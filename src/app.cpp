@@ -13,6 +13,7 @@
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
 #include "core/libretro_screen_source.hpp"
+#include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/compositor.hpp"
@@ -518,7 +519,7 @@ void App::Impl::render() {
     const float height = static_cast<float>(output_height);
 
     if (state == State::Browser) {
-        browser->render(quads, text, width, height);
+        browser->render(quads, text, width, height, input.face_buttons());
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
@@ -604,6 +605,13 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.paths.saves_dir);
     ensure_directory(impl.settings.system_dir);
 
+    // Must be set before any controller is opened. SDL's own default is
+    // "report face buttons by label", which is not what this app assumed for a
+    // while; making it explicit is what keeps every pad consistent.
+    const FaceButtonConvention face_buttons =
+        face_button_convention_from_string(impl.settings.face_buttons, FaceButtonConvention::Labels);
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, sdl_button_labels_hint(face_buttons));
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
         std::fprintf(stderr, "dualscreen: could not start SDL: %s\n", SDL_GetError());
         return 1;
@@ -612,6 +620,19 @@ int App::run(const AppOptions& options) {
     // every tap would register twice.
     SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+
+    // A pad SDL has no entry for, or a wrong entry, is fixable by dropping a
+    // gamecontrollerdb.txt next to settings.json - no rebuild needed.
+    const std::string controller_db = path_join(impl.paths.config_dir, "gamecontrollerdb.txt");
+    if (file_exists(controller_db)) {
+        const int added = SDL_GameControllerAddMappingsFromFile(controller_db.c_str());
+        if (added < 0) {
+            log_warn("could not read " + controller_db + ": " + SDL_GetError());
+        } else {
+            log_info("loaded " + std::to_string(added) + " controller mappings from " + controller_db);
+        }
+    }
+    log_info(std::string("face buttons are read by ") + to_string(face_buttons));
 
     std::string error;
     if (!impl.create_window(&error)) {

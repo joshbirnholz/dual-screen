@@ -23,6 +23,12 @@ struct Settings {
     // places" — see core_search_paths().
     std::string core_path;
 
+    // How SDL reports face buttons, and so how they map onto the DS:
+    //   "labels"    - the button printed A is DS A (matches a game's prompts)
+    //   "positions" - south is DS B, east is DS A (a real DS's layout)
+    // See src/input/controller_mapping.hpp for why this cannot be implicit.
+    std::string face_buttons = "labels";
+
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;
     bool vsync = true;

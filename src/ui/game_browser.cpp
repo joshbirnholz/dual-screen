@@ -180,6 +180,12 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
     const int visible = geometry.visible_rows;
     const int count = static_cast<int>(rows_.size());
 
+    // At most one navigation per update. activate() and the Cancel handler
+    // both replace rows_ underneath this loop, so a second one in the same
+    // frame would act on a directory the player never saw -- entering a folder
+    // and immediately leaving it, which looks like the button doing nothing.
+    bool navigated = false;
+
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
@@ -197,13 +203,17 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 focus_ = std::min(count - 1, focus_ + visible);
                 break;
             case UiAction::Confirm:
-                activate(focus_, result);
+                if (!navigated) {
+                    activate(focus_, result);
+                    navigated = true;
+                }
                 break;
             case UiAction::Cancel:
                 // Up a level, which is what Back means in a file browser.
-                if (!rows_.empty() && rows_.front().is_parent) {
+                if (!navigated && !rows_.empty() && rows_.front().is_parent) {
                     navigate_to(rows_.front().path);
                     result.directory_changed = true;
+                    navigated = true;
                 }
                 break;
             case UiAction::ToggleMenu:
@@ -227,12 +237,14 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
         } else if (pointer.released) {
             if (geometry.quit_button.contains(pointer.x, pointer.y)) {
                 result.quit_requested = true;
-            } else if (dragging_ && !drag_moved_ && geometry.list.contains(pointer.x, pointer.y)) {
+            } else if (!navigated && dragging_ && !drag_moved_ &&
+                       geometry.list.contains(pointer.x, pointer.y)) {
                 const int row = scroll_ + static_cast<int>((pointer.y - geometry.list.y) /
                                                            geometry.row_height);
                 if (row >= 0 && row < count) {
                     focus_ = row;
                     activate(row, result);
+                    navigated = true;
                 }
             }
             dragging_ = false;
@@ -260,7 +272,8 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
 void GameBrowser::render(QuadRenderer& quads,
                          TextRenderer& text,
                          float output_width,
-                         float output_height) {
+                         float output_height,
+                         FaceButtonConvention face_buttons) {
     if (!open_) {
         return;
     }
@@ -332,13 +345,16 @@ void GameBrowser::render(QuadRenderer& quads,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale, theme.danger,
               TextAlign::Center);
 
-    // Kept clear of the Quit button rather than running underneath it.
+    // Kept clear of the Quit button rather than running underneath it. The
+    // letters come from the active convention so the hint names the button the
+    // player will actually press.
     const float hint_width = geometry.quit_button.x - geometry.panel.x - line;
-    text.draw(quads,
-              TextRenderer::elide_left("A opens   -   B goes up   -   L/R pages   -   drag to scroll",
-                                       hint_width, scale * 0.9f),
-              geometry.panel.x, geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f,
-              scale * 0.9f, theme.text_dim);
+    const std::string hint = std::string(confirm_button_label(face_buttons)) + " opens   -   " +
+                             cancel_button_label(face_buttons) +
+                             " goes up   -   L/R pages   -   drag to scroll";
+    text.draw(quads, TextRenderer::elide_left(hint, hint_width, scale * 0.9f), geometry.panel.x,
+              geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale * 0.9f,
+              theme.text_dim);
 }
 
 }  // namespace ds

@@ -164,6 +164,28 @@ Deck and produces a binary that will not start. Worth knowing: building on
 glibc 2.39 raises the floor to 2.38 purely because GCC 13 rewrites `strtol`
 into `__isoc23_strtol`; nothing in this source needs anything that recent.
 
+**Why the face-button convention is explicit.** The input layer originally
+carried the comment "SDL names face buttons by physical position (A = south)".
+That is wrong: `SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS` defaults to `"1"`,
+so SDL reports face buttons by their *printed label*, and on a Nintendo-layout
+pad `SDL_CONTROLLER_BUTTON_A` is the east button, not the south one. Code that
+assumes either layout mis-maps half the pads in circulation, and the menus and
+the DS mapping had drifted onto different assumptions. The convention is now
+named, pushed into SDL explicitly rather than inherited from a default, shared
+by the menus and the game, switchable through `face_buttons` in settings.json,
+and pinned by tests.
+
+**Why duplicate menu actions are dropped.** Steam Input presents a virtual pad
+while the underlying physical device usually stays visible to SDL as well, so a
+single press arrives as two identical button-down events. Two Confirms in one
+frame in the file browser stepped into a folder and immediately back out of it,
+which reads as the button doing nothing at all. Discrete UI actions are now
+deduplicated per frame, and the browser additionally performs at most one
+navigation per update -- `activate()` replaces the row list underneath the
+loop that called it, so acting twice was operating on a directory the player
+never saw. Both halves are tested; the browser test fails in exactly the
+reported way if the guard is removed.
+
 **Why audio is bounded rather than resampled.** The DS runs at ~59.83 Hz
 against a 60 Hz display, so the queue drifts even when everything is behaving.
 The queue is capped at about a quarter second and trimmed when it runs long,

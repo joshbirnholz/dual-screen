@@ -180,6 +180,43 @@ Full options:
 | Move around the menus | d-pad or left stick; **A** confirms, **B** goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 
+### Steam Input
+
+Launched from Steam, your pad reaches the app through Steam Input, which
+matters in two ways.
+
+**Use a gamepad layout, not a desktop one.** In the shortcut's controller
+settings, pick a template that sends real gamepad buttons. A keyboard-and-mouse
+template sends keystrokes instead, and while the menus do accept Enter, Space,
+Escape and Backspace so such a layout is still usable, the game itself will not
+see DS buttons at all.
+
+**If a button does the wrong thing**, run once from a terminal with `--verbose`
+and press it. Every controller button and key is logged with the name SDL gives
+it, along with the pad's name and the type SDL thinks it is:
+
+```
+[dualscreen][info ] controller connected: Steam Virtual Gamepad (SDL type: Xbox 360, face buttons read as labels)
+[dualscreen][debug] controller button down: a (0)
+```
+
+That says exactly what arrived, which is the fastest way to tell a Steam Input
+remap from an app bug.
+
+### If the face buttons feel wrong
+
+SDL reports face buttons by their **printed label** by default, so the button
+marked A is DS A whatever the pad's physical layout. If you would rather have
+the positions of a real DS — south is B, east is A, which is what an
+Xbox-layout pad gives you — set this in `settings.json`:
+
+```json
+"face_buttons": "positions"
+```
+
+A pad SDL has no entry for, or a wrong one, can be corrected without a rebuild
+by dropping a `gamecontrollerdb.txt` next to `settings.json`.
+
 The two-finger tap matters: on a tablet with no buttons attached, it is the
 only way into the menu. Emulation pauses while the menu is open, so you can
 compare layouts against the frame you were actually looking at.
@@ -196,6 +233,7 @@ V1 does not script `shortcuts.vdf` for you.
 
 ```
 ~/.config/dualscreen/settings.json          app-level defaults
+~/.config/dualscreen/gamecontrollerdb.txt   optional controller mapping overrides
 ~/.config/dualscreen/games/<rom-sha1>.json  per-game layout
 ~/.local/share/dualscreen/saves/            cartridge saves (the core writes these)
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
@@ -207,6 +245,7 @@ V1 does not script `shortcuts.vdf` for you.
 {
   "default_layout_id": "vertical",
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
+  "face_buttons": "labels",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
   "stick_deadzone": 0.35,
@@ -261,7 +300,12 @@ ctest --test-dir build --output-on-failure
 - `test_config` — SHA-1 against the FIPS vectors, path handling, config
   round-trips including preservation of keys a future version might add.
 - `test_browser` — which files the game browser offers, how it sorts and where
-  it starts, plus the held-input gate that keeps a menu press out of the game.
+  it starts, the held-input gate that keeps a menu press out of the game, and
+  that a duplicated press navigates once rather than entering a folder and
+  backing straight out of it.
+- `test_controller_mapping` — both face-button conventions, that confirm is
+  always the player's A button, and that duplicate presses from two devices
+  collapse to one menu action.
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture and the frontend's own
   validation of what the core accepted.

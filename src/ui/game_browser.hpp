@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "config/paths.hpp"
+#include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
@@ -43,7 +44,12 @@ public:
                              float output_width,
                              float output_height);
 
-    void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
+    // `face_buttons` only decides which letters the on-screen hints print.
+    void render(QuadRenderer& quads,
+                TextRenderer& text,
+                float output_width,
+                float output_height,
+                FaceButtonConvention face_buttons);
 
 private:
     struct Row {

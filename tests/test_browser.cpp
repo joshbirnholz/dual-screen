@@ -175,6 +175,59 @@ void test_held_input_gate() {
     CHECK(gate.touching());
 }
 
+// The reported symptom: "the A button doesn't actually select a directory".
+// Two Confirms in one frame -- which is what a duplicated Steam Input device
+// produces -- used to enter the folder and immediately back out of it.
+void test_duplicate_confirms_navigate_once() {
+    const std::string sandbox = make_sandbox();
+    if (sandbox.empty()) return;
+    const std::string inner = path_join(sandbox, "inner");
+    ensure_directory(inner);
+    touch_file(path_join(inner, "game.nds"));
+
+    GameBrowser browser;
+    browser.open(sandbox);
+    CHECK_STR_EQ(browser.current_directory(), sandbox);
+
+    InputManager input;  // never initialized: no pointer, no controllers
+    const std::vector<PointerEvent> no_pointers;
+
+    // Focus starts on "..", so step down onto "inner" first.
+    browser.update(input, {UiAction::Down}, no_pointers, 1280.0f, 800.0f);
+
+    // Two Confirms, one frame.
+    const GameBrowserResult result =
+        browser.update(input, {UiAction::Confirm, UiAction::Confirm}, no_pointers, 1280.0f, 800.0f);
+    CHECK(result.directory_changed);
+    CHECK_MSG(browser.current_directory() == inner,
+              "ended up in " + browser.current_directory() + " instead of " + inner);
+
+    // A Confirm and a Cancel together must not cancel out either.
+    browser.update(input, {UiAction::Down}, no_pointers, 1280.0f, 800.0f);
+    browser.update(input, {UiAction::Confirm, UiAction::Cancel}, no_pointers, 1280.0f, 800.0f);
+    CHECK_MSG(browser.current_directory() == inner,
+              "a Confirm+Cancel pair moved to " + browser.current_directory());
+}
+
+void test_confirm_on_a_rom_chooses_it() {
+    const std::string sandbox = make_sandbox();
+    if (sandbox.empty()) return;
+    touch_file(path_join(sandbox, "only.nds"));
+
+    GameBrowser browser;
+    browser.open(sandbox);
+    InputManager input;
+    const std::vector<PointerEvent> no_pointers;
+
+    // Rows are ".." then "only.nds".
+    browser.update(input, {UiAction::Down}, no_pointers, 1280.0f, 800.0f);
+    const GameBrowserResult result =
+        browser.update(input, {UiAction::Confirm}, no_pointers, 1280.0f, 800.0f);
+    CHECK(result.game_chosen);
+    CHECK_STR_EQ(result.chosen_path, path_join(sandbox, "only.nds"));
+    CHECK(!browser.is_open());
+}
+
 }  // namespace
 
 int main() {
@@ -183,5 +236,7 @@ int main() {
     test_browser_navigation();
     test_default_browse_dirs_all_exist();
     test_held_input_gate();
+    test_duplicate_confirms_navigate_once();
+    test_confirm_on_a_rom_chooses_it();
     return test::finish("browser");
 }

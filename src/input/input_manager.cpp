@@ -8,29 +8,6 @@
 namespace ds {
 namespace {
 
-// SDL names face buttons by physical position (A = south). The DS names them
-// the Nintendo way (B = south). Mapping through position rather than letter is
-// what makes a stock Xbox-layout pad feel right on a DS game.
-struct ButtonMapping {
-    SDL_GameControllerButton sdl;
-    DsButton ds;
-};
-
-constexpr ButtonMapping kButtonMappings[] = {
-    {SDL_CONTROLLER_BUTTON_A, DsButton::B},
-    {SDL_CONTROLLER_BUTTON_B, DsButton::A},
-    {SDL_CONTROLLER_BUTTON_X, DsButton::Y},
-    {SDL_CONTROLLER_BUTTON_Y, DsButton::X},
-    {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, DsButton::L},
-    {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, DsButton::R},
-    {SDL_CONTROLLER_BUTTON_START, DsButton::Start},
-    {SDL_CONTROLLER_BUTTON_BACK, DsButton::Select},
-    {SDL_CONTROLLER_BUTTON_DPAD_UP, DsButton::Up},
-    {SDL_CONTROLLER_BUTTON_DPAD_DOWN, DsButton::Down},
-    {SDL_CONTROLLER_BUTTON_DPAD_LEFT, DsButton::Left},
-    {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, DsButton::Right},
-};
-
 DsButton ds_button_for_key(SDL_Keycode key, bool& found) {
     found = true;
     switch (key) {
@@ -58,6 +35,8 @@ InputManager::~InputManager() { shutdown(); }
 
 void InputManager::initialize(const Settings& settings) {
     settings_ = settings;
+    face_buttons_ = face_button_convention_from_string(settings.face_buttons,
+                                                       FaceButtonConvention::Labels);
     settings_.stick_deadzone = std::clamp(settings_.stick_deadzone, 0.05f, 0.9f);
     settings_.trigger_deadzone = std::clamp(settings_.trigger_deadzone, 0.05f, 0.9f);
 
@@ -90,8 +69,27 @@ void InputManager::open_controller(int device_index) {
         return;
     }
     controllers_[id] = controller;
+
+    // Logged in full because a mis-mapped pad is otherwise very hard to
+    // diagnose remotely: this one line says what SDL thinks the pad is, which
+    // decides how its face buttons are reported.
     const char* name = SDL_GameControllerName(controller);
-    log_info(std::string("controller connected: ") + (name != nullptr ? name : "unknown"));
+    log_info(std::string("controller connected: ") + (name != nullptr ? name : "unknown") +
+             " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) +
+             ", face buttons read as " + to_string(face_buttons_) + ")");
+
+    char* mapping = SDL_GameControllerMapping(controller);
+    if (mapping != nullptr) {
+        log_debug(std::string("controller mapping: ") + mapping);
+        SDL_free(mapping);
+    }
+
+    if (controllers_.size() > 1) {
+        // Normal under Steam Input, which adds a virtual pad alongside the real
+        // device. Their inputs are merged and duplicate menu actions dropped.
+        log_info("now tracking " + std::to_string(controllers_.size()) +
+                 " controllers; duplicate presses are merged");
+    }
 }
 
 void InputManager::close_controller(SDL_JoystickID instance_id) {
@@ -123,7 +121,18 @@ void InputManager::begin_frame() {
     window_size_changed_ = false;
 }
 
-void InputManager::push_action(UiAction action) { ui_actions_.push_back(action); }
+void InputManager::push_action(UiAction action) {
+    // Deduplicated within the frame. Steam Input presents a virtual pad while
+    // the physical device often stays visible too, so a single press arrives
+    // as two identical button-down events. Acting on both is actively wrong in
+    // a menu: two Confirms in the browser step into a folder and straight back
+    // out of it, which looks like the button doing nothing at all. No menu
+    // wants the same discrete action twice in one frame regardless.
+    if (std::find(ui_actions_.begin(), ui_actions_.end(), action) != ui_actions_.end()) {
+        return;
+    }
+    ui_actions_.push_back(action);
+}
 
 void InputManager::handle_event(const SDL_Event& event) {
     switch (event.type) {
@@ -148,13 +157,30 @@ void InputManager::handle_event(const SDL_Event& event) {
             break;
 
         case SDL_CONTROLLERBUTTONDOWN: {
-            switch (static_cast<SDL_GameControllerButton>(event.cbutton.button)) {
+            const SDL_GameControllerButton button =
+                static_cast<SDL_GameControllerButton>(event.cbutton.button);
+
+            // Every press is logged under --verbose with the name SDL gives it,
+            // so a pad whose buttons arrive as the wrong thing can be
+            // identified from a log rather than guessed at.
+            const char* sdl_name = SDL_GameControllerGetStringForButton(button);
+            log_debug(std::string("controller button down: ") +
+                      (sdl_name != nullptr ? sdl_name : "?") + " (" +
+                      std::to_string(static_cast<int>(button)) + ")");
+
+            // Confirm and cancel depend on how this pad reports its face
+            // buttons, so they are resolved rather than hardcoded.
+            if (button == confirm_button(face_buttons_)) {
+                push_action(UiAction::Confirm);
+            } else if (button == cancel_button(face_buttons_)) {
+                push_action(UiAction::Cancel);
+            }
+
+            switch (button) {
                 case SDL_CONTROLLER_BUTTON_DPAD_UP: push_action(UiAction::Up); break;
                 case SDL_CONTROLLER_BUTTON_DPAD_DOWN: push_action(UiAction::Down); break;
                 case SDL_CONTROLLER_BUTTON_DPAD_LEFT: push_action(UiAction::Left); break;
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
-                case SDL_CONTROLLER_BUTTON_A: push_action(UiAction::Confirm); break;
-                case SDL_CONTROLLER_BUTTON_B: push_action(UiAction::Cancel); break;
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: push_action(UiAction::PageUp); break;
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: push_action(UiAction::PageDown); break;
                 // R3 opens and closes the menu. Steam grabs Guide in Game Mode,
@@ -167,12 +193,23 @@ void InputManager::handle_event(const SDL_Event& event) {
 
         case SDL_KEYDOWN: {
             if (event.key.repeat != 0) break;
+
+            // Logged for the same reason controller buttons are: a Steam Input
+            // layout that sends keystrokes instead of gamepad buttons is
+            // otherwise invisible from inside the app.
+            log_debug(std::string("key down: ") + SDL_GetKeyName(event.key.keysym.sym));
+
             switch (event.key.keysym.sym) {
-                case SDLK_ESCAPE: push_action(UiAction::Cancel); break;
+                case SDLK_ESCAPE:
+                case SDLK_BACKSPACE: push_action(UiAction::Cancel); break;
                 case SDLK_F1:
                 case SDLK_TAB: push_action(UiAction::ToggleMenu); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
-                case SDLK_SPACE: push_action(UiAction::Confirm); break;
+                // Return doubles as DS Start in game, but game input is off
+                // while a menu is open, so there is no conflict.
+                case SDLK_SPACE:
+                case SDLK_RETURN:
+                case SDLK_KP_ENTER: push_action(UiAction::Confirm); break;
                 default: break;
             }
             // Arrow keys double as menu navigation; they are also DS d-pad keys,
@@ -315,9 +352,12 @@ uint32_t InputManager::poll_held_buttons() const {
     for (const auto& entry : controllers_) {
         SDL_GameController* controller = entry.second;
         if (controller == nullptr) continue;
-        for (const ButtonMapping& mapping : kButtonMappings) {
-            if (SDL_GameControllerGetButton(controller, mapping.sdl) != 0) {
-                held.set(mapping.ds, true);
+        for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
+            const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
+            DsButton ds_button = DsButton::A;
+            if (ds_button_for_controller_button(button, face_buttons_, ds_button) &&
+                SDL_GameControllerGetButton(controller, button) != 0) {
+                held.set(ds_button, true);
             }
         }
         // The left stick doubles as the d-pad; the DS has no analogue stick, and

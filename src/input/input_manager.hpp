@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "input/held_input_gate.hpp"
 #include "layout/layout.hpp"
@@ -76,6 +77,7 @@ public:
     float pointer_y() const { return pointer_y_; }
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
+    FaceButtonConvention face_buttons() const { return face_buttons_; }
 
 private:
     void open_controller(int device_index);
@@ -93,6 +95,7 @@ private:
     };
 
     Settings settings_;
+    FaceButtonConvention face_buttons_ = FaceButtonConvention::Labels;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
 
     DsInputState ds_state_;
