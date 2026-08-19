@@ -150,6 +150,7 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, screen_to_wire(message.granted_screen));
     put_u16(out, message.screen_width);
     put_u16(out, message.screen_height);
+    put_u32(out, message.audio_sample_rate);
     finish_message(out, start, MessageType::Welcome);
 }
 
@@ -221,6 +222,56 @@ bool decode_beacon(const uint8_t* data, std::size_t size, BeaconMessage& out) {
     return true;
 }
 
+void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>(message.stream));
+    put_u32(out, message.sample_rate);
+    put_u32(out, static_cast<uint32_t>(message.samples.size()));
+    for (const int16_t sample : message.samples) {
+        put_u16(out, static_cast<uint16_t>(sample));
+    }
+    finish_message(out, start, MessageType::Audio);
+}
+
+bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
+    Reader reader(data, size);
+    uint8_t stream = 0;
+    uint32_t count = 0;
+    reader.u8(stream);
+    reader.u32(out.sample_rate);
+    reader.u32(count);
+    if (!reader.ok()) return false;
+    // Two bytes per sample must actually be there before anything is reserved.
+    if (static_cast<std::size_t>(count) * 2u > reader.remaining()) {
+        return false;
+    }
+    if (stream > static_cast<uint8_t>(AudioStreamId::BottomDevice)) {
+        return false;
+    }
+    out.stream = static_cast<AudioStreamId>(stream);
+    out.samples.resize(count);
+    for (uint32_t index = 0; index < count; ++index) {
+        uint16_t raw = 0;
+        if (!reader.u16(raw)) {
+            return false;
+        }
+        out.samples[index] = static_cast<int16_t>(raw);
+    }
+    return true;
+}
+
+void encode_request_layout(const RequestLayoutMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_string(out, message.layout_id);
+    finish_message(out, start, MessageType::RequestLayout);
+}
+
+bool decode_request_layout(const uint8_t* data, std::size_t size, RequestLayoutMessage& out) {
+    Reader reader(data, size);
+    reader.string(out.layout_id);
+    return reader.ok();
+}
+
 void encode_bye(std::vector<uint8_t>& out) {
     finish_message(out, begin_message(out), MessageType::Bye);
 }
@@ -254,6 +305,7 @@ bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) 
     reader.u8(screen);
     reader.u16(out.screen_width);
     reader.u16(out.screen_height);
+    reader.u32(out.audio_sample_rate);
     if (!reader.ok()) return false;
     return screen_from_wire(screen, out.granted_screen);
 }

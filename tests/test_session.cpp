@@ -34,6 +34,16 @@ bool spin(HostSession& host, CompanionSession& companion, Predicate done, int mi
     return done();
 }
 
+// Both sides have to agree the handshake finished. Waiting only for the host
+// to see a companion returns before the companion has read the welcome, so
+// anything the welcome carries is still unset.
+bool paired(HostSession& host, CompanionSession& companion) {
+    return spin(host, companion, [&] {
+        return host.has_companion() &&
+               companion.status() == CompanionSession::Status::Connected;
+    });
+}
+
 std::vector<uint32_t> flat_screen(uint32_t colour) {
     return std::vector<uint32_t>(static_cast<std::size_t>(kDsScreenWidth) * kDsScreenHeight, colour);
 }
@@ -64,9 +74,10 @@ void test_host_and_companion_pair_up() {
 
     DiscoveredHost target = companion.hosts().front();
     CHECK_STR_EQ(target.game_title, "Test Game");
-    // The host offers the screen it is not using itself.
+    // Both screens are on offer until one is taken: the host adapts to whichever
+    // the companion asks for.
     CHECK(target.offers(ScreenId::Bottom));
-    CHECK(!target.offers(ScreenId::Top));
+    CHECK(target.offers(ScreenId::Top));
 
     companion.connect_to(target);
     const bool connected = spin(host, companion, [&] {
@@ -156,7 +167,7 @@ void test_non_split_layout_sends_both_screens() {
         return;
     }
     companion.connect_to(companion.hosts().front());
-    if (!spin(host, companion, [&] { return host.has_companion(); })) {
+    if (!paired(host, companion)) {
         host.stop();
         return;
     }
@@ -186,10 +197,239 @@ void test_non_split_layout_sends_both_screens() {
     host.stop();
 }
 
+// The reported bug: "connect as top screen" and "connect as bottom screen"
+// behaved identically because the host decoded the companion's request and then
+// ignored it, always granting the opposite of its own fixed screen.
+void test_companion_gets_the_screen_it_asked_for() {
+    for (const ScreenId wanted : {ScreenId::Top, ScreenId::Bottom}) {
+        HostSession host;
+        HostSession::Config config;
+        config.device_name = "Screen Choice Host";
+        config.game_title = "Choice";
+        config.host_screen = ScreenId::Top;  // deliberately the same either way
+        config.audio_sample_rate = 32000;
+
+        std::string error;
+        if (!host.start(config, &error)) {
+            return;  // covered by the first test's skip
+        }
+        host.set_layout("split_devices", false);
+
+        CompanionSession companion;
+        if (!companion.begin_search("Chooser", wanted, &error)) {
+            host.stop();
+            return;
+        }
+        if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+            host.stop();
+            return;
+        }
+
+        // Both screens must be on offer before anyone has taken one, or the
+        // picker would grey out the very choice being made.
+        const DiscoveredHost found = companion.hosts().front();
+        CHECK_MSG(found.offers(ScreenId::Top) && found.offers(ScreenId::Bottom),
+                  "an unpaired host did not offer both screens");
+
+        companion.connect_to(found);
+        const bool connected = spin(host, companion, [&] {
+            return companion.status() == CompanionSession::Status::Connected &&
+                   host.has_companion();
+        });
+        CHECK_MSG(connected, "handshake did not complete");
+        if (!connected) {
+            host.stop();
+            return;
+        }
+
+        const char* asked = to_string(wanted);
+        CHECK_MSG(companion.granted_screen() == wanted,
+                  std::string("asked for the ") + asked + " screen but was granted the " +
+                      to_string(companion.granted_screen()));
+        CHECK_MSG(host.companion_screen() == wanted,
+                  std::string("the host thinks the companion has the ") +
+                      to_string(host.companion_screen()) + " screen");
+        // ...and the host takes the other one, whatever it started as.
+        CHECK_MSG(host.host_screen() != wanted, "both devices claimed the same screen");
+
+        // The frames that arrive must be the ones asked for.
+        const std::vector<uint32_t> top = flat_screen(0x00204080u);
+        const std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+        host.publish_screens(top.data(), bottom.data(), kDsScreenWidth, kDsScreenHeight,
+                             kDsScreenWidth, 1);
+        const bool arrived = spin(host, companion, [&] { return companion.has_screen(wanted); });
+        CHECK_MSG(arrived, std::string("the ") + asked + " screen never arrived");
+        const ScreenId other = (wanted == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
+        CHECK_MSG(!companion.has_screen(other),
+                  "the screen the companion did not ask for was sent anyway");
+
+        companion.disconnect();
+        host.stop();
+    }
+}
+
+// Sound is mirrored: what the host plays, the companion plays too.
+void test_audio_reaches_the_companion() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Audio Host";
+    config.game_title = "Noisy";
+    config.audio_sample_rate = 32823;
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    host.set_layout("split_devices", false);
+
+    CompanionSession companion;
+    std::size_t frames_heard = 0;
+    uint32_t heard_rate = 0;
+    int16_t first_sample = 0;
+    companion.set_audio_callback(
+        [&](const int16_t* samples, std::size_t frames, uint32_t rate) {
+            if (frames_heard == 0 && frames > 0) {
+                first_sample = samples[0];
+            }
+            frames_heard += frames;
+            heard_rate = rate;
+        });
+
+    if (!companion.begin_search("Listener", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    // The rate is part of the handshake, so the companion can open its output
+    // to match rather than guessing.
+    CHECK_EQ(companion.audio_sample_rate(), static_cast<uint32_t>(32823));
+
+    std::vector<int16_t> tone(512 * 2);
+    for (std::size_t index = 0; index < tone.size(); ++index) {
+        tone[index] = static_cast<int16_t>((index % 64) * 300 - 9600);
+    }
+    host.publish_audio(tone.data(), 512, 32823);
+
+    const bool heard = spin(host, companion, [&] { return frames_heard > 0; });
+    CHECK_MSG(heard, "no audio reached the companion");
+    if (heard) {
+        CHECK_EQ(frames_heard, static_cast<std::size_t>(512));
+        CHECK_EQ(heard_rate, static_cast<uint32_t>(32823));
+        CHECK_EQ(first_sample, tone[0]);
+    }
+
+    // Turning it off stops it, without disturbing anything else.
+    frames_heard = 0;
+    host.set_audio_enabled(false);
+    host.publish_audio(tone.data(), 512, 32823);
+    spin(host, companion, [] { return false; }, 200);
+    CHECK_MSG(frames_heard == 0, "audio was still sent after being switched off");
+
+    companion.disconnect();
+    host.stop();
+}
+
+// A companion can ask for a layout; the host owns the decision.
+void test_companion_can_request_a_layout() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Layout Host";
+    config.game_title = "Layouts";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    host.set_layout("split_devices", false);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Asker", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    // Nothing pending before anything is asked for.
+    std::string requested;
+    CHECK(!host.take_requested_layout(requested));
+
+    companion.request_layout("vertical");
+    const bool asked = spin(host, companion, [&] { return host.take_requested_layout(requested); });
+    CHECK_MSG(asked, "the layout request never reached the host");
+    if (asked) {
+        CHECK_STR_EQ(requested, "vertical");
+        // Taken once only, so a request is not applied repeatedly.
+        std::string again;
+        CHECK(!host.take_requested_layout(again));
+    }
+
+    // And the host's answer comes back, so both devices agree.
+    host.set_layout("vertical", false);
+    const bool agreed =
+        spin(host, companion, [&] { return companion.host_layout_id() == "vertical"; });
+    CHECK_MSG(agreed, "the host's layout change never reached the companion");
+
+    companion.disconnect();
+    host.stop();
+}
+
+// Either end can end the session.
+void test_host_can_disconnect_the_companion() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Ender";
+    config.game_title = "Ending";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+
+    CompanionSession companion;
+    if (!companion.begin_search("Ended", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    host.disconnect_companion("you ended the session");
+    CHECK(!host.has_companion());
+    // The companion is told rather than left waiting for a timeout.
+    const bool noticed = spin(host, companion, [&] {
+        return companion.status() != CompanionSession::Status::Connected;
+    });
+    CHECK_MSG(noticed, "the companion was not told the session ended");
+
+    host.stop();
+}
+
 }  // namespace
 
 int main() {
     test_host_and_companion_pair_up();
     test_non_split_layout_sends_both_screens();
+    test_companion_gets_the_screen_it_asked_for();
+    test_audio_reaches_the_companion();
+    test_companion_can_request_a_layout();
+    test_host_can_disconnect_the_companion();
     return test::finish("session");
 }

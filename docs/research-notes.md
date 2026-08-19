@@ -188,6 +188,29 @@ Deck and produces a binary that will not start. Worth knowing: building on
 glibc 2.39 raises the floor to 2.38 purely because GCC 13 rewrites `strtol`
 into `__isoc23_strtol`; nothing in this source needs anything that recent.
 
+**Why the companion's screen choice was ignored.** The host decoded
+`hello.wanted_screen` and then never read it, granting the opposite of its own
+fixed screen instead -- so "connect as top" and "connect as bottom" did the same
+thing. The host now takes whichever screen the companion did not ask for, and
+advertises both as available until one is claimed, since it adapts either way.
+Two-process coverage runs for both choices: a single-direction test would have
+passed throughout the bug.
+
+**Why audio carries a stream id when there is only one stream.** DS and 3DS have
+one soundtrack, so both devices play the same thing and the id is always
+`Shared`. Wii U genuinely does not -- the GamePad speaker is not a copy of the
+TV's -- so the field exists now, with the per-device values reserved. A
+companion ignores a stream that is not `Shared` rather than playing it on the
+wrong device, which means adding Wii U later does not require a protocol
+version bump for this.
+
+**A test trap worth remembering.** Several session tests waited for
+`host.has_companion()` and then immediately checked something the companion
+learns from the welcome. That returns as soon as the *host* has processed the
+hello, before the companion has read the reply, so the assertions saw unset
+values. Waiting on one side's view of a handshake is not waiting for the
+handshake; the tests now require both ends to agree it finished.
+
 **Saves are the frontend's job, and were simply missing.** In libretro a
 cartridge save lives in the buffer behind `retro_get_memory_data(
 RETRO_MEMORY_SAVE_RAM)`; the core never touches the filesystem for it. The

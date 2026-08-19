@@ -88,6 +88,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             game_title_ = welcome.game_title;
             granted_screen_ = welcome.granted_screen;
+            audio_sample_rate_ = welcome.audio_sample_rate;
             status_ = Status::Connected;
             status_detail_ = "showing the " + std::string(to_string(granted_screen_)) +
                              " screen of " + game_title_;
@@ -133,6 +134,23 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             target.width = frame.width;
             target.height = frame.height;
             target.serial = frame.serial;
+            break;
+        }
+        case MessageType::Audio: {
+            AudioMessage audio;
+            if (!decode_audio(payload.data(), payload.size(), audio)) {
+                return;  // a bad audio packet is not worth ending a session over
+            }
+            // Only the shared stream means anything for DS and 3DS. Per-device
+            // streams arrive with Wii U and are ignored until then rather than
+            // played on the wrong device.
+            if (audio.stream != AudioStreamId::Shared || audio.samples.empty()) {
+                return;
+            }
+            if (audio_callback_) {
+                audio_callback_(audio.samples.data(), audio.samples.size() / 2,
+                                audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_);
+            }
             break;
         }
         case MessageType::Bye:
@@ -225,6 +243,17 @@ uint64_t CompanionSession::received_serial(ScreenId screen) const {
 uint32_t CompanionSession::sample_pixel(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
     return buffer.pixels.empty() ? 0u : (buffer.pixels[0] & 0x00ffffffu);
+}
+
+void CompanionSession::request_layout(const std::string& layout_id) {
+    if (status_ != Status::Connected || !stream_.connected() || layout_id.empty()) {
+        return;
+    }
+    RequestLayoutMessage request;
+    request.layout_id = layout_id;
+    std::vector<uint8_t> out;
+    encode_request_layout(request, out);
+    stream_.send(out);
 }
 
 bool CompanionSession::advance_frame(std::string* error) {

@@ -109,6 +109,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
+        case Row::StreamAudio:
+            settings_.stream_audio = !settings_.stream_audio;
+            result.settings_changed = true;
+            break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -188,6 +192,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"BIOS / system folder", settings_.system_dir},
         {"melonDS DS core", core_found ? resolved_core_path_ : std::string("not found")},
         {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
+        {"Send sound to the other device", settings_.stream_audio ? "On" : "Off"},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"Back", ""},
     };

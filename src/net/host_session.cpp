@@ -75,11 +75,12 @@ void HostSession::refresh_beacon() {
     beacon.game_title = config_.game_title;
     beacon.rom_sha1 = config_.rom_sha1;
     beacon.session_port = listener_.port() != 0 ? listener_.port() : kSessionPort;
-    // Only the screen the host is not using is on offer, and only while nobody
-    // has taken it.
+    // Both screens are on offer until a companion takes one: the host adapts to
+    // whichever it is asked for. Once paired, only the one already taken is
+    // shown as unavailable.
     const bool free_slot = !companion_.open();
-    beacon.top_available = free_slot && companion_screen_ == ScreenId::Top;
-    beacon.bottom_available = free_slot && companion_screen_ == ScreenId::Bottom;
+    beacon.top_available = free_slot;
+    beacon.bottom_available = free_slot;
     announcer_.set_beacon(beacon);
 }
 
@@ -94,6 +95,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_name_.clear();
     companion_input_ = DsInputState();
     companion_input_fresh_ = false;
+    requested_layout_.clear();
     refresh_beacon();
 }
 
@@ -132,8 +134,12 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 return;
             }
 
-            // The companion asks for a screen; the host grants the one it is not
-            // using itself, which is the only arrangement that makes sense.
+            // The companion picked which screen it wants to be, so it gets it
+            // and the host takes the other. Ignoring this was why "connect as
+            // top screen" and "connect as bottom screen" behaved identically.
+            companion_screen_ = hello.wanted_screen;
+            config_.host_screen =
+                (companion_screen_ == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
             companion_name_ = hello.device_name.empty() ? "companion" : hello.device_name;
             handshake_done_ = true;
 
@@ -143,6 +149,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             welcome.granted_screen = companion_screen_;
             welcome.screen_width = kDsScreenWidth;
             welcome.screen_height = kDsScreenHeight;
+            welcome.audio_sample_rate = config_.audio_sample_rate;
             std::vector<uint8_t> out;
             encode_welcome(welcome, out);
             companion_.send(out);
@@ -167,6 +174,16 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             companion_input_.touch_y =
                 std::min(std::max<int>(input.touch_y, 0), kDsScreenHeight - 1);
             companion_input_fresh_ = true;
+            break;
+        }
+        case MessageType::RequestLayout: {
+            RequestLayoutMessage request;
+            if (!decode_request_layout(payload.data(), payload.size(), request)) {
+                return;  // not worth dropping a session over
+            }
+            // Held for the app to validate against the layout registry: the
+            // host owns the choice and will not adopt an id it does not know.
+            requested_layout_ = request.layout_id;
             break;
         }
         case MessageType::Bye:
@@ -231,6 +248,51 @@ void HostSession::poll(uint64_t now_ms) {
             break;
         }
     }
+}
+
+void HostSession::disconnect_companion(const std::string& reason) {
+    if (!companion_.open()) {
+        return;
+    }
+    // Say goodbye before closing, so the other end knows this was deliberate.
+    std::vector<uint8_t> bye;
+    encode_bye(bye);
+    companion_.send(bye);
+    std::string error;
+    std::vector<uint8_t> ignored;
+    companion_.pump(ignored, &error);
+    drop_companion(reason);
+}
+
+bool HostSession::take_requested_layout(std::string& out_layout_id) {
+    if (requested_layout_.empty()) {
+        return false;
+    }
+    out_layout_id = requested_layout_;
+    requested_layout_.clear();
+    return true;
+}
+
+void HostSession::publish_audio(const int16_t* interleaved_stereo,
+                                std::size_t frames,
+                                uint32_t sample_rate) {
+    if (!audio_enabled_ || !has_companion() || interleaved_stereo == nullptr || frames == 0) {
+        return;
+    }
+    // Audio is dropped rather than queued when the link is behind, for the same
+    // reason as video: a growing queue is heard as drift, not as buffering.
+    if (companion_.pending_bytes() > kMaxQueuedBytes) {
+        return;
+    }
+
+    AudioMessage message;
+    message.stream = AudioStreamId::Shared;  // DS and 3DS mirror; Wii U will not
+    message.sample_rate = sample_rate;
+    message.samples.assign(interleaved_stereo, interleaved_stereo + frames * 2);
+
+    std::vector<uint8_t> out;
+    encode_audio(message, out);
+    companion_.send(out);
 }
 
 void HostSession::publish_screens(const uint32_t* top_pixels,

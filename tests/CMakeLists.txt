@@ -60,7 +60,21 @@ if(XVFB_RUN_EXECUTABLE)
             ${MOCK_CORE_PATH}
             ${CMAKE_BINARY_DIR}/two-device
             $<TARGET_FILE:check_screenshot>)
-    set_tests_properties(two_device_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+    set_tests_properties(two_device_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=bottom")
+
+    # The same run with the other choice: "connect as top" and "connect as
+    # bottom" behaving identically was a real bug, and only a two-process run
+    # shows which screen actually ends up where.
+    add_test(NAME two_device_top_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_two_device_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/two-device-top
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(two_device_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=top")
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()

@@ -217,6 +217,7 @@ struct App::Impl {
     double save_flush_accumulator = 0.0;
     bool awaiting_auto_connect = false;
     bool screenshot_taken = false;
+    uint32_t companion_audio_rate = 0;
     int frames_rendered = 0;
 
     bool create_window(std::string* error);
@@ -231,6 +232,9 @@ struct App::Impl {
     ScreenSource* active_source();
     void start_companion(ScreenId wanted_screen);
     void open_launcher();
+    // Plays what arrives from the host, opening this device's audio output the
+    // first time something does -- the rate is not known until then.
+    void attach_companion_audio();
     // Loads a ROM and starts emulating it. On failure it puts a readable
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
@@ -399,6 +403,29 @@ ScreenSource* App::Impl::active_source() {
     return nullptr;
 }
 
+void App::Impl::attach_companion_audio() {
+    if (!companion_session) {
+        return;
+    }
+    companion_session->set_audio_callback(
+        [this](const int16_t* samples, std::size_t frames, uint32_t rate) {
+            if (!settings.stream_audio || rate == 0) {
+                return;
+            }
+            if (!audio.is_open() || companion_audio_rate != rate) {
+                std::string error;
+                if (!audio.open(static_cast<double>(rate), &error)) {
+                    log_warn("cannot play the streamed sound: " + error);
+                    companion_audio_rate = rate;  // do not retry every packet
+                    return;
+                }
+                companion_audio_rate = rate;
+                log_info("playing streamed audio at " + std::to_string(rate) + " Hz");
+            }
+            audio.push(samples, frames);
+        });
+}
+
 void App::Impl::open_launcher() {
     if (!launcher) {
         launcher.reset(new LauncherScreen());
@@ -412,6 +439,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     if (!companion_session) {
         companion_session.reset(new net::CompanionSession());
     }
+    attach_companion_audio();
     std::string error;
     if (!companion_session->begin_search(settings.device_name, wanted_screen, &error)) {
         enter_message(MessageKind::Error, "Cannot look for other devices", error,
@@ -493,8 +521,15 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
 
     source.reset(new LibretroCoreScreenSource());
-    source->set_audio_callback(
-        [this](const int16_t* samples, std::size_t frames) { audio.push(samples, frames); });
+    source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
+        audio.push(samples, frames);
+        // Mirrored to the companion as it is produced, so both devices hear the
+        // same thing at the same time.
+        if (host_session) {
+            host_session->publish_audio(samples, frames,
+                                        static_cast<uint32_t>(source->audio_sample_rate()));
+        }
+    });
 
     std::string source_error;
     if (!source->open(source_config, &source_error)) {
@@ -533,6 +568,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     host_config.game_title = game_title;
     host_config.rom_sha1 = game_config.rom_sha1;
     host_config.host_screen = local_screen;
+    host_config.audio_sample_rate = static_cast<uint32_t>(source->audio_sample_rate());
     std::string host_error;
     if (!host_session->start(host_config, &host_error)) {
         log_warn("not hosting for other devices: " + host_error);
@@ -628,10 +664,13 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Companion: {
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    // No layout menu on a companion: the host owns the layout.
-                    // The menu button leaves the session instead.
-                    companion_session->disconnect();
-                    open_launcher();
+                    // The same layout menu as on the host. Picking one asks the
+                    // host to change it, and the host broadcasts the result, so
+                    // both devices end up showing the same thing.
+                    picker->open(active_layout_id, /*session_active=*/true,
+                                 /*companion=*/true);
+                    state = State::Menu;
+                    input.set_game_input_enabled(false);
                     break;
                 }
             }
@@ -668,15 +707,34 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                                static_cast<float>(output_height));
             if (result.selection_changed) {
                 active_layout_id = picker->selected_layout_id();
-                persist_game_config();
+                if (companion_session &&
+                    companion_session->status() == net::CompanionSession::Status::Connected) {
+                    // A companion does not own the choice: it asks, and adopts
+                    // whatever the host broadcasts back.
+                    companion_session->request_layout(active_layout_id);
+                } else {
+                    persist_game_config();
+                }
             }
-            if (result.quit_requested) {
+            if (result.disconnect_requested) {
+                if (host_session) {
+                    host_session->disconnect_companion("you ended the session");
+                    state = State::Playing;
+                    input.set_game_input_enabled(true);
+                } else if (companion_session) {
+                    companion_session->disconnect();
+                    open_launcher();
+                }
+            } else if (result.quit_requested) {
                 running = false;
             } else if (result.open_settings) {
                 settings_screen->open(settings, resolved_core_path);
                 state = State::Settings;
             } else if (result.close_requested) {
-                state = State::Playing;
+                state = (companion_session && companion_session->status() ==
+                                                  net::CompanionSession::Status::Connected)
+                            ? State::Companion
+                            : State::Playing;
                 input.set_game_input_enabled(true);
             }
             break;
@@ -695,7 +753,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (result.close_requested) {
                 // Back out to the layout menu, which is where Settings was opened from.
-                picker->open(active_layout_id);
+                const bool paired =
+                    (host_session && host_session->has_companion()) ||
+                    (companion_session &&
+                     companion_session->status() == net::CompanionSession::Status::Connected);
+                picker->open(active_layout_id, paired, source == nullptr);
                 state = State::Menu;
             }
             break;
@@ -704,7 +766,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Playing: {
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    picker->open(active_layout_id);
+                    picker->open(active_layout_id,
+                                 host_session && host_session->has_companion());
                     state = State::Menu;
                     input.set_game_input_enabled(false);
                     if (source) {
@@ -1031,8 +1094,23 @@ int App::run(const AppOptions& options) {
         // is acted on this frame.
         const uint64_t network_now = net::monotonic_millis();
         if (impl.host_session) {
+            impl.host_session->set_audio_enabled(impl.settings.stream_audio);
             impl.host_session->set_layout(impl.active_layout_id, impl.state != Impl::State::Playing);
             impl.host_session->poll(network_now);
+
+            // A companion can ask for a layout; the host owns the choice, so an
+            // id it does not recognise is refused rather than adopted.
+            std::string requested;
+            if (impl.host_session->take_requested_layout(requested)) {
+                const Layout& resolved = impl.registry.resolve(requested);
+                if (resolved.id == requested && resolved.id != impl.active_layout_id) {
+                    impl.active_layout_id = resolved.id;
+                    impl.persist_game_config();
+                    log_info("companion asked for the " + resolved.display_name + " layout");
+                }
+            }
+            // Whichever screen the companion took, the host shows the other.
+            impl.local_screen = impl.host_session->host_screen();
         }
         if (impl.companion_session) {
             impl.companion_session->poll(network_now);

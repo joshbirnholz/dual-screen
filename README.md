@@ -68,8 +68,14 @@ screen** or **Connect as bottom screen**. It finds anything running nearby,
 lists it, and joins. The device holding the bottom screen is the one whose
 touchscreen works, and both devices' buttons drive the game.
 
-The layout menu lives on the device running the game; the companion follows
-whatever it picks. Pressing the menu button on the companion leaves the session.
+The layout menu opens on either device — **F1**, or a two-finger tap. Picking a
+layout there asks the host to change it, and the host broadcasts the result, so
+both devices always agree on what they are showing. The menu carries a
+**Disconnect** entry on both ends, so either device can end the session.
+
+Sound is mirrored: the host sends its audio to the companion so both play the
+same thing. Turn it off with **Send sound to the other device** in Settings, or
+`"stream_audio": false` in `settings.json`.
 
 ```sh
 # Skip the menus entirely, for a Steam shortcut on the companion device:
@@ -411,10 +417,15 @@ ctest --test-dir build --output-on-failure
   truncation at every byte offset, an absurd length field, and random-byte fuzz.
 - `test_net` — real sockets over loopback: a beacon a browser receives, a TCP
   session carrying framed messages, a peer close reported as a disconnect.
-- `test_session` — a real host paired with a real companion, checking that the
-  split layout sends one screen and other layouts send both.
-- `two_device_headless` — launches **two real processes** under `Xvfb`, one
-  hosting and one joining, and checks each ends up showing its own half.
+- `test_session` — a real host paired with a real companion: that the split
+  layout sends one screen and other layouts send both, that a companion is
+  granted the screen it asked for, that audio arrives and stops when switched
+  off, that a layout request reaches the host and its answer comes back, and
+  that either end can end the session.
+- `two_device_headless` / `two_device_top_headless` — launch **two real
+  processes** under `Xvfb`, one hosting and one joining, and check each ends up
+  showing its own half. Run twice, once for each screen the companion can ask
+  for, because those behaving identically was a real bug.
 - `smoke_headless` — runs the real binary against the mock core under `Xvfb`,
   screenshots every layout, and checks pixel by pixel that each screen landed
   where the layout says. It also holds a synthetic touch and verifies the

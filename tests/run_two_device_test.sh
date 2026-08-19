@@ -13,6 +13,9 @@
 
 set -uo pipefail
 
+# Which screen the companion asks for; the host must take the other.
+COMPANION_SCREEN="${COMPANION_SCREEN:-bottom}"
+
 XVFB_RUN="$1"
 DUALSCREEN="$2"
 MOCK_CORE="$3"
@@ -60,7 +63,7 @@ XDG_DATA_HOME="$WORK_DIR/companion/data" \
 SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
 "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
     "$DUALSCREEN" \
-        --connect bottom \
+        --connect "$COMPANION_SCREEN" \
         --core "$MOCK_CORE" \
         --windowed \
         --exit-after-seconds 9 \
@@ -113,9 +116,17 @@ check_shot() {
     fi
 }
 
-# Under the split layout each device fills itself with its own screen.
-check_shot "$HOST_SHOT" "center=blue" "host"
-check_shot "$COMPANION_SHOT" "center=green" "companion"
+# Under the split layout each device fills itself with its own screen. The mock
+# core paints the top screen blue and the bottom one green, so which colour
+# lands where is exactly the question of whether the companion got the screen it
+# asked for.
+if [ "$COMPANION_SCREEN" = "top" ]; then
+    check_shot "$HOST_SHOT" "center=green" "host"
+    check_shot "$COMPANION_SHOT" "center=blue" "companion"
+else
+    check_shot "$HOST_SHOT" "center=blue" "host"
+    check_shot "$COMPANION_SHOT" "center=green" "companion"
+fi
 
 if [ "$FAILED" -ne 0 ]; then
     echo "two-device test failed" >&2

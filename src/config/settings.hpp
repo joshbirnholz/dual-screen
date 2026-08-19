@@ -27,6 +27,10 @@ struct Settings {
     // places" — see core_search_paths().
     std::string core_path;
 
+    // Send the game's sound to the connected device as well. DS and 3DS mirror
+    // it, so both devices play the same thing.
+    bool stream_audio = true;
+
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;
     bool vsync = true;

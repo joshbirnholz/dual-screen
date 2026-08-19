@@ -9,20 +9,26 @@
 namespace ds {
 namespace {
 
-const char* footer_label(int index) {
-    switch (index) {
-        case 0: return "Settings";
-        case 1: return "Resume";
-        case 2: return "Quit";
-        default: return "";
-    }
-}
+
 
 }  // namespace
 
-void LayoutPicker::open(const std::string& layout_id) {
+void LayoutPicker::open(const std::string& layout_id, bool session_active, bool companion) {
     open_ = true;
     selected_layout_id_ = layout_id;
+    session_active_ = session_active;
+
+    footer_.clear();
+    footer_.push_back(Footer::Settings);
+    footer_.push_back(Footer::Resume);
+    if (session_active) {
+        footer_.push_back(Footer::Disconnect);
+    }
+    // A companion has no game of its own to quit out of; leaving the session is
+    // the only exit that means anything there.
+    if (!companion) {
+        footer_.push_back(Footer::Quit);
+    }
     const int index = registry_->index_of(layout_id);
     focus_ = index >= 0 ? index : 0;
 }
@@ -64,10 +70,10 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
         });
     }
 
-    const int footer_count = static_cast<int>(Footer::Count);
-    const float footer_width = (geometry.panel.w - gutter * (footer_count - 1)) / footer_count;
+    const int buttons = std::max(1, footer_count());
+    const float footer_width = (geometry.panel.w - gutter * (buttons - 1)) / buttons;
     const float footer_y = geometry.panel.y + geometry.panel.h - footer_height * 0.8f;
-    for (int index = 0; index < footer_count; ++index) {
+    for (int index = 0; index < buttons; ++index) {
         geometry.footer.push_back(PixelRect{
             geometry.panel.x + index * (footer_width + gutter),
             footer_y,
@@ -109,7 +115,7 @@ void LayoutPicker::move_focus(int delta_x, int delta_y, const Geometry& geometry
     const int footer_index = focus_ - tiles;
     if (delta_x != 0) {
         const int next = footer_index + delta_x;
-        if (next >= 0 && next < static_cast<int>(Footer::Count)) {
+        if (next >= 0 && next < footer_count()) {
             focus_ = tiles + next;
         }
         return;
@@ -133,18 +139,23 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         return true;
     }
 
-    switch (static_cast<Footer>(focus_ - tiles)) {
+    const int footer_index = focus_ - tiles;
+    if (footer_index < 0 || footer_index >= footer_count()) {
+        return false;
+    }
+    switch (footer_[static_cast<std::size_t>(footer_index)]) {
         case Footer::Settings:
             result.open_settings = true;
             return true;
         case Footer::Resume:
             result.close_requested = true;
             return true;
+        case Footer::Disconnect:
+            result.disconnect_requested = true;
+            return true;
         case Footer::Quit:
             result.quit_requested = true;
             return true;
-        case Footer::Count:
-            break;
     }
     return false;
 }
@@ -194,7 +205,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         }
     }
 
-    if (result.close_requested || result.quit_requested || result.open_settings) {
+    if (result.close_requested || result.quit_requested || result.open_settings ||
+        result.disconnect_requested) {
         open_ = false;
     }
     return result;
@@ -279,9 +291,23 @@ void LayoutPicker::render(QuadRenderer& quads,
         if (focused) {
             quads.draw_outline(button, theme.text, std::max(1.0f, scale * 0.5f));
         }
-        const Color color = (static_cast<Footer>(index) == Footer::Quit) ? theme.danger : theme.text;
-        text.draw(quads, footer_label(static_cast<int>(index)), button.x + button.w * 0.5f,
-                  button.y + (button.h - line) * 0.5f, scale, color, TextAlign::Center);
+        const Footer kind = footer_[index];
+        const char* label = "";
+        Color color = theme.text;
+        switch (kind) {
+            case Footer::Settings: label = "Settings"; break;
+            case Footer::Resume: label = "Resume"; break;
+            case Footer::Disconnect:
+                label = "Disconnect";
+                color = theme.warning;
+                break;
+            case Footer::Quit:
+                label = "Quit";
+                color = theme.danger;
+                break;
+        }
+        text.draw(quads, label, button.x + button.w * 0.5f, button.y + (button.h - line) * 0.5f,
+                  scale, color, TextAlign::Center);
     }
 
     const std::string prompts = format_prompts({{labels.confirm, "Select"},

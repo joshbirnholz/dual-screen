@@ -33,11 +33,13 @@ enum class MessageType : uint16_t {
     Hello = 1,
     Input = 2,
     Bye = 3,
+    RequestLayout = 4,
     // host -> companion
     Welcome = 10,
     Reject = 11,
     SessionState = 12,
     Frame = 13,
+    Audio = 14,
     // either way
     Ping = 20,
 };
@@ -64,6 +66,36 @@ struct WelcomeMessage {
     ScreenId granted_screen = ScreenId::Bottom;
     uint16_t screen_width = kDsScreenWidth;
     uint16_t screen_height = kDsScreenHeight;
+    // So the companion can open its own audio output at the rate the host is
+    // actually producing, rather than resampling something it guessed.
+    uint32_t audio_sample_rate = 0;
+};
+
+// Which device an audio stream belongs to.
+//
+// DS and 3DS have one soundtrack, so both devices play the same thing and the
+// stream is Shared. Wii U genuinely has separate audio per device -- the
+// GamePad speaker is not a copy of the TV's -- so the field exists now and the
+// per-device values are reserved rather than being bolted on later.
+enum class AudioStreamId : uint8_t {
+    Shared = 0,
+    TopDevice = 1,
+    BottomDevice = 2,
+};
+
+struct AudioMessage {
+    AudioStreamId stream = AudioStreamId::Shared;
+    uint32_t sample_rate = 0;
+    // Interleaved stereo 16-bit, sent uncompressed: it is about 1 Mbit/s at DS
+    // rates, which is comparable to the video and costs no latency to produce.
+    std::vector<int16_t> samples;
+};
+
+// Sent by a companion to ask the host to change layout. The host owns the
+// choice, so this is a request rather than an instruction -- it is applied and
+// then broadcast back as SessionState so both devices agree.
+struct RequestLayoutMessage {
+    std::string layout_id;
 };
 
 struct RejectMessage {
@@ -120,6 +152,8 @@ void encode_reject(const RejectMessage& message, std::vector<uint8_t>& out);
 void encode_session_state(const SessionStateMessage& message, std::vector<uint8_t>& out);
 void encode_frame(const FrameMessage& message, std::vector<uint8_t>& out);
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out);
+void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
+void encode_request_layout(const RequestLayoutMessage& message, std::vector<uint8_t>& out);
 void encode_bye(std::vector<uint8_t>& out);
 // The beacon is not framed -- it replaces the buffer with one datagram.
 void encode_beacon(const BeaconMessage& message, std::vector<uint8_t>& out);
@@ -132,6 +166,8 @@ bool decode_reject(const uint8_t* data, std::size_t size, RejectMessage& out);
 bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMessage& out);
 bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out);
 bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out);
+bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out);
+bool decode_request_layout(const uint8_t* data, std::size_t size, RequestLayoutMessage& out);
 
 // Pulls one complete message off the front of `buffer`, erasing it. Returns
 // false when a whole message is not there yet. Sets `fatal` if the stream is

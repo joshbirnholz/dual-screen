@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,18 @@ public:
 
     // Sends this device's input to the host. Only what changed goes out.
     void send_input(const DsInputState& state);
+
+    // Asks the host to change layout. The host owns the choice and broadcasts
+    // the result back, so nothing is assumed to have taken effect here.
+    void request_layout(const std::string& layout_id);
+
+    // Called with audio received from the host, ready to play. Set before
+    // connecting.
+    using AudioCallback =
+        std::function<void(const int16_t* interleaved_stereo, std::size_t frames, uint32_t rate)>;
+    void set_audio_callback(AudioCallback callback) { audio_callback_ = std::move(callback); }
+    // The rate the host said it produces audio at, known from the handshake.
+    uint32_t audio_sample_rate() const { return audio_sample_rate_; }
 
     // Whether a screen has ever arrived, and the serial of the last one. The
     // split layout only sends one screen, so "did the other one arrive?" is a
@@ -96,6 +109,8 @@ private:
 
     DsInputState last_sent_input_;
     bool ever_sent_input_ = false;
+    AudioCallback audio_callback_;
+    uint32_t audio_sample_rate_ = 0;
 };
 
 const char* to_string(CompanionSession::Status status);

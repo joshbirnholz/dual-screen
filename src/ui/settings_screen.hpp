@@ -53,7 +53,7 @@ public:
     void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
 
 private:
-    enum class Row { SystemDir, CorePath, DefaultLayout, Vsync, Back, Count };
+    enum class Row { SystemDir, CorePath, DefaultLayout, StreamAudio, Vsync, Back, Count };
     static constexpr int kRowCount = static_cast<int>(Row::Count);
 
     struct Geometry {
