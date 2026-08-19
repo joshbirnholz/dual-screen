@@ -66,6 +66,7 @@ add_library(dualscreen_core STATIC
     src/render/text_renderer.cpp
     src/render/texture.cpp
     src/ui/game_browser.cpp
+    src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp

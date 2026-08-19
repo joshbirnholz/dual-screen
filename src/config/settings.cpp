@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <unistd.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -28,9 +30,22 @@ T get_or(const json& object, const char* key, const T& fallback) {
 
 }  // namespace
 
+namespace {
+
+std::string default_device_name() {
+    char hostname[256] = {0};
+    if (::gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
+        return std::string(hostname);
+    }
+    return std::string("dualscreen");
+}
+
+}  // namespace
+
 Settings Settings::load(const AppPaths& paths) {
     Settings settings;
     settings.system_dir = paths.default_system_dir;
+    settings.device_name = default_device_name();
 
     std::ifstream file(paths.settings_file);
     if (!file.is_open()) {
@@ -46,6 +61,7 @@ Settings Settings::load(const AppPaths& paths) {
     }
 
     settings.default_layout_id = get_or<std::string>(document, "default_layout_id", settings.default_layout_id);
+    settings.device_name = get_or<std::string>(document, "device_name", settings.device_name);
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
@@ -66,6 +82,7 @@ bool Settings::save(const AppPaths& paths) const {
 
     json document;
     document["default_layout_id"] = default_layout_id;
+    document["device_name"] = device_name;
     document["last_browse_dir"] = last_browse_dir;
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;

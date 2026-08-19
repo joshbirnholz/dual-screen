@@ -37,7 +37,19 @@ struct Layout {
     std::vector<ScreenPlacement> placements;
     bool accepts_touch_on_bottom = true;  // whether this layout exposes a
                                           // touchable bottom-screen region
+
+    // When true, this layout puts one screen on each device rather than both in
+    // one window: each device fills itself with the screen it owns. It only
+    // means anything with two devices connected, and `placements` is then
+    // resolved per device by resolve_for_device().
+    bool per_device = false;
 };
+
+// The placements this device should actually draw. For an ordinary layout that
+// is the layout itself; for a per-device one it is a single full-window
+// placement of `local_screen`. Called once per frame, on both devices, so each
+// draws its own half of the same choice.
+Layout resolve_for_device(const Layout& layout, ScreenId local_screen);
 
 // A rect in output pixels.
 struct PixelRect {

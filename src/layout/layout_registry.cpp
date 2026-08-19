@@ -63,6 +63,20 @@ LayoutRegistry::LayoutRegistry() {
 
     // The single-screen layouts double as the base case the future networked
     // companion mode reuses: each device renders one screen full-window.
+    // The two-device layout. On its own device each half fills the screen; with
+    // no companion connected the app falls back to showing both screens, since
+    // half a game is not useful.
+    layouts_.push_back(Layout{
+        "split_devices",
+        "One screen per device",
+        {
+            make_placement(0.0f, 0.0f, 1.0f, 0.5f, ScreenId::Top),
+            make_placement(0.0f, 0.5f, 1.0f, 0.5f, ScreenId::Bottom),
+        },
+        true,
+        true,  // per_device
+    });
+
     layouts_.push_back(Layout{
         "top_only",
         "Top screen only",

@@ -11,6 +11,10 @@ namespace ds {
 struct Settings {
     std::string default_layout_id = "vertical";
 
+    // How this device identifies itself to the other one. Defaults to the
+    // machine's hostname, which is what a player will recognise in a list.
+    std::string device_name;
+
     // Directory the in-app game browser opens in. Updated as the player
     // navigates, so launching with no ROM picks up where they left off.
     std::string last_browse_dir;

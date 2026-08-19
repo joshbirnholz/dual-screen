@@ -40,6 +40,28 @@ PixelRect placement_pixel_rect(const ScreenPlacement& placement,
     return rect;
 }
 
+Layout resolve_for_device(const Layout& layout, ScreenId local_screen) {
+    if (!layout.per_device) {
+        return layout;
+    }
+    Layout resolved = layout;
+    resolved.placements.clear();
+
+    ScreenPlacement placement;
+    placement.x = 0.0f;
+    placement.y = 0.0f;
+    placement.w = 1.0f;
+    placement.h = 1.0f;
+    placement.screen = local_screen;
+    placement.fit = ScreenFit::Contain;
+    resolved.placements.push_back(placement);
+
+    // Only the device holding the bottom screen can be touched, which falls out
+    // of the generic touch mapping once the placements say so.
+    resolved.accepts_touch_on_bottom = (local_screen == ScreenId::Bottom);
+    return resolved;
+}
+
 bool layout_has_touchable_bottom(const Layout& layout) {
     if (!layout.accepts_touch_on_bottom) {
         return false;

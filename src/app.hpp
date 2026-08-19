@@ -20,8 +20,15 @@ struct AppOptions {
     // Runs for this many frames and then exits. Used by the headless smoke
     // test; 0 means run until the player quits.
     int exit_after_frames = 0;
+    // Exits after this long. More robust than a frame count for tests that
+    // need two processes to overlap, since frame rate is not bounded when the
+    // display has no vsync.
+    double exit_after_seconds = 0.0;
     // Writes a raw PPM screenshot here just before exiting, for tests.
     std::string screenshot_path;
+    // Takes that screenshot this many seconds in instead of at exit. Needed
+    // whenever what is on screen depends on another process still being alive.
+    double screenshot_at_seconds = 0.0;
     // Opens a menu at startup instead of going straight into the game. Used to
     // capture the UI in tests; "layout", "settings" or "" .
     std::string start_screen;
@@ -30,6 +37,10 @@ struct AppOptions {
     // no simulated touch.
     float simulate_touch_x = -1.0f;
     float simulate_touch_y = -1.0f;
+    // Joins the first host discovered, as "top" or "bottom", without going
+    // through the picker. Used by the two-process test; also genuinely handy
+    // when there is only ever one host on the network.
+    std::string auto_connect_screen;
     std::string parse_error;
 };
 

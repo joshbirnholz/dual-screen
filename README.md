@@ -4,9 +4,11 @@ A shell for playing dual-screen games on Linux/SteamOS that treats each screen
 as its own addressable source, so you pick a screen layout from a visual menu
 instead of cycling a button — and the choice is remembered per game.
 
-This is **V1**: one device, DS games, no networking. It exists to prove the
-rendering/layout/persistence core and to put the seams in place that the later
-phases (a networked host/companion split, 3DS, Wii U) plug into.
+Two devices can share one game: whichever device runs it serves a screen over
+the network to the other, which sends its input back. Either device can be the
+one running the game.
+
+![the launcher](docs/images/launcher.png)
 
 ![the layout picker](docs/images/layout-picker.png)
 
@@ -29,6 +31,9 @@ phases (a networked host/companion split, 3DS, Wii U) plug into.
 - Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
   its path, so moving your ROMs around loses nothing.
 - Writes cartridge saves as `.srm` files, interchangeable with RetroArch's.
+- **Two-device play**: one device runs the game and shows a screen; the other
+  finds it on the network, shows the other screen, and sends its touches and
+  buttons back.
 - Launched with no ROM, it opens a file browser so you can pick one, and starts
   in whichever folder you were last in.
 
@@ -40,11 +45,41 @@ phases (a networked host/companion split, 3DS, Wii U) plug into.
 | `vertical_swapped` | bottom screen above, top screen below |
 | `horizontal` | side by side, top screen on the left |
 | `horizontal_swapped` | side by side, bottom screen on the left |
+| `split_devices` | one screen per device, each filling its own display |
 | `top_only` | top screen filling the window |
 | `bottom_only` | bottom screen filling the window |
 
 Swapping the screens is a layout rather than a separate toggle, which keeps the
 picker to one decision.
+
+`split_devices` is the two-device layout: each device fills itself with the
+screen it owns. Pick any other layout and both devices show the whole thing,
+which is what you want when someone is watching over your shoulder. With no
+second device connected it falls back to showing both screens, since half a
+game is not useful.
+
+## Playing across two devices
+
+Start the game on whichever device you want to run it — a gaming PC, or the
+Deck. It announces itself on the network automatically.
+
+On the other device, launch dualscreen with no ROM and pick **Connect as top
+screen** or **Connect as bottom screen**. It finds anything running nearby,
+lists it, and joins. The device holding the bottom screen is the one whose
+touchscreen works, and both devices' buttons drive the game.
+
+The layout menu lives on the device running the game; the companion follows
+whatever it picks. Pressing the menu button on the companion leaves the session.
+
+```sh
+# Skip the menus entirely, for a Steam shortcut on the companion device:
+dualscreen --connect bottom
+```
+
+Screens go over the wire as deflated RGB565, which measures around 1.3 Mbit/s
+for both screens at 60fps on DS-like content — no video encoder involved, and
+comfortably within wifi. Only screens the current layout actually needs are
+sent, and an unchanged frame is not sent at all.
 
 Adding a layout is meant to be adding data, not code: a `Layout` is a list of
 normalized rects with a screen id each (`src/layout/layout_registry.cpp`).
@@ -346,6 +381,14 @@ ctest --test-dir build --output-on-failure
 - `test_controller_input` — drives an SDL **virtual game controller** through
   the whole input path, so the face-button mapping is verified end to end with
   no hardware.
+- `test_protocol` — every message round-trips, then the decoders are attacked:
+  truncation at every byte offset, an absurd length field, and random-byte fuzz.
+- `test_net` — real sockets over loopback: a beacon a browser receives, a TCP
+  session carrying framed messages, a peer close reported as a disconnect.
+- `test_session` — a real host paired with a real companion, checking that the
+  split layout sends one screen and other layouts send both.
+- `two_device_headless` — launches **two real processes** under `Xvfb`, one
+  hosting and one joining, and checks each ends up showing its own half.
 - `smoke_headless` — runs the real binary against the mock core under `Xvfb`,
   screenshots every layout, and checks pixel by pixel that each screen landed
   where the layout says. It also holds a synthetic touch and verifies the
@@ -357,9 +400,9 @@ ctest --test-dir build --output-on-failure
 
 The mock core means all of this runs with no melonDS core and no commercial ROM.
 
-## Not in V1
+## Not built yet
 
-Networking, host/companion split, 3DS, Wii U, Android or Switch builds, save
-states, cheats, rewind, shaders. See `docs/research-notes.md` for what was
-verified against the real melonDS DS core and what still has to be checked on
-hardware.
+3DS and Wii U support, Android or Switch companion builds, save states, cheats,
+rewind, shaders. More than one companion per host. See `docs/research-notes.md`
+for what was verified against the real melonDS DS core and what still has to be
+checked on hardware.

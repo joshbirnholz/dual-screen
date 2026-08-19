@@ -50,6 +50,17 @@ if(XVFB_RUN_EXECUTABLE)
             -DCHECKER=$<TARGET_FILE:check_screenshot>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_smoke_test.cmake)
     set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300)
+
+    # Driven by a shell script rather than a CMake one: the host has to run in
+    # the background while the companion connects, and execute_process cannot.
+    add_test(NAME two_device_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_two_device_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/two-device
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(two_device_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()

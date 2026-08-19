@@ -21,7 +21,10 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/layout_picker.hpp"
+#include "net/companion_session.hpp"
+#include "net/host_session.hpp"
 #include "ui/game_browser.hpp"
+#include "ui/launcher_screen.hpp"
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
 #include "util/log.hpp"
@@ -83,6 +86,8 @@ std::string usage_text() {
         "  --layout <id>        Override the layout for this run\n"
         "  --system-dir <path>  Folder holding your BIOS/firmware files\n"
         "  --windowed           Run in a window instead of fullscreen\n"
+        "  --connect <screen>   Join the first game found on the network as its\n"
+        "                       top or bottom screen, skipping the menu\n"
         "  --list-layouts       Print the available layout ids and exit\n"
         "  --verbose            Log core and frontend debug output\n"
         "  --help               Show this text\n"
@@ -118,6 +123,12 @@ AppOptions parse_command_line(int argc, char** argv) {
             const std::string value =
                 next_argument(argc, argv, index, "--exit-after-frames", options.parse_error);
             options.exit_after_frames = std::atoi(value.c_str());
+        } else if (argument == "--connect") {
+            options.auto_connect_screen =
+                next_argument(argc, argv, index, "--connect", options.parse_error);
+            if (options.auto_connect_screen != "top" && options.auto_connect_screen != "bottom") {
+                options.parse_error = "--connect wants 'top' or 'bottom'";
+            }
         } else if (argument == "--start-screen") {
             options.start_screen =
                 next_argument(argc, argv, index, "--start-screen", options.parse_error);
@@ -131,6 +142,14 @@ AppOptions parse_command_line(int argc, char** argv) {
                 options.simulate_touch_x = std::strtof(value.substr(0, comma).c_str(), nullptr);
                 options.simulate_touch_y = std::strtof(value.substr(comma + 1).c_str(), nullptr);
             }
+        } else if (argument == "--exit-after-seconds") {
+            const std::string value =
+                next_argument(argc, argv, index, "--exit-after-seconds", options.parse_error);
+            options.exit_after_seconds = std::strtod(value.c_str(), nullptr);
+        } else if (argument == "--screenshot-at-seconds") {
+            const std::string value =
+                next_argument(argc, argv, index, "--screenshot-at-seconds", options.parse_error);
+            options.screenshot_at_seconds = std::strtod(value.c_str(), nullptr);
         } else if (argument == "--screenshot") {
             options.screenshot_path =
                 next_argument(argc, argv, index, "--screenshot", options.parse_error);
@@ -150,7 +169,7 @@ AppOptions parse_command_line(int argc, char** argv) {
 // ---------------------------------------------------------------------------
 
 struct App::Impl {
-    enum class State { Playing, Menu, Settings, Message, Browser };
+    enum class State { Playing, Menu, Settings, Message, Browser, Launcher, HostPicker, Companion };
 
     AppOptions options;
     AppPaths paths;
@@ -175,7 +194,15 @@ struct App::Impl {
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
     std::unique_ptr<GameBrowser> browser;
+    std::unique_ptr<LauncherScreen> launcher;
+    std::unique_ptr<HostPickerScreen> host_picker;
     MessageScreen message;
+
+    // Two-device mode. Exactly one of these is live at a time: a device either
+    // runs the game and serves a screen, or joins someone else's game.
+    std::unique_ptr<net::HostSession> host_session;
+    std::unique_ptr<net::CompanionSession> companion_session;
+    ScreenId local_screen = ScreenId::Top;
 
     State state = State::Playing;
     bool message_is_fatal = false;
@@ -188,12 +215,22 @@ struct App::Impl {
     double frame_period = 1.0 / 60.0;
     double frame_accumulator = 0.0;
     double save_flush_accumulator = 0.0;
+    bool awaiting_auto_connect = false;
+    bool screenshot_taken = false;
     int frames_rendered = 0;
 
     bool create_window(std::string* error);
     void destroy_window();
     void refresh_output_size();
     const Layout& active_layout() const;
+    // What this device actually draws: the chosen layout, resolved for this
+    // device's role when it is a per-device layout.
+    Layout device_layout() const;
+    // The screen source currently feeding the compositor, whichever role we are
+    // in. Null before anything is running.
+    ScreenSource* active_source();
+    void start_companion(ScreenId wanted_screen);
+    void open_launcher();
     // Loads a ROM and starts emulating it. On failure it puts a readable
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
@@ -316,6 +353,59 @@ void App::Impl::refresh_output_size() {
 
 const Layout& App::Impl::active_layout() const { return registry.resolve(active_layout_id); }
 
+Layout App::Impl::device_layout() const {
+    const Layout& chosen = active_layout();
+    if (!chosen.per_device) {
+        return chosen;
+    }
+    // A per-device layout with nobody on the other end would show half a game,
+    // so it falls back to the whole thing until a companion is actually there.
+    const bool paired = (host_session && host_session->has_companion()) ||
+                        (companion_session &&
+                         companion_session->status() == net::CompanionSession::Status::Connected);
+    if (!paired) {
+        Layout both = chosen;
+        both.per_device = false;
+        return both;
+    }
+    return resolve_for_device(chosen, local_screen);
+}
+
+ScreenSource* App::Impl::active_source() {
+    if (source) return source.get();
+    if (companion_session) return companion_session.get();
+    return nullptr;
+}
+
+void App::Impl::open_launcher() {
+    if (!launcher) {
+        launcher.reset(new LauncherScreen());
+    }
+    launcher->open();
+    state = State::Launcher;
+    input.set_game_input_enabled(false);
+}
+
+void App::Impl::start_companion(ScreenId wanted_screen) {
+    if (!companion_session) {
+        companion_session.reset(new net::CompanionSession());
+    }
+    std::string error;
+    if (!companion_session->begin_search(settings.device_name, wanted_screen, &error)) {
+        enter_message(MessageKind::Error, "Cannot look for other devices", error,
+                      {"Another copy of dualscreen may already be searching on this device."},
+                      false);
+        return;
+    }
+    local_screen = wanted_screen;
+    if (!host_picker) {
+        host_picker.reset(new HostPickerScreen());
+    }
+    host_picker->open(wanted_screen);
+    state = State::HostPicker;
+    input.set_game_input_enabled(false);
+}
+
 void App::Impl::enter_message(MessageKind kind,
                               const std::string& title,
                               const std::string& body,
@@ -413,6 +503,20 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     frame_accumulator = 0.0;
     last_counter = SDL_GetPerformanceCounter();
 
+    // Offer this game to the network. A failure here is not fatal: the game is
+    // perfectly playable on one device.
+    host_session.reset(new net::HostSession());
+    net::HostSession::Config host_config;
+    host_config.device_name = settings.device_name;
+    host_config.game_title = game_title;
+    host_config.rom_sha1 = game_config.rom_sha1;
+    host_config.host_screen = local_screen;
+    std::string host_error;
+    if (!host_session->start(host_config, &host_error)) {
+        log_warn("not hosting for other devices: " + host_error);
+        host_session.reset();
+    }
+
     if (!source->warnings().empty()) {
         enter_message(MessageKind::Info, "The core did not accept every setting",
                       "The game will still run, but the screen split may not look right until this "
@@ -440,16 +544,78 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             if (message.update(actions, pointers)) {
                 message.clear();
                 if (!message_is_fatal) {
-                    state = State::Playing;
+                    const bool joined =
+                        companion_session &&
+                        companion_session->status() != net::CompanionSession::Status::Failed;
+                    state = joined ? State::Companion : State::Playing;
                     input.set_game_input_enabled(true);
+                } else if (launcher) {
+                    // Getting here through the launcher means there is
+                    // somewhere to go back to, so a failure is not the end of
+                    // the session.
+                    open_launcher();
                 } else if (browser) {
-                    // A game that would not start is not the end of the
-                    // session when the player got here through the browser --
-                    // send them back to pick another.
                     open_browser();
                 } else {
                     running = false;
                 }
+            }
+            break;
+        }
+
+        case State::Launcher: {
+            const LauncherResult result =
+                launcher->update(actions, pointers, static_cast<float>(output_width),
+                                 static_cast<float>(output_height));
+            switch (result.choice) {
+                case LauncherChoice::LoadGame:
+                    open_browser();
+                    break;
+                case LauncherChoice::ConnectAsTopScreen:
+                    start_companion(ScreenId::Top);
+                    break;
+                case LauncherChoice::ConnectAsBottomScreen:
+                    start_companion(ScreenId::Bottom);
+                    break;
+                case LauncherChoice::Quit:
+                    running = false;
+                    break;
+                case LauncherChoice::None:
+                    break;
+            }
+            break;
+        }
+
+        case State::HostPicker: {
+            const HostPickerResult result = host_picker->update(
+                companion_session->hosts(), actions, pointers, static_cast<float>(output_width),
+                static_cast<float>(output_height));
+            if (result.cancelled) {
+                companion_session->disconnect();
+                open_launcher();
+            } else if (result.chosen) {
+                companion_session->connect_to(result.host);
+                state = State::Companion;
+                // The companion's own touchscreen and buttons drive the host's
+                // game, so local input is live from here on.
+                input.set_game_input_enabled(true);
+            }
+            break;
+        }
+
+        case State::Companion: {
+            for (const UiAction action : actions) {
+                if (action == UiAction::ToggleMenu) {
+                    // No layout menu on a companion: the host owns the layout.
+                    // The menu button leaves the session instead.
+                    companion_session->disconnect();
+                    open_launcher();
+                    break;
+                }
+            }
+            if (companion_session->status() == net::CompanionSession::Status::Failed) {
+                enter_message(MessageKind::Error, "Lost the connection",
+                              companion_session->status_detail(), {}, false);
             }
             break;
         }
@@ -540,9 +706,24 @@ void App::Impl::render() {
         ++frames_rendered;
         return;
     }
+    if (state == State::Launcher) {
+        launcher->render(quads, text, width, height, input.menu_labels(),
+                         companion_session ? static_cast<int>(companion_session->hosts().size())
+                                           : 0);
+        SDL_GL_SwapWindow(window);
+        ++frames_rendered;
+        return;
+    }
+    if (state == State::HostPicker) {
+        host_picker->render(quads, text, width, height, companion_session->hosts(),
+                            input.menu_labels(), companion_session->status_detail());
+        SDL_GL_SwapWindow(window);
+        ++frames_rendered;
+        return;
+    }
 
-    if (source) {
-        compositor.render(quads, active_layout(), source->screens(), width, height, router);
+    if (ScreenSource* drawing = active_source()) {
+        compositor.render(quads, device_layout(), drawing->screens(), width, height, router);
     } else {
         quads.begin_frame(output_width, output_height);
         quads.clear(compositor.style().background);
@@ -668,11 +849,34 @@ int App::run(const AppOptions& options) {
     impl.resolved_core_path = resolve_core_path(options, impl.settings);
 
     // --- decide what to boot -------------------------------------------------
-    if (options.game_path.empty()) {
-        // No ROM named, so let the player pick one. Failing to start a game
-        // chosen this way returns to the browser rather than ending the
-        // session, which is why start_game's failures are non-fatal here.
-        impl.open_browser();
+    if (!options.auto_connect_screen.empty() && options.game_path.empty()) {
+        const ScreenId wanted =
+            options.auto_connect_screen == "top" ? ScreenId::Top : ScreenId::Bottom;
+        impl.companion_session.reset(new net::CompanionSession());
+        std::string search_error;
+        if (!impl.companion_session->begin_search(impl.settings.device_name, wanted,
+                                                  &search_error)) {
+            impl.enter_message(MessageKind::Error, "Cannot look for other devices", search_error,
+                               {}, true);
+        } else {
+            impl.local_screen = wanted;
+            impl.state = Impl::State::Companion;
+            impl.awaiting_auto_connect = true;
+            impl.input.set_game_input_enabled(true);
+        }
+    } else if (options.game_path.empty()) {
+        // No ROM named: offer to play here or to join a game already running on
+        // another device. Failing to start a game chosen this way returns to the
+        // launcher rather than ending the session.
+        impl.companion_session.reset(new net::CompanionSession());
+        std::string search_error;
+        if (!impl.companion_session->begin_search(impl.settings.device_name, ScreenId::Bottom,
+                                                  &search_error)) {
+            // Only discovery is lost; playing locally still works.
+            log_warn("cannot look for other devices: " + search_error);
+            impl.companion_session.reset();
+        }
+        impl.open_launcher();
     } else {
         impl.start_game(expand_user_path(options.game_path), true);
     }
@@ -689,11 +893,16 @@ int App::run(const AppOptions& options) {
         impl.input.set_game_input_enabled(false);
     } else if (options.start_screen == "browser") {
         impl.open_browser();
+    } else if (options.start_screen == "launcher") {
+        impl.open_launcher();
+    } else if (options.start_screen == "hosts") {
+        impl.start_companion(ScreenId::Bottom);
     }
 
     // --- main loop -----------------------------------------------------------
     const uint64_t counter_frequency = SDL_GetPerformanceFrequency();
     impl.last_counter = SDL_GetPerformanceCounter();
+    const uint64_t started_counter = impl.last_counter;
 
     while (impl.running) {
         const uint64_t now = SDL_GetPerformanceCounter();
@@ -754,12 +963,57 @@ int App::run(const AppOptions& options) {
         if (impl.input.quit_requested()) {
             impl.running = false;
         }
+        // Both sessions are polled before the UI so a state change this frame
+        // is acted on this frame.
+        const uint64_t network_now = net::monotonic_millis();
+        if (impl.host_session) {
+            impl.host_session->set_layout(impl.active_layout_id, impl.state != Impl::State::Playing);
+            impl.host_session->poll(network_now);
+        }
+        if (impl.companion_session) {
+            impl.companion_session->poll(network_now);
+            // A companion follows the host's layout: the host owns that choice,
+            // and both devices have to agree or they draw different things.
+            if (impl.state == Impl::State::Companion) {
+                const std::string& host_layout = impl.companion_session->host_layout_id();
+                if (!host_layout.empty() && host_layout != impl.active_layout_id) {
+                    impl.active_layout_id = impl.registry.resolve(host_layout).id;
+                }
+                impl.local_screen = impl.companion_session->granted_screen();
+            }
+            // --connect joins the first host that offers the screen we asked
+            // for, as soon as one appears.
+            if (impl.awaiting_auto_connect &&
+                impl.companion_session->status() == net::CompanionSession::Status::Searching) {
+                for (const net::DiscoveredHost& host : impl.companion_session->hosts()) {
+                    if (host.offers(impl.local_screen)) {
+                        impl.companion_session->connect_to(host);
+                        impl.awaiting_auto_connect = false;
+                        break;
+                    }
+                }
+            }
+        }
+
         impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());
 
         // Emulation only advances while the game is actually in front; opening
         // the layout menu pauses it, which is what makes comparing layouts easy.
         if (impl.source && impl.state == Impl::State::Playing) {
-            impl.source->input_sink().submit(impl.input.ds_state());
+            // The companion's buttons and touches are merged with this device's,
+            // so either player can press anything. This is the InputSink seam
+            // doing exactly what it was left in place for.
+            DsInputState combined = impl.input.ds_state();
+            if (impl.host_session && impl.host_session->has_companion()) {
+                const DsInputState& remote = impl.host_session->companion_input();
+                combined.buttons |= remote.buttons;
+                if (remote.touching && !combined.touching) {
+                    combined.touching = true;
+                    combined.touch_x = remote.touch_x;
+                    combined.touch_y = remote.touch_y;
+                }
+            }
+            impl.source->input_sink().submit(combined);
 
             impl.frame_accumulator += elapsed;
             // Cap catch-up so a hitch cannot spiral into a long fast-forward.
@@ -778,6 +1032,22 @@ int App::run(const AppOptions& options) {
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
                 impl.frame_accumulator = 0.0;
             }
+            // Hand the freshly rendered screens to the companion, if any. The
+            // serial only advances when the pixels actually changed, so an
+            // unchanged frame costs nothing on the wire.
+            if (impl.host_session && impl.host_session->has_companion()) {
+                const CoreVideoFrame& frame = impl.source->core_frame_for_test();
+                const ScreenSplit& split = impl.source->split();
+                if (frame.valid() && split.valid) {
+                    const uint32_t* base = frame.pixels;
+                    const int stride = static_cast<int>(frame.stride_pixels);
+                    impl.host_session->publish_screens(
+                        base + static_cast<std::size_t>(split.top_y) * stride + split.top_x,
+                        base + static_cast<std::size_t>(split.bottom_y) * stride + split.bottom_x,
+                        split.screen_width, split.screen_height, stride, frame.serial);
+                }
+            }
+
             impl.save_flush_accumulator += elapsed;
             if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
                 impl.save_flush_accumulator = 0.0;
@@ -787,7 +1057,11 @@ int App::run(const AppOptions& options) {
             if (impl.source->wants_shutdown()) {
                 impl.running = false;
             }
-        } else if (impl.source) {
+        } else if (impl.companion_session && impl.state == Impl::State::Companion) {
+            impl.companion_session->send_input(impl.input.ds_state());
+        }
+
+        if (impl.source && impl.state != Impl::State::Playing) {
             // Paused: hold the sticks and buttons off the core entirely.
             impl.source->input_sink().submit(DsInputState());
             impl.audio.set_paused(true);
@@ -805,9 +1079,27 @@ int App::run(const AppOptions& options) {
         if (options.exit_after_frames > 0 && impl.frames_rendered >= options.exit_after_frames) {
             impl.running = false;
         }
+        if (options.screenshot_at_seconds > 0.0 && !impl.screenshot_taken &&
+            !options.screenshot_path.empty()) {
+            const double alive =
+                static_cast<double>(SDL_GetPerformanceCounter() - started_counter) /
+                static_cast<double>(counter_frequency);
+            if (alive >= options.screenshot_at_seconds) {
+                impl.render();  // so the buffer read back is the one just drawn
+                impl.screenshot_taken = impl.write_screenshot(options.screenshot_path);
+            }
+        }
+        if (options.exit_after_seconds > 0.0) {
+            const double alive =
+                static_cast<double>(SDL_GetPerformanceCounter() - started_counter) /
+                static_cast<double>(counter_frequency);
+            if (alive >= options.exit_after_seconds) {
+                impl.running = false;
+            }
+        }
     }
 
-    if (!options.screenshot_path.empty()) {
+    if (!options.screenshot_path.empty() && !impl.screenshot_taken) {
         // Re-render once so the buffer being read is the one just drawn.
         impl.render();
         if (impl.write_screenshot(options.screenshot_path)) {
@@ -815,6 +1107,15 @@ int App::run(const AppOptions& options) {
         } else {
             log_warn("could not write " + options.screenshot_path);
         }
+    }
+
+    if (impl.host_session) {
+        impl.host_session->stop();
+        impl.host_session.reset();
+    }
+    if (impl.companion_session) {
+        impl.companion_session->disconnect();
+        impl.companion_session.reset();
     }
 
     impl.persist_game_config();
