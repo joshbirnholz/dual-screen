@@ -1,0 +1,168 @@
+// Exercises the libretro hosting layer against the mock core: option forcing,
+// geometry, video capture, button mapping and touch-to-pointer conversion.
+// No GL context is involved, so this runs anywhere.
+
+#include "test_support.hpp"
+
+#include <cstdlib>
+#include <fstream>
+#include <string>
+#include <unistd.h>
+
+#include "config/paths.hpp"
+#include "core/libretro_core.hpp"
+#include "core/libretro_screen_source.hpp"
+#include "input/ds_input.hpp"
+
+using namespace ds;
+
+namespace {
+
+std::string mock_core_path() {
+    const char* from_environment = std::getenv("DUALSCREEN_MOCK_CORE");
+    return from_environment != nullptr ? std::string(from_environment) : std::string();
+}
+
+std::string make_fake_rom() {
+    char pattern[] = "/tmp/dualscreen-rom-XXXXXX";
+    const char* directory = mkdtemp(pattern);
+    if (directory == nullptr) return std::string();
+    const std::string path = path_join(directory, "fake.nds");
+    std::ofstream file(path, std::ios::binary);
+    file << "not a real rom, the mock core does not look";
+    return path;
+}
+
+void test_core_loads_and_runs() {
+    const std::string core_path = mock_core_path();
+    CHECK_MSG(!core_path.empty(), "DUALSCREEN_MOCK_CORE is not set");
+    if (core_path.empty()) return;
+
+    LibretroCore core;
+    DsInputState input;
+    core.set_input_state(&input);
+
+    // The same options the real source pins.
+    core.force_option("melonds_number_of_screen_layouts", "1");
+    core.force_option("melonds_screen_layout1", "top-bottom");
+    core.force_option("melonds_screen_gap", "0");
+    core.force_option("melonds_render_mode", "software");
+    core.force_option("melonds_touch_mode", "touch");
+    core.force_option("melonds_show_cursor", "disabled");
+    // ...plus one that does not exist, to prove the validation actually fires.
+    core.force_option("melonds_not_a_real_option", "whatever");
+
+    std::string error;
+    CHECK_MSG(core.load(core_path, &error), error);
+    CHECK_STR_EQ(core.core_name(), "Mock DS");
+
+    // Every real option was accepted; only the invented one is complained about.
+    CHECK_EQ(core.option_warnings().size(), static_cast<std::size_t>(1));
+    if (!core.option_warnings().empty()) {
+        CHECK(core.option_warnings()[0].find("melonds_not_a_real_option") != std::string::npos);
+    }
+    CHECK_STR_EQ(core.option_value("melonds_screen_layout1"), "top-bottom");
+    // An option we did not force keeps the core's own default.
+    CHECK(core.declared_options().count("melonds_touch_mode") == 1);
+
+    std::size_t audio_frames = 0;
+    core.set_audio_callback([&audio_frames](const int16_t*, std::size_t frames) {
+        audio_frames += frames;
+    });
+
+    const std::string rom = make_fake_rom();
+    CHECK(!rom.empty());
+    CHECK_MSG(core.load_game(rom, &error), error);
+
+    CHECK_EQ(core.av_info().base_width, 256u);
+    CHECK_EQ(core.av_info().base_height, 384u);
+    CHECK(core.av_info().fps > 59.0 && core.av_info().fps < 60.0);
+
+    core.run_frame();
+    const CoreVideoFrame& frame = core.video_frame();
+    CHECK(frame.valid());
+    CHECK_EQ(frame.width, 256u);
+    CHECK_EQ(frame.height, 384u);
+    CHECK(audio_frames > 0);
+
+    // The mock paints a magenta band across the top screen if the frontend
+    // failed to pin the layout option, so a plain pixel check catches that.
+    bool magenta_band = false;
+    for (unsigned x = 0; x < frame.width; ++x) {
+        const uint32_t pixel = frame.pixels[70u * frame.stride_pixels + x] & 0x00ffffffu;
+        if (pixel == 0x00ff00ffu) {
+            magenta_band = true;
+            break;
+        }
+    }
+    CHECK_MSG(!magenta_band, "the core reported that its layout options were not honoured");
+
+    // The two halves must not be identical, or the split would be untestable.
+    bool halves_differ = false;
+    for (unsigned x = 0; x < frame.width && !halves_differ; ++x) {
+        const uint32_t top = frame.pixels[10u * frame.stride_pixels + x];
+        const uint32_t bottom = frame.pixels[(192u + 10u) * frame.stride_pixels + x];
+        halves_differ = (top != bottom);
+    }
+    CHECK(halves_differ);
+
+    core.unload();
+}
+
+void test_screen_source_reports_a_valid_split() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.core_path = core_path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK(source.split().valid);
+    CHECK_EQ(source.split().screen_width, 256);
+    CHECK_EQ(source.split().screen_height, 192);
+    CHECK_EQ(source.native_screen_size().width, 256);
+    CHECK_EQ(source.native_screen_size().height, 192);
+    CHECK(source.warnings().empty());
+
+    CHECK_MSG(source.advance_frame(&error), error);
+    source.close();
+}
+
+void test_screen_source_reports_missing_files_clearly() {
+    LibretroCoreScreenSource source;
+    std::string error;
+
+    LibretroSourceConfig no_core;
+    no_core.rom_path = "/tmp/whatever.nds";
+    CHECK(!source.open(no_core, &error));
+    CHECK(error.find("core") != std::string::npos);
+
+    LibretroSourceConfig bad_core;
+    bad_core.core_path = "/tmp/definitely-not-here.so";
+    bad_core.rom_path = "/tmp/whatever.nds";
+    CHECK(!source.open(bad_core, &error));
+    CHECK(error.find("does not exist") != std::string::npos);
+
+    const std::string core_path = mock_core_path();
+    if (!core_path.empty()) {
+        LibretroSourceConfig missing_rom;
+        missing_rom.core_path = core_path;
+        missing_rom.rom_path = "/tmp/definitely-not-here.nds";
+        CHECK(!source.open(missing_rom, &error));
+        CHECK(error.find("ROM") != std::string::npos);
+    }
+}
+
+}  // namespace
+
+int main() {
+    test_core_loads_and_runs();
+    test_screen_source_reports_a_valid_split();
+    test_screen_source_reports_missing_files_clearly();
+    return test::finish("core-host");
+}

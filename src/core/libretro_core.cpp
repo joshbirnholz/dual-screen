@@ -1,0 +1,764 @@
+#include "core/libretro_core.hpp"
+
+#include <dlfcn.h>
+
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+
+#include "input/ds_input.hpp"
+#include "libretro/libretro.h"
+#include "util/log.hpp"
+
+namespace ds {
+namespace {
+
+// The libretro callback surface is plain C function pointers with no user-data
+// parameter, so the active core instance has to be reachable statically.
+LibretroCore* g_active_core = nullptr;
+
+std::vector<std::string> split_values(const std::string& text, char separator) {
+    std::vector<std::string> parts;
+    std::string current;
+    std::istringstream stream(text);
+    while (std::getline(stream, current, separator)) {
+        if (!current.empty()) {
+            parts.push_back(current);
+        }
+    }
+    return parts;
+}
+
+LogLevel translate_log_level(int level) {
+    switch (level) {
+        case RETRO_LOG_DEBUG: return LogLevel::Debug;
+        case RETRO_LOG_INFO:  return LogLevel::Info;
+        case RETRO_LOG_WARN:  return LogLevel::Warn;
+        default:              return LogLevel::Error;
+    }
+}
+
+// Matches retro_log_printf_t exactly; cores keep this pointer for their lifetime.
+void core_log_printf(enum retro_log_level level, const char* format, ...) {
+    if (format == nullptr) return;
+    char buffer[2048];
+    va_list args;
+    va_start(args, format);
+    const int written = std::vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    if (written <= 0) return;
+
+    std::string message(buffer);
+    while (!message.empty() && (message.back() == '\n' || message.back() == '\r')) {
+        message.pop_back();
+    }
+    if (message.empty()) return;
+    log_message(translate_log_level(static_cast<int>(level)), "core: " + message);
+}
+
+unsigned retro_id_for(DsButton button) {
+    switch (button) {
+        // libretro's face-button names follow the SNES layout: JOYPAD_B is the
+        // south button, JOYPAD_A the east one. That matches how every other
+        // DS core is mapped, so a player's existing muscle memory carries over.
+        case DsButton::A:      return RETRO_DEVICE_ID_JOYPAD_A;
+        case DsButton::B:      return RETRO_DEVICE_ID_JOYPAD_B;
+        case DsButton::X:      return RETRO_DEVICE_ID_JOYPAD_X;
+        case DsButton::Y:      return RETRO_DEVICE_ID_JOYPAD_Y;
+        case DsButton::L:      return RETRO_DEVICE_ID_JOYPAD_L;
+        case DsButton::R:      return RETRO_DEVICE_ID_JOYPAD_R;
+        case DsButton::Start:  return RETRO_DEVICE_ID_JOYPAD_START;
+        case DsButton::Select: return RETRO_DEVICE_ID_JOYPAD_SELECT;
+        case DsButton::Up:     return RETRO_DEVICE_ID_JOYPAD_UP;
+        case DsButton::Down:   return RETRO_DEVICE_ID_JOYPAD_DOWN;
+        case DsButton::Left:   return RETRO_DEVICE_ID_JOYPAD_LEFT;
+        case DsButton::Right:  return RETRO_DEVICE_ID_JOYPAD_RIGHT;
+        case DsButton::Count:  break;
+    }
+    return RETRO_DEVICE_ID_JOYPAD_B;
+}
+
+}  // namespace
+
+// Entry points resolved out of the core's shared object.
+struct LibretroCore::Api {
+    void (*retro_init)() = nullptr;
+    void (*retro_deinit)() = nullptr;
+    unsigned (*retro_api_version)() = nullptr;
+    void (*retro_get_system_info)(struct retro_system_info*) = nullptr;
+    void (*retro_get_system_av_info)(struct retro_system_av_info*) = nullptr;
+    void (*retro_set_environment)(retro_environment_t) = nullptr;
+    void (*retro_set_video_refresh)(retro_video_refresh_t) = nullptr;
+    void (*retro_set_audio_sample)(retro_audio_sample_t) = nullptr;
+    void (*retro_set_audio_sample_batch)(retro_audio_sample_batch_t) = nullptr;
+    void (*retro_set_input_poll)(retro_input_poll_t) = nullptr;
+    void (*retro_set_input_state)(retro_input_state_t) = nullptr;
+    void (*retro_set_controller_port_device)(unsigned, unsigned) = nullptr;
+    void (*retro_reset)() = nullptr;
+    void (*retro_run)() = nullptr;
+    bool (*retro_load_game)(const struct retro_game_info*) = nullptr;
+    void (*retro_unload_game)() = nullptr;
+};
+
+LibretroCore::LibretroCore() : api_(new Api()) {}
+
+LibretroCore::~LibretroCore() {
+    unload();
+    delete api_;
+    api_ = nullptr;
+}
+
+void LibretroCore::set_system_directory(const std::string& directory) { system_directory_ = directory; }
+void LibretroCore::set_save_directory(const std::string& directory) { save_directory_ = directory; }
+void LibretroCore::set_audio_callback(AudioCallback callback) { audio_callback_ = std::move(callback); }
+void LibretroCore::set_input_state(const DsInputState* state) { input_state_ = state; }
+
+void LibretroCore::set_pointer_source_rect(float x, float y, float w, float h) {
+    pointer_rect_x_ = x;
+    pointer_rect_y_ = y;
+    pointer_rect_w_ = w;
+    pointer_rect_h_ = h;
+}
+
+int16_t LibretroCore::pointer_axis(bool horizontal) const {
+    // Sample the centre of the addressed DS pixel, then place it inside the
+    // core's framebuffer and scale to libretro's [-0x7fff, 0x7fff] range.
+    const float within_screen =
+        horizontal ? (static_cast<float>(input_state_->touch_x) + 0.5f) / 256.0f
+                   : (static_cast<float>(input_state_->touch_y) + 0.5f) / 192.0f;
+    const float normalized = horizontal ? pointer_rect_x_ + within_screen * pointer_rect_w_
+                                        : pointer_rect_y_ + within_screen * pointer_rect_h_;
+    const float scaled = (normalized * 2.0f - 1.0f) * 32767.0f;
+    return static_cast<int16_t>(std::clamp(scaled, -32767.0f, 32767.0f));
+}
+
+void LibretroCore::force_option(const std::string& key, const std::string& value) {
+    forced_options_[key] = value;
+    option_values_[key] = value;
+    variables_dirty_ = true;
+    if (options_registered_) {
+        apply_forced_options();
+    }
+}
+
+std::string LibretroCore::option_value(const std::string& key) const {
+    const auto it = option_values_.find(key);
+    return it == option_values_.end() ? std::string() : it->second;
+}
+
+template <typename T>
+bool LibretroCore::resolve_symbol(const char* name, T& out, std::string* error) {
+    void* symbol = dlsym(handle_, name);
+    if (symbol == nullptr) {
+        if (error != nullptr) {
+            *error = std::string("core is missing the libretro entry point '") + name + "'";
+        }
+        return false;
+    }
+    out = reinterpret_cast<T>(symbol);
+    return true;
+}
+
+bool LibretroCore::load(const std::string& core_path, std::string* error) {
+    if (handle_ != nullptr) {
+        if (error != nullptr) *error = "a core is already loaded";
+        return false;
+    }
+    if (g_active_core != nullptr) {
+        if (error != nullptr) *error = "another libretro core instance is already active";
+        return false;
+    }
+
+    // RTLD_LOCAL keeps the core's symbols out of the global namespace; cores
+    // routinely bundle their own copies of zlib and friends.
+    handle_ = dlopen(core_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (handle_ == nullptr) {
+        const char* reason = dlerror();
+        if (error != nullptr) {
+            *error = "could not load core '" + core_path + "': " + (reason ? reason : "unknown error");
+        }
+        return false;
+    }
+
+    const bool resolved =
+        resolve_symbol("retro_api_version", api_->retro_api_version, error) &&
+        resolve_symbol("retro_init", api_->retro_init, error) &&
+        resolve_symbol("retro_deinit", api_->retro_deinit, error) &&
+        resolve_symbol("retro_get_system_info", api_->retro_get_system_info, error) &&
+        resolve_symbol("retro_get_system_av_info", api_->retro_get_system_av_info, error) &&
+        resolve_symbol("retro_set_environment", api_->retro_set_environment, error) &&
+        resolve_symbol("retro_set_video_refresh", api_->retro_set_video_refresh, error) &&
+        resolve_symbol("retro_set_audio_sample", api_->retro_set_audio_sample, error) &&
+        resolve_symbol("retro_set_audio_sample_batch", api_->retro_set_audio_sample_batch, error) &&
+        resolve_symbol("retro_set_input_poll", api_->retro_set_input_poll, error) &&
+        resolve_symbol("retro_set_input_state", api_->retro_set_input_state, error) &&
+        resolve_symbol("retro_set_controller_port_device", api_->retro_set_controller_port_device, error) &&
+        resolve_symbol("retro_reset", api_->retro_reset, error) &&
+        resolve_symbol("retro_run", api_->retro_run, error) &&
+        resolve_symbol("retro_load_game", api_->retro_load_game, error) &&
+        resolve_symbol("retro_unload_game", api_->retro_unload_game, error);
+    if (!resolved) {
+        dlclose(handle_);
+        handle_ = nullptr;
+        return false;
+    }
+
+    const unsigned api_version = api_->retro_api_version();
+    if (api_version != RETRO_API_VERSION) {
+        if (error != nullptr) {
+            *error = "core targets libretro API version " + std::to_string(api_version) +
+                     ", this build speaks version " + std::to_string(RETRO_API_VERSION);
+        }
+        dlclose(handle_);
+        handle_ = nullptr;
+        return false;
+    }
+
+    g_active_core = this;
+
+    // retro_set_environment must come first: cores declare their options from
+    // inside it, and we need those before retro_init runs.
+    api_->retro_set_environment(&LibretroCore::environment_thunk);
+    api_->retro_set_video_refresh(&LibretroCore::video_refresh_thunk);
+    api_->retro_set_audio_sample(&LibretroCore::audio_sample_thunk);
+    api_->retro_set_audio_sample_batch(&LibretroCore::audio_sample_batch_thunk);
+    api_->retro_set_input_poll(&LibretroCore::input_poll_thunk);
+    api_->retro_set_input_state(&LibretroCore::input_state_thunk);
+
+    struct retro_system_info system_info {};
+    api_->retro_get_system_info(&system_info);
+    core_name_ = system_info.library_name != nullptr ? system_info.library_name : "";
+    core_version_ = system_info.library_version != nullptr ? system_info.library_version : "";
+    valid_extensions_ = system_info.valid_extensions != nullptr ? system_info.valid_extensions : "";
+    needs_fullpath_ = system_info.need_fullpath;
+
+    api_->retro_init();
+    apply_forced_options();
+
+    log_info("loaded core " + core_name_ + " " + core_version_ + " from " + core_path);
+    return true;
+}
+
+bool LibretroCore::load_game(const std::string& rom_path, std::string* error) {
+    if (handle_ == nullptr) {
+        if (error != nullptr) *error = "no core loaded";
+        return false;
+    }
+    if (game_loaded_) {
+        unload_game();
+    }
+
+    struct retro_game_info info {};
+    info.path = rom_path.c_str();
+    info.meta = nullptr;
+
+    if (!needs_fullpath_) {
+        std::ifstream file(rom_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            if (error != nullptr) *error = "could not open ROM: " + rom_path;
+            return false;
+        }
+        const std::streamsize size = file.tellg();
+        if (size <= 0) {
+            if (error != nullptr) *error = "ROM file is empty: " + rom_path;
+            return false;
+        }
+        file.seekg(0, std::ios::beg);
+        rom_data_.resize(static_cast<std::size_t>(size));
+        if (!file.read(rom_data_.data(), size)) {
+            if (error != nullptr) *error = "could not read ROM: " + rom_path;
+            rom_data_.clear();
+            return false;
+        }
+        info.data = rom_data_.data();
+        info.size = rom_data_.size();
+    }
+
+    if (!api_->retro_load_game(&info)) {
+        rom_data_.clear();
+        if (error != nullptr) {
+            *error = "the core refused to load this ROM";
+            if (!core_messages_.empty()) {
+                *error += ": " + core_messages_.back();
+            }
+        }
+        return false;
+    }
+
+    game_loaded_ = true;
+    api_->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
+    refresh_av_info();
+    return true;
+}
+
+void LibretroCore::refresh_av_info() {
+    struct retro_system_av_info info {};
+    api_->retro_get_system_av_info(&info);
+    av_info_.base_width = info.geometry.base_width;
+    av_info_.base_height = info.geometry.base_height;
+    av_info_.max_width = info.geometry.max_width;
+    av_info_.max_height = info.geometry.max_height;
+    av_info_.aspect_ratio = info.geometry.aspect_ratio;
+    av_info_.fps = info.timing.fps > 0.0 ? info.timing.fps : 60.0;
+    av_info_.sample_rate = info.timing.sample_rate > 0.0 ? info.timing.sample_rate : 48000.0;
+}
+
+void LibretroCore::run_frame() {
+    if (handle_ == nullptr || !game_loaded_) {
+        return;
+    }
+    api_->retro_run();
+}
+
+void LibretroCore::unload_game() {
+    if (handle_ != nullptr && game_loaded_) {
+        api_->retro_unload_game();
+    }
+    game_loaded_ = false;
+    rom_data_.clear();
+    video_frame_ = CoreVideoFrame();
+    video_buffer_.clear();
+}
+
+void LibretroCore::unload() {
+    unload_game();
+    if (handle_ != nullptr) {
+        if (api_->retro_deinit != nullptr) {
+            api_->retro_deinit();
+        }
+        dlclose(handle_);
+        handle_ = nullptr;
+    }
+    if (g_active_core == this) {
+        g_active_core = nullptr;
+    }
+}
+
+// --- core options -----------------------------------------------------------
+
+void LibretroCore::register_option(const CoreOptionInfo& info) {
+    if (info.key.empty()) {
+        return;
+    }
+    declared_options_[info.key] = info;
+    // The core's default only applies if we have not already been told otherwise.
+    if (option_values_.find(info.key) == option_values_.end()) {
+        option_values_[info.key] = info.default_value;
+    }
+    options_registered_ = true;
+}
+
+void LibretroCore::apply_forced_options() {
+    option_warnings_.clear();
+    for (const auto& entry : forced_options_) {
+        const std::string& key = entry.first;
+        const std::string& value = entry.second;
+        option_values_[key] = value;
+
+        if (!options_registered_) {
+            continue;  // nothing to validate against yet
+        }
+        const auto declared = declared_options_.find(key);
+        if (declared == declared_options_.end()) {
+            option_warnings_.push_back("this core does not have the option '" + key + "'");
+            continue;
+        }
+        const std::vector<std::string>& allowed = declared->second.allowed_values;
+        if (!allowed.empty() && std::find(allowed.begin(), allowed.end(), value) == allowed.end()) {
+            std::string offered;
+            for (const std::string& candidate : allowed) {
+                if (!offered.empty()) offered += ", ";
+                offered += candidate;
+            }
+            option_warnings_.push_back("core option '" + key + "' does not accept '" + value +
+                                       "' (it offers: " + offered + ")");
+        }
+    }
+    variables_dirty_ = true;
+    for (const std::string& warning : option_warnings_) {
+        log_warn(warning);
+    }
+}
+
+// --- environment ------------------------------------------------------------
+
+bool LibretroCore::on_environment(unsigned command, void* data) {
+    switch (command) {
+        case RETRO_ENVIRONMENT_GET_CAN_DUPE: {
+            *static_cast<bool*>(data) = true;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_OVERSCAN: {
+            *static_cast<bool*>(data) = false;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: {
+            const auto format = *static_cast<const enum retro_pixel_format*>(data);
+            // The compositor's texture upload path assumes 32-bit XRGB8888.
+            // melonDS DS uses it natively; anything else we decline so the core
+            // falls back rather than silently producing wrong colours.
+            if (format == RETRO_PIXEL_FORMAT_XRGB8888) {
+                return true;
+            }
+            log_warn("core requested an unsupported pixel format (" +
+                     std::to_string(static_cast<int>(format)) + "); only XRGB8888 is supported");
+            return false;
+        }
+        case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: {
+            *static_cast<const char**>(data) =
+                system_directory_.empty() ? nullptr : system_directory_.c_str();
+            return !system_directory_.empty();
+        }
+        case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: {
+            *static_cast<const char**>(data) =
+                save_directory_.empty() ? nullptr : save_directory_.c_str();
+            return !save_directory_.empty();
+        }
+        // GET_CONTENT_DIRECTORY is the deprecated alias of this same value.
+        case RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY: {
+            *static_cast<const char**>(data) =
+                system_directory_.empty() ? nullptr : system_directory_.c_str();
+            return !system_directory_.empty();
+        }
+        case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: {
+            static_cast<struct retro_log_callback*>(data)->log = &core_log_printf;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_VARIABLE: {
+            auto* variable = static_cast<struct retro_variable*>(data);
+            if (variable == nullptr || variable->key == nullptr) {
+                return false;
+            }
+            const auto it = option_values_.find(variable->key);
+            if (it == option_values_.end() || it->second.empty()) {
+                variable->value = nullptr;
+                return false;
+            }
+            // The string has to outlive this call; option_values_ owns it and
+            // is only rewritten through force_option().
+            variable->value = it->second.c_str();
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: {
+            *static_cast<bool*>(data) = variables_dirty_;
+            variables_dirty_ = false;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_VARIABLE: {
+            const auto* variable = static_cast<const struct retro_variable*>(data);
+            if (variable == nullptr || variable->key == nullptr) {
+                return true;  // a null pointer here is just a capability probe
+            }
+            if (variable->value != nullptr) {
+                option_values_[variable->key] = variable->value;
+            }
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_VARIABLES: {
+            const auto* variables = static_cast<const struct retro_variable*>(data);
+            for (; variables != nullptr && variables->key != nullptr; ++variables) {
+                CoreOptionInfo info;
+                info.key = variables->key;
+                // Legacy format: "Human readable description; first|second|third"
+                const std::string blob = variables->value != nullptr ? variables->value : "";
+                const std::size_t separator = blob.find(';');
+                if (separator == std::string::npos) {
+                    info.description = blob;
+                } else {
+                    info.description = blob.substr(0, separator);
+                    std::string values = blob.substr(separator + 1);
+                    const std::size_t first = values.find_first_not_of(" \t");
+                    if (first != std::string::npos) {
+                        values = values.substr(first);
+                    }
+                    info.allowed_values = split_values(values, '|');
+                    if (!info.allowed_values.empty()) {
+                        info.default_value = info.allowed_values.front();
+                    }
+                }
+                register_option(info);
+            }
+            apply_forced_options();
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: {
+            *static_cast<unsigned*>(data) = 2;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS: {
+            const auto* definitions = static_cast<const struct retro_core_option_definition*>(data);
+            for (; definitions != nullptr && definitions->key != nullptr; ++definitions) {
+                CoreOptionInfo info;
+                info.key = definitions->key;
+                info.description = definitions->desc != nullptr ? definitions->desc : "";
+                info.default_value = definitions->default_value != nullptr ? definitions->default_value : "";
+                for (const auto& value : definitions->values) {
+                    if (value.value == nullptr) break;
+                    info.allowed_values.push_back(value.value);
+                }
+                register_option(info);
+            }
+            apply_forced_options();
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: {
+            const auto* intl = static_cast<const struct retro_core_options_intl*>(data);
+            if (intl == nullptr) return false;
+            // We only speak English; the "us" table is always the complete one.
+            return on_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS,
+                                  const_cast<void*>(static_cast<const void*>(intl->us)));
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: {
+            const auto* options = static_cast<const struct retro_core_options_v2*>(data);
+            if (options == nullptr) return false;
+            const struct retro_core_option_v2_definition* definitions = options->definitions;
+            for (; definitions != nullptr && definitions->key != nullptr; ++definitions) {
+                CoreOptionInfo info;
+                info.key = definitions->key;
+                info.description = definitions->desc != nullptr ? definitions->desc : "";
+                info.default_value = definitions->default_value != nullptr ? definitions->default_value : "";
+                for (const auto& value : definitions->values) {
+                    if (value.value == nullptr) break;
+                    info.allowed_values.push_back(value.value);
+                }
+                register_option(info);
+            }
+            apply_forced_options();
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL: {
+            const auto* intl = static_cast<const struct retro_core_options_v2_intl*>(data);
+            if (intl == nullptr) return false;
+            return on_environment(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2,
+                                  const_cast<void*>(static_cast<const void*>(intl->us)));
+        }
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY:
+        case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK: {
+            // We do not surface the core's own options UI, so visibility hints
+            // are accepted and ignored.
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: {
+            const auto* info = static_cast<const struct retro_system_av_info*>(data);
+            if (info == nullptr) return false;
+            av_info_.base_width = info->geometry.base_width;
+            av_info_.base_height = info->geometry.base_height;
+            av_info_.max_width = info->geometry.max_width;
+            av_info_.max_height = info->geometry.max_height;
+            av_info_.aspect_ratio = info->geometry.aspect_ratio;
+            if (info->timing.fps > 0.0) av_info_.fps = info->timing.fps;
+            if (info->timing.sample_rate > 0.0) av_info_.sample_rate = info->timing.sample_rate;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_GEOMETRY: {
+            const auto* geometry = static_cast<const struct retro_game_geometry*>(data);
+            if (geometry == nullptr) return false;
+            av_info_.base_width = geometry->base_width;
+            av_info_.base_height = geometry->base_height;
+            if (geometry->max_width > 0) av_info_.max_width = geometry->max_width;
+            if (geometry->max_height > 0) av_info_.max_height = geometry->max_height;
+            av_info_.aspect_ratio = geometry->aspect_ratio;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS: {
+            supports_input_bitmasks_ = true;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_INPUT_MAX_USERS: {
+            *static_cast<unsigned*>(data) = 1;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_LANGUAGE: {
+            *static_cast<unsigned*>(data) = RETRO_LANGUAGE_ENGLISH;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: {
+            *static_cast<int*>(data) = 0x3;  // audio + video both enabled
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_FASTFORWARDING: {
+            *static_cast<bool*>(data) = false;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE: {
+            *static_cast<float*>(data) = 60.0f;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_JIT_CAPABLE: {
+            *static_cast<bool*>(data) = true;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: {
+            // V1 composites from a CPU-side framebuffer, so the core should
+            // stay on its software renderer.
+            *static_cast<unsigned*>(data) = RETRO_HW_CONTEXT_NONE;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_MESSAGE: {
+            const auto* message = static_cast<const struct retro_message*>(data);
+            if (message != nullptr && message->msg != nullptr) {
+                core_messages_.emplace_back(message->msg);
+                log_info(std::string("core message: ") + message->msg);
+            }
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION: {
+            *static_cast<unsigned*>(data) = 1;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_MESSAGE_EXT: {
+            const auto* message = static_cast<const struct retro_message_ext*>(data);
+            if (message != nullptr && message->msg != nullptr) {
+                core_messages_.emplace_back(message->msg);
+                log_message(translate_log_level(message->level), std::string("core message: ") + message->msg);
+            }
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SHUTDOWN: {
+            wants_shutdown_ = true;
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
+        case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
+        case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
+        case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+        case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
+        case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
+        case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
+        case RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE:
+        case RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY:
+        case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
+        case RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK: {
+            // Accepted but not acted on in V1.
+            return true;
+        }
+        default:
+            break;
+    }
+
+    // Anything we do not implement is declined, which every well-behaved core
+    // treats as "the frontend cannot do that" and works around.
+    log_debug("unhandled libretro environment command " + std::to_string(command));
+    return false;
+}
+
+// --- video / audio / input --------------------------------------------------
+
+void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned height, std::size_t pitch) {
+    if (data == nullptr) {
+        // Frame duplication: keep showing the previous frame.
+        return;
+    }
+    if (width == 0 || height == 0) {
+        return;
+    }
+
+    const std::size_t needed = static_cast<std::size_t>(width) * height;
+    if (video_buffer_.size() < needed) {
+        video_buffer_.resize(needed);
+    }
+
+    const auto* source = static_cast<const uint8_t*>(data);
+    const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(uint32_t);
+    for (unsigned row = 0; row < height; ++row) {
+        std::memcpy(video_buffer_.data() + static_cast<std::size_t>(row) * width,
+                    source + static_cast<std::size_t>(row) * pitch,
+                    row_bytes);
+    }
+
+    video_frame_.pixels = video_buffer_.data();
+    video_frame_.width = width;
+    video_frame_.height = height;
+    video_frame_.stride_pixels = width;
+    video_frame_.serial = ++video_serial_;
+}
+
+int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned index, unsigned id) const {
+    if (port != 0 || input_state_ == nullptr) {
+        return 0;
+    }
+
+    if (device == RETRO_DEVICE_JOYPAD) {
+        if (id == RETRO_DEVICE_ID_JOYPAD_MASK) {
+            int16_t mask = 0;
+            for (unsigned button = 0; button < static_cast<unsigned>(DsButton::Count); ++button) {
+                if (input_state_->pressed(static_cast<DsButton>(button))) {
+                    mask |= static_cast<int16_t>(1 << retro_id_for(static_cast<DsButton>(button)));
+                }
+            }
+            return mask;
+        }
+        for (unsigned button = 0; button < static_cast<unsigned>(DsButton::Count); ++button) {
+            const DsButton ds_button = static_cast<DsButton>(button);
+            if (retro_id_for(ds_button) == id) {
+                return input_state_->pressed(ds_button) ? 1 : 0;
+            }
+        }
+        return 0;
+    }
+
+    if (device == RETRO_DEVICE_POINTER) {
+        if (id == RETRO_DEVICE_ID_POINTER_COUNT) {
+            return input_state_->touching ? 1 : 0;
+        }
+        if (index != 0) {
+            return 0;
+        }
+        if (id == RETRO_DEVICE_ID_POINTER_PRESSED) {
+            return input_state_->touching ? 1 : 0;
+        }
+        if (id == RETRO_DEVICE_ID_POINTER_X || id == RETRO_DEVICE_ID_POINTER_Y) {
+            if (!input_state_->touching) {
+                return 0;
+            }
+            // Pointer coordinates are expressed across the core's whole output
+            // framebuffer, so the DS touch point has to be placed back where
+            // the core's own internal layout puts the bottom screen. The
+            // ScreenSource that owns that layout hands us the offsets.
+            return pointer_axis(id == RETRO_DEVICE_ID_POINTER_X);
+        }
+        return 0;
+    }
+
+    return 0;
+}
+
+// --- static thunks ----------------------------------------------------------
+
+bool LibretroCore::environment_thunk(unsigned command, void* data) {
+    if (g_active_core == nullptr) return false;
+    return g_active_core->on_environment(command, data);
+}
+
+void LibretroCore::video_refresh_thunk(const void* data, unsigned width, unsigned height, std::size_t pitch) {
+    if (g_active_core == nullptr) return;
+    g_active_core->on_video_refresh(data, width, height, pitch);
+}
+
+void LibretroCore::audio_sample_thunk(int16_t left, int16_t right) {
+    if (g_active_core == nullptr || !g_active_core->audio_callback_) return;
+    const int16_t frame[2] = {left, right};
+    g_active_core->audio_callback_(frame, 1);
+}
+
+std::size_t LibretroCore::audio_sample_batch_thunk(const int16_t* data, std::size_t frames) {
+    if (g_active_core != nullptr && g_active_core->audio_callback_ && data != nullptr) {
+        g_active_core->audio_callback_(data, frames);
+    }
+    return frames;
+}
+
+void LibretroCore::input_poll_thunk() {
+    // Input is polled by the app's own event loop before retro_run(); the
+    // latched state is already current by the time the core asks for it.
+}
+
+int16_t LibretroCore::input_state_thunk(unsigned port, unsigned device, unsigned index, unsigned id) {
+    if (g_active_core == nullptr) return 0;
+    return g_active_core->on_input_state(port, device, index, id);
+}
+
+}  // namespace ds
