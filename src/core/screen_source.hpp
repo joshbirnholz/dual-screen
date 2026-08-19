@@ -46,6 +46,12 @@ public:
     // True once the source has decided it is finished (e.g. the core asked the
     // frontend to shut down).
     virtual bool wants_shutdown() const { return false; }
+
+    // How the screens are sampled when scaled up. Nearest keeps DS pixel art
+    // crisp; linear smooths it. It lives here rather than in the compositor
+    // because it is a property of the textures, and a streamed screen needs it
+    // just as much as a locally rendered one.
+    virtual void set_filtering(bool linear) { (void)linear; }
 };
 
 }  // namespace ds

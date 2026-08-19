@@ -226,6 +226,62 @@ foreach(CASE IN LISTS TOUCH_CASES)
     endif()
 endforeach()
 
+# Smoothing: the same frame drawn with nearest and with linear sampling must not
+# come out identical. Checking that the toggle reaches the screen takes a real
+# run -- a unit test can see the flag being stored, but not the texture being
+# sampled differently. Separate config homes keep this off the persistence
+# check below, which expects the last run to have been top_only.
+set(FILTER_SHOTS "")
+foreach(FILTERING true false)
+    set(FILTER_HOME "${WORK_DIR}/filter-${FILTERING}")
+    file(REMOVE_RECURSE "${FILTER_HOME}")
+    file(WRITE "${FILTER_HOME}/config/dualscreen/settings.json"
+        "{\"default_bilinear_filtering\": ${FILTERING}}")
+    set(SHOT "${FILTER_HOME}/shot.ppm")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+                "XDG_CONFIG_HOME=${FILTER_HOME}/config"
+                "XDG_DATA_HOME=${FILTER_HOME}/data"
+                "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
+                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+                "${DUALSCREEN}"
+                    --game "${WORK_DIR}/fake.nds"
+                    --core "${MOCK_CORE}"
+                    --layout bottom_only
+                    --windowed
+                    --exit-after-frames ${FRAME_COUNT}
+                    --screenshot "${SHOT}"
+        RESULT_VARIABLE RUN_RESULT
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR)
+    if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${SHOT}")
+        message(STATUS "${RUN_OUTPUT}")
+        message(STATUS "${RUN_ERROR}")
+        message(SEND_ERROR "smoothing run (${FILTERING}) failed")
+        set(ANY_FAILED TRUE)
+    else()
+        list(APPEND FILTER_SHOTS "${SHOT}")
+    endif()
+endforeach()
+
+list(LENGTH FILTER_SHOTS FILTER_SHOT_COUNT)
+if(FILTER_SHOT_COUNT EQUAL 2)
+    list(GET FILTER_SHOTS 0 FILTER_ON_SHOT)
+    list(GET FILTER_SHOTS 1 FILTER_OFF_SHOT)
+    execute_process(
+        COMMAND "${CHECKER}" "${FILTER_ON_SHOT}" "differs=${FILTER_OFF_SHOT}"
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "smoothing on vs off:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        message(SEND_ERROR "smoothing made no difference to what was drawn")
+        set(ANY_FAILED TRUE)
+    endif()
+endif()
+
 # The per-game config must exist afterwards, keyed by the ROM's SHA-1.
 file(GLOB SAVED_CONFIGS "${WORK_DIR}/config/dualscreen/games/*.json")
 list(LENGTH SAVED_CONFIGS CONFIG_COUNT)

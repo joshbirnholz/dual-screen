@@ -288,3 +288,22 @@ The queue is capped at about a quarter second and trimmed when it runs long,
 which is inaudible and keeps input-to-sound latency from creeping up over a
 long session. If the device refuses the core's sample rate, an `SDL_AudioStream`
 converts instead.
+
+**Why smoothing is handled above every screen, not inside the emulator.**
+melonDS DS has its own scaling options, but they only exist for the core's own
+output -- they would say nothing about a screen arriving over the network. The
+toggle instead sets the sampling mode on the two textures a `ScreenSource`
+hands out, which is the one place both a locally emulated screen and a streamed
+one pass through, so `set_filtering` is a method on that seam. It also means the
+choice is per device: the Deck can smooth its half while the TV stays sharp,
+which is the right answer when the two screens are physically very different
+sizes.
+
+**Why R3 is read before the screen it lands on.** The toggle means the same
+thing everywhere, so the app consumes `ToggleFilter` before dispatching to
+whichever screen is up. The first version also let the layout picker handle it,
+which toggled twice and cancelled itself out -- the button did nothing at all
+whenever the menu was open. The picker now ignores the action and is told the
+result instead. What proved it is the end-to-end check: the smoke test renders
+one frame each way and asserts the two pictures differ, which no unit test on
+the stored flag could have seen.

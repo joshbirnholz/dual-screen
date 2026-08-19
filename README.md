@@ -82,6 +82,19 @@ same thing. Turn it off with **Send sound to the other device** in Settings, or
 dualscreen --connect bottom
 ```
 
+## Smoothing
+
+A DS screen is 256x192 and a Deck's is 1280x800, so every pixel is drawn several
+pixels wide. **Smoothing** in the layout menu chooses how: off (the default)
+keeps the original pixels square and sharp, on blends between them. **R3**
+toggles it from anywhere — in a game, in the layout menu, in Settings — so the
+difference can be judged against what is actually on screen rather than from
+memory. A game remembers which it was last given; the setting a game starts
+from is `"default_bilinear_filtering"` in `settings.json`.
+
+It applies to streamed screens too, and it is per device: the Deck can smooth
+its half while the TV stays sharp.
+
 Screens go over the wire as deflated RGB565, which measures around 1.3 Mbit/s
 for both screens at 60fps on DS-like content — no video encoder involved, and
 comfortably within wifi. Only screens the current layout actually needs are
@@ -218,8 +231,9 @@ Full options:
 | | |
 | --- | --- |
 | Open/close the layout menu | **F1** or a **two-finger tap** |
+| Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
-| Move around the menus | d-pad or left stick; **A** confirms, **B** goes back |
+| Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 
 ### If it quits immediately in Game Mode
@@ -348,6 +362,8 @@ V1 does not script `shortcuts.vdf` for you.
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
+  "default_bilinear_filtering": false,
+  "stream_audio": true,
   "stick_deadzone": 0.35,
   "trigger_deadzone": 0.3,
   "vsync": true

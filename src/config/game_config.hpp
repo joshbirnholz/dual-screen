@@ -16,6 +16,9 @@ struct GameConfig {
     std::string rom_sha1;
     std::string display_name;
     std::string layout_id;
+    // Smooth the screens when scaled up, or keep them pixel-crisp. Per game,
+    // because it is a judgement about how one game looks.
+    bool bilinear_filtering = false;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

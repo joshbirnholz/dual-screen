@@ -19,6 +19,8 @@ struct LayoutPickerResult {
     // Ends the two-device session. Offered on both devices, since either end
     // should be able to stop it.
     bool disconnect_requested = false;
+    // The filtering toggle was used; the caller applies and persists it.
+    bool filtering_toggled = false;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -29,7 +31,13 @@ public:
 
     // `session_active` adds a Disconnect entry; `companion` swaps Quit for it
     // entirely, since a companion has no game of its own to quit out of.
-    void open(const std::string& layout_id, bool session_active = false, bool companion = false);
+    void open(const std::string& layout_id,
+              bool session_active = false,
+              bool companion = false,
+              bool bilinear_filtering = false);
+    // Kept in step while the menu is open, since R3 can change it from under us.
+    void set_filtering(bool bilinear) { bilinear_filtering_ = bilinear; }
+    bool filtering() const { return bilinear_filtering_; }
     bool is_open() const { return open_; }
     void close() { open_ = false; }
 
@@ -55,7 +63,7 @@ private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
-    enum class Footer { Settings, Resume, Disconnect, Quit };
+    enum class Footer { Filtering, Settings, Resume, Disconnect, Quit };
 
     struct Geometry {
         std::vector<PixelRect> tiles;
@@ -78,6 +86,7 @@ private:
     std::string selected_layout_id_;
     std::vector<Footer> footer_;
     bool session_active_ = false;
+    bool bilinear_filtering_ = false;
 };
 
 }  // namespace ds

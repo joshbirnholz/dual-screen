@@ -180,6 +180,9 @@ void InputManager::handle_event(const SDL_Event& event) {
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: push_action(UiAction::PageUp); break;
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: push_action(UiAction::PageDown); break;
+                // R3 toggles filtering. It reaches no DS button, so it is free
+                // to mean this everywhere without stealing a press from a game.
+                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: push_action(UiAction::ToggleFilter); break;
                 default: break;
             }
             break;
@@ -201,6 +204,9 @@ void InputManager::handle_event(const SDL_Event& event) {
                 // survives Steam's own claim on the pad.
                 case SDLK_F1:
                 case SDLK_TAB: push_action(UiAction::ToggleMenu); break;
+                // The keyboard equivalent, so a Steam Input layout that sends
+                // keystrokes rather than pad buttons can reach it too.
+                case SDLK_F2: push_action(UiAction::ToggleFilter); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
                 // Return doubles as DS Start in game, but game input is off
                 // while a menu is open, so there is no conflict.

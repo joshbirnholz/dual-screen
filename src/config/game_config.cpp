@@ -14,6 +14,13 @@ namespace {
 
 using json = nlohmann::json;
 
+bool get_bool(const json& object, const char* key, bool fallback) {
+    if (!object.is_object()) return fallback;
+    const auto it = object.find(key);
+    if (it == object.end() || !it->is_boolean()) return fallback;
+    return it->get<bool>();
+}
+
 std::string get_string(const json& object, const char* key, const std::string& fallback) {
     if (!object.is_object()) return fallback;
     const auto it = object.find(key);
@@ -48,6 +55,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.rom_sha1 = rom_sha1;
     config.display_name = display_name;
     config.layout_id = settings.default_layout_id;
+    config.bilinear_filtering = settings.default_bilinear_filtering;
 
     const std::string path = file_path(paths, rom_sha1);
     std::ifstream file(path);
@@ -73,6 +81,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
 
     config.raw_document_ = raw;
     config.layout_id = get_string(document, "layout_id", config.layout_id);
+    config.bilinear_filtering = get_bool(document, "bilinear_filtering", config.bilinear_filtering);
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -110,6 +119,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["rom_sha1"] = rom_sha1;
     document["display_name"] = display_name;
     document["layout_id"] = layout_id;
+    document["bilinear_filtering"] = bilinear_filtering;
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

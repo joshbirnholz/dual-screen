@@ -109,6 +109,45 @@ void test_stick_click_is_not_a_ds_button() {
     CHECK_EQ(state.buttons, 0u);
 }
 
+// Counts the UI actions of one kind that a single press produces. Once, not
+// twice: Steam Input presents the pad twice over, and a doubled toggle would
+// cancel itself out and look like the button doing nothing.
+int ui_actions_from_press(SDL_GameControllerButton button, UiAction wanted) {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return -1;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+
+    input.begin_frame();
+    pad.press(button, true);
+    SDL_Event event;
+    while (SDL_PollEvent(&event) != 0) {
+        input.handle_event(event);
+    }
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f);
+
+    int count = 0;
+    for (const UiAction action : input.ui_actions()) {
+        if (action == wanted) ++count;
+    }
+
+    input.shutdown();
+    pad.detach();
+    return count;
+}
+
+// R3 is the smoothing toggle. It has to arrive as a UI action exactly once,
+// and must not double as a DS button -- that is what lets it mean the same
+// thing in a game as it does in a menu.
+void test_stick_click_toggles_filtering() {
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::ToggleFilter), 1);
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::Confirm), 0);
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_A, UiAction::ToggleFilter), 0);
+}
+
 // The mock core lights an indicator square per libretro joypad button. Their
 // positions come from mock_core.cpp's draw_button_indicators().
 struct Indicator {
@@ -232,6 +271,7 @@ int main() {
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_stick_click_is_not_a_ds_button();
+    test_stick_click_toggles_filtering();
     test_face_buttons_reach_the_core();
 
     SDL_Quit();

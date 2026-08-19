@@ -65,6 +65,8 @@ Settings Settings::load(const AppPaths& paths) {
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
+    settings.default_bilinear_filtering =
+        get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
     settings.stream_audio = get_or<bool>(document, "stream_audio", settings.stream_audio);
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
     settings.trigger_deadzone = get_or<float>(document, "trigger_deadzone", settings.trigger_deadzone);
@@ -87,6 +89,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["last_browse_dir"] = last_browse_dir;
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;
+    document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["stream_audio"] = stream_audio;
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;

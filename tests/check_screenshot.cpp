@@ -8,6 +8,11 @@
 //   regions: upper lower left right center topleft
 //   colours: blue green black orange
 //
+// `differs=<other.ppm>` asserts that two runs did not produce the same picture.
+// That is how the smoothing toggle is checked: nearest and linear sampling of
+// the same frame differ in thousands of pixels along every edge, and comparing
+// two whole runs needs no guess about which pixel to look at.
+//
 // It also understands `crosshair=<x>,<y>`, which finds the mock core's bright
 // yellow touch crosshair and checks it landed at that normalized position in
 // the window. Because the mock draws the crosshair at the DS coordinate the
@@ -165,6 +170,37 @@ int main(int argc, char** argv) {
         }
         const std::string region = argument.substr(0, equals);
         const std::string expected = argument.substr(equals + 1);
+
+        if (region == "differs") {
+            const Image other = load_ppm(expected);
+            if (!other.ok) {
+                ++failures;
+                continue;
+            }
+            long differing = 0;
+            if (other.width == image.width && other.height == image.height) {
+                for (std::size_t byte = 0; byte < image.rgb.size(); byte += 3) {
+                    if (image.rgb[byte] != other.rgb[byte] ||
+                        image.rgb[byte + 1] != other.rgb[byte + 1] ||
+                        image.rgb[byte + 2] != other.rgb[byte + 2]) {
+                        ++differing;
+                    }
+                }
+            } else {
+                std::fprintf(stderr, "check_screenshot: %s and %s are different sizes\n", argv[1],
+                             expected.c_str());
+                ++failures;
+                continue;
+            }
+            // Smoothing repaints every scaled edge, so the difference is in the
+            // thousands. A threshold well above stray noise keeps this from
+            // passing on an accidental single-pixel wobble.
+            const bool ok = differing > 1000;
+            std::printf("%-9s expected a different picture  got %-16ld -> %s\n", "differs",
+                        differing, ok ? "ok" : "FAIL");
+            if (!ok) ++failures;
+            continue;
+        }
 
         if (region == "nocrosshair") {
             double got_x = 0;

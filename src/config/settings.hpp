@@ -27,6 +27,9 @@ struct Settings {
     // places" — see core_search_paths().
     std::string core_path;
 
+    // Starting point for new games; each game remembers its own afterwards.
+    bool default_bilinear_filtering = false;
+
     // Send the game's sound to the connected device as well. DS and 3DS mirror
     // it, so both devices play the same thing.
     bool stream_audio = true;

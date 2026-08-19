@@ -219,6 +219,8 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 break;
             case UiAction::ToggleMenu:
                 break;  // there is no game to pause yet
+            case UiAction::ToggleFilter:
+                break;  // nothing is being drawn from a game here
             case UiAction::Quit:
                 result.quit_requested = true;
                 break;

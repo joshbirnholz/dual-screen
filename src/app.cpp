@@ -208,6 +208,7 @@ struct App::Impl {
     bool message_is_fatal = false;
     bool running = true;
     std::string active_layout_id;
+    bool bilinear_filtering = false;
     std::string game_title;
     std::string resolved_core_path;
 
@@ -235,6 +236,9 @@ struct App::Impl {
     // Plays what arrives from the host, opening this device's audio output the
     // first time something does -- the rate is not known until then.
     void attach_companion_audio();
+    // Pushes the current choice down to whichever source is drawing, and
+    // remembers it. Cheap enough to call whenever it changes.
+    void apply_filtering();
     // Loads a ROM and starts emulating it. On failure it puts a readable
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
@@ -403,6 +407,15 @@ ScreenSource* App::Impl::active_source() {
     return nullptr;
 }
 
+void App::Impl::apply_filtering() {
+    if (ScreenSource* drawing = active_source()) {
+        drawing->set_filtering(bilinear_filtering);
+    }
+    if (picker) {
+        picker->set_filtering(bilinear_filtering);
+    }
+}
+
 void App::Impl::attach_companion_audio() {
     if (!companion_session) {
         return;
@@ -448,6 +461,8 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
         return;
     }
     local_screen = wanted_screen;
+    bilinear_filtering = settings.default_bilinear_filtering;
+    apply_filtering();
     if (!host_picker) {
         host_picker.reset(new HostPickerScreen());
     }
@@ -495,6 +510,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
 
     game_title = path_stem(rom_path);
     active_layout_id = settings.default_layout_id;
+    bilinear_filtering = settings.default_bilinear_filtering;
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
     if (rom_sha1.empty()) {
@@ -503,6 +519,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         game_config = GameConfig::load_or_default(paths, settings, rom_sha1, game_title);
         have_game_config = true;
         active_layout_id = game_config.layout_id;
+        bilinear_filtering = game_config.bilinear_filtering;
     }
     if (!options.layout_id.empty()) {
         active_layout_id = options.layout_id;
@@ -557,6 +574,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
 
     state = State::Playing;
     input.set_game_input_enabled(true);
+    apply_filtering();
     frame_accumulator = 0.0;
     last_counter = SDL_GetPerformanceCounter();
 
@@ -589,6 +607,7 @@ void App::Impl::persist_game_config() {
         return;
     }
     game_config.layout_id = active_layout_id;
+    game_config.bilinear_filtering = bilinear_filtering;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
@@ -597,6 +616,24 @@ void App::Impl::persist_game_config() {
 
 void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers) {
+    // Filtering is deliberately handled before anything else looks at the
+    // actions: R3 means the same thing in a game and in every menu, so it does
+    // not belong to any one screen.
+    for (const UiAction action : actions) {
+        if (action == UiAction::ToggleFilter) {
+            bilinear_filtering = !bilinear_filtering;
+            apply_filtering();
+            if (have_game_config) {
+                persist_game_config();
+            } else {
+                settings.default_bilinear_filtering = bilinear_filtering;
+                settings.save(paths);
+            }
+            log_info(std::string("smoothing ") + (bilinear_filtering ? "on" : "off"));
+            break;
+        }
+    }
+
     switch (state) {
         case State::Message: {
             if (message.update(actions, pointers, last_delta_seconds)) {
@@ -668,7 +705,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     // host to change it, and the host broadcasts the result, so
                     // both devices end up showing the same thing.
                     picker->open(active_layout_id, /*session_active=*/true,
-                                 /*companion=*/true);
+                                 /*companion=*/true, bilinear_filtering);
                     state = State::Menu;
                     input.set_game_input_enabled(false);
                     break;
@@ -716,6 +753,16 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     persist_game_config();
                 }
             }
+            if (result.filtering_toggled) {
+                bilinear_filtering = picker->filtering();
+                apply_filtering();
+                if (have_game_config) {
+                    persist_game_config();
+                } else {
+                    settings.default_bilinear_filtering = bilinear_filtering;
+                    settings.save(paths);
+                }
+            }
             if (result.disconnect_requested) {
                 if (host_session) {
                     host_session->disconnect_companion("you ended the session");
@@ -757,7 +804,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     (host_session && host_session->has_companion()) ||
                     (companion_session &&
                      companion_session->status() == net::CompanionSession::Status::Connected);
-                picker->open(active_layout_id, paired, source == nullptr);
+                picker->open(active_layout_id, paired, source == nullptr, bilinear_filtering);
                 state = State::Menu;
             }
             break;
@@ -767,7 +814,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
                     picker->open(active_layout_id,
-                                 host_session && host_session->has_companion());
+                                 host_session && host_session->has_companion(), false,
+                                 bilinear_filtering);
                     state = State::Menu;
                     input.set_game_input_enabled(false);
                     if (source) {
@@ -1010,7 +1058,7 @@ int App::run(const AppOptions& options) {
     // Test hook: bring a menu up before the first frame so the UI can be
     // captured without synthesising input events.
     if (options.start_screen == "layout" && impl.state == Impl::State::Playing) {
-        impl.picker->open(impl.active_layout_id);
+        impl.picker->open(impl.active_layout_id, false, false, impl.bilinear_filtering);
         impl.state = Impl::State::Menu;
         impl.input.set_game_input_enabled(false);
     } else if (options.start_screen == "settings" && impl.state == Impl::State::Playing) {

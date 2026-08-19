@@ -279,6 +279,11 @@ const ScreenTextures& CompanionSession::screens() {
     return textures_;
 }
 
+void CompanionSession::set_filtering(bool linear) {
+    top_.texture.set_linear_filtering(linear);
+    bottom_.texture.set_linear_filtering(linear);
+}
+
 ScreenSize CompanionSession::native_screen_size() const {
     // Whichever screen we have actually seen; falls back to a DS's own size.
     if (top_.width > 0) return ScreenSize{top_.width, top_.height};

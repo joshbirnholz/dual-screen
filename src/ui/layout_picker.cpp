@@ -13,12 +13,17 @@ namespace {
 
 }  // namespace
 
-void LayoutPicker::open(const std::string& layout_id, bool session_active, bool companion) {
+void LayoutPicker::open(const std::string& layout_id,
+                        bool session_active,
+                        bool companion,
+                        bool bilinear_filtering) {
     open_ = true;
     selected_layout_id_ = layout_id;
     session_active_ = session_active;
+    bilinear_filtering_ = bilinear_filtering;
 
     footer_.clear();
+    footer_.push_back(Footer::Filtering);
     footer_.push_back(Footer::Settings);
     footer_.push_back(Footer::Resume);
     if (session_active) {
@@ -144,6 +149,10 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         return false;
     }
     switch (footer_[static_cast<std::size_t>(footer_index)]) {
+        case Footer::Filtering:
+            bilinear_filtering_ = !bilinear_filtering_;
+            result.filtering_toggled = true;
+            return true;  // stays open, so the change can be seen behind it
         case Footer::Settings:
             result.open_settings = true;
             return true;
@@ -181,6 +190,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
             case UiAction::Quit: result.quit_requested = true; break;
+            // R3 is handled by the app, so that it means the same thing here
+            // as it does in a game; the app pushes the result back in with
+            // set_filtering(). Toggling it again here would undo that.
+            case UiAction::ToggleFilter: break;
             case UiAction::PageUp:
             case UiAction::PageDown: break;  // nothing here scrolls
         }
@@ -292,9 +305,12 @@ void LayoutPicker::render(QuadRenderer& quads,
             quads.draw_outline(button, theme.text, std::max(1.0f, scale * 0.5f));
         }
         const Footer kind = footer_[index];
-        const char* label = "";
+        std::string label;
         Color color = theme.text;
         switch (kind) {
+            case Footer::Filtering:
+                label = bilinear_filtering_ ? "Smoothing: On" : "Smoothing: Off";
+                break;
             case Footer::Settings: label = "Settings"; break;
             case Footer::Resume: label = "Resume"; break;
             case Footer::Disconnect:
@@ -306,14 +322,25 @@ void LayoutPicker::render(QuadRenderer& quads,
                 color = theme.danger;
                 break;
         }
-        text.draw(quads, label, button.x + button.w * 0.5f, button.y + (button.h - line) * 0.5f,
-                  scale, color, TextAlign::Center);
+        // "Smoothing: Off" is much longer than the labels beside it, and a
+        // session adds a fifth button, so a label is shrunk rather than allowed
+        // to run past the edge of its button.
+        float label_scale = scale;
+        const float room = button.w - scale * 6.0f;
+        const float natural = TextRenderer::measure_width(label, scale);
+        if (natural > room && natural > 0.0f) {
+            label_scale = scale * (room / natural);
+        }
+        const float label_line = TextRenderer::line_height(label_scale);
+        text.draw(quads, label, button.x + button.w * 0.5f,
+                  button.y + (button.h - label_line) * 0.5f, label_scale, color,
+                  TextAlign::Center);
     }
 
     const std::string prompts = format_prompts({{labels.confirm, "Select"},
                                                 {labels.cancel, "Resume"},
-                                                {"F1", "Toggle menu"},
-                                                {"Two fingers", "Toggle menu"}});
+                                                {"R3", "Smoothing"},
+                                                {"F1", "Toggle menu"}});
     text.draw(quads, prompts, geometry.panel.x + geometry.panel.w * 0.5f,
               geometry.panel.y + geometry.panel.h + line * 0.2f, scale * 0.9f, theme.text_dim,
               TextAlign::Center);

@@ -304,6 +304,11 @@ ScreenSize LibretroCoreScreenSource::native_screen_size() const {
     return ScreenSize{kDsScreenWidth, kDsScreenHeight};
 }
 
+void LibretroCoreScreenSource::set_filtering(bool linear) {
+    top_texture_.set_linear_filtering(linear);
+    bottom_texture_.set_linear_filtering(linear);
+}
+
 bool LibretroCoreScreenSource::wants_shutdown() const {
     return core_ && core_->wants_shutdown();
 }

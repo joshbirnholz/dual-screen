@@ -27,6 +27,9 @@ enum class UiAction {
     Confirm,
     Cancel,
     ToggleMenu,
+    // Smooth or sharp screen scaling. Works wherever you are -- in a game or
+    // in a menu -- so the difference can be judged against what is on screen.
+    ToggleFilter,
     Quit,
 };
 
