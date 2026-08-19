@@ -1,0 +1,260 @@
+#include "net/companion_session.hpp"
+
+#include "util/log.hpp"
+
+namespace ds::net {
+
+const char* to_string(CompanionSession::Status status) {
+    switch (status) {
+        case CompanionSession::Status::Idle: return "idle";
+        case CompanionSession::Status::Searching: return "searching";
+        case CompanionSession::Status::Connecting: return "connecting";
+        case CompanionSession::Status::Connected: return "connected";
+        case CompanionSession::Status::Failed: return "failed";
+    }
+    return "?";
+}
+
+CompanionSession::CompanionSession() = default;
+CompanionSession::~CompanionSession() { disconnect(); }
+
+bool CompanionSession::begin_search(const std::string& device_name,
+                                    ScreenId wanted_screen,
+                                    std::string* error) {
+    device_name_ = device_name;
+    wanted_screen_ = wanted_screen;
+    granted_screen_ = wanted_screen;
+    if (!browser_.running() && !browser_.start(error)) {
+        status_ = Status::Failed;
+        status_detail_ = error != nullptr ? *error : "cannot listen for hosts";
+        return false;
+    }
+    status_ = Status::Searching;
+    status_detail_.clear();
+    return true;
+}
+
+void CompanionSession::connect_to(const DiscoveredHost& host) {
+    stream_.close();
+    inbox_.clear();
+    said_hello_ = false;
+    ever_sent_input_ = false;
+
+    std::string error;
+    if (!stream_.start_connect(host.address, host.session_port, &error)) {
+        fail(error);
+        return;
+    }
+    status_ = Status::Connecting;
+    status_detail_ = "connecting to " + host.device_name;
+    game_title_ = host.game_title;
+    log_info("connecting to " + host.device_name + " at " + host.address);
+}
+
+void CompanionSession::disconnect() {
+    if (stream_.open()) {
+        std::vector<uint8_t> bye;
+        encode_bye(bye);
+        stream_.send(bye);
+        std::string error;
+        std::vector<uint8_t> ignored;
+        stream_.pump(ignored, &error);
+    }
+    stream_.close();
+    inbox_.clear();
+    said_hello_ = false;
+    if (status_ == Status::Connected || status_ == Status::Connecting) {
+        status_ = Status::Searching;
+        status_detail_.clear();
+    }
+}
+
+void CompanionSession::fail(const std::string& reason) {
+    stream_.close();
+    inbox_.clear();
+    said_hello_ = false;
+    status_ = Status::Failed;
+    status_detail_ = reason;
+    log_warn("companion session failed: " + reason);
+}
+
+void CompanionSession::handle_message(MessageType type, const std::vector<uint8_t>& payload) {
+    switch (type) {
+        case MessageType::Welcome: {
+            WelcomeMessage welcome;
+            if (!decode_welcome(payload.data(), payload.size(), welcome)) {
+                fail("the host sent something we could not read");
+                return;
+            }
+            game_title_ = welcome.game_title;
+            granted_screen_ = welcome.granted_screen;
+            status_ = Status::Connected;
+            status_detail_ = "showing the " + std::string(to_string(granted_screen_)) +
+                             " screen of " + game_title_;
+            log_info("connected: " + status_detail_);
+            break;
+        }
+        case MessageType::Reject: {
+            RejectMessage reject;
+            if (!decode_reject(payload.data(), payload.size(), reject)) {
+                fail("the host refused the connection");
+                return;
+            }
+            fail(reject.reason);
+            break;
+        }
+        case MessageType::SessionState: {
+            SessionStateMessage state;
+            if (!decode_session_state(payload.data(), payload.size(), state)) {
+                return;  // not worth dropping a session over
+            }
+            host_layout_id_ = state.layout_id;
+            host_paused_ = state.paused;
+            granted_screen_ = state.companion_screen;
+            break;
+        }
+        case MessageType::Frame: {
+            FrameMessage frame;
+            if (!decode_frame(payload.data(), payload.size(), frame)) {
+                fail("the host sent a frame we could not read");
+                return;
+            }
+            // Bounded before allocating: these dimensions came off a socket.
+            if (frame.width == 0 || frame.height == 0 || frame.width > 1024 ||
+                frame.height > 1024) {
+                fail("the host sent a frame with impossible dimensions");
+                return;
+            }
+            ScreenBuffer& target = (frame.screen == ScreenId::Top) ? top_ : bottom_;
+            if (!decode_screen_pixels(frame.payload, frame.width, frame.height, target.pixels)) {
+                fail("a frame from the host could not be decompressed");
+                return;
+            }
+            target.width = frame.width;
+            target.height = frame.height;
+            target.serial = frame.serial;
+            break;
+        }
+        case MessageType::Bye:
+            disconnect();
+            status_detail_ = "the host closed the session";
+            break;
+        case MessageType::Ping:
+            break;
+        default:
+            break;
+    }
+}
+
+void CompanionSession::poll(uint64_t now_ms) {
+    browser_.poll(now_ms);
+
+    if (!stream_.open()) {
+        return;
+    }
+
+    std::string error;
+    if (!stream_.pump(inbox_, &error)) {
+        fail(error);
+        return;
+    }
+
+    // The hello waits until the TCP handshake has actually completed, so it is
+    // never queued against a socket that turns out to be unreachable.
+    if (!said_hello_ && stream_.connected()) {
+        HelloMessage hello;
+        hello.device_name = device_name_;
+        hello.wanted_screen = wanted_screen_;
+        std::vector<uint8_t> out;
+        encode_hello(hello, out);
+        stream_.send(out);
+        said_hello_ = true;
+    }
+
+    while (true) {
+        MessageType type = MessageType::Ping;
+        std::vector<uint8_t> payload;
+        bool fatal = false;
+        if (!take_message(inbox_, type, payload, fatal)) {
+            if (fatal) {
+                fail("the host sent a malformed message");
+            }
+            break;
+        }
+        handle_message(type, payload);
+        if (!stream_.open()) {
+            break;
+        }
+    }
+}
+
+void CompanionSession::send_input(const DsInputState& state) {
+    if (status_ != Status::Connected || !stream_.connected()) {
+        return;
+    }
+    // Only changes go out. Holding a button steady costs nothing.
+    if (ever_sent_input_ && state.buttons == last_sent_input_.buttons &&
+        state.touching == last_sent_input_.touching &&
+        (!state.touching || (state.touch_x == last_sent_input_.touch_x &&
+                             state.touch_y == last_sent_input_.touch_y))) {
+        return;
+    }
+
+    InputMessage message;
+    message.buttons = state.buttons;
+    message.touching = state.touching;
+    message.touch_x = static_cast<int16_t>(state.touch_x);
+    message.touch_y = static_cast<int16_t>(state.touch_y);
+    std::vector<uint8_t> out;
+    encode_input(message, out);
+    stream_.send(out);
+
+    last_sent_input_ = state;
+    ever_sent_input_ = true;
+}
+
+bool CompanionSession::has_screen(ScreenId screen) const {
+    const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
+    return buffer.width > 0 && !buffer.pixels.empty();
+}
+
+uint64_t CompanionSession::received_serial(ScreenId screen) const {
+    return (screen == ScreenId::Top) ? top_.serial : bottom_.serial;
+}
+
+uint32_t CompanionSession::sample_pixel(ScreenId screen) const {
+    const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
+    return buffer.pixels.empty() ? 0u : (buffer.pixels[0] & 0x00ffffffu);
+}
+
+bool CompanionSession::advance_frame(std::string* error) {
+    // Frames arrive from poll(); there is nothing to drive here. A failed
+    // session is reported so the app can show it rather than a frozen picture.
+    if (status_ == Status::Failed) {
+        if (error != nullptr) *error = status_detail_;
+        return false;
+    }
+    return true;
+}
+
+const ScreenTextures& CompanionSession::screens() {
+    for (ScreenBuffer* buffer : {&top_, &bottom_}) {
+        if (buffer->serial != buffer->uploaded_serial && !buffer->pixels.empty()) {
+            buffer->texture.upload_xrgb8888(buffer->pixels.data(), buffer->width, buffer->height,
+                                            buffer->width);
+            buffer->uploaded_serial = buffer->serial;
+        }
+    }
+    textures_.top = top_.texture.valid() ? &top_.texture : nullptr;
+    textures_.bottom = bottom_.texture.valid() ? &bottom_.texture : nullptr;
+    return textures_;
+}
+
+ScreenSize CompanionSession::native_screen_size() const {
+    // Whichever screen we have actually seen; falls back to a DS's own size.
+    if (top_.width > 0) return ScreenSize{top_.width, top_.height};
+    if (bottom_.width > 0) return ScreenSize{bottom_.width, bottom_.height};
+    return ScreenSize{kDsScreenWidth, kDsScreenHeight};
+}
+
+}  // namespace ds::net

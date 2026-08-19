@@ -53,7 +53,9 @@ add_library(dualscreen_core STATIC
     src/input/ds_input.cpp
     src/input/input_manager.cpp
     src/layout/layout.cpp
+    src/net/companion_session.cpp
     src/net/discovery.cpp
+    src/net/host_session.cpp
     src/net/protocol.cpp
     src/net/transport.cpp
     src/layout/layout_registry.cpp
