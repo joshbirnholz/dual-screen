@@ -273,7 +273,8 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
 void GameBrowser::render(QuadRenderer& quads,
                          TextRenderer& text,
                          float output_width,
-                         float output_height) {
+                         float output_height,
+                         const MenuButtonLabels& labels) {
     if (!open_) {
         return;
     }
@@ -345,11 +346,14 @@ void GameBrowser::render(QuadRenderer& quads,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale, theme.danger,
               TextAlign::Center);
 
-    // Kept clear of the Quit button rather than running underneath it. Menus
-    // always use the buttons marked A and B, so the letters are literal.
+    // Kept clear of the Quit button rather than running underneath it. The
+    // letters come from what this pad prints, so the hint names the button the
+    // player is actually looking at.
     const float hint_width = geometry.quit_button.x - geometry.panel.x - line;
-    const std::string hint = format_prompts(
-        {{"A", "Open"}, {"B", "Up a folder"}, {"L/R", "Page"}, {"Drag", "Scroll"}});
+    const std::string hint = format_prompts({{labels.confirm, "Open"},
+                                             {labels.cancel, "Up a folder"},
+                                             {"L/R", "Page"},
+                                             {"Drag", "Scroll"}});
     text.draw(quads, TextRenderer::elide_left(hint, hint_width, scale * 0.9f), geometry.panel.x,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale * 0.9f,
               theme.text_dim);

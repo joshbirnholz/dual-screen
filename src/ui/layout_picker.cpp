@@ -217,7 +217,8 @@ void LayoutPicker::render(QuadRenderer& quads,
                           TextRenderer& text,
                           float output_width,
                           float output_height,
-                          const std::string& game_title) {
+                          const std::string& game_title,
+                          const MenuButtonLabels& labels) {
     if (!open_) {
         return;
     }
@@ -283,8 +284,8 @@ void LayoutPicker::render(QuadRenderer& quads,
                   button.y + (button.h - line) * 0.5f, scale, color, TextAlign::Center);
     }
 
-    const std::string prompts = format_prompts({{"A", "Select"},
-                                                {"B", "Resume"},
+    const std::string prompts = format_prompts({{labels.confirm, "Select"},
+                                                {labels.cancel, "Resume"},
                                                 {"F1", "Toggle menu"},
                                                 {"Two fingers", "Toggle menu"}});
     text.draw(quads, prompts, geometry.panel.x + geometry.panel.w * 0.5f,

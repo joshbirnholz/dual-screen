@@ -535,7 +535,7 @@ void App::Impl::render() {
     const float height = static_cast<float>(output_height);
 
     if (state == State::Browser) {
-        browser->render(quads, text, width, height);
+        browser->render(quads, text, width, height, input.menu_labels());
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
@@ -549,7 +549,7 @@ void App::Impl::render() {
     }
 
     if (state == State::Menu) {
-        picker->render(quads, text, width, height, game_title);
+        picker->render(quads, text, width, height, game_title, input.menu_labels());
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, width, height);
     } else if (state == State::Message) {
@@ -621,10 +621,10 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.paths.saves_dir);
     ensure_directory(impl.settings.system_dir);
 
-    // Must be set before any controller is opened. SDL's own default is already
-    // this value, but leaving it implicit is what made the mapping depend on
-    // the SDL version.
-    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kUseButtonLabels);
+    // Must be set before any controller is opened. SDL's default is to report
+    // face buttons by printed label; this app wants positions, so that one rule
+    // -- east means A -- holds in menus and in game on every pad.
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
         std::fprintf(stderr, "dualscreen: could not start SDL: %s\n", SDL_GetError());
@@ -646,8 +646,7 @@ int App::run(const AppOptions& options) {
             log_info("loaded " + std::to_string(added) + " controller mappings from " + controller_db);
         }
     }
-    log_info("in-game face buttons follow a DS's positions: the button marked A is DS B on an "
-             "Xbox-layout pad");
+    log_info("controls are Nintendo positional: east is A, south is B, in menus and in game");
 
     std::string error;
     if (!impl.create_window(&error)) {

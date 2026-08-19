@@ -73,12 +73,7 @@ void InputManager::open_controller(int device_index) {
     // decides how its face buttons are reported.
     const char* name = SDL_GameControllerName(controller);
     log_info(std::string("controller connected: ") + (name != nullptr ? name : "unknown") +
-             " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) +
-             ", letters in " +
-             (pad_letter_layout(SDL_GameControllerGetType(controller)) == PadLetterLayout::Nintendo
-                  ? "Nintendo"
-                  : "Xbox") +
-             " positions)");
+             " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) + ")");
 
     char* mapping = SDL_GameControllerMapping(controller);
     if (mapping != nullptr) {
@@ -170,8 +165,8 @@ void InputManager::handle_event(const SDL_Event& event) {
                       (sdl_name != nullptr ? sdl_name : "?") + " (" +
                       std::to_string(static_cast<int>(button)) + ")");
 
-            // Menus always confirm on the button marked A, whatever the game
-            // is configured to do with it.
+            // Menus confirm on the east button and go back on the south one --
+            // the same positions the game treats as DS A and B.
             if (button == kMenuConfirmButton) {
                 push_action(UiAction::Confirm);
             } else if (button == kMenuCancelButton) {
@@ -346,6 +341,15 @@ void InputManager::emit_navigation_from_axes() {
     axis_right_ = right;
 }
 
+MenuButtonLabels InputManager::menu_labels() const {
+    for (const auto& entry : controllers_) {
+        if (entry.second != nullptr) {
+            return menu_button_labels(pad_letter_layout(SDL_GameControllerGetType(entry.second)));
+        }
+    }
+    return MenuButtonLabels();  // Xbox letters: the common case, and Steam Input's
+}
+
 uint32_t InputManager::poll_held_buttons() const {
     // Polled unconditionally, even while a menu is open: the gate needs the
     // true physical state to know what to suppress when the game resumes.
@@ -355,13 +359,10 @@ uint32_t InputManager::poll_held_buttons() const {
         SDL_GameController* controller = entry.second;
         if (controller == nullptr) continue;
 
-        // Resolved per pad: matching a DS physically depends on where this
-        // particular controller prints its letters.
-        const PadLetterLayout layout = pad_letter_layout(SDL_GameControllerGetType(controller));
         for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
             const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
             DsButton ds_button = DsButton::A;
-            if (ds_button_for_controller_button(button, layout, ds_button) &&
+            if (ds_button_for_controller_button(button, ds_button) &&
                 SDL_GameControllerGetButton(controller, button) != 0) {
                 held.set(ds_button, true);
             }

@@ -44,7 +44,12 @@ public:
                              float output_width,
                              float output_height);
 
-    void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
+    // `labels` only decides which letters the prompts print.
+    void render(QuadRenderer& quads,
+                TextRenderer& text,
+                float output_width,
+                float output_height,
+                const MenuButtonLabels& labels);
 
 private:
     struct Row {

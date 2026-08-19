@@ -181,7 +181,17 @@ a timer alone -- every few seconds, on focus loss, on opening the menu and on
 quit -- because a handheld is powered off without warning and a save is the one
 file here that must never be half-written.
 
-**Why face buttons are three decisions, not one.** The first attempt at fixing
+**Why everything is Nintendo positional.** Menus and game now share one rule --
+east is A, south is B -- and SDL is asked to report face buttons by *position*
+rather than by printed label, which removes pad-type detection from the input
+path entirely. The earlier design had menus follow printed letters and the game
+follow positions, which is defensible in isolation and confusing in practice:
+the button that confirmed a menu was not the button the game called A. Sharing
+one rule costs nothing and removes a whole class of "which one is this?"
+questions. Pad type is still read, but only to decide which letters the
+on-screen prompts print.
+
+**Why face buttons were three decisions, not one.** The first attempt at fixing
 this collapsed them into a single `face_buttons` setting, which could not
 express the thing that turned out to be wanted: menus correct, game swapped.
 They are independent and are now modelled that way -- how SDL reports the

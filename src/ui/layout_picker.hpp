@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/text_renderer.hpp"
@@ -36,7 +37,8 @@ public:
                 TextRenderer& text,
                 float output_width,
                 float output_height,
-                const std::string& game_title);
+                const std::string& game_title,
+                const MenuButtonLabels& labels);
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
 

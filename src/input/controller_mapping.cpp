@@ -2,47 +2,15 @@
 
 namespace ds {
 
-PadLetterLayout pad_letter_layout(SDL_GameControllerType type) {
-    switch (type) {
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
-        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
-            return PadLetterLayout::Nintendo;
-        default:
-            // Everything else prints its letters in Xbox positions -- including
-            // the virtual pad Steam Input presents.
-            return PadLetterLayout::Xbox;
-    }
-}
-
-bool face_position_for_button(SDL_GameControllerButton button,
-                              PadLetterLayout layout,
-                              FacePosition& out_position) {
-    const bool nintendo = (layout == PadLetterLayout::Nintendo);
+bool ds_button_for_controller_button(SDL_GameControllerButton button, DsButton& out_button) {
     switch (button) {
-        case SDL_CONTROLLER_BUTTON_A:
-            out_position = nintendo ? FacePosition::East : FacePosition::South;
-            return true;
-        case SDL_CONTROLLER_BUTTON_B:
-            out_position = nintendo ? FacePosition::South : FacePosition::East;
-            return true;
-        case SDL_CONTROLLER_BUTTON_X:
-            out_position = nintendo ? FacePosition::North : FacePosition::West;
-            return true;
-        case SDL_CONTROLLER_BUTTON_Y:
-            out_position = nintendo ? FacePosition::West : FacePosition::North;
-            return true;
-        default:
-            return false;
-    }
-}
+        // Face buttons, by position. SDL is configured to report positions, so
+        // BUTTON_A is the south button on every pad.
+        case SDL_CONTROLLER_BUTTON_A: out_button = DsButton::B; return true;  // south
+        case SDL_CONTROLLER_BUTTON_B: out_button = DsButton::A; return true;  // east
+        case SDL_CONTROLLER_BUTTON_X: out_button = DsButton::Y; return true;  // west
+        case SDL_CONTROLLER_BUTTON_Y: out_button = DsButton::X; return true;  // north
 
-bool ds_button_for_controller_button(SDL_GameControllerButton button,
-                                     PadLetterLayout layout,
-                                     DsButton& out_button) {
-    // Shoulders, d-pad, Start and Select are unambiguous.
-    switch (button) {
         case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: out_button = DsButton::L; return true;
         case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: out_button = DsButton::R; return true;
         case SDL_CONTROLLER_BUTTON_START: out_button = DsButton::Start; return true;
@@ -51,22 +19,34 @@ bool ds_button_for_controller_button(SDL_GameControllerButton button,
         case SDL_CONTROLLER_BUTTON_DPAD_DOWN: out_button = DsButton::Down; return true;
         case SDL_CONTROLLER_BUTTON_DPAD_LEFT: out_button = DsButton::Left; return true;
         case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: out_button = DsButton::Right; return true;
-        default: break;
+        default: return false;
     }
+}
 
-    // Face buttons go through physical position, because that is what "matches
-    // a DS" means. A DS has B at south, A at east, Y at west and X at north.
-    FacePosition position = FacePosition::South;
-    if (!face_position_for_button(button, layout, position)) {
-        return false;
+PadLetterLayout pad_letter_layout(SDL_GameControllerType type) {
+    switch (type) {
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+            return PadLetterLayout::Nintendo;
+        default:
+            return PadLetterLayout::Xbox;
     }
-    switch (position) {
-        case FacePosition::South: out_button = DsButton::B; return true;
-        case FacePosition::East:  out_button = DsButton::A; return true;
-        case FacePosition::West:  out_button = DsButton::Y; return true;
-        case FacePosition::North: out_button = DsButton::X; return true;
+}
+
+MenuButtonLabels menu_button_labels(PadLetterLayout layout) {
+    MenuButtonLabels labels;
+    if (layout == PadLetterLayout::Nintendo) {
+        // A Nintendo pad already prints A on the east button, so the letters
+        // read the same way round as the positions.
+        labels.confirm = "A";
+        labels.cancel = "B";
+    } else {
+        labels.confirm = "B";
+        labels.cancel = "A";
     }
-    return false;
+    return labels;
 }
 
 const char* to_string(SDL_GameControllerType type) {

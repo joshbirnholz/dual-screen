@@ -78,6 +78,10 @@ public:
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
 
+    // Letters printed on the menu confirm/cancel buttons for the connected pad,
+    // for on-screen prompts. Display only -- it never changes what a button does.
+    MenuButtonLabels menu_labels() const;
+
 private:
     void open_controller(int device_index);
     void close_controller(SDL_JoystickID instance_id);

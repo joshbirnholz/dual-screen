@@ -228,23 +228,26 @@ folder.
 
 ### Face buttons
 
-Three separate things, deliberately kept apart:
+Everything — menus and game alike — uses **Nintendo positional** controls:
 
-- **How SDL reports them** is pinned to *by printed label*, so
-  `SDL_CONTROLLER_BUTTON_A` is always the button marked A on any pad.
-- **Menus** always confirm on the button marked **A** and go back on **B**,
-  matching what every platform's own UI does.
-- **The game** places them where a DS does: south is B, east is A, west is Y,
-  north is X. On an Xbox-layout pad — which is what Steam Input's virtual
-  controller is — that means the button marked A is DS **B**, because that is
-  where B sits on a DS. On a Switch Pro pad nothing moves, since its letters
-  already agree.
+```
+        north = X
+   west = Y      east = A     confirms menus, and is DS A
+        south = B             cancels menus, and is DS B
+```
 
-So in a menu, A confirms; in game, that same button is DS B. That is not a
-bug — the menu is not the game.
+So on an Xbox-layout pad, which is what Steam Input's virtual controller is,
+the button marked **B** confirms and is DS A, and the button marked **A**
+cancels and is DS B. One rule in both places: the button that means "yes" in a
+menu is the button that means A in a game.
 
-None of it is configurable: remap the pad in Steam Input if you want something
-else, which is a better place for it than a second set of bindings here. A pad
+To make that hold without guessing at each pad, SDL is asked to report face
+buttons by *position* rather than by printed label. On-screen prompts still
+name the letters your pad actually prints, so a Switch Pro pad reads "A: Select"
+and an Xbox pad reads "B: Select" — the same physical button either way.
+
+None of it is configurable. Remap the pad in Steam Input if you want something
+else; that is a better place for it than a second set of bindings here. A pad
 SDL has no entry for, or a wrong one, can be corrected without a rebuild by
 dropping a `gamecontrollerdb.txt` next to `settings.json`.
 
