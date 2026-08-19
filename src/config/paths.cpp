@@ -268,6 +268,7 @@ AppPaths AppPaths::resolve() {
     paths.settings_file = path_join(paths.config_dir, "settings.json");
     paths.saves_dir = path_join(path_join(xdg_data, "dualscreen"), "saves");
     paths.default_system_dir = path_join(path_join(xdg_data, "dualscreen"), "system");
+    paths.log_file = path_join(path_join(xdg_data, "dualscreen"), "dualscreen.log");
     return paths;
 }
 

@@ -14,6 +14,7 @@ struct AppPaths {
     std::string settings_file; // ~/.config/dualscreen/settings.json
     std::string saves_dir;     // ~/.local/share/dualscreen/saves
     std::string default_system_dir;  // ~/.local/share/dualscreen/system
+    std::string log_file;            // ~/.local/share/dualscreen/dualscreen.log
 
     static AppPaths resolve();
 };

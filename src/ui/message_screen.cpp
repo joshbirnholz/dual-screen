@@ -12,6 +12,7 @@ void MessageScreen::show(MessageKind kind,
                          const std::string& body,
                          const std::vector<std::string>& details) {
     visible_ = true;
+    seconds_visible_ = 0.0;
     kind_ = kind;
     title_ = title;
     body_ = body;
@@ -24,8 +25,14 @@ void MessageScreen::clear() {
 }
 
 bool MessageScreen::update(const std::vector<UiAction>& actions,
-                           const std::vector<PointerEvent>& pointers) {
+                           const std::vector<PointerEvent>& pointers,
+                           double delta_seconds) {
     if (!visible_) {
+        return false;
+    }
+    seconds_visible_ += delta_seconds;
+    if (seconds_visible_ < kMessageSettleSeconds) {
+        // Still settling: whatever arrived was not aimed at this screen.
         return false;
     }
     for (const UiAction action : actions) {

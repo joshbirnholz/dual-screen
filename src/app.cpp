@@ -243,6 +243,8 @@ struct App::Impl {
                        bool fatal);
     void persist_game_config();
     void handle_ui(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
+    // How long the last frame took, so screens that need a clock have one.
+    double last_delta_seconds = 0.0;
     void render();
     bool write_screenshot(const std::string& path);
 };
@@ -262,9 +264,16 @@ bool App::Impl::create_window(std::string* error) {
         bool gles;
         const char* description;
     };
+    // Tried in order, widening as it goes. The last entry asks for nothing at
+    // all and takes whatever the driver's default context is: under gamescope
+    // an explicitly-profiled request can be refused where the default succeeds,
+    // and a working context of some kind always beats refusing to start.
     const ContextAttempt attempts[] = {
         {SDL_GL_CONTEXT_PROFILE_ES, 2, 0, true, "OpenGL ES 2.0"},
-        {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1"},
+        {SDL_GL_CONTEXT_PROFILE_ES, 3, 0, true, "OpenGL ES 3.0"},
+        {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1 compatibility"},
+        {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
+        {0, 0, 0, false, "the driver's default context"},
     };
 
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
@@ -277,9 +286,11 @@ bool App::Impl::create_window(std::string* error) {
     std::string last_error;
     for (const ContextAttempt& attempt : attempts) {
         SDL_GL_ResetAttributes();
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, attempt.profile);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, attempt.major);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, attempt.minor);
+        if (attempt.profile != 0) {
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, attempt.profile);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, attempt.major);
+            SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, attempt.minor);
+        }
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
         SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
@@ -290,11 +301,13 @@ bool App::Impl::create_window(std::string* error) {
                                   1280, 800, flags);
         if (window == nullptr) {
             last_error = SDL_GetError();
+            log_warn(std::string("no window with ") + attempt.description + ": " + last_error);
             continue;
         }
         gl_context = SDL_GL_CreateContext(window);
         if (gl_context == nullptr) {
             last_error = SDL_GetError();
+            log_warn(std::string("no ") + attempt.description + " context: " + last_error);
             SDL_DestroyWindow(window);
             window = nullptr;
             continue;
@@ -302,8 +315,17 @@ bool App::Impl::create_window(std::string* error) {
 
         SDL_GL_MakeCurrent(window, gl_context);
         std::string load_error;
-        if (!gl::load(attempt.gles, &load_error)) {
+        // Whether this is really an ES context is asked of the context itself
+        // rather than assumed from what was requested, because the default
+        // attempt does not request anything and the shaders differ.
+        int profile = 0;
+        SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &profile);
+        const bool is_gles = attempt.profile != 0
+                                 ? attempt.gles
+                                 : (profile == SDL_GL_CONTEXT_PROFILE_ES);
+        if (!gl::load(is_gles, &load_error)) {
             last_error = load_error;
+            log_warn(std::string("cannot use the ") + attempt.description + ": " + load_error);
             SDL_GL_DeleteContext(gl_context);
             gl_context = nullptr;
             SDL_DestroyWindow(window);
@@ -541,7 +563,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers) {
     switch (state) {
         case State::Message: {
-            if (message.update(actions, pointers)) {
+            if (message.update(actions, pointers, last_delta_seconds)) {
                 message.clear();
                 if (!message_is_fatal) {
                     const bool joined =
@@ -785,6 +807,22 @@ int App::run(const AppOptions& options) {
     }
 
     impl.paths = AppPaths::resolve();
+
+    // Opened before anything that can fail. In Game Mode there is no terminal,
+    // so without a log on disk an early failure is indistinguishable from the
+    // app never starting at all.
+    ensure_directory(path_dirname(impl.paths.log_file));
+    if (set_log_file(impl.paths.log_file)) {
+        log_info("dualscreen starting; log at " + impl.paths.log_file);
+    }
+    // The environment is what actually differs between Game Mode and desktop,
+    // so it is the first thing worth knowing when only one of them works.
+    for (const char* name : {"XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY", "SDL_VIDEODRIVER",
+                             "XDG_RUNTIME_DIR", "GAMESCOPE_WAYLAND_DISPLAY", "STEAM_COMPAT_DATA_PATH"}) {
+        const char* value = std::getenv(name);
+        log_info(std::string("env ") + name + " = " + (value != nullptr ? value : "(unset)"));
+    }
+
     impl.settings = Settings::load(impl.paths);
     if (!options.system_dir.empty()) {
         impl.settings.system_dir = expand_user_path(options.system_dir);
@@ -807,9 +845,29 @@ int App::run(const AppOptions& options) {
     // -- east means A -- holds in menus and in game on every pad.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
-        std::fprintf(stderr, "dualscreen: could not start SDL: %s\n", SDL_GetError());
+    // Video and events are the only subsystems worth failing over. The game
+    // controller subsystem is initialised separately because it can fail on its
+    // own -- device permissions differ inside Game Mode's sandbox -- and losing
+    // controllers is a reason to warn, never a reason to refuse to start.
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
+        const std::string reason = SDL_GetError();
+        log_error("could not start SDL video: " + reason);
+        log_error("SDL knows about these video drivers:" + [] {
+            std::string names;
+            for (int index = 0; index < SDL_GetNumVideoDrivers(); ++index) {
+                names += std::string(" ") + SDL_GetVideoDriver(index);
+            }
+            return names;
+        }());
+        std::fprintf(stderr, "dualscreen: could not start SDL: %s\n", reason.c_str());
         return 1;
+    }
+    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
+        log_warn(std::string("no game controller support this session: ") + SDL_GetError());
+    }
+    {
+        const char* driver = SDL_GetCurrentVideoDriver();
+        log_info(std::string("SDL video driver: ") + (driver != nullptr ? driver : "none"));
     }
     // Touch on a desktop should not also arrive as synthetic mouse events, or
     // every tap would register twice.
@@ -831,14 +889,19 @@ int App::run(const AppOptions& options) {
 
     std::string error;
     if (!impl.create_window(&error)) {
+        log_error(error);
+        log_error("no usable OpenGL context was available, so there is nothing to draw into");
         std::fprintf(stderr, "dualscreen: %s\n", error.c_str());
         SDL_Quit();
+        close_log_file();
         return 1;
     }
     if (!impl.quads.initialize(&error) || !impl.text.initialize(&error)) {
+        log_error("cannot set up the renderer: " + error);
         std::fprintf(stderr, "dualscreen: %s\n", error.c_str());
         impl.destroy_window();
         SDL_Quit();
+        close_log_file();
         return 1;
     }
 
@@ -923,6 +986,7 @@ int App::run(const AppOptions& options) {
             }
         }
 
+        impl.last_delta_seconds = elapsed;
         impl.input.begin_frame();
 
         // Test hook: hold a touch at a fixed spot by pushing the same events a
@@ -1127,6 +1191,8 @@ int App::run(const AppOptions& options) {
     impl.input.shutdown();
     impl.destroy_window();
     SDL_Quit();
+    log_info("dualscreen exiting normally");
+    close_log_file();
     return 0;
 }
 

@@ -27,7 +27,15 @@ public:
     const std::string& title() const { return title_; }
 
     // Returns true when the player dismissed the message.
-    bool update(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
+    //
+    // A message cannot be dismissed for a moment after it appears. Launchers --
+    // Steam Input especially -- deliver a press as the app starts, and without
+    // this a fatal error screen is dismissed before it has been drawn once,
+    // which from the outside looks exactly like the app quitting on startup for
+    // no reason.
+    bool update(const std::vector<UiAction>& actions,
+                const std::vector<PointerEvent>& pointers,
+                double delta_seconds);
 
     void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
 
@@ -37,6 +45,10 @@ private:
     std::string title_;
     std::string body_;
     std::vector<std::string> details_;
+    double seconds_visible_ = 0.0;
 };
+
+// How long a message stays un-dismissable after appearing.
+constexpr double kMessageSettleSeconds = 0.75;
 
 }  // namespace ds

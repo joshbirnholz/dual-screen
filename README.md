@@ -216,6 +216,32 @@ Full options:
 | Move around the menus | d-pad or left stick; **A** confirms, **B** goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 
+### If it quits immediately in Game Mode
+
+Every run writes a log to:
+
+```
+~/.local/share/dualscreen/dualscreen.log
+```
+
+It is truncated each run and records the environment, which SDL video driver
+was chosen, every OpenGL context that was tried and why each failed, and how
+the app exited. In Game Mode there is no terminal, so this file is the only
+thing that can tell you what happened — read it from desktop mode after the
+failed launch.
+
+Common causes, in the order the log will let you distinguish them:
+
+- **No usable OpenGL context.** The log lists each attempt. The app tries ES
+  2.0, ES 3.0, GL 2.1, GL 3.3, and finally whatever the driver offers by
+  default, so this means none of them worked.
+- **A relative path in the shortcut's launch options.** Game Mode does not
+  necessarily start the app in the folder you expect. Use absolute paths for
+  `--game` and `--core`.
+- **The app is showing an error you never saw.** Errors now stay on screen for
+  a moment before any button can dismiss them, so a press delivered as the app
+  launches can no longer close one instantly.
+
 ### Steam Input
 
 Launched from Steam, your pad reaches the app through Steam Input, which

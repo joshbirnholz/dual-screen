@@ -79,6 +79,28 @@ been done is to remove every avoidable reason for it to go wrong:
   flushes the audio queue instead of trying to catch up thousands of frames or
   playing out audio queued before the machine slept.
 
+**Reported symptom: the app quits instantly in Game Mode but works in desktop
+mode.** Not reproducible here, so the response was to remove the reasons a
+startup failure would be *invisible*, and to widen the paths most likely to be
+failing:
+
+- Every run writes a log to `~/.local/share/dualscreen/dualscreen.log`, opened
+  before anything that can fail. Game Mode has no terminal, so previously a
+  failed start and a crash looked identical from outside.
+- `SDL_Init` no longer asks for the game controller subsystem as a hard
+  requirement. It was bundled with video in a single call, so a controller
+  subsystem that fails -- plausible inside Game Mode's sandbox, where device
+  permissions differ -- took the whole app down with it. It is now initialised
+  separately and a failure is a warning.
+- The GL context fallback chain went from two attempts to five, ending with one
+  that requests no profile at all and takes the driver's default. An explicitly
+  profiled request can be refused where the default succeeds, and any working
+  context beats refusing to start. Each attempt is logged with its reason.
+- Error screens cannot be dismissed for the first three quarters of a second.
+  A launcher that delivers a button press as the app starts could otherwise
+  dismiss a fatal error before it had been drawn once -- which from outside is
+  indistinguishable from quitting for no reason.
+
 **What to check first on real hardware**, in this order:
 
 1. That a blank fullscreen window appears at all as a non-Steam shortcut in
