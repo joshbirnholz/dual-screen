@@ -11,6 +11,11 @@ endif()
 
 option(DUALSCREEN_BUILD_TESTS "Build unit tests and the mock libretro core" ON)
 option(DUALSCREEN_WERROR "Treat warnings as errors" OFF)
+# Statically links libstdc++ and libgcc. On by default because the normal way
+# to get this onto a Deck is to build it in a container and copy the binary to
+# a host with a different GCC, and the C++ ABI is the coupling most likely to
+# break that. Leaves the binary needing only SDL2, libc and libm.
+option(DUALSCREEN_PORTABLE "Statically link the C++ runtime" ON)
 
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -82,6 +87,10 @@ endif()
 
 add_executable(dualscreen src/main.cpp)
 target_link_libraries(dualscreen PRIVATE dualscreen_core)
+
+if(DUALSCREEN_PORTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(dualscreen PRIVATE -static-libstdc++ -static-libgcc)
+endif()
 
 install(TARGETS dualscreen RUNTIME DESTINATION bin)
 

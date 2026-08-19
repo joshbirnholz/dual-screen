@@ -46,29 +46,80 @@ new layout gets working touch for free.
 The two single-screen layouts are also the base case the networked companion
 mode will reuse later: each device renders one screen full-window.
 
-## Building
+## Building on SteamOS
+
+```sh
+git clone https://github.com/joshbirnholz/dual-screen
+cd dual-screen
+./tools/build-steamos.sh
+```
+
+That is the whole thing. First run takes a few minutes to fetch the container
+image; after that it is seconds. The result is `build/dualscreen`, which runs
+**on the SteamOS host** — in Game Mode, with no container at runtime, and it
+keeps working across SteamOS updates.
+
+<details>
+<summary>Why it works this way</summary>
+
+SteamOS's root filesystem is read-only and ships no compiler, so the build has
+to happen in a container. The script uses **Debian 12**, which is deliberately
+*older* than any SteamOS release: a binary built against an older glibc runs on
+a newer one, but not the reverse. Build in an Arch container instead — the
+obvious choice, since SteamOS is Arch-based — and you get a rolling-release
+glibc newer than the Deck's, and a binary that will not start.
+
+That direction matters more than it sounds. Built on glibc 2.39, this binary
+demands glibc ≥ 2.38, entirely because GCC 13 quietly rewrites `strtol` and
+friends into `__isoc23_strtol`. Nothing in the source needs anything that
+recent. Build it on Debian 12 and the floor drops to what the code actually
+uses.
+
+The other half is what the binary needs at all:
+
+```
+$ objdump -p build/dualscreen | grep NEEDED
+  NEEDED   libSDL2-2.0.so.0
+  NEEDED   libm.so.6
+  NEEDED   libc.so.6
+```
+
+SDL2 and libc, and that is it. Two reasons:
+
+- `libstdc++` is linked statically (`DUALSCREEN_PORTABLE`, on by default),
+  since the C++ ABI is the coupling most likely to break when a container-built
+  binary meets the host's runtime. Costs about 1.4 MB.
+- **`libGL` is absent**, even though CMake links it. Every GL entry point is
+  resolved through `SDL_GL_GetProcAddress` at runtime, so the linker drops the
+  direct dependency and there is no GL/EGL version coupling to get wrong. This
+  is the same property that lets the renderer take an OpenGL ES context on one
+  machine and desktop GL on another.
+
+**Do not use `sudo steamos-readonly disable`** to install a compiler on the
+host. It works until the next SteamOS update wipes it, and then it works again
+until the update after that.
+
+</details>
+
+## Building anywhere else
 
 Needs a C++17 compiler, CMake 3.16+, SDL2 and nlohmann::json.
 
 ```sh
-# Debian/Ubuntu
-sudo apt install build-essential cmake libsdl2-dev nlohmann-json3-dev
+sudo apt install build-essential cmake libsdl2-dev nlohmann-json3-dev  # Debian/Ubuntu
+sudo pacman -S base-devel cmake sdl2 nlohmann-json                      # Arch
 
-# SteamOS / Arch
-sudo pacman -S base-devel cmake sdl2 nlohmann-json
-```
-
-```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-If nlohmann::json is not installed, CMake fetches it.
+If nlohmann::json is not installed, CMake fetches it. `build-steamos.sh` also
+detects a non-SteamOS machine with a compiler and just builds directly, so it
+is safe to use everywhere.
 
-On SteamOS the read-only root filesystem makes installing build dependencies
-awkward; building inside a `distrobox`/`toolbox` container and copying the
-resulting binary out is the path of least resistance.
+Useful CMake options: `-DDUALSCREEN_PORTABLE=OFF` (link libstdc++ dynamically),
+`-DDUALSCREEN_BUILD_TESTS=OFF`, `-DDUALSCREEN_WERROR=ON`.
 
 ## What you need to supply
 

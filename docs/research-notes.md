@@ -132,6 +132,23 @@ target has no system font to borrow. It is 5x7 glyph art in
 `src/render/font.cpp`, stored as readable ASCII rather than packed hex so a
 typo is visible on inspection.
 
+**Why the C++ runtime is linked statically and libGL is not linked at all.**
+The realistic way this reaches a Deck is: build in a container, copy the binary
+to the host. That makes the host's runtime libraries the compatibility surface.
+Measured on the built binary, the direct dependencies are `libSDL2-2.0.so.0`,
+`libm` and `libc` — nothing else. `libstdc++` is static (`DUALSCREEN_PORTABLE`),
+and `libGL` drops out on its own because every GL entry point is resolved
+through `SDL_GL_GetProcAddress` rather than linked, so there is no GL or EGL
+version to match.
+
+The remaining coupling is glibc, and it is directional: a binary built against
+an older glibc runs against a newer one, never the reverse. So the SteamOS
+build script uses a Debian 12 container rather than the Arch one that SteamOS's
+own lineage would suggest — a rolling Arch image has a *newer* glibc than the
+Deck and produces a binary that will not start. Worth knowing: building on
+glibc 2.39 raises the floor to 2.38 purely because GCC 13 rewrites `strtol`
+into `__isoc23_strtol`; nothing in this source needs anything that recent.
+
 **Why audio is bounded rather than resampled.** The DS runs at ~59.83 Hz
 against a 60 Hz display, so the queue drifts even when everything is behaving.
 The queue is capped at about a quarter second and trimmed when it runs long,
