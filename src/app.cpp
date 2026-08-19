@@ -270,6 +270,10 @@ bool App::Impl::create_window(std::string* error) {
 
         log_info(std::string("created a ") + attempt.description + " context");
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+        // No pointer on screen. The mouse only exists here as a stand-in for
+        // the touchscreen, and an arrow parked over the game is exactly the
+        // kind of thing that gives away that this is not a console.
+        SDL_ShowCursor(SDL_DISABLE);
         refresh_output_size();
         return true;
     }
