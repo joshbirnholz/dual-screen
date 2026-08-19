@@ -5,8 +5,8 @@
 // compositor together.
 //
 // Usage: check_screenshot <file.ppm> <region>=<colour> [...]
-//   regions: upper lower left right center
-//   colours: blue green
+//   regions: upper lower left right center topleft
+//   colours: blue green black
 //
 // It also understands `crosshair=<x>,<y>`, which finds the mock core's bright
 // yellow touch crosshair and checks it landed at that normalized position in
@@ -106,6 +106,7 @@ void average_patch(const Image& image, float cx, float cy, double& r, double& g,
 }
 
 bool region_center(const std::string& region, float& x, float& y) {
+    if (region == "topleft"){ x = 0.03f; y = 0.06f; return true; }
     if (region == "upper")  { x = 0.5f; y = 0.25f; return true; }
     if (region == "lower")  { x = 0.5f; y = 0.75f; return true; }
     if (region == "left")   { x = 0.25f; y = 0.5f; return true; }
@@ -223,6 +224,10 @@ int main(int argc, char** argv) {
             passed = (b > g + 8.0) && (b > r + 8.0);
         } else if (expected == "green") {
             passed = (g > b + 8.0) && (g > r + 8.0);
+        } else if (expected == "black") {
+            // The letterbox around the screens has to be genuinely black, not
+            // merely dark: a lifted background reads as a frame on an OLED.
+            passed = (r < 2.0) && (g < 2.0) && (b < 2.0);
         } else {
             std::fprintf(stderr, "check_screenshot: unknown colour '%s'\n", expected.c_str());
             ++failures;

@@ -70,8 +70,8 @@ been done is to remove every avoidable reason for it to go wrong:
   `SDL_CONTROLLERDEVICEADDED`/`REMOVED` at any time, not enumerated once at
   startup. Docking a Deck to a TV mid-session and plugging in a pad is the
   normal case, not an edge case.
-- **The menu chord.** Steam grabs the Guide button in Game Mode, so it is not
-  used. L3, Select+Start, and a two-finger tap all open the menu.
+- **The menu button.** Steam grabs the Guide button in Game Mode, so it is not
+  used. R3 and a two-finger tap open the menu.
 - **Suspend/resume.** SteamOS sleep shows up as a very long gap between frames
   rather than as an event. Any gap over a second restarts the frame clock and
   flushes the audio queue instead of trying to catch up thousands of frames or
@@ -83,7 +83,7 @@ been done is to remove every avoidable reason for it to go wrong:
    Game Mode (the M0 gate the spec asked for).
 2. Which GL context gamescope actually hands over — the log line reports it.
 3. Whether the Steam Input layer presents the Deck's built-in controls as an
-   SDL GameController, and whether L3 reaches the app or is consumed.
+   SDL GameController, and whether R3 reaches the app or is consumed.
 4. Whether the Deck's touchscreen produces `SDL_FINGER*` events under
    gamescope, and whether they are normalized to the window as SDL documents.
 5. Suspend and resume mid-game; confirm audio recovers and the GL context
@@ -124,7 +124,22 @@ that point.
 
 **Why emulation pauses while the menu is open.** Comparing layouts is much
 easier against a still frame, and it removes any chance of a menu press leaking
-into the game.
+into the game *while* it is open.
+
+**Why there is a held-input gate.** Pausing is not enough on its own. Button
+state is polled, not edge-triggered, so the A press that chooses "Resume" is
+still physically down on the frame after the menu closes, and the game reads it
+as a fresh press. `HeldInputGate` records what is held at the moment the game
+starts listening and suppresses exactly those inputs until they are released;
+anything pressed afterwards passes straight through. The same applies to a
+finger still on the screen. It is a separate class rather than a flag inside
+the SDL polling so the behaviour can be tested directly, which it is.
+
+**Why screen swapping is a layout, not a flag.** V1 originally had both: four
+layouts plus a global swap toggle. That is two controls for one decision, and
+the combinations are redundant (vertical + swap is vertical-swapped). The
+swapped arrangements are now just more entries in the layout registry, which is
+also the shape the registry was designed for -- new arrangements are data.
 
 **Why the font is embedded.** The app has to be able to say "your ROM is
 missing" on a machine where nothing else is installed, and the Switch homebrew

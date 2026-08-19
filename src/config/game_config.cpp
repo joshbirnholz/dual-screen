@@ -21,13 +21,6 @@ std::string get_string(const json& object, const char* key, const std::string& f
     return it->get<std::string>();
 }
 
-bool get_bool(const json& object, const char* key, bool fallback) {
-    if (!object.is_object()) return fallback;
-    const auto it = object.find(key);
-    if (it == object.end() || !it->is_boolean()) return fallback;
-    return it->get<bool>();
-}
-
 }  // namespace
 
 std::string iso8601_utc_now() {
@@ -55,7 +48,6 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.rom_sha1 = rom_sha1;
     config.display_name = display_name;
     config.layout_id = settings.default_layout_id;
-    config.screen_swap = settings.default_screen_swap;
 
     const std::string path = file_path(paths, rom_sha1);
     std::ifstream file(path);
@@ -81,7 +73,6 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
 
     config.raw_document_ = raw;
     config.layout_id = get_string(document, "layout_id", config.layout_id);
-    config.screen_swap = get_bool(document, "screen_swap", config.screen_swap);
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -119,7 +110,6 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["rom_sha1"] = rom_sha1;
     document["display_name"] = display_name;
     document["layout_id"] = layout_id;
-    document["screen_swap"] = screen_swap;
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

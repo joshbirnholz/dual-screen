@@ -9,7 +9,7 @@ void OutputRouter::hand_off(ScreenId, const Texture&, const PixelRect&) {
 OutputRoute LocalOutputRouter::route_for(ScreenId) const { return OutputRoute::Local; }
 
 void Compositor::render(QuadRenderer& quads,
-                        const Layout& resolved_layout,
+                        const Layout& layout,
                         const ScreenTextures& screens,
                         float output_width,
                         float output_height,
@@ -17,7 +17,7 @@ void Compositor::render(QuadRenderer& quads,
     quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
     quads.clear(style_.background);
 
-    for (const ScreenPlacement& placement : resolved_layout.placements) {
+    for (const ScreenPlacement& placement : layout.placements) {
         const PixelRect rect = placement_pixel_rect(placement, output_width, output_height);
         const Texture* texture =
             (placement.screen == ScreenId::Top) ? screens.top : screens.bottom;

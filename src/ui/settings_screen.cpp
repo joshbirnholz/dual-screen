@@ -4,11 +4,6 @@
 #include <cmath>
 
 namespace ds {
-namespace {
-
-constexpr int kRowCount = static_cast<int>(6);
-
-}  // namespace
 
 std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir) {
     // melonDS DS can boot DS games with its own open-source BIOS replacement,
@@ -112,10 +107,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
-        case Row::DefaultSwap:
-            settings_.default_screen_swap = !settings_.default_screen_swap;
-            result.settings_changed = true;
-            break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -149,6 +140,8 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
             case UiAction::Quit: break;
+            case UiAction::PageUp:
+            case UiAction::PageDown: break;  // nothing here scrolls
         }
     }
 
@@ -191,7 +184,6 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"BIOS / system folder", settings_.system_dir},
         {"melonDS DS core", core_found ? resolved_core_path_ : std::string("not found")},
         {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
-        {"Swap screens by default", settings_.default_screen_swap ? "On" : "Off"},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"Back", ""},
     };

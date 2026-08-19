@@ -10,6 +10,8 @@ phases (a networked host/companion split, 3DS, Wii U) plug into.
 
 ![the layout picker](docs/images/layout-picker.png)
 
+![the game browser](docs/images/game-browser.png)
+
 ## What it does today
 
 - Embeds the **melonDS DS** libretro core directly — `dlopen`'d as a library,
@@ -24,8 +26,10 @@ phases (a networked host/companion split, 3DS, Wii U) plug into.
 - Controller input via SDL2's GameController API; touch input on whichever
   screen is currently showing the bottom screen, mapped back into DS
   touchscreen coordinates.
-- Remembers the layout and screen-swap flag per game, keyed by the ROM's SHA-1
-  rather than its path, so moving your ROMs around loses nothing.
+- Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
+  its path, so moving your ROMs around loses nothing.
+- Launched with no ROM, it opens a file browser so you can pick one, and starts
+  in whichever folder you were last in.
 
 ## Layouts
 
@@ -37,6 +41,9 @@ phases (a networked host/companion split, 3DS, Wii U) plug into.
 | `horizontal_swapped` | side by side, bottom screen on the left |
 | `top_only` | top screen filling the window |
 | `bottom_only` | bottom screen filling the window |
+
+Swapping the screens is a layout rather than a separate toggle, which keeps the
+picker to one decision.
 
 Adding a layout is meant to be adding data, not code: a `Layout` is a list of
 normalized rects with a screen id each (`src/layout/layout_registry.cpp`).
@@ -144,7 +151,15 @@ dualscreen --game ~/roms/nds/game.nds
 ```
 
 That boots straight into the game with its last-used layout — no launcher in
-the way. Full options:
+the way.
+
+Run it with no arguments and you get a file browser instead, which opens in the
+folder you were last browsing (and, on a first run, wherever your ROMs most
+likely are — the EmuDeck and RetroDECK paths, the SD card, then home). Useful
+for one catch-all shortcut; per-game shortcuts with `--game` stay the fastest
+way in.
+
+Full options:
 
 ```
 --game <path>        ROM to boot straight into
@@ -160,9 +175,10 @@ the way. Full options:
 
 | | |
 | --- | --- |
-| Open/close the layout menu | **L3**, **Select+Start**, or a **two-finger tap** |
+| Open/close the layout menu | **R3** (right stick click) or a **two-finger tap** |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Move around the menus | d-pad or left stick; **A** confirms, **B** goes back |
+| Page through a long list | **L** and **R**, or drag the list with a finger |
 
 The two-finger tap matters: on a tablet with no buttons attached, it is the
 only way into the menu. Emulation pauses while the menu is open, so you can
@@ -180,7 +196,7 @@ V1 does not script `shortcuts.vdf` for you.
 
 ```
 ~/.config/dualscreen/settings.json          app-level defaults
-~/.config/dualscreen/games/<rom-sha1>.json  per-game layout + screen swap
+~/.config/dualscreen/games/<rom-sha1>.json  per-game layout
 ~/.local/share/dualscreen/saves/            cartridge saves (the core writes these)
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
 ```
@@ -190,7 +206,7 @@ V1 does not script `shortcuts.vdf` for you.
 ```json
 {
   "default_layout_id": "vertical",
-  "default_screen_swap": false,
+  "last_browse_dir": "/home/deck/Emulation/roms/nds",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
   "stick_deadzone": 0.35,
@@ -240,10 +256,12 @@ The per-game config already keys on `rom_sha1` and reserves `role_default` and
 ctest --test-dir build --output-on-failure
 ```
 
-- `test_layout` — placement geometry, screen swap, and touch mapping round-trips
-  for every layout in both swap states.
+- `test_layout` — placement geometry, the swapped layouts mirroring their
+  counterparts, and touch mapping round-trips for every layout.
 - `test_config` — SHA-1 against the FIPS vectors, path handling, config
   round-trips including preservation of keys a future version might add.
+- `test_browser` — which files the game browser offers, how it sorts and where
+  it starts, plus the held-input gate that keeps a menu press out of the game.
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture and the frontend's own
   validation of what the core accepted.

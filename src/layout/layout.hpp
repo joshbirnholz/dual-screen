@@ -60,11 +60,6 @@ PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                int source_width = kDsScreenWidth,
                                int source_height = kDsScreenHeight);
 
-// Applies the per-game screen-swap flag by flipping which logical screen each
-// placement shows. Everything downstream (rendering, touch) works off the
-// resolved layout, so swap is handled in exactly one place.
-Layout resolve_screen_swap(const Layout& layout, bool swap);
-
 struct DsTouchPoint {
     int x = 0;
     int y = 0;
@@ -74,7 +69,7 @@ struct DsTouchPoint {
 // the inverse of the bottom screen's placement. Returns false when the point is
 // not over a touchable bottom screen. This is derived generically from the
 // layout data, so a new layout is new data, not new code.
-bool map_output_point_to_ds(const Layout& resolved_layout,
+bool map_output_point_to_ds(const Layout& layout,
                             float output_width,
                             float output_height,
                             float point_x,
@@ -82,6 +77,6 @@ bool map_output_point_to_ds(const Layout& resolved_layout,
                             DsTouchPoint& out_point);
 
 // True if this layout shows the bottom screen at all (and so can accept touch).
-bool layout_has_touchable_bottom(const Layout& resolved_layout);
+bool layout_has_touchable_bottom(const Layout& layout);
 
 }  // namespace ds

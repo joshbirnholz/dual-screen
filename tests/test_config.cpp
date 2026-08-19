@@ -110,25 +110,21 @@ void test_game_config_round_trip() {
 
     Settings settings;
     settings.default_layout_id = "horizontal";
-    settings.default_screen_swap = true;
 
     const std::string sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d";
 
     // With no file on disk, the app-level defaults apply.
     GameConfig fresh = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
     CHECK_STR_EQ(fresh.layout_id, "horizontal");
-    CHECK_EQ(fresh.screen_swap, true);
     CHECK_STR_EQ(fresh.rom_sha1, sha1);
 
     fresh.layout_id = "vertical";
-    fresh.screen_swap = false;
     fresh.touch_last_played();
     CHECK(fresh.save(paths));
 
     // Reloading gives back what was saved, not the defaults.
     const GameConfig reloaded = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
     CHECK_STR_EQ(reloaded.layout_id, "vertical");
-    CHECK_EQ(reloaded.screen_swap, false);
     CHECK(!reloaded.last_played.empty());
 
     // The file is keyed by hash and carries the forward-compatible keys.
@@ -138,7 +134,6 @@ void test_game_config_round_trip() {
     const std::string contents = read_file(path);
     CHECK(contents.find("\"rom_sha1\"") != std::string::npos);
     CHECK(contents.find("\"layout_id\"") != std::string::npos);
-    CHECK(contents.find("\"screen_swap\"") != std::string::npos);
     CHECK(contents.find("\"last_played\"") != std::string::npos);
     CHECK(contents.find("\"role_default\"") != std::string::npos);
     CHECK(contents.find("\"companion_device_id\"") != std::string::npos);
@@ -208,12 +203,14 @@ void test_settings_round_trip() {
     CHECK_STR_EQ(defaults.system_dir, paths.default_system_dir);
 
     defaults.default_layout_id = "horizontal";
+    defaults.last_browse_dir = "/tmp/roms";
     defaults.vsync = false;
     defaults.stick_deadzone = 0.5f;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
     CHECK_STR_EQ(reloaded.default_layout_id, "horizontal");
+    CHECK_STR_EQ(reloaded.last_browse_dir, "/tmp/roms");
     CHECK_EQ(reloaded.vsync, false);
     CHECK_NEAR(reloaded.stick_deadzone, 0.5f);
 

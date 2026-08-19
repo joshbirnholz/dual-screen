@@ -36,7 +36,9 @@ public:
 };
 
 struct CompositorStyle {
-    Color background{0.04f, 0.05f, 0.07f, 1.0f};
+    // Pure black: anything lighter reads as a visible frame around the screens
+    // on an OLED panel or in a dark room.
+    Color background{0.0f, 0.0f, 0.0f, 1.0f};
     Color screen_tint{1.0f, 1.0f, 1.0f, 1.0f};
     Color placeholder{0.12f, 0.14f, 0.18f, 1.0f};
     // Drawn where a screen was routed away from this device, so the player can
@@ -50,9 +52,8 @@ public:
     void set_style(const CompositorStyle& style) { style_ = style; }
     const CompositorStyle& style() const { return style_; }
 
-    // `resolved_layout` must already have the per-game screen-swap flag applied.
     void render(QuadRenderer& quads,
-                const Layout& resolved_layout,
+                const Layout& layout,
                 const ScreenTextures& screens,
                 float output_width,
                 float output_height,

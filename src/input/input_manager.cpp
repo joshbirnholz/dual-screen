@@ -106,6 +106,17 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
     log_info("controller disconnected");
 }
 
+void InputManager::set_game_input_enabled(bool enabled) {
+    if (enabled && !game_input_enabled_) {
+        // Anything already held when the game starts listening again was meant
+        // for the menu -- most obviously the A press that chose "Resume".
+        held_input_gate_.arm();
+    } else if (!enabled) {
+        held_input_gate_.reset();
+    }
+    game_input_enabled_ = enabled;
+}
+
 void InputManager::begin_frame() {
     ui_actions_.clear();
     pointer_events_.clear();
@@ -136,39 +147,20 @@ void InputManager::handle_event(const SDL_Event& event) {
             close_controller(event.cdevice.which);
             break;
 
-        case SDL_CONTROLLERBUTTONDOWN:
-        case SDL_CONTROLLERBUTTONUP: {
-            const bool down = (event.type == SDL_CONTROLLERBUTTONDOWN);
-            const SDL_GameControllerButton button =
-                static_cast<SDL_GameControllerButton>(event.cbutton.button);
-
-            if (button == SDL_CONTROLLER_BUTTON_BACK) select_down_ = down;
-            if (button == SDL_CONTROLLER_BUTTON_START) start_down_ = down;
-
-            if (down) {
-                switch (button) {
-                    case SDL_CONTROLLER_BUTTON_DPAD_UP: push_action(UiAction::Up); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: push_action(UiAction::Down); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: push_action(UiAction::Left); break;
-                    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
-                    case SDL_CONTROLLER_BUTTON_A: push_action(UiAction::Confirm); break;
-                    case SDL_CONTROLLER_BUTTON_B: push_action(UiAction::Cancel); break;
-                    // L3 is the one-button way into the menu. Steam grabs Guide
-                    // in Game Mode, so that is not available to us.
-                    case SDL_CONTROLLER_BUTTON_LEFTSTICK: push_action(UiAction::ToggleMenu); break;
-                    default: break;
-                }
-            } else {
-                if (button == SDL_CONTROLLER_BUTTON_BACK || button == SDL_CONTROLLER_BUTTON_START) {
-                    chord_consumed_ = false;
-                }
-            }
-
-            // Select+Start together also opens the menu, matching the chord
-            // players already know from other emulator frontends.
-            if (select_down_ && start_down_ && !chord_consumed_) {
-                chord_consumed_ = true;
-                push_action(UiAction::ToggleMenu);
+        case SDL_CONTROLLERBUTTONDOWN: {
+            switch (static_cast<SDL_GameControllerButton>(event.cbutton.button)) {
+                case SDL_CONTROLLER_BUTTON_DPAD_UP: push_action(UiAction::Up); break;
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN: push_action(UiAction::Down); break;
+                case SDL_CONTROLLER_BUTTON_DPAD_LEFT: push_action(UiAction::Left); break;
+                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
+                case SDL_CONTROLLER_BUTTON_A: push_action(UiAction::Confirm); break;
+                case SDL_CONTROLLER_BUTTON_B: push_action(UiAction::Cancel); break;
+                case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: push_action(UiAction::PageUp); break;
+                case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: push_action(UiAction::PageDown); break;
+                // R3 opens and closes the menu. Steam grabs Guide in Game Mode,
+                // so that is not available to us.
+                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: push_action(UiAction::ToggleMenu); break;
+                default: break;
             }
             break;
         }
@@ -190,6 +182,8 @@ void InputManager::handle_event(const SDL_Event& event) {
                 case SDLK_DOWN: push_action(UiAction::Down); break;
                 case SDLK_LEFT: push_action(UiAction::Left); break;
                 case SDLK_RIGHT: push_action(UiAction::Right); break;
+                case SDLK_PAGEUP: push_action(UiAction::PageUp); break;
+                case SDLK_PAGEDOWN: push_action(UiAction::PageDown); break;
                 default: break;
             }
             break;
@@ -313,18 +307,17 @@ void InputManager::emit_navigation_from_axes() {
     axis_right_ = right;
 }
 
-void InputManager::update_ds_buttons() {
-    ds_state_.buttons = 0;
-    if (!game_input_enabled_) {
-        return;
-    }
+uint32_t InputManager::poll_held_buttons() const {
+    // Polled unconditionally, even while a menu is open: the gate needs the
+    // true physical state to know what to suppress when the game resumes.
+    DsInputState held;
 
     for (const auto& entry : controllers_) {
         SDL_GameController* controller = entry.second;
         if (controller == nullptr) continue;
         for (const ButtonMapping& mapping : kButtonMappings) {
             if (SDL_GameControllerGetButton(controller, mapping.sdl) != 0) {
-                ds_state_.set(mapping.ds, true);
+                held.set(mapping.ds, true);
             }
         }
         // The left stick doubles as the d-pad; the DS has no analogue stick, and
@@ -332,10 +325,10 @@ void InputManager::update_ds_buttons() {
         const float axis_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
         const float axis_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
         const float deadzone = settings_.stick_deadzone;
-        if (axis_y < -deadzone) ds_state_.set(DsButton::Up, true);
-        if (axis_y > deadzone) ds_state_.set(DsButton::Down, true);
-        if (axis_x < -deadzone) ds_state_.set(DsButton::Left, true);
-        if (axis_x > deadzone) ds_state_.set(DsButton::Right, true);
+        if (axis_y < -deadzone) held.set(DsButton::Up, true);
+        if (axis_y > deadzone) held.set(DsButton::Down, true);
+        if (axis_x < -deadzone) held.set(DsButton::Left, true);
+        if (axis_x > deadzone) held.set(DsButton::Right, true);
 
         // The triggers double as L and R. The DS's shoulder buttons are
         // digital, but plenty of people reach for the triggers first, and a
@@ -345,8 +338,8 @@ void InputManager::update_ds_buttons() {
             SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
         const float right_trigger =
             SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
-        if (left_trigger > trigger_deadzone) ds_state_.set(DsButton::L, true);
-        if (right_trigger > trigger_deadzone) ds_state_.set(DsButton::R, true);
+        if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
+        if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
     }
 
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
@@ -358,19 +351,15 @@ void InputManager::update_ds_buttons() {
             bool found = false;
             const DsButton button = ds_button_for_key(key, found);
             if (found && keys[SDL_GetScancodeFromKey(key)] != 0) {
-                ds_state_.set(button, true);
+                held.set(button, true);
             }
         }
     }
+
+    return held.buttons;
 }
 
-void InputManager::update_touch(const Layout& resolved_layout, float output_width, float output_height) {
-    ds_state_.touching = false;
-
-    if (!game_input_enabled_) {
-        return;
-    }
-
+bool InputManager::update_pointer(float output_width, float output_height) {
     float point_x = 0.0f;
     float point_y = 0.0f;
     bool have_point = false;
@@ -389,19 +378,15 @@ void InputManager::update_touch(const Layout& resolved_layout, float output_widt
         have_point = true;
     }
 
-    if (!have_point) {
-        return;
-    }
-
-    DsTouchPoint point;
-    if (map_output_point_to_ds(resolved_layout, output_width, output_height, point_x, point_y, point)) {
-        ds_state_.touching = true;
-        ds_state_.touch_x = point.x;
-        ds_state_.touch_y = point.y;
-    }
+    // Kept up to date whether or not the game is listening, because the menus
+    // need it for drag scrolling.
+    pointer_active_ = have_point;
+    pointer_x_ = point_x;
+    pointer_y_ = point_y;
+    return have_point;
 }
 
-void InputManager::end_frame(const Layout& resolved_layout, float output_width, float output_height) {
+void InputManager::end_frame(const Layout& layout, float output_width, float output_height) {
     // Normalize every pointer event into output pixels now that the size is known.
     for (PointerEvent& pointer : pointer_events_) {
         if (pointer.normalized) {
@@ -412,8 +397,24 @@ void InputManager::end_frame(const Layout& resolved_layout, float output_width, 
     }
 
     emit_navigation_from_axes();
-    update_ds_buttons();
-    update_touch(resolved_layout, output_width, output_height);
+
+    const uint32_t held_buttons = poll_held_buttons();
+    const bool pointer_down = update_pointer(output_width, output_height);
+    held_input_gate_.update(held_buttons, pointer_down);
+
+    ds_state_.clear();
+    if (game_input_enabled_) {
+        ds_state_.buttons = held_input_gate_.buttons();
+        if (held_input_gate_.touching()) {
+            DsTouchPoint point;
+            if (map_output_point_to_ds(layout, output_width, output_height, pointer_x_, pointer_y_,
+                                       point)) {
+                ds_state_.touching = true;
+                ds_state_.touch_x = point.x;
+                ds_state_.touch_y = point.y;
+            }
+        }
+    }
 
     for (const UiAction action : ui_actions_) {
         if (action == UiAction::Quit) {

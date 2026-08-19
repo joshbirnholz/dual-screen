@@ -1,6 +1,8 @@
 #include "test_support.hpp"
 
 #include "core/libretro_screen_source.hpp"
+#include <utility>
+
 #include "layout/layout.hpp"
 #include "layout/layout_registry.hpp"
 
@@ -63,25 +65,32 @@ void test_stretch_fills_rect() {
     CHECK_NEAR(rect.h, 360.0f);
 }
 
-void test_screen_swap_flips_every_placement() {
+void test_swapped_layouts_mirror_their_counterparts() {
     const LayoutRegistry registry;
-    const Layout& vertical = *registry.find("vertical");
-    const Layout swapped = resolve_screen_swap(vertical, true);
+    // Screen swapping is expressed as layouts rather than as a flag, so each
+    // swapped layout must place the same rects as its counterpart with the two
+    // screens exchanged.
+    const std::pair<const char*, const char*> pairs[] = {
+        {"vertical", "vertical_swapped"},
+        {"horizontal", "horizontal_swapped"},
+    };
+    for (const auto& pair : pairs) {
+        const Layout* plain = registry.find(pair.first);
+        const Layout* swapped = registry.find(pair.second);
+        CHECK(plain != nullptr && swapped != nullptr);
+        if (plain == nullptr || swapped == nullptr) continue;
 
-    CHECK_EQ(swapped.placements.size(), vertical.placements.size());
-    for (std::size_t i = 0; i < swapped.placements.size(); ++i) {
-        CHECK(swapped.placements[i].screen != vertical.placements[i].screen);
-        // Geometry is untouched; only which screen shows there changes.
-        CHECK_NEAR(swapped.placements[i].y, vertical.placements[i].y);
+        CHECK_EQ(swapped->placements.size(), plain->placements.size());
+        for (std::size_t i = 0; i < swapped->placements.size(); ++i) {
+            // Same geometry...
+            CHECK_NEAR(swapped->placements[i].x, plain->placements[i].x);
+            CHECK_NEAR(swapped->placements[i].y, plain->placements[i].y);
+            CHECK_NEAR(swapped->placements[i].w, plain->placements[i].w);
+            CHECK_NEAR(swapped->placements[i].h, plain->placements[i].h);
+            // ...opposite screen.
+            CHECK(swapped->placements[i].screen != plain->placements[i].screen);
+        }
     }
-    // Swapping twice is the identity.
-    const Layout twice = resolve_screen_swap(swapped, true);
-    for (std::size_t i = 0; i < twice.placements.size(); ++i) {
-        CHECK(twice.placements[i].screen == vertical.placements[i].screen);
-    }
-    // And swap:false is a no-op.
-    const Layout unswapped = resolve_screen_swap(vertical, false);
-    CHECK(unswapped.placements[0].screen == vertical.placements[0].screen);
 }
 
 void test_touch_maps_through_bottom_placement() {
@@ -117,18 +126,18 @@ void test_touch_maps_through_bottom_placement() {
                                   rect.y + rect.h * 0.5f, point));
 }
 
-void test_touch_follows_the_swap_flag() {
+void test_touch_follows_the_swapped_layout() {
     const LayoutRegistry registry;
-    const Layout resolved = resolve_screen_swap(*registry.find("vertical"), true);
+    const Layout& swapped = *registry.find("vertical_swapped");
     const float width = 1280.0f;
     const float height = 720.0f;
 
-    // With screens swapped, the bottom screen is drawn in the upper half, and
-    // touch has to follow it there.
+    // The swapped layout draws the bottom screen in the upper half, and touch
+    // has to follow it there.
     DsTouchPoint point;
-    CHECK(map_output_point_to_ds(resolved, width, height, width * 0.5f, height * 0.25f, point));
+    CHECK(map_output_point_to_ds(swapped, width, height, width * 0.5f, height * 0.25f, point));
     CHECK_EQ(point.x, 128);
-    CHECK(!map_output_point_to_ds(resolved, width, height, width * 0.5f, height * 0.75f, point));
+    CHECK(!map_output_point_to_ds(swapped, width, height, width * 0.5f, height * 0.75f, point));
 }
 
 void test_touch_round_trips_for_every_layout() {
@@ -137,36 +146,33 @@ void test_touch_round_trips_for_every_layout() {
     const float height = 800.0f;
 
     for (const Layout& layout : registry.layouts()) {
-        for (const bool swap : {false, true}) {
-            const Layout resolved = resolve_screen_swap(layout, swap);
-            const ScreenPlacement* bottom = placement_for(resolved, ScreenId::Bottom);
-            if (bottom == nullptr || !resolved.accepts_touch_on_bottom) {
-                // A layout with no touchable bottom screen must reject touch
-                // everywhere rather than mapping it somewhere arbitrary.
-                DsTouchPoint ignored;
-                CHECK_MSG(!map_output_point_to_ds(resolved, width, height, width * 0.5f,
-                                                  height * 0.5f, ignored),
-                          layout.id + " accepted touch with no bottom screen shown");
-                continue;
-            }
+        const ScreenPlacement* bottom = placement_for(layout, ScreenId::Bottom);
+        if (bottom == nullptr || !layout.accepts_touch_on_bottom) {
+            // A layout with no touchable bottom screen must reject touch
+            // everywhere rather than mapping it somewhere arbitrary.
+            DsTouchPoint ignored;
+            CHECK_MSG(!map_output_point_to_ds(layout, width, height, width * 0.5f, height * 0.5f,
+                                              ignored),
+                      layout.id + " accepted touch with no bottom screen shown");
+            continue;
+        }
 
-            const PixelRect rect = placement_pixel_rect(*bottom, width, height);
-            // Walk a grid of DS coordinates out to pixels and back again.
-            for (int ds_y = 4; ds_y < kDsScreenHeight; ds_y += 37) {
-                for (int ds_x = 4; ds_x < kDsScreenWidth; ds_x += 51) {
-                    const float px = rect.x + (ds_x + 0.5f) / kDsScreenWidth * rect.w;
-                    const float py = rect.y + (ds_y + 0.5f) / kDsScreenHeight * rect.h;
-                    DsTouchPoint point;
-                    const bool hit = map_output_point_to_ds(resolved, width, height, px, py, point);
-                    CHECK_MSG(hit, layout.id + " lost a touch inside its own bottom screen");
-                    if (!hit) continue;
-                    CHECK_MSG(std::abs(point.x - ds_x) <= 1,
-                              layout.id + ": x round-tripped to " + std::to_string(point.x) +
-                                  " from " + std::to_string(ds_x));
-                    CHECK_MSG(std::abs(point.y - ds_y) <= 1,
-                              layout.id + ": y round-tripped to " + std::to_string(point.y) +
-                                  " from " + std::to_string(ds_y));
-                }
+        const PixelRect rect = placement_pixel_rect(*bottom, width, height);
+        // Walk a grid of DS coordinates out to pixels and back again.
+        for (int ds_y = 4; ds_y < kDsScreenHeight; ds_y += 37) {
+            for (int ds_x = 4; ds_x < kDsScreenWidth; ds_x += 51) {
+                const float px = rect.x + (ds_x + 0.5f) / kDsScreenWidth * rect.w;
+                const float py = rect.y + (ds_y + 0.5f) / kDsScreenHeight * rect.h;
+                DsTouchPoint point;
+                const bool hit = map_output_point_to_ds(layout, width, height, px, py, point);
+                CHECK_MSG(hit, layout.id + " lost a touch inside its own bottom screen");
+                if (!hit) continue;
+                CHECK_MSG(std::abs(point.x - ds_x) <= 1,
+                          layout.id + ": x round-tripped to " + std::to_string(point.x) + " from " +
+                              std::to_string(ds_x));
+                CHECK_MSG(std::abs(point.y - ds_y) <= 1,
+                          layout.id + ": y round-tripped to " + std::to_string(point.y) + " from " +
+                              std::to_string(ds_y));
             }
         }
     }
@@ -221,9 +227,9 @@ int main() {
     test_registry_contents();
     test_contain_preserves_aspect();
     test_stretch_fills_rect();
-    test_screen_swap_flips_every_placement();
+    test_swapped_layouts_mirror_their_counterparts();
     test_touch_maps_through_bottom_placement();
-    test_touch_follows_the_swap_flag();
+    test_touch_follows_the_swapped_layout();
     test_touch_round_trips_for_every_layout();
     test_layouts_do_not_overlap();
     test_framebuffer_split();

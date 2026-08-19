@@ -12,7 +12,7 @@ namespace ds {
 
 struct LayoutPickerResult {
     bool close_requested = false;
-    bool selection_changed = false;  // layout or swap changed; worth persisting
+    bool selection_changed = false;  // the layout changed; worth persisting
     bool open_settings = false;
     bool quit_requested = false;
 };
@@ -23,7 +23,7 @@ class LayoutPicker {
 public:
     explicit LayoutPicker(const LayoutRegistry& registry) : registry_(&registry) {}
 
-    void open(const std::string& layout_id, bool screen_swap);
+    void open(const std::string& layout_id);
     bool is_open() const { return open_; }
     void close() { open_ = false; }
 
@@ -39,18 +39,14 @@ public:
                 const std::string& game_title);
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
-    bool screen_swap() const { return screen_swap_; }
 
     // Draws a layout as two coloured rectangles arranged per its placements.
     // Shared with any other screen that wants to show a layout at a glance.
-    static void draw_preview(QuadRenderer& quads,
-                             const Layout& layout,
-                             bool screen_swap,
-                             const PixelRect& box);
+    static void draw_preview(QuadRenderer& quads, const Layout& layout, const PixelRect& box);
 
 private:
     // Footer buttons, in focus order after the layout tiles.
-    enum class Footer { Swap, Settings, Resume, Quit, Count };
+    enum class Footer { Settings, Resume, Quit, Count };
 
     struct Geometry {
         std::vector<PixelRect> tiles;
@@ -70,7 +66,6 @@ private:
     bool open_ = false;
     int focus_ = 0;
     std::string selected_layout_id_;
-    bool screen_swap_ = false;
 };
 
 }  // namespace ds

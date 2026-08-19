@@ -10,7 +10,10 @@ namespace ds {
 // App-level defaults, stored in ~/.config/dualscreen/settings.json.
 struct Settings {
     std::string default_layout_id = "vertical";
-    bool default_screen_swap = false;
+
+    // Directory the in-app game browser opens in. Updated as the player
+    // navigates, so launching with no ROM picks up where they left off.
+    std::string last_browse_dir;
 
     // Directory handed to the core as its libretro "system" directory; this is
     // where the user's own BIOS/firmware dumps live. Nothing Nintendo-owned is

@@ -6,22 +6,20 @@
 namespace ds {
 namespace {
 
-const char* footer_label(int index, bool screen_swap) {
+const char* footer_label(int index) {
     switch (index) {
-        case 0: return screen_swap ? "Swap screens: On" : "Swap screens: Off";
-        case 1: return "Settings";
-        case 2: return "Resume";
-        case 3: return "Quit";
+        case 0: return "Settings";
+        case 1: return "Resume";
+        case 2: return "Quit";
         default: return "";
     }
 }
 
 }  // namespace
 
-void LayoutPicker::open(const std::string& layout_id, bool screen_swap) {
+void LayoutPicker::open(const std::string& layout_id) {
     open_ = true;
     selected_layout_id_ = layout_id;
-    screen_swap_ = screen_swap;
     const int index = registry_->index_of(layout_id);
     focus_ = index >= 0 ? index : 0;
 }
@@ -133,10 +131,6 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
     }
 
     switch (static_cast<Footer>(focus_ - tiles)) {
-        case Footer::Swap:
-            screen_swap_ = !screen_swap_;
-            result.selection_changed = true;
-            return true;
         case Footer::Settings:
             result.open_settings = true;
             return true;
@@ -173,6 +167,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
             case UiAction::Quit: result.quit_requested = true; break;
+            case UiAction::PageUp:
+            case UiAction::PageDown: break;  // nothing here scrolls
         }
     }
 
@@ -201,15 +197,11 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     return result;
 }
 
-void LayoutPicker::draw_preview(QuadRenderer& quads,
-                                const Layout& layout,
-                                bool screen_swap,
-                                const PixelRect& box) {
+void LayoutPicker::draw_preview(QuadRenderer& quads, const Layout& layout, const PixelRect& box) {
     const UiTheme& theme = ui_theme();
     quads.draw_solid(box, Color{0.02f, 0.03f, 0.05f, 1.0f});
 
-    const Layout resolved = resolve_screen_swap(layout, screen_swap);
-    for (const ScreenPlacement& placement : resolved.placements) {
+    for (const ScreenPlacement& placement : layout.placements) {
         const PixelRect rect = placement_pixel_rect(placement, box.w, box.h);
         const PixelRect shifted{box.x + rect.x, box.y + rect.y, rect.w, rect.h};
         const Color color =
@@ -262,7 +254,7 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, layout, screen_swap_, preview);
+        draw_preview(quads, layout, preview);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,
@@ -284,12 +276,11 @@ void LayoutPicker::render(QuadRenderer& quads,
             quads.draw_outline(button, theme.text, std::max(1.0f, scale * 0.5f));
         }
         const Color color = (static_cast<Footer>(index) == Footer::Quit) ? theme.danger : theme.text;
-        text.draw(quads, footer_label(static_cast<int>(index), screen_swap_),
-                  button.x + button.w * 0.5f, button.y + (button.h - line) * 0.5f, scale, color,
-                  TextAlign::Center);
+        text.draw(quads, footer_label(static_cast<int>(index)), button.x + button.w * 0.5f,
+                  button.y + (button.h - line) * 0.5f, scale, color, TextAlign::Center);
     }
 
-    text.draw(quads, "L3 or Select+Start closes this menu   -   two fingers also opens it",
+    text.draw(quads, "R3 closes this menu   -   two fingers also opens it",
               geometry.panel.x + geometry.panel.w * 0.5f,
               geometry.panel.y + geometry.panel.h + line * 0.2f, scale * 0.9f, theme.text_dim,
               TextAlign::Center);

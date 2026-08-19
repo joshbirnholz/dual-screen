@@ -20,9 +20,9 @@ set(FRAME_COUNT 12)
 # with '+': a semicolon would split the CMake list itself, and a comma appears
 # inside the crosshair expectations.
 set(CASES
-    "vertical|upper=blue+lower=green"
+    "vertical|upper=blue+lower=green+topleft=black"
     "vertical_swapped|upper=green+lower=blue"
-    "horizontal|left=blue+right=green"
+    "horizontal|left=blue+right=green+topleft=black"
     "horizontal_swapped|left=green+right=blue"
     "top_only|center=blue"
     "bottom_only|center=green"

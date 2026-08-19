@@ -8,6 +8,7 @@
 
 #include "config/settings.hpp"
 #include "input/ds_input.hpp"
+#include "input/held_input_gate.hpp"
 #include "layout/layout.hpp"
 
 namespace ds {
@@ -20,6 +21,8 @@ enum class UiAction {
     Down,
     Left,
     Right,
+    PageUp,
+    PageDown,
     Confirm,
     Cancel,
     ToggleMenu,
@@ -50,10 +53,10 @@ public:
     void begin_frame();
     // Feed every SDL event through here.
     void handle_event(const SDL_Event& event);
-    // Call after the event pump. `resolved_layout` is the layout actually being
-    // drawn (screen-swap already applied), which is what decides where a touch
-    // on the bottom screen lands in DS coordinates.
-    void end_frame(const Layout& resolved_layout, float output_width, float output_height);
+    // Call after the event pump. `layout` is the layout actually being drawn,
+    // which is what decides where a touch on the bottom screen lands in DS
+    // coordinates.
+    void end_frame(const Layout& layout, float output_width, float output_height);
 
     const DsInputState& ds_state() const { return ds_state_; }
     const std::vector<UiAction>& ui_actions() const { return ui_actions_; }
@@ -63,15 +66,24 @@ public:
 
     // While a menu is open the DS gets no input at all, so a stray press in the
     // menu cannot leak into the game.
-    void set_game_input_enabled(bool enabled) { game_input_enabled_ = enabled; }
+    void set_game_input_enabled(bool enabled);
+
+    // Whether a finger or the mouse button is currently down, and where. UI
+    // screens use this for drag scrolling; the discrete press/release events in
+    // pointer_events() only describe taps.
+    bool pointer_active() const { return pointer_active_; }
+    float pointer_x() const { return pointer_x_; }
+    float pointer_y() const { return pointer_y_; }
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
 
 private:
     void open_controller(int device_index);
     void close_controller(SDL_JoystickID instance_id);
-    void update_ds_buttons();
-    void update_touch(const Layout& resolved_layout, float output_width, float output_height);
+    // Physically-held DS buttons, before the held-input gate is applied.
+    uint32_t poll_held_buttons() const;
+    // Updates the live pointer position; returns whether one is down.
+    bool update_pointer(float output_width, float output_height);
     void emit_navigation_from_axes();
     void push_action(UiAction action);
 
@@ -90,6 +102,9 @@ private:
     bool window_size_changed_ = false;
     bool game_input_enabled_ = true;
 
+    // Keeps the press that dismissed a menu from also registering in the game.
+    HeldInputGate held_input_gate_;
+
     // Touch tracking. The first finger down drives the DS touchscreen; a second
     // simultaneous finger opens the menu, which is the only way in on a device
     // with no buttons at all.
@@ -101,16 +116,16 @@ private:
     float mouse_y_ = 0.0f;
     bool second_finger_menu_armed_ = false;
 
+    // Where the active finger or mouse press currently is, in output pixels.
+    bool pointer_active_ = false;
+    float pointer_x_ = 0.0f;
+    float pointer_y_ = 0.0f;
+
     // Stick-as-dpad edge detection for menu navigation.
     bool axis_up_ = false;
     bool axis_down_ = false;
     bool axis_left_ = false;
     bool axis_right_ = false;
-
-    // Menu chord: Select + Start pressed together.
-    bool select_down_ = false;
-    bool start_down_ = false;
-    bool chord_consumed_ = false;
 };
 
 }  // namespace ds

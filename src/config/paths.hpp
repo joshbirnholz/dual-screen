@@ -22,12 +22,28 @@ struct AppPaths {
 // the app's own default, which is always first).
 std::vector<std::string> candidate_system_dirs(const AppPaths& paths);
 
+// One entry from a directory listing.
+struct DirectoryEntry {
+    std::string name;
+    std::string path;
+    bool is_directory = false;
+};
+
+// Lists `directory`, sorted with sub-directories first and then files, each
+// group alphabetical and case-insensitive. Hidden entries are skipped. Returns
+// false with a readable reason if the directory cannot be read.
+bool list_directory(const std::string& directory,
+                    std::vector<DirectoryEntry>& out_entries,
+                    std::string* error);
+
 bool ensure_directory(const std::string& path);
 bool file_exists(const std::string& path);
 bool directory_exists(const std::string& path);
 std::string path_join(const std::string& a, const std::string& b);
 std::string path_basename(const std::string& path);
 std::string path_stem(const std::string& path);
+// The extension without the dot, lowercased. Empty when there is none.
+std::string path_extension_lower(const std::string& path);
 std::string path_dirname(const std::string& path);
 // Expands a leading "~" and makes the result absolute where possible.
 std::string expand_user_path(const std::string& path);

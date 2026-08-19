@@ -40,22 +40,11 @@ PixelRect placement_pixel_rect(const ScreenPlacement& placement,
     return rect;
 }
 
-Layout resolve_screen_swap(const Layout& layout, bool swap) {
-    if (!swap) {
-        return layout;
-    }
-    Layout resolved = layout;
-    for (ScreenPlacement& placement : resolved.placements) {
-        placement.screen = (placement.screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
-    }
-    return resolved;
-}
-
-bool layout_has_touchable_bottom(const Layout& resolved_layout) {
-    if (!resolved_layout.accepts_touch_on_bottom) {
+bool layout_has_touchable_bottom(const Layout& layout) {
+    if (!layout.accepts_touch_on_bottom) {
         return false;
     }
-    for (const ScreenPlacement& placement : resolved_layout.placements) {
+    for (const ScreenPlacement& placement : layout.placements) {
         if (placement.screen == ScreenId::Bottom) {
             return true;
         }
@@ -63,17 +52,17 @@ bool layout_has_touchable_bottom(const Layout& resolved_layout) {
     return false;
 }
 
-bool map_output_point_to_ds(const Layout& resolved_layout,
+bool map_output_point_to_ds(const Layout& layout,
                             float output_width,
                             float output_height,
                             float point_x,
                             float point_y,
                             DsTouchPoint& out_point) {
-    if (!resolved_layout.accepts_touch_on_bottom || output_width <= 0.0f || output_height <= 0.0f) {
+    if (!layout.accepts_touch_on_bottom || output_width <= 0.0f || output_height <= 0.0f) {
         return false;
     }
 
-    for (const ScreenPlacement& placement : resolved_layout.placements) {
+    for (const ScreenPlacement& placement : layout.placements) {
         if (placement.screen != ScreenId::Bottom) {
             continue;
         }

@@ -16,7 +16,6 @@ struct GameConfig {
     std::string rom_sha1;
     std::string display_name;
     std::string layout_id;
-    bool screen_swap = false;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

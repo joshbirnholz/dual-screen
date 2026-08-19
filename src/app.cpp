@@ -20,6 +20,7 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/layout_picker.hpp"
+#include "ui/game_browser.hpp"
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
 #include "util/log.hpp"
@@ -80,9 +81,11 @@ std::string usage_text() {
         "  --verbose            Log core and frontend debug output\n"
         "  --help               Show this text\n"
         "\n"
+        "Run with no --game to pick one from a file browser instead.\n"
+        "\n"
         "Layouts are remembered per game, keyed by the ROM's SHA-1, in\n"
-        "~/.config/dualscreen/games/. Open the layout menu in-game with L3,\n"
-        "Select+Start, or a two-finger tap.\n";
+        "~/.config/dualscreen/games/. Open the layout menu in-game with R3 or a\n"
+        "two-finger tap.\n";
 }
 
 AppOptions parse_command_line(int argc, char** argv) {
@@ -141,7 +144,7 @@ AppOptions parse_command_line(int argc, char** argv) {
 // ---------------------------------------------------------------------------
 
 struct App::Impl {
-    enum class State { Playing, Menu, Settings, Message };
+    enum class State { Playing, Menu, Settings, Message, Browser };
 
     AppOptions options;
     AppPaths paths;
@@ -165,13 +168,13 @@ struct App::Impl {
     std::unique_ptr<LibretroCoreScreenSource> source;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
+    std::unique_ptr<GameBrowser> browser;
     MessageScreen message;
 
     State state = State::Playing;
     bool message_is_fatal = false;
     bool running = true;
     std::string active_layout_id;
-    bool screen_swap = false;
     std::string game_title;
     std::string resolved_core_path;
 
@@ -183,7 +186,12 @@ struct App::Impl {
     bool create_window(std::string* error);
     void destroy_window();
     void refresh_output_size();
-    Layout resolved_layout() const;
+    const Layout& active_layout() const;
+    // Loads a ROM and starts emulating it. On failure it puts a readable
+    // message on screen and returns false; `fatal_on_failure` decides whether
+    // dismissing that message quits or goes back to the browser.
+    bool start_game(const std::string& rom_path, bool fatal_on_failure);
+    void open_browser();
     void enter_message(MessageKind kind,
                        const std::string& title,
                        const std::string& body,
@@ -295,9 +303,7 @@ void App::Impl::refresh_output_size() {
     }
 }
 
-Layout App::Impl::resolved_layout() const {
-    return resolve_screen_swap(registry.resolve(active_layout_id), screen_swap);
-}
+const Layout& App::Impl::active_layout() const { return registry.resolve(active_layout_id); }
 
 void App::Impl::enter_message(MessageKind kind,
                               const std::string& title,
@@ -310,12 +316,103 @@ void App::Impl::enter_message(MessageKind kind,
     input.set_game_input_enabled(false);
 }
 
+void App::Impl::open_browser() {
+    if (!browser) {
+        browser.reset(new GameBrowser());
+    }
+    browser->open(settings.last_browse_dir);
+    state = State::Browser;
+    input.set_game_input_enabled(false);
+}
+
+bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
+    // Tear down anything already running, so picking a second game from the
+    // browser is the same code path as booting the first.
+    audio.close();
+    if (source) {
+        source->close();
+        source.reset();
+    }
+    have_game_config = false;
+    game_config = GameConfig();
+
+    if (!file_exists(rom_path)) {
+        enter_message(MessageKind::Error, "ROM not found", "There is no file at " + rom_path,
+                      {"Check the path in this game's Steam shortcut."}, fatal_on_failure);
+        return false;
+    }
+
+    game_title = path_stem(rom_path);
+    active_layout_id = settings.default_layout_id;
+
+    const std::string rom_sha1 = Sha1::hash_file(rom_path);
+    if (rom_sha1.empty()) {
+        log_warn("could not hash the ROM; this session's layout will not be remembered");
+    } else {
+        game_config = GameConfig::load_or_default(paths, settings, rom_sha1, game_title);
+        have_game_config = true;
+        active_layout_id = game_config.layout_id;
+    }
+    if (!options.layout_id.empty()) {
+        active_layout_id = options.layout_id;
+    }
+    // An unknown id from an old config or a typo'd --layout falls back rather
+    // than leaving the player with a blank screen.
+    active_layout_id = registry.resolve(active_layout_id).id;
+
+    LibretroSourceConfig source_config;
+    source_config.core_path = resolved_core_path;
+    source_config.rom_path = rom_path;
+    source_config.system_directory = settings.system_dir;
+    source_config.save_directory = paths.saves_dir;
+
+    source.reset(new LibretroCoreScreenSource());
+    source->set_audio_callback(
+        [this](const int16_t* samples, std::size_t frames) { audio.push(samples, frames); });
+
+    std::string source_error;
+    if (!source->open(source_config, &source_error)) {
+        std::vector<std::string> details;
+        if (resolved_core_path.empty()) {
+            details.push_back("Looked for melondsds_libretro.so in the RetroArch core folders and "
+                              "/usr/lib/libretro.");
+            details.push_back("Point at it directly with --core, or set \"core_path\" in " +
+                              paths.settings_file + ".");
+        } else {
+            details.push_back("Core: " + resolved_core_path);
+        }
+        details.push_back("BIOS folder: " + settings.system_dir);
+        source.reset();
+        enter_message(MessageKind::Error, "Could not start the game", source_error, details,
+                      fatal_on_failure);
+        return false;
+    }
+
+    frame_period = 1.0 / std::max(1.0, source->frames_per_second());
+    std::string audio_error;
+    if (!audio.open(source->audio_sample_rate(), &audio_error)) {
+        log_warn(audio_error + "; continuing without sound");
+    }
+
+    state = State::Playing;
+    input.set_game_input_enabled(true);
+    frame_accumulator = 0.0;
+    last_counter = SDL_GetPerformanceCounter();
+
+    if (!source->warnings().empty()) {
+        enter_message(MessageKind::Info, "The core did not accept every setting",
+                      "The game will still run, but the screen split may not look right until this "
+                      "is resolved.",
+                      source->warnings(), false);
+    }
+    return true;
+}
+
 void App::Impl::persist_game_config() {
     if (!have_game_config) {
         return;
     }
     game_config.layout_id = active_layout_id;
-    game_config.screen_swap = screen_swap;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
@@ -328,12 +425,37 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Message: {
             if (message.update(actions, pointers)) {
                 message.clear();
-                if (message_is_fatal) {
-                    running = false;
-                } else {
+                if (!message_is_fatal) {
                     state = State::Playing;
                     input.set_game_input_enabled(true);
+                } else if (browser) {
+                    // A game that would not start is not the end of the
+                    // session when the player got here through the browser --
+                    // send them back to pick another.
+                    open_browser();
+                } else {
+                    running = false;
                 }
+            }
+            break;
+        }
+
+        case State::Browser: {
+            const GameBrowserResult result =
+                browser->update(input, actions, pointers, static_cast<float>(output_width),
+                                static_cast<float>(output_height));
+            if (result.directory_changed) {
+                settings.last_browse_dir = browser->current_directory();
+                if (!settings.save(paths)) {
+                    log_warn("could not remember the browsed folder");
+                }
+            }
+            if (result.quit_requested) {
+                running = false;
+            } else if (result.game_chosen) {
+                settings.last_browse_dir = browser->current_directory();
+                settings.save(paths);
+                start_game(result.chosen_path, false);
             }
             break;
         }
@@ -344,7 +466,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                                static_cast<float>(output_height));
             if (result.selection_changed) {
                 active_layout_id = picker->selected_layout_id();
-                screen_swap = picker->screen_swap();
                 persist_game_config();
             }
             if (result.quit_requested) {
@@ -372,7 +493,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (result.close_requested) {
                 // Back out to the layout menu, which is where Settings was opened from.
-                picker->open(active_layout_id, screen_swap);
+                picker->open(active_layout_id);
                 state = State::Menu;
             }
             break;
@@ -381,7 +502,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Playing: {
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    picker->open(active_layout_id, screen_swap);
+                    picker->open(active_layout_id);
                     state = State::Menu;
                     input.set_game_input_enabled(false);
                     break;
@@ -396,8 +517,15 @@ void App::Impl::render() {
     const float width = static_cast<float>(output_width);
     const float height = static_cast<float>(output_height);
 
+    if (state == State::Browser) {
+        browser->render(quads, text, width, height);
+        SDL_GL_SwapWindow(window);
+        ++frames_rendered;
+        return;
+    }
+
     if (source) {
-        compositor.render(quads, resolved_layout(), source->screens(), width, height, router);
+        compositor.render(quads, active_layout(), source->screens(), width, height, router);
     } else {
         quads.begin_frame(output_width, output_height);
         quads.clear(compositor.style().background);
@@ -502,94 +630,30 @@ int App::run(const AppOptions& options) {
     impl.picker.reset(new LayoutPicker(impl.registry));
     impl.settings_screen.reset(new SettingsScreen(impl.registry, impl.paths));
     impl.active_layout_id = impl.settings.default_layout_id;
-    impl.screen_swap = impl.settings.default_screen_swap;
     impl.resolved_core_path = resolve_core_path(options, impl.settings);
 
     // --- decide what to boot -------------------------------------------------
     if (options.game_path.empty()) {
-        impl.enter_message(MessageKind::Info, "No game selected",
-                           "Start dualscreen with a ROM to play, for example:  dualscreen --game "
-                           "/home/deck/roms/game.nds",
-                           {"Add one non-Steam shortcut per game with that argument and each will "
-                            "boot straight into its own saved layout.",
-                            "Run dualscreen --help for the full list of options."},
-                           true);
+        // No ROM named, so let the player pick one. Failing to start a game
+        // chosen this way returns to the browser rather than ending the
+        // session, which is why start_game's failures are non-fatal here.
+        impl.open_browser();
     } else {
-        const std::string rom_path = expand_user_path(options.game_path);
-        if (!file_exists(rom_path)) {
-            impl.enter_message(MessageKind::Error, "ROM not found",
-                               "There is no file at " + rom_path,
-                               {"Check the path in this game's Steam shortcut."}, true);
-        } else {
-            const std::string rom_sha1 = Sha1::hash_file(rom_path);
-            impl.game_title = path_stem(rom_path);
-            if (rom_sha1.empty()) {
-                log_warn("could not hash the ROM; this session's layout will not be remembered");
-            } else {
-                impl.game_config =
-                    GameConfig::load_or_default(impl.paths, impl.settings, rom_sha1, impl.game_title);
-                impl.have_game_config = true;
-                impl.active_layout_id = impl.game_config.layout_id;
-                impl.screen_swap = impl.game_config.screen_swap;
-            }
-            if (!options.layout_id.empty()) {
-                impl.active_layout_id = options.layout_id;
-            }
-            // An unknown id from an old config or a typo'd --layout falls back
-            // rather than leaving the player with a blank screen.
-            impl.active_layout_id = impl.registry.resolve(impl.active_layout_id).id;
-
-            LibretroSourceConfig source_config;
-            source_config.core_path = impl.resolved_core_path;
-            source_config.rom_path = rom_path;
-            source_config.system_directory = impl.settings.system_dir;
-            source_config.save_directory = impl.paths.saves_dir;
-
-            impl.source.reset(new LibretroCoreScreenSource());
-            impl.source->set_audio_callback(
-                [&impl](const int16_t* samples, std::size_t frames) { impl.audio.push(samples, frames); });
-
-            std::string source_error;
-            if (!impl.source->open(source_config, &source_error)) {
-                std::vector<std::string> details;
-                if (impl.resolved_core_path.empty()) {
-                    details.push_back("Looked for melondsds_libretro.so in the RetroArch core "
-                                      "folders and /usr/lib/libretro.");
-                    details.push_back("Point at it directly with --core, or set \"core_path\" in " +
-                                      impl.paths.settings_file + ".");
-                } else {
-                    details.push_back("Core: " + impl.resolved_core_path);
-                }
-                details.push_back("BIOS folder: " + impl.settings.system_dir);
-                impl.source.reset();
-                impl.enter_message(MessageKind::Error, "Could not start the game", source_error,
-                                   details, true);
-            } else {
-                impl.frame_period = 1.0 / std::max(1.0, impl.source->frames_per_second());
-                std::string audio_error;
-                if (!impl.audio.open(impl.source->audio_sample_rate(), &audio_error)) {
-                    log_warn(audio_error + "; continuing without sound");
-                }
-                if (!impl.source->warnings().empty()) {
-                    impl.enter_message(MessageKind::Info, "The core did not accept every setting",
-                                       "The game will still run, but the screen split may not look "
-                                       "right until this is resolved.",
-                                       impl.source->warnings(), false);
-                }
-            }
-        }
+        impl.start_game(expand_user_path(options.game_path), true);
     }
 
     // Test hook: bring a menu up before the first frame so the UI can be
     // captured without synthesising input events.
     if (options.start_screen == "layout" && impl.state == Impl::State::Playing) {
-        impl.picker->open(impl.active_layout_id, impl.screen_swap);
+        impl.picker->open(impl.active_layout_id);
         impl.state = Impl::State::Menu;
         impl.input.set_game_input_enabled(false);
     } else if (options.start_screen == "settings" && impl.state == Impl::State::Playing) {
         impl.settings_screen->open(impl.settings, impl.resolved_core_path);
         impl.state = Impl::State::Settings;
         impl.input.set_game_input_enabled(false);
+    } else if (options.start_screen == "browser") {
+        impl.open_browser();
     }
 
     // --- main loop -----------------------------------------------------------
@@ -642,8 +706,7 @@ int App::run(const AppOptions& options) {
             impl.refresh_output_size();
         }
 
-        const Layout layout = impl.resolved_layout();
-        impl.input.end_frame(layout, static_cast<float>(impl.output_width),
+        impl.input.end_frame(impl.active_layout(), static_cast<float>(impl.output_width),
                              static_cast<float>(impl.output_height));
 
         if (impl.input.quit_requested()) {

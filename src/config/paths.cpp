@@ -1,9 +1,12 @@
 #include "config/paths.hpp"
 
+#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -58,6 +61,19 @@ std::string path_stem(const std::string& path) {
     return base.substr(0, dot);
 }
 
+std::string path_extension_lower(const std::string& path) {
+    const std::string base = path_basename(path);
+    const std::size_t dot = base.find_last_of('.');
+    if (dot == std::string::npos || dot == 0 || dot + 1 >= base.size()) {
+        return std::string();
+    }
+    std::string extension = base.substr(dot + 1);
+    for (char& character : extension) {
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+    return extension;
+}
+
 std::string expand_user_path(const std::string& path) {
     if (path.empty()) return path;
     if (path[0] == '~' && (path.size() == 1 || path[1] == '/')) {
@@ -104,6 +120,67 @@ bool ensure_directory(const std::string& path) {
         index = slash + 1;
     }
     return directory_exists(path);
+}
+
+bool list_directory(const std::string& directory,
+                    std::vector<DirectoryEntry>& out_entries,
+                    std::string* error) {
+    out_entries.clear();
+
+    DIR* handle = ::opendir(directory.c_str());
+    if (handle == nullptr) {
+        if (error != nullptr) {
+            *error = std::string("cannot open ") + directory + ": " + std::strerror(errno);
+        }
+        return false;
+    }
+
+    while (const struct dirent* entry = ::readdir(handle)) {
+        const std::string name = entry->d_name;
+        // "." and ".." are handled by the caller, and dotfiles are noise here.
+        if (name.empty() || name[0] == '.') {
+            continue;
+        }
+
+        DirectoryEntry listed;
+        listed.name = name;
+        listed.path = path_join(directory, name);
+
+        // d_type is not filled in on every filesystem, so fall back to stat.
+        // stat() also follows symlinks, which is what a browser should do.
+        if (entry->d_type == DT_DIR) {
+            listed.is_directory = true;
+        } else if (entry->d_type == DT_REG) {
+            listed.is_directory = false;
+        } else {
+            struct stat status {};
+            if (::stat(listed.path.c_str(), &status) != 0) {
+                continue;  // a broken symlink, or something we cannot see
+            }
+            if (S_ISDIR(status.st_mode)) {
+                listed.is_directory = true;
+            } else if (S_ISREG(status.st_mode)) {
+                listed.is_directory = false;
+            } else {
+                continue;
+            }
+        }
+        out_entries.push_back(std::move(listed));
+    }
+    ::closedir(handle);
+
+    std::sort(out_entries.begin(), out_entries.end(),
+              [](const DirectoryEntry& a, const DirectoryEntry& b) {
+                  if (a.is_directory != b.is_directory) {
+                      return a.is_directory;  // directories first
+                  }
+                  return std::lexicographical_compare(
+                      a.name.begin(), a.name.end(), b.name.begin(), b.name.end(),
+                      [](unsigned char x, unsigned char y) {
+                          return std::tolower(x) < std::tolower(y);
+                      });
+              });
+    return true;
 }
 
 AppPaths AppPaths::resolve() {

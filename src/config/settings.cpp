@@ -46,7 +46,7 @@ Settings Settings::load(const AppPaths& paths) {
     }
 
     settings.default_layout_id = get_or<std::string>(document, "default_layout_id", settings.default_layout_id);
-    settings.default_screen_swap = get_or<bool>(document, "default_screen_swap", settings.default_screen_swap);
+    settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
@@ -66,7 +66,7 @@ bool Settings::save(const AppPaths& paths) const {
 
     json document;
     document["default_layout_id"] = default_layout_id;
-    document["default_screen_swap"] = default_screen_swap;
+    document["last_browse_dir"] = last_browse_dir;
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;
     document["stick_deadzone"] = stick_deadzone;

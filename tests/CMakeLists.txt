@@ -26,6 +26,7 @@ target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
 dualscreen_add_test(test_layout)
 dualscreen_add_test(test_config)
+dualscreen_add_test(test_browser)
 dualscreen_add_test(test_core_host)
 add_dependencies(test_core_host mock_core)
 
