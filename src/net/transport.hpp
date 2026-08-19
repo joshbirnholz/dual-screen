@@ -1,0 +1,94 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace ds::net {
+
+// Thin non-blocking BSD-socket wrappers. Everything here is polled from the
+// app's frame loop -- no threads, because a dropped frame is better than a
+// race, and the loop already runs 60 times a second.
+
+class TcpStream {
+public:
+    TcpStream() = default;
+    ~TcpStream();
+    TcpStream(TcpStream&& other) noexcept;
+    TcpStream& operator=(TcpStream&& other) noexcept;
+    TcpStream(const TcpStream&) = delete;
+    TcpStream& operator=(const TcpStream&) = delete;
+
+    // Starts a non-blocking connect. `connected()` stays false until pump()
+    // reports the handshake finished.
+    bool start_connect(const std::string& address, uint16_t port, std::string* error);
+
+    bool open() const { return descriptor_ >= 0; }
+    bool connected() const { return descriptor_ >= 0 && !connecting_; }
+    void close();
+
+    // Queues bytes for sending. They go out during pump().
+    void send(const uint8_t* data, std::size_t size);
+    void send(const std::vector<uint8_t>& data) { send(data.data(), data.size()); }
+    std::size_t pending_bytes() const { return outbox_.size() - outbox_sent_; }
+
+    // Moves queued writes out and available reads into `inbox`. Returns false
+    // once the connection is finished, with the reason in `error`.
+    bool pump(std::vector<uint8_t>& inbox, std::string* error);
+
+    const std::string& peer_address() const { return peer_address_; }
+
+    // Takes ownership of an accepted descriptor.
+    static TcpStream adopt(int descriptor, std::string peer_address);
+
+private:
+    int descriptor_ = -1;
+    bool connecting_ = false;
+    std::string peer_address_;
+    std::vector<uint8_t> outbox_;
+    std::size_t outbox_sent_ = 0;
+};
+
+class TcpListener {
+public:
+    ~TcpListener();
+
+    bool start(uint16_t port, std::string* error);
+    void stop();
+    bool listening() const { return descriptor_ >= 0; }
+    uint16_t port() const { return port_; }
+
+    // Returns true and fills `out` when someone connected; false otherwise.
+    bool accept(TcpStream& out);
+
+private:
+    int descriptor_ = -1;
+    uint16_t port_ = 0;
+};
+
+// UDP, used only for the discovery beacon.
+class UdpSocket {
+public:
+    ~UdpSocket();
+
+    // A socket that can broadcast. `listen_port` of 0 means send-only.
+    bool start(uint16_t listen_port, bool allow_broadcast, std::string* error);
+    void stop();
+    bool open() const { return descriptor_ >= 0; }
+
+    bool broadcast(uint16_t port, const uint8_t* data, std::size_t size);
+    // Returns true once per waiting datagram.
+    bool receive(std::vector<uint8_t>& out, std::string& from_address);
+
+private:
+    int descriptor_ = -1;
+};
+
+// Best-effort list of this machine's broadcast addresses, so a beacon reaches
+// every subnet the device is on rather than only the default route.
+std::vector<std::string> broadcast_addresses();
+
+// Monotonic milliseconds, for timeouts that must not jump when the clock does.
+uint64_t monotonic_millis();
+
+}  // namespace ds::net

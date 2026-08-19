@@ -27,6 +27,8 @@ add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
 dualscreen_add_test(test_layout)
+dualscreen_add_test(test_protocol)
+dualscreen_add_test(test_net)
 dualscreen_add_test(test_config)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_controller_mapping)

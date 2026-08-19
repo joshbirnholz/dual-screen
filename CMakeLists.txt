@@ -20,6 +20,7 @@ option(DUALSCREEN_PORTABLE "Statically link the C++ runtime" ON)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
+find_package(ZLIB REQUIRED)
 
 # nlohmann::json — prefer a system/CMake package, fall back to the plain header,
 # and only then reach for the network.
@@ -52,6 +53,9 @@ add_library(dualscreen_core STATIC
     src/input/ds_input.cpp
     src/input/input_manager.cpp
     src/layout/layout.cpp
+    src/net/discovery.cpp
+    src/net/protocol.cpp
+    src/net/transport.cpp
     src/layout/layout_registry.cpp
     src/render/compositor.cpp
     src/render/font.cpp
@@ -77,6 +81,7 @@ target_link_libraries(dualscreen_core
         SDL2::SDL2
         OpenGL::GL
         nlohmann_json::nlohmann_json
+        ZLIB::ZLIB
         Threads::Threads
         ${CMAKE_DL_LIBS}
 )
