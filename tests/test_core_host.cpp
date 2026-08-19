@@ -158,11 +158,105 @@ void test_screen_source_reports_missing_files_clearly() {
     }
 }
 
+// Saves are the frontend's job in libretro: the core never touches the
+// filesystem for cartridge SRAM. This covers the whole contract.
+void test_save_ram_round_trip() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    const std::string rom = make_fake_rom();
+    const std::string save_path = path_dirname(rom) + "/save.srm";
+    std::string error;
+
+    // First session: no save file exists, so the game starts fresh and the
+    // frontend writes one out when the core dirties the buffer.
+    {
+        LibretroCoreScreenSource source;
+        LibretroSourceConfig config;
+        config.core_path = core_path;
+        config.rom_path = rom;
+        config.system_directory = "/tmp";
+        config.save_directory = "/tmp";
+        config.save_path = save_path;
+
+        CHECK_MSG(source.open(config, &error), error);
+        CHECK_MSG(source.has_save_ram(), "the core reported no save RAM");
+        CHECK(!file_exists(save_path));
+
+        // Nothing has changed yet, so there is nothing to write.
+        CHECK(!source.flush_save_ram(false));
+
+        CHECK_MSG(source.advance_frame(&error), error);
+        CHECK_MSG(source.flush_save_ram(false), "a changed save buffer was not written");
+        CHECK(file_exists(save_path));
+
+        // A second flush with nothing changed in between must be a no-op.
+        CHECK(!source.flush_save_ram(false));
+        // ...but a forced one always writes.
+        CHECK(source.flush_save_ram(true));
+
+        source.close();
+    }
+
+    std::vector<uint8_t> written;
+    CHECK(read_file(save_path, written, &error));
+    CHECK_EQ(written.size(), static_cast<std::size_t>(1024));
+    // The mock stamps this magic as it runs.
+    CHECK(written.size() >= 4 && written[0] == 'D' && written[1] == 'S' && written[2] == 'S' &&
+          written[3] == 'V');
+
+    // Second session: the frontend must load that file into the core's buffer
+    // *before* the first frame, which is what the mock checks for.
+    {
+        LibretroCoreScreenSource source;
+        LibretroSourceConfig config;
+        config.core_path = core_path;
+        config.rom_path = rom;
+        config.system_directory = "/tmp";
+        config.save_directory = "/tmp";
+        config.save_path = save_path;
+
+        CHECK_MSG(source.open(config, &error), error);
+        CHECK_MSG(source.advance_frame(&error), error);
+
+        // The mock paints an orange band across the top screen when it found
+        // the magic in its save RAM on the first frame.
+        const CoreVideoFrame& frame = source.core_frame_for_test();
+        bool found_marker = false;
+        for (unsigned x = 0; x < frame.width && !found_marker; ++x) {
+            const uint32_t pixel = frame.pixels[80u * frame.stride_pixels + x] & 0x00ffffffu;
+            found_marker = (pixel == 0x00ff8c00u);
+        }
+        CHECK_MSG(found_marker, "the core did not see its save data on the first frame");
+        source.close();
+    }
+}
+
+void test_save_ram_is_skipped_without_a_path() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.core_path = core_path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    // No save_path: saving is off, and nothing should blow up.
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK(!source.has_save_ram());
+    CHECK(!source.flush_save_ram(true));
+    source.close();
+}
+
 }  // namespace
 
 int main() {
     test_core_loads_and_runs();
     test_screen_source_reports_a_valid_split();
     test_screen_source_reports_missing_files_clearly();
+    test_save_ram_round_trip();
+    test_save_ram_is_skipped_without_a_path();
     return test::finish("core-host");
 }

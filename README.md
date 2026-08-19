@@ -28,6 +28,7 @@ phases (a networked host/companion split, 3DS, Wii U) plug into.
   touchscreen coordinates.
 - Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
   its path, so moving your ROMs around loses nothing.
+- Writes cartridge saves as `.srm` files, interchangeable with RetroArch's.
 - Launched with no ROM, it opens a file browser so you can pick one, and starts
   in whichever folder you were last in.
 
@@ -209,6 +210,22 @@ it, along with the pad's name and the type SDL thinks it is:
 That says exactly what arrived, which is the fastest way to tell a Steam Input
 remap from an app bug.
 
+### Saves
+
+Cartridge saves are written to `~/.local/share/dualscreen/saves/<rom name>.srm`,
+the same format and naming RetroArch uses — copy an existing `.srm` in and it
+will be picked up, or copy one out and RetroArch will read it.
+
+They are written whenever the game changes them, checked every few seconds, and
+also on losing focus, on opening the menu and on quitting. A handheld gets put
+to sleep and powered off without warning, so waiting for a clean exit is not
+good enough. Each write goes to a temporary file that is flushed to disk and
+then renamed over the old one, so an interrupted write cannot leave a truncated
+save behind.
+
+DSi NAND and firmware saves are the core's own business and live in the system
+folder.
+
 ### Face buttons
 
 Three separate things, deliberately kept apart:
@@ -216,22 +233,20 @@ Three separate things, deliberately kept apart:
 - **How SDL reports them** is pinned to *by printed label*, so
   `SDL_CONTROLLER_BUTTON_A` is always the button marked A on any pad.
 - **Menus** always confirm on the button marked **A** and go back on **B**,
-  matching what every platform's own UI does. Not configurable.
-- **The game** defaults to matching a DS *physically*: south is B, east is A,
-  west is Y, north is X. On an Xbox-layout pad — which is what Steam Input's
-  virtual controller is — that swaps A/B and X/Y relative to the printed
-  letters, so the buttons sit where a DS puts them. On a Switch Pro pad no swap
-  happens, because its letters already agree.
+  matching what every platform's own UI does.
+- **The game** places them where a DS does: south is B, east is A, west is Y,
+  north is X. On an Xbox-layout pad — which is what Steam Input's virtual
+  controller is — that means the button marked A is DS **B**, because that is
+  where B sits on a DS. On a Switch Pro pad nothing moves, since its letters
+  already agree.
 
-If you would rather the game match the printed letters instead, so on-screen
-prompts always name the button under your thumb:
+So in a menu, A confirms; in game, that same button is DS B. That is not a
+bug — the menu is not the game.
 
-```json
-"game_face_buttons": "match_labels"
-```
-
-A pad SDL has no entry for, or a wrong one, can be corrected without a rebuild
-by dropping a `gamecontrollerdb.txt` next to `settings.json`.
+None of it is configurable: remap the pad in Steam Input if you want something
+else, which is a better place for it than a second set of bindings here. A pad
+SDL has no entry for, or a wrong one, can be corrected without a rebuild by
+dropping a `gamecontrollerdb.txt` next to `settings.json`.
 
 The two-finger tap matters: on a tablet with no buttons attached, it is the
 only way into the menu. Emulation pauses while the menu is open, so you can
@@ -251,7 +266,7 @@ V1 does not script `shortcuts.vdf` for you.
 ~/.config/dualscreen/settings.json          app-level defaults
 ~/.config/dualscreen/gamecontrollerdb.txt   optional controller mapping overrides
 ~/.config/dualscreen/games/<rom-sha1>.json  per-game layout
-~/.local/share/dualscreen/saves/            cartridge saves (the core writes these)
+~/.local/share/dualscreen/saves/<rom>.srm   cartridge saves
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
 ```
 
@@ -261,7 +276,6 @@ V1 does not script `shortcuts.vdf` for you.
 {
   "default_layout_id": "vertical",
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
-  "game_face_buttons": "ds_layout",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
   "stick_deadzone": 0.35,
@@ -324,14 +338,19 @@ ctest --test-dir build --output-on-failure
   unaffected by that setting, and that duplicate presses from two devices
   collapse to one menu action.
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
-  checks option forcing, geometry, video capture and the frontend's own
-  validation of what the core accepted.
+  checks option forcing, geometry, video capture, the frontend's own validation
+  of what the core accepted, and the cartridge-save round trip.
+- `test_controller_input` — drives an SDL **virtual game controller** through
+  the whole input path, so the face-button mapping is verified end to end with
+  no hardware.
 - `smoke_headless` — runs the real binary against the mock core under `Xvfb`,
   screenshots every layout, and checks pixel by pixel that each screen landed
   where the layout says. It also holds a synthetic touch and verifies the
   crosshair the core draws comes back **exactly under the touch point** — which
   only happens if the whole window → DS → pointer → framebuffer → split →
-  composite path agrees.
+  composite path agrees. It then launches the binary twice against one save
+  directory and checks the game starts fresh the first time and restored the
+  second.
 
 The mock core means all of this runs with no melonDS core and no commercial ROM.
 

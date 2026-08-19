@@ -38,21 +38,7 @@ bool face_position_for_button(SDL_GameControllerButton button,
     }
 }
 
-const char* to_string(GameFaceMapping mapping) {
-    return mapping == GameFaceMapping::DsLayout ? "ds_layout" : "match_labels";
-}
-
-GameFaceMapping game_face_mapping_from_string(const std::string& text, GameFaceMapping fallback) {
-    if (text == "ds_layout") return GameFaceMapping::DsLayout;
-    if (text == "match_labels") return GameFaceMapping::MatchLabels;
-    // Accepted for the short-lived settings key this replaced.
-    if (text == "positions") return GameFaceMapping::DsLayout;
-    if (text == "labels") return GameFaceMapping::MatchLabels;
-    return fallback;
-}
-
 bool ds_button_for_controller_button(SDL_GameControllerButton button,
-                                     GameFaceMapping mapping,
                                      PadLetterLayout layout,
                                      DsButton& out_button) {
     // Shoulders, d-pad, Start and Select are unambiguous.
@@ -68,19 +54,8 @@ bool ds_button_for_controller_button(SDL_GameControllerButton button,
         default: break;
     }
 
-    if (mapping == GameFaceMapping::MatchLabels) {
-        // SDL hands us letters, and the DS uses the same four.
-        switch (button) {
-            case SDL_CONTROLLER_BUTTON_A: out_button = DsButton::A; return true;
-            case SDL_CONTROLLER_BUTTON_B: out_button = DsButton::B; return true;
-            case SDL_CONTROLLER_BUTTON_X: out_button = DsButton::X; return true;
-            case SDL_CONTROLLER_BUTTON_Y: out_button = DsButton::Y; return true;
-            default: return false;
-        }
-    }
-
-    // DsLayout: go through physical position, because that is what "matches a
-    // DS" means. A DS has B at south, A at east, Y at west and X at north.
+    // Face buttons go through physical position, because that is what "matches
+    // a DS" means. A DS has B at south, A at east, Y at west and X at north.
     FacePosition position = FacePosition::South;
     if (!face_position_for_button(button, layout, position)) {
         return false;

@@ -1,5 +1,8 @@
 #include "core/libretro_screen_source.hpp"
 
+#include <algorithm>
+#include <cstring>
+
 #include "config/paths.hpp"
 #include "util/log.hpp"
 
@@ -120,6 +123,9 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             static_cast<float>(split_.screen_height) / static_cast<float>(split_.frame_height));
     }
 
+    save_path_ = config.save_path;
+    load_save_ram();
+
     log_info("core geometry " + std::to_string(core_->av_info().base_width) + "x" +
              std::to_string(core_->av_info().base_height) + " at " +
              std::to_string(core_->av_info().fps) + " fps, " +
@@ -128,9 +134,13 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
 }
 
 void LibretroCoreScreenSource::close() {
+    // Before the core goes away, not after: unloading frees the buffer.
+    flush_save_ram(true);
     if (core_) {
         core_->unload();
     }
+    save_shadow_.clear();
+    save_path_.clear();
     top_texture_.destroy();
     bottom_texture_.destroy();
     screens_ = ScreenTextures();
@@ -162,6 +172,70 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
         }
         return false;
     }
+    return true;
+}
+
+void LibretroCoreScreenSource::load_save_ram() {
+    save_shadow_.clear();
+    if (save_path_.empty()) {
+        return;
+    }
+
+    // Only valid after the cart has loaded, which is why this runs here and not
+    // before load_game.
+    void* data = core_->save_ram_data();
+    const std::size_t size = core_->save_ram_size();
+    if (data == nullptr || size == 0) {
+        log_info("this game has no cartridge save");
+        return;
+    }
+
+    std::vector<uint8_t> stored;
+    std::string error;
+    if (read_file(save_path_, stored, &error)) {
+        const std::size_t copied = std::min(stored.size(), size);
+        std::memcpy(data, stored.data(), copied);
+        if (stored.size() != size) {
+            // Keep going: a short file is a save from a smaller cart image, and
+            // refusing to load it would lose the player's progress outright.
+            log_warn("save file is " + std::to_string(stored.size()) + " bytes but this game wants " +
+                     std::to_string(size) + "; loaded what fits");
+        }
+        log_info("loaded " + std::to_string(copied) + " bytes of save data from " + save_path_);
+    } else {
+        log_info("no existing save at " + save_path_ + "; starting fresh");
+    }
+
+    // The shadow is what is on disk now, so the first flush only writes if the
+    // game actually changed something.
+    save_shadow_.assign(static_cast<const uint8_t*>(data),
+                        static_cast<const uint8_t*>(data) + size);
+}
+
+bool LibretroCoreScreenSource::flush_save_ram(bool force) {
+    if (save_path_.empty() || save_shadow_.empty() || !core_ || !core_->game_loaded()) {
+        return false;
+    }
+    const void* data = core_->save_ram_data();
+    const std::size_t size = core_->save_ram_size();
+    if (data == nullptr || size == 0) {
+        return false;
+    }
+    // The buffer can be reallocated by the core (a DSi swap, say); treat a size
+    // change as "everything changed" rather than comparing across it.
+    const bool resized = (size != save_shadow_.size());
+    if (!force && !resized && std::memcmp(data, save_shadow_.data(), size) == 0) {
+        return false;
+    }
+
+    std::string error;
+    if (!write_file_atomically(save_path_, data, size, &error)) {
+        log_error("could not write the save file: " + error);
+        return false;
+    }
+    save_shadow_.assign(static_cast<const uint8_t*>(data),
+                        static_cast<const uint8_t*>(data) + size);
+    log_debug("wrote " + std::to_string(size) + " bytes of save data to " + save_path_);
     return true;
 }
 

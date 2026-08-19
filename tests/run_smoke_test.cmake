@@ -16,6 +16,11 @@ file(WRITE "${WORK_DIR}/fake.nds" "dualscreen smoke test rom")
 
 set(FRAME_COUNT 12)
 
+# The mock core dirties its save RAM as it runs, so every launch leaves a save
+# behind. The layout and touch sections must not depend on that, so they start
+# from a clean slate each time; only the save section below cares about it.
+set(SAVE_FILE "${WORK_DIR}/data/dualscreen/saves/fake.srm")
+
 # layout id -> expectations passed to check_screenshot. Expectations are joined
 # with '+': a semicolon would split the CMake list itself, and a comma appears
 # inside the crosshair expectations.
@@ -37,12 +42,14 @@ foreach(CASE IN LISTS CASES)
     string(REPLACE "+" ";" EXPECTATIONS "${EXPECTATIONS_RAW}")
 
     set(SHOT "${WORK_DIR}/${LAYOUT_ID}.ppm")
+    file(REMOVE "${SAVE_FILE}")
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
                 "XDG_CONFIG_HOME=${WORK_DIR}/config"
                 "XDG_DATA_HOME=${WORK_DIR}/data"
                 "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
                 "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
                 "${DUALSCREEN}"
                     --game "${WORK_DIR}/fake.nds"
@@ -84,6 +91,72 @@ foreach(CASE IN LISTS CASES)
     endif()
 endforeach()
 
+# --- cartridge saves --------------------------------------------------------
+#
+# In libretro the frontend owns save RAM entirely: the core never touches the
+# filesystem for it. This runs the real binary twice against the same save
+# directory. The mock core paints an orange band across the top screen when it
+# finds its magic value in save RAM on the first frame, so the band appearing
+# on the second run -- and only the second -- proves the save was written on
+# exit and read back before emulation started.
+file(REMOVE "${SAVE_FILE}")
+
+foreach(RUN_INDEX RANGE 1 2)
+    set(SHOT "${WORK_DIR}/save_run${RUN_INDEX}.ppm")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+                "XDG_CONFIG_HOME=${WORK_DIR}/config"
+                "XDG_DATA_HOME=${WORK_DIR}/data"
+                "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
+                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+                "${DUALSCREEN}"
+                    --game "${WORK_DIR}/fake.nds"
+                    --core "${MOCK_CORE}"
+                    --layout top_only
+                    --windowed
+                    --exit-after-frames ${FRAME_COUNT}
+                    --screenshot "${SHOT}"
+        RESULT_VARIABLE RUN_RESULT
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR)
+
+    if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${SHOT}")
+        message(STATUS "${RUN_OUTPUT}")
+        message(STATUS "${RUN_ERROR}")
+        message(SEND_ERROR "save run ${RUN_INDEX} failed")
+        set(ANY_FAILED TRUE)
+        continue()
+    endif()
+
+    if(RUN_INDEX EQUAL 1)
+        # Nothing to restore yet, so the plain top screen shows through.
+        set(EXPECTATION "center=blue")
+        if(NOT EXISTS "${SAVE_FILE}")
+            message(SEND_ERROR "no save file was written to ${SAVE_FILE}")
+            set(ANY_FAILED TRUE)
+        endif()
+    else()
+        set(EXPECTATION "center=orange")
+    endif()
+
+    execute_process(
+        COMMAND "${CHECKER}" "${SHOT}" ${EXPECTATION}
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "save run ${RUN_INDEX}:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        if(RUN_INDEX EQUAL 1)
+            message(SEND_ERROR "the first run should have started fresh")
+        else()
+            message(SEND_ERROR "the save was not restored on the second run")
+        endif()
+        set(ANY_FAILED TRUE)
+    endif()
+endforeach()
+
 # --- touch mapping ----------------------------------------------------------
 #
 # The app is told to hold a touch at a fixed fraction of the window. The mock
@@ -111,12 +184,14 @@ foreach(CASE IN LISTS TOUCH_CASES)
     string(REPLACE "," "_" TOUCH_TAG "${TOUCH_POINT}")
 
     set(SHOT "${WORK_DIR}/touch_${LAYOUT_ID}_${TOUCH_TAG}.ppm")
+    file(REMOVE "${SAVE_FILE}")
 
     execute_process(
         COMMAND ${CMAKE_COMMAND} -E env
                 "XDG_CONFIG_HOME=${WORK_DIR}/config"
                 "XDG_DATA_HOME=${WORK_DIR}/data"
                 "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
                 "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
                 "${DUALSCREEN}"
                     --game "${WORK_DIR}/fake.nds"

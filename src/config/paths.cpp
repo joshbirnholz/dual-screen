@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -120,6 +121,79 @@ bool ensure_directory(const std::string& path) {
         index = slash + 1;
     }
     return directory_exists(path);
+}
+
+bool read_file(const std::string& path, std::vector<uint8_t>& out, std::string* error) {
+    out.clear();
+    std::FILE* file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) {
+        if (error != nullptr) {
+            *error = std::string("cannot open ") + path + ": " + std::strerror(errno);
+        }
+        return false;
+    }
+    std::fseek(file, 0, SEEK_END);
+    const long length = std::ftell(file);
+    std::fseek(file, 0, SEEK_SET);
+    if (length < 0) {
+        std::fclose(file);
+        if (error != nullptr) *error = std::string("cannot size ") + path;
+        return false;
+    }
+    out.resize(static_cast<std::size_t>(length));
+    const std::size_t read = out.empty() ? 0 : std::fread(out.data(), 1, out.size(), file);
+    const bool ok = (read == out.size()) && std::ferror(file) == 0;
+    std::fclose(file);
+    if (!ok) {
+        out.clear();
+        if (error != nullptr) *error = std::string("cannot read ") + path;
+        return false;
+    }
+    return true;
+}
+
+bool write_file_atomically(const std::string& path,
+                           const void* data,
+                           std::size_t size,
+                           std::string* error) {
+    if (!ensure_directory(path_dirname(path))) {
+        if (error != nullptr) *error = "cannot create " + path_dirname(path);
+        return false;
+    }
+
+    const std::string temporary = path + ".tmp";
+    std::FILE* file = std::fopen(temporary.c_str(), "wb");
+    if (file == nullptr) {
+        if (error != nullptr) {
+            *error = std::string("cannot open ") + temporary + ": " + std::strerror(errno);
+        }
+        return false;
+    }
+
+    bool ok = (size == 0) || (std::fwrite(data, 1, size, file) == size);
+    if (ok) {
+        ok = (std::fflush(file) == 0);
+    }
+    if (ok) {
+        // Without this the rename can land before the contents do, leaving an
+        // empty save behind after a power cut.
+        ok = (::fsync(::fileno(file)) == 0);
+    }
+    std::fclose(file);
+
+    if (!ok) {
+        std::remove(temporary.c_str());
+        if (error != nullptr) *error = std::string("cannot write ") + temporary;
+        return false;
+    }
+    if (std::rename(temporary.c_str(), path.c_str()) != 0) {
+        std::remove(temporary.c_str());
+        if (error != nullptr) {
+            *error = std::string("cannot replace ") + path + ": " + std::strerror(errno);
+        }
+        return false;
+    }
+    return true;
 }
 
 bool list_directory(const std::string& directory,

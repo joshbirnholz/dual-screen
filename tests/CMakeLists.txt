@@ -16,8 +16,10 @@ function(dualscreen_add_test name)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_options(${name} PRIVATE -Wall -Wextra)
     add_test(NAME ${name} COMMAND ${name})
+    # These need no display. Pinning the driver keeps them independent of
+    # whatever SDL_VIDEODRIVER happens to be set in the caller's environment.
     set_tests_properties(${name} PROPERTIES
-        ENVIRONMENT "DUALSCREEN_MOCK_CORE=${MOCK_CORE_PATH}")
+        ENVIRONMENT "DUALSCREEN_MOCK_CORE=${MOCK_CORE_PATH};SDL_VIDEODRIVER=dummy")
 endfunction()
 
 # A helper binary, not a test itself: the smoke test uses it to inspect output.
@@ -28,6 +30,7 @@ dualscreen_add_test(test_layout)
 dualscreen_add_test(test_config)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_controller_mapping)
+dualscreen_add_test(test_controller_input)
 dualscreen_add_test(test_core_host)
 add_dependencies(test_core_host mock_core)
 

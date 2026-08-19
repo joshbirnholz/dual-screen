@@ -101,6 +101,8 @@ struct LibretroCore::Api {
     void (*retro_run)() = nullptr;
     bool (*retro_load_game)(const struct retro_game_info*) = nullptr;
     void (*retro_unload_game)() = nullptr;
+    void* (*retro_get_memory_data)(unsigned) = nullptr;
+    std::size_t (*retro_get_memory_size)(unsigned) = nullptr;
 };
 
 LibretroCore::LibretroCore() : api_(new Api()) {}
@@ -199,7 +201,9 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
         resolve_symbol("retro_reset", api_->retro_reset, error) &&
         resolve_symbol("retro_run", api_->retro_run, error) &&
         resolve_symbol("retro_load_game", api_->retro_load_game, error) &&
-        resolve_symbol("retro_unload_game", api_->retro_unload_game, error);
+        resolve_symbol("retro_unload_game", api_->retro_unload_game, error) &&
+        resolve_symbol("retro_get_memory_data", api_->retro_get_memory_data, error) &&
+        resolve_symbol("retro_get_memory_size", api_->retro_get_memory_size, error);
     if (!resolved) {
         dlclose(handle_);
         handle_ = nullptr;
@@ -292,6 +296,20 @@ bool LibretroCore::load_game(const std::string& rom_path, std::string* error) {
     api_->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
     refresh_av_info();
     return true;
+}
+
+void* LibretroCore::save_ram_data() const {
+    if (handle_ == nullptr || !game_loaded_ || api_->retro_get_memory_data == nullptr) {
+        return nullptr;
+    }
+    return api_->retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+}
+
+std::size_t LibretroCore::save_ram_size() const {
+    if (handle_ == nullptr || !game_loaded_ || api_->retro_get_memory_size == nullptr) {
+        return 0;
+    }
+    return api_->retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
 }
 
 void LibretroCore::refresh_av_info() {

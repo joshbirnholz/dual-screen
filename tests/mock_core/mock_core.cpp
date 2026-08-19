@@ -10,6 +10,7 @@
 #include "libretro/libretro.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -31,6 +32,14 @@ uint32_t g_framebuffer[kFrameWidth * kFrameHeight];
 int16_t g_silence[1024 * 2];
 unsigned g_frame_counter = 0;
 bool g_layout_option_honoured = false;
+
+// Stand-in for cartridge save RAM. The "game" stamps a magic value into it as
+// it runs; on a later launch, finding that magic proves the frontend both wrote
+// the save out and read it back in before the first frame.
+constexpr std::size_t kSaveRamSize = 1024;
+constexpr char kSaveMagic[4] = {'D', 'S', 'S', 'V'};
+uint8_t g_save_ram[kSaveRamSize];
+bool g_save_was_loaded = false;
 
 const retro_core_option_v2_definition kOptions[] = {
     {"melonds_number_of_screen_layouts", "Number of layouts", nullptr,
@@ -109,6 +118,11 @@ void draw_top_screen() {
     if (!g_layout_option_honoured) {
         // Loud failure state: the frontend did not pin the layout option.
         fill_rect(0, 60, kScreenWidth, 40, pack(255, 0, 255));
+    }
+
+    // Visible proof that save data survived a restart.
+    if (g_save_was_loaded) {
+        fill_rect(0, 60, kScreenWidth, 72, pack(255, 140, 0));
     }
 }
 
@@ -200,7 +214,9 @@ RETRO_API void retro_set_input_state(retro_input_state_t callback) { g_input_sta
 RETRO_API void retro_init(void) {
     std::memset(g_framebuffer, 0, sizeof(g_framebuffer));
     std::memset(g_silence, 0, sizeof(g_silence));
+    std::memset(g_save_ram, 0, sizeof(g_save_ram));
     g_frame_counter = 0;
+    g_save_was_loaded = false;
 }
 
 RETRO_API void retro_deinit(void) {}
@@ -247,6 +263,15 @@ RETRO_API void retro_run(void) {
     if (g_input_poll != nullptr) {
         g_input_poll();
     }
+
+    // On the first frame, report whether the frontend restored a save. The
+    // frontend must have copied the file into this buffer before now.
+    if (g_frame_counter == 0) {
+        g_save_was_loaded = std::memcmp(g_save_ram, kSaveMagic, sizeof(kSaveMagic)) == 0;
+    }
+    // Then dirty the buffer, so there is something for the frontend to write.
+    std::memcpy(g_save_ram, kSaveMagic, sizeof(kSaveMagic));
+    g_save_ram[4] = static_cast<uint8_t>(g_frame_counter & 0xffu);
     draw_top_screen();
     draw_bottom_screen();
     draw_button_indicators();
@@ -263,8 +288,12 @@ RETRO_API void retro_run(void) {
 // The rest of the libretro surface, present so the frontend's symbol lookup
 // succeeds; none of it is exercised by V1.
 RETRO_API unsigned retro_get_region(void) { return RETRO_REGION_NTSC; }
-RETRO_API void* retro_get_memory_data(unsigned) { return nullptr; }
-RETRO_API size_t retro_get_memory_size(unsigned) { return 0; }
+RETRO_API void* retro_get_memory_data(unsigned type) {
+    return type == RETRO_MEMORY_SAVE_RAM ? g_save_ram : nullptr;
+}
+RETRO_API size_t retro_get_memory_size(unsigned type) {
+    return type == RETRO_MEMORY_SAVE_RAM ? kSaveRamSize : 0;
+}
 RETRO_API size_t retro_serialize_size(void) { return 0; }
 RETRO_API bool retro_serialize(void*, size_t) { return false; }
 RETRO_API bool retro_unserialize(const void*, size_t) { return false; }

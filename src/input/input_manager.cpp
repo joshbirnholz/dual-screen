@@ -35,8 +35,6 @@ InputManager::~InputManager() { shutdown(); }
 
 void InputManager::initialize(const Settings& settings) {
     settings_ = settings;
-    game_face_buttons_ =
-        game_face_mapping_from_string(settings.game_face_buttons, GameFaceMapping::DsLayout);
     settings_.stick_deadzone = std::clamp(settings_.stick_deadzone, 0.05f, 0.9f);
     settings_.trigger_deadzone = std::clamp(settings_.trigger_deadzone, 0.05f, 0.9f);
 
@@ -80,7 +78,7 @@ void InputManager::open_controller(int device_index) {
              (pad_letter_layout(SDL_GameControllerGetType(controller)) == PadLetterLayout::Nintendo
                   ? "Nintendo"
                   : "Xbox") +
-             " positions; game mapping " + to_string(game_face_buttons_) + ")");
+             " positions)");
 
     char* mapping = SDL_GameControllerMapping(controller);
     if (mapping != nullptr) {
@@ -363,7 +361,7 @@ uint32_t InputManager::poll_held_buttons() const {
         for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
             const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
             DsButton ds_button = DsButton::A;
-            if (ds_button_for_controller_button(button, game_face_buttons_, layout, ds_button) &&
+            if (ds_button_for_controller_button(button, layout, ds_button) &&
                 SDL_GameControllerGetButton(controller, button) != 0) {
                 held.set(ds_button, true);
             }

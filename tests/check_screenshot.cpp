@@ -6,7 +6,7 @@
 //
 // Usage: check_screenshot <file.ppm> <region>=<colour> [...]
 //   regions: upper lower left right center topleft
-//   colours: blue green black
+//   colours: blue green black orange
 //
 // It also understands `crosshair=<x>,<y>`, which finds the mock core's bright
 // yellow touch crosshair and checks it landed at that normalized position in
@@ -224,6 +224,9 @@ int main(int argc, char** argv) {
             passed = (b > g + 8.0) && (b > r + 8.0);
         } else if (expected == "green") {
             passed = (g > b + 8.0) && (g > r + 8.0);
+        } else if (expected == "orange") {
+            // The mock core paints this band only when it found save data.
+            passed = (r > 150.0) && (g > 60.0) && (g < 200.0) && (b < 80.0);
         } else if (expected == "black") {
             // The letterbox around the screens has to be genuinely black, not
             // merely dark: a lifted background reads as a frame on an OLED.

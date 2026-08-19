@@ -34,6 +34,11 @@ namespace {
 // the stale audio queue thrown away rather than played out.
 constexpr double kSuspendGapSeconds = 1.0;
 
+// How often the cartridge save is checked for changes and written out. A
+// handheld gets put to sleep and powered off without warning, so waiting for a
+// clean exit to write the save is not good enough.
+constexpr double kSaveFlushIntervalSeconds = 5.0;
+
 std::string next_argument(int argc, char** argv, int& index, const char* flag, std::string& error) {
     if (index + 1 >= argc) {
         error = std::string("missing value after ") + flag;
@@ -182,6 +187,7 @@ struct App::Impl {
     uint64_t last_counter = 0;
     double frame_period = 1.0 / 60.0;
     double frame_accumulator = 0.0;
+    double save_flush_accumulator = 0.0;
     int frames_rendered = 0;
 
     bool create_window(std::string* error);
@@ -370,6 +376,9 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     source_config.rom_path = rom_path;
     source_config.system_directory = settings.system_dir;
     source_config.save_directory = paths.saves_dir;
+    // Named after the ROM rather than its hash, so saves are interchangeable
+    // with RetroArch's and recognisable in a file listing.
+    source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
 
     source.reset(new LibretroCoreScreenSource());
     source->set_audio_callback(
@@ -510,6 +519,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     picker->open(active_layout_id);
                     state = State::Menu;
                     input.set_game_input_enabled(false);
+                    if (source) {
+                        source->flush_save_ram(false);
+                    }
                     break;
                 }
             }
@@ -634,9 +646,8 @@ int App::run(const AppOptions& options) {
             log_info("loaded " + std::to_string(added) + " controller mappings from " + controller_db);
         }
     }
-    log_info(std::string("in-game face buttons: ") +
-             to_string(game_face_mapping_from_string(impl.settings.game_face_buttons,
-                                                     GameFaceMapping::DsLayout)));
+    log_info("in-game face buttons follow a DS's positions: the button marked A is DS B on an "
+             "Xbox-layout pad");
 
     std::string error;
     if (!impl.create_window(&error)) {
@@ -699,6 +710,9 @@ int App::run(const AppOptions& options) {
             impl.frame_accumulator = 0.0;
             impl.audio.flush();
             impl.refresh_output_size();
+            if (impl.source) {
+                impl.source->flush_save_ram(false);
+            }
         }
 
         impl.input.begin_frame();
@@ -721,6 +735,10 @@ int App::run(const AppOptions& options) {
             if (event.type == SDL_WINDOWEVENT) {
                 if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
                     impl.audio.set_paused(true);
+                    // Losing focus often precedes being suspended.
+                    if (impl.source) {
+                        impl.source->flush_save_ram(false);
+                    }
                 } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                     impl.audio.flush();
                     impl.audio.set_paused(false);
@@ -761,6 +779,12 @@ int App::run(const AppOptions& options) {
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
                 impl.frame_accumulator = 0.0;
             }
+            impl.save_flush_accumulator += elapsed;
+            if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
+                impl.save_flush_accumulator = 0.0;
+                impl.source->flush_save_ram(false);
+            }
+
             if (impl.source->wants_shutdown()) {
                 impl.running = false;
             }

@@ -23,13 +23,6 @@ struct Settings {
     // places" — see core_search_paths().
     std::string core_path;
 
-    // What the game does with the face buttons. Menus are unaffected: they
-    // always confirm on the button marked A.
-    //   "ds_layout"    - match a DS physically (south B, east A, west Y, north X)
-    //   "match_labels" - the button marked A is DS A, whatever pad it is
-    // See src/input/controller_mapping.hpp for why this is its own decision.
-    std::string game_face_buttons = "ds_layout";
-
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;
     bool vsync = true;

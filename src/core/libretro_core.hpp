@@ -81,6 +81,12 @@ public:
     void unload_game();
     void unload();
 
+    // The cartridge's save RAM, valid only once a game is loaded. In libretro
+    // this buffer is the frontend's responsibility: the core never touches the
+    // filesystem for it, so if we do not read and write it, saves do not exist.
+    void* save_ram_data() const;
+    std::size_t save_ram_size() const;
+
     bool is_loaded() const { return handle_ != nullptr; }
     bool game_loaded() const { return game_loaded_; }
     bool wants_shutdown() const { return wants_shutdown_; }

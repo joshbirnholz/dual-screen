@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,18 @@ bool list_directory(const std::string& directory,
                     std::string* error);
 
 bool ensure_directory(const std::string& path);
+
+// Reads a whole file into `out`. Returns false with a reason if it cannot be
+// read; a missing file is a normal, quiet failure.
+bool read_file(const std::string& path, std::vector<uint8_t>& out, std::string* error);
+
+// Writes through a temporary file, flushed to disk, then renamed over the
+// target. A save file is the one thing in here that must never be left
+// half-written, and a handheld gets powered off mid-write for a living.
+bool write_file_atomically(const std::string& path,
+                           const void* data,
+                           std::size_t size,
+                           std::string* error);
 bool file_exists(const std::string& path);
 bool directory_exists(const std::string& path);
 std::string path_join(const std::string& a, const std::string& b);

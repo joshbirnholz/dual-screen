@@ -166,16 +166,38 @@ Deck and produces a binary that will not start. Worth knowing: building on
 glibc 2.39 raises the floor to 2.38 purely because GCC 13 rewrites `strtol`
 into `__isoc23_strtol`; nothing in this source needs anything that recent.
 
+**Saves are the frontend's job, and were simply missing.** In libretro a
+cartridge save lives in the buffer behind `retro_get_memory_data(
+RETRO_MEMORY_SAVE_RAM)`; the core never touches the filesystem for it. The
+frontend has to read the `.srm` into that buffer after `retro_load_game` and
+write it back. The first version of this frontend did not resolve those two
+symbols at all, so every game started fresh, silently -- nothing errored,
+because nothing was being asked for. Verified against melonDS DS's own
+implementation: it returns the buffer only once a cart is loaded, and returns
+null while it is showing an error screen, so both are handled.
+
+Writes are atomic (temp file, fsync, rename) and happen on change rather than on
+a timer alone -- every few seconds, on focus loss, on opening the menu and on
+quit -- because a handheld is powered off without warning and a save is the one
+file here that must never be half-written.
+
 **Why face buttons are three decisions, not one.** The first attempt at fixing
 this collapsed them into a single `face_buttons` setting, which could not
 express the thing that turned out to be wanted: menus correct, game swapped.
 They are independent and are now modelled that way -- how SDL reports the
 buttons (pinned to "by printed label"), what confirms in a menu (always the
-button marked A, not configurable), and what the game does with them
-(`game_face_buttons`, the only one that is a matter of taste). The game mapping
-resolves through *physical position* rather than swapping letters blindly, so
-"match a DS" is correct on a Switch Pro pad -- where no swap is wanted -- as
-well as on the Xbox-layout pad Steam Input presents.
+button marked A), and where the game places them (always a DS's own positions).
+The game mapping resolves through *physical position* rather than swapping
+letters blindly, so it is correct on a Switch Pro pad -- where nothing should
+move -- as well as on the Xbox-layout pad Steam Input presents. None of it is
+configurable: Steam Input is a better place to remap a pad than a second set of
+bindings here.
+
+A footnote worth remembering: the first attempt shipped a `face_buttons`
+setting, and `Settings::save()` wrote it into everyone's settings.json on every
+save. The follow-up read that key "for compatibility", which meant an
+auto-written artifact nobody had chosen silently overrode the new default. A
+legacy key is only worth honouring if it could only have got there deliberately.
 
 **Why no controller button opens the menu.** Steam claims Guide in Game Mode,
 and every other button is one a DS game might want. The menu opens on F1, which
@@ -190,9 +212,9 @@ so SDL reports face buttons by their *printed label*, and on a Nintendo-layout
 pad `SDL_CONTROLLER_BUTTON_A` is the east button, not the south one. Code that
 assumes either layout mis-maps half the pads in circulation, and the menus and
 the DS mapping had drifted onto different assumptions. The convention is now
-named, pushed into SDL explicitly rather than inherited from a default, shared
-by the menus and the game, switchable through `face_buttons` in settings.json,
-and pinned by tests.
+named, pushed into SDL explicitly rather than inherited from a default, and
+pinned by tests -- including one that drives an SDL virtual game controller
+through the whole input path, which is the level the bug actually lived at.
 
 **Why duplicate menu actions are dropped.** Steam Input presents a virtual pad
 while the underlying physical device usually stays visible to SDL as well, so a

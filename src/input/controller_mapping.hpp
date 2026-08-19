@@ -16,11 +16,13 @@ namespace ds {
 //      whatever pad it is.
 //   2. What confirms in a menu. Always the button marked "A", which is what
 //      every platform's own UI does.
-//   3. What the game does with them. Independent of both: a DS's buttons sit in
-//      Nintendo positions, and matching that is a different question from
-//      matching the letters printed on the pad.
+//   3. What the game does with them. A DS's buttons sit in Nintendo positions,
+//      so the game always matches those positions -- on an Xbox-layout pad that
+//      means the button marked A is DS B, because that is where B sits on a DS.
 //
-// Only (3) is a matter of taste, so only (3) is configurable.
+// None of it is configurable: anyone who wants something else can remap the pad
+// in Steam Input, which is a better place for it than a second set of bindings
+// here that has to be kept consistent with the first.
 
 // The value SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS is pinned to. SDL's own
 // default is already "1", but leaving it implicit is what made the mapping
@@ -49,25 +51,12 @@ bool face_position_for_button(SDL_GameControllerButton button,
                               PadLetterLayout layout,
                               FacePosition& out_position);
 
-// What the *game* does with the face buttons.
-enum class GameFaceMapping {
-    // Match a DS physically: south is B, east is A, west is Y, north is X.
-    // On an Xbox-layout pad this swaps A/B and X/Y relative to the printed
-    // letters; on a Nintendo-layout pad the letters already agree.
-    DsLayout,
-    // Match the printed letters instead: the button marked A is DS A on every
-    // pad, so on-screen prompts always name the button under your thumb.
-    MatchLabels,
-};
-
-const char* to_string(GameFaceMapping mapping);
-GameFaceMapping game_face_mapping_from_string(const std::string& text, GameFaceMapping fallback);
-
-// Maps a reported controller button to a DS button. `layout` only matters for
-// face buttons under GameFaceMapping::DsLayout. Returns false for buttons the
-// DS has no equivalent for.
+// Maps a reported controller button to a DS button, placing face buttons where
+// a DS puts them: south is B, east is A, west is Y, north is X. `layout` says
+// where this pad prints its letters, which is what makes that correct on an
+// Xbox-layout pad and on a Switch pad alike. Returns false for buttons the DS
+// has no equivalent for.
 bool ds_button_for_controller_button(SDL_GameControllerButton button,
-                                     GameFaceMapping mapping,
                                      PadLetterLayout layout,
                                      DsButton& out_button);
 

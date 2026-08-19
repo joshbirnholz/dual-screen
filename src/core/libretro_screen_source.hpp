@@ -34,6 +34,8 @@ struct LibretroSourceConfig {
     std::string rom_path;
     std::string system_directory;
     std::string save_directory;
+    // Where this game's cartridge save lives. Empty disables saving entirely.
+    std::string save_path;
 };
 
 // The V1 ScreenSource: hosts the melonDS DS libretro core, pins it to a single
@@ -54,6 +56,13 @@ public:
     // The sink whose latched state the core reads each frame.
     CoreInputSink& input_sink() { return input_sink_; }
 
+    // Writes the cartridge save out if it has changed since the last write.
+    // `force` writes regardless, for shutdown. Returns true if a write happened.
+    bool flush_save_ram(bool force);
+    // True once a save file is being tracked for the loaded game. Games with no
+    // cartridge save (and a core showing an error screen) report false.
+    bool has_save_ram() const { return !save_shadow_.empty(); }
+
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
     ScreenSize native_screen_size() const override;
@@ -66,10 +75,14 @@ public:
     // build expected but the loaded core does not have).
     const std::vector<std::string>& warnings() const { return warnings_; }
     const std::string& core_description() const { return core_description_; }
+    // The core's raw framebuffer, before the split. Only used by tests, which
+    // need to inspect what the core actually drew.
+    const CoreVideoFrame& core_frame_for_test() const { return core_->video_frame(); }
 
 private:
     void refresh_split_from_frame();
     void upload_screens();
+    void load_save_ram();
 
     std::unique_ptr<LibretroCore> core_;
     CoreInputSink input_sink_;
@@ -81,6 +94,11 @@ private:
     bool split_reported_ = false;
     std::vector<std::string> warnings_;
     std::string core_description_;
+
+    // Cartridge save. `save_shadow_` is what is currently on disk, so a write
+    // only happens when the game has actually changed something.
+    std::string save_path_;
+    std::vector<uint8_t> save_shadow_;
 };
 
 }  // namespace ds
