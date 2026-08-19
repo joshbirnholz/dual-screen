@@ -35,8 +35,8 @@ InputManager::~InputManager() { shutdown(); }
 
 void InputManager::initialize(const Settings& settings) {
     settings_ = settings;
-    face_buttons_ = face_button_convention_from_string(settings.face_buttons,
-                                                       FaceButtonConvention::Labels);
+    game_face_buttons_ =
+        game_face_mapping_from_string(settings.game_face_buttons, GameFaceMapping::DsLayout);
     settings_.stick_deadzone = std::clamp(settings_.stick_deadzone, 0.05f, 0.9f);
     settings_.trigger_deadzone = std::clamp(settings_.trigger_deadzone, 0.05f, 0.9f);
 
@@ -76,7 +76,11 @@ void InputManager::open_controller(int device_index) {
     const char* name = SDL_GameControllerName(controller);
     log_info(std::string("controller connected: ") + (name != nullptr ? name : "unknown") +
              " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) +
-             ", face buttons read as " + to_string(face_buttons_) + ")");
+             ", letters in " +
+             (pad_letter_layout(SDL_GameControllerGetType(controller)) == PadLetterLayout::Nintendo
+                  ? "Nintendo"
+                  : "Xbox") +
+             " positions; game mapping " + to_string(game_face_buttons_) + ")");
 
     char* mapping = SDL_GameControllerMapping(controller);
     if (mapping != nullptr) {
@@ -168,11 +172,11 @@ void InputManager::handle_event(const SDL_Event& event) {
                       (sdl_name != nullptr ? sdl_name : "?") + " (" +
                       std::to_string(static_cast<int>(button)) + ")");
 
-            // Confirm and cancel depend on how this pad reports its face
-            // buttons, so they are resolved rather than hardcoded.
-            if (button == confirm_button(face_buttons_)) {
+            // Menus always confirm on the button marked A, whatever the game
+            // is configured to do with it.
+            if (button == kMenuConfirmButton) {
                 push_action(UiAction::Confirm);
-            } else if (button == cancel_button(face_buttons_)) {
+            } else if (button == kMenuCancelButton) {
                 push_action(UiAction::Cancel);
             }
 
@@ -183,9 +187,6 @@ void InputManager::handle_event(const SDL_Event& event) {
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: push_action(UiAction::PageUp); break;
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: push_action(UiAction::PageDown); break;
-                // R3 opens and closes the menu. Steam grabs Guide in Game Mode,
-                // so that is not available to us.
-                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: push_action(UiAction::ToggleMenu); break;
                 default: break;
             }
             break;
@@ -202,6 +203,9 @@ void InputManager::handle_event(const SDL_Event& event) {
             switch (event.key.keysym.sym) {
                 case SDLK_ESCAPE:
                 case SDLK_BACKSPACE: push_action(UiAction::Cancel); break;
+                // F1 is the menu key. No controller button opens the menu:
+                // bind F1 in Steam Input instead, which is the only way that
+                // survives Steam's own claim on the pad.
                 case SDLK_F1:
                 case SDLK_TAB: push_action(UiAction::ToggleMenu); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
@@ -352,10 +356,14 @@ uint32_t InputManager::poll_held_buttons() const {
     for (const auto& entry : controllers_) {
         SDL_GameController* controller = entry.second;
         if (controller == nullptr) continue;
+
+        // Resolved per pad: matching a DS physically depends on where this
+        // particular controller prints its letters.
+        const PadLetterLayout layout = pad_letter_layout(SDL_GameControllerGetType(controller));
         for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
             const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
             DsButton ds_button = DsButton::A;
-            if (ds_button_for_controller_button(button, face_buttons_, ds_button) &&
+            if (ds_button_for_controller_button(button, game_face_buttons_, layout, ds_button) &&
                 SDL_GameControllerGetButton(controller, button) != 0) {
                 held.set(ds_button, true);
             }

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "ui/prompt.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -272,8 +273,7 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
 void GameBrowser::render(QuadRenderer& quads,
                          TextRenderer& text,
                          float output_width,
-                         float output_height,
-                         FaceButtonConvention face_buttons) {
+                         float output_height) {
     if (!open_) {
         return;
     }
@@ -345,13 +345,11 @@ void GameBrowser::render(QuadRenderer& quads,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale, theme.danger,
               TextAlign::Center);
 
-    // Kept clear of the Quit button rather than running underneath it. The
-    // letters come from the active convention so the hint names the button the
-    // player will actually press.
+    // Kept clear of the Quit button rather than running underneath it. Menus
+    // always use the buttons marked A and B, so the letters are literal.
     const float hint_width = geometry.quit_button.x - geometry.panel.x - line;
-    const std::string hint = std::string(confirm_button_label(face_buttons)) + " opens   -   " +
-                             cancel_button_label(face_buttons) +
-                             " goes up   -   L/R pages   -   drag to scroll";
+    const std::string hint = format_prompts(
+        {{"A", "Open"}, {"B", "Up a folder"}, {"L/R", "Page"}, {"Drag", "Scroll"}});
     text.draw(quads, TextRenderer::elide_left(hint, hint_width, scale * 0.9f), geometry.panel.x,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale * 0.9f,
               theme.text_dim);

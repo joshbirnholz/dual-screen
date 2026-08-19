@@ -17,40 +17,97 @@ using namespace ds;
 
 namespace {
 
-DsButton mapped(SDL_GameControllerButton button, FaceButtonConvention convention, bool& found) {
+DsButton mapped(SDL_GameControllerButton button,
+                GameFaceMapping mapping,
+                PadLetterLayout layout,
+                bool& found) {
     DsButton result = DsButton::A;
-    found = ds_button_for_controller_button(button, convention, result);
+    found = ds_button_for_controller_button(button, mapping, layout, result);
     return result;
 }
 
-void test_labels_convention_matches_letters() {
-    const FaceButtonConvention labels = FaceButtonConvention::Labels;
+// What the player actually asked for: on an Xbox-layout pad -- which is what
+// Steam Input's virtual controller is -- the game's A/B and X/Y are swapped
+// relative to the printed letters, so the buttons sit where a DS puts them.
+void test_ds_layout_swaps_on_an_xbox_pad() {
+    const GameFaceMapping ds = GameFaceMapping::DsLayout;
+    const PadLetterLayout xbox = PadLetterLayout::Xbox;
     bool found = false;
 
-    // SDL is handing us the printed letters, so they pass straight through.
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_A, labels, found) == DsButton::A);
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_A, ds, xbox, found) == DsButton::B);  // A is south
     CHECK(found);
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_B, labels, found) == DsButton::B);
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_X, labels, found) == DsButton::X);
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_Y, labels, found) == DsButton::Y);
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_B, ds, xbox, found) == DsButton::A);  // B is east
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_X, ds, xbox, found) == DsButton::Y);  // X is west
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_Y, ds, xbox, found) == DsButton::X);  // Y is north
 }
 
-void test_positions_convention_uses_the_ds_layout() {
-    const FaceButtonConvention positions = FaceButtonConvention::Positions;
+// The same setting on a Nintendo-layout pad must *not* swap: its letters
+// already sit where a DS puts them, so swapping would break it.
+void test_ds_layout_is_identity_on_a_nintendo_pad() {
+    const GameFaceMapping ds = GameFaceMapping::DsLayout;
+    const PadLetterLayout nintendo = PadLetterLayout::Nintendo;
     bool found = false;
 
-    // SDL is handing us positions, so the DS's own layout applies: B is south,
-    // A is east, Y is west, X is north.
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_A, positions, found) == DsButton::B);  // south
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_A, ds, nintendo, found) == DsButton::A);
     CHECK(found);
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_B, positions, found) == DsButton::A);  // east
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_X, positions, found) == DsButton::Y);  // west
-    CHECK(mapped(SDL_CONTROLLER_BUTTON_Y, positions, found) == DsButton::X);  // north
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_B, ds, nintendo, found) == DsButton::B);
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_X, ds, nintendo, found) == DsButton::X);
+    CHECK(mapped(SDL_CONTROLLER_BUTTON_Y, ds, nintendo, found) == DsButton::Y);
 }
 
-void test_shared_buttons_are_convention_independent() {
-    bool found_labels = false;
-    bool found_positions = false;
+// match_labels means the printed letter wins, on every pad.
+void test_match_labels_ignores_the_pad_layout() {
+    const GameFaceMapping labels = GameFaceMapping::MatchLabels;
+    bool found = false;
+    for (const PadLetterLayout layout : {PadLetterLayout::Xbox, PadLetterLayout::Nintendo}) {
+        CHECK(mapped(SDL_CONTROLLER_BUTTON_A, labels, layout, found) == DsButton::A);
+        CHECK(found);
+        CHECK(mapped(SDL_CONTROLLER_BUTTON_B, labels, layout, found) == DsButton::B);
+        CHECK(mapped(SDL_CONTROLLER_BUTTON_X, labels, layout, found) == DsButton::X);
+        CHECK(mapped(SDL_CONTROLLER_BUTTON_Y, labels, layout, found) == DsButton::Y);
+    }
+}
+
+void test_pad_layout_detection() {
+    // Steam Input's virtual pad, and everything else, prints Xbox-style.
+    for (const SDL_GameControllerType type :
+         {SDL_CONTROLLER_TYPE_XBOX360, SDL_CONTROLLER_TYPE_XBOXONE, SDL_CONTROLLER_TYPE_PS4,
+          SDL_CONTROLLER_TYPE_PS5, SDL_CONTROLLER_TYPE_VIRTUAL, SDL_CONTROLLER_TYPE_UNKNOWN}) {
+        CHECK_MSG(pad_letter_layout(type) == PadLetterLayout::Xbox, to_string(type));
+    }
+    for (const SDL_GameControllerType type :
+         {SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO,
+          SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT,
+          SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT,
+          SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR}) {
+        CHECK_MSG(pad_letter_layout(type) == PadLetterLayout::Nintendo, to_string(type));
+    }
+}
+
+// The two mappings must differ on an Xbox pad and agree on a Nintendo one --
+// that is the whole point of resolving through physical position.
+void test_the_two_mappings_differ_only_where_the_letters_do() {
+    bool found_a = false;
+    bool found_b = false;
+    const SDL_GameControllerButton faces[] = {
+        SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B,
+        SDL_CONTROLLER_BUTTON_X, SDL_CONTROLLER_BUTTON_Y};
+
+    int differences = 0;
+    for (const SDL_GameControllerButton button : faces) {
+        if (mapped(button, GameFaceMapping::DsLayout, PadLetterLayout::Xbox, found_a) !=
+            mapped(button, GameFaceMapping::MatchLabels, PadLetterLayout::Xbox, found_b)) {
+            ++differences;
+        }
+        CHECK(mapped(button, GameFaceMapping::DsLayout, PadLetterLayout::Nintendo, found_a) ==
+              mapped(button, GameFaceMapping::MatchLabels, PadLetterLayout::Nintendo, found_b));
+    }
+    CHECK_EQ(differences, 4);  // all four face buttons move on an Xbox pad
+}
+
+void test_shared_buttons_are_mapping_independent() {
+    bool found_a = false;
+    bool found_b = false;
     const SDL_GameControllerButton shared[] = {
         SDL_CONTROLLER_BUTTON_LEFTSHOULDER, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
         SDL_CONTROLLER_BUTTON_START,        SDL_CONTROLLER_BUTTON_BACK,
@@ -58,105 +115,74 @@ void test_shared_buttons_are_convention_independent() {
         SDL_CONTROLLER_BUTTON_DPAD_LEFT,    SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
     };
     for (const SDL_GameControllerButton button : shared) {
-        const DsButton a = mapped(button, FaceButtonConvention::Labels, found_labels);
-        const DsButton b = mapped(button, FaceButtonConvention::Positions, found_positions);
-        CHECK(found_labels);
-        CHECK(found_positions);
+        const DsButton a = mapped(button, GameFaceMapping::DsLayout, PadLetterLayout::Xbox, found_a);
+        const DsButton b =
+            mapped(button, GameFaceMapping::MatchLabels, PadLetterLayout::Nintendo, found_b);
+        CHECK(found_a);
+        CHECK(found_b);
         CHECK(a == b);
     }
 }
 
 void test_every_ds_button_is_reachable_exactly_once() {
-    for (const FaceButtonConvention convention :
-         {FaceButtonConvention::Labels, FaceButtonConvention::Positions}) {
-        std::set<int> reached;
-        for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
-            DsButton ds_button = DsButton::A;
-            if (ds_button_for_controller_button(static_cast<SDL_GameControllerButton>(index),
-                                                convention, ds_button)) {
-                // No two controller buttons may fight over one DS button.
-                const bool inserted = reached.insert(static_cast<int>(ds_button)).second;
-                CHECK_MSG(inserted, std::string("two controller buttons map to the same DS button "
-                                                "under ") + to_string(convention));
+    for (const GameFaceMapping mapping : {GameFaceMapping::DsLayout, GameFaceMapping::MatchLabels}) {
+        for (const PadLetterLayout layout : {PadLetterLayout::Xbox, PadLetterLayout::Nintendo}) {
+            std::set<int> reached;
+            for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
+                DsButton ds_button = DsButton::A;
+                if (ds_button_for_controller_button(static_cast<SDL_GameControllerButton>(index),
+                                                    mapping, layout, ds_button)) {
+                    // No two controller buttons may fight over one DS button.
+                    CHECK_MSG(reached.insert(static_cast<int>(ds_button)).second,
+                              std::string("two buttons collide under ") + to_string(mapping));
+                }
             }
+            // All twelve DS buttons have to be playable.
+            CHECK_EQ(reached.size(), static_cast<std::size_t>(DsButton::Count));
         }
-        // All twelve DS buttons have to be playable.
-        CHECK_EQ(reached.size(), static_cast<std::size_t>(DsButton::Count));
     }
 }
 
 void test_unmapped_buttons_are_rejected() {
     bool found = true;
-    // R3 is the menu button and must not also reach the game, or opening the
-    // menu would press something.
-    mapped(SDL_CONTROLLER_BUTTON_RIGHTSTICK, FaceButtonConvention::Labels, found);
-    CHECK(!found);
-    mapped(SDL_CONTROLLER_BUTTON_LEFTSTICK, FaceButtonConvention::Labels, found);
-    CHECK(!found);
-    mapped(SDL_CONTROLLER_BUTTON_GUIDE, FaceButtonConvention::Labels, found);
-    CHECK(!found);
-}
-
-void test_confirm_and_cancel_track_the_convention() {
-    for (const FaceButtonConvention convention :
-         {FaceButtonConvention::Labels, FaceButtonConvention::Positions}) {
-        // Confirm and cancel must be different buttons, or menus deadlock.
-        CHECK(confirm_button(convention) != cancel_button(convention));
-
-        // Confirm is always whichever button the player calls "A", so it must
-        // be the one that maps to DS A.
-        DsButton ds_button = DsButton::B;
-        CHECK(ds_button_for_controller_button(confirm_button(convention), convention, ds_button));
-        CHECK_MSG(ds_button == DsButton::A,
-                  std::string("confirm is not the player's A button under ") + to_string(convention));
-
-        CHECK(ds_button_for_controller_button(cancel_button(convention), convention, ds_button));
-        CHECK_MSG(ds_button == DsButton::B,
-                  std::string("cancel is not the player's B button under ") + to_string(convention));
-
+    // The stick clicks and Guide must never reach the game.
+    for (const SDL_GameControllerButton button :
+         {SDL_CONTROLLER_BUTTON_RIGHTSTICK, SDL_CONTROLLER_BUTTON_LEFTSTICK,
+          SDL_CONTROLLER_BUTTON_GUIDE}) {
+        mapped(button, GameFaceMapping::DsLayout, PadLetterLayout::Xbox, found);
+        CHECK(!found);
     }
 }
 
-void test_hint_labels_name_the_physical_button() {
-    // Two different things are easy to conflate here. Which DS button confirm
-    // *acts as* is always DS A (asserted above). Which letter is *printed* on
-    // the button the player has to press is not the same thing, because it
-    // depends on the pad the convention was chosen for.
-    //
-    // Labels mode: SDL hands us letters, so confirm is the button printed "A".
-    CHECK_STR_EQ(confirm_button_label(FaceButtonConvention::Labels), "A");
-    CHECK_STR_EQ(cancel_button_label(FaceButtonConvention::Labels), "B");
-
-    // Positions mode exists for an Xbox-layout pad -- a Nintendo-layout pad is
-    // already correct in Labels mode. Confirm is the east button, and on an
-    // Xbox-layout pad east is printed "B". Telling that player to "press A"
-    // would send them to the wrong button.
-    CHECK_STR_EQ(confirm_button_label(FaceButtonConvention::Positions), "B");
-    CHECK_STR_EQ(cancel_button_label(FaceButtonConvention::Positions), "A");
+void test_menu_buttons_are_the_printed_letters() {
+    // Menus are deliberately not affected by the game mapping: they always use
+    // the buttons marked A and B, which is what every platform's own UI does.
+    CHECK(kMenuConfirmButton == SDL_CONTROLLER_BUTTON_A);
+    CHECK(kMenuCancelButton == SDL_CONTROLLER_BUTTON_B);
+    CHECK(kMenuConfirmButton != kMenuCancelButton);
+    // And SDL has to be reporting printed letters for that to hold.
+    CHECK_STR_EQ(kUseButtonLabels, "1");
 }
 
-void test_hint_value_matches_convention() {
-    // These are the exact strings SDL documents; getting them backwards would
-    // invert every face button.
-    CHECK_STR_EQ(sdl_button_labels_hint(FaceButtonConvention::Labels), "1");
-    CHECK_STR_EQ(sdl_button_labels_hint(FaceButtonConvention::Positions), "0");
-}
-
-void test_convention_parsing() {
-    CHECK(face_button_convention_from_string("labels", FaceButtonConvention::Positions) ==
-          FaceButtonConvention::Labels);
-    CHECK(face_button_convention_from_string("positions", FaceButtonConvention::Labels) ==
-          FaceButtonConvention::Positions);
+void test_mapping_parsing() {
+    CHECK(game_face_mapping_from_string("ds_layout", GameFaceMapping::MatchLabels) ==
+          GameFaceMapping::DsLayout);
+    CHECK(game_face_mapping_from_string("match_labels", GameFaceMapping::DsLayout) ==
+          GameFaceMapping::MatchLabels);
+    // The short-lived key this replaced still resolves, so nobody's settings
+    // silently change meaning under them.
+    CHECK(game_face_mapping_from_string("positions", GameFaceMapping::MatchLabels) ==
+          GameFaceMapping::DsLayout);
+    CHECK(game_face_mapping_from_string("labels", GameFaceMapping::DsLayout) ==
+          GameFaceMapping::MatchLabels);
     // Anything unrecognised keeps the caller's default rather than guessing.
-    CHECK(face_button_convention_from_string("nonsense", FaceButtonConvention::Labels) ==
-          FaceButtonConvention::Labels);
-    CHECK(face_button_convention_from_string("", FaceButtonConvention::Positions) ==
-          FaceButtonConvention::Positions);
-    // Round-trips through its own string form.
-    for (const FaceButtonConvention convention :
-         {FaceButtonConvention::Labels, FaceButtonConvention::Positions}) {
-        CHECK(face_button_convention_from_string(to_string(convention),
-                                                 FaceButtonConvention::Labels) == convention);
+    CHECK(game_face_mapping_from_string("nonsense", GameFaceMapping::DsLayout) ==
+          GameFaceMapping::DsLayout);
+    CHECK(game_face_mapping_from_string("", GameFaceMapping::MatchLabels) ==
+          GameFaceMapping::MatchLabels);
+    for (const GameFaceMapping mapping : {GameFaceMapping::DsLayout, GameFaceMapping::MatchLabels}) {
+        CHECK(game_face_mapping_from_string(to_string(mapping), GameFaceMapping::DsLayout) ==
+              mapping);
     }
 }
 
@@ -239,15 +265,16 @@ void test_keyboard_can_drive_menus() {
 }  // namespace
 
 int main() {
-    test_labels_convention_matches_letters();
-    test_positions_convention_uses_the_ds_layout();
-    test_shared_buttons_are_convention_independent();
+    test_ds_layout_swaps_on_an_xbox_pad();
+    test_ds_layout_is_identity_on_a_nintendo_pad();
+    test_match_labels_ignores_the_pad_layout();
+    test_pad_layout_detection();
+    test_the_two_mappings_differ_only_where_the_letters_do();
+    test_shared_buttons_are_mapping_independent();
     test_every_ds_button_is_reachable_exactly_once();
     test_unmapped_buttons_are_rejected();
-    test_confirm_and_cancel_track_the_convention();
-    test_hint_labels_name_the_physical_button();
-    test_hint_value_matches_convention();
-    test_convention_parsing();
+    test_menu_buttons_are_the_printed_letters();
+    test_mapping_parsing();
     test_duplicate_presses_are_merged();
     test_keyboard_can_drive_menus();
     return test::finish("controller-mapping");

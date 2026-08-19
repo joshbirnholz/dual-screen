@@ -70,8 +70,10 @@ been done is to remove every avoidable reason for it to go wrong:
   `SDL_CONTROLLERDEVICEADDED`/`REMOVED` at any time, not enumerated once at
   startup. Docking a Deck to a TV mid-session and plugging in a pad is the
   normal case, not an edge case.
-- **The menu button.** Steam grabs the Guide button in Game Mode, so it is not
-  used. R3 and a two-finger tap open the menu.
+- **The menu button.** Steam grabs the Guide button in Game Mode, and every
+  other pad button is one a DS game might want, so no controller button opens
+  the menu. F1 and a two-finger tap do; Steam Input can send F1 from any spare
+  input.
 - **Suspend/resume.** SteamOS sleep shows up as a very long gap between frames
   rather than as an event. Any gap over a second restarts the frame clock and
   flushes the audio queue instead of trying to catch up thousands of frames or
@@ -83,7 +85,7 @@ been done is to remove every avoidable reason for it to go wrong:
    Game Mode (the M0 gate the spec asked for).
 2. Which GL context gamescope actually hands over — the log line reports it.
 3. Whether the Steam Input layer presents the Deck's built-in controls as an
-   SDL GameController, and whether R3 reaches the app or is consumed.
+   SDL GameController, and whether a keyboard binding for F1 reaches the app.
 4. Whether the Deck's touchscreen produces `SDL_FINGER*` events under
    gamescope, and whether they are normalized to the window as SDL documents.
 5. Suspend and resume mid-game; confirm audio recovers and the GL context
@@ -163,6 +165,23 @@ own lineage would suggest — a rolling Arch image has a *newer* glibc than the
 Deck and produces a binary that will not start. Worth knowing: building on
 glibc 2.39 raises the floor to 2.38 purely because GCC 13 rewrites `strtol`
 into `__isoc23_strtol`; nothing in this source needs anything that recent.
+
+**Why face buttons are three decisions, not one.** The first attempt at fixing
+this collapsed them into a single `face_buttons` setting, which could not
+express the thing that turned out to be wanted: menus correct, game swapped.
+They are independent and are now modelled that way -- how SDL reports the
+buttons (pinned to "by printed label"), what confirms in a menu (always the
+button marked A, not configurable), and what the game does with them
+(`game_face_buttons`, the only one that is a matter of taste). The game mapping
+resolves through *physical position* rather than swapping letters blindly, so
+"match a DS" is correct on a Switch Pro pad -- where no swap is wanted -- as
+well as on the Xbox-layout pad Steam Input presents.
+
+**Why no controller button opens the menu.** Steam claims Guide in Game Mode,
+and every other button is one a DS game might want. The menu opens on F1, which
+Steam Input can be told to send from any spare input the player has. A
+two-finger tap remains the touch-only route in. The cost is that a plain pad
+with no Steam Input layer has no menu button at all.
 
 **Why the face-button convention is explicit.** The input layer originally
 carried the comment "SDL names face buttons by physical position (A = south)".

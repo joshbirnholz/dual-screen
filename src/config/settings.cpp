@@ -49,7 +49,12 @@ Settings Settings::load(const AppPaths& paths) {
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
-    settings.face_buttons = get_or<std::string>(document, "face_buttons", settings.face_buttons);
+    // "face_buttons" was the short-lived key this replaced; it is still read so
+    // anyone who set it keeps the behaviour they picked.
+    settings.game_face_buttons =
+        get_or<std::string>(document, "face_buttons", settings.game_face_buttons);
+    settings.game_face_buttons =
+        get_or<std::string>(document, "game_face_buttons", settings.game_face_buttons);
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
     settings.trigger_deadzone = get_or<float>(document, "trigger_deadzone", settings.trigger_deadzone);
     settings.vsync = get_or<bool>(document, "vsync", settings.vsync);
@@ -70,7 +75,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["last_browse_dir"] = last_browse_dir;
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;
-    document["face_buttons"] = face_buttons;
+    document["game_face_buttons"] = game_face_buttons;
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;

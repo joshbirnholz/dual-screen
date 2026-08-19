@@ -77,7 +77,7 @@ public:
     float pointer_y() const { return pointer_y_; }
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
-    FaceButtonConvention face_buttons() const { return face_buttons_; }
+    GameFaceMapping game_face_buttons() const { return game_face_buttons_; }
 
 private:
     void open_controller(int device_index);
@@ -95,7 +95,7 @@ private:
     };
 
     Settings settings_;
-    FaceButtonConvention face_buttons_ = FaceButtonConvention::Labels;
+    GameFaceMapping game_face_buttons_ = GameFaceMapping::DsLayout;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
 
     DsInputState ds_state_;

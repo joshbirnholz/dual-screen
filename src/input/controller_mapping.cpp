@@ -2,25 +2,60 @@
 
 namespace ds {
 
-const char* to_string(FaceButtonConvention convention) {
-    return convention == FaceButtonConvention::Labels ? "labels" : "positions";
+PadLetterLayout pad_letter_layout(SDL_GameControllerType type) {
+    switch (type) {
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+            return PadLetterLayout::Nintendo;
+        default:
+            // Everything else prints its letters in Xbox positions -- including
+            // the virtual pad Steam Input presents.
+            return PadLetterLayout::Xbox;
+    }
 }
 
-FaceButtonConvention face_button_convention_from_string(const std::string& text,
-                                                        FaceButtonConvention fallback) {
-    if (text == "labels") return FaceButtonConvention::Labels;
-    if (text == "positions") return FaceButtonConvention::Positions;
+bool face_position_for_button(SDL_GameControllerButton button,
+                              PadLetterLayout layout,
+                              FacePosition& out_position) {
+    const bool nintendo = (layout == PadLetterLayout::Nintendo);
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A:
+            out_position = nintendo ? FacePosition::East : FacePosition::South;
+            return true;
+        case SDL_CONTROLLER_BUTTON_B:
+            out_position = nintendo ? FacePosition::South : FacePosition::East;
+            return true;
+        case SDL_CONTROLLER_BUTTON_X:
+            out_position = nintendo ? FacePosition::North : FacePosition::West;
+            return true;
+        case SDL_CONTROLLER_BUTTON_Y:
+            out_position = nintendo ? FacePosition::West : FacePosition::North;
+            return true;
+        default:
+            return false;
+    }
+}
+
+const char* to_string(GameFaceMapping mapping) {
+    return mapping == GameFaceMapping::DsLayout ? "ds_layout" : "match_labels";
+}
+
+GameFaceMapping game_face_mapping_from_string(const std::string& text, GameFaceMapping fallback) {
+    if (text == "ds_layout") return GameFaceMapping::DsLayout;
+    if (text == "match_labels") return GameFaceMapping::MatchLabels;
+    // Accepted for the short-lived settings key this replaced.
+    if (text == "positions") return GameFaceMapping::DsLayout;
+    if (text == "labels") return GameFaceMapping::MatchLabels;
     return fallback;
 }
 
-const char* sdl_button_labels_hint(FaceButtonConvention convention) {
-    return convention == FaceButtonConvention::Labels ? "1" : "0";
-}
-
 bool ds_button_for_controller_button(SDL_GameControllerButton button,
-                                     FaceButtonConvention convention,
+                                     GameFaceMapping mapping,
+                                     PadLetterLayout layout,
                                      DsButton& out_button) {
-    // Shoulders, d-pad, Start and Select mean the same thing either way.
+    // Shoulders, d-pad, Start and Select are unambiguous.
     switch (button) {
         case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: out_button = DsButton::L; return true;
         case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: out_button = DsButton::R; return true;
@@ -33,8 +68,8 @@ bool ds_button_for_controller_button(SDL_GameControllerButton button,
         default: break;
     }
 
-    if (convention == FaceButtonConvention::Labels) {
-        // SDL is handing us labels, and DS buttons carry the same four letters.
+    if (mapping == GameFaceMapping::MatchLabels) {
+        // SDL hands us letters, and the DS uses the same four.
         switch (button) {
             case SDL_CONTROLLER_BUTTON_A: out_button = DsButton::A; return true;
             case SDL_CONTROLLER_BUTTON_B: out_button = DsButton::B; return true;
@@ -44,36 +79,19 @@ bool ds_button_for_controller_button(SDL_GameControllerButton button,
         }
     }
 
-    // SDL is handing us positions (A = south). A DS has B at south, A at east,
-    // Y at west and X at north.
-    switch (button) {
-        case SDL_CONTROLLER_BUTTON_A: out_button = DsButton::B; return true;  // south
-        case SDL_CONTROLLER_BUTTON_B: out_button = DsButton::A; return true;  // east
-        case SDL_CONTROLLER_BUTTON_X: out_button = DsButton::Y; return true;  // west
-        case SDL_CONTROLLER_BUTTON_Y: out_button = DsButton::X; return true;  // north
-        default: return false;
+    // DsLayout: go through physical position, because that is what "matches a
+    // DS" means. A DS has B at south, A at east, Y at west and X at north.
+    FacePosition position = FacePosition::South;
+    if (!face_position_for_button(button, layout, position)) {
+        return false;
     }
-}
-
-SDL_GameControllerButton confirm_button(FaceButtonConvention convention) {
-    // Whichever SDL button ends up being the player's "A".
-    return convention == FaceButtonConvention::Labels ? SDL_CONTROLLER_BUTTON_A
-                                                      : SDL_CONTROLLER_BUTTON_B;
-}
-
-SDL_GameControllerButton cancel_button(FaceButtonConvention convention) {
-    return convention == FaceButtonConvention::Labels ? SDL_CONTROLLER_BUTTON_B
-                                                      : SDL_CONTROLLER_BUTTON_A;
-}
-
-const char* confirm_button_label(FaceButtonConvention convention) {
-    // In Positions mode SDL's names are positional, so the button we use for
-    // confirm is the east one - printed "B" on an Xbox-layout pad.
-    return convention == FaceButtonConvention::Labels ? "A" : "B";
-}
-
-const char* cancel_button_label(FaceButtonConvention convention) {
-    return convention == FaceButtonConvention::Labels ? "B" : "A";
+    switch (position) {
+        case FacePosition::South: out_button = DsButton::B; return true;
+        case FacePosition::East:  out_button = DsButton::A; return true;
+        case FacePosition::West:  out_button = DsButton::Y; return true;
+        case FacePosition::North: out_button = DsButton::X; return true;
+    }
+    return false;
 }
 
 const char* to_string(SDL_GameControllerType type) {

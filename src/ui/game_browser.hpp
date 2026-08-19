@@ -44,12 +44,7 @@ public:
                              float output_width,
                              float output_height);
 
-    // `face_buttons` only decides which letters the on-screen hints print.
-    void render(QuadRenderer& quads,
-                TextRenderer& text,
-                float output_width,
-                float output_height,
-                FaceButtonConvention face_buttons);
+    void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
 
 private:
     struct Row {

@@ -85,8 +85,8 @@ std::string usage_text() {
         "Run with no --game to pick one from a file browser instead.\n"
         "\n"
         "Layouts are remembered per game, keyed by the ROM's SHA-1, in\n"
-        "~/.config/dualscreen/games/. Open the layout menu in-game with R3 or a\n"
-        "two-finger tap.\n";
+        "~/.config/dualscreen/games/. The layout menu opens on F1 or a\n"
+        "two-finger tap; bind F1 in Steam Input to reach it from a pad.\n";
 }
 
 AppOptions parse_command_line(int argc, char** argv) {
@@ -523,7 +523,7 @@ void App::Impl::render() {
     const float height = static_cast<float>(output_height);
 
     if (state == State::Browser) {
-        browser->render(quads, text, width, height, input.face_buttons());
+        browser->render(quads, text, width, height);
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
@@ -609,12 +609,10 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.paths.saves_dir);
     ensure_directory(impl.settings.system_dir);
 
-    // Must be set before any controller is opened. SDL's own default is
-    // "report face buttons by label", which is not what this app assumed for a
-    // while; making it explicit is what keeps every pad consistent.
-    const FaceButtonConvention face_buttons =
-        face_button_convention_from_string(impl.settings.face_buttons, FaceButtonConvention::Labels);
-    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, sdl_button_labels_hint(face_buttons));
+    // Must be set before any controller is opened. SDL's own default is already
+    // this value, but leaving it implicit is what made the mapping depend on
+    // the SDL version.
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kUseButtonLabels);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
         std::fprintf(stderr, "dualscreen: could not start SDL: %s\n", SDL_GetError());
@@ -636,7 +634,9 @@ int App::run(const AppOptions& options) {
             log_info("loaded " + std::to_string(added) + " controller mappings from " + controller_db);
         }
     }
-    log_info(std::string("face buttons are read by ") + to_string(face_buttons));
+    log_info(std::string("in-game face buttons: ") +
+             to_string(game_face_mapping_from_string(impl.settings.game_face_buttons,
+                                                     GameFaceMapping::DsLayout)));
 
     std::string error;
     if (!impl.create_window(&error)) {

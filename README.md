@@ -175,7 +175,7 @@ Full options:
 
 | | |
 | --- | --- |
-| Open/close the layout menu | **R3** (right stick click) or a **two-finger tap** |
+| Open/close the layout menu | **F1** or a **two-finger tap** |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Move around the menus | d-pad or left stick; **A** confirms, **B** goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
@@ -183,7 +183,13 @@ Full options:
 ### Steam Input
 
 Launched from Steam, your pad reaches the app through Steam Input, which
-matters in two ways.
+matters in three ways.
+
+**Bind F1 to open the menu.** No controller button opens it: Steam claims the
+Guide button, and anything else is a button a game might want. Add a keyboard
+binding for **F1** to a spare input in the shortcut's controller layout — a
+back paddle, a trackpad click, whatever you have spare — and that becomes your
+menu button.
 
 **Use a gamepad layout, not a desktop one.** In the shortcut's controller
 settings, pick a template that sends real gamepad buttons. A keyboard-and-mouse
@@ -203,15 +209,25 @@ it, along with the pad's name and the type SDL thinks it is:
 That says exactly what arrived, which is the fastest way to tell a Steam Input
 remap from an app bug.
 
-### If the face buttons feel wrong
+### Face buttons
 
-SDL reports face buttons by their **printed label** by default, so the button
-marked A is DS A whatever the pad's physical layout. If you would rather have
-the positions of a real DS — south is B, east is A, which is what an
-Xbox-layout pad gives you — set this in `settings.json`:
+Three separate things, deliberately kept apart:
+
+- **How SDL reports them** is pinned to *by printed label*, so
+  `SDL_CONTROLLER_BUTTON_A` is always the button marked A on any pad.
+- **Menus** always confirm on the button marked **A** and go back on **B**,
+  matching what every platform's own UI does. Not configurable.
+- **The game** defaults to matching a DS *physically*: south is B, east is A,
+  west is Y, north is X. On an Xbox-layout pad — which is what Steam Input's
+  virtual controller is — that swaps A/B and X/Y relative to the printed
+  letters, so the buttons sit where a DS puts them. On a Switch Pro pad no swap
+  happens, because its letters already agree.
+
+If you would rather the game match the printed letters instead, so on-screen
+prompts always name the button under your thumb:
 
 ```json
-"face_buttons": "positions"
+"game_face_buttons": "match_labels"
 ```
 
 A pad SDL has no entry for, or a wrong one, can be corrected without a rebuild
@@ -245,7 +261,7 @@ V1 does not script `shortcuts.vdf` for you.
 {
   "default_layout_id": "vertical",
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
-  "face_buttons": "labels",
+  "game_face_buttons": "ds_layout",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
   "stick_deadzone": 0.35,
@@ -303,8 +319,9 @@ ctest --test-dir build --output-on-failure
   it starts, the held-input gate that keeps a menu press out of the game, and
   that a duplicated press navigates once rather than entering a folder and
   backing straight out of it.
-- `test_controller_mapping` — both face-button conventions, that confirm is
-  always the player's A button, and that duplicate presses from two devices
+- `test_controller_mapping` — that the DS mapping swaps A/B and X/Y on an
+  Xbox-layout pad and leaves a Nintendo-layout pad alone, that menus are
+  unaffected by that setting, and that duplicate presses from two devices
   collapse to one menu action.
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture and the frontend's own

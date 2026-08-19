@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/prompt.hpp"
+
 namespace ds {
 
 void MessageScreen::show(MessageKind kind,
@@ -74,7 +76,7 @@ void MessageScreen::render(QuadRenderer& quads,
         pen_y += line * 0.4f;
     }
 
-    text.draw(quads, "Press A, or tap the screen, to continue", output_width * 0.5f,
+    text.draw(quads, format_prompts({{"A", "Continue"}, {"Tap", "Continue"}}), output_width * 0.5f,
               output_height - line * 3.0f, scale, theme.text_dim, TextAlign::Center);
 }
 

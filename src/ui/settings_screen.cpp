@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/prompt.hpp"
+
 namespace ds {
 
 std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir) {
@@ -176,7 +178,9 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
     text.draw(quads, "Settings", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
-    text.draw(quads, "Left/Right changes a value. Paths are edited in settings.json.",
+    text.draw(quads,
+              format_prompts({{"Left/Right", "Change value"}, {"B", "Back"}}) +
+                  "     Paths are edited in settings.json",
               geometry.panel.x, geometry.panel.y + line * 1.8f, scale * 0.9f, theme.text_dim);
 
     const bool core_found = !resolved_core_path_.empty() && file_exists(resolved_core_path_);

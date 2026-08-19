@@ -1,6 +1,9 @@
 #include "ui/layout_picker.hpp"
 
+#include "ui/prompt.hpp"
+
 #include <algorithm>
+#include <string>
 #include <cmath>
 
 namespace ds {
@@ -280,8 +283,11 @@ void LayoutPicker::render(QuadRenderer& quads,
                   button.y + (button.h - line) * 0.5f, scale, color, TextAlign::Center);
     }
 
-    text.draw(quads, "R3 closes this menu   -   two fingers also opens it",
-              geometry.panel.x + geometry.panel.w * 0.5f,
+    const std::string prompts = format_prompts({{"A", "Select"},
+                                                {"B", "Resume"},
+                                                {"F1", "Toggle menu"},
+                                                {"Two fingers", "Toggle menu"}});
+    text.draw(quads, prompts, geometry.panel.x + geometry.panel.w * 0.5f,
               geometry.panel.y + geometry.panel.h + line * 0.2f, scale * 0.9f, theme.text_dim,
               TextAlign::Center);
 }
