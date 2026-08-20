@@ -363,12 +363,15 @@ same on both devices: "Sound: Top" means the same thing wherever you are looking
 at it. The host simply stops sending audio when the companion is not one of the
 devices meant to hear it, so the companion needs no rule of its own.
 
-**Why the pointer has fixed modes as well as a timer.** Hiding on idle and
+**Why the pointer is a switch rather than three modes.** Hiding on idle and
 ignoring `SDL_TOUCH_MOUSEID` is the right behaviour where SDL can tell a finger
 from a mouse. Steam Input can present a touchscreen as an ordinary mouse, and
-then nothing can: the events are identical. Rather than guess, Settings offers
-the three states outright -- hide when still, always shown, always hidden -- and
-leaves the automatic one as the default.
+then nothing can: the events are identical. That argued for offering the states
+outright -- but a "never hides" one was never really on offer, since SteamOS
+hides an idle pointer itself whatever this app asks for. What is left is on and
+off: on is the idle-hiding behaviour, off is no pointer at all. The old "auto"
+key still reads back as on, so a settings.json written by the three-way version
+keeps working.
 
 **Why the footer wraps.** Six buttons across a 1280-wide window leaves each label
 about 170px, and "Smoothing: Off" does not fit in that at a readable size. Five

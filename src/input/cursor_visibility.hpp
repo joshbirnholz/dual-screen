@@ -4,13 +4,15 @@
 
 namespace ds {
 
-// What the pointer does. Automatic is what you want when SDL can tell a mouse
-// from a finger; the other two exist because some setups present a touchscreen
-// as an ordinary mouse, and then no amount of cleverness can tell them apart.
+// Whether this device has a pointer at all.
+//
+// On means the ordinary one: it appears when the mouse moves and goes away once
+// it has been still for a moment. There is no third "never hides" mode, because
+// SteamOS hides an idle pointer by itself -- asking for one that stays put is
+// asking for something the system will not give.
 enum class CursorMode {
-    AutoHide,      // appears when the mouse moves, hides once it is still
-    AlwaysShown,
-    AlwaysHidden,
+    Shown,
+    Hidden,
 };
 
 const char* to_string(CursorMode mode);
@@ -57,19 +59,12 @@ public:
         }
     }
 
-    bool visible() const {
-        switch (mode_) {
-            case CursorMode::AlwaysShown: return true;
-            case CursorMode::AlwaysHidden: return false;
-            case CursorMode::AutoHide: break;
-        }
-        return !idle_hidden_;
-    }
+    bool visible() const { return mode_ == CursorMode::Shown && !idle_hidden_; }
 
 private:
     double idle_seconds_;
     double still_for_ = 0.0;
-    CursorMode mode_ = CursorMode::AutoHide;
+    CursorMode mode_ = CursorMode::Shown;
     // Hidden to begin with: nothing has been touched yet, and a pointer sitting
     // over the game at startup is the thing being avoided.
     bool idle_hidden_ = true;

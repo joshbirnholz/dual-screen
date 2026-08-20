@@ -54,12 +54,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             }
             return "Sound: Both";
         case Footer::Cursor:
-            switch (state_.cursor_mode) {
-                case CursorMode::AlwaysShown: return "Pointer: On";
-                case CursorMode::AlwaysHidden: return "Pointer: Off";
-                case CursorMode::AutoHide: break;
-            }
-            return "Pointer: Auto";
+            return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: break;

@@ -244,7 +244,7 @@ Full options:
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Change what the pointer does | **Pointer** in the layout menu, cycling auto / always on / always off |
+| Turn the pointer off entirely | **Pointer** in the layout menu |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 
@@ -376,7 +376,7 @@ V1 does not script `shortcuts.vdf` for you.
   "core_path": "",
   "default_bilinear_filtering": false,
   "audio_target": "both",
-  "cursor_mode": "auto",
+  "cursor_mode": "shown",
   "stick_deadzone": 0.35,
   "trigger_deadzone": 0.3,
   "vsync": true

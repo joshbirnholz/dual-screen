@@ -228,8 +228,8 @@ endforeach()
 
 # The pointer mode has to survive the trip from settings.json into the running
 # app. It was read and stored and then never handed to the thing that acts on
-# it, so every mode behaved as the default; nothing on screen shows that, but
-# the app says which mode it came up in.
+# it, so the setting did nothing at all; nothing on screen shows that, but the
+# app says which mode it came up in.
 set(POINTER_HOME "${WORK_DIR}/pointer")
 file(REMOVE_RECURSE "${POINTER_HOME}")
 file(WRITE "${POINTER_HOME}/config/dualscreen/settings.json" "{\"cursor_mode\": \"hidden\"}")
@@ -248,7 +248,7 @@ execute_process(
     RESULT_VARIABLE POINTER_RESULT
     OUTPUT_VARIABLE POINTER_OUTPUT
     ERROR_VARIABLE POINTER_ERROR)
-if(NOT POINTER_OUTPUT MATCHES "pointer: Always hidden")
+if(NOT POINTER_OUTPUT MATCHES "pointer: Off")
     message(STATUS "${POINTER_OUTPUT}")
     message(STATUS "${POINTER_ERROR}")
     message(SEND_ERROR "the stored pointer mode did not reach the running app")

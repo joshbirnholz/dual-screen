@@ -37,9 +37,8 @@ struct Settings {
     // with the room rather than once at setup.
     AudioTarget audio_target = AudioTarget::Both;
 
-    // What the mouse pointer does. Automatic suits a setup where SDL can tell a
-    // finger from a mouse; the fixed choices are for one where it cannot.
-    CursorMode cursor_mode = CursorMode::AutoHide;
+    // Whether this device has a mouse pointer at all.
+    CursorMode cursor_mode = CursorMode::Shown;
 
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;

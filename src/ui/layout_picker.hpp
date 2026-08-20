@@ -42,7 +42,7 @@ struct LayoutPickerState {
     bool companion = false;
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
-    CursorMode cursor_mode = CursorMode::AutoHide;
+    CursorMode cursor_mode = CursorMode::Shown;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through

@@ -214,7 +214,7 @@ void test_settings_round_trip() {
     defaults.stick_deadzone = 0.5f;
     defaults.default_bilinear_filtering = true;
     defaults.audio_target = AudioTarget::BottomScreen;
-    defaults.cursor_mode = CursorMode::AlwaysShown;
+    defaults.cursor_mode = CursorMode::Hidden;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -224,7 +224,7 @@ void test_settings_round_trip() {
     CHECK_NEAR(reloaded.stick_deadzone, 0.5f);
     CHECK_EQ(reloaded.default_bilinear_filtering, true);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
-    CHECK(reloaded.cursor_mode == CursorMode::AlwaysShown);
+    CHECK(reloaded.cursor_mode == CursorMode::Hidden);
 
     // Malformed settings fall back to defaults rather than refusing to start.
     {
@@ -235,11 +235,15 @@ void test_settings_round_trip() {
     CHECK_STR_EQ(recovered.default_layout_id, "vertical");
     CHECK_EQ(recovered.default_bilinear_filtering, false);
     CHECK(recovered.audio_target == AudioTarget::Both);
-    CHECK(recovered.cursor_mode == CursorMode::AutoHide);
+    CHECK(recovered.cursor_mode == CursorMode::Shown);
 
     // Text nobody recognises falls back rather than becoming a fourth state.
     CHECK(audio_target_from_key("sideways") == AudioTarget::Both);
-    CHECK(cursor_mode_from_key("") == CursorMode::AutoHide);
+    CHECK(cursor_mode_from_key("") == CursorMode::Shown);
+    // "auto" is what the old three-way version called the one that survived.
+    CHECK(cursor_mode_from_key("auto") == CursorMode::Shown);
+    CHECK(next_cursor_mode(CursorMode::Shown) == CursorMode::Hidden);
+    CHECK(next_cursor_mode(CursorMode::Hidden) == CursorMode::Shown);
 
     // Cycling visits all three and comes back round.
     CHECK(next_audio_target(AudioTarget::Both) == AudioTarget::TopScreen);
