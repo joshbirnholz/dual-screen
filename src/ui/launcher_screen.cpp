@@ -10,12 +10,13 @@ namespace {
 
 const LauncherScreen* unused_tag = nullptr;
 
-constexpr int kLauncherRowCount = 4;
+constexpr int kLauncherRowCount = 5;
 
 const char* const kTitles[kLauncherRowCount] = {
     "Load a game",
     "Connect as top screen",
     "Connect as bottom screen",
+    "Settings",
     "Quit",
 };
 
@@ -23,6 +24,7 @@ const char* const kDetails[kLauncherRowCount] = {
     "Play here, on this device",
     "Show the top screen of a game running on another device",
     "Show the bottom screen, and use this device's touchscreen",
+    "Folders, the pointer, and what a new game starts with",
     "",
 };
 
@@ -31,6 +33,7 @@ LauncherChoice choice_for_row(int row) {
         case 0: return LauncherChoice::LoadGame;
         case 1: return LauncherChoice::ConnectAsTopScreen;
         case 2: return LauncherChoice::ConnectAsBottomScreen;
+        case 3: return LauncherChoice::Settings;
         default: return LauncherChoice::Quit;
     }
 }

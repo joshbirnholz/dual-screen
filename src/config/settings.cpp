@@ -67,7 +67,10 @@ Settings Settings::load(const AppPaths& paths) {
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
     settings.default_bilinear_filtering =
         get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
-    settings.stream_audio = get_or<bool>(document, "stream_audio", settings.stream_audio);
+    settings.audio_target = audio_target_from_key(
+        get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
+    settings.cursor_mode = cursor_mode_from_key(
+        get_or<std::string>(document, "cursor_mode", cursor_mode_key(settings.cursor_mode)));
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
     settings.trigger_deadzone = get_or<float>(document, "trigger_deadzone", settings.trigger_deadzone);
     settings.vsync = get_or<bool>(document, "vsync", settings.vsync);
@@ -90,7 +93,8 @@ bool Settings::save(const AppPaths& paths) const {
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
-    document["stream_audio"] = stream_audio;
+    document["audio_target"] = audio_target_key(audio_target);
+    document["cursor_mode"] = cursor_mode_key(cursor_mode);
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;

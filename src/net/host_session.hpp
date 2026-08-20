@@ -46,9 +46,15 @@ public:
 
     // The host's own screen assignment, which the split layout follows.
     void set_host_screen(ScreenId screen);
-    // Tells the companion which layout is active, so it knows whether to draw
-    // one screen or both. Cheap to call every frame.
-    void set_layout(const std::string& layout_id, bool paused);
+    // The session state the companion has to agree with: which layout is
+    // active, whether the game is paused, and the two settings both devices
+    // share. The host is the only writer, which is what stops the two ends
+    // drifting apart. Cheap to call every frame; nothing is sent unless
+    // something actually changed.
+    void set_session_state(const std::string& layout_id,
+                           bool paused,
+                           bool bilinear_filtering,
+                           AudioTarget audio_target);
 
     // Sends the game's audio to the companion. DS and 3DS mirror it, so both
     // devices play the same thing; the stream id leaves room for Wii U, where
@@ -61,9 +67,15 @@ public:
     // its launcher rather than waiting for a timeout.
     void disconnect_companion(const std::string& reason);
 
-    // A layout the companion asked for since the last call, if any. The host
-    // owns the choice, so this is a request the app applies and broadcasts back.
-    bool take_requested_layout(std::string& out_layout_id);
+    // What the companion has asked for since the last call, if anything. The
+    // host owns every one of these choices, so the app validates and applies
+    // them and they come back to the companion as session state.
+    bool take_request(RequestMessage& out_request);
+
+    // The companion has its own menu open, so the game is paused there. The
+    // host pauses too: a session where one device is playing on while the other
+    // reads a menu is two people looking at different games.
+    bool companion_menu_open() const { return companion_menu_open_; }
 
     // Sends whichever screens the companion needs for the current layout.
     // `serial` should advance only when the pixels actually changed.
@@ -101,13 +113,17 @@ private:
 
     std::string layout_id_;
     bool paused_ = false;
+    bool bilinear_filtering_ = false;
+    AudioTarget audio_target_ = AudioTarget::Both;
     bool session_state_dirty_ = true;
 
     DsInputState companion_input_;
     bool companion_input_fresh_ = false;
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
-    std::string requested_layout_;
+    bool companion_menu_open_ = false;
+    bool have_request_ = false;
+    RequestMessage request_;
 };
 
 }  // namespace ds::net

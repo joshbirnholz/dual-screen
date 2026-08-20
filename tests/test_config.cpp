@@ -213,6 +213,8 @@ void test_settings_round_trip() {
     defaults.vsync = false;
     defaults.stick_deadzone = 0.5f;
     defaults.default_bilinear_filtering = true;
+    defaults.audio_target = AudioTarget::BottomScreen;
+    defaults.cursor_mode = CursorMode::AlwaysShown;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -221,6 +223,8 @@ void test_settings_round_trip() {
     CHECK_EQ(reloaded.vsync, false);
     CHECK_NEAR(reloaded.stick_deadzone, 0.5f);
     CHECK_EQ(reloaded.default_bilinear_filtering, true);
+    CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
+    CHECK(reloaded.cursor_mode == CursorMode::AlwaysShown);
 
     // Malformed settings fall back to defaults rather than refusing to start.
     {
@@ -230,6 +234,25 @@ void test_settings_round_trip() {
     const Settings recovered = Settings::load(paths);
     CHECK_STR_EQ(recovered.default_layout_id, "vertical");
     CHECK_EQ(recovered.default_bilinear_filtering, false);
+    CHECK(recovered.audio_target == AudioTarget::Both);
+    CHECK(recovered.cursor_mode == CursorMode::AutoHide);
+
+    // Text nobody recognises falls back rather than becoming a fourth state.
+    CHECK(audio_target_from_key("sideways") == AudioTarget::Both);
+    CHECK(cursor_mode_from_key("") == CursorMode::AutoHide);
+
+    // Cycling visits all three and comes back round.
+    CHECK(next_audio_target(AudioTarget::Both) == AudioTarget::TopScreen);
+    CHECK(next_audio_target(AudioTarget::TopScreen) == AudioTarget::BottomScreen);
+    CHECK(next_audio_target(AudioTarget::BottomScreen) == AudioTarget::Both);
+
+    // Who hears what, which is the whole point of the setting.
+    CHECK(audio_reaches(AudioTarget::Both, ScreenId::Top));
+    CHECK(audio_reaches(AudioTarget::Both, ScreenId::Bottom));
+    CHECK(audio_reaches(AudioTarget::TopScreen, ScreenId::Top));
+    CHECK(!audio_reaches(AudioTarget::TopScreen, ScreenId::Bottom));
+    CHECK(!audio_reaches(AudioTarget::BottomScreen, ScreenId::Top));
+    CHECK(audio_reaches(AudioTarget::BottomScreen, ScreenId::Bottom));
 }
 
 void test_command_line() {

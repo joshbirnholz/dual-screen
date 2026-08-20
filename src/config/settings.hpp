@@ -4,6 +4,8 @@
 #include <vector>
 
 #include "config/paths.hpp"
+#include "input/cursor_visibility.hpp"
+#include "layout/layout.hpp"
 
 namespace ds {
 
@@ -30,9 +32,14 @@ struct Settings {
     // Starting point for new games; each game remembers its own afterwards.
     bool default_bilinear_filtering = false;
 
-    // Send the game's sound to the connected device as well. DS and 3DS mirror
-    // it, so both devices play the same thing.
-    bool stream_audio = true;
+    // Which device plays the sound while two are connected. Chosen from the
+    // layout menu rather than here, since it is the kind of thing that changes
+    // with the room rather than once at setup.
+    AudioTarget audio_target = AudioTarget::Both;
+
+    // What the mouse pointer does. Automatic suits a setup where SDL can tell a
+    // finger from a mouse; the fixed choices are for one where it cannot.
+    CursorMode cursor_mode = CursorMode::AutoHide;
 
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;

@@ -328,3 +328,50 @@ count as movement -- SDL reports them as mouse events from `SDL_TOUCH_MOUSEID`,
 and a tap that left an arrow on the screen would be the original problem back
 again. The timing lives in `CursorVisibility` rather than in the event loop so
 it can be tested without a mouse.
+
+**Why the host owns every shared setting.** The layout was already host-owned --
+the companion asked and adopted the answer -- but smoothing and the sound target
+were not, so a companion could sit at a different setting from the host it was
+showing. They are all session state now, carried in one `SessionState` message,
+and a companion never applies any of them locally: it sends a `Request` and waits
+for the broadcast. Being unable to hold a second copy of the value is what makes
+"always in sync" true rather than merely likely; a companion that applied
+optimistically and reconciled afterwards would have a window where the two ends
+disagreed, and reconciliation bugs live in exactly that window.
+
+The same reasoning removed Settings from a connected companion's menu. What is
+left in there is that device's own BIOS folder, core path and pointer behaviour,
+plus what a new game starts with -- none of it a decision a companion is in a
+position to make, since it is not the one running the game. It moved to the
+launcher instead, which is where a device that is only ever a screen can still
+reach it.
+
+**Why a menu pauses both devices.** Only the host's own menu paused the game, so
+opening the menu on the Deck left the game running on the PC -- and left the
+Deck's held buttons pressed, since only input *changes* go over the wire. The
+companion now reports its menu state, the host pauses while either device has one
+open, and the host drops whatever the companion was holding the moment the menu
+goes up. The session test holds a button down across the transition, which is the
+case that would otherwise walk the character into a wall for as long as the menu
+was up.
+
+**Why the sound is a target rather than a switch.** "Send sound to the other
+device" could not express the arrangement people actually want -- the Deck in
+hand and the TV across the room, with only one of them making noise. Naming the
+device by the screen it holds gives three states instead of two, and reads the
+same on both devices: "Sound: Top" means the same thing wherever you are looking
+at it. The host simply stops sending audio when the companion is not one of the
+devices meant to hear it, so the companion needs no rule of its own.
+
+**Why the pointer has fixed modes as well as a timer.** Hiding on idle and
+ignoring `SDL_TOUCH_MOUSEID` is the right behaviour where SDL can tell a finger
+from a mouse. Steam Input can present a touchscreen as an ordinary mouse, and
+then nothing can: the events are identical. Rather than guess, Settings offers
+the three states outright -- hide when still, always shown, always hidden -- and
+leaves the automatic one as the default.
+
+**Why the footer wraps.** Six buttons across a 1280-wide window leaves each label
+about 170px, and "Smoothing: Off" does not fit in that at a readable size. Five
+or more wrap onto a second row instead, and focus moves through the two rows as a
+grid. Shrinking every label to fit would have kept the code simpler and made the
+menu worse.

@@ -14,6 +14,20 @@ enum class ScreenId { Top, Bottom };
 
 const char* to_string(ScreenId screen);
 
+// Which device plays the game's sound, named by the screen that device is
+// holding. With one device there is nothing to choose, so this only means
+// anything while two are connected. DS and 3DS have a single soundtrack, so
+// "Both" is two devices playing the same thing rather than two soundtracks.
+enum class AudioTarget { TopScreen, BottomScreen, Both };
+
+const char* to_string(AudioTarget target);
+// Whether the device holding `screen` should be making sound.
+bool audio_reaches(AudioTarget target, ScreenId screen);
+AudioTarget next_audio_target(AudioTarget target);
+// Round-trips through settings files; unknown text falls back to Both.
+const char* audio_target_key(AudioTarget target);
+AudioTarget audio_target_from_key(const std::string& key);
+
 // How a screen fills the normalized rect it is placed in.
 enum class ScreenFit {
     Contain,  // preserve the screen's 4:3 aspect, letterboxed inside the rect

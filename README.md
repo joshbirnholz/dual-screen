@@ -68,14 +68,23 @@ screen** or **Connect as bottom screen**. It finds anything running nearby,
 lists it, and joins. The device holding the bottom screen is the one whose
 touchscreen works, and both devices' buttons drive the game.
 
-The layout menu opens on either device — **F1**, or a two-finger tap. Picking a
-layout there asks the host to change it, and the host broadcasts the result, so
-both devices always agree on what they are showing. The menu carries a
-**Disconnect** entry on both ends, so either device can end the session.
+The layout menu opens on either device — **F1**, or a two-finger tap — and shows
+the same thing on both. Everything on it belongs to the host: the companion asks,
+the host decides and broadcasts the result, and only then does either device
+change. That is what makes the two ends impossible to get out of step, rather
+than merely unlikely. Opening the menu on either device pauses the game on both,
+so nobody is left playing on alone. The menu carries a **Disconnect** entry on
+both ends, so either device can end the session.
 
-Sound is mirrored: the host sends its audio to the companion so both play the
-same thing. Turn it off with **Send sound to the other device** in Settings, or
-`"stream_audio": false` in `settings.json`.
+**Sound** is on the same menu, once two devices are connected, and cycles between
+the top screen's device, the bottom screen's device, and both. DS and 3DS have
+one soundtrack, so "both" is the two devices playing the same thing — useful when
+the Deck is across the room from the TV, and worth turning off on one of them
+when they are not.
+
+A companion has no **Settings** entry while it is connected: everything in there
+is about that device's own files, or what a game starts with, and a companion is
+doing neither. Set those up from the launcher, before connecting.
 
 ```sh
 # Skip the menus entirely, for a Steam shortcut on the companion device:
@@ -92,8 +101,8 @@ difference can be judged against what is actually on screen rather than from
 memory. A game remembers which it was last given; the setting a game starts
 from is `"default_bilinear_filtering"` in `settings.json`.
 
-It applies to streamed screens too, and it is per device: the Deck can smooth
-its half while the TV stays sharp.
+It applies to streamed screens too, and while two devices are connected it is one
+choice for both of them, like everything else on that menu.
 
 Screens go over the wire as deflated RGB565, which measures around 1.3 Mbit/s
 for both screens at 60fps on DS-like content — no video encoder involved, and
@@ -234,6 +243,7 @@ Full options:
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
+| Change what the pointer does | **Mouse pointer** in Settings: hide when still, always shown, or always hidden |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 
@@ -364,7 +374,8 @@ V1 does not script `shortcuts.vdf` for you.
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
   "default_bilinear_filtering": false,
-  "stream_audio": true,
+  "audio_target": "both",
+  "cursor_mode": "auto",
   "stick_deadzone": 0.35,
   "trigger_deadzone": 0.3,
   "vsync": true

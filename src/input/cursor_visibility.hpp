@@ -1,6 +1,22 @@
 #pragma once
 
+#include <string>
+
 namespace ds {
+
+// What the pointer does. Automatic is what you want when SDL can tell a mouse
+// from a finger; the other two exist because some setups present a touchscreen
+// as an ordinary mouse, and then no amount of cleverness can tell them apart.
+enum class CursorMode {
+    AutoHide,      // appears when the mouse moves, hides once it is still
+    AlwaysShown,
+    AlwaysHidden,
+};
+
+const char* to_string(CursorMode mode);
+CursorMode next_cursor_mode(CursorMode mode);
+const char* cursor_mode_key(CursorMode mode);
+CursorMode cursor_mode_from_key(const std::string& key);
 
 // Shows the mouse pointer while it is being moved and hides it again once it
 // has been still for a moment.
@@ -19,33 +35,44 @@ class CursorVisibility {
 public:
     explicit CursorVisibility(double idle_seconds = 2.0) : idle_seconds_(idle_seconds) {}
 
+    void set_mode(CursorMode mode) { mode_ = mode; }
+    CursorMode mode() const { return mode_; }
+
     // The real mouse moved or was clicked.
     void notice_mouse_activity() {
         still_for_ = 0.0;
-        visible_ = true;
+        idle_hidden_ = false;
     }
 
     // Advances the idle timer by one frame's worth of time.
     void update(double delta_seconds) {
-        if (!visible_) {
+        if (idle_hidden_) {
             return;
         }
         if (delta_seconds > 0.0) {
             still_for_ += delta_seconds;
         }
         if (still_for_ >= idle_seconds_) {
-            visible_ = false;
+            idle_hidden_ = true;
         }
     }
 
-    bool visible() const { return visible_; }
+    bool visible() const {
+        switch (mode_) {
+            case CursorMode::AlwaysShown: return true;
+            case CursorMode::AlwaysHidden: return false;
+            case CursorMode::AutoHide: break;
+        }
+        return !idle_hidden_;
+    }
 
 private:
     double idle_seconds_;
     double still_for_ = 0.0;
+    CursorMode mode_ = CursorMode::AutoHide;
     // Hidden to begin with: nothing has been touched yet, and a pointer sitting
     // over the game at startup is the thing being avoided.
-    bool visible_ = false;
+    bool idle_hidden_ = true;
 };
 
 }  // namespace ds

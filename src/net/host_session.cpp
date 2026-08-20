@@ -61,10 +61,16 @@ void HostSession::set_host_screen(ScreenId screen) {
     config_.host_screen = screen;
 }
 
-void HostSession::set_layout(const std::string& layout_id, bool paused) {
-    if (layout_id != layout_id_ || paused != paused_) {
+void HostSession::set_session_state(const std::string& layout_id,
+                                   bool paused,
+                                   bool bilinear_filtering,
+                                   AudioTarget audio_target) {
+    if (layout_id != layout_id_ || paused != paused_ ||
+        bilinear_filtering != bilinear_filtering_ || audio_target != audio_target_) {
         layout_id_ = layout_id;
         paused_ = paused;
+        bilinear_filtering_ = bilinear_filtering;
+        audio_target_ = audio_target;
         session_state_dirty_ = true;
     }
 }
@@ -95,7 +101,10 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_name_.clear();
     companion_input_ = DsInputState();
     companion_input_fresh_ = false;
-    requested_layout_.clear();
+    have_request_ = false;
+    request_ = RequestMessage();
+    // Nobody is holding a menu open on a device that has gone.
+    companion_menu_open_ = false;
     refresh_beacon();
 }
 
@@ -176,14 +185,38 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             companion_input_fresh_ = true;
             break;
         }
-        case MessageType::RequestLayout: {
-            RequestLayoutMessage request;
-            if (!decode_request_layout(payload.data(), payload.size(), request)) {
+        case MessageType::Request: {
+            RequestMessage request;
+            if (!decode_request(payload.data(), payload.size(), request)) {
                 return;  // not worth dropping a session over
             }
-            // Held for the app to validate against the layout registry: the
-            // host owns the choice and will not adopt an id it does not know.
-            requested_layout_ = request.layout_id;
+            // Held for the app to validate: the host owns these choices and
+            // will not adopt a layout id it does not recognise.
+            if (have_request_ && request.layout_id.empty()) {
+                // Do not let a later request without a layout erase an earlier
+                // one that had it; each field means only itself.
+                request.layout_id = request_.layout_id;
+            }
+            if (have_request_ && !request.wants_filtering && request_.wants_filtering) {
+                request.wants_filtering = true;
+                request.bilinear_filtering = request_.bilinear_filtering;
+            }
+            if (have_request_ && !request.wants_audio_target && request_.wants_audio_target) {
+                request.wants_audio_target = true;
+                request.audio_target = request_.audio_target;
+            }
+            request_ = request;
+            have_request_ = true;
+            if (request.menu_open != companion_menu_open_) {
+                companion_menu_open_ = request.menu_open;
+                // A menu takes the companion's hands off the game. Whatever it
+                // was holding when the menu opened would otherwise stay held
+                // for as long as the menu is up, since only changes are sent.
+                if (companion_menu_open_) {
+                    companion_input_ = DsInputState();
+                    companion_input_fresh_ = true;
+                }
+            }
             break;
         }
         case MessageType::Bye:
@@ -221,6 +254,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.layout_id = layout_id_;
         state.companion_screen = companion_screen_;
         state.paused = paused_;
+        state.bilinear_filtering = bilinear_filtering_;
+        state.audio_target = audio_target_;
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);
@@ -264,12 +299,13 @@ void HostSession::disconnect_companion(const std::string& reason) {
     drop_companion(reason);
 }
 
-bool HostSession::take_requested_layout(std::string& out_layout_id) {
-    if (requested_layout_.empty()) {
+bool HostSession::take_request(RequestMessage& out_request) {
+    if (!have_request_) {
         return false;
     }
-    out_layout_id = requested_layout_;
-    requested_layout_.clear();
+    out_request = request_;
+    request_ = RequestMessage();
+    have_request_ = false;
     return true;
 }
 

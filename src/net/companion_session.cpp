@@ -111,6 +111,8 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             host_layout_id_ = state.layout_id;
             host_paused_ = state.paused;
+            host_filtering_ = state.bilinear_filtering;
+            host_audio_target_ = state.audio_target;
             granted_screen_ = state.companion_screen;
             break;
         }
@@ -245,15 +247,47 @@ uint32_t CompanionSession::sample_pixel(ScreenId screen) const {
     return buffer.pixels.empty() ? 0u : (buffer.pixels[0] & 0x00ffffffu);
 }
 
-void CompanionSession::request_layout(const std::string& layout_id) {
-    if (status_ != Status::Connected || !stream_.connected() || layout_id.empty()) {
+void CompanionSession::send_request(RequestMessage request) {
+    if (status_ != Status::Connected || !stream_.connected()) {
         return;
     }
-    RequestLayoutMessage request;
-    request.layout_id = layout_id;
+    // Every request carries the menu state, so the host cannot miss it even if
+    // one message is the only one that ever goes out.
+    request.menu_open = menu_open_;
     std::vector<uint8_t> out;
-    encode_request_layout(request, out);
+    encode_request(request, out);
     stream_.send(out);
+}
+
+void CompanionSession::request_layout(const std::string& layout_id) {
+    if (layout_id.empty()) {
+        return;
+    }
+    RequestMessage request;
+    request.layout_id = layout_id;
+    send_request(request);
+}
+
+void CompanionSession::request_filtering(bool bilinear) {
+    RequestMessage request;
+    request.wants_filtering = true;
+    request.bilinear_filtering = bilinear;
+    send_request(request);
+}
+
+void CompanionSession::request_audio_target(AudioTarget target) {
+    RequestMessage request;
+    request.wants_audio_target = true;
+    request.audio_target = target;
+    send_request(request);
+}
+
+void CompanionSession::set_menu_open(bool open) {
+    if (open == menu_open_) {
+        return;
+    }
+    menu_open_ = open;
+    send_request(RequestMessage());
 }
 
 bool CompanionSession::advance_frame(std::string* error) {

@@ -152,6 +152,25 @@ void test_cursor_auto_hides() {
     CHECK(cursor.visible());
     cursor.update(2.0);
     CHECK(!cursor.visible());
+
+    // The fixed modes ignore the timer entirely, in both directions. They exist
+    // for setups where the touchscreen arrives as an ordinary mouse and no
+    // amount of cleverness can tell a finger from a trackpad.
+    cursor.set_mode(CursorMode::AlwaysShown);
+    CHECK(cursor.visible());
+    cursor.update(60.0);
+    CHECK_MSG(cursor.visible(), "\"always shown\" hid the pointer anyway");
+
+    cursor.set_mode(CursorMode::AlwaysHidden);
+    cursor.notice_mouse_activity();
+    CHECK_MSG(!cursor.visible(), "\"always hidden\" showed the pointer anyway");
+
+    // Going back to automatic starts from what the timer says, not from
+    // whatever the fixed mode was showing.
+    cursor.set_mode(CursorMode::AutoHide);
+    CHECK(cursor.visible());  // the mouse moved a moment ago
+    cursor.update(2.0);
+    CHECK(!cursor.visible());
 }
 
 // The bug this guards: dismissing a menu with A left the button physically

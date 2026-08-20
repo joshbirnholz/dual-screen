@@ -210,6 +210,11 @@ struct App::Impl {
     bool running = true;
     std::string active_layout_id;
     bool bilinear_filtering = false;
+    // Which device makes the sound. Only meaningful once two are connected.
+    AudioTarget audio_target = AudioTarget::Both;
+    // Settings can be reached from the launcher as well as from the layout
+    // menu, and backing out has to return where it came from.
+    bool settings_from_launcher = false;
     std::string game_title;
     std::string resolved_core_path;
 
@@ -240,6 +245,22 @@ struct App::Impl {
     // Pushes the current choice down to whichever source is drawing, and
     // remembers it. Cheap enough to call whenever it changes.
     void apply_filtering();
+    // True while this device is showing another device's game.
+    bool is_companion() const;
+    // True while two devices are in a session, whichever end this is.
+    bool paired() const;
+    // Opens the layout menu with the state it should be showing.
+    void open_picker();
+    // The two settings both devices share. On a companion these ask the host
+    // and change nothing locally; the host owns them and broadcasts the result,
+    // which is what keeps the two devices from ever disagreeing.
+    void request_filtering(bool bilinear);
+    void request_audio_target(AudioTarget target);
+    // Applies and persists a host-side change to either of them.
+    void adopt_filtering(bool bilinear);
+    void adopt_audio_target(AudioTarget target);
+    // Whether this device should be making sound right now.
+    bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
@@ -411,6 +432,81 @@ ScreenSource* App::Impl::active_source() {
     return nullptr;
 }
 
+bool App::Impl::is_companion() const {
+    return companion_session &&
+           companion_session->status() == net::CompanionSession::Status::Connected;
+}
+
+bool App::Impl::paired() const {
+    return (host_session && host_session->has_companion()) || is_companion();
+}
+
+void App::Impl::open_picker() {
+    LayoutPickerState picker_state;
+    picker_state.layout_id = active_layout_id;
+    picker_state.session_active = paired();
+    picker_state.companion = (source == nullptr);
+    picker_state.bilinear_filtering = bilinear_filtering;
+    picker_state.audio_target = audio_target;
+    picker->open(picker_state);
+}
+
+void App::Impl::request_filtering(bool bilinear) {
+    if (is_companion()) {
+        companion_session->request_filtering(bilinear);
+        return;  // the host decides; it will tell us
+    }
+    adopt_filtering(bilinear);
+}
+
+void App::Impl::request_audio_target(AudioTarget target) {
+    if (is_companion()) {
+        companion_session->request_audio_target(target);
+        return;
+    }
+    adopt_audio_target(target);
+}
+
+void App::Impl::adopt_filtering(bool bilinear) {
+    if (bilinear == bilinear_filtering) {
+        return;
+    }
+    bilinear_filtering = bilinear;
+    apply_filtering();
+    if (have_game_config) {
+        persist_game_config();
+    } else {
+        settings.default_bilinear_filtering = bilinear_filtering;
+        settings.save(paths);
+    }
+    log_info(std::string("smoothing ") + (bilinear_filtering ? "on" : "off"));
+}
+
+void App::Impl::adopt_audio_target(AudioTarget target) {
+    if (target == audio_target) {
+        return;
+    }
+    audio_target = target;
+    if (picker) {
+        picker->set_audio_target(audio_target);
+    }
+    // A device arrangement rather than a property of the game, so it is
+    // remembered globally rather than per ROM.
+    if (!is_companion()) {
+        settings.audio_target = audio_target;
+        settings.save(paths);
+    }
+    log_info(std::string(is_companion() ? "following the host: sound " : "sound: ") +
+             to_string(audio_target));
+}
+
+bool App::Impl::sound_plays_here() const {
+    if (!paired()) {
+        return true;  // nobody else to hand it to
+    }
+    return audio_reaches(audio_target, local_screen);
+}
+
 void App::Impl::apply_filtering() {
     if (ScreenSource* drawing = active_source()) {
         drawing->set_filtering(bilinear_filtering);
@@ -426,7 +522,9 @@ void App::Impl::attach_companion_audio() {
     }
     companion_session->set_audio_callback(
         [this](const int16_t* samples, std::size_t frames, uint32_t rate) {
-            if (!settings.stream_audio || rate == 0) {
+            // Anything that arrives is meant for this device: the host stops
+            // sending when the sound is not supposed to come out here.
+            if (rate == 0) {
                 return;
             }
             if (!audio.is_open() || companion_audio_rate != rate) {
@@ -465,7 +563,10 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
         return;
     }
     local_screen = wanted_screen;
+    // Where this device starts. Once a host is on the other end, both of these
+    // come from it instead -- see the companion branch of the frame loop.
     bilinear_filtering = settings.default_bilinear_filtering;
+    audio_target = settings.audio_target;
     apply_filtering();
     if (!host_picker) {
         host_picker.reset(new HostPickerScreen());
@@ -515,6 +616,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     game_title = path_stem(rom_path);
     active_layout_id = settings.default_layout_id;
     bilinear_filtering = settings.default_bilinear_filtering;
+    audio_target = settings.audio_target;
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
     if (rom_sha1.empty()) {
@@ -543,7 +645,9 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
 
     source.reset(new LibretroCoreScreenSource());
     source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
-        audio.push(samples, frames);
+        if (sound_plays_here()) {
+            audio.push(samples, frames);
+        }
         // Mirrored to the companion as it is produced, so both devices hear the
         // same thing at the same time.
         if (host_session) {
@@ -625,15 +729,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
     // not belong to any one screen.
     for (const UiAction action : actions) {
         if (action == UiAction::ToggleFilter) {
-            bilinear_filtering = !bilinear_filtering;
-            apply_filtering();
-            if (have_game_config) {
-                persist_game_config();
-            } else {
-                settings.default_bilinear_filtering = bilinear_filtering;
-                settings.save(paths);
-            }
-            log_info(std::string("smoothing ") + (bilinear_filtering ? "on" : "off"));
+            request_filtering(!bilinear_filtering);
             break;
         }
     }
@@ -676,6 +772,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 case LauncherChoice::ConnectAsBottomScreen:
                     start_companion(ScreenId::Bottom);
                     break;
+                case LauncherChoice::Settings:
+                    settings_screen->open(settings, resolved_core_path);
+                    settings_from_launcher = true;
+                    state = State::Settings;
+                    break;
                 case LauncherChoice::Quit:
                     running = false;
                     break;
@@ -705,11 +806,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Companion: {
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    // The same layout menu as on the host. Picking one asks the
-                    // host to change it, and the host broadcasts the result, so
-                    // both devices end up showing the same thing.
-                    picker->open(active_layout_id, /*session_active=*/true,
-                                 /*companion=*/true, bilinear_filtering);
+                    // The same layout menu as on the host, showing the same
+                    // state. Everything on it is a request: the host applies it
+                    // and broadcasts the result, so both devices agree.
+                    open_picker();
+                    companion_session->set_menu_open(true);
                     state = State::Menu;
                     input.set_game_input_enabled(false);
                     break;
@@ -747,25 +848,20 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 picker->update(actions, pointers, static_cast<float>(output_width),
                                static_cast<float>(output_height));
             if (result.selection_changed) {
-                active_layout_id = picker->selected_layout_id();
-                if (companion_session &&
-                    companion_session->status() == net::CompanionSession::Status::Connected) {
+                if (is_companion()) {
                     // A companion does not own the choice: it asks, and adopts
                     // whatever the host broadcasts back.
-                    companion_session->request_layout(active_layout_id);
+                    companion_session->request_layout(picker->selected_layout_id());
                 } else {
+                    active_layout_id = picker->selected_layout_id();
                     persist_game_config();
                 }
             }
             if (result.filtering_toggled) {
-                bilinear_filtering = picker->filtering();
-                apply_filtering();
-                if (have_game_config) {
-                    persist_game_config();
-                } else {
-                    settings.default_bilinear_filtering = bilinear_filtering;
-                    settings.save(paths);
-                }
+                request_filtering(!bilinear_filtering);
+            }
+            if (result.audio_target_changed) {
+                request_audio_target(next_audio_target(audio_target));
             }
             if (result.disconnect_requested) {
                 if (host_session) {
@@ -780,12 +876,15 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 running = false;
             } else if (result.open_settings) {
                 settings_screen->open(settings, resolved_core_path);
+                settings_from_launcher = false;
                 state = State::Settings;
             } else if (result.close_requested) {
-                state = (companion_session && companion_session->status() ==
-                                                  net::CompanionSession::Status::Connected)
-                            ? State::Companion
-                            : State::Playing;
+                if (is_companion()) {
+                    companion_session->set_menu_open(false);
+                    state = State::Companion;
+                } else {
+                    state = State::Playing;
+                }
                 input.set_game_input_enabled(true);
             }
             break;
@@ -803,13 +902,13 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
             }
             if (result.close_requested) {
-                // Back out to the layout menu, which is where Settings was opened from.
-                const bool paired =
-                    (host_session && host_session->has_companion()) ||
-                    (companion_session &&
-                     companion_session->status() == net::CompanionSession::Status::Connected);
-                picker->open(active_layout_id, paired, source == nullptr, bilinear_filtering);
-                state = State::Menu;
+                // Back where it was opened from.
+                if (settings_from_launcher) {
+                    open_launcher();
+                } else {
+                    open_picker();
+                    state = State::Menu;
+                }
             }
             break;
         }
@@ -817,9 +916,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Playing: {
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    picker->open(active_layout_id,
-                                 host_session && host_session->has_companion(), false,
-                                 bilinear_filtering);
+                    open_picker();
                     state = State::Menu;
                     input.set_game_input_enabled(false);
                     if (source) {
@@ -1037,7 +1134,14 @@ int App::run(const AppOptions& options) {
             impl.enter_message(MessageKind::Error, "Cannot look for other devices", search_error,
                                {}, true);
         } else {
+            // The same setup start_companion() does for the menu route. This
+            // path skipped it, which left --connect with no streamed sound at
+            // all and nothing for the host's settings to override.
+            impl.attach_companion_audio();
             impl.local_screen = wanted;
+            impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
+            impl.audio_target = impl.settings.audio_target;
+            impl.apply_filtering();
             impl.state = Impl::State::Companion;
             impl.awaiting_auto_connect = true;
             impl.input.set_game_input_enabled(true);
@@ -1062,7 +1166,7 @@ int App::run(const AppOptions& options) {
     // Test hook: bring a menu up before the first frame so the UI can be
     // captured without synthesising input events.
     if (options.start_screen == "layout" && impl.state == Impl::State::Playing) {
-        impl.picker->open(impl.active_layout_id, false, false, impl.bilinear_filtering);
+        impl.open_picker();
         impl.state = Impl::State::Menu;
         impl.input.set_game_input_enabled(false);
     } else if (options.start_screen == "settings" && impl.state == Impl::State::Playing) {
@@ -1166,19 +1270,39 @@ int App::run(const AppOptions& options) {
         // is acted on this frame.
         const uint64_t network_now = net::monotonic_millis();
         if (impl.host_session) {
-            impl.host_session->set_audio_enabled(impl.settings.stream_audio);
-            impl.host_session->set_layout(impl.active_layout_id, impl.state != Impl::State::Playing);
+            // Sound only goes over the wire when the other device is one of the
+            // ones meant to be making it.
+            impl.host_session->set_audio_enabled(
+                audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
+            // A menu on either device pauses the game, so the two are always
+            // looking at the same frame.
+            const bool paused_here = impl.state != Impl::State::Playing;
+            impl.host_session->set_session_state(
+                impl.active_layout_id, paused_here || impl.host_session->companion_menu_open(),
+                impl.bilinear_filtering, impl.audio_target);
             impl.host_session->poll(network_now);
 
-            // A companion can ask for a layout; the host owns the choice, so an
-            // id it does not recognise is refused rather than adopted.
-            std::string requested;
-            if (impl.host_session->take_requested_layout(requested)) {
-                const Layout& resolved = impl.registry.resolve(requested);
-                if (resolved.id == requested && resolved.id != impl.active_layout_id) {
-                    impl.active_layout_id = resolved.id;
-                    impl.persist_game_config();
-                    log_info("companion asked for the " + resolved.display_name + " layout");
+            // The companion can ask for any of the shared settings; the host
+            // owns them all, so a layout id it does not recognise is refused
+            // rather than adopted.
+            net::RequestMessage request;
+            if (impl.host_session->take_request(request)) {
+                if (!request.layout_id.empty()) {
+                    const Layout& resolved = impl.registry.resolve(request.layout_id);
+                    if (resolved.id == request.layout_id && resolved.id != impl.active_layout_id) {
+                        impl.active_layout_id = resolved.id;
+                        impl.persist_game_config();
+                        if (impl.picker && impl.picker->is_open()) {
+                            impl.picker->set_selected_layout(impl.active_layout_id);
+                        }
+                        log_info("companion asked for the " + resolved.display_name + " layout");
+                    }
+                }
+                if (request.wants_filtering) {
+                    impl.adopt_filtering(request.bilinear_filtering);
+                }
+                if (request.wants_audio_target) {
+                    impl.adopt_audio_target(request.audio_target);
                 }
             }
             // Whichever screen the companion took, the host shows the other.
@@ -1186,13 +1310,25 @@ int App::run(const AppOptions& options) {
         }
         if (impl.companion_session) {
             impl.companion_session->poll(network_now);
-            // A companion follows the host's layout: the host owns that choice,
-            // and both devices have to agree or they draw different things.
-            if (impl.state == Impl::State::Companion) {
+            // A companion follows the host on everything the two devices share
+            // -- layout, smoothing, where the sound comes out. It decides none
+            // of it locally, which is why they cannot drift apart. This applies
+            // with the menu open too, so the menu shows the host's real state.
+            if (impl.is_companion()) {
                 const std::string& host_layout = impl.companion_session->host_layout_id();
                 if (!host_layout.empty() && host_layout != impl.active_layout_id) {
                     impl.active_layout_id = impl.registry.resolve(host_layout).id;
+                    if (impl.picker && impl.picker->is_open()) {
+                        impl.picker->set_selected_layout(impl.active_layout_id);
+                    }
                 }
+                if (impl.companion_session->host_filtering() != impl.bilinear_filtering) {
+                    impl.bilinear_filtering = impl.companion_session->host_filtering();
+                    impl.apply_filtering();
+                    log_info(std::string("following the host: smoothing ") +
+                             (impl.bilinear_filtering ? "on" : "off"));
+                }
+                impl.adopt_audio_target(impl.companion_session->host_audio_target());
                 impl.local_screen = impl.companion_session->granted_screen();
             }
             // --connect joins the first host that offers the screen we asked
@@ -1213,7 +1349,12 @@ int App::run(const AppOptions& options) {
 
         // Emulation only advances while the game is actually in front; opening
         // the layout menu pauses it, which is what makes comparing layouts easy.
-        if (impl.source && impl.state == Impl::State::Playing) {
+        // A menu on the *other* device counts just as much: otherwise one player
+        // reads a menu while the game carries on without them.
+        const bool game_running =
+            impl.state == Impl::State::Playing &&
+            !(impl.host_session && impl.host_session->companion_menu_open());
+        if (impl.source && game_running) {
             // The companion's buttons and touches are merged with this device's,
             // so either player can press anything. This is the InputSink seam
             // doing exactly what it was left in place for.
@@ -1275,12 +1416,12 @@ int App::run(const AppOptions& options) {
             impl.companion_session->send_input(impl.input.ds_state());
         }
 
-        if (impl.source && impl.state != Impl::State::Playing) {
+        if (impl.source && !game_running) {
             // Paused: hold the sticks and buttons off the core entirely.
             impl.source->input_sink().submit(DsInputState());
             impl.audio.set_paused(true);
         }
-        if (impl.source && impl.state == Impl::State::Playing) {
+        if (impl.source && game_running) {
             impl.audio.set_paused(false);
         }
 

@@ -24,8 +24,17 @@ WORK_DIR="$4"
 CHECKER="$5"
 
 rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR/host/config" "$WORK_DIR/companion/config"
+mkdir -p "$WORK_DIR/host/config/dualscreen" "$WORK_DIR/companion/config/dualscreen"
 printf 'dualscreen two device test rom' > "$WORK_DIR/fake.nds"
+
+# The companion is given the opposite of the host's settings on purpose. Every
+# setting the two devices share belongs to the host, so a companion that used
+# its own would be the bug: what it starts with has to be thrown away in favour
+# of what the host says.
+printf '{"default_bilinear_filtering": true, "audio_target": "top"}' \
+    > "$WORK_DIR/companion/config/dualscreen/settings.json"
+printf '{"default_bilinear_filtering": false, "audio_target": "both"}' \
+    > "$WORK_DIR/host/config/dualscreen/settings.json"
 
 HOST_SHOT="$WORK_DIR/host.ppm"
 COMPANION_SHOT="$WORK_DIR/companion.ppm"
@@ -101,6 +110,17 @@ if ! grep -q "connected" "$WORK_DIR/companion.log" 2>/dev/null; then
 fi
 if ! grep -q "connected as the" "$WORK_DIR/host.log" 2>/dev/null; then
     echo "the host never reported accepting a companion" >&2
+    FAILED=1
+fi
+
+# The companion started with smoothing on and the sound pinned to the top
+# screen; the host has neither. Both have to end up at the host's answer.
+if ! grep -q "following the host: smoothing off" "$WORK_DIR/companion.log" 2>/dev/null; then
+    echo "the companion kept its own smoothing instead of following the host" >&2
+    FAILED=1
+fi
+if ! grep -q "following the host: sound both screens" "$WORK_DIR/companion.log" 2>/dev/null; then
+    echo "the companion kept its own sound target instead of following the host" >&2
     FAILED=1
 fi
 

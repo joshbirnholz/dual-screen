@@ -13,29 +13,52 @@ namespace {
 
 }  // namespace
 
-void LayoutPicker::open(const std::string& layout_id,
-                        bool session_active,
-                        bool companion,
-                        bool bilinear_filtering) {
+void LayoutPicker::open(const LayoutPickerState& state) {
     open_ = true;
-    selected_layout_id_ = layout_id;
-    session_active_ = session_active;
-    bilinear_filtering_ = bilinear_filtering;
+    state_ = state;
+    selected_layout_id_ = state.layout_id;
 
     footer_.clear();
     footer_.push_back(Footer::Filtering);
-    footer_.push_back(Footer::Settings);
+    // Which device makes the sound is only a question when there are two of
+    // them, so the entry appears with the session and not before.
+    if (state.session_active) {
+        footer_.push_back(Footer::Sound);
+    }
+    // Not on a companion: everything in Settings is either about this device's
+    // own files or a default for starting a game, and a companion is doing
+    // neither. What it can change here is the session, which is shared.
+    if (!state.companion) {
+        footer_.push_back(Footer::Settings);
+    }
     footer_.push_back(Footer::Resume);
-    if (session_active) {
+    if (state.session_active) {
         footer_.push_back(Footer::Disconnect);
     }
-    // A companion has no game of its own to quit out of; leaving the session is
-    // the only exit that means anything there.
-    if (!companion) {
+    if (!state.companion) {
         footer_.push_back(Footer::Quit);
     }
-    const int index = registry_->index_of(layout_id);
+    const int index = registry_->index_of(state.layout_id);
     focus_ = index >= 0 ? index : 0;
+}
+
+std::string LayoutPicker::footer_label(Footer kind) const {
+    switch (kind) {
+        case Footer::Filtering:
+            return state_.bilinear_filtering ? "Smoothing: On" : "Smoothing: Off";
+        case Footer::Sound:
+            switch (state_.audio_target) {
+                case AudioTarget::TopScreen: return "Sound: Top";
+                case AudioTarget::BottomScreen: return "Sound: Bottom";
+                case AudioTarget::Both: break;
+            }
+            return "Sound: Both";
+        case Footer::Settings: return "Settings";
+        case Footer::Resume: return "Resume";
+        case Footer::Disconnect: return "Disconnect";
+        case Footer::Quit: break;
+    }
+    return "Quit";
 }
 
 LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float output_height) const {
@@ -47,8 +70,18 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
                                output_width - margin * 2.0f,
                                output_height - std::round(output_height * 0.12f)};
 
-    const float header_height = TextRenderer::line_height(geometry.scale) * 3.5f;
-    const float footer_height = TextRenderer::line_height(geometry.scale) * 3.0f;
+    const float line = TextRenderer::line_height(geometry.scale);
+    const int buttons = std::max(1, footer_count());
+    // Four across is as narrow as a label stays readable at arm's length, so a
+    // fifth button starts a second row rather than shrinking them all.
+    const int footer_rows = (buttons > 4) ? 2 : 1;
+    geometry.footer_columns = (buttons + footer_rows - 1) / footer_rows;
+
+    const float header_height = line * 3.5f;
+    const float button_height = line * 2.1f;
+    const float button_gap = std::round(line * 0.35f);
+    const float footer_height = button_height * static_cast<float>(footer_rows) +
+                                button_gap * static_cast<float>(footer_rows - 1) + line * 0.9f;
     const float grid_top = geometry.panel.y + header_height;
     const float grid_height = geometry.panel.h - header_height - footer_height;
 
@@ -75,15 +108,20 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
         });
     }
 
-    const int buttons = std::max(1, footer_count());
-    const float footer_width = (geometry.panel.w - gutter * (buttons - 1)) / buttons;
-    const float footer_y = geometry.panel.y + geometry.panel.h - footer_height * 0.8f;
+    const int footer_columns = std::max(1, geometry.footer_columns);
+    const float footer_width =
+        (geometry.panel.w - gutter * (footer_columns - 1)) / footer_columns;
+    const float footer_top = geometry.panel.y + geometry.panel.h -
+                             (button_height * static_cast<float>(footer_rows) +
+                              button_gap * static_cast<float>(footer_rows - 1));
     for (int index = 0; index < buttons; ++index) {
+        const int column = index % footer_columns;
+        const int row = index / footer_columns;
         geometry.footer.push_back(PixelRect{
-            geometry.panel.x + index * (footer_width + gutter),
-            footer_y,
+            geometry.panel.x + column * (footer_width + gutter),
+            footer_top + row * (button_height + button_gap),
             footer_width,
-            footer_height * 0.7f,
+            button_height,
         });
     }
     return geometry;
@@ -116,8 +154,9 @@ void LayoutPicker::move_focus(int delta_x, int delta_y, const Geometry& geometry
         return;
     }
 
-    // Focus is on the footer row.
+    // Focus is in the footer, which may itself be two rows deep.
     const int footer_index = focus_ - tiles;
+    const int footer_columns = std::max(1, geometry.footer_columns);
     if (delta_x != 0) {
         const int next = footer_index + delta_x;
         if (next >= 0 && next < footer_count()) {
@@ -125,11 +164,24 @@ void LayoutPicker::move_focus(int delta_x, int delta_y, const Geometry& geometry
         }
         return;
     }
-    if (delta_y < 0 && tiles > 0) {
-        // Back up into the last grid row, keeping roughly the same column.
-        const int last_row = (tiles - 1) / columns;
-        const int column = std::min(footer_index, columns - 1);
-        focus_ = std::min(tiles - 1, last_row * columns + column);
+    if (delta_y > 0) {
+        const int next = footer_index + footer_columns;
+        if (next < footer_count()) {
+            focus_ = tiles + next;
+        }
+        return;
+    }
+    if (delta_y < 0) {
+        if (footer_index >= footer_columns) {
+            focus_ = tiles + footer_index - footer_columns;
+            return;
+        }
+        if (tiles > 0) {
+            // Back up into the last grid row, keeping roughly the same column.
+            const int last_row = (tiles - 1) / columns;
+            const int column = std::min(footer_index, columns - 1);
+            focus_ = std::min(tiles - 1, last_row * columns + column);
+        }
     }
 }
 
@@ -150,9 +202,14 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
     }
     switch (footer_[static_cast<std::size_t>(footer_index)]) {
         case Footer::Filtering:
-            bilinear_filtering_ = !bilinear_filtering_;
+            // Stays open, so the change can be judged against the frame behind
+            // it. The caller decides what the new value actually is -- on a
+            // companion the host does -- and tells us with set_filtering().
             result.filtering_toggled = true;
-            return true;  // stays open, so the change can be seen behind it
+            return true;
+        case Footer::Sound:
+            result.audio_target_changed = true;
+            return true;
         case Footer::Settings:
             result.open_settings = true;
             return true;
@@ -305,22 +362,12 @@ void LayoutPicker::render(QuadRenderer& quads,
             quads.draw_outline(button, theme.text, std::max(1.0f, scale * 0.5f));
         }
         const Footer kind = footer_[index];
-        std::string label;
+        const std::string label = footer_label(kind);
         Color color = theme.text;
-        switch (kind) {
-            case Footer::Filtering:
-                label = bilinear_filtering_ ? "Smoothing: On" : "Smoothing: Off";
-                break;
-            case Footer::Settings: label = "Settings"; break;
-            case Footer::Resume: label = "Resume"; break;
-            case Footer::Disconnect:
-                label = "Disconnect";
-                color = theme.warning;
-                break;
-            case Footer::Quit:
-                label = "Quit";
-                color = theme.danger;
-                break;
+        if (kind == Footer::Disconnect) {
+            color = theme.warning;
+        } else if (kind == Footer::Quit) {
+            color = theme.danger;
         }
         // "Smoothing: Off" is much longer than the labels beside it, and a
         // session adds a fifth button, so a label is shrunk rather than allowed

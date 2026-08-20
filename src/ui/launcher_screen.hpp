@@ -17,6 +17,7 @@ enum class LauncherChoice {
     LoadGame,
     ConnectAsTopScreen,
     ConnectAsBottomScreen,
+    Settings,
     Quit,
 };
 

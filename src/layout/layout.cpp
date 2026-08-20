@@ -9,6 +9,48 @@ const char* to_string(ScreenId screen) {
     return screen == ScreenId::Top ? "top" : "bottom";
 }
 
+const char* to_string(AudioTarget target) {
+    switch (target) {
+        case AudioTarget::TopScreen: return "top screen only";
+        case AudioTarget::BottomScreen: return "bottom screen only";
+        case AudioTarget::Both: break;
+    }
+    return "both screens";
+}
+
+bool audio_reaches(AudioTarget target, ScreenId screen) {
+    switch (target) {
+        case AudioTarget::TopScreen: return screen == ScreenId::Top;
+        case AudioTarget::BottomScreen: return screen == ScreenId::Bottom;
+        case AudioTarget::Both: break;
+    }
+    return true;
+}
+
+AudioTarget next_audio_target(AudioTarget target) {
+    switch (target) {
+        case AudioTarget::Both: return AudioTarget::TopScreen;
+        case AudioTarget::TopScreen: return AudioTarget::BottomScreen;
+        case AudioTarget::BottomScreen: break;
+    }
+    return AudioTarget::Both;
+}
+
+const char* audio_target_key(AudioTarget target) {
+    switch (target) {
+        case AudioTarget::TopScreen: return "top";
+        case AudioTarget::BottomScreen: return "bottom";
+        case AudioTarget::Both: break;
+    }
+    return "both";
+}
+
+AudioTarget audio_target_from_key(const std::string& key) {
+    if (key == "top") return AudioTarget::TopScreen;
+    if (key == "bottom") return AudioTarget::BottomScreen;
+    return AudioTarget::Both;
+}
+
 PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                float output_width,
                                float output_height,

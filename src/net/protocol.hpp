@@ -19,7 +19,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 1;
+constexpr uint16_t kProtocolVersion = 2;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -33,7 +33,7 @@ enum class MessageType : uint16_t {
     Hello = 1,
     Input = 2,
     Bye = 3,
-    RequestLayout = 4,
+    Request = 4,
     // host -> companion
     Welcome = 10,
     Reject = 11,
@@ -91,23 +91,37 @@ struct AudioMessage {
     std::vector<int16_t> samples;
 };
 
-// Sent by a companion to ask the host to change layout. The host owns the
-// choice, so this is a request rather than an instruction -- it is applied and
-// then broadcast back as SessionState so both devices agree.
-struct RequestLayoutMessage {
-    std::string layout_id;
+// Sent by a companion to ask the host to change something, and to tell it when
+// its own menu is open. The host owns every one of these choices, so they are
+// requests rather than instructions: it applies them and broadcasts the result
+// as SessionState, which is what keeps the two devices from ever disagreeing.
+//
+// Each field carries its own "I mean this one" flag, so a companion asking for
+// a layout does not have to have an opinion about the sound at the same time.
+struct RequestMessage {
+    std::string layout_id;  // empty asks for no layout change
+    bool wants_filtering = false;
+    bool bilinear_filtering = false;
+    bool wants_audio_target = false;
+    AudioTarget audio_target = AudioTarget::Both;
+    // The companion has a menu up. The host pauses while either device does, so
+    // both are looking at the same still frame.
+    bool menu_open = false;
 };
 
 struct RejectMessage {
     std::string reason;
 };
 
-// Sent whenever the host's layout changes, so the companion knows whether it is
-// showing one screen or both.
+// The host's view of the session, sent whenever any of it changes. Everything
+// both devices have to agree on lives here and nowhere else: the companion
+// never decides any of it locally, which is why the two cannot drift apart.
 struct SessionStateMessage {
     std::string layout_id;
     ScreenId companion_screen = ScreenId::Bottom;
     bool paused = false;
+    bool bilinear_filtering = false;
+    AudioTarget audio_target = AudioTarget::Both;
 };
 
 struct FrameMessage {
@@ -153,7 +167,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
 void encode_frame(const FrameMessage& message, std::vector<uint8_t>& out);
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out);
 void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
-void encode_request_layout(const RequestLayoutMessage& message, std::vector<uint8_t>& out);
+void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 void encode_bye(std::vector<uint8_t>& out);
 // The beacon is not framed -- it replaces the buffer with one datagram.
 void encode_beacon(const BeaconMessage& message, std::vector<uint8_t>& out);
@@ -167,7 +181,7 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
 bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out);
 bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out);
 bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out);
-bool decode_request_layout(const uint8_t* data, std::size_t size, RequestLayoutMessage& out);
+bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out);
 
 // Pulls one complete message off the front of `buffer`, erasing it. Returns
 // false when a whole message is not there yet. Sets `fatal` if the stream is

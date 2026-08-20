@@ -68,6 +68,10 @@ void test_welcome_and_session_round_trip() {
     state.layout_id = "split_devices";
     state.companion_screen = ScreenId::Bottom;
     state.paused = true;
+    // Deliberately not the defaults: a field that never made it across would
+    // otherwise decode to the value that was sent and look like it worked.
+    state.bilinear_filtering = true;
+    state.audio_target = AudioTarget::TopScreen;
 
     buffer.clear();
     encode_session_state(state, buffer);
@@ -79,6 +83,57 @@ void test_welcome_and_session_round_trip() {
     CHECK_STR_EQ(received_state.layout_id, "split_devices");
     CHECK(received_state.companion_screen == ScreenId::Bottom);
     CHECK_EQ(received_state.paused, true);
+    CHECK_EQ(received_state.bilinear_filtering, true);
+    CHECK(received_state.audio_target == AudioTarget::TopScreen);
+}
+
+// Everything a companion can ask the host for travels in one message, each
+// field saying whether it means anything, so asking about the sound does not
+// silently also ask for a layout.
+void test_request_round_trip() {
+    RequestMessage sent;
+    sent.layout_id = "horizontal";
+    sent.wants_filtering = true;
+    sent.bilinear_filtering = true;
+    sent.wants_audio_target = true;
+    sent.audio_target = AudioTarget::BottomScreen;
+    sent.menu_open = true;
+
+    std::vector<uint8_t> buffer;
+    encode_request(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::Request);
+
+    RequestMessage received;
+    CHECK(decode_request(payload.data(), payload.size(), received));
+    CHECK_STR_EQ(received.layout_id, "horizontal");
+    CHECK_EQ(received.wants_filtering, true);
+    CHECK_EQ(received.bilinear_filtering, true);
+    CHECK_EQ(received.wants_audio_target, true);
+    CHECK(received.audio_target == AudioTarget::BottomScreen);
+    CHECK_EQ(received.menu_open, true);
+
+    // A request that means none of it round-trips as such rather than as an
+    // accidental instruction.
+    RequestMessage quiet;
+    buffer.clear();
+    encode_request(quiet, buffer);
+    CHECK(one_message(buffer, type, payload));
+    RequestMessage received_quiet;
+    CHECK(decode_request(payload.data(), payload.size(), received_quiet));
+    CHECK(received_quiet.layout_id.empty());
+    CHECK_EQ(received_quiet.wants_filtering, false);
+    CHECK_EQ(received_quiet.wants_audio_target, false);
+    CHECK_EQ(received_quiet.menu_open, false);
+
+    // An audio target outside the three that exist is refused rather than
+    // becoming one of them by accident.
+    std::vector<uint8_t> corrupt(payload);
+    corrupt[corrupt.size() - 2] = 9;
+    RequestMessage rejected;
+    CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
 }
 
 void test_input_round_trip() {
@@ -305,6 +360,7 @@ void test_corrupt_pixel_payload_is_rejected() {
 int main() {
     test_hello_round_trip();
     test_welcome_and_session_round_trip();
+    test_request_round_trip();
     test_input_round_trip();
     test_stream_framing();
     test_absurd_length_is_fatal();

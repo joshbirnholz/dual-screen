@@ -41,16 +41,26 @@ public:
     const std::vector<DiscoveredHost>& hosts() const { return browser_.hosts(); }
     const std::string& game_title() const { return game_title_; }
     ScreenId granted_screen() const { return granted_screen_; }
-    // The layout the host is showing, so this device draws the same thing.
+    // The session as the host sees it. This device follows all of it rather
+    // than deciding anything locally, which is what keeps the two in step.
     const std::string& host_layout_id() const { return host_layout_id_; }
     bool host_paused() const { return host_paused_; }
+    bool host_filtering() const { return host_filtering_; }
+    AudioTarget host_audio_target() const { return host_audio_target_; }
 
     // Sends this device's input to the host. Only what changed goes out.
     void send_input(const DsInputState& state);
 
-    // Asks the host to change layout. The host owns the choice and broadcasts
-    // the result back, so nothing is assumed to have taken effect here.
+    // Asks the host to change something. The host owns every one of these and
+    // broadcasts the result back, so nothing is assumed to have taken effect
+    // here -- which is exactly why the two devices cannot end up disagreeing.
     void request_layout(const std::string& layout_id);
+    void request_filtering(bool bilinear);
+    void request_audio_target(AudioTarget target);
+
+    // Tells the host whether a menu is up on this device, so it pauses too.
+    // Sent whenever it changes, and repeated with every other request.
+    void set_menu_open(bool open);
 
     // Called with audio received from the host, ready to play. Set before
     // connecting.
@@ -78,6 +88,7 @@ public:
 
 private:
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
+    void send_request(RequestMessage request);
     void fail(const std::string& reason);
 
     HostBrowser browser_;
@@ -92,6 +103,9 @@ private:
     std::string game_title_;
     std::string host_layout_id_;
     bool host_paused_ = false;
+    bool host_filtering_ = false;
+    AudioTarget host_audio_target_ = AudioTarget::Both;
+    bool menu_open_ = false;
     bool said_hello_ = false;
 
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice

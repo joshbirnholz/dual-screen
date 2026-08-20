@@ -117,6 +117,25 @@ std::size_t begin_message(std::vector<uint8_t>& out) {
 
 uint8_t screen_to_wire(ScreenId screen) { return screen == ScreenId::Top ? 0u : 1u; }
 
+uint8_t audio_target_to_wire(AudioTarget target) {
+    switch (target) {
+        case AudioTarget::TopScreen: return 0u;
+        case AudioTarget::BottomScreen: return 1u;
+        case AudioTarget::Both: break;
+    }
+    return 2u;
+}
+
+bool audio_target_from_wire(uint8_t value, AudioTarget& out) {
+    switch (value) {
+        case 0: out = AudioTarget::TopScreen; return true;
+        case 1: out = AudioTarget::BottomScreen; return true;
+        case 2: out = AudioTarget::Both; return true;
+        default: break;
+    }
+    return false;
+}
+
 bool screen_from_wire(uint8_t value, ScreenId& out) {
     if (value == 0) {
         out = ScreenId::Top;
@@ -165,6 +184,8 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_string(out, message.layout_id);
     put_u8(out, screen_to_wire(message.companion_screen));
     put_u8(out, message.paused ? 1u : 0u);
+    put_u8(out, message.bilinear_filtering ? 1u : 0u);
+    put_u8(out, audio_target_to_wire(message.audio_target));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -260,16 +281,36 @@ bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
     return true;
 }
 
-void encode_request_layout(const RequestLayoutMessage& message, std::vector<uint8_t>& out) {
+void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_string(out, message.layout_id);
-    finish_message(out, start, MessageType::RequestLayout);
+    put_u8(out, message.wants_filtering ? 1u : 0u);
+    put_u8(out, message.bilinear_filtering ? 1u : 0u);
+    put_u8(out, message.wants_audio_target ? 1u : 0u);
+    put_u8(out, audio_target_to_wire(message.audio_target));
+    put_u8(out, message.menu_open ? 1u : 0u);
+    finish_message(out, start, MessageType::Request);
 }
 
-bool decode_request_layout(const uint8_t* data, std::size_t size, RequestLayoutMessage& out) {
+bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) {
     Reader reader(data, size);
+    uint8_t wants_filtering = 0;
+    uint8_t filtering = 0;
+    uint8_t wants_audio = 0;
+    uint8_t audio = 0;
+    uint8_t menu_open = 0;
     reader.string(out.layout_id);
-    return reader.ok();
+    reader.u8(wants_filtering);
+    reader.u8(filtering);
+    reader.u8(wants_audio);
+    reader.u8(audio);
+    reader.u8(menu_open);
+    if (!reader.ok()) return false;
+    out.wants_filtering = (wants_filtering != 0);
+    out.bilinear_filtering = (filtering != 0);
+    out.wants_audio_target = (wants_audio != 0);
+    out.menu_open = (menu_open != 0);
+    return audio_target_from_wire(audio, out.audio_target);
 }
 
 void encode_bye(std::vector<uint8_t>& out) {
@@ -320,11 +361,17 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     Reader reader(data, size);
     uint8_t screen = 0;
     uint8_t paused = 0;
+    uint8_t filtering = 0;
+    uint8_t audio = 0;
     reader.string(out.layout_id);
     reader.u8(screen);
     reader.u8(paused);
+    reader.u8(filtering);
+    reader.u8(audio);
     if (!reader.ok()) return false;
     out.paused = (paused != 0);
+    out.bilinear_filtering = (filtering != 0);
+    if (!audio_target_from_wire(audio, out.audio_target)) return false;
     return screen_from_wire(screen, out.companion_screen);
 }
 

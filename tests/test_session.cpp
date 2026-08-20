@@ -61,7 +61,7 @@ void test_host_and_companion_pair_up() {
         std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
         return;
     }
-    host.set_layout("split_devices", false);
+    host.set_session_state("split_devices", false, false, AudioTarget::Both);
 
     CompanionSession companion;
     CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
@@ -154,7 +154,7 @@ void test_non_split_layout_sends_both_screens() {
     if (!host.start(config, &error)) {
         return;  // covered by the first test's skip
     }
-    host.set_layout("vertical", false);
+    host.set_session_state("vertical", false, false, AudioTarget::Both);
 
     CompanionSession companion;
     if (!companion.begin_search("Deck 2", ScreenId::Bottom, &error)) {
@@ -213,7 +213,7 @@ void test_companion_gets_the_screen_it_asked_for() {
         if (!host.start(config, &error)) {
             return;  // covered by the first test's skip
         }
-        host.set_layout("split_devices", false);
+        host.set_session_state("split_devices", false, false, AudioTarget::Both);
 
         CompanionSession companion;
         if (!companion.begin_search("Chooser", wanted, &error)) {
@@ -278,7 +278,7 @@ void test_audio_reaches_the_companion() {
 
     std::string error;
     if (!host.start(config, &error)) return;
-    host.set_layout("split_devices", false);
+    host.set_session_state("split_devices", false, false, AudioTarget::Both);
 
     CompanionSession companion;
     std::size_t frames_heard = 0;
@@ -345,7 +345,7 @@ void test_companion_can_request_a_layout() {
 
     std::string error;
     if (!host.start(config, &error)) return;
-    host.set_layout("split_devices", false);
+    host.set_session_state("split_devices", false, false, AudioTarget::Both);
 
     CompanionSession companion;
     if (!companion.begin_search("Asker", ScreenId::Bottom, &error)) {
@@ -363,26 +363,150 @@ void test_companion_can_request_a_layout() {
     }
 
     // Nothing pending before anything is asked for.
-    std::string requested;
-    CHECK(!host.take_requested_layout(requested));
+    RequestMessage requested;
+    CHECK(!host.take_request(requested));
 
     companion.request_layout("vertical");
-    const bool asked = spin(host, companion, [&] { return host.take_requested_layout(requested); });
+    const bool asked = spin(host, companion, [&] { return host.take_request(requested); });
     CHECK_MSG(asked, "the layout request never reached the host");
     if (asked) {
-        CHECK_STR_EQ(requested, "vertical");
+        CHECK_STR_EQ(requested.layout_id, "vertical");
         // Taken once only, so a request is not applied repeatedly.
-        std::string again;
-        CHECK(!host.take_requested_layout(again));
+        RequestMessage again;
+        CHECK(!host.take_request(again));
     }
 
     // And the host's answer comes back, so both devices agree.
-    host.set_layout("vertical", false);
+    host.set_session_state("vertical", false, false, AudioTarget::Both);
     const bool agreed =
         spin(host, companion, [&] { return companion.host_layout_id() == "vertical"; });
     CHECK_MSG(agreed, "the host's layout change never reached the companion");
 
     companion.disconnect();
+    host.stop();
+}
+
+// The settings both devices share are the host's to hold. A companion asks and
+// then adopts what comes back, which is what makes "always in sync" true rather
+// than merely likely: there is no second copy to disagree with.
+void test_shared_settings_stay_in_sync() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Sync Host";
+    config.game_title = "Syncing";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Sync Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    // Smoothing: asked for on the companion, decided on the host, and only then
+    // true on both. Nothing is applied locally on the way through.
+    companion.request_filtering(true);
+    RequestMessage request;
+    const bool asked = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_filtering;
+    });
+    CHECK_MSG(asked, "the smoothing request never reached the host");
+    CHECK_EQ(request.bilinear_filtering, true);
+    // Asking about smoothing must not read as asking for a layout as well.
+    CHECK(request.layout_id.empty());
+    CHECK_EQ(request.wants_audio_target, false);
+
+    host.set_session_state("split_devices", false, true, AudioTarget::Both);
+    CHECK_MSG(spin(host, companion, [&] { return companion.host_filtering(); }),
+              "the host's smoothing never reached the companion");
+
+    // The sound target travels the same way.
+    companion.request_audio_target(AudioTarget::TopScreen);
+    const bool asked_audio = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_audio_target;
+    });
+    CHECK_MSG(asked_audio, "the sound request never reached the host");
+    CHECK(request.audio_target == AudioTarget::TopScreen);
+
+    host.set_session_state("split_devices", false, true, AudioTarget::TopScreen);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return companion.host_audio_target() == AudioTarget::TopScreen; }),
+              "the host's sound target never reached the companion");
+
+    companion.disconnect();
+    host.stop();
+}
+
+// A menu on the companion pauses the host. Otherwise one player reads a menu
+// while the other's game carries on without them.
+void test_companion_menu_pauses_the_host() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Pause Host";
+    config.game_title = "Pausing";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Pause Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    CHECK(!host.companion_menu_open());
+
+    // Something held down as the menu opens.
+    DsInputState held;
+    held.buttons = 1u << static_cast<unsigned>(DsButton::A);
+    held.touching = true;
+    held.touch_x = 100;
+    held.touch_y = 100;
+    companion.send_input(held);
+    CHECK_MSG(spin(host, companion, [&] { return host.companion_input().buttons != 0; }),
+              "the companion's input never reached the host");
+
+    companion.set_menu_open(true);
+    CHECK_MSG(spin(host, companion, [&] { return host.companion_menu_open(); }),
+              "the companion's menu never reached the host");
+    // Only changes go over the wire, so a button held as the menu opened would
+    // stay held for as long as the menu was up if the host did not let go of it.
+    CHECK_EQ(host.companion_input().buttons, 0u);
+    CHECK_EQ(host.companion_input().touching, false);
+
+    companion.set_menu_open(false);
+    CHECK_MSG(spin(host, companion, [&] { return !host.companion_menu_open(); }),
+              "the companion's menu never closed on the host");
+
+    // And a device that leaves is not still holding a menu open.
+    companion.set_menu_open(true);
+    CHECK(spin(host, companion, [&] { return host.companion_menu_open(); }));
+    companion.disconnect();
+    CHECK_MSG(spin(host, companion, [&] { return !host.has_companion(); }),
+              "the host never noticed the companion leaving");
+    CHECK(!host.companion_menu_open());
+
     host.stop();
 }
 
@@ -430,6 +554,8 @@ int main() {
     test_companion_gets_the_screen_it_asked_for();
     test_audio_reaches_the_companion();
     test_companion_can_request_a_layout();
+    test_shared_settings_stay_in_sync();
+    test_companion_menu_pauses_the_host();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
 }
