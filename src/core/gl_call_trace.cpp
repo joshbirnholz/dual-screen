@@ -176,6 +176,42 @@ void APIENTRY trace_BufferSubData(GLenum target, GLintptr offset, GLsizeiptr siz
          n(static_cast<long long>(offset)) + ", size=" + n(static_cast<long long>(size)) + ")");
 }
 
+// Enable and disable matter more than they look. The frontend's own blending,
+// left switched on, silently discards anything the core draws without alpha of
+// its own -- and a core that tracks state in a shadow object will not turn it
+// off, because it believes it already is off. Tracing these is the only way to
+// tell "the core turned it off and something else is wrong" from "the core
+// never touched it".
+void APIENTRY trace_Enable(GLenum cap) {
+    REAL("glEnable", void (APIENTRY*)(GLenum))
+    real_fn(cap);
+    note("glEnable(" + hex(cap) + ")");
+}
+
+void APIENTRY trace_Disable(GLenum cap) {
+    REAL("glDisable", void (APIENTRY*)(GLenum))
+    real_fn(cap);
+    note("glDisable(" + hex(cap) + ")");
+}
+
+void APIENTRY trace_BlendFunc(GLenum src, GLenum dst) {
+    REAL("glBlendFunc", void (APIENTRY*)(GLenum, GLenum))
+    real_fn(src, dst);
+    note("glBlendFunc(" + hex(src) + ", " + hex(dst) + ")");
+}
+
+void APIENTRY trace_BlendFuncSeparate(GLenum sr, GLenum dr, GLenum sa, GLenum da) {
+    REAL("glBlendFuncSeparate", void (APIENTRY*)(GLenum, GLenum, GLenum, GLenum))
+    real_fn(sr, dr, sa, da);
+    note("glBlendFuncSeparate(" + hex(sr) + ", " + hex(dr) + ", " + hex(sa) + ", " + hex(da) + ")");
+}
+
+void APIENTRY trace_ColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a) {
+    REAL("glColorMask", void (APIENTRY*)(GLboolean, GLboolean, GLboolean, GLboolean))
+    real_fn(r, g, b, a);
+    note("glColorMask(" + n(r) + ", " + n(g) + ", " + n(b) + ", " + n(a) + ")");
+}
+
 void APIENTRY trace_BindVertexArray(GLuint array) {
     REAL("glBindVertexArray", void (APIENTRY*)(GLuint))
     real_fn(array);
@@ -215,6 +251,11 @@ const std::map<std::string, void*>& table() {
         {"glBufferData", reinterpret_cast<void*>(&trace_BufferData)},
         {"glBufferSubData", reinterpret_cast<void*>(&trace_BufferSubData)},
         {"glBindVertexArray", reinterpret_cast<void*>(&trace_BindVertexArray)},
+        {"glEnable", reinterpret_cast<void*>(&trace_Enable)},
+        {"glDisable", reinterpret_cast<void*>(&trace_Disable)},
+        {"glBlendFunc", reinterpret_cast<void*>(&trace_BlendFunc)},
+        {"glBlendFuncSeparate", reinterpret_cast<void*>(&trace_BlendFuncSeparate)},
+        {"glColorMask", reinterpret_cast<void*>(&trace_ColorMask)},
         {"glBindBufferBase", reinterpret_cast<void*>(&trace_BindBufferBase)},
         {"glBindBufferRange", reinterpret_cast<void*>(&trace_BindBufferRange)},
     };

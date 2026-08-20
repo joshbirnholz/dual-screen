@@ -130,3 +130,11 @@ if(DUALSCREEN_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# A diagnostic tool, not part of the app: loads a real libretro core and reports
+# what it asks the frontend for, without needing a ROM for it.
+add_executable(probe_core tools/probe_core.cpp)
+target_include_directories(probe_core PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
+target_link_libraries(probe_core PRIVATE ${SDL2_LIBRARIES} ${CMAKE_DL_LIBS})
+target_include_directories(probe_core PRIVATE ${SDL2_INCLUDE_DIRS})
+target_compile_options(probe_core PRIVATE -Wall -Wextra)

@@ -230,7 +230,31 @@ anything non-default, so this is a test failure rather than a black screen.
 Removing the reset produces exactly what the real core produced:
 `frontend left non-default GL state: GL_BLEND`.
 
-**What is still unverified:** all of this is exercised against a mock core that
+**Verified against the real core.** `tools/probe_core` loads a genuine libretro
+core against a real OpenGL context and reports what it asks for. No ROM is
+needed, which is the point: a core requests its hardware context, pixel format
+and options before it looks at the game file. Run against the Citra build from a
+Steam Deck's RetroArch:
+
+```
+core: Citra 4268124  extensions: 3ds|3dsx|cia|elf
+SET_PIXEL_FORMAT: 1                    (XRGB8888)
+SET_HW_SHARED_CONTEXT requested
+SET_HW_RENDER: context_type=3 version=3.3 depth=0 stencil=0 bottom_left_origin=1 cache_context=0
+```
+
+Every value this frontend was built against, confirmed from the core itself
+rather than from reading its source: `context_type=3` is
+`RETRO_HW_CONTEXT_OPENGL_CORE`, at 3.3, bottom-left origin, no cached context.
+And `depth=0, stencil=0` — so no depth or stencil attachment belongs on the
+render target, and a depth test can never be what discards a frame here.
+
+This is the tool that should have existed before any of the 3DS work. Every
+wrong turn in this file came from a mock that agreed with an assumption instead
+of with the core.
+
+**What is still unverified:** the rendering itself is exercised against a mock
+core that
 requests the same context Citra does and renders through it, not against a real
 Citra build, which was not available in this environment. The frontend's runtime
 guards are what stand in: a forced option the core does not declare becomes a
