@@ -72,7 +72,9 @@ private:
     };
 
     Geometry compute_geometry(float output_width, float output_height) const;
-    void navigate_to(const std::string& directory);
+    // By value on purpose: see the definition. Returns whether the browser
+    // actually moved, so a refused directory is not reported as a change.
+    bool navigate_to(std::string directory);
     void activate(int index, GameBrowserResult& result);
     void scroll_focus_into_view(int visible_rows);
     void clamp_scroll(int visible_rows);

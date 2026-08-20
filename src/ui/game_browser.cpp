@@ -62,7 +62,12 @@ void GameBrowser::open(const std::string& directory) {
     navigate_to(start);
 }
 
-void GameBrowser::navigate_to(const std::string& directory) {
+// By value, not by reference. Callers hand this the path out of a row, and
+// rebuilding the row list below destroys that string -- so a reference would
+// dangle from there on, and the ".." written for the next level would point at
+// freed memory. Taking a copy makes that impossible for every caller rather
+// than asking each one to remember.
+bool GameBrowser::navigate_to(std::string directory) {
     std::vector<DirectoryEntry> entries;
     std::string error;
     if (!list_directory(directory, entries, &error)) {
@@ -70,14 +75,14 @@ void GameBrowser::navigate_to(const std::string& directory) {
         error_ = error;
         log_warn(error);
         if (!directory_.empty()) {
-            return;
+            return false;
         }
         // Nothing to fall back to on the very first listing.
         directory_ = directory;
         rows_.clear();
         focus_ = 0;
         scroll_ = 0;
-        return;
+        return true;
     }
 
     error_.clear();
@@ -105,6 +110,7 @@ void GameBrowser::navigate_to(const std::string& directory) {
         row.is_directory = entry.is_directory;
         rows_.push_back(row);
     }
+    return true;
 }
 
 GameBrowser::Geometry GameBrowser::compute_geometry(float output_width, float output_height) const {
@@ -162,8 +168,7 @@ void GameBrowser::activate(int index, GameBrowserResult& result) {
     }
     const Row row = rows_[static_cast<std::size_t>(index)];
     if (row.is_directory) {
-        navigate_to(row.path);
-        result.directory_changed = true;
+        result.directory_changed = navigate_to(row.path);
         return;
     }
     result.game_chosen = true;
@@ -217,8 +222,7 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 // out of the browser entirely once there is no level left.
                 if (!navigated) {
                     if (!rows_.empty() && rows_.front().is_parent) {
-                        navigate_to(rows_.front().path);
-                        result.directory_changed = true;
+                        result.directory_changed = navigate_to(rows_.front().path);
                     } else {
                         result.back_requested = true;
                     }

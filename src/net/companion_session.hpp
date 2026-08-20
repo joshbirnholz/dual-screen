@@ -31,7 +31,9 @@ public:
     // Starts browsing for hosts. Safe to call repeatedly.
     bool begin_search(const std::string& device_name, ScreenId wanted_screen, std::string* error);
     // Connects to one of the hosts found by the search.
-    void connect_to(const DiscoveredHost& host);
+    // By value: callers pass an entry out of hosts(), and a session that ever
+    // clears that list while connecting would leave the argument dangling.
+    void connect_to(DiscoveredHost host);
     void disconnect();
 
     void poll(uint64_t now_ms);

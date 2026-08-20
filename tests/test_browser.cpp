@@ -278,12 +278,51 @@ void test_confirm_on_a_rom_chooses_it() {
     CHECK(!browser.is_open());
 }
 
+// Walking up out of a deep folder has to keep working at every level. The
+// parent row's path is handed straight to navigate_to, which rebuilds the row
+// list -- so if navigate_to reads its argument after that rebuild it is
+// reading a string it just destroyed, and the ".." it writes for the next
+// level points at nothing. That shows up as a browser that climbs one level
+// and then refuses to move, which is exactly what a player would hit after
+// landing somewhere they did not mean to be.
+void test_cancel_climbs_all_the_way_out() {
+    const std::string sandbox = make_sandbox();
+    if (sandbox.empty()) return;
+
+    // Long names on purpose: a short path fits inside std::string's inline
+    // buffer, where a use-after-free leaves the bytes readable and the bug
+    // stays hidden.
+    const std::string deep = path_join(
+        sandbox, "Emulation-roms-nintendo-ds-collection/sorted-by-publisher/nintendo-first-party");
+    CHECK(ensure_directory(deep));
+    touch_file(path_join(deep, "only.nds"));
+
+    GameBrowser browser;
+    browser.open(deep);
+    CHECK_STR_EQ(browser.current_directory(), deep);
+
+    InputManager input;
+    const std::vector<PointerEvent> no_pointers;
+
+    std::string here = deep;
+    while (here != "/") {
+        const std::string expected = path_dirname(here);
+        browser.update(input, {UiAction::Cancel}, no_pointers, 1280.0f, 800.0f);
+        CHECK_MSG(browser.current_directory() == expected,
+                  "climbing out of " + here + " landed in '" + browser.current_directory() +
+                      "' rather than " + expected);
+        if (browser.current_directory() != expected) return;
+        here = expected;
+    }
+}
+
 }  // namespace
 
 int main() {
     test_rom_extensions();
     test_listing_sorts_and_filters();
     test_browser_navigation();
+    test_cancel_climbs_all_the_way_out();
     test_default_browse_dirs_all_exist();
     test_held_input_gate();
     test_cursor_auto_hides();

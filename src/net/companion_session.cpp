@@ -34,7 +34,7 @@ bool CompanionSession::begin_search(const std::string& device_name,
     return true;
 }
 
-void CompanionSession::connect_to(const DiscoveredHost& host) {
+void CompanionSession::connect_to(DiscoveredHost host) {
     stream_.close();
     inbox_.clear();
     said_hello_ = false;
