@@ -31,10 +31,17 @@ bool tracing_now() { return g_enabled && g_frame < kMaxFrames && g_lines < kMaxL
 // The call has already happened; this says whether OpenGL objected to it.
 void note(const std::string& call) {
     if (!tracing_now()) return;
+    // Resolved here rather than once up front, so rebuilding the window cannot
+    // leave this pointing into a context that no longer exists.
+    if (real_GetError == nullptr) {
+        real_GetError = reinterpret_cast<GLenum (*)()>(real("glGetError"));
+    }
     GLenum error = (real_GetError != nullptr) ? real_GetError() : 0;
     if (error == 0) {
         ++g_lines;
-        log_debug("core gl: " + call);
+        // Info, not debug: turning the trace on is already an explicit request,
+        // and needing a second flag to see its output is a trap.
+        log_info("core gl: " + call);
         return;
     }
     const char* text = "an error";
@@ -210,13 +217,18 @@ bool enabled() {
     if (!g_checked_environment) {
         g_checked_environment = true;
         const char* value = std::getenv("DUALSCREEN_TRACE_CORE_GL");
-        g_enabled = value != nullptr && value[0] != '\0' && value[0] != '0';
-        if (g_enabled) {
-            real_GetError = reinterpret_cast<GLenum (*)()>(real("glGetError"));
-            log_info("tracing the core's OpenGL calls for the first few frames");
+        if (value != nullptr && value[0] != '\0' && value[0] != '0') {
+            force_enable();
         }
     }
     return g_enabled;
+}
+
+void force_enable() {
+    g_checked_environment = true;
+    if (g_enabled) return;
+    g_enabled = true;
+    log_info("tracing the core's OpenGL calls for the first few frames");
 }
 
 void* wrapper_for(const std::string& name) {

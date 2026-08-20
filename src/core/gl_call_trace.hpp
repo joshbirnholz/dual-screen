@@ -17,6 +17,11 @@ namespace ds::gl_trace {
 // on.
 bool enabled();
 
+// Turns tracing on regardless of the environment, for --trace-core-gl. Has to
+// be called before the core is loaded: the core resolves its GL functions once,
+// during context_reset, and keeps whatever it was handed.
+void force_enable();
+
 // The wrapper for `name`, or nullptr if this symbol is not traced -- in which
 // case the caller should hand over the driver's own function.
 void* wrapper_for(const std::string& name);

@@ -12,6 +12,7 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
+#include "core/gl_call_trace.hpp"
 #include "core/libretro_screen_source.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
@@ -110,6 +111,9 @@ std::string usage_text() {
         "                       top or bottom screen, skipping the menu\n"
         "  --list-layouts       Print the available layout ids and exit\n"
         "  --verbose            Log core and frontend debug output\n"
+        "  --trace-core-gl      Log every OpenGL call a GPU-rendering core makes,\n"
+        "                       and which the driver rejected. Slow; for when such\n"
+        "                       a core draws nothing and does not say why\n"
         "  --help               Show this text\n"
         "\n"
         "Run with no --game to pick one from a file browser instead.\n"
@@ -135,6 +139,8 @@ AppOptions parse_command_line(int argc, char** argv) {
             options.system_dir = next_argument(argc, argv, index, "--system-dir", options.parse_error);
         } else if (argument == "--windowed") {
             options.windowed = true;
+        } else if (argument == "--trace-core-gl") {
+            options.trace_core_gl = true;
         } else if (argument == "--verbose") {
             options.verbose = true;
         } else if (argument == "--list-layouts") {
@@ -835,6 +841,13 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
+
+    // Before the core is loaded, for the same reason the context is: the core
+    // resolves its GL functions once, while the game is being opened, and keeps
+    // whatever it was handed.
+    if (options.trace_core_gl) {
+        gl_trace::force_enable();
+    }
 
     // Before the core is loaded, not after: a core that renders on the GPU asks
     // for its context while the game is being opened and refuses to open it at

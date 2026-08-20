@@ -12,6 +12,10 @@ struct AppOptions {
     std::string game_path;
     std::string core_path;    // overrides settings.json / the search paths
     std::string layout_id;    // overrides the game's saved layout for this run
+    // Logs every OpenGL call a GPU-rendering core makes, and which of them the
+    // driver rejected. Slow, and only useful when such a core is drawing
+    // nothing and not saying why.
+    bool trace_core_gl = false;
     std::string system_dir;   // overrides settings.json
     bool windowed = false;    // for development on a desktop
     bool verbose = false;
