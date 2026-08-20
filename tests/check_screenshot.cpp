@@ -143,10 +143,14 @@ bool matches_colour(const std::string& expected, double r, double g, double b) {
                std::fabs(b - 37.0) < 6.0;
     }
     if (expected == "shell") {
-        // The Standard layout's console body: bright, and near enough grey that
-        // no screen of the mock core's could be mistaken for it.
-        return (r > 150.0) && (g > 150.0) && (b > 150.0) &&
-               std::fabs(r - b) < 30.0 && std::fabs(r - g) < 30.0;
+        // The Standard layout's console body. Near enough grey that no screen of
+        // the mock core's could be mistaken for it, and clearly brighter than
+        // the flat #252525 the artwork sits on -- which is what separates "the
+        // console is drawn here" from "this is the surround". A DS's shell is
+        // light plastic and a 3DS's is charcoal, so the test is the shape of the
+        // colour rather than how bright it is.
+        return (r > 42.0) && (g > 42.0) && (b > 42.0) && std::fabs(r - b) < 30.0 &&
+               std::fabs(r - g) < 30.0;
     }
     std::fprintf(stderr, "check_screenshot: unknown colour '%s'\n", expected.c_str());
     return false;

@@ -391,8 +391,13 @@ file(WRITE "${THREE_DS_HOME}/game.3ds" "dualscreen 3ds smoke test rom")
 set(THREE_DS_CASES
     # Stacked: the upper screen is wider than the touch screen below it.
     "vertical|upper=blue+lower=green+topleft=black"
-    # The console's own arrangement, with nothing drawn around the screens yet.
-    "standard|upper=blue+lower=green+topleft=black"
+    # The console's own arrangement, drawn into the 3DS artwork. The surround is
+    # the artwork's own background rather than black, the console body shows
+    # through beside the screens, and each screen sits inside its own hole in
+    # the picture: a point well inside every edge is the game, a point just
+    # outside is plastic. Those pairs are what would catch a screen rectangle
+    # measured wrong -- the picture alone would still look plausible.
+    "standard|upper=blue+lower=green+topleft=bezel+at=0.2996,0.6200,shell+at=0.3582,0.2950,blue+at=0.3285,0.2950,shell+at=0.6410,0.2950,blue+at=0.6723,0.2950,shell+at=0.3895,0.6950,green+at=0.6410,0.6950,shell+at=0.4988,0.8325,green+at=0.4988,0.8888,shell"
     "side_by_side|left=blue+right=green"
 )
 

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "layout/layout.hpp"
+#include "render/compositor.hpp"
 #include "core/system.hpp"
 #include "layout/layout_registry.hpp"
 
@@ -567,6 +568,36 @@ void test_layouts_handle_mismatched_screens() {
     CHECK_EQ(point.y, screens.bottom.height - 1);
 }
 
+// Smoothing is a request, and this is what is done with it. The case that
+// matters now is a core rendering above the size it is drawn at: point-sampling
+// a reduction throws away the very pixels the higher resolution was paid for.
+void test_smoothing_follows_the_texture_not_just_the_setting() {
+    PlacedScreen placed;
+    placed.screen = ScreenId::Top;
+    placed.rect = PixelRect{0.0f, 0.0f, 400.0f, 240.0f};
+
+    // One texel per pixel: never smoothed, whatever the setting says.
+    CHECK_EQ(screen_needs_smoothing(placed, 400, 240, true), false);
+    CHECK_EQ(screen_needs_smoothing(placed, 400, 240, false), false);
+
+    // Magnified, which is the case the setting was added for.
+    CHECK_EQ(screen_needs_smoothing(placed, 200, 120, true), true);
+    CHECK_EQ(screen_needs_smoothing(placed, 200, 120, false), false);
+
+    // Rendered at 2x and drawn at the console's own size: resampled either way,
+    // because the alternative is dropping every other row.
+    CHECK_EQ(screen_needs_smoothing(placed, 800, 480, false), true);
+    CHECK_EQ(screen_needs_smoothing(placed, 800, 480, true), true);
+
+    // A quarter turn swaps which way round the two meet, so a rotated screen
+    // that lands one-to-one is still left alone.
+    PlacedScreen turned = placed;
+    turned.rotation = ScreenRotation::Clockwise;
+    turned.rect = PixelRect{0.0f, 0.0f, 240.0f, 400.0f};
+    CHECK_EQ(screen_needs_smoothing(turned, 400, 240, true), false);
+    CHECK_EQ(screen_needs_smoothing(turned, 800, 480, false), true);
+}
+
 }  // namespace
 
 int main() {
@@ -584,5 +615,6 @@ int main() {
     test_framebuffer_split();
     test_3ds_framebuffer_split();
     test_layouts_handle_mismatched_screens();
+    test_smoothing_follows_the_texture_not_just_the_setting();
     return test::finish("layout");
 }

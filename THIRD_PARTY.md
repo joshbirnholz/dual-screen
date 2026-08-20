@@ -23,17 +23,17 @@ A build and runtime dependency, not vendored. zlib licensed.
 libretro C ABI. melonDS DS is GPL-3.0; nothing from it is compiled into this
 project.
 
-## `assets/ds_bezel.png`
+## `assets/ds_bezel.png` and `assets/three_ds_bezel.png`
 
-An illustration of a Nintendo DS, drawn by the Standard layout behind the two
-screens. Supplied by this project's author rather than produced here, and
-embedded into the binary at build time.
+Illustrations of a Nintendo DS and a Nintendo 3DS, drawn by the Standard layout
+behind the two screens. Both were supplied by this project's author rather than
+produced here, and are embedded into the binary at build time.
 
-**Its provenance is not recorded, and it needs to be.** It depicts Nintendo
-hardware, and whoever made the illustration holds copyright in it independently
+**Their provenance is not recorded, and it needs to be.** They depict Nintendo
+hardware, and whoever made each illustration holds copyright in it independently
 of that. Before this repository is published or a build is distributed, the
-source and licence of this file should be established and written down here — or
-the file replaced with one whose terms are known.
+source and licence of these files should be established and written down here —
+or the files replaced with ones whose terms are known.
 
 ## What is deliberately absent
 

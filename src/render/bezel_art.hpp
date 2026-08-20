@@ -2,26 +2,40 @@
 
 #include <string>
 
+#include "core/system.hpp"
 #include "render/texture.hpp"
 
 namespace ds {
 
-// The console artwork the Standard layout draws its screens into.
+// The console artwork the Standard layout draws its screens into -- one picture
+// per console, since a 3DS is not a DS with different screens.
 //
-// Owned rather than kept in a global, because it holds a GL texture and a
+// Owned rather than kept in a global, because it holds GL textures and a
 // texture has to die before the context that made it. The app creates one after
 // the window is up and destroys it before the window goes down.
 class BezelArt {
 public:
-    // Decodes the embedded image and uploads it. Failing is not fatal: the
-    // layout still works, it just has nothing drawn behind the screens.
+    // Decodes the embedded images and uploads them. Failing is not fatal: the
+    // layout still works, it just has nothing drawn behind the screens. A
+    // console whose picture failed reports null and is drawn blank; the error
+    // describes the first one that went wrong.
     bool load(std::string* error);
-    void destroy() { texture_ = Texture(); }
+    void destroy() {
+        ds_ = Texture();
+        three_ds_ = Texture();
+    }
 
-    const Texture* texture() const { return texture_.valid() ? &texture_ : nullptr; }
+    // The picture for one console, or null where there is none to draw.
+    const Texture* texture(SystemId system) const {
+        const Texture& art = (system == SystemId::ThreeDs) ? three_ds_ : ds_;
+        return art.valid() ? &art : nullptr;
+    }
 
 private:
-    Texture texture_;
+    bool load_one(const unsigned char* png, unsigned long size, Texture& out, std::string* error);
+
+    Texture ds_;
+    Texture three_ds_;
 };
 
 }  // namespace ds

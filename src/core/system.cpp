@@ -57,29 +57,26 @@ SystemProfile make_three_ds() {
     profile.screens.top = ScreenSize{400, 240};
     profile.screens.bottom = ScreenSize{320, 240};
 
-    // No artwork yet, so the console frame is built from the machine's own
-    // measurements instead: 134 x 74 mm per half, an upper screen with a
-    // 76.8 x 46.08 mm active area and a lower one of 61.44 x 46.08 mm, each
-    // centred in its half. The screens land where a 3DS's do; the space around
-    // them is simply blank until there is a picture to put behind it.
-    constexpr float kBodyWidth = 134.0f;
-    constexpr float kBodyHeight = 74.0f * 2.0f;
-    constexpr float kTopScreenWidth = 76.8f;
-    constexpr float kBottomScreenWidth = 61.44f;
-    constexpr float kScreenHeight = 46.08f;
+    // Measured from assets/three_ds_bezel.png and the overlay that came with
+    // it, the same way the DS's was: the screens are 400x240 at (131, 66) and
+    // 320x240 at (171, 391) in a 663x688 image, one image pixel per 3DS pixel.
+    constexpr float kArtWidth = 663.0f;
+    constexpr float kArtHeight = 688.0f;
 
     ConsoleFrame& console = profile.screens.console;
-    console.aspect = kBodyWidth / kBodyHeight;
-    console.top = console_screen((kBodyWidth - kTopScreenWidth) * 0.5f / kBodyWidth,
-                                 0.25f - kScreenHeight * 0.5f / kBodyHeight,
-                                 kTopScreenWidth / kBodyWidth, kScreenHeight / kBodyHeight,
-                                 ScreenId::Top);
-    console.bottom = console_screen((kBodyWidth - kBottomScreenWidth) * 0.5f / kBodyWidth,
-                                    0.75f - kScreenHeight * 0.5f / kBodyHeight,
-                                    kBottomScreenWidth / kBodyWidth, kScreenHeight / kBodyHeight,
-                                    ScreenId::Bottom);
+    console.aspect = kArtWidth / kArtHeight;
+    console.top = console_screen(131.0f / kArtWidth, 66.0f / kArtHeight, 400.0f / kArtWidth,
+                                 240.0f / kArtHeight, ScreenId::Top);
+    console.bottom = console_screen(171.0f / kArtWidth, 391.0f / kArtHeight, 320.0f / kArtWidth,
+                                    240.0f / kArtHeight, ScreenId::Bottom);
     console.margin = 0.03f;
-    console.has_art = false;
+    console.native_width = kArtWidth;
+    console.native_height = kArtHeight;
+    // One image pixel per 3DS pixel, so a display this size or smaller gets the
+    // artwork at its own size and both screens land exactly one-to-one.
+    console.native_max_output_width = 1280.0f;
+    console.native_max_output_height = 800.0f;
+    console.has_art = true;
 
     profile.rom_extensions = {"3ds", "3dsx", "cci", "cxi", "app", "elf", "axf", "cia"};
     profile.core_filenames = {"citra_libretro.so", "citra2018_libretro.so",

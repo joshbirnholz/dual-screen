@@ -435,6 +435,27 @@ DS's 256x192. The smoke test verifies the whole round trip on both consoles: a
 touch at a given point in the window makes the mock core draw its crosshair at
 exactly that point.
 
+**Why the console picture is per system and where its numbers come from.** The
+Standard layout is the one that draws a console, and a 3DS is not a DS with
+different screens: different body, different proportions, different holes. So
+`BezelArt` holds one texture per system and the app hands the compositor the one
+for whatever is being played -- which on a companion means whatever the host
+says is being played, since it follows the host's console too.
+
+The screen rectangles are measured off the artwork rather than derived from the
+real machine's millimetres, which is what the 3DS profile used to do while it had
+no picture. Both images come with an overlay marking where the screens go, and
+reading that overlay gives whole pixels: on the 3DS, 400x240 at (131, 66) and
+320x240 at (171, 391) in a 663x688 image -- one image pixel per 3DS pixel, the
+same relationship the DS artwork has. That is what lets both consoles be drawn at
+the artwork's own size on a 1280x800 display and have every screen land exactly
+one-to-one.
+
+The smoke test checks the two agree by probing pairs of points: one well inside
+each screen edge, which must be the game, and one just outside it, which must be
+console plastic. A rectangle measured wrong still produces a plausible-looking
+picture, and only a pair like that notices.
+
 **Why the console is a profile rather than a set of constants.** Screen sizes,
 ROM extensions, core filenames, the console picture and the core options to pin
 were all DS constants scattered across the layout code, the screen source, the
@@ -462,6 +483,18 @@ session state. The rule the footer actually follows is that a button appears
 where there is something to choose, not where the machinery happens to live: a
 DS game has no button, because melonDS is pinned to its software renderer and
 there is no multiplier to set.
+
+**Why smoothing depends on the texture and not only on the setting.** "Off"
+means "keep the original pixels square", and that is a statement about being
+drawn bigger than life. It says nothing useful about the opposite case, which
+arrived with the render scale: a core rendering at 2x into a rect the size of the
+console's own screen hands the GPU twice the pixels there is room for, and
+point-sampling that drops every other row -- the exact detail the higher
+resolution was paid for. So the rule is: one texel per pixel is never resampled,
+more texture than room always is, and everything in between follows the player.
+`screen_needs_smoothing()` is the single place that decides it, because the
+compositor and the menu's layout previews both draw screens and a rule living in
+only one of them is a rule the other quietly disagrees with.
 
 **Why emulation pauses while the menu is open.** Comparing layouts is much
 easier against a still frame, and it removes any chance of a menu press leaking

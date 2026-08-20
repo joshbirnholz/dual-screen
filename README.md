@@ -68,21 +68,22 @@ screens the other way too.
 
 `standard` draws an illustration of the console itself and puts the two screens
 exactly where its own are, on a #252525 surround rather than black — that is the
-artwork's own background colour, so the picture has no visible edge. See
-[THIRD_PARTY.md](THIRD_PARTY.md) for a note about where that image came from.
+artwork's own background colour, so the picture has no visible edge. There is one
+picture per console, a DS and a 3DS, and the game being played decides which is
+drawn. See [THIRD_PARTY.md](THIRD_PARTY.md) for a note about where those images
+came from.
 
-On a display no bigger than a Deck's (1280x800), that layout is drawn at the
-artwork's own pixel size rather than scaled to fit, so each DS pixel is one
-display pixel. On a smaller display the console runs off the edges, which is the
-right trade: an exact picture with its corners over the sides beats a soft one
-that fits.
+Both are drawn at one image pixel per console pixel, so on a display no bigger
+than a Deck's (1280x800) that layout is drawn at the artwork's own size rather
+than scaled to fit and every screen lands exactly one-to-one. On a smaller
+display the console runs off the edges, which is the right trade: an exact
+picture with its corners over the sides beats a soft one that fits.
 
 Every layout works on both consoles. A 3DS's two screens are different shapes —
 400x240 above, 320x240 below — and each layout measures each screen against its
 own size rather than assuming they match, so the wider upper screen stays wider
-and the narrower touch screen stays centred beneath it. `standard` has no 3DS
-artwork yet, so on a 3DS game it arranges the two screens on the plain
-background.
+and the narrower touch screen stays centred beneath it — `standard` included,
+which has its own 3DS to draw them into.
 
 `upper_on_tv` is the two-device layout: each device fills itself with the screen
 it owns. Pick any other and both devices show the whole thing, which is what you
@@ -137,11 +138,18 @@ from is `"default_bilinear_filtering"` in `settings.json`.
 It applies to streamed screens too, and while two devices are connected it is one
 choice for both of them, like everything else on that menu.
 
-It is a request rather than an instruction. A screen that lands at exactly its
-own size is drawn untouched whatever the setting says — there is nothing to
-resample, and sampling it anyway could only soften it. That covers the Standard
-layout on a Deck, and the small screen of either focus layout, which comes out
-one-to-one at 1280x800 by arithmetic rather than by design.
+It is a request rather than an instruction, and what happens to it depends on
+how the screen actually lands. One texture pixel per display pixel is drawn
+untouched whatever the setting says — there is nothing to resample, and sampling
+it anyway could only soften it. That covers the Standard layout on a Deck, and
+the small screen of either focus layout, which comes out one-to-one at 1280x800
+by arithmetic rather than by design.
+
+A screen with *more* texture than there is room for is always resampled, setting
+or no setting: that is what a core rendering at 2x into a smaller rect produces,
+and point-sampling a reduction throws away exactly the pixels the higher
+resolution was paid for. "Keep it crisp" is a statement about being magnified,
+which is the case it was asked for.
 
 Screens go over the wire as deflated RGB565, which measures around 1.3 Mbit/s
 for both screens at 60fps on DS-like content — no video encoder involved, and
@@ -509,9 +517,9 @@ ctest --test-dir build --output-on-failure
 ```
 
 - `test_layout` — placement geometry, the console shell keeping its proportions
-  in any window, handedness mirroring a layout rather than duplicating it, and
-  touch mapping round-trips for every layout in both hands, quarter turns
-  included.
+  in any window, handedness mirroring a layout rather than duplicating it, touch
+  mapping round-trips for every layout in both hands, quarter turns included, and
+  when a screen is resampled on its way to the display rather than point-sampled.
 - `test_config` — SHA-1 against the FIPS vectors, path handling, config
   round-trips including preservation of keys a future version might add.
 - `test_browser` — which files the game browser offers, how it sorts and where
@@ -555,7 +563,9 @@ ctest --test-dir build --output-on-failure
   directory and checks the game starts fresh the first time and restored the
   second. The 3DS half of it runs every shared layout twice, at 1x and at 2x,
   and checks the screens land in exactly the same places both times — a render
-  scale that moved anything would be a different feature.
+  scale that moved anything would be a different feature. On the Standard layout
+  it probes pairs of points either side of each screen's edge, so the game has to
+  be inside the artwork's screen hole and plastic has to be just outside it.
 
 The mock core means all of this runs with no melonDS core and no commercial ROM.
 

@@ -292,6 +292,10 @@ struct App::Impl {
     // Pushes the current choice down to whichever source is drawing, and
     // remembers it. Cheap enough to call whenever it changes.
     void apply_filtering();
+    // Hands the compositor and the menu the console picture for whatever is
+    // being played. Called whenever either the artwork or the console changes,
+    // which on a companion means whenever the host says so.
+    void apply_bezel_art();
     // True while this device is showing another device's game.
     bool is_companion() const;
     // True while two devices are in a session, whichever end this is.
@@ -465,10 +469,7 @@ bool App::Impl::create_window(GlContextNeed need, std::string* error) {  // NOLI
         log_info(std::string("created a ") + attempt.description + " context");
         std::string art_error;
         if (bezel_art.load(&art_error)) {
-            compositor.set_bezel_art(bezel_art.texture());
-            if (picker) {
-                picker->set_bezel_art(bezel_art.texture());
-            }
+            apply_bezel_art();
         } else {
             // Not fatal: the Standard layout still puts the screens where they
             // belong, it just has nothing drawn behind them.
@@ -552,11 +553,17 @@ bool App::Impl::rebuild_renderer(std::string* error) {
              (gl::is_core_profile() ? ", core profile" : "") +
              (gl::has_vertex_arrays() ? ", vertex arrays available" : ", no vertex arrays"));
     gl::log_error_once("rebuilding the renderer");
-    if (picker) {
-        picker->set_bezel_art(bezel_art.texture());
-    }
+    apply_bezel_art();
     refresh_output_size();
     return true;
+}
+
+void App::Impl::apply_bezel_art() {
+    const Texture* art = bezel_art.texture(system);
+    compositor.set_bezel_art(art);
+    if (picker) {
+        picker->set_bezel_art(art);
+    }
 }
 
 void App::Impl::refresh_output_size() {
@@ -898,6 +905,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
+    apply_bezel_art();
 
     // Before the core is loaded, for the same reason the context is: the core
     // resolves its GL functions once, while the game is being opened, and keeps
@@ -1465,7 +1473,7 @@ int App::run(const AppOptions& options) {
 
     impl.input.initialize(impl.settings);
     impl.picker.reset(new LayoutPicker(impl.registry));
-    impl.picker->set_bezel_art(impl.bezel_art.texture());
+    impl.apply_bezel_art();
     impl.settings_screen.reset(new SettingsScreen(impl.registry, impl.paths));
     impl.active_layout_id = impl.settings.default_layout_id;
     // A starting guess for the settings screen. Loading a game replaces it with
@@ -1698,6 +1706,7 @@ int App::run(const AppOptions& options) {
                 impl.adopt_handedness(impl.companion_session->host_handedness());
                 if (impl.system != impl.companion_session->system()) {
                     impl.system = impl.companion_session->system();
+                    impl.apply_bezel_art();
                     log_info(std::string("following the host: ") +
                              system_profile(impl.system).name);
                 }

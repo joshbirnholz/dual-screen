@@ -55,6 +55,17 @@ struct CompositorStyle {
 // the screens still land where they belong.
 void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* art);
 
+// Whether a screen should be resampled on its way to `rect`, given what the
+// player asked for. Smoothing is a request rather than an instruction, and this
+// is the one place that decides what to do with it -- the compositor and the
+// menu's previews both draw screens, and a rule that lived in only one of them
+// would be a rule the other quietly disagreed with.
+bool screen_needs_smoothing(const PlacedScreen& placed,
+                            int texture_width,
+                            int texture_height,
+                            bool requested);
+bool screen_needs_smoothing(const PlacedScreen& placed, const Texture& texture, bool requested);
+
 // Draws a resolved layout's screens into the output window.
 class Compositor {
 public:

@@ -346,7 +346,7 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
         // companion that has not received one yet, or a core still booting.
         if (texture != nullptr && texture->valid()) {
             quads.draw_screen(rect, *texture, Color{}, placed.rotation,
-                              smoothing && !placed.native);
+                              screen_needs_smoothing(placed, *texture, smoothing));
         } else {
             const Color color =
                 placed.screen == ScreenId::Top ? theme.top_screen : theme.bottom_screen;

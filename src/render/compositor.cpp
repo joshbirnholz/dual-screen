@@ -1,5 +1,7 @@
 #include "render/compositor.hpp"
 
+#include <cmath>
+
 #include "util/log.hpp"
 
 namespace ds {
@@ -9,6 +11,44 @@ void OutputRouter::hand_off(ScreenId, const Texture&, const PixelRect&) {
 }
 
 OutputRoute LocalOutputRouter::route_for(ScreenId) const { return OutputRoute::Local; }
+
+bool screen_needs_smoothing(const PlacedScreen& placed,
+                            int texture_width,
+                            int texture_height,
+                            bool requested) {
+    if (placed.rect.w <= 0.0f || placed.rect.h <= 0.0f) {
+        return requested;
+    }
+    // A quarter turn swaps which way round the texture meets the rect.
+    const bool turned = rotation_is_quarter_turn(placed.rotation);
+    const float source_width = static_cast<float>(turned ? texture_height : texture_width);
+    const float source_height = static_cast<float>(turned ? texture_width : texture_height);
+    if (source_width <= 0.0f || source_height <= 0.0f) {
+        return requested;
+    }
+    // One texel per pixel: there is nothing to resample, and sampling it anyway
+    // could only soften an image that was already exact.
+    if (std::fabs(source_width - placed.rect.w) < 0.5f &&
+        std::fabs(source_height - placed.rect.h) < 0.5f) {
+        return false;
+    }
+    // More texture than there is room for, which is what a core rendering above
+    // the size it is drawn at produces. Point-sampling a reduction drops whole
+    // rows and columns, and the entire reason to render at 2x is to have that
+    // detail arrive -- so "keep it crisp" is read as a statement about being
+    // magnified, which is the case it was asked for.
+    if (source_width > placed.rect.w + 0.5f || source_height > placed.rect.h + 0.5f) {
+        return true;
+    }
+    return requested;
+}
+
+bool screen_needs_smoothing(const PlacedScreen& placed, const Texture& texture, bool requested) {
+    if (!texture.valid()) {
+        return requested;
+    }
+    return screen_needs_smoothing(placed, texture.width(), texture.height(), requested);
+}
 
 void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* art) {
     if (frame.w <= 0.0f || frame.h <= 0.0f || art == nullptr || !art->valid()) {
@@ -72,7 +112,7 @@ void Compositor::render(QuadRenderer& quads,
                          std::to_string(style_.screen_tint.a) + ")");
             }
             quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation,
-                              smoothing_ && !placed.native);
+                              screen_needs_smoothing(placed, *texture, smoothing_));
         } else {
             // No frame yet (core still booting): keep the layout's shape visible
             // rather than flashing the background colour.
