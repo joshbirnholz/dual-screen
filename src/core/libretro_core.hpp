@@ -215,6 +215,7 @@ private:
     // True until the core declares a real output size, so the guess made
     // before that can be replaced rather than grown from.
     bool hw_size_is_placeholder_ = true;
+    bool hw_stain_done_ = false;
     // Raised when a core presents something larger than it declared.
     unsigned minimum_hw_width_ = 0;
     unsigned minimum_hw_height_ = 0;

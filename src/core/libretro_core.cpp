@@ -43,7 +43,19 @@ retro_proc_address_t RETRO_CALLCONV hw_get_proc_address_thunk(const char* symbol
     if (symbol == nullptr) return nullptr;
     // The same resolver the frontend's own renderer uses, so the core and the
     // frontend are talking to one driver rather than two.
-    return reinterpret_cast<retro_proc_address_t>(SDL_GL_GetProcAddress(symbol));
+    void* address = SDL_GL_GetProcAddress(symbol);
+    if (address == nullptr) {
+        // A core that silently loses an entry point renders nothing and says
+        // nothing. Capped, because a loader asking for every name in the
+        // specification will miss plenty it never intended to use.
+        static int reported = 0;
+        if (reported < 12) {
+            ++reported;
+            log_debug(std::string("the core asked for a GL entry point this context does not "
+                                  "have: ") + symbol);
+        }
+    }
+    return reinterpret_cast<retro_proc_address_t>(address);
 }
 
 std::vector<std::string> split_values(const std::string& text, char separator) {
@@ -495,6 +507,20 @@ void LibretroCore::run_frame() {
         // Everything the core is about to do belongs to the core. Draining here
         // means the check after retro_run reports only what the core caused.
         gl::take_error();
+
+        // On the first frame only, stain the buffer a colour nothing else uses.
+        // Afterwards it reads back as one of exactly two things, and they mean
+        // opposite things: still stained means the core never wrote to the
+        // buffer it was given, and black means the core cleared it and then
+        // drew nothing. One needs the handover fixed, the other the core's
+        // rendering, and there is otherwise no way to tell them apart.
+        if (!hw_stain_done_) {
+            hw_stain_done_ = true;
+            gl::BindFramebuffer(GL_FRAMEBUFFER, hw_render_.framebuffer());
+            gl::ClearColor(1.0f, 0.0f, 1.0f, 1.0f);  // magenta
+            gl::Clear(GL_COLOR_BUFFER_BIT);
+            log_info("stained the core's framebuffer magenta before its first frame");
+        }
         // The core draws into its own framebuffer, not the window. Binding it
         // here rather than trusting the core to means a core that leaves the
         // binding somewhere else cannot scribble over the window.
