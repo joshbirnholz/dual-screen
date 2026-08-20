@@ -316,6 +316,43 @@ void test_cancel_climbs_all_the_way_out() {
     }
 }
 
+// The trap that stranded a player in the app's own build directory: the
+// browser held a relative path. path_dirname maps "." -- and any bare name --
+// to "." forever, so the ".." row pointed at the directory it was already in
+// and there was no way up. It displayed as "." too, which is how a build
+// directory came to look like the root of the filesystem.
+void test_a_relative_directory_never_traps_the_browser() {
+    const std::string sandbox = make_sandbox();
+    if (sandbox.empty()) return;
+    CHECK(ensure_directory(path_join(sandbox, "generated/tests")));
+
+    InputManager input;
+    const std::vector<PointerEvent> no_pointers;
+
+    // A remembered folder that is not absolute could only be junk left behind
+    // by a bug, so it is dropped for a default rather than resolved against
+    // wherever the app happens to have been started from.
+    for (const char* remembered : {".", "./generated", "CMakeFiles", ""}) {
+        GameBrowser browser;
+        browser.open(remembered);
+        const std::string landed = browser.current_directory();
+        CHECK_MSG(!landed.empty() && landed.front() == '/',
+                  std::string("opening with \"") + remembered + "\" left the browser at '" +
+                      landed + "'");
+        if (landed.empty() || landed.front() != '/') continue;
+        CHECK_MSG(path_dirname(landed) != landed,
+                  std::string("opening with \"") + remembered +
+                      "\" left the browser in a directory that is its own parent");
+        CHECK_MSG(directory_exists(landed), landed + " does not exist");
+
+        // And Back really moves, rather than pressing forever against a wall.
+        if (landed == "/") continue;
+        browser.update(input, {UiAction::Cancel}, no_pointers, 1280.0f, 800.0f);
+        CHECK_MSG(browser.current_directory() == path_dirname(landed),
+                  "Back did not move the browser out of " + landed);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -323,6 +360,7 @@ int main() {
     test_listing_sorts_and_filters();
     test_browser_navigation();
     test_cancel_climbs_all_the_way_out();
+    test_a_relative_directory_never_traps_the_browser();
     test_default_browse_dirs_all_exist();
     test_held_input_gate();
     test_cursor_auto_hides();

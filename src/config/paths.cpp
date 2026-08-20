@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 #include "util/log.hpp"
 
@@ -83,6 +84,43 @@ std::string expand_user_path(const std::string& path) {
         return path.size() == 1 ? home_dir() : path_join(home_dir(), path.substr(2));
     }
     return path;
+}
+
+std::string absolute_path(const std::string& path) {
+    if (path.empty()) return path;
+
+    std::string full = expand_user_path(path);
+    if (full.empty() || full.front() != '/') {
+        // A relative path is relative to wherever the app was started from,
+        // which is the same thing the C library would resolve it against.
+        char buffer[4096];
+        const char* working = ::getcwd(buffer, sizeof(buffer));
+        full = path_join(working != nullptr ? std::string(working) : std::string("/"), full);
+    }
+
+    // Fold the path lexically. Without this a "." survives into the result and
+    // path_dirname maps it to itself, which is a directory with no way out.
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    while (start <= full.size()) {
+        const std::size_t slash = full.find('/', start);
+        const std::size_t end = (slash == std::string::npos) ? full.size() : slash;
+        const std::string part = full.substr(start, end - start);
+        if (part == "..") {
+            if (!parts.empty()) parts.pop_back();
+        } else if (!part.empty() && part != ".") {
+            parts.push_back(part);
+        }
+        if (slash == std::string::npos) break;
+        start = slash + 1;
+    }
+
+    std::string result;
+    for (const std::string& part : parts) {
+        result += "/";
+        result += part;
+    }
+    return result.empty() ? std::string("/") : result;
 }
 
 bool file_exists(const std::string& path) {

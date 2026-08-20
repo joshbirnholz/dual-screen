@@ -59,7 +59,14 @@ std::string path_stem(const std::string& path);
 // The extension without the dot, lowercased. Empty when there is none.
 std::string path_extension_lower(const std::string& path);
 std::string path_dirname(const std::string& path);
-// Expands a leading "~" and makes the result absolute where possible.
+// Expands a leading "~/". Anything else is returned unchanged -- in particular
+// a relative path stays relative. Use absolute_path() when a path has to be
+// one that can be walked upwards.
 std::string expand_user_path(const std::string& path);
+// Expands "~/", resolves the path against the working directory if it is
+// relative, and folds away "." and ".." segments. The result always begins
+// with "/", so it has a real parent to climb to; an empty path stays empty.
+// Purely lexical: nothing has to exist for this to work.
+std::string absolute_path(const std::string& path);
 
 }  // namespace ds

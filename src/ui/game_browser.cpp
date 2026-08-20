@@ -54,7 +54,15 @@ std::vector<std::string> default_browse_dirs() {
 
 void GameBrowser::open(const std::string& directory) {
     open_ = true;
+    // A remembered directory has to be absolute. A relative one could only
+    // have come from a bug, and resolving it against wherever the app happens
+    // to have been started from lands the player somewhere arbitrary -- so it
+    // is discarded in favour of a sensible default rather than honoured.
     std::string start = expand_user_path(directory);
+    if (!start.empty() && start.front() != '/') {
+        log_warn("ignoring a remembered folder that is not an absolute path: " + start);
+        start.clear();
+    }
     if (start.empty() || !directory_exists(start)) {
         const std::vector<std::string> defaults = default_browse_dirs();
         start = defaults.empty() ? std::string("/") : defaults.front();
@@ -68,6 +76,11 @@ void GameBrowser::open(const std::string& directory) {
 // freed memory. Taking a copy makes that impossible for every caller rather
 // than asking each one to remember.
 bool GameBrowser::navigate_to(std::string directory) {
+    // Everything below assumes a path that can be walked upwards. A relative
+    // one cannot: path_dirname maps "." and any bare name to "." forever, so a
+    // browser that ever stored one could never climb out of it again.
+    directory = absolute_path(directory);
+
     std::vector<DirectoryEntry> entries;
     std::string error;
     if (!list_directory(directory, entries, &error)) {

@@ -100,6 +100,31 @@ void test_path_helpers() {
     CHECK_STR_EQ(expand_user_path("~/roms"), "/home/tester/roms");
     CHECK_STR_EQ(expand_user_path("/absolute"), "/absolute");
     CHECK_STR_EQ(expand_user_path("~notauser/x"), "~notauser/x");
+
+    // absolute_path is the one that guarantees a path with a parent. "." is
+    // the case that matters: path_dirname maps it to itself, so a browser that
+    // ever stored a "." could never climb out of it.
+    CHECK_STR_EQ(absolute_path("~/roms"), "/home/tester/roms");
+    CHECK_STR_EQ(absolute_path("/a/./b/../c"), "/a/c");
+    CHECK_STR_EQ(absolute_path("/a/b/"), "/a/b");
+    CHECK_STR_EQ(absolute_path("/"), "/");
+    CHECK_STR_EQ(absolute_path("/.."), "/");
+    CHECK_STR_EQ(absolute_path(""), "");
+
+    // Relative inputs resolve against the working directory, and never come
+    // back as something path_dirname would treat as its own parent.
+    char buffer[4096];
+    const std::string working = ::getcwd(buffer, sizeof(buffer));
+    CHECK_STR_EQ(absolute_path("."), working);
+    CHECK_STR_EQ(absolute_path("./tests"), working + "/tests");
+    CHECK_STR_EQ(absolute_path("CMakeFiles"), working + "/CMakeFiles");
+    for (const char* relative : {".", "./tests", "CMakeFiles", ".."}) {
+        const std::string resolved = absolute_path(relative);
+        CHECK_MSG(!resolved.empty() && resolved.front() == '/',
+                  std::string(relative) + " did not resolve to an absolute path");
+        CHECK_MSG(path_dirname(resolved) != resolved,
+                  std::string(relative) + " resolved to a directory that is its own parent");
+    }
 }
 
 void test_game_config_round_trip() {
