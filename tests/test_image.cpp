@@ -7,6 +7,7 @@
 #include "test_support.hpp"
 
 #include "layout/layout.hpp"
+#include "core/system.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/embedded_assets.hpp"
 #include "render/png_image.hpp"
@@ -14,6 +15,8 @@
 using namespace ds;
 
 namespace {
+
+const SystemScreens& ds_screens() { return system_profile(SystemId::Ds).screens; }
 
 DecodedImage decode_bezel() {
     DecodedImage image;
@@ -76,9 +79,9 @@ void test_standard_screens_sit_in_the_artwork() {
     // the image's pixels and the two can be compared directly.
     const PixelRect window{0.0f, 0.0f, static_cast<float>(image.width),
                            static_cast<float>(image.height)};
-    Layout unpadded = standard;
-    unpadded.frame_margin = 0.0f;  // the padding is around the console, not in it
-    const std::vector<PlacedScreen> placed = place_screens(unpadded, window);
+    SystemScreens unpadded = ds_screens();
+    unpadded.console.margin = 0.0f;  // the padding is around the console, not in it
+    const std::vector<PlacedScreen> placed = place_screens(standard, window, unpadded);
     CHECK_EQ(placed.size(), 2u);
 
     // The overlay that came with the artwork puts the screens here, one image
@@ -123,7 +126,7 @@ void test_standard_screens_sit_in_the_artwork() {
 
     // The padding keeps the console clear of the window's edges, on a display
     // big enough for the artwork to be scaled up at all.
-    const PixelRect padded = layout_frame(standard, 1920.0f, 1200.0f);
+    const PixelRect padded = layout_frame(standard, 1920.0f, 1200.0f, ds_screens());
     CHECK(padded.y > 1.0f);
     CHECK(padded.x > 1.0f);
     CHECK(padded.y + padded.h < 1199.0f);
@@ -151,7 +154,7 @@ void test_standard_locks_to_native_on_small_displays() {
     };
 
     for (const Case& test : cases) {
-        const PixelRect frame = layout_frame(standard, test.width, test.height);
+        const PixelRect frame = layout_frame(standard, test.width, test.height, ds_screens());
         const std::string where =
             std::to_string(static_cast<int>(test.width)) + "x" +
             std::to_string(static_cast<int>(test.height));
@@ -167,7 +170,7 @@ void test_standard_locks_to_native_on_small_displays() {
                       where + ": the console was locked to its own size with room to scale");
         }
 
-        for (const PlacedScreen& placed : place_screens(standard, test.width, test.height)) {
+        for (const PlacedScreen& placed : place_screens(standard, test.width, test.height, ds_screens())) {
             const std::string screen = where + " " + to_string(placed.screen) + " screen";
             if (test.locked) {
                 CHECK_MSG(placed.native, screen + " is not one-to-one");
@@ -190,7 +193,7 @@ void test_native_screens_are_spotted_anywhere() {
     const LayoutRegistry registry;
     for (const char* id : {"upper_focus", "touch_focus"}) {
         bool found_native = false;
-        for (const PlacedScreen& placed : place_screens(*registry.find(id), 1280.0f, 800.0f)) {
+        for (const PlacedScreen& placed : place_screens(*registry.find(id), 1280.0f, 800.0f, ds_screens())) {
             if (placed.native) {
                 found_native = true;
                 CHECK_NEAR(placed.rect.w, static_cast<float>(kDsScreenWidth));
@@ -204,7 +207,7 @@ void test_native_screens_are_spotted_anywhere() {
     // A screen that is merely close is not called native, or it would be snapped
     // to a size it never had.
     const std::vector<PlacedScreen> stretched =
-        place_screens(*registry.find("vertical"), 1280.0f, 800.0f);
+        place_screens(*registry.find("vertical"), 1280.0f, 800.0f, ds_screens());
     for (const PlacedScreen& placed : stretched) {
         CHECK(!placed.native);
     }
@@ -218,15 +221,15 @@ void test_previews_are_not_displays() {
     const LayoutRegistry registry;
     const Layout& standard = *registry.find("standard");
 
-    // A tile is smaller than the threshold in both dimensions, so the lock would
-    // fire on it if nothing stripped it.
+    // A tile is smaller than the threshold in both dimensions, so the console
+    // would be drawn at its own size on it if nothing stripped that.
     const PixelRect tile{80.0f, 120.0f, 340.0f, 190.0f};
-    CHECK(standard.native_frame.applies(tile.w, tile.h));
+    const SystemScreens preview = as_preview(ds_screens());
+    CHECK(ds_screens().console.native_width > 0.0f);
+    CHECK_MSG(preview.console.native_width == 0.0f,
+              "a preview kept the console's own pixel size");
 
-    const Layout preview = as_preview(standard);
-    CHECK(!preview.native_frame.applies(tile.w, tile.h));
-
-    for (const PlacedScreen& placed : place_screens(preview, tile)) {
+    for (const PlacedScreen& placed : place_screens(standard, tile, preview)) {
         const std::string screen = std::string(to_string(placed.screen)) + " screen";
         CHECK_MSG(placed.rect.x >= tile.x - 0.5f && placed.rect.y >= tile.y - 0.5f &&
                       placed.rect.x + placed.rect.w <= tile.x + tile.w + 0.5f &&
@@ -234,9 +237,11 @@ void test_previews_are_not_displays() {
                   "a preview's " + screen + " spilled outside its tile");
     }
 
-    // And the layout itself is untouched: previewing one must not change what
-    // the display does with it.
-    CHECK(standard.native_frame.applies(1280.0f, 800.0f));
+    // And the system's own geometry is untouched: previewing must not change
+    // what the display does with it.
+    CHECK(ds_screens().console.native_width > 0.0f);
+    const PixelRect display = layout_frame(standard, 1280.0f, 800.0f, ds_screens());
+    CHECK_NEAR(display.w, 615.0f);
 }
 
 }  // namespace

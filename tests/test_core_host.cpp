@@ -123,13 +123,69 @@ void test_screen_source_reports_a_valid_split() {
     std::string error;
     CHECK_MSG(source.open(config, &error), error);
     CHECK(source.split().valid);
-    CHECK_EQ(source.split().screen_width, 256);
-    CHECK_EQ(source.split().screen_height, 192);
-    CHECK_EQ(source.native_screen_size().width, 256);
-    CHECK_EQ(source.native_screen_size().height, 192);
+    CHECK_EQ(source.split().top_width, 256);
+    CHECK_EQ(source.split().top_height, 192);
+    CHECK_EQ(source.split().bottom_width, 256);
+    CHECK_EQ(source.split().bottom_height, 192);
+    CHECK_EQ(source.screens_geometry().top.width, 256);
+    CHECK_EQ(source.screens_geometry().bottom.height, 192);
     CHECK(source.warnings().empty());
 
     CHECK_MSG(source.advance_frame(&error), error);
+    source.close();
+}
+
+// The same frontend against a core shaped like a 3DS: two screens of different
+// widths, the narrower one centred under the wider. Every step from the core
+// option through the crop to the reported geometry has to follow the console
+// rather than a remembered 256x192.
+void test_screen_source_handles_a_3ds_core() {
+    const char* path = std::getenv("DUALSCREEN_MOCK_CORE_3DS");
+    if (path == nullptr || path[0] == '\0') return;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.system = SystemId::ThreeDs;
+    config.core_path = path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK_MSG(source.split().valid, "the 3DS framebuffer did not split");
+    CHECK_EQ(source.split().top_width, 400);
+    CHECK_EQ(source.split().top_height, 240);
+    CHECK_EQ(source.split().bottom_width, 320);
+    CHECK_EQ(source.split().bottom_height, 240);
+    CHECK_EQ(source.split().bottom_x, 40);
+    CHECK_EQ(source.split().bottom_y, 240);
+    CHECK_EQ(source.screens_geometry().top.width, 400);
+    CHECK_EQ(source.screens_geometry().bottom.width, 320);
+    // The core reports whether the layout option actually reached it, and it
+    // paints a loud magenta band across the upper screen when it did not.
+    CHECK_MSG(source.warnings().empty(), "the 3DS core refused an option we pin");
+
+    CHECK_MSG(source.advance_frame(&error), error);
+
+    // The crop really does take the touch screen from where the core put it:
+    // the mock draws it in greens, and the upper screen in blues.
+    const CoreVideoFrame& frame = source.core_frame_for_test();
+    CHECK(frame.valid());
+    if (frame.valid()) {
+        const ScreenSplit& split = source.split();
+        const uint32_t top_pixel =
+            frame.pixels[(static_cast<std::size_t>(split.top_y) + 100) * frame.stride_pixels +
+                         split.top_x + 100];
+        const uint32_t bottom_pixel =
+            frame.pixels[(static_cast<std::size_t>(split.bottom_y) + 100) * frame.stride_pixels +
+                         split.bottom_x + 100];
+        const auto blue = [](uint32_t p) { return p & 0xffu; };
+        const auto green = [](uint32_t p) { return (p >> 8) & 0xffu; };
+        CHECK_MSG(blue(top_pixel) > green(top_pixel), "the upper screen was not where it should be");
+        CHECK_MSG(green(bottom_pixel) > blue(bottom_pixel),
+                  "the touch screen was not where it should be");
+    }
     source.close();
 }
 
@@ -255,6 +311,7 @@ void test_save_ram_is_skipped_without_a_path() {
 int main() {
     test_core_loads_and_runs();
     test_screen_source_reports_a_valid_split();
+    test_screen_source_handles_a_3ds_core();
     test_screen_source_reports_missing_files_clearly();
     test_save_ram_round_trip();
     test_save_ram_is_skipped_without_a_path();

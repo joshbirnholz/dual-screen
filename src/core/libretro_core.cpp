@@ -118,21 +118,20 @@ void LibretroCore::set_save_directory(const std::string& directory) { save_direc
 void LibretroCore::set_audio_callback(AudioCallback callback) { audio_callback_ = std::move(callback); }
 void LibretroCore::set_input_state(const DsInputState* state) { input_state_ = state; }
 
-void LibretroCore::set_pointer_source_rect(float x, float y, float w, float h) {
-    pointer_rect_x_ = x;
-    pointer_rect_y_ = y;
-    pointer_rect_w_ = w;
-    pointer_rect_h_ = h;
-}
+void LibretroCore::set_pointer_source(const PointerSource& source) { pointer_source_ = source; }
 
 int16_t LibretroCore::pointer_axis(bool horizontal) const {
-    // Sample the centre of the addressed DS pixel, then place it inside the
-    // core's framebuffer and scale to libretro's [-0x7fff, 0x7fff] range.
+    // Sample the centre of the addressed touch-screen pixel, then place it
+    // inside the core's framebuffer and scale to libretro's [-0x7fff, 0x7fff]
+    // range. The divisor is this system's touch screen, not the DS's: a 3DS
+    // touch screen is 320x240, so dividing by 256x192 would overshoot by 25%.
     const float within_screen =
-        horizontal ? (static_cast<float>(input_state_->touch_x) + 0.5f) / 256.0f
-                   : (static_cast<float>(input_state_->touch_y) + 0.5f) / 192.0f;
-    const float normalized = horizontal ? pointer_rect_x_ + within_screen * pointer_rect_w_
-                                        : pointer_rect_y_ + within_screen * pointer_rect_h_;
+        horizontal ? (static_cast<float>(input_state_->touch_x) + 0.5f) /
+                         static_cast<float>(pointer_source_.screen_width)
+                   : (static_cast<float>(input_state_->touch_y) + 0.5f) /
+                         static_cast<float>(pointer_source_.screen_height);
+    const float normalized = horizontal ? pointer_source_.x + within_screen * pointer_source_.width
+                                        : pointer_source_.y + within_screen * pointer_source_.height;
     const float scaled = (normalized * 2.0f - 1.0f) * 32767.0f;
     return static_cast<int16_t>(std::clamp(scaled, -32767.0f, 32767.0f));
 }

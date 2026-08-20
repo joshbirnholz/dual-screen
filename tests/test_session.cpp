@@ -60,6 +60,17 @@ void set_shared(HostSession& host,
     host.set_session_state(shared);
 }
 
+// Publishing takes each screen's own pixels and size, so a system whose screens
+// differ can say so. These tests use a DS's, which are the same.
+HostSession::ScreenPixels screen_pixels(const std::vector<uint32_t>& pixels) {
+    HostSession::ScreenPixels entry;
+    entry.pixels = pixels.data();
+    entry.width = kDsScreenWidth;
+    entry.height = kDsScreenHeight;
+    entry.stride_pixels = kDsScreenWidth;
+    return entry;
+}
+
 std::vector<uint32_t> flat_screen(uint32_t colour) {
     return std::vector<uint32_t>(static_cast<std::size_t>(kDsScreenWidth) * kDsScreenHeight, colour);
 }
@@ -112,8 +123,7 @@ void test_host_and_companion_pair_up() {
     // top must never arrive.
     const std::vector<uint32_t> top = flat_screen(0x00204080u);
     const std::vector<uint32_t> bottom = flat_screen(0x00801020u);
-    host.publish_screens(top.data(), bottom.data(), kDsScreenWidth, kDsScreenHeight,
-                         kDsScreenWidth, 1);
+    host.publish_screens(screen_pixels(top), screen_pixels(bottom), 1);
 
     const bool got_bottom =
         spin(host, companion, [&] { return companion.has_screen(ScreenId::Bottom); });
@@ -192,8 +202,7 @@ void test_non_split_layout_sends_both_screens() {
     const std::vector<uint32_t> bottom = flat_screen(0x00445566u);
     // A distinct serial per publish, as the app does when pixels change.
     for (uint64_t serial = 1; serial <= 3; ++serial) {
-        host.publish_screens(top.data(), bottom.data(), kDsScreenWidth, kDsScreenHeight,
-                             kDsScreenWidth, serial);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
         spin(host, companion, [] { return false; }, 60);
     }
 
@@ -271,8 +280,7 @@ void test_companion_gets_the_screen_it_asked_for() {
         // The frames that arrive must be the ones asked for.
         const std::vector<uint32_t> top = flat_screen(0x00204080u);
         const std::vector<uint32_t> bottom = flat_screen(0x00801020u);
-        host.publish_screens(top.data(), bottom.data(), kDsScreenWidth, kDsScreenHeight,
-                             kDsScreenWidth, 1);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), 1);
         const bool arrived = spin(host, companion, [&] { return companion.has_screen(wanted); });
         CHECK_MSG(arrived, std::string("the ") + asked + " screen never arrived");
         const ScreenId other = (wanted == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
@@ -572,8 +580,7 @@ void test_menu_gets_the_companion_both_screens() {
     const std::vector<uint32_t> top = flat_screen(0x00112233u);
     const std::vector<uint32_t> bottom = flat_screen(0x00445566u);
     auto publish = [&](uint64_t serial) {
-        host.publish_screens(top.data(), bottom.data(), kDsScreenWidth, kDsScreenHeight,
-                             kDsScreenWidth, serial);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
     };
 
     // One screen each: the companion holds the bottom one and is sent only that.

@@ -177,8 +177,7 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     put_string(out, message.game_title);
     put_string(out, message.rom_sha1);
     put_u8(out, screen_to_wire(message.granted_screen));
-    put_u16(out, message.screen_width);
-    put_u16(out, message.screen_height);
+    put_u8(out, message.system == SystemId::ThreeDs ? 1u : 0u);
     put_u32(out, message.audio_sample_rate);
     finish_message(out, start, MessageType::Welcome);
 }
@@ -359,14 +358,15 @@ bool decode_hello(const uint8_t* data, std::size_t size, HelloMessage& out) {
 bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) {
     Reader reader(data, size);
     uint8_t screen = 0;
+    uint8_t system = 0;
     reader.u16(out.protocol_version);
     reader.string(out.game_title);
     reader.string(out.rom_sha1);
     reader.u8(screen);
-    reader.u16(out.screen_width);
-    reader.u16(out.screen_height);
+    reader.u8(system);
     reader.u32(out.audio_sample_rate);
-    if (!reader.ok()) return false;
+    if (!reader.ok() || system > 1u) return false;
+    out.system = (system == 1u) ? SystemId::ThreeDs : SystemId::Ds;
     return screen_from_wire(screen, out.granted_screen);
 }
 

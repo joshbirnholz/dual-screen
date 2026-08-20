@@ -13,6 +13,7 @@
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
 #include "core/libretro_screen_source.hpp"
+#include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
@@ -52,20 +53,25 @@ std::string next_argument(int argc, char** argv, int& index, const char* flag, s
     return std::string(argv[++index]);
 }
 
-// Picks the core to load: an explicit --core, then settings.json, then
-// $DUALSCREEN_CORE, then the usual install locations.
-std::string resolve_core_path(const AppOptions& options, const Settings& settings) {
+// Picks the core for a system: an explicit --core, then settings.json, then
+// $DUALSCREEN_CORE, then the usual install locations. The first two and the
+// environment name one core rather than one per system, so they only apply to
+// the system actually being asked for when they are set.
+std::string resolve_core_path(const AppOptions& options,
+                              const Settings& settings,
+                              SystemId system) {
     if (!options.core_path.empty()) {
         return expand_user_path(options.core_path);
     }
-    if (!settings.core_path.empty()) {
-        return expand_user_path(settings.core_path);
+    if (!settings.core_path_for(system).empty()) {
+        return expand_user_path(settings.core_path_for(system));
     }
-    const char* from_environment = std::getenv("DUALSCREEN_CORE");
+    const char* from_environment =
+        std::getenv(system == SystemId::ThreeDs ? "DUALSCREEN_CORE_3DS" : "DUALSCREEN_CORE");
     if (from_environment != nullptr && from_environment[0] != '\0') {
         return expand_user_path(from_environment);
     }
-    for (const std::string& candidate : core_search_paths()) {
+    for (const std::string& candidate : core_search_paths(system)) {
         if (file_exists(candidate)) {
             return candidate;
         }
@@ -73,18 +79,30 @@ std::string resolve_core_path(const AppOptions& options, const Settings& setting
     return std::string();
 }
 
+// One entry per console for the Settings screen, so a machine with a DS core
+// but no 3DS one (or the reverse) says so before a game is picked.
+std::vector<SettingsScreen::CoreStatus> resolve_core_statuses(const AppOptions& options,
+                                                              const Settings& settings) {
+    std::vector<SettingsScreen::CoreStatus> statuses;
+    for (const SystemProfile& profile : system_profiles()) {
+        statuses.push_back({profile.name, resolve_core_path(options, settings, profile.id)});
+    }
+    return statuses;
+}
+
 }  // namespace
 
 std::string usage_text() {
     return
-        "dualscreen - a dual-screen shell for DS emulation\n"
+        "dualscreen - a dual-screen shell for DS and 3DS emulation\n"
         "\n"
         "Usage:\n"
         "  dualscreen --game /path/to/rom.nds [options]\n"
         "\n"
         "Options:\n"
         "  --game <path>        ROM to boot straight into\n"
-        "  --core <path>        melonDS DS libretro core (.so) to load\n"
+        "  --core <path>        libretro core (.so) to load, instead of the one\n"
+        "                       found for this game's console\n"
         "  --layout <id>        Override the layout for this run\n"
         "  --system-dir <path>  Folder holding your BIOS/firmware files\n"
         "  --windowed           Run in a window instead of fullscreen\n"
@@ -221,6 +239,13 @@ struct App::Impl {
     Handedness handedness = Handedness::Right;
     std::string game_title;
     std::string resolved_core_path;
+    // Which console the loaded game belongs to, and its screens. On a companion
+    // both come from the host; on a device running a game, from the ROM.
+    SystemId system = SystemId::Ds;
+
+    // The screens whatever is being drawn actually has. Every layout, touch and
+    // preview goes through this rather than assuming a DS's.
+    SystemScreens screens_geometry() const;
 
     uint64_t last_counter = 0;
     double frame_period = 1.0 / 60.0;
@@ -457,6 +482,16 @@ ScreenSource* App::Impl::active_source() {
     return nullptr;
 }
 
+SystemScreens App::Impl::screens_geometry() const {
+    if (source) {
+        return source->screens_geometry();
+    }
+    if (companion_session) {
+        return companion_session->screens_geometry();
+    }
+    return system_profile(system).screens;
+}
+
 bool App::Impl::is_companion() const {
     return companion_session &&
            companion_session->status() == net::CompanionSession::Status::Connected;
@@ -475,6 +510,7 @@ void App::Impl::open_picker() {
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
     picker_state.handedness = handedness;
+    picker->set_screens(screens_geometry());
     picker->open(picker_state);
 }
 
@@ -690,7 +726,16 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // than leaving the player with a blank screen.
     active_layout_id = registry.resolve(active_layout_id).id;
 
+    // The extension says which console this is for, which decides the core, the
+    // screen sizes and everything downstream of them.
+    if (!system_for_rom(rom_path, system)) {
+        system = SystemId::Ds;
+    }
+    const SystemProfile& profile = system_profile(system);
+    resolved_core_path = resolve_core_path(options, settings, system);
+
     LibretroSourceConfig source_config;
+    source_config.system = system;
     source_config.core_path = resolved_core_path;
     source_config.rom_path = rom_path;
     source_config.system_directory = settings.system_dir;
@@ -716,10 +761,12 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     if (!source->open(source_config, &source_error)) {
         std::vector<std::string> details;
         if (resolved_core_path.empty()) {
-            details.push_back("Looked for melondsds_libretro.so in the RetroArch core folders and "
-                              "/usr/lib/libretro.");
-            details.push_back("Point at it directly with --core, or set \"core_path\" in " +
-                              paths.settings_file + ".");
+            details.push_back("Looked for " + profile.core_filenames.front() +
+                              " in the RetroArch core folders and /usr/lib/libretro.");
+            details.push_back(
+                "Point at it directly with --core, or set \"" +
+                std::string(system == SystemId::ThreeDs ? "core_path_3ds" : "core_path") +
+                "\" in " + paths.settings_file + ".");
         } else {
             details.push_back("Core: " + resolved_core_path);
         }
@@ -750,6 +797,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     host_config.game_title = game_title;
     host_config.rom_sha1 = game_config.rom_sha1;
     host_config.host_screen = local_screen;
+    host_config.system = system;
     host_config.audio_sample_rate = static_cast<uint32_t>(source->audio_sample_rate());
     std::string host_error;
     if (!host_session->start(host_config, &host_error)) {
@@ -837,7 +885,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     start_companion(ScreenId::Bottom);
                     break;
                 case LauncherChoice::Settings:
-                    settings_screen->open(settings, resolved_core_path);
+                    settings_screen->open(settings, resolve_core_statuses(options, settings));
                     state = State::Settings;
                     break;
                 case LauncherChoice::Quit:
@@ -1026,9 +1074,10 @@ void App::Impl::render() {
 
     const ScreenTextures* frames = nullptr;
     if (ScreenSource* drawing = active_source()) {
-        const ScreenTextures& screens = drawing->screens();
-        compositor.render(quads, device_layout(), screens, width, height, router);
-        frames = &screens;
+        const ScreenTextures& textures = drawing->screens();
+        compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
+                          router);
+        frames = &textures;
     } else {
         quads.begin_frame(output_width, output_height);
         quads.clear(compositor.style().background);
@@ -1197,7 +1246,9 @@ int App::run(const AppOptions& options) {
     impl.picker->set_bezel_art(impl.bezel_art.texture());
     impl.settings_screen.reset(new SettingsScreen(impl.registry, impl.paths));
     impl.active_layout_id = impl.settings.default_layout_id;
-    impl.resolved_core_path = resolve_core_path(options, impl.settings);
+    // A starting guess for the settings screen. Loading a game replaces it with
+    // the core for whichever console that game is for.
+    impl.resolved_core_path = resolve_core_path(options, impl.settings, SystemId::Ds);
 
     // --- decide what to boot -------------------------------------------------
     if (!options.auto_connect_screen.empty() && options.game_path.empty()) {
@@ -1247,7 +1298,7 @@ int App::run(const AppOptions& options) {
     if (options.start_screen == "layout" && impl.state == Impl::State::Playing) {
         open_layout_menu_when_playing = true;
     } else if (options.start_screen == "settings" && impl.state == Impl::State::Playing) {
-        impl.settings_screen->open(impl.settings, impl.resolved_core_path);
+        impl.settings_screen->open(impl.settings, resolve_core_statuses(options, impl.settings));
         impl.state = Impl::State::Settings;
         impl.input.set_game_input_enabled(false);
     } else if (options.start_screen == "browser") {
@@ -1342,7 +1393,7 @@ int App::run(const AppOptions& options) {
         // mapping against the shared one put every touch in the wrong place.
         const Layout touch_layout = impl.device_layout();
         impl.input.end_frame(touch_layout, static_cast<float>(impl.output_width),
-                             static_cast<float>(impl.output_height));
+                             static_cast<float>(impl.output_height), impl.screens_geometry());
 
         if (impl.input.quit_requested()) {
             impl.running = false;
@@ -1419,6 +1470,11 @@ int App::run(const AppOptions& options) {
                 }
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
                 impl.adopt_handedness(impl.companion_session->host_handedness());
+                if (impl.system != impl.companion_session->system()) {
+                    impl.system = impl.companion_session->system();
+                    log_info(std::string("following the host: ") +
+                             system_profile(impl.system).name);
+                }
                 impl.local_screen = impl.companion_session->granted_screen();
             }
             // --connect joins the first host that offers the screen we asked
@@ -1512,10 +1568,18 @@ int App::run(const AppOptions& options) {
             if (frame.valid() && split.valid) {
                 const uint32_t* base = frame.pixels;
                 const int stride = static_cast<int>(frame.stride_pixels);
-                impl.host_session->publish_screens(
-                    base + static_cast<std::size_t>(split.top_y) * stride + split.top_x,
-                    base + static_cast<std::size_t>(split.bottom_y) * stride + split.bottom_x,
-                    split.screen_width, split.screen_height, stride, frame.serial);
+                net::HostSession::ScreenPixels top;
+                top.pixels = base + static_cast<std::size_t>(split.top_y) * stride + split.top_x;
+                top.width = split.top_width;
+                top.height = split.top_height;
+                top.stride_pixels = stride;
+                net::HostSession::ScreenPixels bottom;
+                bottom.pixels =
+                    base + static_cast<std::size_t>(split.bottom_y) * stride + split.bottom_x;
+                bottom.width = split.bottom_width;
+                bottom.height = split.bottom_height;
+                bottom.stride_pixels = stride;
+                impl.host_session->publish_screens(top, bottom, frame.serial);
             }
         }
 

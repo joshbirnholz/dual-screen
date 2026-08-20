@@ -80,9 +80,12 @@ Handedness other_hand(Handedness handedness) {
     return handedness == Handedness::Left ? Handedness::Right : Handedness::Left;
 }
 
-Layout as_preview(const Layout& layout) {
-    Layout preview = layout;
-    preview.native_frame = Layout::NativeFrame();
+SystemScreens as_preview(const SystemScreens& screens) {
+    SystemScreens preview = screens;
+    // A tile is smaller than any threshold, so leaving this in would draw the
+    // console at full size across the rest of the menu.
+    preview.console.native_width = 0.0f;
+    preview.console.native_height = 0.0f;
     return preview;
 }
 
@@ -116,21 +119,23 @@ Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
 
 namespace {
 
-// The size one screen occupies, in source pixels, given its rotation.
+// The size one screen occupies, in source pixels, given its own dimensions and
+// its rotation. Each item measures against its own screen, so "a third the size"
+// means a third of that screen rather than a third of some shared unit -- which
+// is what keeps the arrangements right on a console whose screens differ.
 void item_source_size(const ScreenItem& item,
-                      int source_width,
-                      int source_height,
+                      const SystemScreens& screens,
                       float& out_width,
                       float& out_height) {
+    const ScreenSize size = screens.size_of(item.screen);
     const bool turned = rotation_is_quarter_turn(item.rotation);
-    out_width = static_cast<float>(turned ? source_height : source_width) * item.scale;
-    out_height = static_cast<float>(turned ? source_width : source_height) * item.scale;
+    out_width = static_cast<float>(turned ? size.height : size.width) * item.scale;
+    out_height = static_cast<float>(turned ? size.width : size.height) * item.scale;
 }
 
 std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
                                          const PixelRect& frame,
-                                         int source_width,
-                                         int source_height) {
+                                         const SystemScreens& screens) {
     std::vector<PlacedScreen> placed;
     if (composition.items.empty() || frame.w <= 0.0f || frame.h <= 0.0f) {
         return placed;
@@ -145,7 +150,7 @@ std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
     for (const ScreenItem& item : composition.items) {
         float width = 0.0f;
         float height = 0.0f;
-        item_source_size(item, source_width, source_height, width, height);
+        item_source_size(item, screens, width, height);
         const float item_along = horizontal ? width : height;
         const float item_across = horizontal ? height : width;
         along += item_along;
@@ -180,7 +185,7 @@ std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
     for (const ScreenItem& item : composition.items) {
         float width = 0.0f;
         float height = 0.0f;
-        item_source_size(item, source_width, source_height, width, height);
+        item_source_size(item, screens, width, height);
         width *= scale;
         height *= scale;
         const float item_along = horizontal ? width : height;
@@ -222,10 +227,11 @@ namespace {
 // the difference between a resampled picture and an exact one is not.
 constexpr float kNativeTolerance = 1.0f;
 
-void mark_native(PlacedScreen& placed, int source_width, int source_height) {
+void mark_native(PlacedScreen& placed, const SystemScreens& screens) {
+    const ScreenSize size = screens.size_of(placed.screen);
     const bool turned = rotation_is_quarter_turn(placed.rotation);
-    const float natural_width = static_cast<float>(turned ? source_height : source_width);
-    const float natural_height = static_cast<float>(turned ? source_width : source_height);
+    const float natural_width = static_cast<float>(turned ? size.height : size.width);
+    const float natural_height = static_cast<float>(turned ? size.width : size.height);
     if (std::fabs(placed.rect.w - natural_width) > kNativeTolerance ||
         std::fabs(placed.rect.h - natural_height) > kNativeTolerance) {
         return;
@@ -241,24 +247,33 @@ void mark_native(PlacedScreen& placed, int source_width, int source_height) {
 
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         const PixelRect& window,
-                                        int source_width,
-                                        int source_height) {
-    const PixelRect frame = layout_frame(layout, window);
+                                        const SystemScreens& screens) {
+    const PixelRect frame = layout_frame(layout, window, screens);
     std::vector<PlacedScreen> placed;
     if (layout.composition.used) {
-        placed = place_composed(layout.composition, frame, source_width, source_height);
+        placed = place_composed(layout.composition, frame, screens);
+    } else if (layout.uses_console_frame && screens.console.exists()) {
+        // The console's own arrangement, from whichever system is running.
+        for (const ScreenPlacement* placement : {&screens.console.top, &screens.console.bottom}) {
+            PlacedScreen entry;
+            entry.screen = placement->screen;
+            entry.rotation = placement->rotation;
+            entry.rect = placement_pixel_rect(*placement, frame, screens.size_of(placement->screen));
+            placed.push_back(entry);
+        }
     } else {
         placed.reserve(layout.placements.size());
         for (const ScreenPlacement& placement : layout.placements) {
             PlacedScreen entry;
             entry.screen = placement.screen;
             entry.rotation = placement.rotation;
-            entry.rect = placement_pixel_rect(placement, frame, source_width, source_height);
+            entry.rect =
+                placement_pixel_rect(placement, frame, screens.size_of(placement.screen));
             placed.push_back(entry);
         }
     }
     for (PlacedScreen& entry : placed) {
-        mark_native(entry, source_width, source_height);
+        mark_native(entry, screens);
     }
     return placed;
 }
@@ -266,57 +281,65 @@ std::vector<PlacedScreen> place_screens(const Layout& layout,
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         float output_width,
                                         float output_height,
-                                        int source_width,
-                                        int source_height) {
-    return place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, source_width,
-                         source_height);
+                                        const SystemScreens& screens) {
+    return place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens);
 }
 
-PixelRect layout_frame(const Layout& layout, const PixelRect& window) {
-    if (layout.frame_aspect <= 0.0f || window.w <= 0.0f || window.h <= 0.0f) {
+PixelRect layout_frame(const Layout& layout,
+                       const PixelRect& window,
+                       const SystemScreens& screens) {
+    const ConsoleFrame& console = screens.console;
+    if (!layout.uses_console_frame || !console.exists() || window.w <= 0.0f || window.h <= 0.0f) {
         return window;
     }
-    if (layout.native_frame.applies(window.w, window.h)) {
+    const bool native_fits = console.native_width > 0.0f && console.native_height > 0.0f &&
+                             window.w <= console.native_max_output_width &&
+                             window.h <= console.native_max_output_height;
+    if (native_fits) {
         // Whole pixels, so the screens inside land on the pixel grid rather than
         // half a pixel off it. Bigger than the window is allowed: an exact
         // picture with its edges over the sides beats a soft one that fits.
         PixelRect frame;
-        frame.w = layout.native_frame.width;
-        frame.h = layout.native_frame.height;
+        frame.w = console.native_width;
+        frame.h = console.native_height;
         frame.x = std::round(window.x + (window.w - frame.w) * 0.5f);
         frame.y = std::round(window.y + (window.h - frame.h) * 0.5f);
         return frame;
     }
     PixelRect frame = window;
-    if (layout.frame_margin > 0.0f) {
-        frame.x += window.w * layout.frame_margin;
-        frame.y += window.h * layout.frame_margin;
-        frame.w -= window.w * layout.frame_margin * 2.0f;
-        frame.h -= window.h * layout.frame_margin * 2.0f;
+    if (console.margin > 0.0f) {
+        frame.x += window.w * console.margin;
+        frame.y += window.h * console.margin;
+        frame.w -= window.w * console.margin * 2.0f;
+        frame.h -= window.h * console.margin * 2.0f;
         if (frame.w <= 0.0f || frame.h <= 0.0f) {
             return window;
         }
     }
     const PixelRect available = frame;
     const float window_aspect = available.w / available.h;
-    if (window_aspect > layout.frame_aspect) {
-        frame.w = available.h * layout.frame_aspect;
+    if (window_aspect > console.aspect) {
+        frame.w = available.h * console.aspect;
         frame.x = available.x + (available.w - frame.w) * 0.5f;
     } else {
-        frame.h = available.w / layout.frame_aspect;
+        frame.h = available.w / console.aspect;
         frame.y = available.y + (available.h - frame.h) * 0.5f;
     }
     return frame;
 }
 
-PixelRect layout_frame(const Layout& layout, float output_width, float output_height) {
-    return layout_frame(layout, PixelRect{0.0f, 0.0f, output_width, output_height});
+PixelRect layout_frame(const Layout& layout,
+                       float output_width,
+                       float output_height,
+                       const SystemScreens& screens) {
+    return layout_frame(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens);
 }
 
 PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                const PixelRect& frame,
-                               int source_width,
-                               int source_height) {
+                               ScreenSize source) {
+    int source_width = source.width;
+    int source_height = source.height;
     PixelRect rect;
     rect.x = frame.x + placement.x * frame.w;
     rect.y = frame.y + placement.y * frame.h;
@@ -352,10 +375,9 @@ PixelRect placement_pixel_rect(const ScreenPlacement& placement,
 PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                float output_width,
                                float output_height,
-                               int source_width,
-                               int source_height) {
+                               ScreenSize source) {
     return placement_pixel_rect(placement, PixelRect{0.0f, 0.0f, output_width, output_height},
-                                source_width, source_height);
+                                source);
 }
 
 Layout resolve_for_device(const Layout& layout, ScreenId local_screen) {
@@ -367,8 +389,7 @@ Layout resolve_for_device(const Layout& layout, ScreenId local_screen) {
     // One screen filling a whole device is not the DS's shell, and nothing is
     // beside anything, so neither the frame, the bezel nor the arrangement
     // carries over.
-    resolved.frame_aspect = 0.0f;
-    resolved.bezel = false;
+    resolved.uses_console_frame = false;
     resolved.composition = LayoutComposition();
 
     ScreenPlacement placement;
@@ -411,12 +432,14 @@ bool map_output_point_to_ds(const Layout& layout,
                             float output_height,
                             float point_x,
                             float point_y,
-                            DsTouchPoint& out_point) {
+                            DsTouchPoint& out_point,
+                            const SystemScreens& screens) {
     if (!layout.accepts_touch_on_bottom || output_width <= 0.0f || output_height <= 0.0f) {
         return false;
     }
 
-    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height)) {
+    const ScreenSize touch = screens.bottom;
+    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height, screens)) {
         if (placed.screen != ScreenId::Bottom) {
             continue;
         }
@@ -445,8 +468,10 @@ bool map_output_point_to_ds(const Layout& layout,
             }
             case ScreenRotation::None: break;
         }
-        out_point.x = std::clamp(static_cast<int>(u * kDsScreenWidth), 0, kDsScreenWidth - 1);
-        out_point.y = std::clamp(static_cast<int>(v * kDsScreenHeight), 0, kDsScreenHeight - 1);
+        out_point.x = std::clamp(static_cast<int>(u * static_cast<float>(touch.width)), 0,
+                                 touch.width - 1);
+        out_point.y = std::clamp(static_cast<int>(v * static_cast<float>(touch.height)), 0,
+                                 touch.height - 1);
         return true;
     }
     return false;

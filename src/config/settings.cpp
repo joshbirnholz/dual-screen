@@ -65,6 +65,8 @@ Settings Settings::load(const AppPaths& paths) {
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
+    settings.core_path_3ds =
+        expand_user_path(get_or<std::string>(document, "core_path_3ds", settings.core_path_3ds));
     settings.default_bilinear_filtering =
         get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
     settings.audio_target = audio_target_from_key(
@@ -94,6 +96,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["last_browse_dir"] = last_browse_dir;
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;
+    document["core_path_3ds"] = core_path_3ds;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
@@ -122,17 +125,31 @@ bool Settings::save(const AppPaths& paths) const {
     return true;
 }
 
-std::vector<std::string> core_search_paths() {
-    std::vector<std::string> paths;
+std::vector<std::string> core_search_paths(SystemId system) {
+    // The usual places a libretro core ends up, crossed with the filenames this
+    // system's cores go by. The order is preference: this app's own folder
+    // first, then RetroArch's, then the distribution's.
+    static const char* const kDirectories[] = {
+        nullptr,  // stands in for this app's config directory, filled in below
+        "~/.config/retroarch/cores",
+        "~/.var/app/org.libretro.RetroArch/config/retroarch/cores",
+        "~/.local/share/retroarch/cores",
+        "/usr/lib/libretro",
+        "/usr/lib64/libretro",
+        "/usr/lib/x86_64-linux-gnu/libretro",
+    };
+
     const AppPaths app_paths = AppPaths::resolve();
-    paths.push_back(path_join(app_paths.config_dir, "cores/melondsds_libretro.so"));
-    paths.push_back(expand_user_path("~/.config/retroarch/cores/melondsds_libretro.so"));
-    paths.push_back(expand_user_path(
-        "~/.var/app/org.libretro.RetroArch/config/retroarch/cores/melondsds_libretro.so"));
-    paths.push_back(expand_user_path("~/.local/share/retroarch/cores/melondsds_libretro.so"));
-    paths.push_back("/usr/lib/libretro/melondsds_libretro.so");
-    paths.push_back("/usr/lib64/libretro/melondsds_libretro.so");
-    paths.push_back("/usr/lib/x86_64-linux-gnu/libretro/melondsds_libretro.so");
+    const std::string own_cores = path_join(app_paths.config_dir, "cores");
+
+    std::vector<std::string> paths;
+    for (const std::string& filename : system_profile(system).core_filenames) {
+        for (const char* directory : kDirectories) {
+            const std::string folder =
+                (directory == nullptr) ? own_cores : expand_user_path(directory);
+            paths.push_back(path_join(folder, filename));
+        }
+    }
     return paths;
 }
 

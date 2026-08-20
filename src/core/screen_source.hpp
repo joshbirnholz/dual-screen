@@ -2,14 +2,10 @@
 
 #include <string>
 
+#include "layout/layout.hpp"
 #include "render/texture.hpp"
 
 namespace ds {
-
-struct ScreenSize {
-    int width = 0;
-    int height = 0;
-};
 
 // The two logical screens for the current frame, as GPU textures.
 struct ScreenTextures {
@@ -40,8 +36,9 @@ public:
     // advance_frame(). May report invalid textures before the first frame.
     virtual const ScreenTextures& screens() = 0;
 
-    // Native size of one screen, in the source's own pixels (256x192 for DS).
-    virtual ScreenSize native_screen_size() const = 0;
+    // The screens this source produces, at their own sizes -- which are not
+    // necessarily the same as each other.
+    virtual SystemScreens screens_geometry() const = 0;
 
     // True once the source has decided it is finished (e.g. the core asked the
     // frontend to shut down).

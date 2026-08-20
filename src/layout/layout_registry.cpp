@@ -8,23 +8,6 @@
 namespace ds {
 namespace {
 
-// The Standard layout draws a picture of a DS, and its screens have to land on
-// that picture's screens exactly. These come from the artwork itself
-// (assets/ds_bezel.png, 615 x 630) and its companion overlay, where the screens
-// are 256 x 192 -- one image pixel per DS pixel -- at (179, 60) and (179, 337).
-constexpr float kShellImageWidth = 615.0f;
-constexpr float kShellImageHeight = 630.0f;
-constexpr float kShellAspect = kShellImageWidth / kShellImageHeight;
-constexpr float kShellScreenX = 179.0f / kShellImageWidth;
-constexpr float kShellScreenWidth = 256.0f / kShellImageWidth;
-constexpr float kShellScreenHeight = 192.0f / kShellImageHeight;
-constexpr float kShellTopScreenY = 60.0f / kShellImageHeight;
-constexpr float kShellBottomScreenY = 337.0f / kShellImageHeight;
-
-// Room to breathe around the console, so it does not sit hard against the edges
-// of the window.
-constexpr float kShellMargin = 0.03f;
-
 // Everything below is measured off the Wii U Virtual Console's own output, on
 // the 378 x 212 pixel picture it draws inside the TV frame in its Screen
 // Settings shots. Numbers rather than eyeballing, because "a bit smaller, over
@@ -71,23 +54,6 @@ LayoutComposition make_composition(LayoutAxis axis,
     return composition;
 }
 
-ScreenPlacement make_placement(float x,
-                               float y,
-                               float w,
-                               float h,
-                               ScreenId screen,
-                               ScreenRotation rotation = ScreenRotation::None) {
-    ScreenPlacement placement;
-    placement.x = x;
-    placement.y = y;
-    placement.w = w;
-    placement.h = h;
-    placement.screen = screen;
-    placement.fit = ScreenFit::Contain;
-    placement.rotation = rotation;
-    return placement;
-}
-
 }  // namespace
 
 const char* LayoutRegistry::fallback_id() { return "standard"; }
@@ -110,33 +76,15 @@ LayoutRegistry::LayoutRegistry() {
     // a left-handed variant there are one layout here plus a handedness toggle,
     // rather than two entries that differ only in which corner a screen is in.
 
-    // 0. Both screens inside a drawing of the console itself.
+    // 0. Both screens arranged the way the console itself arranges them, inside
+    // a picture of it where there is one. The shape, the screen positions and
+    // whether there is any artwork all come from the system being played, so
+    // this entry says only that it is that layout.
     {
         Layout layout;
         layout.id = "standard";
-        layout.display_name = "Standard Nintendo DS";
-        layout.frame_aspect = kShellAspect;
-        layout.frame_margin = kShellMargin;
-        // On a display no bigger than a Deck's there is not enough room to scale
-        // the console up without softening it, so it is drawn at its own size
-        // and the screens come out exact. Larger displays scale it as usual.
-        layout.native_frame.width = kShellImageWidth;
-        layout.native_frame.height = kShellImageHeight;
-        layout.native_frame.max_output_width = 1280.0f;
-        layout.native_frame.max_output_height = 800.0f;
-        layout.bezel = true;
-        // Stretch rather than contain: these rects are already the screens'
-        // exact shape, and letterboxing inside them would leave a hairline of
-        // the artwork's black showing along an edge.
-        layout.placements = {
-            make_placement(kShellScreenX, kShellTopScreenY, kShellScreenWidth, kShellScreenHeight,
-                           ScreenId::Top),
-            make_placement(kShellScreenX, kShellBottomScreenY, kShellScreenWidth,
-                           kShellScreenHeight, ScreenId::Bottom),
-        };
-        for (ScreenPlacement& placement : layout.placements) {
-            placement.fit = ScreenFit::Stretch;
-        }
+        layout.display_name = "Standard";
+        layout.uses_console_frame = true;
         layouts_.push_back(layout);
     }
 

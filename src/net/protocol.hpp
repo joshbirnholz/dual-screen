@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "input/ds_input.hpp"
+#include "core/system.hpp"
 #include "layout/layout.hpp"
 
 namespace ds::net {
@@ -19,7 +20,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 3;
+constexpr uint16_t kProtocolVersion = 4;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -64,8 +65,11 @@ struct WelcomeMessage {
     std::string game_title;
     std::string rom_sha1;
     ScreenId granted_screen = ScreenId::Bottom;
-    uint16_t screen_width = kDsScreenWidth;
-    uint16_t screen_height = kDsScreenHeight;
+    // Which console is being played. The companion looks the screen sizes and
+    // the console's own arrangement up from this rather than being sent them:
+    // both devices run the same build, so a name is enough and there is no way
+    // for the two to end up with different numbers.
+    SystemId system = SystemId::Ds;
     // So the companion can open its own audio output at the rate the host is
     // actually producing, rather than resampling something it guessed.
     uint32_t audio_sample_rate = 0;

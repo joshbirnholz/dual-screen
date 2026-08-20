@@ -20,31 +20,68 @@ constexpr const char* kOptRenderMode = "melonds_render_mode";
 constexpr const char* kOptTouchMode = "melonds_touch_mode";
 constexpr const char* kOptShowCursor = "melonds_show_cursor";
 
+// Citra's equivalent. Its "Default Top-Bottom Screen" stacks the 400x240 upper
+// screen above the 320x240 touch screen, the narrower one centred beneath the
+// wider, in a buffer 400 wide and 480 tall at 1x.
+constexpr const char* kOpt3dsLayout = "citra_layout_option";
+constexpr const char* kOpt3dsLayoutValue = "Default Top-Bottom Screen";
+constexpr const char* kOpt3dsSwapScreens = "citra_swap_screen";
+
+std::string dimensions(int width, int height) {
+    return std::to_string(width) + "x" + std::to_string(height);
+}
+
 }  // namespace
 
-ScreenSplit compute_top_bottom_split(int frame_width, int frame_height, std::string* reason) {
+ScreenSplit compute_top_bottom_split(SystemId system,
+                                     int frame_width,
+                                     int frame_height,
+                                     std::string* reason) {
     ScreenSplit split;
     if (frame_width <= 0 || frame_height <= 0) {
         if (reason != nullptr) *reason = "the core produced an empty frame";
         return split;
     }
-    // One DS screen wide, two tall: height must be exactly 1.5x the width.
-    if (frame_height % 2 != 0 || frame_height * 2 != frame_width * 3) {
+
+    // What the pinned layout should have produced, at 1x. The core may be
+    // rendering at a higher internal resolution, so the check is on the shape
+    // rather than the size, and everything below scales with it.
+    const SystemScreens& screens = system_profile(system).screens;
+    const int unit_width = std::max(screens.top.width, screens.bottom.width);
+    const int unit_height = screens.top.height + screens.bottom.height;
+
+    // frame / unit must be the same ratio in both directions, and a whole
+    // number of source pixels must land on each screen.
+    if (frame_width * unit_height != frame_height * unit_width) {
         if (reason != nullptr) {
-            *reason = "expected a framebuffer two DS screens tall (a 2:3 width:height ratio) but the "
-                      "core produced " + std::to_string(frame_width) + "x" + std::to_string(frame_height);
+            *reason = "expected a framebuffer shaped like two " + system_profile(system).name +
+                      " screens stacked (" + dimensions(unit_width, unit_height) +
+                      ", or a whole multiple of it) but the core produced " +
+                      dimensions(frame_width, frame_height);
+        }
+        return split;
+    }
+    if (frame_width % unit_width != 0) {
+        if (reason != nullptr) {
+            *reason = "the core produced " + dimensions(frame_width, frame_height) +
+                      ", which is not a whole multiple of " + dimensions(unit_width, unit_height);
         }
         return split;
     }
 
+    const int scale = frame_width / unit_width;
     split.frame_width = frame_width;
     split.frame_height = frame_height;
-    split.screen_width = frame_width;
-    split.screen_height = frame_height / 2;
-    split.top_x = 0;
+    split.top_width = screens.top.width * scale;
+    split.top_height = screens.top.height * scale;
+    split.bottom_width = screens.bottom.width * scale;
+    split.bottom_height = screens.bottom.height * scale;
+    // Each screen centred across the buffer's width, which is what the pinned
+    // layouts do with the narrower of the two.
+    split.top_x = (frame_width - split.top_width) / 2;
     split.top_y = 0;
-    split.bottom_x = 0;
-    split.bottom_y = split.screen_height;
+    split.bottom_x = (frame_width - split.bottom_width) / 2;
+    split.bottom_y = split.top_height;
     split.valid = true;
     return split;
 }
@@ -60,10 +97,13 @@ void LibretroCoreScreenSource::set_audio_callback(AudioCallback callback) {
 bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::string* error) {
     warnings_.clear();
 
+    system_ = config.system;
+    const SystemProfile& profile = system_profile(system_);
+
     if (config.core_path.empty()) {
         if (error != nullptr) {
-            *error = "No melonDS DS libretro core was found. Install melondsds_libretro.so, or set "
-                     "\"core_path\" in settings.json.";
+            *error = "No " + profile.core_description + " libretro core was found. Install " +
+                     profile.core_filenames.front() + ", or set \"core_path\" in settings.json.";
         }
         return false;
     }
@@ -85,15 +125,27 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     core_->set_input_state(input_sink_.state_pointer());
 
     // Pin the core to exactly one internal layout, chosen so the two screens
-    // land as clean, axis-aligned halves of a single buffer. Everything the
-    // player sees is composited by us from those halves, so this value is an
+    // land as clean, axis-aligned pieces of a single buffer. Everything the
+    // player sees is composited by us from those pieces, so this value is an
     // implementation detail they never interact with.
-    core_->force_option(kOptNumberOfLayouts, "1");   // no layout cycling
-    core_->force_option(kOptScreenLayout1, "top-bottom");
-    core_->force_option(kOptScreenGap, "0");         // no dead rows between screens
-    core_->force_option(kOptRenderMode, "software"); // V1 composites from a CPU framebuffer
-    core_->force_option(kOptTouchMode, "touch");     // touch arrives as a libretro pointer
-    core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
+    //
+    // Options a core does not have are ignored, and a core that refuses one
+    // says so through warnings() rather than quietly changing the picture --
+    // which is why both systems' options can simply be set here.
+    switch (system_) {
+        case SystemId::Ds:
+            core_->force_option(kOptNumberOfLayouts, "1");   // no layout cycling
+            core_->force_option(kOptScreenLayout1, "top-bottom");
+            core_->force_option(kOptScreenGap, "0");         // no dead rows between screens
+            core_->force_option(kOptRenderMode, "software"); // composited from a CPU framebuffer
+            core_->force_option(kOptTouchMode, "touch");     // touch arrives as a libretro pointer
+            core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
+            break;
+        case SystemId::ThreeDs:
+            core_->force_option(kOpt3dsLayout, kOpt3dsLayoutValue);
+            core_->force_option(kOpt3dsSwapScreens, "disabled");
+            break;
+    }
 
     if (!core_->load(config.core_path, error)) {
         return false;
@@ -112,15 +164,11 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     // The core's declared geometry should already describe the pinned layout;
     // the authoritative check happens on the first real frame.
     std::string reason;
-    split_ = compute_top_bottom_split(static_cast<int>(core_->av_info().base_width),
-                                      static_cast<int>(core_->av_info().base_height),
-                                      &reason);
+    split_ = compute_top_bottom_split(system_, static_cast<int>(core_->av_info().base_width),
+                                      static_cast<int>(core_->av_info().base_height), &reason);
     if (split_.valid) {
-        core_->set_pointer_source_rect(
-            static_cast<float>(split_.bottom_x) / static_cast<float>(split_.frame_width),
-            static_cast<float>(split_.bottom_y) / static_cast<float>(split_.frame_height),
-            static_cast<float>(split_.screen_width) / static_cast<float>(split_.frame_width),
-            static_cast<float>(split_.screen_height) / static_cast<float>(split_.frame_height));
+        apply_pointer_rect();
+        log_split();
     }
 
     save_path_ = config.save_path;
@@ -165,10 +213,11 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
     if (!split_.valid && core_->video_frame().valid()) {
         if (error != nullptr) {
             std::string reason;
-            compute_top_bottom_split(static_cast<int>(core_->video_frame().width),
+            compute_top_bottom_split(system_, static_cast<int>(core_->video_frame().width),
                                      static_cast<int>(core_->video_frame().height), &reason);
             *error = "The core is not rendering in the screen layout this app pins it to: " + reason +
-                     ". Check that the loaded core accepts the 'top-bottom' screen layout.";
+                     ". Check that the loaded core accepts the stacked screen layout this app "
+                     "pins it to.";
         }
         return false;
     }
@@ -250,7 +299,7 @@ void LibretroCoreScreenSource::refresh_split_from_frame() {
     }
 
     std::string reason;
-    const ScreenSplit split = compute_top_bottom_split(static_cast<int>(frame.width),
+    const ScreenSplit split = compute_top_bottom_split(system_, static_cast<int>(frame.width),
                                                        static_cast<int>(frame.height), &reason);
     split_ = split;
     if (!split.valid) {
@@ -262,14 +311,30 @@ void LibretroCoreScreenSource::refresh_split_from_frame() {
     }
 
     split_reported_ = false;
-    core_->set_pointer_source_rect(
-        static_cast<float>(split_.bottom_x) / static_cast<float>(split_.frame_width),
-        static_cast<float>(split_.bottom_y) / static_cast<float>(split_.frame_height),
-        static_cast<float>(split_.screen_width) / static_cast<float>(split_.frame_width),
-        static_cast<float>(split_.screen_height) / static_cast<float>(split_.frame_height));
-    log_info("splitting " + std::to_string(split_.frame_width) + "x" + std::to_string(split_.frame_height) +
-             " into two " + std::to_string(split_.screen_width) + "x" +
-             std::to_string(split_.screen_height) + " screens");
+    apply_pointer_rect();
+    log_split();
+}
+
+void LibretroCoreScreenSource::log_split() {
+    log_info("splitting " + dimensions(split_.frame_width, split_.frame_height) + " into a " +
+             dimensions(split_.top_width, split_.top_height) + " upper screen and a " +
+             dimensions(split_.bottom_width, split_.bottom_height) + " touch screen");
+}
+
+void LibretroCoreScreenSource::apply_pointer_rect() {
+    // Where the touch screen sits inside the whole framebuffer, plus the size
+    // of the screen itself, which together let a touch in the screen's own
+    // coordinates become a libretro pointer.
+    LibretroCore::PointerSource source;
+    source.x = static_cast<float>(split_.bottom_x) / static_cast<float>(split_.frame_width);
+    source.y = static_cast<float>(split_.bottom_y) / static_cast<float>(split_.frame_height);
+    source.width = static_cast<float>(split_.bottom_width) / static_cast<float>(split_.frame_width);
+    source.height =
+        static_cast<float>(split_.bottom_height) / static_cast<float>(split_.frame_height);
+    const ScreenSize touch = system_profile(system_).screens.bottom;
+    source.screen_width = touch.width;
+    source.screen_height = touch.height;
+    core_->set_pointer_source(source);
 }
 
 void LibretroCoreScreenSource::upload_screens() {
@@ -282,10 +347,10 @@ void LibretroCoreScreenSource::upload_screens() {
     const int stride = static_cast<int>(frame.stride_pixels);
 
     const uint32_t* top = base + static_cast<std::size_t>(split_.top_y) * stride + split_.top_x;
-    top_texture_.upload_xrgb8888(top, split_.screen_width, split_.screen_height, stride);
+    top_texture_.upload_xrgb8888(top, split_.top_width, split_.top_height, stride);
 
     const uint32_t* bottom = base + static_cast<std::size_t>(split_.bottom_y) * stride + split_.bottom_x;
-    bottom_texture_.upload_xrgb8888(bottom, split_.screen_width, split_.screen_height, stride);
+    bottom_texture_.upload_xrgb8888(bottom, split_.bottom_width, split_.bottom_height, stride);
 
     uploaded_serial_ = frame.serial;
 }
@@ -297,11 +362,11 @@ const ScreenTextures& LibretroCoreScreenSource::screens() {
     return screens_;
 }
 
-ScreenSize LibretroCoreScreenSource::native_screen_size() const {
-    if (split_.valid) {
-        return ScreenSize{split_.screen_width, split_.screen_height};
-    }
-    return ScreenSize{kDsScreenWidth, kDsScreenHeight};
+SystemScreens LibretroCoreScreenSource::screens_geometry() const {
+    // The console's own screen sizes rather than the framebuffer's: a core
+    // rendering at 4x still shows a 3DS's 400x240 and 320x240 screens, and every
+    // layout, touch mapping and preview reasons in those terms.
+    return system_profile(system_).screens;
 }
 
 bool LibretroCoreScreenSource::wants_shutdown() const {

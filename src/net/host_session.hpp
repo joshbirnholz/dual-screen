@@ -23,6 +23,9 @@ public:
         std::string device_name;
         std::string game_title;
         std::string rom_sha1;
+        // Which console is running, so the companion lays its screens out the
+        // same way and clamps touches to the same coordinate space.
+        SystemId system = SystemId::Ds;
         // Where the host starts. A companion asks for whichever screen it
         // wants and the host takes the other, so this is only the arrangement
         // before anyone connects.
@@ -85,14 +88,18 @@ public:
     // reads a menu is two people looking at different games.
     bool companion_menu_open() const { return companion_menu_open_; }
 
+    // One screen's pixels inside the core's framebuffer. The two are described
+    // separately because they are not always the same size.
+    struct ScreenPixels {
+        const uint32_t* pixels = nullptr;
+        int width = 0;
+        int height = 0;
+        int stride_pixels = 0;
+    };
+
     // Sends whichever screens the companion needs for the current layout.
     // `serial` should advance only when the pixels actually changed.
-    void publish_screens(const uint32_t* top_pixels,
-                         const uint32_t* bottom_pixels,
-                         int width,
-                         int height,
-                         int stride_pixels,
-                         uint64_t serial);
+    void publish_screens(const ScreenPixels& top, const ScreenPixels& bottom, uint64_t serial);
 
     // Accepts connections, moves bytes, and drains input. Call once a frame.
     void poll(uint64_t now_ms);

@@ -50,6 +50,46 @@ screen at `(0, 192, 256, 192)`.
 
 Both are covered by tests (`test_core_host`, `test_layout`).
 
+## 1b. Which Citra core-option layout gives clean sub-rects?
+
+Not in the V1 spec — 3DS support came later, and this is the same question
+asked of the other console.
+
+**Answer: `citra_layout_option = "Default Top-Bottom Screen"`, with
+`citra_swap_screen = "Top"`.**
+
+The 3DS is not a bigger DS. Its two screens are different shapes — **400x240**
+above and **320x240** below — so nothing about the DS's "two equal halves"
+reasoning carries over.
+
+Under Citra's default top-bottom layout the framebuffer is **400x480**: the
+upper screen fills the full width at `(0, 0, 400, 240)`, and the narrower touch
+screen is centred beneath it at `(40, 240, 320, 240)`. `citra_swap_screen` has
+to be pinned as well, or the player's swap toggle moves the two screens and the
+crop lands on the wrong one.
+
+`compute_top_bottom_split` handles both consoles from the same code by deriving
+the scale from `frame_width / max(top.width, bottom.width)` and centring each
+screen horizontally within the frame. That is exactly the DS case when the two
+widths are equal, so there is one rule rather than a per-console table, and an
+upscaled buffer (Citra's internal resolution multiplier) splits correctly with
+no change. It is covered by `test_screen_source_handles_a_3ds_core`, which runs
+against a mock core shaped like Citra and checks the crop lands on the colours
+the mock painted.
+
+**What is still unverified:** this is derived from Citra's option definitions
+and exercised against a mock, not against a real Citra build, which was not
+available in this environment. The same runtime guard as the DS applies — a
+forced option the core does not declare becomes a visible warning rather than a
+silently wrong picture — so a core that has moved on says so instead of
+mis-splitting.
+
+**3DS system files.** As with the DS: none ship here and none are downloaded.
+Citra needs files that come off your own console, and the Settings screen's
+inventory covers the DS files only, since Citra's requirements vary by fork.
+What the Settings screen does report for 3DS is whether a core was found at
+all.
+
 ## 2. Does gamescope's Game Mode have quirks with dlopen'd cores, GL context creation, or controller hot-plugging?
 
 **Not yet verified on hardware — this needs a Steam Deck or a SteamOS machine,
@@ -139,12 +179,32 @@ log.
 
 **Why the pointer rect is pushed into the core rather than assumed.** libretro
 pointer coordinates span the core's whole output framebuffer, not one screen.
-Since the core is pinned to top-bottom, a DS touch at `(x, y)` has to become a
-pointer coordinate in the lower half of the buffer. That rect is computed from
+Since the core is pinned to top-bottom, a touch at `(x, y)` has to become a
+pointer coordinate in the lower part of the buffer. That rect is computed from
 the same `ScreenSplit` the crop uses and handed to `LibretroCore`, so the two
-can never drift apart. The smoke test verifies the whole round trip: a touch at
-a given point in the window makes the mock core draw its crosshair at exactly
-that point.
+can never drift apart. The touch screen's *own* size travels with the rect in
+the same struct, because converting a touch needs both and taking one from one
+console and one from another misplaces every press by exactly the ratio between
+them — which is what a 3DS touch did while `pointer_axis` still divided by the
+DS's 256x192. The smoke test verifies the whole round trip on both consoles: a
+touch at a given point in the window makes the mock core draw its crosshair at
+exactly that point.
+
+**Why the console is a profile rather than a set of constants.** Screen sizes,
+ROM extensions, core filenames, the console picture and the core options to pin
+were all DS constants scattered across the layout code, the screen source, the
+protocol and the browser. They are now one `SystemProfile` per console in
+`src/core/system.cpp`, and everything that used to know 256x192 takes a
+`SystemScreens` instead. The geometry parameters are deliberately *not*
+defaulted: a caller that forgets to pass one fails to compile rather than
+quietly getting a DS's. Adding a console is a profile plus its option pinning,
+not a hunt for constants.
+
+**Why the console comes from the ROM's extension.** Nothing else about a
+session establishes it early enough. The extension picks the profile, the
+profile picks the core, and the choice rides the wire in the welcome message so
+the companion adopts the host's console rather than guessing from the frame
+size it happens to receive.
 
 **Why emulation pauses while the menu is open.** Comparing layouts is much
 easier against a still frame, and it removes any chance of a menu press leaking

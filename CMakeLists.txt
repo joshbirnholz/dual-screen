@@ -65,6 +65,7 @@ add_library(dualscreen_core STATIC
     src/core/libretro_core.cpp
     src/core/libretro_screen_source.cpp
     src/core/core_input_sink.cpp
+    src/core/system.cpp
     src/input/controller_mapping.cpp
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp

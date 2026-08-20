@@ -439,7 +439,10 @@ bool InputManager::update_pointer(float output_width, float output_height) {
     return have_point;
 }
 
-void InputManager::end_frame(const Layout& layout, float output_width, float output_height) {
+void InputManager::end_frame(const Layout& layout,
+                             float output_width,
+                             float output_height,
+                             const SystemScreens& screens) {
     // Normalize every pointer event into output pixels now that the size is known.
     for (PointerEvent& pointer : pointer_events_) {
         if (pointer.normalized) {
@@ -461,7 +464,7 @@ void InputManager::end_frame(const Layout& layout, float output_width, float out
         if (held_input_gate_.touching()) {
             DsTouchPoint point;
             if (map_output_point_to_ds(layout, output_width, output_height, pointer_x_, pointer_y_,
-                                       point)) {
+                                       point, screens)) {
                 ds_state_.touching = true;
                 ds_state_.touch_x = point.x;
                 ds_state_.touch_y = point.y;

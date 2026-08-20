@@ -5,12 +5,24 @@
 
 namespace ds {
 
-// Native dimensions of one DS screen. Touch coordinates are always expressed
-// in this space, whatever the core's internal framebuffer resolution is.
+// Native dimensions of one DS screen, which is also the default when nothing
+// says otherwise.
 constexpr int kDsScreenWidth = 256;
 constexpr int kDsScreenHeight = 192;
 
 enum class ScreenId { Top, Bottom };
+
+// The size of one screen in its own pixels. Touch coordinates are expressed in
+// the touch screen's own space, whatever the core's framebuffer resolution is.
+struct ScreenSize {
+    int width = 0;
+    int height = 0;
+
+    bool valid() const { return width > 0 && height > 0; }
+    float aspect() const {
+        return valid() ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
+    }
+};
 
 const char* to_string(ScreenId screen);
 
@@ -96,6 +108,45 @@ struct LayoutComposition {
     float margin = 0.0f;
 };
 
+// Where the screens sit inside a picture of the console, for the layout that
+// draws one. The picture itself is optional: without artwork the screens still
+// sit where the console's own do and the space around them is simply blank,
+// which is what a system whose illustration has not been drawn yet looks like.
+struct ConsoleFrame {
+    // Width over height of the whole console picture. Zero means this system has
+    // no console frame at all.
+    float aspect = 0.0f;
+    // The two screens, normalized inside that picture.
+    ScreenPlacement top;
+    ScreenPlacement bottom;
+    // Padding around the console, as a fraction of the window.
+    float margin = 0.0f;
+    // The artwork's own pixel size, when there is artwork, and the largest
+    // display that gets it drawn at that size rather than scaled.
+    float native_width = 0.0f;
+    float native_height = 0.0f;
+    float native_max_output_width = 0.0f;
+    float native_max_output_height = 0.0f;
+    // Whether an illustration is drawn behind the screens. Without one the
+    // arrangement is the same and the surround is left blank.
+    bool has_art = false;
+
+    bool exists() const { return aspect > 0.0f; }
+};
+
+// The screens a system has, and the console they belong to. The two are not
+// always the same shape: a 3DS's upper screen is 400x240 and its touch screen
+// 320x240, which is why nothing here can be a constant.
+struct SystemScreens {
+    ScreenSize top{kDsScreenWidth, kDsScreenHeight};
+    ScreenSize bottom{kDsScreenWidth, kDsScreenHeight};
+    ConsoleFrame console;
+
+    const ScreenSize& size_of(ScreenId screen) const {
+        return screen == ScreenId::Top ? top : bottom;
+    }
+};
+
 struct Layout {
     std::string id;            // stable identifier, used in config files
     std::string display_name;  // shown in the picker UI
@@ -113,38 +164,11 @@ struct Layout {
     // resolved per device by resolve_for_device().
     bool per_device = false;
 
-    // When non-zero, placements are relative to a box of this aspect ratio
-    // (width / height) letterboxed inside the window, rather than to the window
-    // itself. Standard uses it so the DS's shell keeps the proportions of a real
-    // one whatever shape the window is.
-    float frame_aspect = 0.0f;
-
-    // Padding around that frame, as a fraction of the window, so a layout that
-    // draws something with edges of its own does not press them against the
-    // edges of the display.
-    float frame_margin = 0.0f;
-
-    // Some frames are a picture drawn at a particular size, with the screens
-    // sized to it. Scaling that picture to a display barely bigger than itself
-    // resamples both it and the game for no gain, so below a threshold the frame
-    // is drawn at its own size instead -- centred, and overflowing if it must.
-    struct NativeFrame {
-        float width = 0.0f;
-        float height = 0.0f;
-        float max_output_width = 0.0f;
-        float max_output_height = 0.0f;
-
-        bool applies(float output_width, float output_height) const {
-            return width > 0.0f && height > 0.0f && output_width <= max_output_width &&
-                   output_height <= max_output_height;
-        }
-    };
-    NativeFrame native_frame;
-
-    // Draw the DS's own shell around the screens. Only Standard does: it is the
-    // layout that says "this is a Nintendo DS" rather than "these are two
-    // pictures".
-    bool bezel = false;
+    // This layout arranges its screens the way the console itself does, taking
+    // its shape and its screen positions from whichever system is running. Only
+    // Standard does; everything else composes its screens for itself and looks
+    // the same on any console.
+    bool uses_console_frame = false;
 };
 
 // Which hand holds the stylus. Layouts that put one screen beside another are
@@ -156,14 +180,14 @@ const char* handedness_key(Handedness handedness);
 Handedness handedness_from_key(const std::string& key);
 Handedness other_hand(Handedness handedness);
 
-// The layout as it should be drawn into something that is not the display: a
-// preview tile, or anything else smaller than the real thing.
+// The system's screens as they should be drawn into something that is not the
+// display: a preview tile, or anything else smaller than the real thing.
 //
-// It exists because one property -- drawing the frame at its own pixel size on a
-// small display -- is about the display and nothing else. A tile is smaller than
-// any such threshold, so a layout drawn into one without this drew a full-size
-// console across the rest of the menu.
-Layout as_preview(const Layout& layout);
+// It exists because one property -- drawing the console at its own pixel size on
+// a small display -- is about the display and nothing else. A tile is smaller
+// than any such threshold, so a layout drawn into one without this drew a
+// full-size console across the rest of the menu.
+SystemScreens as_preview(const SystemScreens& screens);
 
 // The layout as it should be drawn for a given hand: right-handed as written,
 // left-handed mirrored left to right, with any quarter turns reversed to match.
@@ -201,50 +225,54 @@ struct PlacedScreen {
     bool native = false;
 };
 
+// The geometry is not optional: a system's screens are the whole basis of where
+// anything lands, and defaulting it would let a caller silently get a DS's.
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         const PixelRect& window,
-                                        int source_width = kDsScreenWidth,
-                                        int source_height = kDsScreenHeight);
+                                        const SystemScreens& screens);
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         float output_width,
                                         float output_height,
-                                        int source_width = kDsScreenWidth,
-                                        int source_height = kDsScreenHeight);
+                                        const SystemScreens& screens);
 
 // The box a layout's placements are relative to: the whole window, unless the
-// layout asked for an aspect ratio of its own, in which case the largest box of
-// that shape that fits, centred.
-PixelRect layout_frame(const Layout& layout, const PixelRect& window);
-PixelRect layout_frame(const Layout& layout, float output_width, float output_height);
+// layout draws the console, in which case the largest box of the console's shape
+// that fits, centred -- or the artwork's own pixel size on a small display.
+PixelRect layout_frame(const Layout& layout,
+                       const PixelRect& window,
+                       const SystemScreens& screens);
+PixelRect layout_frame(const Layout& layout,
+                       float output_width,
+                       float output_height,
+                       const SystemScreens& screens);
 
 // Where a placement actually lands, in pixels, within a frame. This is the
 // single source of truth shared by the compositor, the previews and touch
 // mapping — if they ever disagreed, touches would land in the wrong place.
 PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                const PixelRect& frame,
-                               int source_width = kDsScreenWidth,
-                               int source_height = kDsScreenHeight);
+                               ScreenSize source = ScreenSize{kDsScreenWidth, kDsScreenHeight});
 PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                float output_width,
                                float output_height,
-                               int source_width = kDsScreenWidth,
-                               int source_height = kDsScreenHeight);
+                               ScreenSize source = ScreenSize{kDsScreenWidth, kDsScreenHeight});
 
 struct DsTouchPoint {
     int x = 0;
     int y = 0;
 };
 
-// Maps a point in output-window pixels back into DS touchscreen space, using
-// the inverse of the bottom screen's placement. Returns false when the point is
-// not over a touchable bottom screen. This is derived generically from the
-// layout data, so a new layout is new data, not new code.
+// Maps a point in output-window pixels back into the touch screen's own space,
+// using the inverse of the bottom screen's placement. Returns false when the
+// point is not over a touchable bottom screen. This is derived generically from
+// the layout data, so a new layout is new data, not new code.
 bool map_output_point_to_ds(const Layout& layout,
                             float output_width,
                             float output_height,
                             float point_x,
                             float point_y,
-                            DsTouchPoint& out_point);
+                            DsTouchPoint& out_point,
+                            const SystemScreens& screens);
 
 // True if this layout shows the bottom screen at all (and so can accept touch).
 bool layout_has_touchable_bottom(const Layout& layout);

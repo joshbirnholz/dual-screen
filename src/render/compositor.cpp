@@ -19,20 +19,28 @@ void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* a
 
 void Compositor::render(QuadRenderer& quads,
                         const Layout& layout,
-                        const ScreenTextures& screens,
+                        const ScreenTextures& textures,
+                        const SystemScreens& screens,
                         float output_width,
                         float output_height,
                         OutputRouter& router) {
     quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
-    quads.clear(layout.bezel ? style_.bezel_background : style_.background);
 
-    if (layout.bezel) {
-        draw_ds_shell(quads, layout_frame(layout, output_width, output_height), bezel_art_);
+    // A console drawn from artwork sits on the artwork's own background, so the
+    // picture has no edge. A console with no artwork yet is simply blank around
+    // its screens, and blank is the black everything else uses.
+    const bool draws_console = layout.uses_console_frame && screens.console.exists();
+    quads.clear(draws_console && screens.console.has_art ? style_.bezel_background
+                                                         : style_.background);
+
+    if (draws_console) {
+        draw_ds_shell(quads, layout_frame(layout, output_width, output_height, screens),
+                      screens.console.has_art ? bezel_art_ : nullptr);
     }
 
-    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height)) {
+    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height, screens)) {
         const PixelRect& rect = placed.rect;
-        const Texture* texture = (placed.screen == ScreenId::Top) ? screens.top : screens.bottom;
+        const Texture* texture = (placed.screen == ScreenId::Top) ? textures.top : textures.bottom;
 
         // The one place that decides local vs. elsewhere.
         const OutputRoute route = router.route_for(placed.screen);

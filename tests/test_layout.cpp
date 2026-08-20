@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "layout/layout.hpp"
+#include "core/system.hpp"
 #include "layout/layout_registry.hpp"
 
 using namespace ds;
@@ -11,12 +12,17 @@ using namespace ds;
 namespace {
 
 // Where a screen actually lands, which is all any caller really wants to know.
+// Unless a test says otherwise, "the screens" means a DS's -- which is what
+// most of this file is about.
+const SystemScreens& ds_screens() { return system_profile(SystemId::Ds).screens; }
+
 bool placed_screen(const Layout& layout,
                    ScreenId screen,
                    float width,
                    float height,
-                   PlacedScreen& out) {
-    for (const PlacedScreen& placed : place_screens(layout, width, height)) {
+                   PlacedScreen& out,
+                   const SystemScreens& screens = ds_screens()) {
+    for (const PlacedScreen& placed : place_screens(layout, width, height, screens)) {
         if (placed.screen == screen) {
             out = placed;
             return true;
@@ -40,7 +46,7 @@ void test_registry_contents() {
     for (const Layout& layout : registry.layouts()) {
         CHECK(!layout.id.empty());
         CHECK(!layout.display_name.empty());
-        CHECK_MSG(place_screens(layout, 1280.0f, 800.0f).size() == 2,
+        CHECK_MSG(place_screens(layout, 1280.0f, 800.0f, ds_screens()).size() == 2,
                   layout.id + " does not place both screens");
         CHECK_EQ(registry.index_of(layout.id) >= 0, true);
     }
@@ -159,34 +165,35 @@ void test_layouts_match_the_wii_u() {
     }
 }
 
-// Standard is the console itself: the artwork keeps a real DS's proportions
-// whatever shape the window is, and the screens sit exactly where its own
-// screens are.
+// Standard is the console itself: its shape comes from whichever system is
+// running, and the screens sit exactly where that console's own screens are.
 void test_standard_is_the_console() {
     const LayoutRegistry registry;
     const Layout& standard = *registry.find("standard");
-    CHECK(standard.bezel);
-    CHECK(standard.frame_aspect > 0.0f);
+    const SystemScreens screens = system_profile(SystemId::Ds).screens;
+    CHECK(standard.uses_console_frame);
+    CHECK(screens.console.exists());
+    CHECK(screens.console.has_art);
 
     // Nothing else draws a console around itself.
     for (const Layout& layout : registry.layouts()) {
         if (layout.id == "standard") continue;
-        CHECK_MSG(!layout.bezel, layout.id + " draws a console shell");
+        CHECK_MSG(!layout.uses_console_frame, layout.id + " draws a console shell");
     }
 
     // The frame is letterboxed inside the window, so the shell is the same shape
     // on a 16:9 TV as on a 16:10 handheld.
-    const PixelRect wide = layout_frame(standard, 1600.0f, 900.0f);
-    const PixelRect tall = layout_frame(standard, 800.0f, 1200.0f);
-    CHECK_NEAR(wide.w / wide.h, standard.frame_aspect);
-    CHECK_NEAR(tall.w / tall.h, standard.frame_aspect);
+    const PixelRect wide = layout_frame(standard, 1600.0f, 900.0f, screens);
+    const PixelRect tall = layout_frame(standard, 800.0f, 1200.0f, screens);
+    CHECK_NEAR(wide.w / wide.h, screens.console.aspect);
+    CHECK_NEAR(tall.w / tall.h, screens.console.aspect);
     CHECK_MSG(wide.h <= 900.01f && wide.w <= 1600.01f, "the shell did not fit the window");
     // Centred, with the letterboxing split evenly.
     CHECK_NEAR(wide.x, (1600.0f - wide.w) * 0.5f);
     CHECK_NEAR(tall.y, (1200.0f - tall.h) * 0.5f);
 
     // Both screens sit inside the shell rather than over its edge.
-    for (const PlacedScreen& placed : place_screens(standard, 1600.0f, 900.0f)) {
+    for (const PlacedScreen& placed : place_screens(standard, 1600.0f, 900.0f, screens)) {
         const PixelRect& rect = placed.rect;
         CHECK(rect.x >= wide.x - 0.01f && rect.x + rect.w <= wide.x + wide.w + 0.01f);
         CHECK(rect.y >= wide.y - 0.01f && rect.y + rect.h <= wide.y + wide.h + 0.01f);
@@ -288,20 +295,20 @@ void test_touch_follows_a_quarter_turn() {
     // The centre is the centre whichever way the screen is turned, to within the
     // pixel the exact midpoint falls between.
     CHECK(map_output_point_to_ds(sideways, width, height, rect.x + rect.w * 0.5f,
-                                 rect.y + rect.h * 0.5f, point));
+                                 rect.y + rect.h * 0.5f, point, ds_screens()));
     CHECK(std::abs(point.x - 128) <= 1);
     CHECK(std::abs(point.y - 96) <= 1);
 
     // Turned anticlockwise, the DS's top-left corner is drawn at the bottom
     // left of the rect, so that is where touching it has to read from.
     CHECK(map_output_point_to_ds(sideways, width, height, rect.x + 1.0f,
-                                 rect.y + rect.h - 1.0f, point));
+                                 rect.y + rect.h - 1.0f, point, ds_screens()));
     CHECK_MSG(point.x <= 2 && point.y <= 2,
               "the bottom-left of a sideways screen was not the DS's top-left, it was " +
                   std::to_string(point.x) + "," + std::to_string(point.y));
     // ...and the DS's bottom-right is drawn at the top right.
     CHECK(map_output_point_to_ds(sideways, width, height, rect.x + rect.w - 1.0f, rect.y + 1.0f,
-                                 point));
+                                 point, ds_screens()));
     CHECK(point.x >= kDsScreenWidth - 3 && point.y >= kDsScreenHeight - 3);
 }
 
@@ -347,24 +354,24 @@ void test_touch_maps_through_bottom_placement() {
     // Centre of the bottom screen -> centre of the DS touchscreen. Exactly on
     // the boundary between two DS pixels, so either of them is right.
     CHECK(map_output_point_to_ds(vertical, width, height, rect.x + rect.w * 0.5f,
-                                 rect.y + rect.h * 0.5f, point));
+                                 rect.y + rect.h * 0.5f, point, ds_screens()));
     CHECK(std::abs(point.x - 128) <= 1);
     CHECK(std::abs(point.y - 96) <= 1);
 
     // Corners clamp inside the screen rather than off it.
-    CHECK(map_output_point_to_ds(vertical, width, height, rect.x + 0.5f, rect.y + 0.5f, point));
+    CHECK(map_output_point_to_ds(vertical, width, height, rect.x + 0.5f, rect.y + 0.5f, point, ds_screens()));
     CHECK_EQ(point.x, 0);
     CHECK_EQ(point.y, 0);
     CHECK(map_output_point_to_ds(vertical, width, height, rect.x + rect.w - 0.5f,
-                                 rect.y + rect.h - 0.5f, point));
+                                 rect.y + rect.h - 0.5f, point, ds_screens()));
     CHECK_EQ(point.x, kDsScreenWidth - 1);
     CHECK_EQ(point.y, kDsScreenHeight - 1);
 
     // A touch on the top screen is not a touch at all.
-    CHECK(!map_output_point_to_ds(vertical, width, height, width * 0.5f, height * 0.25f, point));
+    CHECK(!map_output_point_to_ds(vertical, width, height, width * 0.5f, height * 0.25f, point, ds_screens()));
     // Nor is one in the pillarbox beside the bottom screen.
     CHECK(!map_output_point_to_ds(vertical, width, height, rect.x - 4.0f,
-                                  rect.y + rect.h * 0.5f, point));
+                                  rect.y + rect.h * 0.5f, point, ds_screens()));
 }
 
 void test_touch_round_trips_for_every_layout() {
@@ -382,7 +389,7 @@ void test_touch_round_trips_for_every_layout() {
             // everywhere rather than mapping it somewhere arbitrary.
             DsTouchPoint ignored;
             CHECK_MSG(!map_output_point_to_ds(layout, width, height, width * 0.5f, height * 0.5f,
-                                              ignored),
+                                              ignored, ds_screens()),
                       layout.id + " accepted touch with no bottom screen shown");
             continue;
         }
@@ -416,7 +423,8 @@ void test_touch_round_trips_for_every_layout() {
                 const float px = rect.x + u * rect.w;
                 const float py = rect.y + v * rect.h;
                 DsTouchPoint point;
-                const bool hit = map_output_point_to_ds(layout, width, height, px, py, point);
+                const bool hit =
+                    map_output_point_to_ds(layout, width, height, px, py, point, ds_screens());
                 CHECK_MSG(hit, layout.id + " lost a touch inside its own bottom screen");
                 if (!hit) continue;
                 CHECK_MSG(std::abs(point.x - ds_x) <= 1,
@@ -436,7 +444,7 @@ void test_layouts_do_not_overlap() {
     for (const Layout& base : registry.layouts()) {
       for (const Handedness hand : {Handedness::Right, Handedness::Left}) {
         const Layout layout = resolve_for_handedness(base, hand);
-        const std::vector<PlacedScreen> placed = place_screens(layout, 1000.0f, 1000.0f);
+        const std::vector<PlacedScreen> placed = place_screens(layout, 1000.0f, 1000.0f, ds_screens());
         for (std::size_t a = 0; a < placed.size(); ++a) {
             const PixelRect ra = placed[a].rect;
             CHECK_MSG(ra.x >= -0.01f && ra.y >= -0.01f && ra.x + ra.w <= 1000.01f &&
@@ -455,27 +463,108 @@ void test_layouts_do_not_overlap() {
 
 void test_framebuffer_split() {
     std::string reason;
-    // The shape the core is pinned to: one screen wide, two tall.
-    const ScreenSplit split = compute_top_bottom_split(256, 384, &reason);
+    // The shape the DS core is pinned to: one screen wide, two tall.
+    const ScreenSplit split = compute_top_bottom_split(SystemId::Ds, 256, 384, &reason);
     CHECK(split.valid);
-    CHECK_EQ(split.screen_width, 256);
-    CHECK_EQ(split.screen_height, 192);
+    CHECK_EQ(split.top_width, 256);
+    CHECK_EQ(split.top_height, 192);
+    CHECK_EQ(split.bottom_width, 256);
+    CHECK_EQ(split.bottom_height, 192);
     CHECK_EQ(split.top_y, 0);
     CHECK_EQ(split.bottom_y, 192);
 
     // Upscaled output stays splittable, so an OpenGL-renderer core would work
     // without changing the crop maths.
-    const ScreenSplit upscaled = compute_top_bottom_split(512, 768, &reason);
+    const ScreenSplit upscaled = compute_top_bottom_split(SystemId::Ds, 512, 768, &reason);
     CHECK(upscaled.valid);
-    CHECK_EQ(upscaled.screen_height, 384);
+    CHECK_EQ(upscaled.top_height, 384);
 
     // Anything that is not two screens stacked is rejected with a reason,
     // rather than silently cropping the wrong pixels.
-    CHECK(!compute_top_bottom_split(512, 192, &reason).valid);
+    CHECK(!compute_top_bottom_split(SystemId::Ds, 512, 192, &reason).valid);
     CHECK(!reason.empty());
-    CHECK(!compute_top_bottom_split(256, 400, &reason).valid);  // a screen gap
-    CHECK(!compute_top_bottom_split(0, 0, &reason).valid);
-    CHECK(!compute_top_bottom_split(256, 191, &reason).valid);  // odd height
+    CHECK(!compute_top_bottom_split(SystemId::Ds, 256, 400, &reason).valid);  // a screen gap
+    CHECK(!compute_top_bottom_split(SystemId::Ds, 0, 0, &reason).valid);
+    CHECK(!compute_top_bottom_split(SystemId::Ds, 256, 191, &reason).valid);  // odd height
+}
+
+// A 3DS packs two screens of different widths: 400x240 above 320x240, the
+// narrower one centred under the wider. Cropping it as if the screens matched
+// would take a strip of the upper screen's edge into the touch screen.
+void test_3ds_framebuffer_split() {
+    std::string reason;
+    const ScreenSplit split = compute_top_bottom_split(SystemId::ThreeDs, 400, 480, &reason);
+    CHECK_MSG(split.valid, reason);
+    CHECK_EQ(split.top_width, 400);
+    CHECK_EQ(split.top_height, 240);
+    CHECK_EQ(split.top_x, 0);
+    CHECK_EQ(split.top_y, 0);
+    CHECK_EQ(split.bottom_width, 320);
+    CHECK_EQ(split.bottom_height, 240);
+    CHECK_EQ(split.bottom_x, 40);  // centred: (400 - 320) / 2
+    CHECK_EQ(split.bottom_y, 240);
+
+    // The core may render at a higher internal resolution; everything scales.
+    const ScreenSplit upscaled = compute_top_bottom_split(SystemId::ThreeDs, 1200, 1440, &reason);
+    CHECK_MSG(upscaled.valid, reason);
+    CHECK_EQ(upscaled.top_width, 1200);
+    CHECK_EQ(upscaled.bottom_width, 960);
+    CHECK_EQ(upscaled.bottom_x, 120);
+    CHECK_EQ(upscaled.bottom_y, 720);
+
+    // A DS-shaped buffer from a 3DS core means the layout option did not take,
+    // and is refused with an explanation rather than cropped into nonsense.
+    CHECK(!compute_top_bottom_split(SystemId::ThreeDs, 256, 384, &reason).valid);
+    CHECK(!reason.empty());
+    // ...and the reverse, which is the same mistake the other way round.
+    CHECK(!compute_top_bottom_split(SystemId::Ds, 400, 480, &reason).valid);
+    // Not a whole multiple of the console's own size.
+    CHECK(!compute_top_bottom_split(SystemId::ThreeDs, 600, 720, &reason).valid);
+}
+
+// Every layout works on a console whose screens are different shapes. This is
+// the check that nothing is still assuming both screens match.
+void test_layouts_handle_mismatched_screens() {
+    const LayoutRegistry registry;
+    const SystemScreens screens = system_profile(SystemId::ThreeDs).screens;
+    CHECK(screens.top.width != screens.bottom.width);
+
+    for (const Layout& base : registry.layouts()) {
+        for (const Handedness hand : {Handedness::Right, Handedness::Left}) {
+            const Layout layout = resolve_for_handedness(base, hand);
+            const std::vector<PlacedScreen> placed =
+                place_screens(layout, 1280.0f, 800.0f, screens);
+            CHECK_MSG(placed.size() == 2, layout.id + " lost a screen on a 3DS");
+            for (const PlacedScreen& entry : placed) {
+                const ScreenSize size = screens.size_of(entry.screen);
+                const float want = rotation_is_quarter_turn(entry.rotation)
+                                       ? static_cast<float>(size.height) /
+                                             static_cast<float>(size.width)
+                                       : static_cast<float>(size.width) /
+                                             static_cast<float>(size.height);
+                const float got = entry.rect.w / entry.rect.h;
+                CHECK_MSG(std::abs(got - want) < 0.02f,
+                          layout.id + " drew the " + to_string(entry.screen) +
+                              " screen at the wrong shape: " + std::to_string(got) +
+                              " instead of " + std::to_string(want));
+                CHECK(entry.rect.x >= -0.01f && entry.rect.y >= -0.01f &&
+                      entry.rect.x + entry.rect.w <= 1280.01f &&
+                      entry.rect.y + entry.rect.h <= 800.01f);
+            }
+        }
+    }
+
+    // A touch lands in the touch screen's own space, which is 320x240 here --
+    // not a DS's 256x192, and not the upper screen's 400x240.
+    const Layout& vertical = *registry.find("vertical");
+    PlacedScreen bottom;
+    CHECK(placed_screen(vertical, ScreenId::Bottom, 1280.0f, 800.0f, bottom, screens));
+    DsTouchPoint point;
+    CHECK(map_output_point_to_ds(vertical, 1280.0f, 800.0f,
+                                 bottom.rect.x + bottom.rect.w - 1.0f,
+                                 bottom.rect.y + bottom.rect.h - 1.0f, point, screens));
+    CHECK_EQ(point.x, screens.bottom.width - 1);
+    CHECK_EQ(point.y, screens.bottom.height - 1);
 }
 
 }  // namespace
@@ -493,5 +582,7 @@ int main() {
     test_touch_round_trips_for_every_layout();
     test_layouts_do_not_overlap();
     test_framebuffer_split();
+    test_3ds_framebuffer_split();
+    test_layouts_handle_mismatched_screens();
     return test::finish("layout");
 }

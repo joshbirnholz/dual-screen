@@ -47,8 +47,7 @@ void test_welcome_and_session_round_trip() {
     welcome.game_title = "Pokemon Platinum";
     welcome.rom_sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d";
     welcome.granted_screen = ScreenId::Top;
-    welcome.screen_width = 256;
-    welcome.screen_height = 192;
+    welcome.system = SystemId::ThreeDs;
 
     std::vector<uint8_t> buffer;
     encode_welcome(welcome, buffer);
@@ -62,7 +61,7 @@ void test_welcome_and_session_round_trip() {
     CHECK_STR_EQ(received.game_title, welcome.game_title);
     CHECK_STR_EQ(received.rom_sha1, welcome.rom_sha1);
     CHECK(received.granted_screen == ScreenId::Top);
-    CHECK_EQ(received.screen_width, 256);
+    CHECK(received.system == SystemId::ThreeDs);
 
     SessionStateMessage state;
     state.layout_id = "upper_on_tv";

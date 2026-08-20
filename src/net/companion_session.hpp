@@ -40,6 +40,8 @@ public:
     const std::string& status_detail() const { return status_detail_; }
     const std::vector<DiscoveredHost>& hosts() const { return browser_.hosts(); }
     const std::string& game_title() const { return game_title_; }
+    // Which console the host is playing, so this device draws it the same way.
+    SystemId system() const { return system_; }
     ScreenId granted_screen() const { return granted_screen_; }
     // The session as the host sees it. This device follows all of it rather
     // than deciding anything locally, which is what keeps the two in step.
@@ -84,7 +86,7 @@ public:
     // --- ScreenSource ---
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
-    ScreenSize native_screen_size() const override;
+    SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override { return false; }
 
 private:
@@ -102,6 +104,7 @@ private:
     ScreenId wanted_screen_ = ScreenId::Bottom;
     ScreenId granted_screen_ = ScreenId::Bottom;
     std::string game_title_;
+    SystemId system_ = SystemId::Ds;
     std::string host_layout_id_;
     bool host_paused_ = false;
     bool host_filtering_ = false;

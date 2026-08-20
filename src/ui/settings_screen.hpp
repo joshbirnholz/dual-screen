@@ -39,7 +39,14 @@ public:
     SettingsScreen(const LayoutRegistry& registry, const AppPaths& paths)
         : registry_(&registry), paths_(paths) {}
 
-    void open(const Settings& settings, const std::string& resolved_core_path);
+    // One entry per system, in the order they should be listed: the console's
+    // name and where its core was resolved to (empty when nothing was found).
+    struct CoreStatus {
+        std::string system_name;
+        std::string resolved_path;
+    };
+
+    void open(const Settings& settings, const std::vector<CoreStatus>& cores);
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
@@ -53,12 +60,15 @@ public:
     void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
 
 private:
-    enum class Row { SystemDir, CorePath, DefaultLayout, Vsync, Back, Count };
+    // The cores are not in here: they are read-only, one per console, and a
+    // focusable row that does nothing when pressed is worse than a plain list.
+    enum class Row { SystemDir, DefaultLayout, Vsync, Back, Count };
     static constexpr int kRowCount = static_cast<int>(Row::Count);
 
     struct Geometry {
         std::vector<PixelRect> rows;
         PixelRect panel;
+        PixelRect core_panel;
         PixelRect bios_panel;
         float scale = 1.0f;
     };
@@ -70,7 +80,7 @@ private:
     const LayoutRegistry* registry_;
     AppPaths paths_;
     Settings settings_;
-    std::string resolved_core_path_;
+    std::vector<CoreStatus> cores_;
     std::vector<std::string> system_dir_candidates_;
     std::vector<BiosFileStatus> bios_;
     int focus_ = 0;

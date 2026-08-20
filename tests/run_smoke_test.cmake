@@ -380,6 +380,121 @@ if(STANDARD_SHOT_COUNT EQUAL 2)
     endif()
 endif()
 
+# The same app against a 3DS game: a different core, a different ROM extension,
+# and two screens that are different shapes from each other. The upper screen is
+# 5:3 and the touch screen 4:3, so a frontend still assuming they match would
+# stretch one of them -- which is what the aspect checks below catch.
+set(THREE_DS_HOME "${WORK_DIR}/three-ds")
+file(REMOVE_RECURSE "${THREE_DS_HOME}")
+file(WRITE "${THREE_DS_HOME}/game.3ds" "dualscreen 3ds smoke test rom")
+
+set(THREE_DS_CASES
+    # Stacked: the upper screen is wider than the touch screen below it.
+    "vertical|upper=blue+lower=green+topleft=black"
+    # The console's own arrangement, with nothing drawn around the screens yet.
+    "standard|upper=blue+lower=green+topleft=black"
+    "side_by_side|left=blue+right=green"
+)
+
+foreach(CASE IN LISTS THREE_DS_CASES)
+    string(REPLACE "|" ";" PARTS "${CASE}")
+    list(GET PARTS 0 LAYOUT_ID)
+    list(GET PARTS 1 EXPECTATION_STRING)
+    string(REPLACE "+" ";" EXPECTATIONS "${EXPECTATION_STRING}")
+
+    # The mock core dirties its save RAM as it runs, and paints a band across
+    # the upper screen when it finds one on the next launch. That band would sit
+    # exactly where these checks look, so each case starts from a clean slate.
+    file(REMOVE "${THREE_DS_HOME}/data/dualscreen/saves/game.srm")
+
+    set(SHOT "${THREE_DS_HOME}/${LAYOUT_ID}.ppm")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+                "XDG_CONFIG_HOME=${THREE_DS_HOME}/config"
+                "XDG_DATA_HOME=${THREE_DS_HOME}/data"
+                "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
+                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+                "${DUALSCREEN}"
+                    --game "${THREE_DS_HOME}/game.3ds"
+                    --core "${MOCK_CORE_3DS}"
+                    --layout "${LAYOUT_ID}"
+                    --windowed
+                    --exit-after-frames ${FRAME_COUNT}
+                    --screenshot "${SHOT}"
+        RESULT_VARIABLE RUN_RESULT
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR)
+
+    if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${SHOT}")
+        message(STATUS "${RUN_OUTPUT}")
+        message(STATUS "${RUN_ERROR}")
+        message(SEND_ERROR "the 3DS run failed for layout ${LAYOUT_ID}")
+        set(ANY_FAILED TRUE)
+        continue()
+    endif()
+    # The core says so itself: it paints a magenta band across the upper screen
+    # when the layout option did not reach it.
+    if(NOT RUN_OUTPUT MATCHES "splitting 400x480 into a 400x240 upper screen and a 320x240 touch screen")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "the 3DS framebuffer was not split into two differently shaped screens")
+        set(ANY_FAILED TRUE)
+    endif()
+
+    execute_process(
+        COMMAND "${CHECKER}" "${SHOT}" ${EXPECTATIONS}
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "3DS layout ${LAYOUT_ID}:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        message(SEND_ERROR "the 3DS layout ${LAYOUT_ID} did not render its screens where expected")
+        set(ANY_FAILED TRUE)
+    endif()
+endforeach()
+
+# A touch on a 3DS lands in a 320x240 space, not a DS's 256x192 -- and the touch
+# screen is narrower than the upper one, so a crop that took the wrong columns
+# would put the crosshair off to one side.
+file(REMOVE "${THREE_DS_HOME}/data/dualscreen/saves/game.srm")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CONFIG_HOME=${THREE_DS_HOME}/config"
+            "XDG_DATA_HOME=${THREE_DS_HOME}/data"
+            "SDL_AUDIODRIVER=dummy"
+            "SDL_VIDEODRIVER=x11"
+            "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+            "${DUALSCREEN}"
+                --game "${THREE_DS_HOME}/game.3ds"
+                --core "${MOCK_CORE_3DS}"
+                --layout vertical
+                --windowed
+                --exit-after-frames ${FRAME_COUNT}
+                --simulate-touch "0.45,0.80"
+                --screenshot "${THREE_DS_HOME}/touch.ppm"
+    RESULT_VARIABLE RUN_RESULT
+    OUTPUT_VARIABLE RUN_OUTPUT
+    ERROR_VARIABLE RUN_ERROR)
+if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${THREE_DS_HOME}/touch.ppm")
+    message(STATUS "${RUN_OUTPUT}")
+    message(STATUS "${RUN_ERROR}")
+    message(SEND_ERROR "the 3DS touch run failed")
+    set(ANY_FAILED TRUE)
+else()
+    execute_process(
+        COMMAND "${CHECKER}" "${THREE_DS_HOME}/touch.ppm" "crosshair=0.45,0.80"
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "3DS touch at 0.45,0.80:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        message(SEND_ERROR "a touch on a 3DS did not come back where it went in")
+        set(ANY_FAILED TRUE)
+    endif()
+endif()
+
 # The per-game config must exist afterwards, keyed by the ROM's SHA-1.
 file(GLOB SAVED_CONFIGS "${WORK_DIR}/config/dualscreen/games/*.json")
 list(LENGTH SAVED_CONFIGS CONFIG_COUNT)

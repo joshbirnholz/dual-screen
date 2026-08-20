@@ -66,6 +66,9 @@ public:
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
+    // The console being played, which decides the screens' shapes and what the
+    // Standard tile draws.
+    void set_screens(const SystemScreens& screens) { screens_ = screens; }
     Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
     void set_selected_layout(const std::string& layout_id) { selected_layout_id_ = layout_id; }
@@ -88,7 +91,7 @@ public:
                 float output_height,
                 const std::string& game_title,
                 const MenuButtonLabels& labels,
-                const ScreenTextures* screens = nullptr);
+                const ScreenTextures* textures = nullptr);
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
 
@@ -97,9 +100,10 @@ public:
     static void draw_preview(QuadRenderer& quads,
                              const Layout& layout,
                              const PixelRect& box,
-                             const ScreenTextures* screens = nullptr,
-                             const Texture* bezel_art = nullptr,
-                             bool smoothing = true);
+                             const SystemScreens& geometry,
+                             const ScreenTextures* textures,
+                             const Texture* bezel_art,
+                             bool smoothing);
 
 private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
@@ -138,6 +142,7 @@ private:
     LayoutPickerState state_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;
+    SystemScreens screens_;
 };
 
 }  // namespace ds

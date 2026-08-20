@@ -60,7 +60,10 @@ public:
     // Call after the event pump. `layout` is the layout actually being drawn,
     // which is what decides where a touch on the bottom screen lands in DS
     // coordinates.
-    void end_frame(const Layout& layout, float output_width, float output_height);
+    void end_frame(const Layout& layout,
+                   float output_width,
+                   float output_height,
+                   const SystemScreens& screens);
 
     const DsInputState& ds_state() const { return ds_state_; }
     const std::vector<UiAction>& ui_actions() const { return ui_actions_; }

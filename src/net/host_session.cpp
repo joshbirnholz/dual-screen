@@ -163,8 +163,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             welcome.game_title = config_.game_title;
             welcome.rom_sha1 = config_.rom_sha1;
             welcome.granted_screen = companion_screen_;
-            welcome.screen_width = kDsScreenWidth;
-            welcome.screen_height = kDsScreenHeight;
+            welcome.system = config_.system;
             welcome.audio_sample_rate = config_.audio_sample_rate;
             std::vector<uint8_t> out;
             encode_welcome(welcome, out);
@@ -184,11 +183,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             }
             companion_input_.buttons = input.buttons;
             companion_input_.touching = input.touching;
-            // Clamped rather than trusted: these arrive from another machine.
-            companion_input_.touch_x =
-                std::min(std::max<int>(input.touch_x, 0), kDsScreenWidth - 1);
-            companion_input_.touch_y =
-                std::min(std::max<int>(input.touch_y, 0), kDsScreenHeight - 1);
+            // Clamped rather than trusted: these arrive from another machine,
+            // and to this console's own touch screen rather than a DS's.
+            const ScreenSize touch = system_profile(config_.system).screens.bottom;
+            companion_input_.touch_x = std::min(std::max<int>(input.touch_x, 0), touch.width - 1);
+            companion_input_.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
             companion_input_fresh_ = true;
             break;
         }
@@ -346,11 +345,8 @@ void HostSession::publish_audio(const int16_t* interleaved_stereo,
     companion_.send(out);
 }
 
-void HostSession::publish_screens(const uint32_t* top_pixels,
-                                  const uint32_t* bottom_pixels,
-                                  int width,
-                                  int height,
-                                  int stride_pixels,
+void HostSession::publish_screens(const ScreenPixels& top,
+                                  const ScreenPixels& bottom,
                                   uint64_t serial) {
     if (!has_companion()) {
         return;
@@ -372,19 +368,22 @@ void HostSession::publish_screens(const uint32_t* top_pixels,
     std::vector<uint8_t> out;
     const struct {
         ScreenId screen;
-        const uint32_t* pixels;
-    } screens[] = {{ScreenId::Top, top_pixels}, {ScreenId::Bottom, bottom_pixels}};
+        const ScreenPixels& pixels;
+    } screens[] = {{ScreenId::Top, top}, {ScreenId::Bottom, bottom}};
 
     for (const auto& entry : screens) {
-        if (entry.pixels == nullptr || !companion_wants(entry.screen)) {
+        const ScreenPixels& source = entry.pixels;
+        if (source.pixels == nullptr || source.width <= 0 || source.height <= 0 ||
+            !companion_wants(entry.screen)) {
             continue;
         }
         FrameMessage frame;
         frame.screen = entry.screen;
         frame.serial = serial;
-        frame.width = static_cast<uint16_t>(width);
-        frame.height = static_cast<uint16_t>(height);
-        if (!encode_screen_pixels(entry.pixels, width, height, stride_pixels, frame.payload)) {
+        frame.width = static_cast<uint16_t>(source.width);
+        frame.height = static_cast<uint16_t>(source.height);
+        if (!encode_screen_pixels(source.pixels, source.width, source.height,
+                                  source.stride_pixels, frame.payload)) {
             continue;
         }
         encode_frame(frame, out);

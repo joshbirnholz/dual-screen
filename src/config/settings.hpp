@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "config/paths.hpp"
+#include "core/system.hpp"
 #include "input/cursor_visibility.hpp"
 #include "layout/layout.hpp"
 
@@ -25,9 +26,16 @@ struct Settings {
     // where the user's own BIOS/firmware dumps live. Nothing Nintendo-owned is
     // bundled with this app.
     std::string system_dir;
-    // Path to the melonDS DS libretro core (.so). Empty means "search the usual
-    // places" — see core_search_paths().
+    // Path to the DS libretro core (.so). Empty means "search the usual places"
+    // — see core_search_paths().
     std::string core_path;
+    // And the same for 3DS games, which need a different core.
+    std::string core_path_3ds;
+
+    // The path this system's core should be loaded from, or empty to search.
+    const std::string& core_path_for(SystemId system) const {
+        return system == SystemId::ThreeDs ? core_path_3ds : core_path;
+    }
 
     // Starting point for new games; each game remembers its own afterwards.
     bool default_bilinear_filtering = false;
@@ -54,6 +62,6 @@ struct Settings {
 
 // Places a melonDS DS core may be installed, most-preferred first. The
 // settings' core_path, then $DUALSCREEN_CORE, take priority over these.
-std::vector<std::string> core_search_paths();
+std::vector<std::string> core_search_paths(SystemId system);
 
 }  // namespace ds

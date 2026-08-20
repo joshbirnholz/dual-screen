@@ -63,12 +63,24 @@ public:
     void set_audio_callback(AudioCallback callback);
     // The state read by the core's input_state callback each frame.
     void set_input_state(const DsInputState* state);
-    // Where the bottom screen sits inside the core's own output framebuffer,
-    // as a normalized rect, under whatever internal layout the core is pinned
-    // to. libretro pointer coordinates span the whole framebuffer, so this is
-    // what lets a DS-space touch point be converted back into one. Defaults to
-    // the lower half of the buffer (the core's top/bottom layout).
-    void set_pointer_source_rect(float x, float y, float w, float h);
+    // Where the touch screen sits inside the core's own output framebuffer and
+    // how large that screen is in its own pixels, under whatever internal
+    // layout the core is pinned to. libretro pointer coordinates span the whole
+    // framebuffer, so this is what lets a touch expressed in screen pixels be
+    // converted back into one. The rect and the size travel together because a
+    // touch needs both: getting one from one system and one from another would
+    // silently misplace every press.
+    struct PointerSource {
+        // Normalized position of the touch screen inside the framebuffer.
+        float x = 0.0f;
+        float y = 0.5f;
+        float width = 1.0f;
+        float height = 0.5f;
+        // The touch screen's own resolution, which touch points are given in.
+        int screen_width = 256;
+        int screen_height = 192;
+    };
+    void set_pointer_source(const PointerSource& source);
     // Forces a core option to a value. Applied on top of the core's declared
     // defaults, and validated against the core's own option definitions once
     // those arrive (a mismatch is reported through option_warnings()).
@@ -154,10 +166,7 @@ private:
 
     AudioCallback audio_callback_;
     const DsInputState* input_state_ = nullptr;
-    float pointer_rect_x_ = 0.0f;
-    float pointer_rect_y_ = 0.5f;
-    float pointer_rect_w_ = 1.0f;
-    float pointer_rect_h_ = 0.5f;
+    PointerSource pointer_source_;
 
     // Resolved core entry points.
     struct Api;

@@ -37,11 +37,11 @@ std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir) {
     return statuses;
 }
 
-void SettingsScreen::open(const Settings& settings, const std::string& resolved_core_path) {
+void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus>& cores) {
     open_ = true;
     focus_ = 0;
     settings_ = settings;
-    resolved_core_path_ = resolved_core_path;
+    cores_ = cores;
     system_dir_candidates_ = candidate_system_dirs(paths_);
     if (std::find(system_dir_candidates_.begin(), system_dir_candidates_.end(),
                   settings_.system_dir) == system_dir_candidates_.end()) {
@@ -74,7 +74,13 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
         });
     }
 
-    const float bios_top = rows_top + kRowCount * (row_height + line * 0.3f) + line;
+    // The cores get their own block: a heading plus one line per console, so
+    // the space it takes follows the list rather than a remembered count.
+    const float core_top = rows_top + kRowCount * (row_height + line * 0.3f) + line;
+    const float core_height = line * (1.6f + 1.1f * static_cast<float>(cores_.size()));
+    geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
+
+    const float bios_top = core_top + core_height + line * 0.6f;
     geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w,
                                     std::max(line * 3.0f,
                                              geometry.panel.y + geometry.panel.h - bios_top)};
@@ -97,8 +103,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
-        case Row::CorePath:
-            break;  // read-only here; edited in settings.json
         case Row::DefaultLayout: {
             const int count = static_cast<int>(registry_->size());
             if (count == 0) break;
@@ -184,10 +188,8 @@ void SettingsScreen::render(QuadRenderer& quads,
                   "     Paths are edited in settings.json",
               geometry.panel.x, geometry.panel.y + line * 1.8f, scale * 0.9f, theme.text_dim);
 
-    const bool core_found = !resolved_core_path_.empty() && file_exists(resolved_core_path_);
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
-        {"melonDS DS core", core_found ? resolved_core_path_ : std::string("not found")},
         {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"Back", ""},
@@ -208,10 +210,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float baseline = row.y + (row.h - line) * 0.5f;
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, theme.text);
         if (!rows[index][1].empty()) {
-            Color value_color = theme.text_dim;
-            if (index == static_cast<int>(Row::CorePath)) {
-                value_color = core_found ? theme.success : theme.danger;
-            }
+            const Color value_color = theme.text_dim;
             const float label_width = TextRenderer::measure_width(rows[index][0], scale);
             const float available = row.w - label_width - pad * 4.0f;
             const std::string value =
@@ -221,9 +220,27 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
     }
 
+    // Emulator cores, one line per console, so a machine set up for one system
+    // and not the other says so before a game is picked rather than after.
+    float core_pen_y = geometry.core_panel.y;
+    text.draw(quads, "Emulator cores", geometry.core_panel.x, core_pen_y, scale, theme.text);
+    core_pen_y += line * 1.6f;
+    for (const CoreStatus& core : cores_) {
+        const bool found = !core.resolved_path.empty() && file_exists(core.resolved_path);
+        const std::string label = core.system_name + "  ";
+        text.draw(quads, label, geometry.core_panel.x, core_pen_y, scale * 0.9f, theme.text_dim);
+        const float label_width = TextRenderer::measure_width(label, scale * 0.9f);
+        const float available = geometry.core_panel.w - label_width;
+        const std::string value = TextRenderer::elide_left(
+            found ? core.resolved_path : std::string("not found"), available, scale * 0.9f);
+        text.draw(quads, value, geometry.core_panel.x + label_width, core_pen_y, scale * 0.9f,
+                  found ? theme.success : theme.danger);
+        core_pen_y += line * 1.1f;
+    }
+
     // BIOS file inventory.
     float pen_y = geometry.bios_panel.y;
-    text.draw(quads, "BIOS and firmware files found in that folder", geometry.bios_panel.x, pen_y,
+    text.draw(quads, "DS BIOS and firmware files found in that folder", geometry.bios_panel.x, pen_y,
               scale, theme.text);
     pen_y += line * 1.6f;
 

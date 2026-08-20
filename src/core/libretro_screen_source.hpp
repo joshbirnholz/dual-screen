@@ -7,29 +7,34 @@
 #include "core/core_input_sink.hpp"
 #include "core/libretro_core.hpp"
 #include "core/screen_source.hpp"
+#include "core/system.hpp"
 #include "layout/layout.hpp"
 
 namespace ds {
 
 // Where the two screens sit inside the core's single output framebuffer, in
 // framebuffer pixels. Derived from the frame's own dimensions rather than
-// hardcoded, so it stays correct if the core is ever upscaled.
+// hardcoded, so it stays correct if the core is ever upscaled -- and the two
+// screens are sized separately, because on a 3DS they are different shapes.
 struct ScreenSplit {
     int frame_width = 0;
     int frame_height = 0;
-    int screen_width = 0;
-    int screen_height = 0;
-    int top_x = 0, top_y = 0;
-    int bottom_x = 0, bottom_y = 0;
+    int top_x = 0, top_y = 0, top_width = 0, top_height = 0;
+    int bottom_x = 0, bottom_y = 0, bottom_width = 0, bottom_height = 0;
     bool valid = false;
 };
 
-// Computes the split for a core framebuffer that is one DS screen wide and two
-// tall (the core's "top-bottom" internal layout with no screen gap). Returns an
-// invalid split, and an explanation, if the geometry is not that shape.
-ScreenSplit compute_top_bottom_split(int frame_width, int frame_height, std::string* reason);
+// Computes the split for a core framebuffer holding one system's two screens
+// stacked with no gap. Both cores are pinned to that arrangement; what differs
+// is the shape. Returns an invalid split, and an explanation, if the geometry is
+// not what the pinned layout should have produced.
+ScreenSplit compute_top_bottom_split(SystemId system,
+                                     int frame_width,
+                                     int frame_height,
+                                     std::string* reason);
 
 struct LibretroSourceConfig {
+    SystemId system = SystemId::Ds;
     std::string core_path;
     std::string rom_path;
     std::string system_directory;
@@ -65,7 +70,7 @@ public:
 
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
-    ScreenSize native_screen_size() const override;
+    SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override;
 
     double frames_per_second() const;
@@ -82,10 +87,16 @@ public:
 private:
     void refresh_split_from_frame();
     void upload_screens();
+    // Tells the core where the touch screen sits in its own framebuffer.
+    void apply_pointer_rect();
+    // Says what the framebuffer was cut into, which is the first thing worth
+    // knowing when a core turns out not to be arranged the way we asked.
+    void log_split();
     void load_save_ram();
 
     std::unique_ptr<LibretroCore> core_;
     CoreInputSink input_sink_;
+    SystemId system_ = SystemId::Ds;
     ScreenSplit split_;
     Texture top_texture_;
     Texture bottom_texture_;

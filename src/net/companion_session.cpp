@@ -87,6 +87,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 return;
             }
             game_title_ = welcome.game_title;
+            system_ = welcome.system;
             granted_screen_ = welcome.granted_screen;
             audio_sample_rate_ = welcome.audio_sample_rate;
             status_ = Status::Connected;
@@ -321,11 +322,11 @@ const ScreenTextures& CompanionSession::screens() {
     return textures_;
 }
 
-ScreenSize CompanionSession::native_screen_size() const {
-    // Whichever screen we have actually seen; falls back to a DS's own size.
-    if (top_.width > 0) return ScreenSize{top_.width, top_.height};
-    if (bottom_.width > 0) return ScreenSize{bottom_.width, bottom_.height};
-    return ScreenSize{kDsScreenWidth, kDsScreenHeight};
+SystemScreens CompanionSession::screens_geometry() const {
+    // The host says which console it is running and both devices run the same
+    // build, so the sizes are looked up rather than measured from whatever
+    // frame happened to arrive first.
+    return system_profile(system_).screens;
 }
 
 }  // namespace ds::net

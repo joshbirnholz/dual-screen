@@ -72,7 +72,8 @@ public:
 
     void render(QuadRenderer& quads,
                 const Layout& layout,
-                const ScreenTextures& screens,
+                const ScreenTextures& textures,
+                const SystemScreens& screens,
                 float output_width,
                 float output_height,
                 OutputRouter& router);

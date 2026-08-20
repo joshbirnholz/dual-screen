@@ -10,10 +10,6 @@
 namespace ds {
 namespace {
 
-// What melonDS DS accepts. Archives are not listed: loading one would need a
-// libretro VFS implementation this frontend does not provide.
-const char* const kRomExtensions[] = {"nds", "dsi", "ids", "srl", "app"};
-
 // A press has to move further than this before it counts as a scroll rather
 // than a tap, so a slightly shaky finger still selects what it landed on.
 constexpr float kDragThresholdPixels = 12.0f;
@@ -21,13 +17,11 @@ constexpr float kDragThresholdPixels = 12.0f;
 }  // namespace
 
 bool is_supported_rom(const std::string& filename) {
-    const std::string extension = path_extension_lower(filename);
-    for (const char* candidate : kRomExtensions) {
-        if (extension == candidate) {
-            return true;
-        }
-    }
-    return false;
+    // Whatever any system claims, so the browser lists a 3DS game beside a DS
+    // one and picking either simply works. Archives are not claimed by
+    // anything: loading one would need a libretro VFS this frontend does not
+    // provide.
+    return is_supported_rom_for_any_system(filename);
 }
 
 std::vector<std::string> default_browse_dirs() {

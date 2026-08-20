@@ -299,27 +299,30 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
 }
 
 void LayoutPicker::draw_preview(QuadRenderer& quads,
-                                const Layout& tile_layout,
+                                const Layout& layout,
                                 const PixelRect& box,
-                                const ScreenTextures* screens,
+                                const SystemScreens& tile_geometry,
+                                const ScreenTextures* textures,
                                 const Texture* bezel_art,
                                 bool smoothing) {
     const UiTheme& theme = ui_theme();
     // A tile is not a display -- see as_preview().
-    const Layout layout = as_preview(tile_layout);
+    const SystemScreens geometry = as_preview(tile_geometry);
+    const bool draws_console = layout.uses_console_frame && geometry.console.exists();
+    const bool has_art = draws_console && geometry.console.has_art;
     // The tile shows what the layout shows, background included.
-    quads.draw_solid(box, layout.bezel ? Color{37.0f / 255.0f, 37.0f / 255.0f, 37.0f / 255.0f, 1.0f}
-                                       : Color{0.02f, 0.03f, 0.05f, 1.0f});
+    quads.draw_solid(box, has_art ? Color{37.0f / 255.0f, 37.0f / 255.0f, 37.0f / 255.0f, 1.0f}
+                                  : Color{0.02f, 0.03f, 0.05f, 1.0f});
 
-    if (layout.bezel) {
-        draw_ds_shell(quads, layout_frame(layout, box), bezel_art);
+    if (draws_console) {
+        draw_ds_shell(quads, layout_frame(layout, box, geometry), has_art ? bezel_art : nullptr);
     }
 
-    for (const PlacedScreen& placed : place_screens(layout, box)) {
+    for (const PlacedScreen& placed : place_screens(layout, box, geometry)) {
         const PixelRect& rect = placed.rect;
         const Texture* texture = nullptr;
-        if (screens != nullptr) {
-            texture = (placed.screen == ScreenId::Top) ? screens->top : screens->bottom;
+        if (textures != nullptr) {
+            texture = (placed.screen == ScreenId::Top) ? textures->top : textures->bottom;
         }
         // The paused game itself, which says what picking this will actually
         // look like far better than two coloured blocks and a key can. The
@@ -342,7 +345,7 @@ void LayoutPicker::render(QuadRenderer& quads,
                           float output_height,
                           const std::string& game_title,
                           const MenuButtonLabels& labels,
-                          const ScreenTextures* screens) {
+                          const ScreenTextures* textures) {
     if (!open_) {
         return;
     }
@@ -364,7 +367,7 @@ void LayoutPicker::render(QuadRenderer& quads,
     // The colour key only earns its space when the previews are colours. With
     // the game's own screens in the tiles there is nothing to decode.
     const bool previews_are_coloured =
-        screens == nullptr || screens->top == nullptr || !screens->top->valid();
+        textures == nullptr || textures->top == nullptr || !textures->top->valid();
     if (previews_are_coloured) {
         text.draw(quads, "Top screen", geometry.panel.x, geometry.panel.y + line * 2.0f, scale,
                   theme.top_screen);
@@ -389,8 +392,8 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens,
-                     bezel_art_, smoothing_);
+        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens_,
+                     textures, bezel_art_, smoothing_);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,

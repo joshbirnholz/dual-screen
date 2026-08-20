@@ -1,14 +1,25 @@
 # The mock libretro core: a real .so with the libretro C ABI, so the frontend's
-# dlopen path is exercised exactly as it would be with melonDS DS.
-add_library(mock_core MODULE mock_core/mock_core.cpp)
-set_target_properties(mock_core PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "mock_ds_libretro"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
-target_include_directories(mock_core PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
-target_compile_options(mock_core PRIVATE -Wall -Wextra)
+# dlopen path is exercised exactly as it would be with a real core. Built twice
+# from one source -- shaped like a DS, and like a 3DS, whose screens are
+# different sizes from each other.
+function(dualscreen_add_mock_core target output)
+    add_library(${target} MODULE mock_core/mock_core.cpp)
+    set_target_properties(${target} PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "${output}"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
+    target_compile_options(${target} PRIVATE -Wall -Wextra)
+    if(ARGN)
+        target_compile_definitions(${target} PRIVATE ${ARGN})
+    endif()
+endfunction()
+
+dualscreen_add_mock_core(mock_core mock_ds_libretro)
+dualscreen_add_mock_core(mock_core_3ds mock_3ds_libretro MOCK_CORE_3DS)
 
 set(MOCK_CORE_PATH "${CMAKE_BINARY_DIR}/tests/mock_ds_libretro.so")
+set(MOCK_CORE_3DS_PATH "${CMAKE_BINARY_DIR}/tests/mock_3ds_libretro.so")
 
 function(dualscreen_add_test name)
     add_executable(${name} ${name}.cpp)
@@ -19,7 +30,7 @@ function(dualscreen_add_test name)
     # These need no display. Pinning the driver keeps them independent of
     # whatever SDL_VIDEODRIVER happens to be set in the caller's environment.
     set_tests_properties(${name} PROPERTIES
-        ENVIRONMENT "DUALSCREEN_MOCK_CORE=${MOCK_CORE_PATH};SDL_VIDEODRIVER=dummy")
+        ENVIRONMENT "DUALSCREEN_MOCK_CORE=${MOCK_CORE_PATH};DUALSCREEN_MOCK_CORE_3DS=${MOCK_CORE_3DS_PATH};SDL_VIDEODRIVER=dummy")
 endfunction()
 
 # A helper binary, not a test itself: the smoke test uses it to inspect output.
@@ -36,7 +47,7 @@ dualscreen_add_test(test_browser)
 dualscreen_add_test(test_controller_mapping)
 dualscreen_add_test(test_controller_input)
 dualscreen_add_test(test_core_host)
-add_dependencies(test_core_host mock_core)
+add_dependencies(test_core_host mock_core mock_core_3ds)
 
 # End-to-end smoke test: runs the real binary against the mock core under a
 # headless X server and checks the composited output pixel by pixel.
@@ -47,6 +58,7 @@ if(XVFB_RUN_EXECUTABLE)
             -DXVFB_RUN=${XVFB_RUN_EXECUTABLE}
             -DDUALSCREEN=$<TARGET_FILE:dualscreen>
             -DMOCK_CORE=${MOCK_CORE_PATH}
+            -DMOCK_CORE_3DS=${MOCK_CORE_3DS_PATH}
             -DWORK_DIR=${CMAKE_BINARY_DIR}/smoke
             -DCHECKER=$<TARGET_FILE:check_screenshot>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_smoke_test.cmake)

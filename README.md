@@ -16,9 +16,12 @@ one running the game.
 
 ## What it does today
 
-- Embeds the **melonDS DS** libretro core directly — `dlopen`'d as a library,
-  with the libretro frontend implemented here. RetroArch is not involved and
-  does not need to be installed.
+- Plays **Nintendo DS** and **Nintendo 3DS** games, picking the console from
+  the ROM's extension and loading that console's core.
+- Embeds the libretro core directly — **melonDS DS** for DS games, **Citra**
+  (or a fork) for 3DS ones — `dlopen`'d as a library, with the libretro
+  frontend implemented here. RetroArch is not involved and does not need to be
+  installed.
 - Pins the core to a single known internal layout and splits its framebuffer
   into two textures — top screen and bottom screen — every frame.
 - Composites those two textures into **your chosen layout**, which is entirely
@@ -26,8 +29,8 @@ one running the game.
 - Runs as one fullscreen window, so it behaves like any other non-Steam
   shortcut under gamescope / Game Mode.
 - Controller input via SDL2's GameController API; touch input on whichever
-  screen is currently showing the bottom screen, mapped back into DS
-  touchscreen coordinates.
+  screen is currently showing the bottom screen, mapped back into the
+  console's own touchscreen coordinates.
 - Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
   its path, so moving your ROMs around loses nothing.
 - Writes cartridge saves as `.srm` files, interchangeable with RetroArch's.
@@ -72,6 +75,13 @@ artwork's own pixel size rather than scaled to fit, so each DS pixel is one
 display pixel. On a smaller display the console runs off the edges, which is the
 right trade: an exact picture with its corners over the sides beats a soft one
 that fits.
+
+Every layout works on both consoles. A 3DS's two screens are different shapes —
+400x240 above, 320x240 below — and each layout measures each screen against its
+own size rather than assuming they match, so the wider upper screen stays wider
+and the narrower touch screen stays centred beneath it. `standard` has no 3DS
+artwork yet, so on a 3DS game it arranges the two screens on the plain
+background.
 
 `upper_on_tv` is the two-device layout: each device fills itself with the screen
 it owns. Pick any other and both devices show the whole thing, which is what you
@@ -223,17 +233,26 @@ Useful CMake options: `-DDUALSCREEN_PORTABLE=OFF` (link libstdc++ dynamically),
 
 ## What you need to supply
 
-**The core.** Install melonDS DS (`melondsds_libretro.so`) — through
-RetroArch's core downloader, your distribution, or a release from the melonDS
-DS project. dualscreen looks in the usual RetroArch core directories and
-`/usr/lib/libretro`; override with `--core` or the `core_path` setting.
+**A core per console you want to play.** For DS, melonDS DS
+(`melondsds_libretro.so`). For 3DS, Citra or a fork of it
+(`citra_libretro.so`, `citra_canary_libretro.so`, `azahar_libretro.so`). Get
+them through RetroArch's core downloader, your distribution, or the projects'
+own releases. dualscreen looks in the usual RetroArch core directories and
+`/usr/lib/libretro`, and the Settings screen lists what it found for each
+console. Override with the `core_path` and `core_path_3ds` settings, or with
+`--core` for a single run.
+
+You only need the core for the console you actually play; a missing one is
+reported when you try to load a game for it, not before.
 
 **BIOS/firmware, if you want them.** melonDS DS boots DS games using its own
-open-source BIOS replacement, so nothing is strictly required. For native boot
-or DSi mode, put your own dumps (`bios7.bin`, `bios9.bin`, `firmware.bin`, and
-the `dsi_*` files) in the system folder. **No Nintendo-owned data ships with
-this app and none is downloaded** — these have to be your own. The Settings
-screen shows exactly which files it can and cannot see.
+open-source BIOS replacement, so nothing is strictly required for DS. For
+native boot or DSi mode, put your own dumps (`bios7.bin`, `bios9.bin`,
+`firmware.bin`, and the `dsi_*` files) in the system folder. 3DS games need the
+system files Citra asks for, which come off your own console. **No
+Nintendo-owned data ships with this app and none is downloaded** — these have
+to be your own. The Settings screen shows exactly which DS files it can and
+cannot see.
 
 **ROMs.** Yours, obviously.
 
@@ -256,7 +275,8 @@ Full options:
 
 ```
 --game <path>        ROM to boot straight into
---core <path>        melonDS DS libretro core (.so) to load
+--core <path>        libretro core (.so) to load, instead of the one found
+                     for this game's console
 --layout <id>        Override the layout for this run
 --system-dir <path>  Folder holding your BIOS/firmware files
 --windowed           Run in a window instead of fullscreen
@@ -270,7 +290,7 @@ Full options:
 | --- | --- |
 | Open/close the layout menu | **F1** or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
-| Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
+| Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
 | Turn the pointer off entirely | **Pointer** in the layout menu |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
@@ -403,6 +423,7 @@ V1 does not script `shortcuts.vdf` for you.
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
+  "core_path_3ds": "",
   "default_bilinear_filtering": false,
   "audio_target": "both",
   "cursor_mode": "shown",

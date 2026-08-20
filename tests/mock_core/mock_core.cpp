@@ -17,10 +17,29 @@
 
 namespace {
 
-constexpr unsigned kScreenWidth = 256;
-constexpr unsigned kScreenHeight = 192;
-constexpr unsigned kFrameWidth = kScreenWidth;
-constexpr unsigned kFrameHeight = kScreenHeight * 2;
+// Built twice from this one source: once shaped like a DS, once like a 3DS,
+// whose two screens are different widths. The 3DS build is what checks that
+// nothing in the frontend still assumes the screens match.
+#ifdef MOCK_CORE_3DS
+constexpr unsigned kTopWidth = 400;
+constexpr unsigned kTopHeight = 240;
+constexpr unsigned kBottomWidth = 320;
+constexpr unsigned kBottomHeight = 240;
+constexpr bool kIsThreeDs = true;
+#else
+constexpr unsigned kTopWidth = 256;
+constexpr unsigned kTopHeight = 192;
+constexpr unsigned kBottomWidth = 256;
+constexpr unsigned kBottomHeight = 192;
+constexpr bool kIsThreeDs = false;
+#endif
+
+// Stacked with no gap, each screen centred across the buffer -- the arrangement
+// both real cores are pinned to.
+constexpr unsigned kFrameWidth = kTopWidth > kBottomWidth ? kTopWidth : kBottomWidth;
+constexpr unsigned kFrameHeight = kTopHeight + kBottomHeight;
+constexpr unsigned kTopX = (kFrameWidth - kTopWidth) / 2;
+constexpr unsigned kBottomX = (kFrameWidth - kBottomWidth) / 2;
 
 retro_environment_t g_environment = nullptr;
 retro_video_refresh_t g_video_refresh = nullptr;
@@ -42,6 +61,15 @@ uint8_t g_save_ram[kSaveRamSize];
 bool g_save_was_loaded = false;
 
 const retro_core_option_v2_definition kOptions[] = {
+    {"citra_layout_option", "Screen layout", nullptr, "How the two screens are arranged", nullptr,
+     "screen",
+     {{"Default Top-Bottom Screen", nullptr},
+      {"Single Screen Only", nullptr},
+      {"Side by Side", nullptr},
+      {nullptr, nullptr}},
+     "Default Top-Bottom Screen"},
+    {"citra_swap_screen", "Swap screens", nullptr, nullptr, nullptr, "screen",
+     {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
     {"melonds_number_of_screen_layouts", "Number of layouts", nullptr,
      "How many layouts to cycle through", nullptr, "screen",
      {{"1", nullptr}, {"2", nullptr}, {nullptr, nullptr}}, "2"},
@@ -98,49 +126,51 @@ void fill_rect(int x, int y, int w, int h, uint32_t color) {
 
 // The top screen: cool blues, diagonal stripes, a bar that sweeps with time.
 void draw_top_screen() {
-    for (unsigned y = 0; y < kScreenHeight; ++y) {
-        for (unsigned x = 0; x < kScreenWidth; ++x) {
+    for (unsigned y = 0; y < kTopHeight; ++y) {
+        for (unsigned x = 0; x < kTopWidth; ++x) {
             const bool stripe = ((x + y) / 16) % 2 == 0;
-            const uint8_t blue = static_cast<uint8_t>(120 + (y * 100) / kScreenHeight);
-            g_framebuffer[y * kFrameWidth + x] =
+            const uint8_t blue = static_cast<uint8_t>(120 + (y * 100) / kTopHeight);
+            g_framebuffer[y * kFrameWidth + kTopX + x] =
                 stripe ? pack(20, 40, blue) : pack(10, 20, static_cast<uint8_t>(blue / 2));
         }
     }
     // A red border makes it obvious if the crop takes rows from the wrong half.
-    fill_rect(0, 0, kScreenWidth, 3, pack(230, 60, 60));
-    fill_rect(0, static_cast<int>(kScreenHeight) - 3, kScreenWidth, 3, pack(230, 60, 60));
-    fill_rect(0, 0, 3, kScreenHeight, pack(230, 60, 60));
-    fill_rect(static_cast<int>(kScreenWidth) - 3, 0, 3, kScreenHeight, pack(230, 60, 60));
+    const int x0 = static_cast<int>(kTopX);
+    fill_rect(x0, 0, kTopWidth, 3, pack(230, 60, 60));
+    fill_rect(x0, static_cast<int>(kTopHeight) - 3, kTopWidth, 3, pack(230, 60, 60));
+    fill_rect(x0, 0, 3, kTopHeight, pack(230, 60, 60));
+    fill_rect(x0 + static_cast<int>(kTopWidth) - 3, 0, 3, kTopHeight, pack(230, 60, 60));
 
-    const int bar_x = static_cast<int>((g_frame_counter * 2) % (kScreenWidth - 24));
+    const int bar_x = x0 + static_cast<int>((g_frame_counter * 2) % (kTopWidth - 24));
     fill_rect(bar_x, 20, 24, 24, pack(255, 255, 255));
 
     if (!g_layout_option_honoured) {
         // Loud failure state: the frontend did not pin the layout option.
-        fill_rect(0, 60, kScreenWidth, 40, pack(255, 0, 255));
+        fill_rect(x0, 60, kTopWidth, 40, pack(255, 0, 255));
     }
 
     // Visible proof that save data survived a restart.
     if (g_save_was_loaded) {
-        fill_rect(0, 60, kScreenWidth, 72, pack(255, 140, 0));
+        fill_rect(x0, 60, kTopWidth, 72, pack(255, 140, 0));
     }
 }
 
 // The bottom screen: warm greens, a checkerboard, and a crosshair at the touch
 // point so touch mapping can be checked by eye.
 void draw_bottom_screen() {
-    const unsigned base = kScreenHeight;
-    for (unsigned y = 0; y < kScreenHeight; ++y) {
-        for (unsigned x = 0; x < kScreenWidth; ++x) {
+    const unsigned base = kTopHeight;
+    for (unsigned y = 0; y < kBottomHeight; ++y) {
+        for (unsigned x = 0; x < kBottomWidth; ++x) {
             const bool check = ((x / 16) + (y / 16)) % 2 == 0;
-            g_framebuffer[(base + y) * kFrameWidth + x] =
+            g_framebuffer[(base + y) * kFrameWidth + kBottomX + x] =
                 check ? pack(30, 90, 40) : pack(15, 55, 25);
         }
     }
-    fill_rect(0, static_cast<int>(base), kScreenWidth, 3, pack(60, 220, 220));
-    fill_rect(0, static_cast<int>(base + kScreenHeight) - 3, kScreenWidth, 3, pack(60, 220, 220));
-    fill_rect(0, static_cast<int>(base), 3, kScreenHeight, pack(60, 220, 220));
-    fill_rect(static_cast<int>(kScreenWidth) - 3, static_cast<int>(base), 3, kScreenHeight,
+    const int x0 = static_cast<int>(kBottomX);
+    fill_rect(x0, static_cast<int>(base), kBottomWidth, 3, pack(60, 220, 220));
+    fill_rect(x0, static_cast<int>(base + kBottomHeight) - 3, kBottomWidth, 3, pack(60, 220, 220));
+    fill_rect(x0, static_cast<int>(base), 3, kBottomHeight, pack(60, 220, 220));
+    fill_rect(x0 + static_cast<int>(kBottomWidth) - 3, static_cast<int>(base), 3, kBottomHeight,
               pack(60, 220, 220));
 
     if (g_input_state == nullptr) {
@@ -176,7 +206,7 @@ void draw_button_indicators() {
     };
     for (const auto& indicator : kIndicators) {
         const bool down = g_input_state(0, RETRO_DEVICE_JOYPAD, 0, indicator.id) != 0;
-        fill_rect(indicator.x, static_cast<int>(kScreenHeight) - 24, 14, 14,
+        fill_rect(static_cast<int>(kTopX) + indicator.x, static_cast<int>(kTopHeight) - 24, 14, 14,
                   down ? pack(255, 255, 120) : pack(50, 50, 60));
     }
 }
@@ -250,10 +280,16 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
         !g_environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format)) {
         return false;
     }
-    // Report whether the frontend actually pinned the layout we depend on.
-    g_layout_option_honoured = (read_variable("melonds_screen_layout1") == "top-bottom") &&
-                               (read_variable("melonds_number_of_screen_layouts") == "1") &&
-                               (read_variable("melonds_screen_gap") == "0");
+    // Report whether the frontend actually pinned the layout we depend on, in
+    // whichever core's language this build speaks.
+    if (kIsThreeDs) {
+        g_layout_option_honoured =
+            read_variable("citra_layout_option") == "Default Top-Bottom Screen";
+    } else {
+        g_layout_option_honoured = (read_variable("melonds_screen_layout1") == "top-bottom") &&
+                                   (read_variable("melonds_number_of_screen_layouts") == "1") &&
+                                   (read_variable("melonds_screen_gap") == "0");
+    }
     return true;
 }
 

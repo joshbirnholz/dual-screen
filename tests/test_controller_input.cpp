@@ -16,6 +16,7 @@
 #include "core/libretro_screen_source.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
+#include "core/system.hpp"
 #include "layout/layout_registry.hpp"
 
 using namespace ds;
@@ -67,7 +68,8 @@ DsInputState press_and_read(SDL_GameControllerButton button) {
 
     pad.press(button, true);
     input.begin_frame();
-    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f);
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::Ds).screens);
     const DsInputState state = input.ds_state();
 
     input.shutdown();
@@ -127,7 +129,8 @@ int ui_actions_from_press(SDL_GameControllerButton button, UiAction wanted) {
     while (SDL_PollEvent(&event) != 0) {
         input.handle_event(event);
     }
-    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f);
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::Ds).screens);
 
     int count = 0;
     for (const UiAction action : input.ui_actions()) {
@@ -203,7 +206,8 @@ std::string buttons_seen_by_core(SDL_GameControllerButton button, bool& ok) {
 
     pad.press(button, true);
     input.begin_frame();
-    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f);
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::Ds).screens);
     source.input_sink().submit(input.ds_state());
     source.advance_frame(&error);
 
