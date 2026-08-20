@@ -79,6 +79,7 @@ public:
 
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
+    bool read_screen(ScreenId screen, ScreenReadback& out) override;
     SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override;
 
@@ -101,16 +102,40 @@ private:
     // Pins the core's resolution option to render_scale_, in whichever core's
     // language this system speaks.
     void apply_render_scale();
-    // Crops one screen out of a GPU-rendered frame into `destination`.
+    // Crops one screen out of a GPU-rendered frame into `destination`. A
+    // destination size of zero means the source's own, which is the usual case;
+    // a smaller one scales on the way, which is how a core rendering above the
+    // console's resolution is read back at the console's resolution.
     bool blit_screen(const CoreVideoFrame& frame,
                      Texture& destination,
                      int source_x,
                      int source_y,
                      int width,
-                     int height);
+                     int height,
+                     int destination_width = 0,
+                     int destination_height = 0);
+    // Copies one screen off the GPU into `readbacks_`. Only what is being sent
+    // somewhere is ever asked for.
+    bool read_screen_from_gpu(ScreenId screen, const CoreVideoFrame& frame, ScreenReadback& out);
     // Reused for every crop: the destination texture is swapped in each time
     // rather than a framebuffer being created per screen per frame.
     GLuint screen_framebuffer_ = 0;
+    // One staging texture and one CPU buffer per screen, for reading a
+    // GPU-rendered screen back out. Kept alive between frames: a session sends
+    // one of these sixty times a second and reallocating each time would be
+    // pure waste. Cached by frame serial so two callers in one frame read the
+    // card once.
+    struct Readback {
+        Texture texture;
+        std::vector<uint32_t> pixels;
+        int width = 0;
+        int height = 0;
+        uint64_t serial = 0;
+        bool filled = false;
+    };
+    Readback readbacks_[2];
+    GLuint readback_framebuffer_ = 0;
+    bool readback_failure_reported_ = false;
     void probe_core_framebuffer(const CoreVideoFrame& frame);
     void probe_window_framebuffer();
     bool window_probe_done_ = false;

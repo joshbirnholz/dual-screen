@@ -100,6 +100,36 @@ if(XVFB_RUN_EXECUTABLE)
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(two_device_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
         ENVIRONMENT "COMPANION_SCREEN=top")
+
+    # And again with a host whose core renders on the GPU. Serving a screen is a
+    # different job there: there is no CPU copy of the frame to point at, so the
+    # host has to read one back off the card. Reaching into the frame as if
+    # there were sent an empty top screen and read off the end of nothing for
+    # the bottom -- which crashed the host the moment a companion needed it.
+    add_test(NAME two_device_3ds_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_two_device_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/two-device-3ds
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(two_device_3ds_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=bottom;ROM_NAME=game.3ds;HOST_CORE=${MOCK_CORE_3DS_PATH}")
+
+    # The other screen, for the same reason as the DS pair -- and because this
+    # is the one that checks the colours survive the trip. A screen read back
+    # off the card arrives as RGBA and leaves as XRGB; get that swap wrong and
+    # the upper screen turns red, while the green one below stays green either
+    # way and says nothing.
+    add_test(NAME two_device_3ds_top_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_two_device_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/two-device-3ds-top
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(two_device_3ds_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=top;ROM_NAME=game.3ds;HOST_CORE=${MOCK_CORE_3DS_PATH}")
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()

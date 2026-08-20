@@ -11,11 +11,18 @@
 # running as a whole and not only in pieces.
 #
 # Usage: run_two_device_test.sh <xvfb-run> <dualscreen> <mock core> <work dir> <checker>
+#
+# COMPANION_SCREEN picks which screen the companion asks for. HOST_CORE and
+# ROM_NAME let the same run be done for a console whose core renders on the GPU,
+# which is a different path entirely on the host's side: it has no CPU copy of
+# the frame to send and has to read one back off the card.
 
 set -uo pipefail
 
 # Which screen the companion asks for; the host must take the other.
 COMPANION_SCREEN="${COMPANION_SCREEN:-bottom}"
+# What the host plays. The companion runs no core whatever the console is.
+ROM_NAME="${ROM_NAME:-fake.nds}"
 
 XVFB_RUN="$1"
 DUALSCREEN="$2"
@@ -25,7 +32,8 @@ CHECKER="$5"
 
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR/host/config/dualscreen" "$WORK_DIR/companion/config/dualscreen"
-printf 'dualscreen two device test rom' > "$WORK_DIR/fake.nds"
+HOST_CORE="${HOST_CORE:-$MOCK_CORE}"
+printf 'dualscreen two device test rom' > "$WORK_DIR/$ROM_NAME"
 
 # The companion is given the opposite of the host's settings on purpose --
 # smoothing, where the sound comes out, and which hand holds the stylus. Every
@@ -56,8 +64,8 @@ XDG_DATA_HOME="$WORK_DIR/host/data" \
 SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
 "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
     "$DUALSCREEN" \
-        --game "$WORK_DIR/fake.nds" \
-        --core "$MOCK_CORE" \
+        --game "$WORK_DIR/$ROM_NAME" \
+        --core "$HOST_CORE" \
         --layout upper_on_tv \
         --windowed \
         --exit-after-seconds 16 \

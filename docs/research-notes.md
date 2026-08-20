@@ -484,6 +484,68 @@ where there is something to choose, not where the machinery happens to live: a
 DS game has no button, because melonDS is pinned to its software renderer and
 there is no multiplier to set.
 
+**Serving a screen from a core that renders on the GPU.** The host used to hand
+the network layer a pointer into the core's framebuffer and let it read the two
+screens out. That is exactly right for a software-rendered core and meaningless
+for Citra, which never puts a frame in memory at all: `frame.pixels` is null, so
+the arithmetic ran off a null base. The top screen sits at (0, 0), so its
+pointer stayed null and the guard against a null pointer skipped it -- a
+companion connected, heard audio, and saw a placeholder forever. The bottom
+screen sits further in, so its pointer was null plus an offset: not null, not
+mapped, and the host segfaulted the moment anything needed that screen. Which is
+every layout except the split one, and the split one too as soon as the
+companion opened its menu, since a menu draws every layout in miniature and
+needs both.
+
+So the frontend asks the *source* for a screen rather than reaching into a frame
+it does not own: `read_screen()` hands back a view into the core's own
+framebuffer where there is one, and reads back off the card where there is not.
+Three things fall out of that:
+
+- **Only what is being sent is read.** A read back off the GPU stalls the
+  pipeline, so `companion_wants()` is public and the caller skips the screen
+  nobody is going to see.
+- **At the console's resolution, not the core's.** The crop into the staging
+  texture scales, so a core rendering at 2x is read back at 400x240. Rendering
+  above native is for the screen in front of you; the other device is going to
+  draw one screen either way, and would only pay twice the bandwidth for it. The
+  scaling blit filters linearly for the same reason the compositor does.
+- **RGBA in, XRGB out.** `glReadPixels` is asked for `GL_RGBA` rather than
+  `GL_BGRA` -- every driver takes that one -- and the swizzle costs a fraction
+  of what compressing the frame costs. Getting it wrong turns the upper screen
+  red and leaves the green one below looking perfectly fine, which is why the
+  two-device test that checks the colour is the one where the companion takes
+  the *top* screen.
+
+No flip is involved: `glReadPixels` starts at the framebuffer's bottom-left,
+which for these textures is the screen's top row, because the crop that filled
+them already turned the core's bottom-left origin into the top-row-first order
+everything here is uploaded in. The touch round-trip in the two-device test is
+what proves it -- a flipped picture would put the crosshair at 0.75 instead of
+0.25.
+
+**The left stick is the circle pad, and on a 3DS that is all it is.** The stick
+used to set the d-pad bits unconditionally, on the reasoning that a DS has no
+stick and a player will reach for one anyway. That is right for a DS and wrong
+for a 3DS, which has both: every core that reads the d-pad saw a direction held
+down for as long as the stick was off centre, so walking came out as the eight
+directions the d-pad has and the circle pad could not be used. It is now a
+property of the console -- `SystemProfile::has_analog_stick` -- rather than a
+rule about controllers.
+
+Fixing that turned up the larger half of the same bug: `poll_held_buttons()`
+computed the circle pad into a local `DsInputState` and returned only the
+buttons out of it. Every layer underneath already carried the stick -- the wire,
+the analog callback, the core -- and each was tested; the one step that fills it
+in from the physical pad was not, so a 3DS was always handed a centred circle
+pad. Polling now returns the whole state. The lesson is the mirror of the mock
+one: testing every layer of a chain separately does not test the chain.
+
+The held-input gate learned about the stick at the same time. The menu is
+navigated with it, so it is very often still pushed at the moment the game
+starts listening again -- the same leak the gate was written for, one input
+later.
+
 **Why smoothing depends on the texture and not only on the setting.** "Off"
 means "keep the original pixels square", and that is a statement about being
 drawn bigger than life. It says nothing useful about the opposite case, which

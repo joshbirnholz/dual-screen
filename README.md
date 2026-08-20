@@ -156,6 +156,13 @@ for both screens at 60fps on DS-like content — no video encoder involved, and
 comfortably within wifi. Only screens the current layout actually needs are
 sent, and an unchanged frame is not sent at all.
 
+A 3DS game is served the same way, but it takes more work to get there: Citra
+renders on the GPU, so there is no copy of the frame in memory to send. Each
+screen the other device needs is read back off the card at the console's own
+resolution — 400x240 and 320x240 — whatever the render scale is set to. Rendering
+at 2x is for the screen you are looking at; sending twice the pixels to a device
+that is going to draw one screen would just cost twice the wifi.
+
 Adding a layout is meant to be adding data, not code. A layout says how its
 screens are *arranged* — along which axis, at what relative sizes, how far apart,
 aligned to which edge — and the rectangles are solved for at draw time
@@ -329,7 +336,8 @@ Full options:
 | --- | --- |
 | Open/close the layout menu | **F1** or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
-| Move with the circle pad | the left stick, on 3DS games; on DS games it doubles as the d-pad |
+| Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |
+| Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
 | Turn the pointer off entirely | **Pointer** in the layout menu |
@@ -540,7 +548,8 @@ ctest --test-dir build --output-on-failure
   intent now that the row wraps.
 - `test_controller_input` — drives an SDL **virtual game controller** through
   the whole input path, so the face-button mapping is verified end to end with
-  no hardware.
+  no hardware, and the left stick reaches the circle pad — pressing the d-pad
+  too only on a console that has no stick of its own.
 - `test_protocol` — every message round-trips, then the decoders are attacked:
   truncation at every byte offset, an absurd length field, and random-byte fuzz.
 - `test_net` — real sockets over loopback: a beacon a browser receives, a TCP
@@ -554,6 +563,12 @@ ctest --test-dir build --output-on-failure
   processes** under `Xvfb`, one hosting and one joining, and check each ends up
   showing its own half. Run twice, once for each screen the companion can ask
   for, because those behaving identically was a real bug.
+- `two_device_3ds_headless` / `two_device_3ds_top_headless` — the same pair with
+  a host whose core renders on the GPU, which has to read each screen back off
+  the card to send it. Reaching into the frame as though there were pixels there
+  sent an empty top screen and then segfaulted the host on the bottom one; these
+  catch that (the host exits 139) and, in the `top` case, that the colours
+  survive the trip.
 - `smoke_headless` — runs the real binary against the mock core under `Xvfb`,
   screenshots every layout, and checks pixel by pixel that each screen landed
   where the layout says. It also holds a synthetic touch and verifies the

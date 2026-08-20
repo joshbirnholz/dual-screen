@@ -220,6 +220,15 @@ void LibretroCoreScreenSource::close() {
         gl::DeleteFramebuffers(1, &screen_framebuffer_);
         screen_framebuffer_ = 0;
     }
+    if (readback_framebuffer_ != 0 && gl::DeleteFramebuffers != nullptr) {
+        gl::DeleteFramebuffers(1, &readback_framebuffer_);
+        readback_framebuffer_ = 0;
+    }
+    for (Readback& readback : readbacks_) {
+        readback.texture.destroy();
+        readback.pixels.clear();
+        readback.filled = false;
+    }
     if (core_) {
         core_->unload();
     }
@@ -489,8 +498,12 @@ bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
                                            int source_x,
                                            int source_y,
                                            int width,
-                                           int height) {
-    destination.allocate_rgba(width, height);
+                                           int height,
+                                           int destination_width,
+                                           int destination_height) {
+    if (destination_width <= 0) destination_width = width;
+    if (destination_height <= 0) destination_height = height;
+    destination.allocate_rgba(destination_width, destination_height);
     if (!destination.valid()) return false;
 
     // A blit is clipped by the scissor rect and filtered by the colour mask
@@ -517,10 +530,122 @@ bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
         y0 = static_cast<int>(frame.height) - source_y;
         y1 = static_cast<int>(frame.height) - (source_y + height);
     }
-    gl::BlitFramebuffer(source_x, y0, source_x + width, y1, 0, 0, width, height,
-                        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    // Linear only when the two sizes differ, and they only differ when the
+    // core is rendering above the console's resolution: point-sampling that
+    // reduction would throw away exactly the detail it was rendered for.
+    const bool scaled = destination_width != width || destination_height != height;
+    gl::BlitFramebuffer(source_x, y0, source_x + width, y1, 0, 0, destination_width,
+                        destination_height, GL_COLOR_BUFFER_BIT,
+                        scaled ? GL_LINEAR : GL_NEAREST);
     gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    return true;
+}
+
+bool LibretroCoreScreenSource::read_screen(ScreenId screen, ScreenReadback& out) {
+    out = ScreenReadback();
+    if (!core_ || !split_.valid) {
+        return false;
+    }
+    const CoreVideoFrame& frame = core_->video_frame();
+    if (!frame.valid()) {
+        return false;
+    }
+
+    const bool is_top = (screen == ScreenId::Top);
+    const int source_x = is_top ? split_.top_x : split_.bottom_x;
+    const int source_y = is_top ? split_.top_y : split_.bottom_y;
+    const int width = is_top ? split_.top_width : split_.bottom_width;
+    const int height = is_top ? split_.top_height : split_.bottom_height;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    if (frame.source == FrameSource::Pixels) {
+        // Already on the CPU: hand back a view into the core's own framebuffer
+        // rather than copying it.
+        out.pixels = frame.pixels + static_cast<std::size_t>(source_y) * frame.stride_pixels +
+                     source_x;
+        out.width = width;
+        out.height = height;
+        out.stride_pixels = static_cast<int>(frame.stride_pixels);
+        return true;
+    }
+    return read_screen_from_gpu(screen, frame, out);
+}
+
+bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
+                                                    const CoreVideoFrame& frame,
+                                                    ScreenReadback& out) {
+    if (gl::ReadPixels == nullptr || gl::GenFramebuffers == nullptr || !gl::has_blit()) {
+        if (!readback_failure_reported_) {
+            readback_failure_reported_ = true;
+            log_warn("this driver cannot copy a GPU-rendered screen back for the other device");
+        }
+        return false;
+    }
+
+    const bool is_top = (screen == ScreenId::Top);
+    Readback& readback = readbacks_[is_top ? 0 : 1];
+    // The console's own resolution, not the core's. A core rendering at 2x has
+    // no more to say to a device that is going to draw one screen: sending the
+    // larger picture would cost twice the bandwidth for a picture the other end
+    // scales anyway.
+    const ScreenSize native = system_profile(system_).screens.size_of(screen);
+    if (readback.filled && readback.serial == frame.serial && readback.width == native.width &&
+        readback.height == native.height) {
+        out.pixels = readback.pixels.data();
+        out.width = readback.width;
+        out.height = readback.height;
+        out.stride_pixels = readback.width;
+        return true;  // already read this frame, for the other caller
+    }
+
+    const int source_x = is_top ? split_.top_x : split_.bottom_x;
+    const int source_y = is_top ? split_.top_y : split_.bottom_y;
+    const int width = is_top ? split_.top_width : split_.bottom_width;
+    const int height = is_top ? split_.top_height : split_.bottom_height;
+    if (!blit_screen(frame, readback.texture, source_x, source_y, width, height, native.width,
+                     native.height)) {
+        return false;
+    }
+
+    if (readback_framebuffer_ == 0) {
+        gl::GenFramebuffers(1, &readback_framebuffer_);
+    }
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, readback_framebuffer_);
+    gl::FramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                             readback.texture.id(), 0);
+
+    const std::size_t count = static_cast<std::size_t>(native.width) * native.height;
+    readback.pixels.resize(count);
+    // GL_RGBA rather than a BGRA read: every driver takes this one, and the
+    // swizzle below costs a fraction of what compressing the frame costs.
+    gl::ReadPixels(0, 0, native.width, native.height, GL_RGBA, GL_UNSIGNED_BYTE,
+                   readback.pixels.data());
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+
+    // What came back is R,G,B,A in memory; what the encoder reads is XRGB8888.
+    //
+    // The rows need no flipping. glReadPixels starts at the framebuffer's
+    // bottom-left, which for these textures is the screen's top row: the crop
+    // that filled this texture already turned the core's bottom-left origin
+    // into the top-row-first order every texture here is uploaded in.
+    for (uint32_t& pixel : readback.pixels) {
+        pixel = ((pixel & 0x000000ffu) << 16) | (pixel & 0x0000ff00u) |
+                ((pixel & 0x00ff0000u) >> 16);
+    }
+
+    readback.width = native.width;
+    readback.height = native.height;
+    readback.serial = frame.serial;
+    readback.filled = true;
+    gl::take_error();
+
+    out.pixels = readback.pixels.data();
+    out.width = readback.width;
+    out.height = readback.height;
+    out.stride_pixels = readback.width;
     return true;
 }
 

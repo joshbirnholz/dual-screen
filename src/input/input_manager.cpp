@@ -357,7 +357,7 @@ MenuButtonLabels InputManager::menu_labels() const {
     return MenuButtonLabels();  // Xbox letters: the common case, and Steam Input's
 }
 
-uint32_t InputManager::poll_held_buttons() const {
+DsInputState InputManager::poll_held_state() const {
     // Polled unconditionally, even while a menu is open: the gate needs the
     // true physical state to know what to suppress when the game resumes.
     DsInputState held;
@@ -374,19 +374,23 @@ uint32_t InputManager::poll_held_buttons() const {
                 held.set(ds_button, true);
             }
         }
-        // The left stick is the 3DS's circle pad, and it also doubles as the
-        // d-pad: a DS has no analogue stick at all, and players reach for the
-        // stick expecting it to work. Both readings are sent, and each console's
-        // core takes the one it understands.
+        // The left stick is always the circle pad. Whether it is *also* the
+        // d-pad depends on the console: a DS has no stick, so reaching for one
+        // has to work, but a 3DS has both and pressing both at once is what
+        // made its circle pad unusable -- a core that reads the d-pad sees a
+        // direction held down for as long as the stick is off centre, and
+        // walking becomes the eight directions the d-pad has.
         const int16_t raw_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
         const int16_t raw_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
         const float axis_x = raw_x / 32767.0f;
         const float axis_y = raw_y / 32767.0f;
         const float deadzone = settings_.stick_deadzone;
-        if (axis_y < -deadzone) held.set(DsButton::Up, true);
-        if (axis_y > deadzone) held.set(DsButton::Down, true);
-        if (axis_x < -deadzone) held.set(DsButton::Left, true);
-        if (axis_x > deadzone) held.set(DsButton::Right, true);
+        if (stick_is_dpad_) {
+            if (axis_y < -deadzone) held.set(DsButton::Up, true);
+            if (axis_y > deadzone) held.set(DsButton::Down, true);
+            if (axis_x < -deadzone) held.set(DsButton::Left, true);
+            if (axis_x > deadzone) held.set(DsButton::Right, true);
+        }
 
         // The strongest deflection across every pad wins, so two controllers do
         // not average each other out into standing still.
@@ -419,7 +423,7 @@ uint32_t InputManager::poll_held_buttons() const {
         }
     }
 
-    return held.buttons;
+    return held;
 }
 
 bool InputManager::update_pointer(float output_width, float output_height) {
@@ -464,13 +468,26 @@ void InputManager::end_frame(const Layout& layout,
 
     emit_navigation_from_axes();
 
-    const uint32_t held_buttons = poll_held_buttons();
+    const DsInputState held = poll_held_state();
     const bool pointer_down = update_pointer(output_width, output_height);
-    held_input_gate_.update(held_buttons, pointer_down);
+    // Off centre by enough that the menu would have moved on it, which is the
+    // deflection worth holding back after the menu closes.
+    const bool stick_off_centre =
+        std::abs(held.circle_x) > static_cast<int>(settings_.stick_deadzone * 32767.0f) ||
+        std::abs(held.circle_y) > static_cast<int>(settings_.stick_deadzone * 32767.0f);
+    held_input_gate_.update(held.buttons, pointer_down, stick_off_centre);
 
     ds_state_.clear();
     if (game_input_enabled_) {
         ds_state_.buttons = held_input_gate_.buttons();
+        // The stick reaches the game as itself. Every layer below this one --
+        // the wire, the core's analog callback -- already carried it; nothing
+        // filled it in, so a 3DS could be handed a circle pad that was always
+        // centred.
+        if (held_input_gate_.stick_live()) {
+            ds_state_.circle_x = held.circle_x;
+            ds_state_.circle_y = held.circle_y;
+        }
         if (held_input_gate_.touching()) {
             DsTouchPoint point;
             if (map_output_point_to_ds(layout, output_width, output_height, pointer_x_, pointer_y_,

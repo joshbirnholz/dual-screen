@@ -38,6 +38,10 @@ struct SystemProfile {
     std::string core_description;
     // The context this system's cores need to be given.
     GlContextNeed gl_context = GlContextNeed::Any;
+    // Whether the console itself has an analogue stick. One that does reads the
+    // left stick as that stick and nothing else; one that does not lets the
+    // stick stand in for the d-pad, since players reach for it either way.
+    bool has_analog_stick = false;
     // The largest internal resolution multiplier the quick settings offer for
     // this system. 1 means the core draws at the console's own resolution and
     // there is nothing to choose, so the button does not appear at all.

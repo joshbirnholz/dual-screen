@@ -17,6 +17,19 @@ struct ScreenTextures {
     }
 };
 
+// One screen's pixels on the CPU, at the console's own resolution, for sending
+// to another device. Kept separate from ScreenTextures because a texture is
+// what this machine draws and this is what leaves it: a source that renders on
+// the GPU has no CPU copy of its frame at all and has to be asked for one.
+struct ScreenReadback {
+    // XRGB8888, the byte order the wire encoder reads.
+    const uint32_t* pixels = nullptr;
+    int width = 0;
+    int height = 0;
+    int stride_pixels = 0;
+    bool valid() const { return pixels != nullptr && width > 0 && height > 0; }
+};
+
 // Seam: something that produces two textures (top/bottom) per frame plus their
 // native resolution.
 //
@@ -39,6 +52,16 @@ public:
     // The screens this source produces, at their own sizes -- which are not
     // necessarily the same as each other.
     virtual SystemScreens screens_geometry() const = 0;
+
+    // One screen as CPU pixels, valid until the next call or the next frame.
+    // Only what is actually being sent should be asked for: on a source that
+    // renders on the GPU this reads back off the card, which is not free.
+    // False when there is nothing to read yet.
+    virtual bool read_screen(ScreenId screen, ScreenReadback& out) {
+        (void)screen;
+        (void)out;
+        return false;
+    }
 
     // True once the source has decided it is finished (e.g. the core asked the
     // frontend to shut down).

@@ -75,6 +75,12 @@ public:
     // menu cannot leak into the game.
     void set_game_input_enabled(bool enabled);
 
+    // Whether the left stick should also press the d-pad. True for a console
+    // with no stick of its own, where reaching for the stick has to work;
+    // false for one that has a stick, where doing both would hold a direction
+    // down on the d-pad for as long as the stick is moved at all.
+    void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
+
     // Whether a finger or the mouse button is currently down, and where. UI
     // screens use this for drag scrolling; the discrete press/release events in
     // pointer_events() only describe taps.
@@ -91,8 +97,10 @@ public:
 private:
     void open_controller(int device_index);
     void close_controller(SDL_JoystickID instance_id);
-    // Physically-held DS buttons, before the held-input gate is applied.
-    uint32_t poll_held_buttons() const;
+    // Physically-held input, before the held-input gate is applied: the
+    // buttons and the stick together, because they come off the same pads and
+    // splitting them is how the circle pad came to be computed and dropped.
+    DsInputState poll_held_state() const;
     // Updates the live pointer position; returns whether one is down.
     bool update_pointer(float output_width, float output_height);
     void emit_navigation_from_axes();
@@ -104,6 +112,7 @@ private:
     };
 
     Settings settings_;
+    bool stick_is_dpad_ = true;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
 
     DsInputState ds_state_;

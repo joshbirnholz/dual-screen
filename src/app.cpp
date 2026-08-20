@@ -292,10 +292,11 @@ struct App::Impl {
     // Pushes the current choice down to whichever source is drawing, and
     // remembers it. Cheap enough to call whenever it changes.
     void apply_filtering();
-    // Hands the compositor and the menu the console picture for whatever is
-    // being played. Called whenever either the artwork or the console changes,
-    // which on a companion means whenever the host says so.
-    void apply_bezel_art();
+    // Everything that follows from which console is being played: the picture
+    // the Standard layout draws, and whether the left stick is also a d-pad.
+    // Called whenever the console changes, which on a companion means whenever
+    // the host says so.
+    void apply_system();
     // True while this device is showing another device's game.
     bool is_companion() const;
     // True while two devices are in a session, whichever end this is.
@@ -469,7 +470,7 @@ bool App::Impl::create_window(GlContextNeed need, std::string* error) {  // NOLI
         log_info(std::string("created a ") + attempt.description + " context");
         std::string art_error;
         if (bezel_art.load(&art_error)) {
-            apply_bezel_art();
+            apply_system();
         } else {
             // Not fatal: the Standard layout still puts the screens where they
             // belong, it just has nothing drawn behind them.
@@ -553,17 +554,21 @@ bool App::Impl::rebuild_renderer(std::string* error) {
              (gl::is_core_profile() ? ", core profile" : "") +
              (gl::has_vertex_arrays() ? ", vertex arrays available" : ", no vertex arrays"));
     gl::log_error_once("rebuilding the renderer");
-    apply_bezel_art();
+    apply_system();
     refresh_output_size();
     return true;
 }
 
-void App::Impl::apply_bezel_art() {
+void App::Impl::apply_system() {
+    const SystemProfile& profile = system_profile(system);
     const Texture* art = bezel_art.texture(system);
     compositor.set_bezel_art(art);
     if (picker) {
         picker->set_bezel_art(art);
     }
+    // A console with its own stick reads the stick as that stick. One without
+    // lets it stand in for the d-pad, because a player will reach for it.
+    input.set_stick_is_dpad(!profile.has_analog_stick);
 }
 
 void App::Impl::refresh_output_size() {
@@ -905,7 +910,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
-    apply_bezel_art();
+    apply_system();
 
     // Before the core is loaded, for the same reason the context is: the core
     // resolves its GL functions once, while the game is being opened, and keeps
@@ -1473,7 +1478,7 @@ int App::run(const AppOptions& options) {
 
     impl.input.initialize(impl.settings);
     impl.picker.reset(new LayoutPicker(impl.registry));
-    impl.apply_bezel_art();
+    impl.apply_system();
     impl.settings_screen.reset(new SettingsScreen(impl.registry, impl.paths));
     impl.active_layout_id = impl.settings.default_layout_id;
     // A starting guess for the settings screen. Loading a game replaces it with
@@ -1706,7 +1711,7 @@ int App::run(const AppOptions& options) {
                 impl.adopt_handedness(impl.companion_session->host_handedness());
                 if (impl.system != impl.companion_session->system()) {
                     impl.system = impl.companion_session->system();
-                    impl.apply_bezel_art();
+                    impl.apply_system();
                     log_info(std::string("following the host: ") +
                              system_profile(impl.system).name);
                 }
@@ -1809,23 +1814,33 @@ int App::run(const AppOptions& options) {
         // step. It has to: a paused game still owes the other device a picture
         // when what it needs changes, and while paused no new frame is coming.
         if (impl.source && impl.host_session && impl.host_session->has_companion()) {
-            const CoreVideoFrame& frame = impl.source->core_frame_for_test();
-            const ScreenSplit& split = impl.source->split();
-            if (frame.valid() && split.valid) {
-                const uint32_t* base = frame.pixels;
-                const int stride = static_cast<int>(frame.stride_pixels);
-                net::HostSession::ScreenPixels top;
-                top.pixels = base + static_cast<std::size_t>(split.top_y) * stride + split.top_x;
-                top.width = split.top_width;
-                top.height = split.top_height;
-                top.stride_pixels = stride;
-                net::HostSession::ScreenPixels bottom;
-                bottom.pixels =
-                    base + static_cast<std::size_t>(split.bottom_y) * stride + split.bottom_x;
-                bottom.width = split.bottom_width;
-                bottom.height = split.bottom_height;
-                bottom.stride_pixels = stride;
-                impl.host_session->publish_screens(top, bottom, frame.serial);
+            // Asked for per screen rather than taken from the frame directly:
+            // a core that renders on the GPU has no CPU copy of its picture,
+            // and reaching into one is how a 3DS session used to send an empty
+            // top screen and then read off the end of nothing for the bottom.
+            // Only the screens the companion actually needs are asked for,
+            // because on that path each one is a copy back off the card.
+            const uint64_t serial = impl.source->core_frame_for_test().serial;
+            ScreenReadback top;
+            ScreenReadback bottom;
+            if (impl.host_session->companion_wants(ScreenId::Top)) {
+                impl.source->read_screen(ScreenId::Top, top);
+            }
+            if (impl.host_session->companion_wants(ScreenId::Bottom)) {
+                impl.source->read_screen(ScreenId::Bottom, bottom);
+            }
+            if (top.valid() || bottom.valid()) {
+                net::HostSession::ScreenPixels top_pixels;
+                top_pixels.pixels = top.pixels;
+                top_pixels.width = top.width;
+                top_pixels.height = top.height;
+                top_pixels.stride_pixels = top.stride_pixels;
+                net::HostSession::ScreenPixels bottom_pixels;
+                bottom_pixels.pixels = bottom.pixels;
+                bottom_pixels.width = bottom.width;
+                bottom_pixels.height = bottom.height;
+                bottom_pixels.stride_pixels = bottom.stride_pixels;
+                impl.host_session->publish_screens(top_pixels, bottom_pixels, serial);
             }
         }
 

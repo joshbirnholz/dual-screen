@@ -100,6 +100,11 @@ public:
         int stride_pixels = 0;
     };
 
+    // Which screens the companion needs right now. Public because reading a
+    // screen out of a GPU-rendered frame costs a copy back off the card, so the
+    // caller has to be able to skip one nobody is going to see.
+    bool companion_wants(ScreenId screen) const;
+
     // Sends whichever screens the companion needs for the current layout.
     // `serial` should advance only when the pixels actually changed.
     void publish_screens(const ScreenPixels& top, const ScreenPixels& bottom, uint64_t serial);
@@ -116,7 +121,6 @@ private:
     void refresh_beacon();
     void drop_companion(const std::string& reason);
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
-    bool companion_wants(ScreenId screen) const;
 
     Config config_;
     TcpListener listener_;

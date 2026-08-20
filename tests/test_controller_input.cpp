@@ -105,6 +105,51 @@ void test_shoulders_and_dpad_are_stable() {
     CHECK(press_and_read(SDL_CONTROLLER_BUTTON_BACK).pressed(DsButton::Select));
 }
 
+// Pushing the left stick, read the way each console reads it. A DS has no
+// stick, so the stick has to stand in for the d-pad; a 3DS has both, and
+// sending both from one stick is what made its circle pad unusable -- every
+// core that reads the d-pad saw a direction held down for as long as the stick
+// was off centre.
+DsInputState push_stick_and_read(bool stick_is_dpad) {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return DsInputState();
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    input.set_stick_is_dpad(stick_is_dpad);
+
+    // Hard left, well past any deadzone.
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_LEFTX, -32000);
+    SDL_GameControllerUpdate();
+    input.begin_frame();
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::ThreeDs).screens);
+    const DsInputState state = input.ds_state();
+
+    input.shutdown();
+    pad.detach();
+    return state;
+}
+
+void test_the_stick_is_the_dpad_only_where_there_is_no_stick() {
+    // A console with an analogue stick of its own: the circle pad moves and the
+    // d-pad stays up.
+    const DsInputState with_stick = push_stick_and_read(/*stick_is_dpad=*/false);
+    CHECK_MSG(with_stick.circle_x < -16000, "the circle pad did not follow the stick");
+    CHECK_MSG(!with_stick.pressed(DsButton::Left),
+              "the stick pressed the d-pad on a console that has its own stick");
+    CHECK_EQ(with_stick.buttons, 0u);
+
+    // A console without one: the same push has to reach the d-pad, because
+    // that is the only way to walk.
+    const DsInputState without = push_stick_and_read(/*stick_is_dpad=*/true);
+    CHECK_MSG(without.pressed(DsButton::Left),
+              "the stick did not stand in for the d-pad on a console with no stick");
+    CHECK_MSG(without.circle_x < -16000, "the circle pad should still follow the stick");
+}
+
 // The stick click must not reach the game at all.
 void test_stick_click_is_not_a_ds_button() {
     const DsInputState state = press_and_read(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
@@ -274,6 +319,7 @@ int main() {
 
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
+    test_the_stick_is_the_dpad_only_where_there_is_no_stick();
     test_stick_click_is_not_a_ds_button();
     test_stick_click_toggles_filtering();
     test_face_buttons_reach_the_core();
