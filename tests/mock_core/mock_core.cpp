@@ -95,6 +95,8 @@ void (*gl_BindVertexArray)(GLuint_) = nullptr;
 void (*gl_Scissor)(GLint_, GLint_, GLsizei_, GLsizei_) = nullptr;
 void (*gl_Clear)(GLbitfield_) = nullptr;
 void (*gl_ClearColor)(float, float, float, float) = nullptr;
+unsigned char (*gl_IsEnabled)(GLenum_) = nullptr;
+bool g_state_checked = false;
 
 constexpr GLenum_ kGlTexture2d = 0x0DE1;
 constexpr GLenum_ kGlRgba = 0x1908;
@@ -115,6 +117,7 @@ constexpr GLenum_ kGlOne = 1;
 constexpr GLenum_ kGlZero = 0;
 constexpr GLenum_ kGlCullFace = 0x0B44;
 constexpr GLenum_ kGlScissorTest = 0x0C11;
+constexpr GLenum_ kGlStencilTest = 0x0B90;
 constexpr GLenum_ kGlTexture3 = 0x84C3;
 
 GLuint_ g_gpu_texture = 0;
@@ -148,6 +151,7 @@ void RETRO_CALLCONV hw_context_reset() {
     resolve_gl(gl_Scissor, "glScissor");
     resolve_gl(gl_Clear, "glClear");
     resolve_gl(gl_ClearColor, "glClearColor");
+    resolve_gl(gl_IsEnabled, "glIsEnabled");
 
     g_hw_ready = gl_GenTextures != nullptr && gl_BlitFramebuffer != nullptr &&
                  gl_GenFramebuffers != nullptr && gl_TexImage2D != nullptr;
@@ -541,10 +545,49 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
 
 RETRO_API void retro_unload_game(void) {}
 
+// What a core is entitled to assume when retro_run begins. A real core tracks
+// GL state in a shadow object that starts at OpenGL's defaults and only issues
+// the calls where its belief differs -- so anything the frontend leaves
+// switched on is invisible to it and never gets switched off. Blending is the
+// one that hurts: left enabled with a SRC_ALPHA function, it quietly discards
+// everything the core draws that has no alpha of its own.
+void check_frontend_left_default_gl_state() {
+    if (!kUsesHwRender || !g_hw_ready || gl_IsEnabled == nullptr) return;
+    if (g_state_checked) return;
+    g_state_checked = true;
+
+    const struct {
+        GLenum_ cap;
+        const char* name;
+        bool expected;
+    } kExpected[] = {
+        {kGlBlend, "GL_BLEND", false},
+        {kGlDepthTest, "GL_DEPTH_TEST", false},
+        {kGlScissorTest, "GL_SCISSOR_TEST", false},
+        {kGlCullFace, "GL_CULL_FACE", false},
+        {kGlStencilTest, "GL_STENCIL_TEST", false},
+    };
+    std::string wrong;
+    for (const auto& entry : kExpected) {
+        const bool actual = gl_IsEnabled(entry.cap) != 0;
+        if (actual != entry.expected) {
+            if (!wrong.empty()) wrong += ", ";
+            wrong += entry.name;
+        }
+    }
+    if (!wrong.empty() && g_environment != nullptr) {
+        static char text[128];
+        std::snprintf(text, sizeof(text), "frontend left non-default GL state: %s", wrong.c_str());
+        struct retro_message message = {text, 300};
+        g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+    }
+}
+
 RETRO_API void retro_run(void) {
     if (g_input_poll != nullptr) {
         g_input_poll();
     }
+    check_frontend_left_default_gl_state();
 
     // On the first frame, report whether the frontend restored a save. The
     // frontend must have copied the file into this buffer before now.

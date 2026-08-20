@@ -440,6 +440,18 @@ foreach(CASE IN LISTS THREE_DS_CASES)
         message(SEND_ERROR "the 3DS framebuffer was not split into two differently shaped screens")
         set(ANY_FAILED TRUE)
     endif()
+    # A core is entitled to a context in OpenGL's default state. It tracks GL
+    # state in a shadow object starting from those defaults and only issues the
+    # calls where its belief differs, so anything left switched on here is
+    # invisible to it and never gets switched off. Blending is the one that
+    # hurts: enabled with a SRC_ALPHA function, it silently discards everything
+    # the core draws that has no alpha of its own -- a black screen, no error.
+    if(RUN_OUTPUT MATCHES "non-default GL state")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "the core was handed a context that was not in OpenGL's default state")
+        set(ANY_FAILED TRUE)
+    endif()
+
     # The 3DS core renders on the GPU, as Citra does. If the frontend ever went
     # back to declining that, the core would simply refuse to load the game --
     # so the handshake is checked outright rather than inferred from the picture.

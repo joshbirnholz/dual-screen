@@ -80,6 +80,11 @@ PFN_GetIntegerv GetIntegerv = nullptr;
 PFN_DepthMask DepthMask = nullptr;
 PFN_ColorMask ColorMask = nullptr;
 PFN_BlendEquation BlendEquation = nullptr;
+PFN_DepthFunc DepthFunc = nullptr;
+PFN_CullFace CullFace = nullptr;
+PFN_FrontFace FrontFace = nullptr;
+PFN_StencilMask StencilMask = nullptr;
+PFN_IsEnabled IsEnabled = nullptr;
 PFN_GenFramebuffers GenFramebuffers = nullptr;
 PFN_DeleteFramebuffers DeleteFramebuffers = nullptr;
 PFN_BindFramebuffer BindFramebuffer = nullptr;
@@ -141,6 +146,33 @@ void log_error_once(const char* label) {
     log_warn(std::string(label) + ": " + error);
 }
 
+void reset_state_for_core() {
+    if (Enable == nullptr) return;
+    // OpenGL's defaults, exactly, because that is where a core's own state
+    // tracking believes it is starting from.
+    Disable(GL_BLEND);
+    BlendFunc(GL_ONE, GL_ZERO);
+    if (BlendEquation != nullptr) BlendEquation(GL_FUNC_ADD);
+    Disable(GL_DEPTH_TEST);
+    if (DepthFunc != nullptr) DepthFunc(GL_LESS);
+    if (DepthMask != nullptr) DepthMask(GL_TRUE);
+    Disable(GL_STENCIL_TEST);
+    if (StencilMask != nullptr) StencilMask(0xFFFFFFFFu);
+    Disable(GL_SCISSOR_TEST);
+    Disable(GL_CULL_FACE);
+    if (CullFace != nullptr) CullFace(GL_BACK);
+    if (FrontFace != nullptr) FrontFace(GL_CCW);
+    Enable(GL_DITHER);  // on by default, unlike everything else here
+    if (ColorMask != nullptr) ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    if (ActiveTexture != nullptr) ActiveTexture(GL_TEXTURE0);
+    if (UseProgram != nullptr) UseProgram(0);
+    if (BindVertexArray != nullptr) BindVertexArray(0);
+    if (PixelStorei != nullptr) {
+        PixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        PixelStorei(GL_PACK_ALIGNMENT, 4);
+    }
+}
+
 bool is_gles() { return g_is_gles; }
 bool is_core_profile() { return g_is_core_profile; }
 
@@ -192,7 +224,8 @@ void unload() {
     BufferData = nullptr; BufferSubData = nullptr; VertexAttribPointer = nullptr;
     EnableVertexAttribArray = nullptr; DisableVertexAttribArray = nullptr;
     DrawArrays = nullptr; GetIntegerv = nullptr; DepthMask = nullptr; ColorMask = nullptr;
-    BlendEquation = nullptr; GenFramebuffers = nullptr;
+    BlendEquation = nullptr; DepthFunc = nullptr; CullFace = nullptr; FrontFace = nullptr;
+    StencilMask = nullptr; IsEnabled = nullptr; GenFramebuffers = nullptr;
     DeleteFramebuffers = nullptr; BindFramebuffer = nullptr; FramebufferTexture2D = nullptr;
     CheckFramebufferStatus = nullptr; GenRenderbuffers = nullptr;
     DeleteRenderbuffers = nullptr; BindRenderbuffer = nullptr; RenderbufferStorage = nullptr;
@@ -257,6 +290,11 @@ bool load(bool gles_context, std::string* error) {
     resolve(DepthMask, "glDepthMask");
     resolve(ColorMask, "glColorMask");
     resolve(BlendEquation, "glBlendEquation");
+    resolve(DepthFunc, "glDepthFunc");
+    resolve(CullFace, "glCullFace");
+    resolve(FrontFace, "glFrontFace");
+    resolve(StencilMask, "glStencilMask");
+    resolve(IsEnabled, "glIsEnabled");
     resolve(GenFramebuffers, "glGenFramebuffers");
     resolve(DeleteFramebuffers, "glDeleteFramebuffers");
     resolve(BindFramebuffer, "glBindFramebuffer");

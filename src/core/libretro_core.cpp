@@ -518,6 +518,15 @@ void LibretroCore::run_frame() {
         // means the check after retro_run reports only what the core caused.
         gl::take_error();
 
+        // The context goes back to OpenGL's defaults before the core touches
+        // it. A core tracks GL state in a shadow object that starts at those
+        // defaults and only issues the calls where its belief differs -- so
+        // anything this app leaves switched on is invisible to the core, and it
+        // will not switch it off. This app's own alpha blending, left enabled,
+        // silently swallows everything a core draws that has no alpha of its
+        // own, which is exactly what a 3DS screen is.
+        gl::reset_state_for_core();
+
         // On the first frame only, stain the buffer a colour nothing else uses.
         // Afterwards it reads back as one of exactly two things, and they mean
         // opposite things: still stained means the core never wrote to the

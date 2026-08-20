@@ -198,6 +198,38 @@ new size, `run_frame` re-checks in case one ever draws larger unannounced, and
 the placeholder allocated before any size is declared is replaced by the real
 size rather than becoming a floor it cannot shrink below.
 
+**Hand the core OpenGL's default state, not yours.** This was the black screen,
+and it took a call trace on the real core to see it. Citra was reaching the
+right framebuffer, setting the right viewport, binding its textures and issuing
+its draws with no error — and the result was black.
+
+The reason is how every emulator of any size drives OpenGL. State changes are
+expensive, so the core keeps a *shadow* of the GL state and only issues the
+calls where its belief differs from what it wants. That shadow starts at the GL
+defaults. So anything the frontend leaves switched on is **invisible** to the
+core: it will not turn it off, because as far as it knows it is already off.
+
+This app enables `GL_BLEND` with `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`, which its own
+text and UI need. Citra draws its screens with no blending, so it never disables
+blending, so its screens were composited against the background through their
+own alpha — and 3DS screen data has no meaningful alpha. Every pixel it drew
+resolved to the background. Drawn correctly, landing nowhere, no error anywhere.
+
+`gl::reset_state_for_core()` now puts the whole fixed-function state back to the
+GL defaults before every `retro_run`. The rule is: **the frontend's rendering
+state is the frontend's business, and the core is entitled to start from the
+defaults its own bookkeeping assumes.**
+
+It is the mirror image of the earlier lesson about a core not restoring state
+after itself. Both directions matter, and neither is optional: the frontend
+must reset before handing over, and must not trust anything after getting it
+back.
+
+The mock now checks what it is handed at the top of `retro_run` and reports
+anything non-default, so this is a test failure rather than a black screen.
+Removing the reset produces exactly what the real core produced:
+`frontend left non-default GL state: GL_BLEND`.
+
 **What is still unverified:** all of this is exercised against a mock core that
 requests the same context Citra does and renders through it, not against a real
 Citra build, which was not available in this environment. The frontend's runtime

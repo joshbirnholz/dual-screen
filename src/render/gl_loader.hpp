@@ -63,6 +63,11 @@ using PFN_GetIntegerv = void (*)(GLenum, GLint*);
 using PFN_DepthMask = void (*)(GLboolean);
 using PFN_ColorMask = void (*)(GLboolean, GLboolean, GLboolean, GLboolean);
 using PFN_BlendEquation = void (*)(GLenum);
+using PFN_DepthFunc = void (*)(GLenum);
+using PFN_CullFace = void (*)(GLenum);
+using PFN_FrontFace = void (*)(GLenum);
+using PFN_StencilMask = void (*)(GLuint);
+using PFN_IsEnabled = GLboolean (*)(GLenum);
 
 // Framebuffer objects. Core to ES 2.0 and to desktop GL 3.0, so these are
 // required: the hardware-rendering path draws the core's picture into one.
@@ -135,6 +140,11 @@ extern PFN_GetIntegerv GetIntegerv;
 extern PFN_DepthMask DepthMask;
 extern PFN_ColorMask ColorMask;
 extern PFN_BlendEquation BlendEquation;
+extern PFN_DepthFunc DepthFunc;
+extern PFN_CullFace CullFace;
+extern PFN_FrontFace FrontFace;
+extern PFN_StencilMask StencilMask;
+extern PFN_IsEnabled IsEnabled;
 extern PFN_GenFramebuffers GenFramebuffers;
 extern PFN_DeleteFramebuffers DeleteFramebuffers;
 extern PFN_BindFramebuffer BindFramebuffer;
@@ -162,6 +172,23 @@ extern PFN_BindVertexArray BindVertexArray;
 // place, which clips both draws and framebuffer blits. Any state set once at
 // startup is gone after the first frame of such a core.
 void reset_render_state();
+
+// Puts the whole fixed-function state back to OpenGL's own defaults, for
+// handing the context to a libretro core that renders on the GPU.
+//
+// This matters more than it sounds. A core of any size tracks GL state in a
+// shadow object and only issues the calls where its belief differs from what
+// it wants -- that is how they avoid thousands of redundant calls a frame. Its
+// belief starts at the GL defaults. So anything the frontend leaves switched on
+// is invisible to the core: it will not turn it off, because as far as it knows
+// it is already off.
+//
+// Citra draws its screens with no blending, which means it never disables
+// blending. Handing it a context with GL_BLEND enabled and a SRC_ALPHA blend
+// function -- which is what this app's own UI needs -- makes it composite those
+// screens against the background through their alpha, and 3DS screen data has
+// no meaningful alpha. The picture is drawn and lands nowhere.
+void reset_state_for_core();
 
 // Drains the GL error queue and reports the first error, if any, as text.
 // Empty when there was none. GL errors are sticky and otherwise invisible, so
