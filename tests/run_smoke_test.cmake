@@ -514,6 +514,42 @@ else()
     endif()
 endif()
 
+# When a GPU-rendering core announces a frame and puts nothing in it, the app has
+# to notice by itself and start recording the core's OpenGL calls. Asking for
+# that with a flag is no use: the core resolves its GL functions once, while the
+# game is opening, long before anyone knows anything is wrong -- so the wrappers
+# have to be in place already and the recording armed by the symptom.
+file(REMOVE "${THREE_DS_HOME}/data/dualscreen/saves/game.srm")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CONFIG_HOME=${THREE_DS_HOME}/config"
+            "XDG_DATA_HOME=${THREE_DS_HOME}/data"
+            "SDL_AUDIODRIVER=dummy"
+            "SDL_VIDEODRIVER=x11"
+            "MOCK_CORE_PRESENT_NOTHING=1"
+            "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+            "${DUALSCREEN}"
+                --game "${THREE_DS_HOME}/game.3ds"
+                --core "${MOCK_CORE_3DS}"
+                --layout vertical
+                --windowed
+                --exit-after-frames ${FRAME_COUNT}
+    RESULT_VARIABLE EMPTY_RESULT
+    OUTPUT_VARIABLE EMPTY_OUTPUT
+    ERROR_VARIABLE EMPTY_ERROR)
+
+if(NOT EMPTY_OUTPUT MATCHES "tracing the core's OpenGL calls")
+    message(STATUS "${EMPTY_OUTPUT}")
+    message(SEND_ERROR "the app did not start tracing a core that presented an empty frame")
+    set(ANY_FAILED TRUE)
+elseif(NOT EMPTY_OUTPUT MATCHES "glScissor\\(0, 0, -1, -1\\)  ->  GL_INVALID_VALUE")
+    message(STATUS "${EMPTY_OUTPUT}")
+    message(SEND_ERROR "the trace did not name the call the driver rejected")
+    set(ANY_FAILED TRUE)
+else()
+    message(STATUS "an empty GPU frame armed the call trace, which named the rejected call: ok")
+endif()
+
 # A touch on a 3DS lands in a 320x240 space, not a DS's 256x192 -- and the touch
 # screen is narrower than the upper one, so a crop that took the wrong columns
 # would put the crosshair off to one side.

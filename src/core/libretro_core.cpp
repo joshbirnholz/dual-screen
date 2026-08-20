@@ -424,6 +424,9 @@ bool LibretroCore::accept_hw_render(struct retro_hw_render_callback* callback) {
 
     hw_callback_ = callback;
     hw_render_requested_ = true;
+    // Silently, and before the core resolves anything: the wrappers cannot be
+    // put in place later, and whether they will be needed is not known yet.
+    gl_trace::install();
     hw_context_reset_done_ = false;
     callback->get_current_framebuffer = &hw_get_current_framebuffer_thunk;
     callback->get_proc_address = &hw_get_proc_address_thunk;

@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -62,6 +63,8 @@ uint32_t g_framebuffer[kFrameWidth * kFrameHeight];
 // is the only way a libretro core is allowed to reach GL.
 struct retro_hw_render_callback g_hw_render;
 bool g_hw_ready = false;
+// Set by MOCK_CORE_PRESENT_NOTHING, for the frontend's own diagnostics.
+bool g_present_nothing = false;
 
 using GLenum_ = unsigned;
 using GLuint_ = unsigned;
@@ -90,6 +93,8 @@ void (*gl_UseProgram)(GLuint_) = nullptr;
 void (*gl_ActiveTexture)(GLenum_) = nullptr;
 void (*gl_BindVertexArray)(GLuint_) = nullptr;
 void (*gl_Scissor)(GLint_, GLint_, GLsizei_, GLsizei_) = nullptr;
+void (*gl_Clear)(GLbitfield_) = nullptr;
+void (*gl_ClearColor)(float, float, float, float) = nullptr;
 
 constexpr GLenum_ kGlTexture2d = 0x0DE1;
 constexpr GLenum_ kGlRgba = 0x1908;
@@ -141,6 +146,8 @@ void RETRO_CALLCONV hw_context_reset() {
     resolve_gl(gl_ActiveTexture, "glActiveTexture");
     resolve_gl(gl_BindVertexArray, "glBindVertexArray");
     resolve_gl(gl_Scissor, "glScissor");
+    resolve_gl(gl_Clear, "glClear");
+    resolve_gl(gl_ClearColor, "glClearColor");
 
     g_hw_ready = gl_GenTextures != nullptr && gl_BlitFramebuffer != nullptr &&
                  gl_GenFramebuffers != nullptr && gl_TexImage2D != nullptr;
@@ -201,6 +208,26 @@ void RETRO_CALLCONV hw_context_destroy() {
 // has to prove the handover works.
 void present_through_gpu() {
     if (!g_hw_ready) return;
+
+    // Reproduces the failure a real core can land in: it announces a frame, but
+    // nothing it drew reaches the framebuffer the frontend gave it. The point
+    // is to check that the frontend notices on its own and starts recording the
+    // core's OpenGL calls, rather than needing to be asked on a second run.
+    if (g_present_nothing) {
+        const GLuint_ target = g_hw_render.get_current_framebuffer != nullptr
+                                   ? static_cast<GLuint_>(g_hw_render.get_current_framebuffer())
+                                   : 0;
+        gl_BindFramebuffer(kGlFramebuffer, target);
+        // Clearing but not drawing, which is what the real failure looks like:
+        // the core reaches the right framebuffer and empties it.
+        if (gl_ClearColor != nullptr) gl_ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        if (gl_Clear != nullptr) gl_Clear(kGlColorBufferBit);
+        // A call the driver will reject, so the frontend sees an error too.
+        if (gl_Scissor != nullptr) gl_Scissor(0, 0, -1, -1);
+        gl_BindFramebuffer(kGlFramebuffer, 0);
+        trash_gl_state_like_a_real_core();
+        return;
+    }
 
     // XRGB8888 in a uint32 is B,G,R,X in memory, so it goes up as BGRA and
     // lands in the texture in the right order.
@@ -474,6 +501,9 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
         return false;
     }
     if (kUsesHwRender) {
+        const char* nothing = std::getenv("MOCK_CORE_PRESENT_NOTHING");
+        g_present_nothing = nothing != nullptr && nothing[0] != '\0' && nothing[0] != '0';
+
         // Exactly what Citra asks for, and in the same order: a 3.3 core
         // profile, bottom-left origin, no cached context. A frontend that
         // refuses gets the same "cannot load" a real 3DS core would give.

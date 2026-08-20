@@ -17,10 +17,25 @@ namespace ds::gl_trace {
 // on.
 bool enabled();
 
+// Hands the wrappers out from now on, silently. Called once for a core that
+// renders on the GPU, before it resolves its functions.
+void install();
+
 // Turns tracing on regardless of the environment, for --trace-core-gl. Has to
 // be called before the core is loaded: the core resolves its GL functions once,
 // during context_reset, and keeps whatever it was handed.
 void force_enable();
+
+// Arms the trace from inside the app, some frames after the core was loaded.
+//
+// The wrappers are always installed for a GPU-rendering core, because they have
+// to be in place before the core resolves its functions and that is long before
+// anything is known to be wrong. Installed but silent costs an indirect call;
+// nothing is logged and glGetError is not called until this is invoked. That is
+// what lets a frontend notice the symptom -- a core that drew nothing and left
+// an error behind -- and then record the frames that follow, with no flag to
+// set and no second run.
+void arm(const std::string& reason);
 
 // The wrapper for `name`, or nullptr if this symbol is not traced -- in which
 // case the caller should hand over the driver's own function.

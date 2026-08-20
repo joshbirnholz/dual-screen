@@ -12,9 +12,14 @@
 namespace ds::gl_trace {
 namespace {
 
-bool g_enabled = false;
+// Whether the wrappers are handed out at all. Separate from whether they log:
+// they must be installed before the core resolves its functions, which happens
+// long before anything is known to be wrong.
+bool g_installed = false;
+bool g_logging = false;
 bool g_checked_environment = false;
 int g_frame = 0;
+int g_frames_when_armed = -1;
 int g_lines = 0;
 
 // Enough to see a frame's shape without burying the log. A core that draws
@@ -26,7 +31,12 @@ GLenum (*real_GetError)() = nullptr;
 
 void* real(const char* name) { return SDL_GL_GetProcAddress(name); }
 
-bool tracing_now() { return g_enabled && g_frame < kMaxFrames && g_lines < kMaxLines; }
+bool tracing_now() {
+    if (!g_logging || g_lines >= kMaxLines) return false;
+    // Counted from when logging started, not from the first frame, since the
+    // trace may be armed several frames in.
+    return (g_frame - g_frames_when_armed) < kMaxFrames;
+}
 
 // The call has already happened; this says whether OpenGL objected to it.
 void note(const std::string& call) {
@@ -214,6 +224,8 @@ const std::map<std::string, void*>& table() {
 }  // namespace
 
 bool enabled() {
+    // Only decides whether an explicit request was made; installation is
+    // separate, see install().
     if (!g_checked_environment) {
         g_checked_environment = true;
         const char* value = std::getenv("DUALSCREEN_TRACE_CORE_GL");
@@ -221,25 +233,41 @@ bool enabled() {
             force_enable();
         }
     }
-    return g_enabled;
+    return g_logging;
 }
 
 void force_enable() {
     g_checked_environment = true;
-    if (g_enabled) return;
-    g_enabled = true;
+    g_installed = true;
+    if (g_logging) return;
+    g_logging = true;
+    g_frames_when_armed = 0;
     log_info("tracing the core's OpenGL calls for the first few frames");
 }
 
+void install() {
+    g_installed = true;
+    // Reading the environment here too, so an explicit request still starts
+    // logging from the very first frame rather than waiting for a symptom.
+    enabled();
+}
+
+void arm(const std::string& reason) {
+    if (!g_installed || g_logging) return;
+    g_logging = true;
+    g_frames_when_armed = g_frame;
+    log_info("tracing the core's OpenGL calls: " + reason);
+}
+
 void* wrapper_for(const std::string& name) {
-    if (!enabled()) return nullptr;
+    enabled();  // so an explicit request is honoured from the first frame
+    if (!g_installed) return nullptr;
     const auto it = table().find(name);
     return it == table().end() ? nullptr : it->second;
 }
 
 void begin_frame() {
-    if (!g_enabled) return;
-    if (g_frame < kMaxFrames) {
+    if (g_logging && tracing_now()) {
         log_info("--- core frame " + std::to_string(g_frame) + " ---");
     }
     ++g_frame;

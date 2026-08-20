@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "config/paths.hpp"
+#include "core/gl_call_trace.hpp"
 #include "render/gl_loader.hpp"
 #include "util/log.hpp"
 
@@ -406,10 +407,12 @@ void LibretroCoreScreenSource::probe_core_framebuffer(const CoreVideoFrame& fram
         static_cast<int>(frame.texture_height) - 1,
     };
     std::string report;
+    bool all_black = true;
     for (const int y : rows) {
         if (y < 0 || y >= static_cast<int>(frame.texture_height)) continue;
         uint8_t rgba[4] = {0, 0, 0, 0};
         gl::ReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        if (rgba[0] != 0 || rgba[1] != 0 || rgba[2] != 0) all_black = false;
         if (!report.empty()) report += ", ";
         report += "y=" + std::to_string(y) + " rgb(" + std::to_string(rgba[0]) + "," +
                   std::to_string(rgba[1]) + "," + std::to_string(rgba[2]) + ")";
@@ -417,6 +420,16 @@ void LibretroCoreScreenSource::probe_core_framebuffer(const CoreVideoFrame& fram
     gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     log_info("down the core's framebuffer at x=" + std::to_string(x) + ": " + report);
     gl::log_error_once("reading back the core's framebuffer");
+
+    // The symptom, recognised in the one place it can be: the core said it
+    // presented a picture, and every pixel sampled out of what it presented is
+    // black. Arm the call trace, so the next few frames say which of the core's
+    // OpenGL calls the driver is rejecting. There is no use asking for that up
+    // front -- by the time anyone knows to ask, the core has long since
+    // resolved its functions and cannot be given wrapped ones.
+    if (all_black) {
+        gl_trace::arm("the core presented a frame with nothing in it");
+    }
 }
 
 bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
