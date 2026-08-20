@@ -41,6 +41,10 @@ struct LibretroSourceConfig {
     std::string save_directory;
     // Where this game's cartridge save lives. Empty disables saving entirely.
     std::string save_path;
+    // Internal resolution multiplier the core renders at, clamped to what the
+    // system offers. Set before the core loads so the first frame is already
+    // the right size.
+    int render_scale = 1;
 };
 
 // The V1 ScreenSource: hosts the melonDS DS libretro core, pins it to a single
@@ -58,6 +62,11 @@ public:
     void close();
 
     void set_audio_callback(AudioCallback callback);
+    // Changes the core's internal resolution while it runs. The core answers
+    // with a new geometry and the split follows it, so nothing else has to be
+    // told. A system with no scale to choose ignores this.
+    void set_render_scale(int scale);
+    int render_scale() const { return render_scale_; }
     // The sink whose latched state the core reads each frame.
     CoreInputSink& input_sink() { return input_sink_; }
 
@@ -89,6 +98,9 @@ private:
     void upload_screens();
     // Tells the core where the touch screen sits in its own framebuffer.
     void apply_pointer_rect();
+    // Pins the core's resolution option to render_scale_, in whichever core's
+    // language this system speaks.
+    void apply_render_scale();
     // Crops one screen out of a GPU-rendered frame into `destination`.
     bool blit_screen(const CoreVideoFrame& frame,
                      Texture& destination,
@@ -114,6 +126,7 @@ private:
     std::unique_ptr<LibretroCore> core_;
     CoreInputSink input_sink_;
     SystemId system_ = SystemId::Ds;
+    int render_scale_ = 1;
     ScreenSplit split_;
     Texture top_texture_;
     Texture bottom_texture_;

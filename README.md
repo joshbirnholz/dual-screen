@@ -157,6 +157,27 @@ GamePad: new data rather than new arithmetic. Touch mapping reads the same
 solved rectangles — including any quarter turn, inverted — so a new layout gets
 working touch for free, sideways or not.
 
+## Render scale
+
+A 3DS renders at 400x240 and 320x240. Citra can draw the same frame at a
+multiple of that, and **Render** in the layout menu cycles between **1x**, **2x**
+and **3x** while the game runs. It changes how much the emulator draws and
+nothing else: the screens stay exactly where the layout puts them, at the same
+size, and only get sharper. A game remembers what it was last set to; the value
+a new game starts from is `"default_render_scale"` in `settings.json`.
+
+2x on a Deck's 1280x800 screen is the interesting one — the upper screen becomes
+800x480, which is most of the width it is drawn at, so the softness of an
+upscaled 400-pixel picture goes away. 3x fills a 1080p TV from the upper screen
+alone. Citra offers up to 10x; the menu stops at 3x because past that a handheld
+GPU pays for pixels nothing can show.
+
+The button only appears where it means something. A DS game does not have it:
+melonDS is pinned to its software renderer, which draws one pixel per DS pixel
+and has nothing to multiply. Neither does a companion device, which is being
+sent a picture rather than drawing one — the device running the game owns this
+setting, and it is the only one on that menu not shared between the two.
+
 ## Building on SteamOS
 
 ```sh
@@ -434,6 +455,7 @@ V1 does not script `shortcuts.vdf` for you.
   "core_path": "",
   "core_path_3ds": "",
   "default_bilinear_filtering": false,
+  "default_render_scale": 1,
   "audio_target": "both",
   "cursor_mode": "shown",
   "handedness": "right",
@@ -501,6 +523,11 @@ ctest --test-dir build --output-on-failure
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture, the frontend's own validation
   of what the core accepted, and the cartridge-save round trip.
+- `test_quick_settings` — taps a grid over the layout menu and counts which
+  taps do what, so the render-scale button is checked by being *found* rather
+  than by being told where it is: present on a 3DS game, absent on a DS game and
+  on a companion, and the six buttons beside it still each report their own
+  intent now that the row wraps.
 - `test_controller_input` — drives an SDL **virtual game controller** through
   the whole input path, so the face-button mapping is verified end to end with
   no hardware.
@@ -524,7 +551,9 @@ ctest --test-dir build --output-on-failure
   only happens if the whole window → DS → pointer → framebuffer → split →
   composite path agrees. It then launches the binary twice against one save
   directory and checks the game starts fresh the first time and restored the
-  second.
+  second. The 3DS half of it runs every shared layout twice, at 1x and at 2x,
+  and checks the screens land in exactly the same places both times — a render
+  scale that moved anything would be a different feature.
 
 The mock core means all of this runs with no melonDS core and no commercial ROM.
 

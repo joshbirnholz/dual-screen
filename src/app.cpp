@@ -243,6 +243,10 @@ struct App::Impl {
     // Which hand holds the stylus. Shared with the other device, since it
     // changes what both of them are drawing.
     Handedness handedness = Handedness::Right;
+    // How many pixels the core renders per console pixel. Belongs to whichever
+    // device is running the core, so it is never shared: a companion is shown
+    // the result and has nothing to set.
+    int render_scale = 1;
     std::string game_title;
     std::string resolved_core_path;
     // Which console the loaded game belongs to, and its screens. On a companion
@@ -302,6 +306,11 @@ struct App::Impl {
     void request_handedness(Handedness hand);
     // Applies and persists a host-side change to any of them.
     void adopt_filtering(bool bilinear);
+    // Not shared, so there is no request/adopt pair: the device running the
+    // core is the only one that has one to change.
+    void set_render_scale(int scale);
+    // The next scale in the cycle, wrapping at the system's maximum.
+    int next_render_scale() const;
     void adopt_audio_target(AudioTarget target);
     void adopt_handedness(Handedness hand);
     // Whether this device should be making sound right now.
@@ -618,8 +627,40 @@ void App::Impl::open_picker() {
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
     picker_state.handedness = handedness;
+    picker_state.render_scale = render_scale;
+    // A companion has no core, so the maximum it can offer is 1 whatever the
+    // system is -- rebuild_footer() reads that as "no button".
+    picker_state.max_render_scale =
+        source ? system_profile(system).max_render_scale : 1;
     picker->set_screens(screens_geometry());
     picker->open(picker_state);
+}
+
+int App::Impl::next_render_scale() const {
+    const int maximum = std::max(1, system_profile(system).max_render_scale);
+    return render_scale >= maximum ? 1 : render_scale + 1;
+}
+
+void App::Impl::set_render_scale(int scale) {
+    const int wanted = std::clamp(scale, 1, std::max(1, system_profile(system).max_render_scale));
+    if (wanted == render_scale) {
+        return;
+    }
+    render_scale = wanted;
+    if (source) {
+        source->set_render_scale(render_scale);
+        // Whatever the core actually accepted, which is what the menu shows.
+        render_scale = source->render_scale();
+    }
+    if (picker) {
+        picker->set_render_scale(render_scale);
+    }
+    if (have_game_config) {
+        persist_game_config();
+    } else {
+        settings.default_render_scale = render_scale;
+        settings.save(paths);
+    }
 }
 
 void App::Impl::request_filtering(bool bilinear) {
@@ -764,6 +805,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     // Where this device starts. Once a host is on the other end, both of these
     // come from it instead -- see the companion branch of the frame loop.
     bilinear_filtering = settings.default_bilinear_filtering;
+    render_scale = settings.default_render_scale;
     audio_target = settings.audio_target;
     handedness = settings.handedness;
     apply_filtering();
@@ -826,6 +868,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         have_game_config = true;
         active_layout_id = game_config.layout_id;
         bilinear_filtering = game_config.bilinear_filtering;
+        render_scale = game_config.render_scale;
     }
     if (!options.layout_id.empty()) {
         active_layout_id = options.layout_id;
@@ -870,6 +913,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // Named after the ROM rather than its hash, so saves are interchangeable
     // with RetroArch's and recognisable in a file listing.
     source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
+    source_config.render_scale = render_scale;
 
     source.reset(new LibretroCoreScreenSource());
     source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
@@ -903,6 +947,10 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                       fatal_on_failure);
         return false;
     }
+
+    // A scale from an older config, or one this system does not offer, is
+    // clamped by the source; the menu should show what the core was given.
+    render_scale = source->render_scale();
 
     frame_period = 1.0 / std::max(1.0, source->frames_per_second());
     std::string audio_error;
@@ -947,6 +995,7 @@ void App::Impl::persist_game_config() {
     }
     game_config.layout_id = active_layout_id;
     game_config.bilinear_filtering = bilinear_filtering;
+    game_config.render_scale = render_scale;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
@@ -1099,6 +1148,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (result.filtering_toggled) {
                 request_filtering(!bilinear_filtering);
+            }
+            if (result.render_scale_changed) {
+                set_render_scale(next_render_scale());
             }
             if (result.audio_target_changed) {
                 request_audio_target(next_audio_target(audio_target));

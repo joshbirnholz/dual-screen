@@ -43,6 +43,13 @@ constexpr const char* kOpt3dsSwapScreensValue = "Top";
 constexpr const char* kOpt3dsTouch = "citra_touch_touchscreen";
 // Its own on-screen pointer, which would sit on top of the one we draw.
 constexpr const char* kOpt3dsRenderTouch = "citra_render_touchscreen";
+// How many pixels Citra renders per 3DS pixel. Its values are spelled "2x",
+// "3x" and so on, with the first one written out in full.
+constexpr const char* kOpt3dsResolution = "citra_resolution_factor";
+
+std::string citra_resolution_value(int scale) {
+    return scale <= 1 ? std::string("1x (Native)") : std::to_string(scale) + "x";
+}
 
 std::string dimensions(int width, int height) {
     return std::to_string(width) + "x" + std::to_string(height);
@@ -116,6 +123,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
 
     system_ = config.system;
     const SystemProfile& profile = system_profile(system_);
+    render_scale_ = std::clamp(config.render_scale, 1, profile.max_render_scale);
 
     if (config.core_path.empty()) {
         if (error != nullptr) {
@@ -165,6 +173,8 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOpt3dsRenderTouch, "disabled"); // we draw our own pointer
             break;
     }
+    // After the layout, because it multiplies whatever that layout produces.
+    apply_render_scale();
 
     if (!core_->load(config.core_path, error)) {
         return false;
@@ -193,6 +203,9 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     save_path_ = config.save_path;
     load_save_ram();
 
+    if (profile.max_render_scale > 1) {
+        log_info("render scale " + std::to_string(render_scale_) + "x");
+    }
     log_info("core geometry " + std::to_string(core_->av_info().base_width) + "x" +
              std::to_string(core_->av_info().base_height) + " at " +
              std::to_string(core_->av_info().fps) + " fps, " +
@@ -349,6 +362,35 @@ void LibretroCoreScreenSource::log_split() {
     log_info("splitting " + dimensions(split_.frame_width, split_.frame_height) + " into a " +
              dimensions(split_.top_width, split_.top_height) + " upper screen and a " +
              dimensions(split_.bottom_width, split_.bottom_height) + " touch screen");
+}
+
+void LibretroCoreScreenSource::set_render_scale(int scale) {
+    const int wanted = std::clamp(scale, 1, system_profile(system_).max_render_scale);
+    if (wanted == render_scale_) {
+        return;
+    }
+    render_scale_ = wanted;
+    apply_render_scale();
+    // Nothing else to do here. The core picks the option up on its next frame,
+    // announces the framebuffer it now wants, and refresh_split_from_frame()
+    // re-derives the split from the frame that comes back -- which is the same
+    // path a core that resizes itself for any other reason takes.
+    log_info("render scale " + std::to_string(render_scale_) + "x");
+}
+
+void LibretroCoreScreenSource::apply_render_scale() {
+    if (!core_) {
+        return;
+    }
+    switch (system_) {
+        case SystemId::Ds:
+            // melonDS is pinned to its software renderer, which draws one pixel
+            // per DS pixel and has nothing to multiply.
+            break;
+        case SystemId::ThreeDs:
+            core_->force_option(kOpt3dsResolution, citra_resolution_value(render_scale_));
+            break;
+    }
 }
 
 void LibretroCoreScreenSource::apply_pointer_rect() {

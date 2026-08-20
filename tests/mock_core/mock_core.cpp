@@ -50,6 +50,13 @@ constexpr unsigned kBottomX = (kFrameWidth - kBottomWidth) / 2;
 // that path is the whole reason a 3DS core loads at all.
 constexpr bool kUsesHwRender = kIsThreeDs;
 
+// How many pixels this core draws per console pixel, the way Citra's
+// citra_resolution_factor works. The frame is still composed at 1x on the CPU
+// and stretched on the way to the frontend's framebuffer -- what matters here
+// is that the core announces a larger frame and then fills it.
+int g_render_scale = 1;
+constexpr int kMaxRenderScale = 10;  // as many as Citra offers
+
 retro_environment_t g_environment = nullptr;
 retro_video_refresh_t g_video_refresh = nullptr;
 retro_audio_sample_batch_t g_audio_batch = nullptr;
@@ -273,8 +280,10 @@ void present_through_gpu() {
     // Flipped on the way over: the frame is stored top row first, and this core
     // declares bottom_left_origin, so the frontend expects the bottom row at
     // y = 0.
-    gl_BlitFramebuffer(0, 0, kFrameWidth, kFrameHeight, 0, kFrameHeight, kFrameWidth, 0,
-                       kGlColorBufferBit, kGlNearest);
+    gl_BlitFramebuffer(0, 0, kFrameWidth, kFrameHeight, 0,
+                       static_cast<GLint_>(kFrameHeight * g_render_scale),
+                       static_cast<GLint_>(kFrameWidth * g_render_scale), 0, kGlColorBufferBit,
+                       kGlNearest);
     gl_BindFramebuffer(kGlReadFramebuffer, 0);
     gl_BindFramebuffer(kGlDrawFramebuffer, 0);
 
@@ -314,6 +323,22 @@ const retro_core_option_v2_definition kOptions[] = {
     {"citra_render_touchscreen", "Render simulated touchscreen interactions", nullptr, nullptr,
      nullptr, "screen",
      {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
+    // Citra's spelling, which is not "2" or "2.0" but "2x" -- with the first
+    // value written out in words. A mock that invented "1|2|3" here would have
+    // let the frontend send something the real core rejects.
+    {"citra_resolution_factor", "Resolution scale factor", nullptr, nullptr, nullptr, "video",
+     {{"1x (Native)", nullptr},
+      {"2x", nullptr},
+      {"3x", nullptr},
+      {"4x", nullptr},
+      {"5x", nullptr},
+      {"6x", nullptr},
+      {"7x", nullptr},
+      {"8x", nullptr},
+      {"9x", nullptr},
+      {"10x", nullptr},
+      {nullptr, nullptr}},
+     "1x (Native)"},
     {"melonds_number_of_screen_layouts", "Number of layouts", nullptr,
      "How many layouts to cycle through", nullptr, "screen",
      {{"1", nullptr}, {"2", nullptr}, {nullptr, nullptr}}, "2"},
@@ -352,6 +377,38 @@ std::string read_variable(const char* key) {
         return std::string();
     }
     return std::string(variable.value);
+}
+
+// Reads citra_resolution_factor and returns whether it changed. Parsed the way
+// Citra parses it: everything before the 'x'.
+bool refresh_render_scale() {
+    const std::string value = read_variable("citra_resolution_factor");
+    int scale = 1;
+    const std::size_t end = value.find('x');
+    if (end != std::string::npos && end > 0) {
+        scale = std::atoi(value.substr(0, end).c_str());
+    }
+    if (scale < 1 || scale > kMaxRenderScale) scale = 1;
+    if (scale == g_render_scale) return false;
+    g_render_scale = scale;
+    return true;
+}
+
+// What Citra does when its resolution changes mid-game: it hands the frontend a
+// whole new av_info, with the maximum pulled down to the new base, and draws at
+// that size from the very next frame.
+void announce_geometry() {
+    if (g_environment == nullptr) return;
+    struct retro_system_av_info info {};
+    info.geometry.base_width = kFrameWidth * g_render_scale;
+    info.geometry.base_height = kFrameHeight * g_render_scale;
+    info.geometry.max_width = info.geometry.base_width;
+    info.geometry.max_height = info.geometry.base_height;
+    info.geometry.aspect_ratio =
+        static_cast<float>(info.geometry.base_width) / static_cast<float>(info.geometry.base_height);
+    info.timing.fps = 59.8261;
+    info.timing.sample_rate = 32823.6;
+    g_environment(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &info);
 }
 
 inline uint32_t pack(uint8_t r, uint8_t g, uint8_t b) {
@@ -506,8 +563,8 @@ RETRO_API void retro_get_system_info(struct retro_system_info* info) {
 
 RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
     std::memset(info, 0, sizeof(*info));
-    info->geometry.base_width = kFrameWidth;
-    info->geometry.base_height = kFrameHeight;
+    info->geometry.base_width = kFrameWidth * g_render_scale;
+    info->geometry.base_height = kFrameHeight * g_render_scale;
     // Citra declares a maximum ten times its base, because that is its largest
     // resolution multiplier, while still rendering at the base size until the
     // player asks for more. The frontend sizes the core's framebuffer from the
@@ -565,6 +622,11 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
                                    (read_variable("melonds_number_of_screen_layouts") == "1") &&
                                    (read_variable("melonds_screen_gap") == "0");
     }
+    if (kUsesHwRender) {
+        // Before the frontend asks for the av_info, so the first frame is
+        // already the size the player asked for.
+        refresh_render_scale();
+    }
     return true;
 }
 
@@ -612,6 +674,14 @@ RETRO_API void retro_run(void) {
     if (g_input_poll != nullptr) {
         g_input_poll();
     }
+    // Options can change while the game runs; the resolution is the one that
+    // changes the size of what comes out.
+    bool options_changed = false;
+    if (g_environment != nullptr &&
+        g_environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &options_changed) && options_changed &&
+        kUsesHwRender && refresh_render_scale()) {
+        announce_geometry();
+    }
     check_frontend_left_default_gl_state();
 
     // On the first frame, report whether the frontend restored a save. The
@@ -650,7 +720,8 @@ RETRO_API void retro_run(void) {
     if (g_video_refresh != nullptr) {
         if (kUsesHwRender) {
             present_through_gpu();
-            g_video_refresh(RETRO_HW_FRAME_BUFFER_VALID, kFrameWidth, kFrameHeight, 0);
+            g_video_refresh(RETRO_HW_FRAME_BUFFER_VALID, kFrameWidth * g_render_scale,
+                            kFrameHeight * g_render_scale, 0);
         } else {
             g_video_refresh(g_framebuffer, kFrameWidth, kFrameHeight,
                             kFrameWidth * sizeof(uint32_t));

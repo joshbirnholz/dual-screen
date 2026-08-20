@@ -38,6 +38,10 @@ struct SystemProfile {
     std::string core_description;
     // The context this system's cores need to be given.
     GlContextNeed gl_context = GlContextNeed::Any;
+    // The largest internal resolution multiplier the quick settings offer for
+    // this system. 1 means the core draws at the console's own resolution and
+    // there is nothing to choose, so the button does not appear at all.
+    int max_render_scale = 1;
 };
 
 const SystemProfile& system_profile(SystemId id);

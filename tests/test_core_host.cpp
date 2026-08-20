@@ -280,6 +280,110 @@ void test_screen_source_handles_a_3ds_core() {
     source.close();
 }
 
+// Rendering at 2x changes how much the core draws and nothing else. The two
+// screens have to come out of the larger buffer whole, in the same places, and
+// the geometry the layouts are built from has to stay the console's own -- a
+// render scale that moved the screens around would be a different feature.
+void test_render_scale_only_changes_the_resolution() {
+    const char* path = std::getenv("DUALSCREEN_MOCK_CORE_3DS");
+    if (path == nullptr || path[0] == '\0') return;
+
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        test::skip("no OpenGL 3.3 context available for the 3DS core");
+        return;
+    }
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.system = SystemId::ThreeDs;
+    config.core_path = path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    config.render_scale = 2;
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK_MSG(source.warnings().empty(), "the core refused the resolution we asked for");
+    CHECK_EQ(source.render_scale(), 2);
+    CHECK_MSG(source.advance_frame(&error), error);
+
+    const CoreVideoFrame& frame = source.core_frame_for_test();
+    CHECK_EQ(static_cast<int>(frame.width), 800);
+    CHECK_EQ(static_cast<int>(frame.height), 960);
+    CHECK_EQ(source.split().top_width, 800);
+    CHECK_EQ(source.split().top_height, 480);
+    CHECK_EQ(source.split().bottom_width, 640);
+    CHECK_EQ(source.split().bottom_y, 480);
+    // Still centred, at the larger size: the narrower screen sits 80 pixels in
+    // rather than 40.
+    CHECK_EQ(source.split().bottom_x, 80);
+    // The part every layout is built from, which must not have moved.
+    CHECK_EQ(source.screens_geometry().top.width, 400);
+    CHECK_EQ(source.screens_geometry().top.height, 240);
+    CHECK_EQ(source.screens_geometry().bottom.width, 320);
+
+    const ScreenTextures& screens = source.screens();
+    CHECK_MSG(screens.top != nullptr && screens.bottom != nullptr,
+              "the upscaled frame did not become two screen textures");
+    if (screens.top != nullptr && screens.bottom != nullptr) {
+        CHECK_EQ(screens.top->width(), 800);
+        CHECK_EQ(screens.top->height(), 480);
+        CHECK_EQ(screens.bottom->width(), 640);
+        // The same two screens, still the right way up and not swapped: the
+        // crop followed the scale instead of reading the old rectangles.
+        uint8_t top_rgba[4] = {0, 0, 0, 0};
+        uint8_t bottom_rgba[4] = {0, 0, 0, 0};
+        CHECK(read_texture_pixel(*screens.top, 400, 240, top_rgba));
+        CHECK(read_texture_pixel(*screens.bottom, 320, 240, bottom_rgba));
+        CHECK_MSG(top_rgba[2] > top_rgba[1], "the upper screen was not where it should be at 2x");
+        CHECK_MSG(bottom_rgba[1] > bottom_rgba[2], "the touch screen was not where it should be at 2x");
+    }
+
+    // Changed while the game runs, which is the only way the menu can change
+    // it. The core picks the option up on its next frame and resizes itself.
+    source.set_render_scale(1);
+    CHECK_EQ(source.render_scale(), 1);
+    CHECK_MSG(source.advance_frame(&error), error);
+    CHECK_EQ(static_cast<int>(source.core_frame_for_test().width), 400);
+    CHECK_EQ(source.split().top_width, 400);
+    CHECK_EQ(source.split().bottom_x, 40);
+    CHECK_EQ(source.screens_geometry().top.width, 400);
+
+    // More than this system offers is clamped rather than sent to the core,
+    // which would reject a value it never declared.
+    source.set_render_scale(99);
+    CHECK_EQ(source.render_scale(), system_profile(SystemId::ThreeDs).max_render_scale);
+    CHECK_MSG(source.advance_frame(&error), error);
+    CHECK_MSG(source.warnings().empty(), "a clamped render scale still reached the core");
+    source.close();
+}
+
+// melonDS is pinned to its software renderer, so there is no scale to set and
+// asking for one changes nothing.
+void test_render_scale_is_ignored_where_there_is_none() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.core_path = core_path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    config.render_scale = 2;
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK_EQ(source.render_scale(), 1);
+    CHECK_MSG(source.advance_frame(&error), error);
+    CHECK_EQ(source.split().top_width, 256);
+    source.set_render_scale(3);
+    CHECK_EQ(source.render_scale(), 1);
+    source.close();
+}
+
 void test_screen_source_reports_missing_files_clearly() {
     LibretroCoreScreenSource source;
     std::string error;
@@ -403,6 +507,8 @@ int main() {
     test_core_loads_and_runs();
     test_screen_source_reports_a_valid_split();
     test_screen_source_handles_a_3ds_core();
+    test_render_scale_only_changes_the_resolution();
+    test_render_scale_is_ignored_where_there_is_none();
     test_screen_source_reports_missing_files_clearly();
     test_save_ram_round_trip();
     test_save_ram_is_skipped_without_a_path();

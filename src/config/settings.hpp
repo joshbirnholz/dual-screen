@@ -40,6 +40,11 @@ struct Settings {
     // Starting point for new games; each game remembers its own afterwards.
     bool default_bilinear_filtering = false;
 
+    // And the same for the internal render resolution. 1 means the core draws
+    // at the console's own resolution; a system whose core cannot upscale
+    // ignores it.
+    int default_render_scale = 1;
+
     // Which device plays the sound while two are connected. Chosen from the
     // layout menu rather than here, since it is the kind of thing that changes
     // with the room rather than once at setup.

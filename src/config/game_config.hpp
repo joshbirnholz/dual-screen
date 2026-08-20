@@ -19,6 +19,9 @@ struct GameConfig {
     // Smooth the screens when scaled up, or keep them pixel-crisp. Per game,
     // because it is a judgement about how one game looks.
     bool bilinear_filtering = false;
+    // How many pixels the core renders per console pixel. Per game for the same
+    // reason: how much a game can afford is a judgement about that game.
+    int render_scale = 1;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

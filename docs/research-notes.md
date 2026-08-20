@@ -147,6 +147,35 @@ that option's branch; the default branch (`citra_mouse_touchscreen`, on by
 default) takes its press from `RETRO_DEVICE_ID_MOUSE_LEFT`, which this frontend
 never sends.
 
+**Rendering at a higher internal resolution** is one more option in the same
+table, `citra_resolution_factor`, and it is the one the player actually gets to
+change: `1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x`, spelled exactly like that —
+`"2"` and `"2.0"` are not values it has, and the first one is written out in
+words. Citra parses everything before the `x`, so the frontend builds the string
+the same way.
+
+Changing it mid-game needed nothing new. Citra sees the change through
+`GET_VARIABLE_UPDATE` at the top of its next `retro_run`, recomputes its layout,
+and announces the result with a whole new `retro_system_av_info` — base *and*
+maximum both set to the new size. The existing path already handled that: the
+framebuffer grows on `SET_SYSTEM_AV_INFO`, the frame that comes back is measured
+rather than assumed, and `compute_top_bottom_split` derives its scale from
+`frame_width / max(top.width, bottom.width)`, which is exactly the "an upscaled
+buffer splits correctly with no change" claim above being cashed in. The only
+new code is the option string and the button.
+
+What does *not* change is `screens_geometry()`, which keeps reporting the
+console's own 400x240 and 320x240. Layout placement is computed from that and
+not from the texture sizes, so every layout puts the screens in the same place
+at any scale and only the sharpness differs — checked by running every shared
+3DS layout at 1x and 2x in the smoke test and comparing where the screens
+landed, and against the real core with a homebrew ROM, where the lit bounding
+box came out identical to the pixel.
+
+The menu stops at 3x. That is a judgement about the hardware, not a limit of the
+core: past 3x a Deck pays for pixels nothing can display, and a cycle through
+ten values is a worse control than a cycle through three.
+
 **The circle pad.** A 3DS is played with an analogue stick, and this frontend
 sent only digital buttons — so a 3DS game would have loaded, drawn and been
 impossible to walk around in. `DsInputState` now carries the stick in libretro's
@@ -421,6 +450,17 @@ session establishes it early enough. The extension picks the profile, the
 profile picks the core, and the choice rides the wire in the welcome message so
 the companion adopts the host's console rather than guessing from the frame
 size it happens to receive.
+
+**Why the render scale is the one menu entry not shared between devices.**
+Everything else on that menu is a property of the picture both devices are
+looking at, so the host owns it and broadcasts the result. The render scale is a
+setting on the core, and only one device is running a core: a companion has
+nothing to apply it to, and offering it there would be a button that does
+nothing or a request that changes the other device's frame rate from across the
+room. So it is absent on a companion, and absent again on a DS game, where
+melonDS is pinned to its software renderer and there is no multiplier to set.
+The rule the footer follows is that a button appears only where pressing it
+means something.
 
 **Why emulation pauses while the menu is open.** Comparing layouts is much
 easier against a still frame, and it removes any chance of a menu press leaking

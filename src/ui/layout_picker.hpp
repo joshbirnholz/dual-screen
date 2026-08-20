@@ -30,6 +30,9 @@ struct LayoutPickerResult {
     bool cursor_mode_changed = false;
     // Which hand holds the stylus was toggled, mirroring the handed layouts.
     bool handedness_changed = false;
+    // The render scale was cycled. Like the pointer, it belongs to this device
+    // alone -- it is a setting on the core, and only one device runs one.
+    bool render_scale_changed = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -47,6 +50,11 @@ struct LayoutPickerState {
     AudioTarget audio_target = AudioTarget::Both;
     CursorMode cursor_mode = CursorMode::Shown;
     Handedness handedness = Handedness::Right;
+    // How many pixels the core renders per console pixel, and the largest this
+    // system offers. A maximum of 1 means there is nothing to choose and the
+    // button does not appear.
+    int render_scale = 1;
+    int max_render_scale = 1;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -63,6 +71,7 @@ public:
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
+    void set_render_scale(int scale) { state_.render_scale = scale; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -109,7 +118,7 @@ private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
-    enum class Footer { Filtering, Hands, Sound, Cursor, Resume, Disconnect, Quit };
+    enum class Footer { Filtering, RenderScale, Hands, Sound, Cursor, Resume, Disconnect, Quit };
 
     struct Geometry {
         std::vector<PixelRect> tiles;

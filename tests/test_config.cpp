@@ -136,6 +136,7 @@ void test_game_config_round_trip() {
     Settings settings;
     settings.default_layout_id = "side_by_side";
     settings.default_bilinear_filtering = true;
+    settings.default_render_scale = 2;
 
     const std::string sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d";
 
@@ -143,12 +144,14 @@ void test_game_config_round_trip() {
     GameConfig fresh = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
     CHECK_STR_EQ(fresh.layout_id, "side_by_side");
     CHECK_EQ(fresh.bilinear_filtering, true);
+    CHECK_EQ(fresh.render_scale, 2);
     CHECK_STR_EQ(fresh.rom_sha1, sha1);
 
     fresh.layout_id = "vertical";
     // Deliberately the opposite of the default, so a reload that quietly fell
     // back to the default would be visible rather than looking like a pass.
     fresh.bilinear_filtering = false;
+    fresh.render_scale = 3;
     fresh.touch_last_played();
     CHECK(fresh.save(paths));
 
@@ -156,6 +159,7 @@ void test_game_config_round_trip() {
     const GameConfig reloaded = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
     CHECK_STR_EQ(reloaded.layout_id, "vertical");
     CHECK_EQ(reloaded.bilinear_filtering, false);
+    CHECK_EQ(reloaded.render_scale, 3);
     CHECK(!reloaded.last_played.empty());
 
     // The file is keyed by hash and carries the forward-compatible keys.
@@ -238,6 +242,7 @@ void test_settings_round_trip() {
     defaults.vsync = false;
     defaults.stick_deadzone = 0.5f;
     defaults.default_bilinear_filtering = true;
+    defaults.default_render_scale = 2;
     defaults.audio_target = AudioTarget::BottomScreen;
     defaults.cursor_mode = CursorMode::Hidden;
     CHECK(defaults.save(paths));
@@ -248,6 +253,7 @@ void test_settings_round_trip() {
     CHECK_EQ(reloaded.vsync, false);
     CHECK_NEAR(reloaded.stick_deadzone, 0.5f);
     CHECK_EQ(reloaded.default_bilinear_filtering, true);
+    CHECK_EQ(reloaded.default_render_scale, 2);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
 
@@ -259,6 +265,7 @@ void test_settings_round_trip() {
     const Settings recovered = Settings::load(paths);
     CHECK_STR_EQ(recovered.default_layout_id, "standard");
     CHECK_EQ(recovered.default_bilinear_filtering, false);
+    CHECK_EQ(recovered.default_render_scale, 1);
     CHECK(recovered.audio_target == AudioTarget::Both);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
 

@@ -479,6 +479,81 @@ foreach(CASE IN LISTS THREE_DS_CASES)
     endif()
 endforeach()
 
+# The same 3DS game with the core rendering at 2x. A larger framebuffer must
+# reach the screens as a sharper picture and nothing else: the split has to
+# follow the new size, and the two screens have to land in exactly the places
+# the layout put them at 1x. A render scale that moved anything would be a
+# different feature from the one the menu offers.
+set(SCALE_HOME "${WORK_DIR}/three-ds-2x")
+file(REMOVE_RECURSE "${SCALE_HOME}")
+file(WRITE "${SCALE_HOME}/config/dualscreen/settings.json" "{\"default_render_scale\": 2}")
+file(WRITE "${SCALE_HOME}/game.3ds" "dualscreen 3ds smoke test rom")
+
+foreach(CASE IN LISTS THREE_DS_CASES)
+    string(REPLACE "|" ";" PARTS "${CASE}")
+    list(GET PARTS 0 LAYOUT_ID)
+    list(GET PARTS 1 EXPECTATION_STRING)
+    string(REPLACE "+" ";" EXPECTATIONS "${EXPECTATION_STRING}")
+
+    file(REMOVE "${SCALE_HOME}/data/dualscreen/saves/game.srm")
+    set(SHOT "${SCALE_HOME}/${LAYOUT_ID}.ppm")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+                "XDG_CONFIG_HOME=${SCALE_HOME}/config"
+                "XDG_DATA_HOME=${SCALE_HOME}/data"
+                "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
+                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+                "${DUALSCREEN}"
+                    --game "${SCALE_HOME}/game.3ds"
+                    --core "${MOCK_CORE_3DS}"
+                    --layout "${LAYOUT_ID}"
+                    --windowed
+                    --exit-after-frames ${FRAME_COUNT}
+                    --screenshot "${SHOT}"
+        RESULT_VARIABLE RUN_RESULT
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR)
+
+    if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${SHOT}")
+        message(STATUS "${RUN_OUTPUT}")
+        message(STATUS "${RUN_ERROR}")
+        message(SEND_ERROR "the 2x run failed for layout ${LAYOUT_ID}")
+        set(ANY_FAILED TRUE)
+        continue()
+    endif()
+    if(NOT RUN_OUTPUT MATCHES "render scale 2x")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "the stored render scale did not reach the core")
+        set(ANY_FAILED TRUE)
+    endif()
+    # Twice the pixels in both directions, cut into the same two screens.
+    if(NOT RUN_OUTPUT MATCHES "splitting 800x960 into a 800x480 upper screen and a 640x480 touch screen")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "the upscaled framebuffer was not split at the new size")
+        set(ANY_FAILED TRUE)
+    endif()
+    # The value is spelled the way Citra spells it, and a core that rejected it
+    # would say so here rather than quietly rendering at 1x.
+    if(RUN_OUTPUT MATCHES "does not accept")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "the core refused the resolution the app asked for")
+        set(ANY_FAILED TRUE)
+    endif()
+
+    execute_process(
+        COMMAND "${CHECKER}" "${SHOT}" ${EXPECTATIONS}
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "3DS layout ${LAYOUT_ID} at 2x:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        message(SEND_ERROR "rendering at 2x moved the screens in layout ${LAYOUT_ID}")
+        set(ANY_FAILED TRUE)
+    endif()
+endforeach()
+
 # The layout menu, drawn right after a frame from a core that renders on the GPU
 # and hands the context back with its own state in it. That is the case where
 # the frontend's own rendering breaks: with the blending the core leaves behind,
