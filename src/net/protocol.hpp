@@ -20,7 +20,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 5;
+constexpr uint16_t kProtocolVersion = 6;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -110,6 +110,11 @@ struct RequestMessage {
     AudioTarget audio_target = AudioTarget::Both;
     bool wants_handedness = false;
     Handedness handedness = Handedness::Right;
+    // How many pixels the core renders per console pixel. The companion is not
+    // running a core, but the menu is one menu wherever it is opened from, so
+    // it asks the host the same way it asks for anything else.
+    bool wants_render_scale = false;
+    uint8_t render_scale = 1;
     // The companion has a menu up. The host pauses while either device does, so
     // both are looking at the same still frame.
     bool menu_open = false;
@@ -129,6 +134,7 @@ struct SessionStateMessage {
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
     Handedness handedness = Handedness::Right;
+    uint8_t render_scale = 1;
 };
 
 struct FrameMessage {

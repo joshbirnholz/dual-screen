@@ -41,10 +41,10 @@ int taps_that_cycle_the_scale(const LayoutRegistry& registry, const LayoutPicker
     return hits;
 }
 
-// The render scale is offered exactly where it can be acted on: on the device
-// running the core, for a system whose core can draw at more than one
-// resolution. Anywhere else the button would be a lie.
-void test_the_render_button_appears_only_where_it_means_something() {
+// The render scale is offered wherever the console being played has one to
+// choose. That is both devices: this is one menu that happens to be reachable
+// from either end, and a companion asks the host rather than acting locally.
+void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
     LayoutRegistry registry;
 
     LayoutPickerState playing;
@@ -54,18 +54,24 @@ void test_the_render_button_appears_only_where_it_means_something() {
     CHECK(playing.max_render_scale > 1);
     CHECK(taps_that_cycle_the_scale(registry, playing) > 0);
 
+    // The companion end of the same 3DS session: the same button, the same
+    // size, because it is the same menu.
+    LayoutPickerState companion = playing;
+    companion.companion = true;
+    companion.session_active = true;
+    CHECK(taps_that_cycle_the_scale(registry, companion) > 0);
+
     // A DS: melonDS is pinned to its software renderer, so there is nothing to
-    // choose and nothing to press.
+    // choose and nothing to press -- on either device.
     LayoutPickerState ds = playing;
     ds.max_render_scale = system_profile(SystemId::Ds).max_render_scale;
     CHECK_EQ(ds.max_render_scale, 1);
     CHECK_EQ(taps_that_cycle_the_scale(registry, ds), 0);
 
-    // A companion is not running the core, so the setting is not its to make
-    // even when the game is a 3DS game.
-    LayoutPickerState companion = playing;
-    companion.companion = true;
-    CHECK_EQ(taps_that_cycle_the_scale(registry, companion), 0);
+    LayoutPickerState ds_companion = ds;
+    ds_companion.companion = true;
+    ds_companion.session_active = true;
+    CHECK_EQ(taps_that_cycle_the_scale(registry, ds_companion), 0);
 }
 
 // The other footer buttons keep working with a seventh one among them: the row
@@ -111,7 +117,7 @@ void test_the_other_buttons_still_work() {
 }  // namespace
 
 int main() {
-    test_the_render_button_appears_only_where_it_means_something();
+    test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_other_buttons_still_work();
     return test::finish("quick-settings");
 }

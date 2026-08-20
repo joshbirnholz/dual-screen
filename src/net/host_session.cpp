@@ -69,7 +69,8 @@ void HostSession::set_session_state(const SharedState& state) {
     if (state.layout_id != shared_.layout_id ||
         state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
         state.bilinear_filtering != shared_.bilinear_filtering ||
-        state.audio_target != shared_.audio_target || state.handedness != shared_.handedness) {
+        state.audio_target != shared_.audio_target || state.handedness != shared_.handedness ||
+        state.render_scale != shared_.render_scale) {
         shared_ = state;
         session_state_dirty_ = true;
     }
@@ -217,6 +218,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_handedness = true;
                 request.handedness = request_.handedness;
             }
+            if (have_request_ && !request.wants_render_scale && request_.wants_render_scale) {
+                request.wants_render_scale = true;
+                request.render_scale = request_.render_scale;
+            }
             request_ = request;
             have_request_ = true;
             if (request.menu_open != companion_menu_open_) {
@@ -272,6 +277,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.bilinear_filtering = shared_.bilinear_filtering;
         state.audio_target = shared_.audio_target;
         state.handedness = shared_.handedness;
+        state.render_scale = static_cast<uint8_t>(shared_.render_scale);
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);

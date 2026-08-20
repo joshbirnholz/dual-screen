@@ -196,6 +196,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.bilinear_filtering ? 1u : 0u);
     put_u8(out, audio_target_to_wire(message.audio_target));
     put_u8(out, handedness_to_wire(message.handedness));
+    put_u8(out, message.render_scale);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -302,6 +303,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, audio_target_to_wire(message.audio_target));
     put_u8(out, message.wants_handedness ? 1u : 0u);
     put_u8(out, handedness_to_wire(message.handedness));
+    put_u8(out, message.wants_render_scale ? 1u : 0u);
+    put_u8(out, message.render_scale);
     put_u8(out, message.menu_open ? 1u : 0u);
     finish_message(out, start, MessageType::Request);
 }
@@ -314,6 +317,7 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     uint8_t audio = 0;
     uint8_t wants_hands = 0;
     uint8_t hands = 0;
+    uint8_t wants_scale = 0;
     uint8_t menu_open = 0;
     reader.string(out.layout_id);
     reader.u8(wants_filtering);
@@ -322,12 +326,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     reader.u8(audio);
     reader.u8(wants_hands);
     reader.u8(hands);
+    reader.u8(wants_scale);
+    reader.u8(out.render_scale);
     reader.u8(menu_open);
     if (!reader.ok()) return false;
     out.wants_filtering = (wants_filtering != 0);
     out.bilinear_filtering = (filtering != 0);
     out.wants_audio_target = (wants_audio != 0);
     out.wants_handedness = (wants_hands != 0);
+    out.wants_render_scale = (wants_scale != 0);
     out.menu_open = (menu_open != 0);
     if (!handedness_from_wire(hands, out.handedness)) return false;
     return audio_target_from_wire(audio, out.audio_target);
@@ -391,6 +398,7 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     reader.u8(filtering);
     reader.u8(audio);
     reader.u8(hands);
+    reader.u8(out.render_scale);
     if (!reader.ok()) return false;
     out.paused = (paused != 0);
     out.bilinear_filtering = (filtering != 0);

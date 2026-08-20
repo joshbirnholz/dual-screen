@@ -243,9 +243,9 @@ struct App::Impl {
     // Which hand holds the stylus. Shared with the other device, since it
     // changes what both of them are drawing.
     Handedness handedness = Handedness::Right;
-    // How many pixels the core renders per console pixel. Belongs to whichever
-    // device is running the core, so it is never shared: a companion is shown
-    // the result and has nothing to set.
+    // How many pixels the core renders per console pixel. Only the host runs a
+    // core, but the menu is one menu wherever it is opened from, so this is
+    // shared like everything else on it.
     int render_scale = 1;
     std::string game_title;
     std::string resolved_core_path;
@@ -304,11 +304,10 @@ struct App::Impl {
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
+    void request_render_scale(int scale);
     // Applies and persists a host-side change to any of them.
     void adopt_filtering(bool bilinear);
-    // Not shared, so there is no request/adopt pair: the device running the
-    // core is the only one that has one to change.
-    void set_render_scale(int scale);
+    void adopt_render_scale(int scale);
     // The next scale in the cycle, wrapping at the system's maximum.
     int next_render_scale() const;
     void adopt_audio_target(AudioTarget target);
@@ -628,10 +627,11 @@ void App::Impl::open_picker() {
     picker_state.cursor_mode = settings.cursor_mode;
     picker_state.handedness = handedness;
     picker_state.render_scale = render_scale;
-    // A companion has no core, so the maximum it can offer is 1 whatever the
-    // system is -- rebuild_footer() reads that as "no button".
+    // From the console being played, on both devices: a companion is shown the
+    // same menu as the host, and `system` follows the host while it is
+    // connected. Outside a game there is nothing to scale.
     picker_state.max_render_scale =
-        source ? system_profile(system).max_render_scale : 1;
+        (source || is_companion()) ? system_profile(system).max_render_scale : 1;
     picker->set_screens(screens_geometry());
     picker->open(picker_state);
 }
@@ -641,7 +641,15 @@ int App::Impl::next_render_scale() const {
     return render_scale >= maximum ? 1 : render_scale + 1;
 }
 
-void App::Impl::set_render_scale(int scale) {
+void App::Impl::request_render_scale(int scale) {
+    if (is_companion()) {
+        companion_session->request_render_scale(scale);
+        return;  // the host decides; it will tell us
+    }
+    adopt_render_scale(scale);
+}
+
+void App::Impl::adopt_render_scale(int scale) {
     const int wanted = std::clamp(scale, 1, std::max(1, system_profile(system).max_render_scale));
     if (wanted == render_scale) {
         return;
@@ -654,6 +662,12 @@ void App::Impl::set_render_scale(int scale) {
     }
     if (picker) {
         picker->set_render_scale(render_scale);
+    }
+    // A companion is following the host and has no game of its own to remember
+    // this against, so it changes what it displays and nothing on disk.
+    if (is_companion()) {
+        log_info("following the host: render scale " + std::to_string(render_scale) + "x");
+        return;
     }
     if (have_game_config) {
         persist_game_config();
@@ -1150,7 +1164,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 request_filtering(!bilinear_filtering);
             }
             if (result.render_scale_changed) {
-                set_render_scale(next_render_scale());
+                request_render_scale(next_render_scale());
             }
             if (result.audio_target_changed) {
                 request_audio_target(next_audio_target(audio_target));
@@ -1624,6 +1638,7 @@ int App::run(const AppOptions& options) {
             shared.bilinear_filtering = impl.bilinear_filtering;
             shared.audio_target = impl.audio_target;
             shared.handedness = impl.handedness;
+            shared.render_scale = impl.render_scale;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
@@ -1651,6 +1666,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_handedness) {
                     impl.adopt_handedness(request.handedness);
+                }
+                if (request.wants_render_scale) {
+                    impl.adopt_render_scale(request.render_scale);
                 }
             }
             // Whichever screen the companion took, the host shows the other.
@@ -1683,6 +1701,9 @@ int App::run(const AppOptions& options) {
                     log_info(std::string("following the host: ") +
                              system_profile(impl.system).name);
                 }
+                // After the console, which is what decides whether there is a
+                // scale to follow at all.
+                impl.adopt_render_scale(impl.companion_session->host_render_scale());
                 impl.local_screen = impl.companion_session->granted_screen();
             }
             // --connect joins the first host that offers the screen we asked

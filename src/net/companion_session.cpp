@@ -115,6 +115,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_filtering_ = state.bilinear_filtering;
             host_audio_target_ = state.audio_target;
             host_handedness_ = state.handedness;
+            host_render_scale_ = state.render_scale;
             granted_screen_ = state.companion_screen;
             break;
         }
@@ -292,6 +293,13 @@ void CompanionSession::request_handedness(Handedness handedness) {
     RequestMessage request;
     request.wants_handedness = true;
     request.handedness = handedness;
+    send_request(request);
+}
+
+void CompanionSession::request_render_scale(int scale) {
+    RequestMessage request;
+    request.wants_render_scale = true;
+    request.render_scale = static_cast<uint8_t>(scale < 1 ? 1 : scale);
     send_request(request);
 }
 

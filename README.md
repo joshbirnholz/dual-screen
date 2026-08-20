@@ -172,11 +172,13 @@ upscaled 400-pixel picture goes away. 3x fills a 1080p TV from the upper screen
 alone. Citra offers up to 10x; the menu stops at 3x because past that a handheld
 GPU pays for pixels nothing can show.
 
-The button only appears where it means something. A DS game does not have it:
-melonDS is pinned to its software renderer, which draws one pixel per DS pixel
-and has nothing to multiply. Neither does a companion device, which is being
-sent a picture rather than drawing one — the device running the game owns this
-setting, and it is the only one on that menu not shared between the two.
+It is shared like everything else on that menu. Only the host is running a core,
+but the menu is one menu reachable from either device: a companion shows the same
+button, and pressing it asks the host, which changes the core and broadcasts the
+result back. Neither device decides it locally, so the two cannot disagree.
+
+A DS game does not have the button at all: melonDS is pinned to its software
+renderer, which draws one pixel per DS pixel and has nothing to multiply.
 
 ## Building on SteamOS
 

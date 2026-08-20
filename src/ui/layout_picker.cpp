@@ -28,10 +28,11 @@ void LayoutPicker::rebuild_footer() {
     footer_.push_back(Footer::Filtering);
     // Next to smoothing, because the two are the same kind of question -- how
     // the picture is made -- and both are judged against the frame behind the
-    // menu. It is absent where there is nothing to choose: on a companion,
-    // which is not running the core, and on a system whose core draws at one
-    // fixed resolution.
-    if (!state_.companion && state_.max_render_scale > 1) {
+    // menu. It is absent only where there is nothing to choose: a system whose
+    // core draws at one fixed resolution, or no game at all. A companion gets
+    // it like every other entry here -- one menu, reachable from either device
+    // -- and asks the host to make the change.
+    if (state_.max_render_scale > 1) {
         footer_.push_back(Footer::RenderScale);
     }
     // Which hand holds the stylus decides which side the small screen sits on.

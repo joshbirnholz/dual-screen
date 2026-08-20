@@ -451,16 +451,17 @@ profile picks the core, and the choice rides the wire in the welcome message so
 the companion adopts the host's console rather than guessing from the frame
 size it happens to receive.
 
-**Why the render scale is the one menu entry not shared between devices.**
-Everything else on that menu is a property of the picture both devices are
-looking at, so the host owns it and broadcasts the result. The render scale is a
-setting on the core, and only one device is running a core: a companion has
-nothing to apply it to, and offering it there would be a button that does
-nothing or a request that changes the other device's frame rate from across the
-room. So it is absent on a companion, and absent again on a DS game, where
-melonDS is pinned to its software renderer and there is no multiplier to set.
-The rule the footer follows is that a button appears only where pressing it
-means something.
+**Why the render scale is shared like everything else on that menu.** It is
+tempting to treat it as the host's private business, since the host is the only
+device running a core. That is the wrong seam: the in-game menu is one menu that
+happens to be reachable from either device, and a player holding the companion
+should not have to walk over to the other machine to change how the game looks.
+So it travels the same road as smoothing, handedness and the sound target — the
+companion asks, the host applies it to the core, and the result comes back as
+session state. The rule the footer actually follows is that a button appears
+where there is something to choose, not where the machinery happens to live: a
+DS game has no button, because melonDS is pinned to its software renderer and
+there is no multiplier to set.
 
 **Why emulation pauses while the menu is open.** Comparing layouts is much
 easier against a still frame, and it removes any chance of a menu press leaking

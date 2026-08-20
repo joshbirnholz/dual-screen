@@ -72,6 +72,7 @@ void test_welcome_and_session_round_trip() {
     state.bilinear_filtering = true;
     state.audio_target = AudioTarget::TopScreen;
     state.handedness = Handedness::Left;
+    state.render_scale = 3;
 
     buffer.clear();
     encode_session_state(state, buffer);
@@ -86,6 +87,7 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(received_state.bilinear_filtering, true);
     CHECK(received_state.audio_target == AudioTarget::TopScreen);
     CHECK(received_state.handedness == Handedness::Left);
+    CHECK_EQ(static_cast<int>(received_state.render_scale), 3);
 }
 
 // Everything a companion can ask the host for travels in one message, each
@@ -100,6 +102,8 @@ void test_request_round_trip() {
     sent.audio_target = AudioTarget::BottomScreen;
     sent.wants_handedness = true;
     sent.handedness = Handedness::Left;
+    sent.wants_render_scale = true;
+    sent.render_scale = 2;
     sent.menu_open = true;
 
     std::vector<uint8_t> buffer;
@@ -118,6 +122,8 @@ void test_request_round_trip() {
     CHECK(received.audio_target == AudioTarget::BottomScreen);
     CHECK_EQ(received.wants_handedness, true);
     CHECK(received.handedness == Handedness::Left);
+    CHECK_EQ(received.wants_render_scale, true);
+    CHECK_EQ(static_cast<int>(received.render_scale), 2);
     CHECK_EQ(received.menu_open, true);
 
     // A request that means none of it round-trips as such rather than as an
@@ -132,12 +138,13 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_filtering, false);
     CHECK_EQ(received_quiet.wants_audio_target, false);
     CHECK_EQ(received_quiet.wants_handedness, false);
+    CHECK_EQ(received_quiet.wants_render_scale, false);
     CHECK_EQ(received_quiet.menu_open, false);
 
     // An audio target outside the three that exist is refused rather than
     // becoming one of them by accident.
     std::vector<uint8_t> corrupt(payload);
-    corrupt[corrupt.size() - 4] = 9;  // the audio target byte
+    corrupt[corrupt.size() - 6] = 9;  // the audio target byte
     RequestMessage rejected;
     CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
 }

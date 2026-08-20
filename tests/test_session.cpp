@@ -50,13 +50,15 @@ void set_shared(HostSession& host,
                 const std::string& layout_id,
                 bool bilinear_filtering = false,
                 AudioTarget audio_target = AudioTarget::Both,
-                Handedness handedness = Handedness::Right) {
+                Handedness handedness = Handedness::Right,
+                int render_scale = 1) {
     HostSession::SharedState shared;
     shared.layout_id = layout_id;
     shared.per_device_layout = (layout_id == "upper_on_tv");
     shared.bilinear_filtering = bilinear_filtering;
     shared.audio_target = audio_target;
     shared.handedness = handedness;
+    shared.render_scale = render_scale;
     host.set_session_state(shared);
 }
 
@@ -480,6 +482,20 @@ void test_shared_settings_stay_in_sync() {
     CHECK_MSG(spin(host, companion,
                    [&] { return companion.host_handedness() == Handedness::Left; }),
               "the host's handedness never reached the companion");
+
+    // And the render scale, which only the host can actually act on -- it is
+    // the one running a core. The companion still asks for it from the same
+    // menu, because there is only one menu.
+    companion.request_render_scale(2);
+    const bool asked_scale = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_render_scale;
+    });
+    CHECK_MSG(asked_scale, "the render scale request never reached the host");
+    CHECK_EQ(static_cast<int>(request.render_scale), 2);
+
+    set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2);
+    CHECK_MSG(spin(host, companion, [&] { return companion.host_render_scale() == 2; }),
+              "the host's render scale never reached the companion");
 
     companion.disconnect();
     host.stop();
