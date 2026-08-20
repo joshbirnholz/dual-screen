@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Runs two real dualscreen processes against the mock core -- one hosting, one
-# joining -- and checks each ends up showing its own half of the game.
+# joining -- and checks each ends up showing its own half of the game, and that
+# touching the companion's screen reaches the game on the host.
 #
 # The host is pinned to the split-across-devices layout, so a correct session
 # leaves the host showing only the top screen (blue) and the companion showing
@@ -66,6 +67,7 @@ SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
         --connect "$COMPANION_SCREEN" \
         --core "$MOCK_CORE" \
         --windowed \
+        --simulate-touch 0.5,0.25 \
         --exit-after-seconds 9 \
         --screenshot-at-seconds 6 \
         --screenshot "$COMPANION_SHOT" \
@@ -120,12 +122,26 @@ check_shot() {
 # core paints the top screen blue and the bottom one green, so which colour
 # lands where is exactly the question of whether the companion got the screen it
 # asked for.
+#
+# The companion also holds a touch a quarter of the way down its own window.
+# Where that lands is the whole point: the companion fills its window with the
+# one screen it owns, so a touch has to be mapped against that and not against
+# the shared two-screen layout. The mock core draws its crosshair wherever the
+# frontend said the DS was touched, and the host streams that screen back, so
+# the crosshair reappearing at the point that was touched proves the mapping,
+# the trip to the host and the trip back.
+#
+# Holding the top screen means holding no touchscreen at all, so there the same
+# touch must reach nothing -- and the host, which owns the bottom screen in
+# that case, must show a clean one.
 if [ "$COMPANION_SCREEN" = "top" ]; then
     check_shot "$HOST_SHOT" "center=green" "host"
     check_shot "$COMPANION_SHOT" "center=blue" "companion"
+    check_shot "$HOST_SHOT" "nocrosshair=yes" "host's bottom screen"
 else
     check_shot "$HOST_SHOT" "center=blue" "host"
     check_shot "$COMPANION_SHOT" "center=green" "companion"
+    check_shot "$COMPANION_SHOT" "crosshair=0.500,0.250" "companion's touch"
 fi
 
 if [ "$FAILED" -ne 0 ]; then

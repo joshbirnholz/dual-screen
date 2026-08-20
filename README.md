@@ -233,6 +233,7 @@ Full options:
 | Open/close the layout menu | **F1** or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
+| Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 

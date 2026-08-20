@@ -14,6 +14,7 @@
 #include "config/sha1.hpp"
 #include "core/libretro_screen_source.hpp"
 #include "input/controller_mapping.hpp"
+#include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/compositor.hpp"
@@ -253,6 +254,9 @@ struct App::Impl {
     void handle_ui(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
     // How long the last frame took, so screens that need a clock have one.
     double last_delta_seconds = 0.0;
+    CursorVisibility cursor;
+    // What SDL was last told, so it is only told when the answer changes.
+    bool cursor_shown = false;
     void render();
     bool write_screenshot(const std::string& path);
 };
@@ -343,9 +347,9 @@ bool App::Impl::create_window(std::string* error) {
 
         log_info(std::string("created a ") + attempt.description + " context");
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
-        // No pointer on screen. The mouse only exists here as a stand-in for
-        // the touchscreen, and an arrow parked over the game is exactly the
-        // kind of thing that gives away that this is not a console.
+        // No pointer on screen to begin with: an arrow parked over the game is
+        // exactly the kind of thing that gives away that this is not a console.
+        // It comes back while the mouse is being moved -- see CursorVisibility.
         SDL_ShowCursor(SDL_DISABLE);
         refresh_output_size();
         return true;
@@ -1098,6 +1102,7 @@ int App::run(const AppOptions& options) {
         }
 
         impl.last_delta_seconds = elapsed;
+        impl.cursor.update(elapsed);
         impl.input.begin_frame();
 
         // Test hook: hold a touch at a fixed spot by pushing the same events a
@@ -1115,6 +1120,14 @@ int App::run(const AppOptions& options) {
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
             impl.input.handle_event(event);
+            // A real mouse brings the pointer back; a finger does not. SDL
+            // reports touches as mouse events from SDL_TOUCH_MOUSEID, and a tap
+            // on the touchscreen should not put an arrow on the screen.
+            if ((event.type == SDL_MOUSEMOTION && event.motion.which != SDL_TOUCH_MOUSEID) ||
+                (event.type == SDL_MOUSEBUTTONDOWN && event.button.which != SDL_TOUCH_MOUSEID) ||
+                (event.type == SDL_MOUSEWHEEL && event.wheel.which != SDL_TOUCH_MOUSEID)) {
+                impl.cursor.notice_mouse_activity();
+            }
             if (event.type == SDL_WINDOWEVENT) {
                 if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
                     impl.audio.set_paused(true);
@@ -1128,11 +1141,22 @@ int App::run(const AppOptions& options) {
                 }
             }
         }
+        if (impl.cursor.visible() != impl.cursor_shown) {
+            impl.cursor_shown = impl.cursor.visible();
+            SDL_ShowCursor(impl.cursor_shown ? SDL_ENABLE : SDL_DISABLE);
+        }
+
         if (impl.input.window_size_changed()) {
             impl.refresh_output_size();
         }
 
-        impl.input.end_frame(impl.active_layout(), static_cast<float>(impl.output_width),
+        // Touches are mapped against what this device is actually showing, not
+        // against the shared layout. On "one screen per device" the two differ
+        // completely: the device holding the bottom screen fills its window
+        // with it, while the shared layout still describes a stacked pair, so
+        // mapping against the shared one put every touch in the wrong place.
+        const Layout touch_layout = impl.device_layout();
+        impl.input.end_frame(touch_layout, static_cast<float>(impl.output_width),
                              static_cast<float>(impl.output_height));
 
         if (impl.input.quit_requested()) {

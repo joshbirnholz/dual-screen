@@ -10,6 +10,7 @@
 
 #include "config/paths.hpp"
 #include "input/ds_input.hpp"
+#include "input/cursor_visibility.hpp"
 #include "input/held_input_gate.hpp"
 #include "ui/game_browser.hpp"
 
@@ -117,6 +118,40 @@ void test_default_browse_dirs_all_exist() {
     for (const std::string& candidate : candidates) {
         CHECK_MSG(directory_exists(candidate), candidate + " does not exist");
     }
+}
+
+// The pointer has to be reachable without being permanently on screen: hidden
+// until the mouse moves, back for a couple of seconds, gone again.
+void test_cursor_auto_hides() {
+    CursorVisibility cursor(2.0);
+
+    // Nothing has been touched yet, so there is no arrow over the game.
+    CHECK(!cursor.visible());
+    cursor.update(10.0);
+    CHECK(!cursor.visible());
+
+    // Moving the mouse brings it straight back.
+    cursor.notice_mouse_activity();
+    CHECK(cursor.visible());
+
+    // It stays up while the mouse is being used, however long that goes on.
+    for (int frame = 0; frame < 100; ++frame) {
+        cursor.update(1.0 / 60.0);
+        cursor.notice_mouse_activity();
+        CHECK(cursor.visible());
+    }
+
+    // Held still, it survives a moment and then goes.
+    cursor.update(1.5);
+    CHECK_MSG(cursor.visible(), "the pointer vanished while the mouse was barely still");
+    cursor.update(0.6);
+    CHECK(!cursor.visible());
+
+    // And it comes back again afterwards -- hiding is not one-way.
+    cursor.notice_mouse_activity();
+    CHECK(cursor.visible());
+    cursor.update(2.0);
+    CHECK(!cursor.visible());
 }
 
 // The bug this guards: dismissing a menu with A left the button physically
@@ -236,6 +271,7 @@ int main() {
     test_browser_navigation();
     test_default_browse_dirs_all_exist();
     test_held_input_gate();
+    test_cursor_auto_hides();
     test_duplicate_confirms_navigate_once();
     test_confirm_on_a_rom_chooses_it();
     return test::finish("browser");

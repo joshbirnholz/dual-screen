@@ -307,3 +307,24 @@ whenever the menu was open. The picker now ignores the action and is told the
 result instead. What proved it is the end-to-end check: the smoke test renders
 one frame each way and asserts the two pictures differ, which no unit test on
 the stored flag could have seen.
+
+**Why touch is mapped against what one device is showing.** The compositor drew
+with the per-device layout while the touch mapping still used the shared one.
+For every layout that shows both screens on both devices those are the same
+object, so nothing was wrong until "one screen per device" arrived -- there the
+companion fills its window with the bottom screen while the shared layout still
+describes a stacked pair, so the upper half of the companion's screen mapped to
+nothing at all and the lower half landed at roughly double the offset. Both now
+come from `device_layout()`. The two-process test holds a touch on the
+companion and checks the mock core's crosshair comes back at the same point,
+which fails in exactly the reported way against the old code; the top-screen run
+asserts the opposite, that a device holding no touchscreen sends nothing.
+
+**Why the pointer auto-hides rather than being gone.** It was hidden outright,
+which is right for a console but wrong for a trackpad: the bottom screen is a
+touchscreen, and an arrow you cannot see is one you cannot aim. It now appears
+on mouse movement and hides two seconds after the movement stops. Touches do not
+count as movement -- SDL reports them as mouse events from `SDL_TOUCH_MOUSEID`,
+and a tap that left an arrow on the screen would be the original problem back
+again. The timing lives in `CursorVisibility` rather than in the event loop so
+it can be tested without a mouse.
