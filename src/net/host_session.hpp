@@ -127,6 +127,9 @@ private:
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
     bool companion_menu_open_ = false;
+    // Send the current screens once more even if nothing has changed, because
+    // what the companion needs has.
+    bool resend_screens_ = true;
     bool have_request_ = false;
     RequestMessage request_;
 };

@@ -44,23 +44,26 @@ struct CompositorStyle {
     // Drawn where a screen was routed away from this device, so the player can
     // see the layout is intact even though the picture is elsewhere.
     Color remote_placeholder{0.10f, 0.18f, 0.26f, 1.0f};
+    // What surrounds the console artwork. It is the artwork's own background
+    // colour, so the picture has no edge: the frame simply ends.
+    Color bezel_background{37.0f / 255.0f, 37.0f / 255.0f, 37.0f / 255.0f, 1.0f};
 };
 
-// Draws the DS's own shell into `frame`, behind the screens the Standard layout
+// Draws the console artwork into `frame`, behind the screens the Standard layout
 // places inside it. Shared with the layout picker so a preview tile looks like
-// what picking it will give you.
-//
-// It is built from flat rectangles because that is the whole of the renderer:
-// no image ships with the app, and a photograph of a console would be someone
-// else's artwork. What it aims for is a silhouette that reads as a DS at a
-// glance, at both tile size and full screen.
-void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame);
+// what picking it will give you. With no artwork loaded it draws nothing, and
+// the screens still land where they belong.
+void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* art);
 
 // Draws a resolved layout's screens into the output window.
 class Compositor {
 public:
     void set_style(const CompositorStyle& style) { style_ = style; }
     const CompositorStyle& style() const { return style_; }
+
+    // The console artwork, for the layout that draws one. Set once, after the
+    // GL context exists; null simply means nothing is drawn behind the screens.
+    void set_bezel_art(const Texture* art) { bezel_art_ = art; }
 
     void render(QuadRenderer& quads,
                 const Layout& layout,
@@ -71,6 +74,7 @@ public:
 
 private:
     CompositorStyle style_;
+    const Texture* bezel_art_ = nullptr;
 };
 
 }  // namespace ds

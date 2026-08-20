@@ -6,7 +6,7 @@
 //
 // Usage: check_screenshot <file.ppm> <region>=<colour> [...]
 //   regions: upper lower left right center topleft
-//   colours: blue green black orange
+//   colours: blue green black orange bezel shell
 //
 // `at=<x>,<y>,<colour>` checks one point given as fractions of the window, for
 // the layouts that put a screen somewhere none of the named regions land.
@@ -133,6 +133,13 @@ bool matches_colour(const std::string& expected, double r, double g, double b) {
         // The letterbox around the screens has to be genuinely black, not
         // merely dark: a lifted background reads as a frame on an OLED.
         return (r < 2.0) && (g < 2.0) && (b < 2.0);
+    }
+    if (expected == "bezel") {
+        // The surround the Standard layout uses: the console artwork's own
+        // background colour, #252525, rather than the black everything else
+        // sits on.
+        return std::fabs(r - 37.0) < 6.0 && std::fabs(g - 37.0) < 6.0 &&
+               std::fabs(b - 37.0) < 6.0;
     }
     if (expected == "shell") {
         // The Standard layout's console body: bright, and near enough grey that

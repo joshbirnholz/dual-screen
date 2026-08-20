@@ -159,20 +159,19 @@ void test_layouts_match_the_wii_u() {
     }
 }
 
-// Standard is the console itself: the shell keeps a real DS's proportions
-// whatever shape the window is, and it is the one layout that is never smoothed.
+// Standard is the console itself: the artwork keeps a real DS's proportions
+// whatever shape the window is, and the screens sit exactly where its own
+// screens are.
 void test_standard_is_the_console() {
     const LayoutRegistry registry;
     const Layout& standard = *registry.find("standard");
     CHECK(standard.bezel);
-    CHECK(standard.forbids_filtering);
     CHECK(standard.frame_aspect > 0.0f);
 
-    // Nothing else claims either.
+    // Nothing else draws a console around itself.
     for (const Layout& layout : registry.layouts()) {
         if (layout.id == "standard") continue;
         CHECK_MSG(!layout.bezel, layout.id + " draws a console shell");
-        CHECK_MSG(!layout.forbids_filtering, layout.id + " refuses smoothing");
     }
 
     // The frame is letterboxed inside the window, so the shell is the same shape

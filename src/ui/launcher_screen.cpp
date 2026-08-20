@@ -20,14 +20,6 @@ const char* const kTitles[kLauncherRowCount] = {
     "Quit",
 };
 
-const char* const kDetails[kLauncherRowCount] = {
-    "Play here, on this device",
-    "Show the top screen of a game running on another device",
-    "Show the bottom screen, and use this device's touchscreen",
-    "Folders, the pointer, and what a new game starts with",
-    "",
-};
-
 LauncherChoice choice_for_row(int row) {
     switch (row) {
         case 0: return LauncherChoice::LoadGame;
@@ -47,7 +39,7 @@ std::vector<PixelRect> LauncherScreen::compute_rows(float output_width,
     const float line = TextRenderer::line_height(out_scale);
     const float margin = std::round(output_width * 0.12f);
     const float width = output_width - margin * 2.0f;
-    const float row_height = line * 3.4f;
+    const float row_height = line * 2.4f;
     const float top = std::round(output_height * 0.30f);
 
     std::vector<PixelRect> rows;
@@ -146,12 +138,11 @@ void LauncherScreen::render(QuadRenderer& quads,
 
         const float pad = line * 0.7f;
         const bool is_quit = (choice_for_row(static_cast<int>(index)) == LauncherChoice::Quit);
-        text.draw(quads, kTitles[index], row.x + pad, row.y + pad * 0.8f, scale * 1.2f,
+        // Centred on the row, since there is nothing under it any more: the
+        // names say what they do without a sentence explaining them.
+        text.draw(quads, kTitles[index], row.x + pad,
+                  row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
                   is_quit ? theme.danger : theme.text);
-        if (kDetails[index][0] != '\0') {
-            text.draw(quads, kDetails[index], row.x + pad, row.y + pad * 0.8f + line * 1.5f,
-                      scale * 0.9f, theme.text_dim);
-        }
     }
 
     // Live feedback that the search is working, so "connect" is not a leap of

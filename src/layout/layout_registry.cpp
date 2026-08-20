@@ -8,19 +8,22 @@
 namespace ds {
 namespace {
 
-// Real Nintendo DS proportions, which is what makes the Standard layout read as
-// a console rather than as a border: the body is 148.7 x 84.7 mm per half and
-// the active area of a screen is 61.8 x 46.4 mm.
-constexpr float kShellWidthPerScreen = 148.7f / 61.8f;   // 2.406
-constexpr float kShellHalfHeightPerScreen = 84.7f / 46.4f;  // 1.825
+// The Standard layout draws a picture of a DS, and its screens have to land on
+// that picture's screens exactly. These come from the artwork itself
+// (assets/ds_bezel.png, 615 x 630) and its companion overlay, where the screens
+// are 256 x 192 -- one image pixel per DS pixel -- at (179, 60) and (179, 337).
+constexpr float kShellImageWidth = 615.0f;
+constexpr float kShellImageHeight = 630.0f;
+constexpr float kShellAspect = kShellImageWidth / kShellImageHeight;
+constexpr float kShellScreenX = 179.0f / kShellImageWidth;
+constexpr float kShellScreenWidth = 256.0f / kShellImageWidth;
+constexpr float kShellScreenHeight = 192.0f / kShellImageHeight;
+constexpr float kShellTopScreenY = 60.0f / kShellImageHeight;
+constexpr float kShellBottomScreenY = 337.0f / kShellImageHeight;
 
-// A screen is 4:3, so the whole open console is this much wider than it is tall.
-constexpr float kShellAspect = (kShellWidthPerScreen * 4.0f / 3.0f) /
-                               (kShellHalfHeightPerScreen * 2.0f);
-
-// Where each screen sits inside that shell, as a fraction of the whole.
-constexpr float kShellScreenWidth = 1.0f / kShellWidthPerScreen;             // 0.416
-constexpr float kShellScreenHeight = 1.0f / (kShellHalfHeightPerScreen * 2.0f);  // 0.274
+// Room to breathe around the console, so it does not sit hard against the edges
+// of the window.
+constexpr float kShellMargin = 0.03f;
 
 // Everything below is measured off the Wii U Virtual Console's own output, on
 // the 378 x 212 pixel picture it draws inside the TV frame in its Screen
@@ -113,17 +116,20 @@ LayoutRegistry::LayoutRegistry() {
         layout.id = "standard";
         layout.display_name = "Standard Nintendo DS";
         layout.frame_aspect = kShellAspect;
+        layout.frame_margin = kShellMargin;
         layout.bezel = true;
-        // The shell is the point of this one, and a blurred screen inside a
-        // crisp plastic body looks like a mistake. The Wii U does not offer
-        // smoothing here either.
-        layout.forbids_filtering = true;
+        // Stretch rather than contain: these rects are already the screens'
+        // exact shape, and letterboxing inside them would leave a hairline of
+        // the artwork's black showing along an edge.
         layout.placements = {
-            make_placement((1.0f - kShellScreenWidth) * 0.5f, 0.25f - kShellScreenHeight * 0.5f,
-                           kShellScreenWidth, kShellScreenHeight, ScreenId::Top),
-            make_placement((1.0f - kShellScreenWidth) * 0.5f, 0.75f - kShellScreenHeight * 0.5f,
-                           kShellScreenWidth, kShellScreenHeight, ScreenId::Bottom),
+            make_placement(kShellScreenX, kShellTopScreenY, kShellScreenWidth, kShellScreenHeight,
+                           ScreenId::Top),
+            make_placement(kShellScreenX, kShellBottomScreenY, kShellScreenWidth,
+                           kShellScreenHeight, ScreenId::Bottom),
         };
+        for (ScreenPlacement& placement : layout.placements) {
+            placement.fit = ScreenFit::Stretch;
+        }
         layouts_.push_back(layout);
     }
 

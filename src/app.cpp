@@ -17,6 +17,7 @@
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
+#include "render/bezel_art.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_loader.hpp"
 #include "render/quad_renderer.hpp"
@@ -188,6 +189,9 @@ struct App::Impl {
     TextRenderer text;
     Compositor compositor;
     LocalOutputRouter router;
+    // Lives as long as the GL context does, and no longer: created just after
+    // the window, destroyed just before it.
+    BezelArt bezel_art;
     InputManager input;
     AudioOutput audio;
 
@@ -261,9 +265,6 @@ struct App::Impl {
     void adopt_filtering(bool bilinear);
     void adopt_audio_target(AudioTarget target);
     void adopt_handedness(Handedness hand);
-    // Smoothing as it should actually be applied. The Standard layout draws the
-    // console around the screens and is never smoothed, whatever is remembered.
-    bool effective_filtering() const;
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
@@ -372,6 +373,17 @@ bool App::Impl::create_window(std::string* error) {
         }
 
         log_info(std::string("created a ") + attempt.description + " context");
+        std::string art_error;
+        if (bezel_art.load(&art_error)) {
+            compositor.set_bezel_art(bezel_art.texture());
+            if (picker) {
+                picker->set_bezel_art(bezel_art.texture());
+            }
+        } else {
+            // Not fatal: the Standard layout still puts the screens where they
+            // belong, it just has nothing drawn behind them.
+            log_warn("cannot draw the console artwork: " + art_error);
+        }
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
         // No pointer on screen to begin with: an arrow parked over the game is
         // exactly the kind of thing that gives away that this is not a console.
@@ -388,6 +400,12 @@ bool App::Impl::create_window(std::string* error) {
 }
 
 void App::Impl::destroy_window() {
+    // Before the context that owns it.
+    bezel_art.destroy();
+    compositor.set_bezel_art(nullptr);
+    if (picker) {
+        picker->set_bezel_art(nullptr);
+    }
     text.shutdown();
     quads.shutdown();
     if (gl_context != nullptr) {
@@ -460,14 +478,7 @@ void App::Impl::open_picker() {
     picker->open(picker_state);
 }
 
-bool App::Impl::effective_filtering() const {
-    return bilinear_filtering && !active_layout().forbids_filtering;
-}
-
 void App::Impl::request_filtering(bool bilinear) {
-    if (active_layout().forbids_filtering) {
-        return;  // not on offer for this layout, so R3 means nothing here
-    }
     if (is_companion()) {
         companion_session->request_filtering(bilinear);
         return;  // the host decides; it will tell us
@@ -550,7 +561,7 @@ bool App::Impl::sound_plays_here() const {
 
 void App::Impl::apply_filtering() {
     if (ScreenSource* drawing = active_source()) {
-        drawing->set_filtering(effective_filtering());
+        drawing->set_filtering(bilinear_filtering);
     }
     if (picker) {
         picker->set_filtering(bilinear_filtering);
@@ -781,12 +792,20 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Message: {
             if (message.update(actions, pointers, last_delta_seconds)) {
                 message.clear();
-                if (!message_is_fatal) {
-                    const bool joined =
-                        companion_session &&
-                        companion_session->status() != net::CompanionSession::Status::Failed;
-                    state = joined ? State::Companion : State::Playing;
+                if (!message_is_fatal && is_companion()) {
+                    state = State::Companion;
                     input.set_game_input_enabled(true);
+                } else if (!message_is_fatal && source) {
+                    state = State::Playing;
+                    input.set_game_input_enabled(true);
+                } else if (!message_is_fatal || launcher) {
+                    // Nothing here to go back to: this device was showing
+                    // somebody else's game and that session is over. The main
+                    // menu is where it came from and where it can start again.
+                    if (companion_session) {
+                        companion_session->disconnect();
+                    }
+                    open_launcher();
                 } else if (launcher) {
                     // Getting here through the launcher means there is
                     // somewhere to go back to, so a failure is not the end of
@@ -875,7 +894,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     log_warn("could not remember the browsed folder");
                 }
             }
-            if (result.quit_requested) {
+            if (result.back_requested) {
+                open_launcher();
+            } else if (result.quit_requested) {
                 running = false;
             } else if (result.game_chosen) {
                 settings.last_browse_dir = browser->current_directory();
@@ -1171,6 +1192,7 @@ int App::run(const AppOptions& options) {
 
     impl.input.initialize(impl.settings);
     impl.picker.reset(new LayoutPicker(impl.registry));
+    impl.picker->set_bezel_art(impl.bezel_art.texture());
     impl.settings_screen.reset(new SettingsScreen(impl.registry, impl.paths));
     impl.active_layout_id = impl.settings.default_layout_id;
     impl.resolved_core_path = resolve_core_path(options, impl.settings);
@@ -1464,22 +1486,6 @@ int App::run(const AppOptions& options) {
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
                 impl.frame_accumulator = 0.0;
             }
-            // Hand the freshly rendered screens to the companion, if any. The
-            // serial only advances when the pixels actually changed, so an
-            // unchanged frame costs nothing on the wire.
-            if (impl.host_session && impl.host_session->has_companion()) {
-                const CoreVideoFrame& frame = impl.source->core_frame_for_test();
-                const ScreenSplit& split = impl.source->split();
-                if (frame.valid() && split.valid) {
-                    const uint32_t* base = frame.pixels;
-                    const int stride = static_cast<int>(frame.stride_pixels);
-                    impl.host_session->publish_screens(
-                        base + static_cast<std::size_t>(split.top_y) * stride + split.top_x,
-                        base + static_cast<std::size_t>(split.bottom_y) * stride + split.bottom_x,
-                        split.screen_width, split.screen_height, stride, frame.serial);
-                }
-            }
-
             impl.save_flush_accumulator += elapsed;
             if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
                 impl.save_flush_accumulator = 0.0;
@@ -1491,6 +1497,24 @@ int App::run(const AppOptions& options) {
             }
         } else if (impl.companion_session && impl.state == Impl::State::Companion) {
             impl.companion_session->send_input(impl.input.ds_state());
+        }
+
+        // Hand the current screens to the companion, if any. The serial only
+        // advances when the pixels actually changed, so an unchanged frame costs
+        // nothing on the wire -- which is why this can sit outside the emulation
+        // step. It has to: a paused game still owes the other device a picture
+        // when what it needs changes, and while paused no new frame is coming.
+        if (impl.source && impl.host_session && impl.host_session->has_companion()) {
+            const CoreVideoFrame& frame = impl.source->core_frame_for_test();
+            const ScreenSplit& split = impl.source->split();
+            if (frame.valid() && split.valid) {
+                const uint32_t* base = frame.pixels;
+                const int stride = static_cast<int>(frame.stride_pixels);
+                impl.host_session->publish_screens(
+                    base + static_cast<std::size_t>(split.top_y) * stride + split.top_x,
+                    base + static_cast<std::size_t>(split.bottom_y) * stride + split.bottom_x,
+                    split.screen_width, split.screen_height, stride, frame.serial);
+            }
         }
 
         if (impl.source && !game_running) {

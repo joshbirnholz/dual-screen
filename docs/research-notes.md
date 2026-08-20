@@ -480,3 +480,37 @@ thumb reaches it. In Touch Screen Focus the small one is the upper screen, and i
 sits at the top, for the same reason. The alignment is a property of the screen,
 not of the layout, which is why it is a field on the item rather than on the
 composition.
+
+**Why the console is an image now, and how it gets into the binary.** The shell
+was drawn from flat quads because no image shipped with the app. Given a real
+illustration, the drawn one has nothing to recommend it. The image lives in
+`assets/` as an ordinary PNG -- viewable, replaceable -- and CMake turns it into
+a source file at build time, so the binary is still the only thing that has to
+be copied to a Deck. Decoding it costs a hundred lines against the zlib the
+network protocol already links: PNG is chunk headers, one inflate, and undoing
+five row filters.
+
+The screens are placed from coordinates measured out of the artwork's own
+overlay -- 256 x 192 at (179, 60) and (179, 337) in a 615 x 630 image, one image
+pixel per DS pixel. They use Stretch rather than Contain: the rectangles are
+already exactly the screens' shape, and letterboxing inside them would leave a
+hairline of the illustration showing along an edge. A test checks the placements
+against those coordinates *and* that the artwork is dark at the middle of each
+one, so a re-exported image that shifted would be caught rather than leaving the
+screens sitting slightly off their own wells.
+
+The surround is #252525 rather than black because that is the image's own
+background: the picture then has no edge, it simply ends. Smoothing applies to
+this layout like any other -- the earlier reasoning, that a blurred screen inside
+crisp plastic looks like a mistake, did not survive contact with the real
+artwork.
+
+**Why a paused host still sends frames.** Under "Upper Screen on TV" the
+companion is only sent the screen it shows. Opening its menu makes it need both,
+since the preview tiles draw every layout -- and opening its menu also pauses the
+host, so no new frame is ever produced to carry the other screen across. The
+companion sat looking at whatever stale copy it happened to have, or at a
+coloured block. Publishing now happens whether or not the game advanced, and the
+host re-sends the current frame once whenever what the companion needs changes.
+Both halves are load-bearing: removing either one leaves the test looking at an
+empty screen.

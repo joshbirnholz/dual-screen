@@ -25,12 +25,7 @@ void LayoutPicker::open(const LayoutPickerState& state) {
 
 void LayoutPicker::rebuild_footer() {
     footer_.clear();
-    // Standard draws the console around the screens, and a blurred screen inside
-    // a crisp plastic body looks like a mistake rather than a console -- so that
-    // layout does not offer smoothing at all, exactly as the Wii U does not.
-    if (!registry_->resolve(selected_layout_id_).forbids_filtering) {
-        footer_.push_back(Footer::Filtering);
-    }
+    footer_.push_back(Footer::Filtering);
     // Which hand holds the stylus decides which side the small screen sits on.
     // One button rather than a left-handed twin of every layout.
     footer_.push_back(Footer::Hands);
@@ -211,8 +206,6 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         if (id != selected_layout_id_) {
             selected_layout_id_ = id;
             result.selection_changed = true;
-            // Whether Smoothing is on offer depends on which layout is chosen.
-            rebuild_footer();
         }
         return true;
     }
@@ -308,13 +301,15 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
 void LayoutPicker::draw_preview(QuadRenderer& quads,
                                 const Layout& layout,
                                 const PixelRect& box,
-                                const ScreenTextures* screens) {
+                                const ScreenTextures* screens,
+                                const Texture* bezel_art) {
     const UiTheme& theme = ui_theme();
-    quads.draw_solid(box, Color{0.02f, 0.03f, 0.05f, 1.0f});
+    // The tile shows what the layout shows, background included.
+    quads.draw_solid(box, layout.bezel ? Color{37.0f / 255.0f, 37.0f / 255.0f, 37.0f / 255.0f, 1.0f}
+                                       : Color{0.02f, 0.03f, 0.05f, 1.0f});
 
-    const PixelRect frame = layout_frame(layout, box);
     if (layout.bezel) {
-        draw_ds_shell(quads, frame);
+        draw_ds_shell(quads, layout_frame(layout, box), bezel_art);
     }
 
     for (const PlacedScreen& placed : place_screens(layout, box)) {
@@ -390,7 +385,8 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens);
+        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens,
+                     bezel_art_);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,

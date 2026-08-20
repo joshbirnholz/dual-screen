@@ -39,7 +39,23 @@ if(NOT nlohmann_json_FOUND)
     endif()
 endif()
 
+# The console artwork the Standard layout draws, turned into a source file so it
+# travels inside the binary. Regenerated whenever the image changes.
+set(DS_BEZEL_ASSET "${CMAKE_CURRENT_SOURCE_DIR}/assets/ds_bezel.png")
+set(DS_BEZEL_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/ds_bezel_png.cpp")
+add_custom_command(
+    OUTPUT "${DS_BEZEL_SOURCE}"
+    COMMAND ${CMAKE_COMMAND}
+            -DINPUT=${DS_BEZEL_ASSET}
+            -DOUTPUT=${DS_BEZEL_SOURCE}
+            -DSYMBOL=kDsBezelPng
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_asset.cmake
+    DEPENDS "${DS_BEZEL_ASSET}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_asset.cmake"
+    COMMENT "Embedding assets/ds_bezel.png"
+    VERBATIM)
+
 add_library(dualscreen_core STATIC
+    ${DS_BEZEL_SOURCE}
     src/app.cpp
     src/audio/audio_output.cpp
     src/config/game_config.cpp
@@ -60,9 +76,11 @@ add_library(dualscreen_core STATIC
     src/net/protocol.cpp
     src/net/transport.cpp
     src/layout/layout_registry.cpp
+    src/render/bezel_art.cpp
     src/render/compositor.cpp
     src/render/font.cpp
     src/render/gl_loader.cpp
+    src/render/png_image.cpp
     src/render/quad_renderer.cpp
     src/render/text_renderer.cpp
     src/render/texture.cpp

@@ -119,12 +119,15 @@ struct Layout {
     // one whatever shape the window is.
     float frame_aspect = 0.0f;
 
+    // Padding around that frame, as a fraction of the window, so a layout that
+    // draws something with edges of its own does not press them against the
+    // edges of the display.
+    float frame_margin = 0.0f;
+
     // Draw the DS's own shell around the screens. Only Standard does: it is the
     // layout that says "this is a Nintendo DS" rather than "these are two
-    // pictures", and that is also why it is not smoothed -- a shell drawn around
-    // a blurred screen looks like a mistake rather than a console.
+    // pictures".
     bool bezel = false;
-    bool forbids_filtering = false;
 };
 
 // Which hand holds the stylus. Layouts that put one screen beside another are

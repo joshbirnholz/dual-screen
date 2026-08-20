@@ -24,6 +24,8 @@ struct GameBrowserResult {
     std::string chosen_path;
     // The browsed directory changed, so the remembered one is worth updating.
     bool directory_changed = false;
+    // Back to where the browser was opened from, rather than up a folder.
+    bool back_requested = false;
     bool quit_requested = false;
 };
 
@@ -62,6 +64,7 @@ private:
     struct Geometry {
         PixelRect panel;
         PixelRect list;
+        PixelRect back_button;
         PixelRect quit_button;
         float row_height = 0.0f;
         float scale = 1.0f;

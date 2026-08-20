@@ -133,9 +133,18 @@ GameBrowser::Geometry GameBrowser::compute_geometry(float output_width, float ou
 
     const float button_width = std::min(geometry.panel.w * 0.3f,
                                         TextRenderer::measure_width("  Quit  ", geometry.scale) * 2.0f);
-    geometry.quit_button = PixelRect{geometry.panel.x + geometry.panel.w - button_width,
-                                     geometry.panel.y + geometry.panel.h - footer + line * 0.4f,
-                                     button_width, line * 2.0f};
+    const float button_y = geometry.panel.y + geometry.panel.h - footer + line * 0.4f;
+    const float button_height = line * 2.0f;
+    geometry.quit_button = PixelRect{geometry.panel.x + geometry.panel.w - button_width, button_y,
+                                     button_width, button_height};
+    // Beside Quit, because leaving the browser and leaving the app are the two
+    // ways out and they belong together.
+    const float back_width = std::min(
+        geometry.panel.w * 0.35f,
+        TextRenderer::measure_width("  Main menu  ", geometry.scale) * 1.4f);
+    geometry.back_button =
+        PixelRect{geometry.quit_button.x - back_width - line * 0.6f, button_y, back_width,
+                  button_height};
     return geometry;
 }
 
@@ -210,10 +219,15 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 }
                 break;
             case UiAction::Cancel:
-                // Up a level, which is what Back means in a file browser.
-                if (!navigated && !rows_.empty() && rows_.front().is_parent) {
-                    navigate_to(rows_.front().path);
-                    result.directory_changed = true;
+                // Up a level, which is what Back means in a file browser -- and
+                // out of the browser entirely once there is no level left.
+                if (!navigated) {
+                    if (!rows_.empty() && rows_.front().is_parent) {
+                        navigate_to(rows_.front().path);
+                        result.directory_changed = true;
+                    } else {
+                        result.back_requested = true;
+                    }
                     navigated = true;
                 }
                 break;
@@ -240,6 +254,8 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
         } else if (pointer.released) {
             if (geometry.quit_button.contains(pointer.x, pointer.y)) {
                 result.quit_requested = true;
+            } else if (geometry.back_button.contains(pointer.x, pointer.y)) {
+                result.back_requested = true;
             } else if (!navigated && dragging_ && !drag_moved_ &&
                        geometry.list.contains(pointer.x, pointer.y)) {
                 const int row = scroll_ + static_cast<int>((pointer.y - geometry.list.y) /
@@ -343,6 +359,11 @@ void GameBrowser::render(QuadRenderer& quads,
                          theme.accent);
     }
 
+    quads.draw_solid(geometry.back_button, theme.panel);
+    text.draw(quads, "Main menu", geometry.back_button.x + geometry.back_button.w * 0.5f,
+              geometry.back_button.y + (geometry.back_button.h - line) * 0.5f, scale, theme.text,
+              TextAlign::Center);
+
     quads.draw_solid(geometry.quit_button, theme.panel);
     text.draw(quads, "Quit", geometry.quit_button.x + geometry.quit_button.w * 0.5f,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale, theme.danger,
@@ -351,11 +372,12 @@ void GameBrowser::render(QuadRenderer& quads,
     // Kept clear of the Quit button rather than running underneath it. The
     // letters come from what this pad prints, so the hint names the button the
     // player is actually looking at.
-    const float hint_width = geometry.quit_button.x - geometry.panel.x - line;
-    const std::string hint = format_prompts({{labels.confirm, "Open"},
-                                             {labels.cancel, "Up a folder"},
-                                             {"L/R", "Page"},
-                                             {"Drag", "Scroll"}});
+    const float hint_width = geometry.back_button.x - geometry.panel.x - line;
+    // Short enough to fit beside two buttons. Cancel goes up a folder while
+    // there is one to go up to and out of the browser once there is not, which
+    // "Back" covers either way.
+    const std::string hint = format_prompts(
+        {{labels.confirm, "Open"}, {labels.cancel, "Back"}, {"L/R", "Page"}});
     text.draw(quads, TextRenderer::elide_left(hint, hint_width, scale * 0.9f), geometry.panel.x,
               geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale * 0.9f,
               theme.text_dim);

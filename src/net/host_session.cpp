@@ -62,6 +62,10 @@ void HostSession::set_host_screen(ScreenId screen) {
 }
 
 void HostSession::set_session_state(const SharedState& state) {
+    if (state.per_device_layout != shared_.per_device_layout) {
+        // The set of screens the companion needs depends on this.
+        resend_screens_ = true;
+    }
     if (state.layout_id != shared_.layout_id ||
         state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
         state.bilinear_filtering != shared_.bilinear_filtering ||
@@ -101,6 +105,8 @@ void HostSession::drop_companion(const std::string& reason) {
     request_ = RequestMessage();
     // Nobody is holding a menu open on a device that has gone.
     companion_menu_open_ = false;
+    resend_screens_ = false;
+    sent_serial_ = 0;
     refresh_beacon();
 }
 
@@ -108,8 +114,13 @@ bool HostSession::companion_wants(ScreenId screen) const {
     if (!has_companion()) {
         return false;
     }
-    // Under a per-device layout the companion only needs its own screen. Under
-    // any other it draws the whole thing, so it needs both.
+    // With its menu up the companion draws every layout in miniature, so it
+    // needs both screens whatever the live layout is.
+    if (companion_menu_open_) {
+        return true;
+    }
+    // Under a per-device layout it only needs its own screen. Under any other it
+    // draws the whole thing, so it needs both.
     if (shared_.per_device_layout) {
         return screen == companion_screen_;
     }
@@ -209,6 +220,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             have_request_ = true;
             if (request.menu_open != companion_menu_open_) {
                 companion_menu_open_ = request.menu_open;
+                // What it needs has just changed, and a paused game will not
+                // produce a new frame to carry the change across.
+                resend_screens_ = true;
                 // A menu takes the companion's hands off the game. Whatever it
                 // was holding when the menu opened would otherwise stay held
                 // for as long as the menu is up, since only changes are sent.
@@ -338,7 +352,15 @@ void HostSession::publish_screens(const uint32_t* top_pixels,
                                   int height,
                                   int stride_pixels,
                                   uint64_t serial) {
-    if (!has_companion() || serial == sent_serial_) {
+    if (!has_companion()) {
+        return;
+    }
+    // Normally an unchanged frame costs nothing: the serial only moves when the
+    // pixels do. But when the companion starts needing a screen it was not being
+    // sent -- it opened its menu, whose previews show both -- the pixels may
+    // never change again while it waits, since a menu pauses the game. So a
+    // change in what it needs forces one send of whatever is current.
+    if (serial == sent_serial_ && !resend_screens_) {
         return;
     }
     // Never let the send queue grow without bound: a companion that cannot keep
@@ -372,6 +394,7 @@ void HostSession::publish_screens(const uint32_t* top_pixels,
         companion_.send(out);
     }
     sent_serial_ = serial;
+    resend_screens_ = false;
 }
 
 }  // namespace ds::net

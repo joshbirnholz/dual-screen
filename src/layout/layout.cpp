@@ -237,13 +237,23 @@ PixelRect layout_frame(const Layout& layout, const PixelRect& window) {
         return window;
     }
     PixelRect frame = window;
-    const float window_aspect = window.w / window.h;
+    if (layout.frame_margin > 0.0f) {
+        frame.x += window.w * layout.frame_margin;
+        frame.y += window.h * layout.frame_margin;
+        frame.w -= window.w * layout.frame_margin * 2.0f;
+        frame.h -= window.h * layout.frame_margin * 2.0f;
+        if (frame.w <= 0.0f || frame.h <= 0.0f) {
+            return window;
+        }
+    }
+    const PixelRect available = frame;
+    const float window_aspect = available.w / available.h;
     if (window_aspect > layout.frame_aspect) {
-        frame.w = window.h * layout.frame_aspect;
-        frame.x = window.x + (window.w - frame.w) * 0.5f;
+        frame.w = available.h * layout.frame_aspect;
+        frame.x = available.x + (available.w - frame.w) * 0.5f;
     } else {
-        frame.h = window.w / layout.frame_aspect;
-        frame.y = window.y + (window.h - frame.h) * 0.5f;
+        frame.h = available.w / layout.frame_aspect;
+        frame.y = available.y + (available.h - frame.h) * 0.5f;
     }
     return frame;
 }

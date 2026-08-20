@@ -63,14 +63,11 @@ public:
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
+    // The console artwork, drawn inside the Standard layout's tile.
+    void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
-    void set_selected_layout(const std::string& layout_id) {
-        if (layout_id != selected_layout_id_) {
-            selected_layout_id_ = layout_id;
-            rebuild_footer();
-        }
-    }
+    void set_selected_layout(const std::string& layout_id) { selected_layout_id_ = layout_id; }
     bool filtering() const { return state_.bilinear_filtering; }
     AudioTarget audio_target() const { return state_.audio_target; }
     bool is_open() const { return open_; }
@@ -99,7 +96,8 @@ public:
     static void draw_preview(QuadRenderer& quads,
                              const Layout& layout,
                              const PixelRect& box,
-                             const ScreenTextures* screens = nullptr);
+                             const ScreenTextures* screens = nullptr,
+                             const Texture* bezel_art = nullptr);
 
 private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
@@ -126,8 +124,8 @@ private:
     bool activate_focus(LayoutPickerResult& result);
 
     std::string footer_label(Footer kind) const;
-    // Which buttons the footer carries depends on the session and on which
-    // layout is selected, so it is built rather than fixed.
+    // Which buttons the footer carries depends on the session, so it is built
+    // per-open rather than fixed.
     void rebuild_footer();
 
     const LayoutRegistry* registry_;
@@ -136,6 +134,7 @@ private:
     std::string selected_layout_id_;
     std::vector<Footer> footer_;
     LayoutPickerState state_;
+    const Texture* bezel_art_ = nullptr;
 };
 
 }  // namespace ds

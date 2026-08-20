@@ -539,6 +539,72 @@ void test_companion_menu_pauses_the_host() {
     host.stop();
 }
 
+// A companion showing one screen still needs both the moment its menu opens: the
+// preview tiles draw every layout, including the one it is not being sent. The
+// catch is that a menu also pauses the game, so no new frame is coming to carry
+// the change across -- the host has to re-send what it already has.
+void test_menu_gets_the_companion_both_screens() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Screens Host";
+    config.game_title = "Screens";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    if (!companion.begin_search("Screens Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00112233u);
+    const std::vector<uint32_t> bottom = flat_screen(0x00445566u);
+    auto publish = [&](uint64_t serial) {
+        host.publish_screens(top.data(), bottom.data(), kDsScreenWidth, kDsScreenHeight,
+                             kDsScreenWidth, serial);
+    };
+
+    // One screen each: the companion holds the bottom one and is sent only that.
+    publish(1);
+    CHECK_MSG(spin(host, companion, [&] { return companion.has_screen(ScreenId::Bottom); }),
+              "the companion never got the screen it owns");
+    CHECK_MSG(!companion.has_screen(ScreenId::Top),
+              "the companion was sent a screen it does not show");
+
+    // Now its menu goes up. The game is paused from here on, so the serial never
+    // moves again -- and the top screen still has to arrive.
+    companion.set_menu_open(true);
+    CHECK(spin(host, companion, [&] { return host.companion_menu_open(); }));
+    const bool arrived = spin(host, companion, [&] {
+        publish(1);  // the same frame, over and over, exactly as a paused host does
+        return companion.has_screen(ScreenId::Top);
+    });
+    CHECK_MSG(arrived, "the other screen never reached the companion's menu");
+    if (arrived) {
+        // Close, not equal: RGB565 is lossy. What matters is that it is the top
+        // screen's pixels rather than a copy of the bottom's.
+        const uint32_t pixel = companion.sample_pixel(ScreenId::Top);
+        CHECK_MSG(std::abs(static_cast<int>((pixel >> 16) & 0xff) - 0x11) <= 8 &&
+                      std::abs(static_cast<int>(pixel & 0xff) - 0x33) <= 8,
+                  "the wrong screen arrived for the menu");
+    }
+
+    companion.disconnect();
+    host.stop();
+}
+
 // Either end can end the session.
 void test_host_can_disconnect_the_companion() {
     HostSession host;
@@ -585,6 +651,7 @@ int main() {
     test_companion_can_request_a_layout();
     test_shared_settings_stay_in_sync();
     test_companion_menu_pauses_the_host();
+    test_menu_gets_the_companion_both_screens();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
 }

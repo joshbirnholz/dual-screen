@@ -62,10 +62,10 @@ the touch screen is under whichever hand holds the stylus. It is one toggle
 rather than a left-handed twin of every layout, and it turns the sideways
 screens the other way too.
 
-`standard` is the only layout that is never smoothed: it draws the console's
-plastic around the screens, and a blurred picture inside a crisp shell reads as
-a mistake. The **Smoothing** entry disappears while it is selected, which is
-what the Wii U does as well.
+`standard` draws an illustration of the console itself and puts the two screens
+exactly where its own are, on a #252525 surround rather than black — that is the
+artwork's own background colour, so the picture has no visible edge. See
+[THIRD_PARTY.md](THIRD_PARTY.md) for a note about where that image came from.
 
 `upper_on_tv` is the two-device layout: each device fills itself with the screen
 it owns. Pick any other and both devices show the whole thing, which is what you

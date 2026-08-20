@@ -28,7 +28,7 @@ set(SAVE_FILE "${WORK_DIR}/data/dualscreen/saves/fake.srm")
 # none of the named regions reach -- the small screen of the two focus layouts --
 # the point is given outright.
 set(CASES
-    "standard|upper=blue+lower=green+topleft=black+at=0.5,0.55,shell"
+    "standard|upper=blue+lower=green+at=0.03,0.06,bezel+at=0.30,0.20,shell"
     "upper_focus|left=blue+at=0.86,0.785,green"
     "touch_focus|right=green+at=0.115,0.145,blue"
     "vertical|upper=blue+lower=green+topleft=black"
@@ -325,9 +325,8 @@ if(FILTER_SHOT_COUNT EQUAL 2)
     endif()
 endif()
 
-# ...and the Standard layout is the one place it must make no difference at all,
-# whatever settings.json remembers. A blurred screen inside a crisp plastic body
-# reads as a mistake, so that layout refuses smoothing outright.
+# ...including the Standard layout, whose screens are small enough inside the
+# console artwork that it would be easy for the setting never to reach them.
 set(STANDARD_SHOTS "")
 foreach(FILTERING true false)
     set(STANDARD_HOME "${WORK_DIR}/standard-${FILTERING}")
@@ -367,14 +366,14 @@ if(STANDARD_SHOT_COUNT EQUAL 2)
     list(GET STANDARD_SHOTS 0 STANDARD_ON_SHOT)
     list(GET STANDARD_SHOTS 1 STANDARD_OFF_SHOT)
     execute_process(
-        COMMAND "${CHECKER}" "${STANDARD_ON_SHOT}" "same=${STANDARD_OFF_SHOT}"
+        COMMAND "${CHECKER}" "${STANDARD_ON_SHOT}" "differs=${STANDARD_OFF_SHOT}"
         RESULT_VARIABLE CHECK_RESULT
         OUTPUT_VARIABLE CHECK_OUTPUT
         ERROR_VARIABLE CHECK_ERROR)
     message(STATUS "standard, smoothing on vs off:\n${CHECK_OUTPUT}")
     if(NOT CHECK_RESULT EQUAL 0)
         message(STATUS "${CHECK_ERROR}")
-        message(SEND_ERROR "the Standard layout was smoothed after all")
+        message(SEND_ERROR "smoothing did not reach the Standard layout's screens")
         set(ANY_FAILED TRUE)
     endif()
 endif()
