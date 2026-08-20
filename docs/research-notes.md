@@ -447,3 +447,36 @@ already pauses emulation, so the frames are sitting there; the tiles draw them
 through the same placement code the compositor uses. The key survives for the
 case where there is no frame yet: a companion that has not received one, or a
 core still booting.
+
+**Why layouts describe an arrangement rather than rectangles.** The first pass at
+the Wii U's layouts hand-placed normalized rects, tuned by eye against the
+screenshots. They were close and all of them were slightly wrong: the two focus
+layouts were not aligned to an edge at all, and the gaps between stacked and
+side-by-side screens were whatever looked right. Measuring the Wii U's own output
+-- a 378 x 212 picture inside the TV frame in its Screen Settings shots -- gives
+227 x 170 beside 76 x 57 with 12 px between, 126 x 94 stacked with 18 px, 154 x
+204 side by side with 32 px.
+
+Those numbers cannot be written as normalized rects, because a rect's shape
+depends on the window's and normalized coordinates stretch with it. So a layout
+now carries a composition: an axis, its screens at relative scales with a
+cross-axis alignment each, a gap as a fraction of the largest screen's extent,
+and a margin. `place_screens()` solves that for the largest scale that fits and
+centres the group. Reproducing the measurements to within a pixel or two is a
+test, which is the only way to know the layouts match rather than merely
+resemble.
+
+The point of describing rather than placing is what comes next. "Two screens in
+a row, the second a third the size, aligned to the bottom" is the same idea for a
+3DS -- whose screens are 400x240 and 320x240, different sizes *and* different
+shapes -- and for a Wii U's TV and GamePad. `place_screens()` already takes the
+source dimensions as parameters, so those are new entries in the registry rather
+than new geometry code.
+
+**Why the focus layouts align to opposite edges.** It looks arbitrary until you
+notice which screen is the small one. In Upper Screen Focus the small screen is
+the touch screen, and it sits at the bottom -- where it is on a DS, and where a
+thumb reaches it. In Touch Screen Focus the small one is the upper screen, and it
+sits at the top, for the same reason. The alignment is a property of the screen,
+not of the layout, which is why it is a field on the item rather than on the
+composition.

@@ -317,21 +317,21 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
         draw_ds_shell(quads, frame);
     }
 
-    for (const ScreenPlacement& placement : layout.placements) {
-        const PixelRect rect = placement_pixel_rect(placement, frame);
+    for (const PlacedScreen& placed : place_screens(layout, box)) {
+        const PixelRect& rect = placed.rect;
         const Texture* texture = nullptr;
         if (screens != nullptr) {
-            texture = (placement.screen == ScreenId::Top) ? screens->top : screens->bottom;
+            texture = (placed.screen == ScreenId::Top) ? screens->top : screens->bottom;
         }
         // The paused game itself, which says what picking this will actually
         // look like far better than two coloured blocks and a key can. The
         // blocks are still there for when there is no frame to show -- a
         // companion that has not received one yet, or a core still booting.
         if (texture != nullptr && texture->valid()) {
-            quads.draw_screen(rect, *texture, Color{}, placement.rotation);
+            quads.draw_screen(rect, *texture, Color{}, placed.rotation);
         } else {
             const Color color =
-                placement.screen == ScreenId::Top ? theme.top_screen : theme.bottom_screen;
+                placed.screen == ScreenId::Top ? theme.top_screen : theme.bottom_screen;
             quads.draw_solid(rect, color);
         }
     }

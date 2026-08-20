@@ -1,5 +1,8 @@
 #include "layout/layout_registry.hpp"
 
+#include <utility>
+#include <vector>
+
 #include "util/log.hpp"
 
 namespace ds {
@@ -19,11 +22,51 @@ constexpr float kShellAspect = (kShellWidthPerScreen * 4.0f / 3.0f) /
 constexpr float kShellScreenWidth = 1.0f / kShellWidthPerScreen;             // 0.416
 constexpr float kShellScreenHeight = 1.0f / (kShellHalfHeightPerScreen * 2.0f);  // 0.274
 
-// The small screen in the two "focus" layouts, as a fraction of the frame. The
-// big one takes most of the width and the small one tucks into the far corner,
-// which is the arrangement the Wii U uses.
-constexpr float kFocusLargeWidth = 0.62f;
-constexpr float kFocusSmallWidth = 0.22f;
+// Everything below is measured off the Wii U Virtual Console's own output, on
+// the 378 x 212 pixel picture it draws inside the TV frame in its Screen
+// Settings shots. Numbers rather than eyeballing, because "a bit smaller, over
+// to the right" is exactly the kind of thing that ends up subtly wrong.
+//
+// Focus layouts: a 227 x 170 screen beside a 76 x 57 one, 12 px apart, the pair
+// inset 32 px from each side of a 378-wide picture.
+constexpr float kFocusSmallScale = 76.0f / 227.0f;   // 0.335
+constexpr float kFocusGap = 12.0f / 227.0f;          // 0.053 of the large screen
+constexpr float kFocusMargin = 32.0f / 378.0f;       // 0.085
+
+// Vertical: two 126 x 94 screens 18 px apart, 3 px clear of a 212-tall picture.
+constexpr float kVerticalGap = 18.0f / 94.0f;        // 0.19 of a screen's height
+constexpr float kVerticalMargin = 3.0f / 212.0f;     // 0.014
+
+// Side-by-Side: two 154 x 204 screens 32 px apart, 4 px clear top and bottom.
+// The gap is measured against the same edge of the screen either way -- the one
+// the turn puts along the axis -- so the two layouts space alike.
+constexpr float kSideBySideGap = 32.0f / 154.0f;     // 0.208
+constexpr float kSideBySideMargin = 4.0f / 212.0f;   // 0.019
+
+ScreenItem make_item(ScreenId screen,
+                     float scale = 1.0f,
+                     CrossAlign align = CrossAlign::Center,
+                     ScreenRotation rotation = ScreenRotation::None) {
+    ScreenItem item;
+    item.screen = screen;
+    item.scale = scale;
+    item.align = align;
+    item.rotation = rotation;
+    return item;
+}
+
+LayoutComposition make_composition(LayoutAxis axis,
+                                   std::vector<ScreenItem> items,
+                                   float gap,
+                                   float margin) {
+    LayoutComposition composition;
+    composition.used = true;
+    composition.axis = axis;
+    composition.items = std::move(items);
+    composition.gap = gap;
+    composition.margin = margin;
+    return composition;
+}
 
 ScreenPlacement make_placement(float x,
                                float y,
@@ -84,31 +127,37 @@ LayoutRegistry::LayoutRegistry() {
         layouts_.push_back(layout);
     }
 
-    // 1. The upper screen as large as it goes, the touch screen tucked into the
-    // corner under the stylus hand.
+    // 1. The upper screen as large as it goes, the touch screen small beside it.
+    // The small one sits at the bottom, where the touch screen is on a DS and
+    // where a thumb can reach it; the two are bottom-aligned as a result.
     {
         Layout layout;
         layout.id = "upper_focus";
         layout.display_name = "Upper Screen Focus";
-        layout.placements = {
-            make_placement(0.02f, 0.05f, kFocusLargeWidth, 0.9f, ScreenId::Top),
-            make_placement(1.0f - kFocusSmallWidth - 0.03f, 0.62f, kFocusSmallWidth, 0.33f,
-                           ScreenId::Bottom),
-        };
+        layout.composition = make_composition(
+            LayoutAxis::Horizontal,
+            {
+                make_item(ScreenId::Top),
+                make_item(ScreenId::Bottom, kFocusSmallScale, CrossAlign::End),
+            },
+            kFocusGap, kFocusMargin);
         layouts_.push_back(layout);
     }
 
-    // 2. The other way round: the touch screen large, the upper one small and
-    // out of the way in the far corner.
+    // 2. The other way round: the touch screen large, the upper one small. That
+    // one sits at the top, again where it belongs on a DS, so this pair is
+    // top-aligned where the last was bottom-aligned.
     {
         Layout layout;
         layout.id = "touch_focus";
         layout.display_name = "Touch Screen Focus";
-        layout.placements = {
-            make_placement(0.03f, 0.05f, kFocusSmallWidth, 0.33f, ScreenId::Top),
-            make_placement(1.0f - kFocusLargeWidth - 0.02f, 0.05f, kFocusLargeWidth, 0.9f,
-                           ScreenId::Bottom),
-        };
+        layout.composition = make_composition(
+            LayoutAxis::Horizontal,
+            {
+                make_item(ScreenId::Top, kFocusSmallScale, CrossAlign::Start),
+                make_item(ScreenId::Bottom),
+            },
+            kFocusGap, kFocusMargin);
         layouts_.push_back(layout);
     }
 
@@ -118,10 +167,10 @@ LayoutRegistry::LayoutRegistry() {
         Layout layout;
         layout.id = "vertical";
         layout.display_name = "Vertical Screens";
-        layout.placements = {
-            make_placement(0.0f, 0.0f, 1.0f, 0.5f, ScreenId::Top),
-            make_placement(0.0f, 0.5f, 1.0f, 0.5f, ScreenId::Bottom),
-        };
+        layout.composition = make_composition(
+            LayoutAxis::Vertical,
+            {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
+            kVerticalGap, kVerticalMargin);
         layouts_.push_back(layout);
     }
 
@@ -132,26 +181,29 @@ LayoutRegistry::LayoutRegistry() {
         Layout layout;
         layout.id = "side_by_side";
         layout.display_name = "Side-by-Side Screens";
-        layout.placements = {
-            make_placement(0.02f, 0.02f, 0.47f, 0.96f, ScreenId::Top,
-                           ScreenRotation::CounterClockwise),
-            make_placement(0.51f, 0.02f, 0.47f, 0.96f, ScreenId::Bottom,
-                           ScreenRotation::CounterClockwise),
-        };
+        layout.composition = make_composition(
+            LayoutAxis::Horizontal,
+            {
+                make_item(ScreenId::Top, 1.0f, CrossAlign::Center,
+                          ScreenRotation::CounterClockwise),
+                make_item(ScreenId::Bottom, 1.0f, CrossAlign::Center,
+                          ScreenRotation::CounterClockwise),
+            },
+            kSideBySideGap, kSideBySideMargin);
         layouts_.push_back(layout);
     }
 
     // 5. One screen on each device. With nobody on the other end it falls back
-    // to showing both, since half a game is not useful.
+    // to showing both stacked, since half a game is not useful.
     {
         Layout layout;
         layout.id = "upper_on_tv";
         layout.display_name = "Upper Screen on TV";
         layout.per_device = true;
-        layout.placements = {
-            make_placement(0.0f, 0.0f, 1.0f, 0.5f, ScreenId::Top),
-            make_placement(0.0f, 0.5f, 1.0f, 0.5f, ScreenId::Bottom),
-        };
+        layout.composition = make_composition(
+            LayoutAxis::Vertical,
+            {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
+            kVerticalGap, kVerticalMargin);
         layouts_.push_back(layout);
     }
 }

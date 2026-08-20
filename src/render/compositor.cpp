@@ -77,23 +77,22 @@ void Compositor::render(QuadRenderer& quads,
         draw_ds_shell(quads, frame);
     }
 
-    for (const ScreenPlacement& placement : layout.placements) {
-        const PixelRect rect = placement_pixel_rect(placement, frame);
-        const Texture* texture =
-            (placement.screen == ScreenId::Top) ? screens.top : screens.bottom;
+    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height)) {
+        const PixelRect& rect = placed.rect;
+        const Texture* texture = (placed.screen == ScreenId::Top) ? screens.top : screens.bottom;
 
         // The one place that decides local vs. elsewhere.
-        const OutputRoute route = router.route_for(placement.screen);
+        const OutputRoute route = router.route_for(placed.screen);
         if (route != OutputRoute::Local) {
             quads.draw_solid(rect, style_.remote_placeholder);
             if (texture != nullptr && texture->valid()) {
-                router.hand_off(placement.screen, *texture, rect);
+                router.hand_off(placed.screen, *texture, rect);
             }
             continue;
         }
 
         if (texture != nullptr && texture->valid()) {
-            quads.draw_screen(rect, *texture, style_.screen_tint, placement.rotation);
+            quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation);
         } else {
             // No frame yet (core still booting): keep the layout's shape visible
             // rather than flashing the background colour.

@@ -85,6 +85,18 @@ Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
         return layout;
     }
     Layout mirrored = layout;
+    // A composed layout mirrors by running its items the other way along the
+    // axis. Stacked screens are unaffected, which is right: there is no left or
+    // right to a column, and the Wii U's vertical layouts differ only in how the
+    // GamePad is held.
+    if (mirrored.composition.used) {
+        if (mirrored.composition.axis == LayoutAxis::Horizontal) {
+            std::reverse(mirrored.composition.items.begin(), mirrored.composition.items.end());
+        }
+        for (ScreenItem& item : mirrored.composition.items) {
+            item.rotation = mirror_rotation(item.rotation);
+        }
+    }
     for (ScreenPlacement& placement : mirrored.placements) {
         // Mirrored about the frame's vertical centre line, so a screen tucked
         // into the right corner ends up in the left one. Centred placements come
@@ -94,6 +106,130 @@ Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
         placement.rotation = mirror_rotation(placement.rotation);
     }
     return mirrored;
+}
+
+namespace {
+
+// The size one screen occupies, in source pixels, given its rotation.
+void item_source_size(const ScreenItem& item,
+                      int source_width,
+                      int source_height,
+                      float& out_width,
+                      float& out_height) {
+    const bool turned = rotation_is_quarter_turn(item.rotation);
+    out_width = static_cast<float>(turned ? source_height : source_width) * item.scale;
+    out_height = static_cast<float>(turned ? source_width : source_height) * item.scale;
+}
+
+std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
+                                         const PixelRect& frame,
+                                         int source_width,
+                                         int source_height) {
+    std::vector<PlacedScreen> placed;
+    if (composition.items.empty() || frame.w <= 0.0f || frame.h <= 0.0f) {
+        return placed;
+    }
+
+    const bool horizontal = composition.axis == LayoutAxis::Horizontal;
+
+    // The group's natural size, in source pixels, before it is scaled to fit.
+    float along = 0.0f;
+    float across = 0.0f;
+    float largest_along = 0.0f;
+    for (const ScreenItem& item : composition.items) {
+        float width = 0.0f;
+        float height = 0.0f;
+        item_source_size(item, source_width, source_height, width, height);
+        const float item_along = horizontal ? width : height;
+        const float item_across = horizontal ? height : width;
+        along += item_along;
+        across = std::max(across, item_across);
+        largest_along = std::max(largest_along, item_along);
+    }
+    const float gap = composition.gap * largest_along;
+    along += gap * static_cast<float>(composition.items.size() - 1);
+    if (along <= 0.0f || across <= 0.0f) {
+        return placed;
+    }
+
+    // The largest scale that fits inside the frame once the margin is taken off.
+    const float usable_width = frame.w * (1.0f - composition.margin * 2.0f);
+    const float usable_height = frame.h * (1.0f - composition.margin * 2.0f);
+    const float usable_along = horizontal ? usable_width : usable_height;
+    const float usable_across = horizontal ? usable_height : usable_width;
+    const float scale = std::min(usable_along / along, usable_across / across);
+    if (!(scale > 0.0f)) {
+        return placed;
+    }
+
+    // Centred in the frame itself rather than inside the margin, so a group that
+    // came out smaller than its allowance still sits in the middle.
+    const float group_along = along * scale;
+    const float group_across = across * scale;
+    float cursor = (horizontal ? frame.x : frame.y) +
+                   ((horizontal ? frame.w : frame.h) - group_along) * 0.5f;
+    const float across_origin = (horizontal ? frame.y : frame.x) +
+                                ((horizontal ? frame.h : frame.w) - group_across) * 0.5f;
+
+    for (const ScreenItem& item : composition.items) {
+        float width = 0.0f;
+        float height = 0.0f;
+        item_source_size(item, source_width, source_height, width, height);
+        width *= scale;
+        height *= scale;
+        const float item_along = horizontal ? width : height;
+        const float item_across = horizontal ? height : width;
+
+        float across_offset = 0.0f;
+        switch (item.align) {
+            case CrossAlign::Start: break;
+            case CrossAlign::Center: across_offset = (group_across - item_across) * 0.5f; break;
+            case CrossAlign::End: across_offset = group_across - item_across; break;
+        }
+
+        PlacedScreen entry;
+        entry.screen = item.screen;
+        entry.rotation = item.rotation;
+        entry.rect.x = horizontal ? cursor : across_origin + across_offset;
+        entry.rect.y = horizontal ? across_origin + across_offset : cursor;
+        entry.rect.w = width;
+        entry.rect.h = height;
+        placed.push_back(entry);
+
+        cursor += item_along + gap * scale;
+    }
+    return placed;
+}
+
+}  // namespace
+
+std::vector<PlacedScreen> place_screens(const Layout& layout,
+                                        const PixelRect& window,
+                                        int source_width,
+                                        int source_height) {
+    const PixelRect frame = layout_frame(layout, window);
+    if (layout.composition.used) {
+        return place_composed(layout.composition, frame, source_width, source_height);
+    }
+    std::vector<PlacedScreen> placed;
+    placed.reserve(layout.placements.size());
+    for (const ScreenPlacement& placement : layout.placements) {
+        PlacedScreen entry;
+        entry.screen = placement.screen;
+        entry.rotation = placement.rotation;
+        entry.rect = placement_pixel_rect(placement, frame, source_width, source_height);
+        placed.push_back(entry);
+    }
+    return placed;
+}
+
+std::vector<PlacedScreen> place_screens(const Layout& layout,
+                                        float output_width,
+                                        float output_height,
+                                        int source_width,
+                                        int source_height) {
+    return place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, source_width,
+                         source_height);
 }
 
 PixelRect layout_frame(const Layout& layout, const PixelRect& window) {
@@ -168,9 +304,11 @@ Layout resolve_for_device(const Layout& layout, ScreenId local_screen) {
     Layout resolved = layout;
     resolved.placements.clear();
     // One screen filling a whole device is not the DS's shell, and nothing is
-    // beside anything, so neither the frame nor the bezel carries over.
+    // beside anything, so neither the frame, the bezel nor the arrangement
+    // carries over.
     resolved.frame_aspect = 0.0f;
     resolved.bezel = false;
+    resolved.composition = LayoutComposition();
 
     ScreenPlacement placement;
     placement.x = 0.0f;
@@ -191,6 +329,14 @@ bool layout_has_touchable_bottom(const Layout& layout) {
     if (!layout.accepts_touch_on_bottom) {
         return false;
     }
+    if (layout.composition.used) {
+        for (const ScreenItem& item : layout.composition.items) {
+            if (item.screen == ScreenId::Bottom) {
+                return true;
+            }
+        }
+        return false;
+    }
     for (const ScreenPlacement& placement : layout.placements) {
         if (placement.screen == ScreenId::Bottom) {
             return true;
@@ -209,12 +355,11 @@ bool map_output_point_to_ds(const Layout& layout,
         return false;
     }
 
-    const PixelRect frame = layout_frame(layout, output_width, output_height);
-    for (const ScreenPlacement& placement : layout.placements) {
-        if (placement.screen != ScreenId::Bottom) {
+    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height)) {
+        if (placed.screen != ScreenId::Bottom) {
             continue;
         }
-        const PixelRect rect = placement_pixel_rect(placement, frame);
+        const PixelRect& rect = placed.rect;
         if (rect.w <= 0.0f || rect.h <= 0.0f || !rect.contains(point_x, point_y)) {
             continue;
         }
@@ -222,7 +367,7 @@ bool map_output_point_to_ds(const Layout& layout,
         float v = (point_y - rect.y) / rect.h;
         // Undo whatever turn the screen was drawn with, so a touch on a sideways
         // screen lands where the finger is pointing rather than 90 degrees off.
-        switch (placement.rotation) {
+        switch (placed.rotation) {
             case ScreenRotation::Clockwise: {
                 const float turned_u = v;
                 const float turned_v = 1.0f - u;

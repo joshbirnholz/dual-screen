@@ -51,6 +51,12 @@ under its names — that list is what this app is trying to be.
 | `side_by_side` | held sideways: both screens turned a quarter turn |
 | `upper_on_tv` | one screen per device, each filling its own display |
 
+The arrangements are measured off the Wii U's own output rather than eyeballed:
+the sizes, the gaps and the alignments all come from its Screen Settings shots.
+In the two focus layouts the small screen sits where that screen sits on a real
+DS — the touch screen low, the upper screen high — so one pair is bottom-aligned
+and the other top-aligned.
+
 **Hands** in the menu mirrors the layouts that put one screen beside another, so
 the touch screen is under whichever hand holds the stylus. It is one toggle
 rather than a left-handed twin of every layout, and it turns the sideways
@@ -120,11 +126,14 @@ for both screens at 60fps on DS-like content — no video encoder involved, and
 comfortably within wifi. Only screens the current layout actually needs are
 sent, and an unchanged frame is not sent at all.
 
-Adding a layout is meant to be adding data, not code: a `Layout` is a list of
-normalized rects with a screen id, a fit and an optional quarter turn each
-(`src/layout/layout_registry.cpp`). Touch mapping is derived from the active
-layout's bottom-screen placement — including the turn, inverted — so a new
-layout gets working touch for free, sideways or not.
+Adding a layout is meant to be adding data, not code. A layout says how its
+screens are *arranged* — along which axis, at what relative sizes, how far apart,
+aligned to which edge — and the rectangles are solved for at draw time
+(`src/layout/layout_registry.cpp`). That is what lets the same description serve
+a 3DS, whose two screens are different sizes and shapes, or a Wii U's TV and
+GamePad: new data rather than new arithmetic. Touch mapping reads the same
+solved rectangles — including any quarter turn, inverted — so a new layout gets
+working touch for free, sideways or not.
 
 ## Building on SteamOS
 

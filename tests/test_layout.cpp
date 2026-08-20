@@ -10,13 +10,19 @@ using namespace ds;
 
 namespace {
 
-const ScreenPlacement* placement_for(const Layout& layout, ScreenId screen) {
-    for (const ScreenPlacement& placement : layout.placements) {
-        if (placement.screen == screen) {
-            return &placement;
+// Where a screen actually lands, which is all any caller really wants to know.
+bool placed_screen(const Layout& layout,
+                   ScreenId screen,
+                   float width,
+                   float height,
+                   PlacedScreen& out) {
+    for (const PlacedScreen& placed : place_screens(layout, width, height)) {
+        if (placed.screen == screen) {
+            out = placed;
+            return true;
         }
     }
-    return nullptr;
+    return false;
 }
 
 void test_registry_contents() {
@@ -29,11 +35,13 @@ void test_registry_contents() {
     for (std::size_t index = 0; index < registry.size(); ++index) {
         CHECK_STR_EQ(registry.at(index).id, expected[index]);
     }
-    // Ids are unique and non-empty; config files key off them.
+    // Ids are unique and non-empty; config files key off them. Every layout has
+    // to put its screens somewhere, however it describes them.
     for (const Layout& layout : registry.layouts()) {
         CHECK(!layout.id.empty());
         CHECK(!layout.display_name.empty());
-        CHECK(!layout.placements.empty());
+        CHECK_MSG(place_screens(layout, 1280.0f, 800.0f).size() == 2,
+                  layout.id + " does not place both screens");
         CHECK_EQ(registry.index_of(layout.id) >= 0, true);
     }
     // An unknown id resolves rather than throwing, so a stale config still boots.
@@ -48,6 +56,107 @@ void test_registry_contents() {
     CHECK_STR_EQ(registry.resolve("vertical_swapped").id, "vertical");
     CHECK_STR_EQ(registry.resolve("top_only").id, "upper_focus");
     CHECK_STR_EQ(registry.resolve("bottom_only").id, "touch_focus");
+}
+
+// The arrangements are measured off the Wii U's own output: a 378 x 212 picture
+// inside the TV frame in its Screen Settings shots. Checking against those
+// numbers is the only way to know the layouts match rather than merely resemble.
+// The window here is that same 378 x 212 so the numbers can be read directly.
+void test_layouts_match_the_wii_u() {
+    const LayoutRegistry registry;
+    const float width = 378.0f;
+    const float height = 212.0f;
+    const float tolerance = 2.5f;  // a pixel or two off a measured screenshot
+
+    struct Expected {
+        const char* id;
+        ScreenId screen;
+        float x, y, w, h;
+    };
+    // Upper Screen Focus: 227x170 at (32,21) beside 76x57 at (270,134).
+    // Touch Screen Focus: 76x57 at (32,21) beside 227x170 at (119,21).
+    // Vertical:           126x94 at (126,3) above 126x94 at (126,115).
+    // Side-by-Side:       154x204 at (19,4) beside 154x204 at (205,4).
+    const Expected cases[] = {
+        {"upper_focus", ScreenId::Top, 32, 21, 227, 170},
+        {"upper_focus", ScreenId::Bottom, 270, 134, 76, 57},
+        {"touch_focus", ScreenId::Top, 32, 21, 76, 57},
+        {"touch_focus", ScreenId::Bottom, 119, 21, 227, 170},
+        {"vertical", ScreenId::Top, 126, 3, 126, 94},
+        {"vertical", ScreenId::Bottom, 126, 115, 126, 94},
+        {"side_by_side", ScreenId::Top, 19, 4, 154, 204},
+        {"side_by_side", ScreenId::Bottom, 205, 4, 154, 204},
+    };
+
+    for (const Expected& expected : cases) {
+        PlacedScreen placed;
+        const Layout& layout = *registry.find(expected.id);
+        CHECK_MSG(placed_screen(layout, expected.screen, width, height, placed),
+                  std::string(expected.id) + " did not place its " + to_string(expected.screen) +
+                      " screen");
+        const std::string where = std::string(expected.id) + "'s " + to_string(expected.screen);
+        CHECK_MSG(std::abs(placed.rect.x - expected.x) < tolerance,
+                  where + " x is " + std::to_string(placed.rect.x) + ", the Wii U's is " +
+                      std::to_string(expected.x));
+        CHECK_MSG(std::abs(placed.rect.y - expected.y) < tolerance,
+                  where + " y is " + std::to_string(placed.rect.y) + ", the Wii U's is " +
+                      std::to_string(expected.y));
+        CHECK_MSG(std::abs(placed.rect.w - expected.w) < tolerance,
+                  where + " width is " + std::to_string(placed.rect.w) + ", the Wii U's is " +
+                      std::to_string(expected.w));
+        CHECK_MSG(std::abs(placed.rect.h - expected.h) < tolerance,
+                  where + " height is " + std::to_string(placed.rect.h) + ", the Wii U's is " +
+                      std::to_string(expected.h));
+    }
+
+    // The alignment those numbers encode, stated outright so it survives a
+    // change of window size: the small screen of each focus layout sits where
+    // that screen sits on a real DS -- the touch screen low, the upper one high
+    // -- and the big screen it stands beside shares that edge.
+    for (const float w : {600.0f, 1280.0f, 1920.0f}) {
+        for (const float h : {400.0f, 800.0f, 1200.0f}) {
+            for (const Handedness hand : {Handedness::Right, Handedness::Left}) {
+                const Layout upper =
+                    resolve_for_handedness(*registry.find("upper_focus"), hand);
+                const Layout touch =
+                    resolve_for_handedness(*registry.find("touch_focus"), hand);
+                PlacedScreen big;
+                PlacedScreen small;
+                CHECK(placed_screen(upper, ScreenId::Top, w, h, big));
+                CHECK(placed_screen(upper, ScreenId::Bottom, w, h, small));
+                CHECK_MSG(
+                    std::abs((big.rect.y + big.rect.h) - (small.rect.y + small.rect.h)) < 1.0f,
+                    "upper focus is not bottom-aligned");
+                CHECK(small.rect.w < big.rect.w);
+
+                CHECK(placed_screen(touch, ScreenId::Bottom, w, h, big));
+                CHECK(placed_screen(touch, ScreenId::Top, w, h, small));
+                CHECK_MSG(std::abs(big.rect.y - small.rect.y) < 1.0f,
+                          "touch focus is not top-aligned");
+                CHECK(small.rect.w < big.rect.w);
+            }
+        }
+    }
+
+    // The gap is a proportion, so it survives a change of window size too.
+    for (const float w : {600.0f, 1280.0f, 1920.0f}) {
+        PlacedScreen top;
+        PlacedScreen bottom;
+        CHECK(placed_screen(*registry.find("vertical"), ScreenId::Top, w, w * 0.625f, top));
+        CHECK(placed_screen(*registry.find("vertical"), ScreenId::Bottom, w, w * 0.625f, bottom));
+        const float gap = bottom.rect.y - (top.rect.y + top.rect.h);
+        CHECK_MSG(std::abs(gap / top.rect.h - 18.0f / 94.0f) < 0.02f,
+                  "the vertical gap is " + std::to_string(gap / top.rect.h) +
+                      " of a screen, the Wii U's is 0.19");
+
+        CHECK(placed_screen(*registry.find("side_by_side"), ScreenId::Top, w, w * 0.625f, top));
+        CHECK(placed_screen(*registry.find("side_by_side"), ScreenId::Bottom, w, w * 0.625f,
+                            bottom));
+        const float side_gap = bottom.rect.x - (top.rect.x + top.rect.w);
+        CHECK_MSG(std::abs(side_gap / top.rect.w - 32.0f / 154.0f) < 0.02f,
+                  "the side-by-side gap is " + std::to_string(side_gap / top.rect.w) +
+                      " of a screen, the Wii U's is 0.21");
+    }
 }
 
 // Standard is the console itself: the shell keeps a real DS's proportions
@@ -78,8 +187,8 @@ void test_standard_is_the_console() {
     CHECK_NEAR(tall.y, (1200.0f - tall.h) * 0.5f);
 
     // Both screens sit inside the shell rather than over its edge.
-    for (const ScreenPlacement& placement : standard.placements) {
-        const PixelRect rect = placement_pixel_rect(placement, wide);
+    for (const PlacedScreen& placed : place_screens(standard, 1600.0f, 900.0f)) {
+        const PixelRect& rect = placed.rect;
         CHECK(rect.x >= wide.x - 0.01f && rect.x + rect.w <= wide.x + wide.w + 0.01f);
         CHECK(rect.y >= wide.y - 0.01f && rect.y + rect.h <= wide.y + wide.h + 0.01f);
     }
@@ -90,39 +199,58 @@ void test_standard_is_the_console() {
 void test_handedness_mirrors_the_layout() {
     const LayoutRegistry registry;
 
+    const float width = 1280.0f;
+    const float height = 800.0f;
+
     const Layout& focus = *registry.find("upper_focus");
     const Layout mirrored = resolve_for_handedness(focus, Handedness::Left);
-    CHECK_EQ(mirrored.placements.size(), focus.placements.size());
-    for (std::size_t i = 0; i < focus.placements.size(); ++i) {
-        // Same size, opposite side.
-        CHECK_NEAR(mirrored.placements[i].w, focus.placements[i].w);
-        CHECK_NEAR(mirrored.placements[i].h, focus.placements[i].h);
-        CHECK_NEAR(mirrored.placements[i].y, focus.placements[i].y);
-        CHECK_NEAR(mirrored.placements[i].x,
-                   1.0f - focus.placements[i].x - focus.placements[i].w);
-    }
 
-    // Right-handed is the layout as written, so it is left alone entirely.
-    const Layout right = resolve_for_handedness(focus, Handedness::Right);
-    CHECK_NEAR(right.placements[0].x, focus.placements[0].x);
+    PlacedScreen right_big;
+    PlacedScreen right_small;
+    PlacedScreen left_big;
+    PlacedScreen left_small;
+    CHECK(placed_screen(focus, ScreenId::Top, width, height, right_big));
+    CHECK(placed_screen(focus, ScreenId::Bottom, width, height, right_small));
+    CHECK(placed_screen(mirrored, ScreenId::Top, width, height, left_big));
+    CHECK(placed_screen(mirrored, ScreenId::Bottom, width, height, left_small));
+
+    // Same sizes, and each screen's mirror image about the window's centre line.
+    CHECK_NEAR(left_big.rect.w, right_big.rect.w);
+    CHECK_NEAR(left_small.rect.w, right_small.rect.w);
+    CHECK_NEAR(left_big.rect.y, right_big.rect.y);
+    CHECK_NEAR(left_big.rect.x, width - right_big.rect.x - right_big.rect.w);
+    CHECK_NEAR(left_small.rect.x, width - right_small.rect.x - right_small.rect.w);
+    // Right-handed puts the touch screen on the right, left-handed on the left.
+    CHECK(right_small.rect.x > right_big.rect.x);
+    CHECK(left_small.rect.x < left_big.rect.x);
 
     // Held sideways, the other hand turns the screens the other way.
     const Layout& sideways = *registry.find("side_by_side");
-    CHECK(sideways.placements[0].rotation == ScreenRotation::CounterClockwise);
+    PlacedScreen turned;
+    CHECK(placed_screen(sideways, ScreenId::Top, width, height, turned));
+    CHECK(turned.rotation == ScreenRotation::CounterClockwise);
     const Layout sideways_left = resolve_for_handedness(sideways, Handedness::Left);
-    CHECK(sideways_left.placements[0].rotation == ScreenRotation::Clockwise);
+    CHECK(placed_screen(sideways_left, ScreenId::Top, width, height, turned));
+    CHECK(turned.rotation == ScreenRotation::Clockwise);
 
     // Mirroring twice is the identity, so the toggle cannot drift.
     const Layout back = resolve_for_handedness(sideways_left, Handedness::Left);
-    CHECK_NEAR(back.placements[0].x, sideways.placements[0].x);
-    CHECK(back.placements[0].rotation == sideways.placements[0].rotation);
+    PlacedScreen there;
+    PlacedScreen and_back;
+    CHECK(placed_screen(sideways, ScreenId::Bottom, width, height, there));
+    CHECK(placed_screen(back, ScreenId::Bottom, width, height, and_back));
+    CHECK_NEAR(and_back.rect.x, there.rect.x);
+    CHECK(and_back.rotation == there.rotation);
 
-    // A centred layout has no side to swap.
+    // A column has no left or right, so a stacked layout comes back unchanged.
     const Layout& vertical = *registry.find("vertical");
     const Layout vertical_left = resolve_for_handedness(vertical, Handedness::Left);
-    for (std::size_t i = 0; i < vertical.placements.size(); ++i) {
-        CHECK_NEAR(vertical_left.placements[i].x, vertical.placements[i].x);
-    }
+    PlacedScreen upright;
+    PlacedScreen lefty;
+    CHECK(placed_screen(vertical, ScreenId::Bottom, width, height, upright));
+    CHECK(placed_screen(vertical_left, ScreenId::Bottom, width, height, lefty));
+    CHECK_NEAR(lefty.rect.x, upright.rect.x);
+    CHECK_NEAR(lefty.rect.y, upright.rect.y);
 }
 
 // A quarter-turned screen is 3:4 where an upright one is 4:3, and the letterbox
@@ -151,17 +279,17 @@ void test_touch_follows_a_quarter_turn() {
     const float width = 1280.0f;
     const float height = 800.0f;
 
-    const ScreenPlacement* bottom = placement_for(sideways, ScreenId::Bottom);
-    CHECK(bottom != nullptr);
-    if (bottom == nullptr) return;
-    const PixelRect rect = placement_pixel_rect(*bottom, width, height);
+    PlacedScreen bottom;
+    CHECK(placed_screen(sideways, ScreenId::Bottom, width, height, bottom));
+    const PixelRect rect = bottom.rect;
 
     DsTouchPoint point;
-    // The centre is the centre whichever way the screen is turned.
+    // The centre is the centre whichever way the screen is turned, to within the
+    // pixel the exact midpoint falls between.
     CHECK(map_output_point_to_ds(sideways, width, height, rect.x + rect.w * 0.5f,
                                  rect.y + rect.h * 0.5f, point));
-    CHECK_EQ(point.x, 128);
-    CHECK_EQ(point.y, 96);
+    CHECK(std::abs(point.x - 128) <= 1);
+    CHECK(std::abs(point.y - 96) <= 1);
 
     // Turned anticlockwise, the DS's top-left corner is drawn at the bottom
     // left of the rect, so that is where touching it has to read from.
@@ -210,16 +338,17 @@ void test_touch_maps_through_bottom_placement() {
     const float width = 1280.0f;
     const float height = 720.0f;
 
-    const ScreenPlacement* bottom = placement_for(vertical, ScreenId::Bottom);
-    CHECK(bottom != nullptr);
-    const PixelRect rect = placement_pixel_rect(*bottom, width, height);
+    PlacedScreen bottom;
+    CHECK(placed_screen(vertical, ScreenId::Bottom, width, height, bottom));
+    const PixelRect rect = bottom.rect;
 
     DsTouchPoint point;
-    // Centre of the bottom screen -> centre of the DS touchscreen.
+    // Centre of the bottom screen -> centre of the DS touchscreen. Exactly on
+    // the boundary between two DS pixels, so either of them is right.
     CHECK(map_output_point_to_ds(vertical, width, height, rect.x + rect.w * 0.5f,
                                  rect.y + rect.h * 0.5f, point));
-    CHECK_EQ(point.x, 128);
-    CHECK_EQ(point.y, 96);
+    CHECK(std::abs(point.x - 128) <= 1);
+    CHECK(std::abs(point.y - 96) <= 1);
 
     // Corners clamp inside the screen rather than off it.
     CHECK(map_output_point_to_ds(vertical, width, height, rect.x + 0.5f, rect.y + 0.5f, point));
@@ -245,8 +374,9 @@ void test_touch_round_trips_for_every_layout() {
     for (const Layout& base : registry.layouts()) {
       for (const Handedness hand : {Handedness::Right, Handedness::Left}) {
         const Layout layout = resolve_for_handedness(base, hand);
-        const ScreenPlacement* bottom = placement_for(layout, ScreenId::Bottom);
-        if (bottom == nullptr || !layout.accepts_touch_on_bottom) {
+        PlacedScreen bottom_placed;
+        const bool has_bottom = placed_screen(layout, ScreenId::Bottom, width, height, bottom_placed);
+        if (!has_bottom || !layout.accepts_touch_on_bottom) {
             // A layout with no touchable bottom screen must reject touch
             // everywhere rather than mapping it somewhere arbitrary.
             DsTouchPoint ignored;
@@ -256,8 +386,7 @@ void test_touch_round_trips_for_every_layout() {
             continue;
         }
 
-        const PixelRect frame = layout_frame(layout, width, height);
-        const PixelRect rect = placement_pixel_rect(*bottom, frame);
+        const PixelRect& rect = bottom_placed.rect;
         // Walk a grid of DS coordinates out to pixels and back again. Where the
         // screen was turned, the walk has to be turned with it -- which is the
         // point: the same rotation has to be applied and undone by two
@@ -266,7 +395,7 @@ void test_touch_round_trips_for_every_layout() {
             for (int ds_x = 4; ds_x < kDsScreenWidth; ds_x += 51) {
                 float u = (ds_x + 0.5f) / kDsScreenWidth;
                 float v = (ds_y + 0.5f) / kDsScreenHeight;
-                switch (bottom->rotation) {
+                switch (bottom_placed.rotation) {
                     case ScreenRotation::Clockwise: {
                         const float turned_u = 1.0f - v;
                         const float turned_v = u;
@@ -306,14 +435,14 @@ void test_layouts_do_not_overlap() {
     for (const Layout& base : registry.layouts()) {
       for (const Handedness hand : {Handedness::Right, Handedness::Left}) {
         const Layout layout = resolve_for_handedness(base, hand);
-        const PixelRect frame = layout_frame(layout, 1000.0f, 1000.0f);
-        for (std::size_t a = 0; a < layout.placements.size(); ++a) {
-            const PixelRect ra = placement_pixel_rect(layout.placements[a], frame);
+        const std::vector<PlacedScreen> placed = place_screens(layout, 1000.0f, 1000.0f);
+        for (std::size_t a = 0; a < placed.size(); ++a) {
+            const PixelRect ra = placed[a].rect;
             CHECK_MSG(ra.x >= -0.01f && ra.y >= -0.01f && ra.x + ra.w <= 1000.01f &&
                           ra.y + ra.h <= 1000.01f,
                       layout.id + " places a screen outside the window");
-            for (std::size_t b = a + 1; b < layout.placements.size(); ++b) {
-                const PixelRect rb = placement_pixel_rect(layout.placements[b], frame);
+            for (std::size_t b = a + 1; b < placed.size(); ++b) {
+                const PixelRect rb = placed[b].rect;
                 const bool disjoint = ra.x + ra.w <= rb.x + 0.01f || rb.x + rb.w <= ra.x + 0.01f ||
                                       ra.y + ra.h <= rb.y + 0.01f || rb.y + rb.h <= ra.y + 0.01f;
                 CHECK_MSG(disjoint, layout.id + " overlaps its own screens");
@@ -352,6 +481,7 @@ void test_framebuffer_split() {
 
 int main() {
     test_registry_contents();
+    test_layouts_match_the_wii_u();
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
     test_rotated_screens_letterbox_sideways();

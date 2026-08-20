@@ -57,9 +57,52 @@ struct ScreenPlacement {
     ScreenRotation rotation = ScreenRotation::None;
 };
 
+// Which way a composed layout lays its screens out.
+enum class LayoutAxis { Horizontal, Vertical };
+
+// Where a screen sits across that axis when it is smaller than the tallest (or
+// widest) thing beside it. The Wii U's two focus layouts differ by exactly this:
+// the small touch screen sits at the bottom, the small upper screen at the top,
+// each where it would be on a real DS.
+enum class CrossAlign { Start, Center, End };
+
+// One screen in a composed layout, sized relative to the largest in the group.
+struct ScreenItem {
+    ScreenId screen = ScreenId::Top;
+    float scale = 1.0f;
+    CrossAlign align = CrossAlign::Center;
+    ScreenRotation rotation = ScreenRotation::None;
+};
+
+// How a layout arranges its screens, as a description rather than as rectangles.
+//
+// Rectangles cannot be written down ahead of time: a screen's shape depends on
+// the window's, and normalized rects would stretch with it. More to the point,
+// arrangements repeat -- "these screens in a row, this one a third the size,
+// this much space between them" is the same idea whether the screens are a DS's
+// two, a 3DS's differently-shaped two, or a Wii U's TV and GamePad. Describing
+// the arrangement and solving for the rectangles means those are new data
+// rather than new arithmetic.
+struct LayoutComposition {
+    bool used = false;
+    LayoutAxis axis = LayoutAxis::Vertical;
+    std::vector<ScreenItem> items;
+    // Space between neighbours, as a fraction of the largest item's extent
+    // along the axis. Measured from the Wii U, where it is a deliberate visual
+    // gap rather than the hinge's real one.
+    float gap = 0.0f;
+    // Inset on every side, as a fraction of the frame. The group is fitted
+    // inside what is left and then centred.
+    float margin = 0.0f;
+};
+
 struct Layout {
     std::string id;            // stable identifier, used in config files
     std::string display_name;  // shown in the picker UI
+    // Either a composition, or explicit placements for the layouts whose screens
+    // are positioned by something other than a row -- Standard's are set by the
+    // console shell around them.
+    LayoutComposition composition;
     std::vector<ScreenPlacement> placements;
     bool accepts_touch_on_bottom = true;  // whether this layout exposes a
                                           // touchable bottom-screen region
@@ -114,6 +157,25 @@ struct PixelRect {
         return px >= x && px < x + w && py >= y && py < y + h;
     }
 };
+
+// A screen as it should actually be drawn: where it goes and which way up.
+// Everything that cares -- the compositor, the preview tiles, touch mapping --
+// reads this and nothing else, so they cannot disagree about where a screen is.
+struct PlacedScreen {
+    ScreenId screen = ScreenId::Top;
+    PixelRect rect;
+    ScreenRotation rotation = ScreenRotation::None;
+};
+
+std::vector<PlacedScreen> place_screens(const Layout& layout,
+                                        const PixelRect& window,
+                                        int source_width = kDsScreenWidth,
+                                        int source_height = kDsScreenHeight);
+std::vector<PlacedScreen> place_screens(const Layout& layout,
+                                        float output_width,
+                                        float output_height,
+                                        int source_width = kDsScreenWidth,
+                                        int source_height = kDsScreenHeight);
 
 // The box a layout's placements are relative to: the whole window, unless the
 // layout asked for an aspect ratio of its own, in which case the largest box of
