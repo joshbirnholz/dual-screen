@@ -76,6 +76,9 @@ PFN_EnableVertexAttribArray EnableVertexAttribArray = nullptr;
 PFN_DisableVertexAttribArray DisableVertexAttribArray = nullptr;
 PFN_DrawArrays DrawArrays = nullptr;
 PFN_GetIntegerv GetIntegerv = nullptr;
+PFN_DepthMask DepthMask = nullptr;
+PFN_ColorMask ColorMask = nullptr;
+PFN_BlendEquation BlendEquation = nullptr;
 PFN_GenFramebuffers GenFramebuffers = nullptr;
 PFN_DeleteFramebuffers DeleteFramebuffers = nullptr;
 PFN_BindFramebuffer BindFramebuffer = nullptr;
@@ -90,6 +93,21 @@ PFN_BlitFramebuffer BlitFramebuffer = nullptr;
 PFN_GenVertexArrays GenVertexArrays = nullptr;
 PFN_DeleteVertexArrays DeleteVertexArrays = nullptr;
 PFN_BindVertexArray BindVertexArray = nullptr;
+
+void reset_render_state() {
+    if (Enable == nullptr) return;
+    Enable(GL_BLEND);
+    BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (BlendEquation != nullptr) BlendEquation(GL_FUNC_ADD);
+    Disable(GL_DEPTH_TEST);
+    if (DepthMask != nullptr) DepthMask(GL_FALSE);
+    Disable(GL_STENCIL_TEST);
+    Disable(GL_SCISSOR_TEST);
+    Disable(GL_CULL_FACE);
+    Disable(GL_DITHER);
+    if (ColorMask != nullptr) ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    if (ActiveTexture != nullptr) ActiveTexture(GL_TEXTURE0);
+}
 
 bool is_gles() { return g_is_gles; }
 bool is_core_profile() { return g_is_core_profile; }
@@ -141,7 +159,8 @@ void unload() {
     GenBuffers = nullptr; DeleteBuffers = nullptr; BindBuffer = nullptr;
     BufferData = nullptr; BufferSubData = nullptr; VertexAttribPointer = nullptr;
     EnableVertexAttribArray = nullptr; DisableVertexAttribArray = nullptr;
-    DrawArrays = nullptr; GetIntegerv = nullptr; GenFramebuffers = nullptr;
+    DrawArrays = nullptr; GetIntegerv = nullptr; DepthMask = nullptr; ColorMask = nullptr;
+    BlendEquation = nullptr; GenFramebuffers = nullptr;
     DeleteFramebuffers = nullptr; BindFramebuffer = nullptr; FramebufferTexture2D = nullptr;
     CheckFramebufferStatus = nullptr; GenRenderbuffers = nullptr;
     DeleteRenderbuffers = nullptr; BindRenderbuffer = nullptr; RenderbufferStorage = nullptr;
@@ -203,6 +222,9 @@ bool load(bool gles_context, std::string* error) {
     resolve(DisableVertexAttribArray, "glDisableVertexAttribArray");
     resolve(DrawArrays, "glDrawArrays");
     resolve(GetIntegerv, "glGetIntegerv");
+    resolve(DepthMask, "glDepthMask");
+    resolve(ColorMask, "glColorMask");
+    resolve(BlendEquation, "glBlendEquation");
     resolve(GenFramebuffers, "glGenFramebuffers");
     resolve(DeleteFramebuffers, "glDeleteFramebuffers");
     resolve(BindFramebuffer, "glBindFramebuffer");

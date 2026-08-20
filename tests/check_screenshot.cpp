@@ -8,6 +8,7 @@
 //   regions: upper lower left right center topleft
 //   colours: blue green black orange bezel shell
 //
+// `text=<x0>,<y0>,<x1>,<y1>` checks a band holds readable glyphs, not a block.
 // `at=<x>,<y>,<colour>` checks one point given as fractions of the window, for
 // the layouts that put a screen somewhere none of the named regions land.
 //
@@ -229,6 +230,61 @@ int main(int argc, char** argv) {
             const bool ok = matches_colour(colour, r, g, b);
             std::printf("%-9s expected %-6s at %.2f,%.2f  got rgb(%3.0f, %3.0f, %3.0f) -> %s\n",
                         "at", colour.c_str(), x, y, r, g, b, ok ? "ok" : "FAIL");
+            if (!ok) ++failures;
+            continue;
+        }
+
+        // `text=<x0>,<y0>,<x1>,<y1>`: the given band has to hold readable glyphs
+        // rather than a solid block. Text is drawn from a coverage mask, so it
+        // only looks like letters while alpha blending is on -- with blending
+        // that ignores source alpha, every glyph cell fills solid and the band
+        // becomes one flat colour. Checking that light and dark pixels are both
+        // present is what tells those two apart.
+        if (region == "text") {
+            float bounds[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            std::size_t start = 0;
+            bool parsed = true;
+            for (int part = 0; part < 4; ++part) {
+                const std::size_t comma = expected.find(',', start);
+                if (part < 3 && comma == std::string::npos) {
+                    parsed = false;
+                    break;
+                }
+                bounds[part] = std::strtof(expected.substr(start, comma - start).c_str(), nullptr);
+                start = comma + 1;
+            }
+            if (!parsed) {
+                std::fprintf(stderr, "check_screenshot: text wants x0,y0,x1,y1\n");
+                ++failures;
+                continue;
+            }
+            const int x0 = static_cast<int>(bounds[0] * image.width);
+            const int y0 = static_cast<int>(bounds[1] * image.height);
+            const int x1 = static_cast<int>(bounds[2] * image.width);
+            const int y1 = static_cast<int>(bounds[3] * image.height);
+            long light = 0;
+            long dark = 0;
+            for (int y = y0; y < y1 && y < image.height; ++y) {
+                for (int x = x0; x < x1 && x < image.width; ++x) {
+                    const std::size_t offset =
+                        (static_cast<std::size_t>(y) * image.width + x) * 3;
+                    const int luma = (image.rgb[offset] + image.rgb[offset + 1] +
+                                      image.rgb[offset + 2]) / 3;
+                    if (luma > 140) ++light;
+                    if (luma < 70) ++dark;
+                }
+            }
+            // The strokes of a 5x7 glyph light up a small share of the band they
+            // sit in -- around a tenth, for these labels. When blending ignores
+            // source alpha, every glyph's whole cell fills with the text colour
+            // instead, roughly tripling that share. So the test is that the lit
+            // area stays well under what solid cells would produce, while still
+            // being enough to be text at all rather than an empty strip.
+            const long total = light + dark;
+            const double lit = total > 0 ? static_cast<double>(light) / total : 0.0;
+            const bool ok = total > 0 && lit > 0.01 && lit < 0.18;
+            std::printf("%-9s expected %-21s got %.0f%% of the band lit -> %s\n", "text",
+                        "glyphs, not blocks", lit * 100.0, ok ? "ok" : "FAIL");
             if (!ok) ++failures;
             continue;
         }

@@ -154,6 +154,32 @@ own range, `RETRO_DEVICE_ANALOG`'s left index answers with it, and it travels
 over the wire so a companion device can drive it too. A DS core is asked for it
 and ignores it, so there is nothing to switch on.
 
+**A GPU core does not hand the context back as it found it.** This is the third
+thing that only showed up against the real core, and the most costly: the game
+ran, but its screens were blank and the menu's text came out as solid
+rectangles. Citra ends every frame with its own `ResetGLState()`, which is not a
+reset to anything a frontend would want:
+
+| what it leaves | what it does to this app |
+| --- | --- |
+| `glBlendFunc(GL_ONE, GL_ZERO)` | source alpha ignored, so text drawn from a coverage mask fills every glyph cell solid |
+| `glEnable(GL_DEPTH_TEST)` | harmless here only because the window has no depth buffer |
+| a live scissor rect from its own rendering | clips both draws **and** framebuffer blits, which is what blanked the screens |
+| bound program, textures and vertex array reset | a core profile draws nothing at all with no vertex array bound |
+
+The frontend had set its blend mode and bound its vertex array once, in
+`initialize()`. That is fine for a CPU-rendering core and worthless for a GPU
+one: none of it survives the first frame. `gl::reset_render_state()` now
+re-establishes the whole lot every frame from `QuadRenderer::begin_frame`, and
+again before the screen blit, which runs before the frame proper begins. The
+rule is that the renderer assumes nothing about state it did not set this frame.
+
+The mock core now performs Citra's `ResetGLState` verbatim after presenting, so
+this is a test failure rather than a bug report. That is the same lesson as the
+option values, twice over: **a mock that is better behaved than the real core
+tests nothing.** Each time this project has been surprised by Citra, the mock had
+been written to match an assumption rather than the source.
+
 **What is still unverified:** all of this is exercised against a mock core that
 requests the same context Citra does and renders through it, not against a real
 Citra build, which was not available in this environment. The frontend's runtime

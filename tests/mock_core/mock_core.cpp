@@ -81,6 +81,15 @@ void (*gl_BindFramebuffer)(GLenum_, GLuint_) = nullptr;
 void (*gl_FramebufferTexture2D)(GLenum_, GLenum_, GLenum_, GLuint_, GLint_) = nullptr;
 void (*gl_BlitFramebuffer)(GLint_, GLint_, GLint_, GLint_, GLint_, GLint_, GLint_, GLint_,
                            GLbitfield_, GLenum_) = nullptr;
+void (*gl_Enable)(GLenum_) = nullptr;
+void (*gl_Disable)(GLenum_) = nullptr;
+void (*gl_DepthFunc)(GLenum_) = nullptr;
+void (*gl_DepthMask)(unsigned char) = nullptr;
+void (*gl_BlendFunc)(GLenum_, GLenum_) = nullptr;
+void (*gl_UseProgram)(GLuint_) = nullptr;
+void (*gl_ActiveTexture)(GLenum_) = nullptr;
+void (*gl_BindVertexArray)(GLuint_) = nullptr;
+void (*gl_Scissor)(GLint_, GLint_, GLsizei_, GLsizei_) = nullptr;
 
 constexpr GLenum_ kGlTexture2d = 0x0DE1;
 constexpr GLenum_ kGlRgba = 0x1908;
@@ -94,6 +103,14 @@ constexpr GLenum_ kGlDrawFramebuffer = 0x8CA9;
 constexpr GLenum_ kGlFramebuffer = 0x8D40;
 constexpr GLenum_ kGlColorAttachment0 = 0x8CE0;
 constexpr GLbitfield_ kGlColorBufferBit = 0x00004000;
+constexpr GLenum_ kGlDepthTest = 0x0B71;
+constexpr GLenum_ kGlLess = 0x0201;
+constexpr GLenum_ kGlBlend = 0x0BE2;
+constexpr GLenum_ kGlOne = 1;
+constexpr GLenum_ kGlZero = 0;
+constexpr GLenum_ kGlCullFace = 0x0B44;
+constexpr GLenum_ kGlScissorTest = 0x0C11;
+constexpr GLenum_ kGlTexture3 = 0x84C3;
 
 GLuint_ g_gpu_texture = 0;
 GLuint_ g_gpu_framebuffer = 0;
@@ -115,6 +132,15 @@ void RETRO_CALLCONV hw_context_reset() {
     resolve_gl(gl_BindFramebuffer, "glBindFramebuffer");
     resolve_gl(gl_FramebufferTexture2D, "glFramebufferTexture2D");
     resolve_gl(gl_BlitFramebuffer, "glBlitFramebuffer");
+    resolve_gl(gl_Enable, "glEnable");
+    resolve_gl(gl_Disable, "glDisable");
+    resolve_gl(gl_DepthFunc, "glDepthFunc");
+    resolve_gl(gl_DepthMask, "glDepthMask");
+    resolve_gl(gl_BlendFunc, "glBlendFunc");
+    resolve_gl(gl_UseProgram, "glUseProgram");
+    resolve_gl(gl_ActiveTexture, "glActiveTexture");
+    resolve_gl(gl_BindVertexArray, "glBindVertexArray");
+    resolve_gl(gl_Scissor, "glScissor");
 
     g_hw_ready = gl_GenTextures != nullptr && gl_BlitFramebuffer != nullptr &&
                  gl_GenFramebuffers != nullptr && gl_TexImage2D != nullptr;
@@ -132,6 +158,30 @@ void RETRO_CALLCONV hw_context_reset() {
     gl_BindFramebuffer(kGlFramebuffer, g_gpu_framebuffer);
     gl_FramebufferTexture2D(kGlFramebuffer, kGlColorAttachment0, kGlTexture2d, g_gpu_texture, 0);
     gl_BindFramebuffer(kGlFramebuffer, 0);
+}
+
+// A real emulator core does not hand the GL context back the way it found it.
+// This is Citra's own ResetGLState, which is what it leaves behind after every
+// frame: depth testing on, blending that ignores source alpha, no program, no
+// vertex array, and a texture unit that is not unit 0. Anything in the frontend
+// that set its GL state once at startup and assumed it would survive is broken
+// by this -- so the mock does it too, and the tests see what the real core does.
+void trash_gl_state_like_a_real_core() {
+    if (gl_Enable == nullptr) return;
+    gl_Enable(kGlDepthTest);
+    gl_DepthFunc(kGlLess);
+    gl_DepthMask(1);
+    gl_Enable(kGlBlend);
+    gl_BlendFunc(kGlOne, kGlZero);  // source alpha ignored: alpha masks go solid
+    gl_Disable(kGlCullFace);
+    gl_ActiveTexture(kGlTexture3);
+    gl_UseProgram(0);
+    if (gl_BindVertexArray != nullptr) gl_BindVertexArray(0);
+    // Citra does not turn scissoring off, so whatever rect it was last using
+    // stays live -- and a scissor clips framebuffer blits as well as draws.
+    gl_Enable(kGlScissorTest);
+    gl_Scissor(0, 0, 4, 4);
+    gl_BindTexture(kGlTexture2d, 0);
 }
 
 void RETRO_CALLCONV hw_context_destroy() {
@@ -171,6 +221,8 @@ void present_through_gpu() {
                        kGlColorBufferBit, kGlNearest);
     gl_BindFramebuffer(kGlReadFramebuffer, 0);
     gl_BindFramebuffer(kGlDrawFramebuffer, 0);
+
+    trash_gl_state_like_a_real_core();
 }
 
 int16_t g_silence[1024 * 2];

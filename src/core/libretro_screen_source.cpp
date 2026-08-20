@@ -369,6 +369,12 @@ bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
     destination.allocate_rgba(width, height);
     if (!destination.valid()) return false;
 
+    // A blit is clipped by the scissor rect and filtered by the colour mask
+    // just as a draw is, and the core we are copying from left both set to suit
+    // itself. This runs before the frontend's own frame begins, so it cannot
+    // rely on begin_frame having tidied up yet.
+    gl::reset_render_state();
+
     if (screen_framebuffer_ == 0) {
         gl::GenFramebuffers(1, &screen_framebuffer_);
     }

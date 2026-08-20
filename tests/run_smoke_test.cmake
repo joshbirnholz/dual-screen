@@ -467,6 +467,53 @@ foreach(CASE IN LISTS THREE_DS_CASES)
     endif()
 endforeach()
 
+# The layout menu, drawn right after a frame from a core that renders on the GPU
+# and hands the context back with its own state in it. That is the case where
+# the frontend's own rendering breaks: with the blending the core leaves behind,
+# text drawn from a coverage mask fills solid and the menu becomes rectangles.
+file(REMOVE "${THREE_DS_HOME}/data/dualscreen/saves/game.srm")
+set(MENU_SHOT "${THREE_DS_HOME}/menu.ppm")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CONFIG_HOME=${THREE_DS_HOME}/config"
+            "XDG_DATA_HOME=${THREE_DS_HOME}/data"
+            "SDL_AUDIODRIVER=dummy"
+            "SDL_VIDEODRIVER=x11"
+            "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+            "${DUALSCREEN}"
+                --game "${THREE_DS_HOME}/game.3ds"
+                --core "${MOCK_CORE_3DS}"
+                --layout vertical
+                --windowed
+                --start-screen layout
+                --exit-after-frames ${FRAME_COUNT}
+                --screenshot "${MENU_SHOT}"
+    RESULT_VARIABLE MENU_RESULT
+    OUTPUT_VARIABLE MENU_OUTPUT
+    ERROR_VARIABLE MENU_ERROR)
+
+if(NOT MENU_RESULT EQUAL 0 OR NOT EXISTS "${MENU_SHOT}")
+    message(STATUS "${MENU_OUTPUT}")
+    message(STATUS "${MENU_ERROR}")
+    message(SEND_ERROR "the 3DS layout menu run failed")
+    set(ANY_FAILED TRUE)
+else()
+    execute_process(
+        COMMAND "${CHECKER}" "${MENU_SHOT}"
+                # The title, and the footer prompts along the bottom.
+                text=0.02,0.03,0.35,0.09
+                text=0.10,0.94,0.70,0.98
+        RESULT_VARIABLE MENU_CHECK_RESULT
+        OUTPUT_VARIABLE MENU_CHECK_OUTPUT
+        ERROR_VARIABLE MENU_CHECK_ERROR)
+    message(STATUS "3DS layout menu text:\n${MENU_CHECK_OUTPUT}")
+    if(NOT MENU_CHECK_RESULT EQUAL 0)
+        message(STATUS "${MENU_CHECK_ERROR}")
+        message(SEND_ERROR "the menu text was not legible over a GPU-rendered game")
+        set(ANY_FAILED TRUE)
+    endif()
+endif()
+
 # A touch on a 3DS lands in a 320x240 space, not a DS's 256x192 -- and the touch
 # screen is narrower than the upper one, so a crop that took the wrong columns
 # would put the crosshair off to one side.

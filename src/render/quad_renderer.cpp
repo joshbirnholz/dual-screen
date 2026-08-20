@@ -163,8 +163,8 @@ bool QuadRenderer::initialize(std::string* error) {
     gl::BufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(float) * 24), nullptr, GL_DYNAMIC_DRAW);
     gl::BindBuffer(GL_ARRAY_BUFFER, 0);
 
-    gl::Enable(GL_BLEND);
-    gl::BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // Blend state is not set here: begin_frame establishes it every frame,
+    // because a core sharing this context will have changed it by then.
     return true;
 }
 
@@ -187,6 +187,16 @@ void QuadRenderer::begin_frame(int output_width, int output_height) {
     output_width_ = output_width;
     output_height_ = output_height;
     gl::Viewport(0, 0, output_width, output_height);
+
+    // Every frame, not once at startup: a GPU-rendering core shares this
+    // context and leaves its own state behind, so nothing set in initialize()
+    // survives the first frame of a game.
+    gl::reset_render_state();
+    if (vertex_array_ != 0) {
+        // A core profile draws nothing at all with no vertex array bound, and
+        // a core that binds its own leaves ours unbound.
+        gl::BindVertexArray(vertex_array_);
+    }
 }
 
 void QuadRenderer::clear(const Color& color) {

@@ -60,6 +60,9 @@ using PFN_EnableVertexAttribArray = void (*)(GLuint);
 using PFN_DisableVertexAttribArray = void (*)(GLuint);
 using PFN_DrawArrays = void (*)(GLenum, GLint, GLsizei);
 using PFN_GetIntegerv = void (*)(GLenum, GLint*);
+using PFN_DepthMask = void (*)(GLboolean);
+using PFN_ColorMask = void (*)(GLboolean, GLboolean, GLboolean, GLboolean);
+using PFN_BlendEquation = void (*)(GLenum);
 
 // Framebuffer objects. Core to ES 2.0 and to desktop GL 3.0, so these are
 // required: the hardware-rendering path draws the core's picture into one.
@@ -129,6 +132,9 @@ extern PFN_EnableVertexAttribArray EnableVertexAttribArray;
 extern PFN_DisableVertexAttribArray DisableVertexAttribArray;
 extern PFN_DrawArrays DrawArrays;
 extern PFN_GetIntegerv GetIntegerv;
+extern PFN_DepthMask DepthMask;
+extern PFN_ColorMask ColorMask;
+extern PFN_BlendEquation BlendEquation;
 extern PFN_GenFramebuffers GenFramebuffers;
 extern PFN_DeleteFramebuffers DeleteFramebuffers;
 extern PFN_BindFramebuffer BindFramebuffer;
@@ -143,6 +149,19 @@ extern PFN_BlitFramebuffer BlitFramebuffer;
 extern PFN_GenVertexArrays GenVertexArrays;
 extern PFN_DeleteVertexArrays DeleteVertexArrays;
 extern PFN_BindVertexArray BindVertexArray;
+
+// Puts the fixed-function state this renderer depends on back the way it needs
+// it: alpha blending on, depth/stencil/scissor/culling off, texture unit 0,
+// full colour mask.
+//
+// This exists because a libretro core that renders on the GPU shares this
+// context and does not hand it back as it found it. Citra, for one, finishes
+// every frame with depth testing enabled and glBlendFunc(GL_ONE, GL_ZERO) --
+// which ignores source alpha, so text drawn from a coverage mask comes out as
+// solid rectangles -- and leaves whatever scissor rect it was last using in
+// place, which clips both draws and framebuffer blits. Any state set once at
+// startup is gone after the first frame of such a core.
+void reset_render_state();
 
 // Whether the optional entry points above turned up. A GL 3.3 core profile has
 // both; an ES 2.0 context has neither.
