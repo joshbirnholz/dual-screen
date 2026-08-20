@@ -231,6 +231,7 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
     // error behind is its own business; the same error attributed to us would
     // send the next person hunting in the wrong file.
     gl::log_error_once("the core left an OpenGL error behind");
+    probe_window_framebuffer();
 
     for (const std::string& message : core_->core_messages()) {
         warnings_.push_back(message);
@@ -363,6 +364,28 @@ void LibretroCoreScreenSource::apply_pointer_rect() {
     source.screen_width = touch.width;
     source.screen_height = touch.height;
     core_->set_pointer_source(source);
+}
+
+void LibretroCoreScreenSource::probe_window_framebuffer() {
+    // Looks at the window right after the core ran, once. A core told to draw
+    // into framebuffer 0 paints the window instead of its own target, and the
+    // frontend's clear erases it a moment later -- from the outside that is
+    // indistinguishable from a core that never rendered, so it is worth being
+    // able to tell the two apart.
+    if (window_probe_done_ || gl::ReadPixels == nullptr) return;
+    window_probe_done_ = true;
+
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    std::string report;
+    for (int y : {40, 200, 400}) {
+        uint8_t rgba[4] = {0, 0, 0, 0};
+        gl::ReadPixels(200, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        if (!report.empty()) report += ", ";
+        report += "y=" + std::to_string(y) + " rgb(" + std::to_string(rgba[0]) + "," +
+                  std::to_string(rgba[1]) + "," + std::to_string(rgba[2]) + ")";
+    }
+    log_info("the window right after the core ran: " + report);
+    gl::take_error();
 }
 
 void LibretroCoreScreenSource::probe_core_framebuffer(const CoreVideoFrame& frame) {

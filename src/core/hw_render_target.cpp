@@ -2,6 +2,9 @@
 
 #include "util/log.hpp"
 
+#ifndef GL_RGBA8
+#define GL_RGBA8 0x8058
+#endif
 #ifndef GL_DEPTH24_STENCIL8
 #define GL_DEPTH24_STENCIL8 0x88F0
 #endif
@@ -67,7 +70,10 @@ bool HwRenderTarget::create(unsigned width, unsigned height, bool want_depth, bo
 
     gl::GenTextures(1, &texture_);
     gl::BindTexture(GL_TEXTURE_2D, texture_);
-    gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width),
+    // GL_RGBA8, sized, rather than plain GL_RGBA. Only the sized formats are
+    // guaranteed colour-renderable in a core profile, and this texture exists
+    // solely to be rendered into by the core.
+    gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width),
                    static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     // No mipmaps and clamped, or an incomplete texture would make the whole
     // framebuffer incomplete.

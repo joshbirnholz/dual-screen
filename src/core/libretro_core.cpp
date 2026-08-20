@@ -26,8 +26,17 @@ LibretroCore* g_active_core = nullptr;
 // these with its own calling convention, so they are free functions here
 // rather than members.
 uintptr_t RETRO_CALLCONV hw_get_current_framebuffer_thunk() {
-    if (g_active_core == nullptr) return 0;
-    return static_cast<uintptr_t>(g_active_core->hw_framebuffer_name());
+    const GLuint name = (g_active_core == nullptr) ? 0 : g_active_core->hw_framebuffer_name();
+    // Once. Zero here means the core is being told to draw into the window,
+    // where the frontend's own clear wipes it out before anyone sees it -- which
+    // looks exactly like a core that never rendered.
+    static bool reported = false;
+    if (!reported) {
+        reported = true;
+        log_info("the core asked where to draw and was given framebuffer " +
+                 std::to_string(name));
+    }
+    return static_cast<uintptr_t>(name);
 }
 
 retro_proc_address_t RETRO_CALLCONV hw_get_proc_address_thunk(const char* symbol) {
@@ -483,6 +492,9 @@ void LibretroCore::run_frame() {
         // Catches a core that drew larger than it had announced: the frame that
         // overflowed is already gone, but the next one fits.
         ensure_hw_target();
+        // Everything the core is about to do belongs to the core. Draining here
+        // means the check after retro_run reports only what the core caused.
+        gl::take_error();
         // The core draws into its own framebuffer, not the window. Binding it
         // here rather than trusting the core to means a core that leaves the
         // binding somewhere else cannot scribble over the window.
