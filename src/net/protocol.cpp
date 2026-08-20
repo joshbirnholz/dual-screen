@@ -217,6 +217,8 @@ void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.touching ? 1u : 0u);
     put_u16(out, static_cast<uint16_t>(message.touch_x));
     put_u16(out, static_cast<uint16_t>(message.touch_y));
+    put_u16(out, static_cast<uint16_t>(message.circle_x));
+    put_u16(out, static_cast<uint16_t>(message.circle_y));
     finish_message(out, start, MessageType::Input);
 }
 
@@ -426,14 +428,20 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
     uint8_t touching = 0;
     uint16_t x = 0;
     uint16_t y = 0;
+    uint16_t circle_x = 0;
+    uint16_t circle_y = 0;
     reader.u32(out.buttons);
     reader.u8(touching);
     reader.u16(x);
     reader.u16(y);
+    reader.u16(circle_x);
+    reader.u16(circle_y);
     if (!reader.ok()) return false;
     out.touching = (touching != 0);
     out.touch_x = static_cast<int16_t>(x);
     out.touch_y = static_cast<int16_t>(y);
+    out.circle_x = static_cast<int16_t>(circle_x);
+    out.circle_y = static_cast<int16_t>(circle_y);
     return true;
 }
 

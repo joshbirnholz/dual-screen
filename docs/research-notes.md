@@ -123,6 +123,37 @@ Three consequences worth knowing:
   the draw picks the matching shader path, so no caller has to know where a
   screen came from.
 
+**The options Citra actually needs pinned**, all read out of its source rather
+than assumed:
+
+| option | value | why |
+| --- | --- | --- |
+| `citra_layout_option` | `Default Top-Bottom Screen` | the arrangement the split expects |
+| `citra_swap_screen` | `Top` | Citra's way of saying "not swapped" — it has no disabled/enabled here |
+| `citra_touch_touchscreen` | `enabled` | **off by default**; with it off Citra ignores the libretro pointer entirely and the touch screen does nothing |
+| `citra_render_touchscreen` | `disabled` | its own pointer would sit on top of the one this app draws |
+
+The first two were wrong on the first attempt, in the same way and for the same
+reason: the mock core declared value lists this app had *invented* rather than
+copied, so forcing `citra_swap_screen = "disabled"` passed every test and was
+rejected by the real core. The mock now declares Citra's own values, which turns
+a wrong pinned value back into a test failure. That is the general lesson here —
+a mock that agrees with the frontend's assumptions tests nothing.
+
+`citra_touch_touchscreen` is the one that would have been hardest to find from a
+bug report, because nothing fails: the core loads, the game runs, and touches
+are silently dropped. Citra reads `RETRO_DEVICE_ID_POINTER_PRESSED` only inside
+that option's branch; the default branch (`citra_mouse_touchscreen`, on by
+default) takes its press from `RETRO_DEVICE_ID_MOUSE_LEFT`, which this frontend
+never sends.
+
+**The circle pad.** A 3DS is played with an analogue stick, and this frontend
+sent only digital buttons — so a 3DS game would have loaded, drawn and been
+impossible to walk around in. `DsInputState` now carries the stick in libretro's
+own range, `RETRO_DEVICE_ANALOG`'s left index answers with it, and it travels
+over the wire so a companion device can drive it too. A DS core is asked for it
+and ignores it, so there is nothing to switch on.
+
 **What is still unverified:** all of this is exercised against a mock core that
 requests the same context Citra does and renders through it, not against a real
 Citra build, which was not available in this environment. The frontend's runtime

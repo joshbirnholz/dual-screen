@@ -217,6 +217,8 @@ void CompanionSession::send_input(const DsInputState& state) {
     // Only changes go out. Holding a button steady costs nothing.
     if (ever_sent_input_ && state.buttons == last_sent_input_.buttons &&
         state.touching == last_sent_input_.touching &&
+        state.circle_x == last_sent_input_.circle_x &&
+        state.circle_y == last_sent_input_.circle_y &&
         (!state.touching || (state.touch_x == last_sent_input_.touch_x &&
                              state.touch_y == last_sent_input_.touch_y))) {
         return;
@@ -227,6 +229,8 @@ void CompanionSession::send_input(const DsInputState& state) {
     message.touching = state.touching;
     message.touch_x = static_cast<int16_t>(state.touch_x);
     message.touch_y = static_cast<int16_t>(state.touch_y);
+    message.circle_x = state.circle_x;
+    message.circle_y = state.circle_y;
     std::vector<uint8_t> out;
     encode_input(message, out);
     stream_.send(out);

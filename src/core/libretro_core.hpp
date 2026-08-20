@@ -193,6 +193,8 @@ private:
     std::map<std::string, std::string> option_values_;
     std::map<std::string, std::string> forced_options_;
     std::vector<std::string> option_warnings_;
+    // What has already been written to the log, so a revalidation is quiet.
+    std::vector<std::string> logged_option_warnings_;
     std::vector<std::string> core_messages_;
 
     // --- hardware rendering ---

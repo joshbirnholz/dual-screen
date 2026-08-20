@@ -1646,6 +1646,14 @@ int App::run(const AppOptions& options) {
             if (impl.host_session && impl.host_session->has_companion()) {
                 const DsInputState& remote = impl.host_session->companion_input();
                 combined.buttons |= remote.buttons;
+                // Whichever stick is pushed further wins, so a companion's idle
+                // stick does not cancel out the host's, or the other way round.
+                if (std::abs(remote.circle_x) > std::abs(combined.circle_x)) {
+                    combined.circle_x = remote.circle_x;
+                }
+                if (std::abs(remote.circle_y) > std::abs(combined.circle_y)) {
+                    combined.circle_y = remote.circle_y;
+                }
                 if (remote.touching && !combined.touching) {
                     combined.touching = true;
                     combined.touch_x = remote.touch_x;

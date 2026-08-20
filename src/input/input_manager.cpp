@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 #include "util/log.hpp"
 
@@ -373,15 +374,24 @@ uint32_t InputManager::poll_held_buttons() const {
                 held.set(ds_button, true);
             }
         }
-        // The left stick doubles as the d-pad; the DS has no analogue stick, and
-        // players expect the stick to just work.
-        const float axis_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
-        const float axis_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
+        // The left stick is the 3DS's circle pad, and it also doubles as the
+        // d-pad: a DS has no analogue stick at all, and players reach for the
+        // stick expecting it to work. Both readings are sent, and each console's
+        // core takes the one it understands.
+        const int16_t raw_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+        const int16_t raw_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
+        const float axis_x = raw_x / 32767.0f;
+        const float axis_y = raw_y / 32767.0f;
         const float deadzone = settings_.stick_deadzone;
         if (axis_y < -deadzone) held.set(DsButton::Up, true);
         if (axis_y > deadzone) held.set(DsButton::Down, true);
         if (axis_x < -deadzone) held.set(DsButton::Left, true);
         if (axis_x > deadzone) held.set(DsButton::Right, true);
+
+        // The strongest deflection across every pad wins, so two controllers do
+        // not average each other out into standing still.
+        if (std::abs(raw_x) > std::abs(held.circle_x)) held.circle_x = raw_x;
+        if (std::abs(raw_y) > std::abs(held.circle_y)) held.circle_y = raw_y;
 
         // The triggers double as L and R. The DS's shoulder buttons are
         // digital, but plenty of people reach for the triggers first, and a

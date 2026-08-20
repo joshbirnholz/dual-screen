@@ -298,6 +298,7 @@ Full options:
 | --- | --- |
 | Open/close the layout menu | **F1** or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
+| Move with the circle pad | the left stick, on 3DS games; on DS games it doubles as the d-pad |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
 | Turn the pointer off entirely | **Pointer** in the layout menu |

@@ -542,8 +542,14 @@ void LibretroCore::apply_forced_options() {
         }
     }
     variables_dirty_ = true;
-    for (const std::string& warning : option_warnings_) {
-        log_warn(warning);
+    // A core can declare its options more than once (a v1 table after a v2 one,
+    // say), and each declaration revalidates. Logging only what changed keeps
+    // one real problem from appearing several times in the log.
+    if (option_warnings_ != logged_option_warnings_) {
+        for (const std::string& warning : option_warnings_) {
+            log_warn(warning);
+        }
+        logged_option_warnings_ = option_warnings_;
     }
 }
 
@@ -902,6 +908,18 @@ int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned in
                 return input_state_->pressed(ds_button) ? 1 : 0;
             }
         }
+        return 0;
+    }
+
+    if (device == RETRO_DEVICE_ANALOG) {
+        // Only the left stick is the circle pad. The right one is Citra's
+        // C-stick, which nothing here maps yet, and reporting a centred stick
+        // for it is the same as reporting nothing.
+        if (index != RETRO_DEVICE_INDEX_ANALOG_LEFT) {
+            return 0;
+        }
+        if (id == RETRO_DEVICE_ID_ANALOG_X) return input_state_->circle_x;
+        if (id == RETRO_DEVICE_ID_ANALOG_Y) return input_state_->circle_y;
         return 0;
     }
 

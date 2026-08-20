@@ -148,6 +148,11 @@ void test_input_round_trip() {
     sent.touching = true;
     sent.touch_x = 200;
     sent.touch_y = 150;
+    // Negative on purpose: the circle pad is signed and travels as unsigned
+    // bytes, so a sign lost in the round trip would make a companion's stick
+    // push the wrong way.
+    sent.circle_x = -12345;
+    sent.circle_y = 32000;
 
     std::vector<uint8_t> buffer;
     encode_input(sent, buffer);
@@ -162,6 +167,8 @@ void test_input_round_trip() {
     CHECK_EQ(received.touching, true);
     CHECK_EQ(received.touch_x, 200);
     CHECK_EQ(received.touch_y, 150);
+    CHECK_EQ(received.circle_x, -12345);
+    CHECK_EQ(received.circle_y, 32000);
 }
 
 // Several messages written back to back must come out one at a time, in order,

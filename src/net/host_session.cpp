@@ -188,6 +188,8 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             const ScreenSize touch = system_profile(config_.system).screens.bottom;
             companion_input_.touch_x = std::min(std::max<int>(input.touch_x, 0), touch.width - 1);
             companion_input_.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
+            companion_input_.circle_x = input.circle_x;
+            companion_input_.circle_y = input.circle_y;
             companion_input_fresh_ = true;
             break;
         }

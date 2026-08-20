@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -175,6 +176,8 @@ void present_through_gpu() {
 int16_t g_silence[1024 * 2];
 unsigned g_frame_counter = 0;
 bool g_layout_option_honoured = false;
+int16_t g_reported_circle_x = 0;
+int16_t g_reported_circle_y = 0;
 
 // Stand-in for cartridge save RAM. The "game" stamps a magic value into it as
 // it runs; on a later launch, finding that magic proves the frontend both wrote
@@ -192,7 +195,16 @@ const retro_core_option_v2_definition kOptions[] = {
       {"Side by Side", nullptr},
       {nullptr, nullptr}},
      "Default Top-Bottom Screen"},
-    {"citra_swap_screen", "Swap screens", nullptr, nullptr, nullptr, "screen",
+    // Values copied from Citra's own option table, not invented. An earlier
+    // version of this mock guessed "disabled|enabled" here, so the frontend
+    // forcing "disabled" passed every test and was rejected by the real core.
+    {"citra_swap_screen", "Prominent 3DS screen", nullptr, nullptr, nullptr, "screen",
+     {{"Top", nullptr}, {"Bottom", nullptr}, {nullptr, nullptr}}, "Top"},
+    {"citra_touch_touchscreen", "Simulate touchscreen interactions with touchscreen", nullptr,
+     nullptr, nullptr, "screen",
+     {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
+    {"citra_render_touchscreen", "Render simulated touchscreen interactions", nullptr, nullptr,
+     nullptr, "screen",
      {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
     {"melonds_number_of_screen_layouts", "Number of layouts", nullptr,
      "How many layouts to cycle through", nullptr, "screen",
@@ -425,8 +437,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
     // Report whether the frontend actually pinned the layout we depend on, in
     // whichever core's language this build speaks.
     if (kIsThreeDs) {
+        // Every option the frontend depends on, not just the layout: touch is
+        // ignored outright unless citra_touch_touchscreen is turned on, and the
+        // split lands on the wrong screen if the prominent one is swapped.
         g_layout_option_honoured =
-            read_variable("citra_layout_option") == "Default Top-Bottom Screen";
+            read_variable("citra_layout_option") == "Default Top-Bottom Screen" &&
+            read_variable("citra_swap_screen") == "Top" &&
+            read_variable("citra_touch_touchscreen") == "enabled";
     } else {
         g_layout_option_honoured = (read_variable("melonds_screen_layout1") == "top-bottom") &&
                                    (read_variable("melonds_number_of_screen_layouts") == "1") &&
@@ -450,6 +467,26 @@ RETRO_API void retro_run(void) {
     // Then dirty the buffer, so there is something for the frontend to write.
     std::memcpy(g_save_ram, kSaveMagic, sizeof(kSaveMagic));
     g_save_ram[4] = static_cast<uint8_t>(g_frame_counter & 0xffu);
+    // Report the circle pad back, so a test can see whether the frontend's
+    // analog plumbing reached the core at all. A 3DS is played with this stick;
+    // a core that never receives it cannot be walked around in.
+    if (g_input_state != nullptr && g_environment != nullptr) {
+        const int16_t circle_x = g_input_state(0, RETRO_DEVICE_ANALOG,
+                                               RETRO_DEVICE_INDEX_ANALOG_LEFT,
+                                               RETRO_DEVICE_ID_ANALOG_X);
+        const int16_t circle_y = g_input_state(0, RETRO_DEVICE_ANALOG,
+                                               RETRO_DEVICE_INDEX_ANALOG_LEFT,
+                                               RETRO_DEVICE_ID_ANALOG_Y);
+        if (circle_x != g_reported_circle_x || circle_y != g_reported_circle_y) {
+            g_reported_circle_x = circle_x;
+            g_reported_circle_y = circle_y;
+            static char text[64];
+            std::snprintf(text, sizeof(text), "circle %d,%d", circle_x, circle_y);
+            struct retro_message message = {text, 60};
+            g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+        }
+    }
+
     draw_top_screen();
     draw_bottom_screen();
     draw_button_indicators();

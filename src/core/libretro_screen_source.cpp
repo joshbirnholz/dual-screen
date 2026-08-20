@@ -33,7 +33,15 @@ constexpr const char* kOptShowCursor = "melonds_show_cursor";
 // wider, in a buffer 400 wide and 480 tall at 1x.
 constexpr const char* kOpt3dsLayout = "citra_layout_option";
 constexpr const char* kOpt3dsLayoutValue = "Default Top-Bottom Screen";
+// "Top" means the top screen is the prominent one, which is Citra's way of
+// saying "not swapped" -- it has no disabled/enabled here.
 constexpr const char* kOpt3dsSwapScreens = "citra_swap_screen";
+constexpr const char* kOpt3dsSwapScreensValue = "Top";
+// Citra ignores the libretro pointer entirely unless this is on: with it off,
+// touches reach the core and are dropped, and the touch screen does nothing.
+constexpr const char* kOpt3dsTouch = "citra_touch_touchscreen";
+// Its own on-screen pointer, which would sit on top of the one we draw.
+constexpr const char* kOpt3dsRenderTouch = "citra_render_touchscreen";
 
 std::string dimensions(int width, int height) {
     return std::to_string(width) + "x" + std::to_string(height);
@@ -151,7 +159,9 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             break;
         case SystemId::ThreeDs:
             core_->force_option(kOpt3dsLayout, kOpt3dsLayoutValue);
-            core_->force_option(kOpt3dsSwapScreens, "disabled");
+            core_->force_option(kOpt3dsSwapScreens, kOpt3dsSwapScreensValue);
+            core_->force_option(kOpt3dsTouch, "enabled");        // touch reaches the core
+            core_->force_option(kOpt3dsRenderTouch, "disabled"); // we draw our own pointer
             break;
     }
 

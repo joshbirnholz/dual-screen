@@ -24,6 +24,11 @@ struct DsInputState {
     bool touching = false;
     int touch_x = 0;
     int touch_y = 0;
+    // The circle pad, in libretro's analog range [-0x7fff, 0x7fff]. A DS has no
+    // analog stick and ignores these; a 3DS is played with them, so a game like
+    // A Link Between Worlds cannot be moved without them.
+    int16_t circle_x = 0;
+    int16_t circle_y = 0;
 
     bool pressed(DsButton button) const {
         return (buttons & (1u << static_cast<unsigned>(button))) != 0u;
@@ -37,6 +42,8 @@ struct DsInputState {
         touching = false;
         touch_x = 0;
         touch_y = 0;
+        circle_x = 0;
+        circle_y = 0;
     }
 };
 

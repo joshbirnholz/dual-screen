@@ -86,7 +86,17 @@ void test_core_loads_and_runs() {
     CHECK_EQ(core.av_info().base_height, 384u);
     CHECK(core.av_info().fps > 59.0 && core.av_info().fps < 60.0);
 
+    // The circle pad has to reach the core. A 3DS is played with it, and a DS
+    // core simply ignores it, so it is always sent.
+    input.circle_x = -20000;
+    input.circle_y = 15000;
     core.run_frame();
+    bool saw_circle = false;
+    for (const std::string& message : core.core_messages()) {
+        if (message == "circle -20000,15000") saw_circle = true;
+    }
+    CHECK_MSG(saw_circle, "the circle pad never reached the core");
+
     const CoreVideoFrame& frame = core.video_frame();
     CHECK(frame.valid());
     CHECK_EQ(frame.width, 256u);
