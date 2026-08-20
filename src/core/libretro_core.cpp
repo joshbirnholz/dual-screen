@@ -409,24 +409,41 @@ bool LibretroCore::accept_hw_render(struct retro_hw_render_callback* callback) {
 bool LibretroCore::ensure_hw_target() {
     if (!hw_render_requested_) return false;
 
-    // The core declares its largest output through av_info. Before that arrives
-    // this falls back to the current geometry, which load_game() then corrects.
-    unsigned width = av_info_.max_width != 0 ? av_info_.max_width : av_info_.base_width;
-    unsigned height = av_info_.max_height != 0 ? av_info_.max_height : av_info_.base_height;
-    if (width == 0 || height == 0) {
+    // Sized to what the core says it is drawing, not to the largest it could
+    // ever draw. Citra declares a maximum ten times its base -- room for a
+    // resolution multiplier it is not using -- so taking the maximum leaves the
+    // picture in one corner of a buffer a hundred times its area, and every
+    // read out of it then depends on knowing which corner. Matching the base
+    // removes that question, and reclaims the 76MB the maximum would cost.
+    //
+    // Growing is still handled: the core announces a size change through
+    // SET_GEOMETRY or SET_SYSTEM_AV_INFO before it draws at the new size, and
+    // run_frame checks again in case a core ever draws larger unannounced.
+    unsigned width = av_info_.base_width != 0 ? av_info_.base_width : av_info_.max_width;
+    unsigned height = av_info_.base_height != 0 ? av_info_.base_height : av_info_.max_height;
+    width = width > minimum_hw_width_ ? width : minimum_hw_width_;
+    height = height > minimum_hw_height_ ? height : minimum_hw_height_;
+    // Whether this is the real size or a guess made before the core declared
+    // one. A guess must not become a floor the real size cannot shrink below.
+    const bool from_declared_geometry = (width != 0 && height != 0);
+    if (!from_declared_geometry) {
         // Nothing declared yet. A modest default keeps the framebuffer valid
-        // until the real size arrives; it only ever grows from here.
+        // until the real size arrives and replaces it.
         width = 1024;
         height = 1024;
     }
+    const bool exact = from_declared_geometry && hw_size_is_placeholder_;
 
     const GLuint before = hw_render_.framebuffer();
     std::string error;
     if (!hw_render_.create(width, height, hw_callback_ != nullptr && hw_callback_->depth,
-                           hw_callback_ != nullptr && hw_callback_->stencil, &error)) {
+                           hw_callback_ != nullptr && hw_callback_->stencil, exact, &error)) {
         log_error(error);
         option_warnings_.push_back(error);
         return false;
+    }
+    if (from_declared_geometry) {
+        hw_size_is_placeholder_ = false;
     }
     if (hw_render_.framebuffer() != before) {
         // Growing throws the old framebuffer away. Any frame still pointing at
@@ -463,6 +480,9 @@ void LibretroCore::run_frame() {
         return;
     }
     if (hw_render_requested_) {
+        // Catches a core that drew larger than it had announced: the frame that
+        // overflowed is already gone, but the next one fits.
+        ensure_hw_target();
         // The core draws into its own framebuffer, not the window. Binding it
         // here rather than trusting the core to means a core that leaves the
         // binding somewhere else cannot scribble over the window.
@@ -849,6 +869,15 @@ void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned h
         // Nothing to copy: the picture is already in the texture we handed the
         // core. All this frame carries is how much of it is used.
         if (!hw_render_.valid()) return;
+        if (width > hw_render_.width() || height > hw_render_.height()) {
+            // Undeclared and too big: remember it so the next frame has room,
+            // and say so, because this frame is being cropped short.
+            minimum_hw_width_ = width;
+            minimum_hw_height_ = height;
+            log_warn("the core drew a " + std::to_string(width) + "x" + std::to_string(height) +
+                     " picture into a smaller framebuffer than it asked for; growing it");
+            return;
+        }
         video_frame_.source = FrameSource::Texture;
         video_frame_.pixels = nullptr;
         video_frame_.texture = hw_render_.texture();

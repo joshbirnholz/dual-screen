@@ -226,6 +226,11 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
         return false;
     }
     core_->run_frame();
+    // Checked here so the frontend's own check, at the top of the next frame's
+    // drawing, is not blamed for something the core did. An emulator leaving an
+    // error behind is its own business; the same error attributed to us would
+    // send the next person hunting in the wrong file.
+    gl::log_error_once("the core left an OpenGL error behind");
 
     for (const std::string& message : core_->core_messages()) {
         warnings_.push_back(message);
@@ -360,6 +365,37 @@ void LibretroCoreScreenSource::apply_pointer_rect() {
     core_->set_pointer_source(source);
 }
 
+void LibretroCoreScreenSource::probe_core_framebuffer(const CoreVideoFrame& frame) {
+    // Reads a column down the core's framebuffer and reports where the picture
+    // actually is. "The crop ran and the screen is still black" has only two
+    // explanations -- we are reading the wrong rows, or there is nothing to
+    // read -- and one look down the buffer separates them.
+    if (gl::ReadPixels == nullptr || gl::GenFramebuffers == nullptr) return;
+
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, frame.framebuffer);
+    const int x = static_cast<int>(frame.width) / 2;
+    const int rows[] = {
+        0,
+        static_cast<int>(frame.height) / 4,
+        static_cast<int>(frame.height) / 2,
+        static_cast<int>(frame.height) - 1,
+        static_cast<int>(frame.texture_height) / 2,
+        static_cast<int>(frame.texture_height) - 1,
+    };
+    std::string report;
+    for (const int y : rows) {
+        if (y < 0 || y >= static_cast<int>(frame.texture_height)) continue;
+        uint8_t rgba[4] = {0, 0, 0, 0};
+        gl::ReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        if (!report.empty()) report += ", ";
+        report += "y=" + std::to_string(y) + " rgb(" + std::to_string(rgba[0]) + "," +
+                  std::to_string(rgba[1]) + "," + std::to_string(rgba[2]) + ")";
+    }
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    log_info("down the core's framebuffer at x=" + std::to_string(x) + ": " + report);
+    gl::log_error_once("reading back the core's framebuffer");
+}
+
 bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
                                            Texture& destination,
                                            int source_x,
@@ -440,6 +476,7 @@ void LibretroCoreScreenSource::upload_screens() {
             gl::log_error_once("cropping the screens out of the core's framebuffer failed");
             if (!first_gpu_crop_reported_) {
                 first_gpu_crop_reported_ = true;
+                probe_core_framebuffer(frame);
                 log_info("cropped the first GPU frame: a " +
                          dimensions(split_.top_width, split_.top_height) + " upper screen at " +
                          std::to_string(split_.top_x) + "," + std::to_string(split_.top_y) +

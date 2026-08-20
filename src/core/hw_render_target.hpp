@@ -28,7 +28,10 @@ public:
     // Allocates for a core that wants `width` x `height` at most. Safe to call
     // again with a larger size; a smaller one is ignored, since the existing
     // texture already covers it.
-    bool create(unsigned width, unsigned height, bool want_depth, bool want_stencil,
+    // `exact` replaces the current storage even when it is larger, for the
+    // moment the real size becomes known and the placeholder guessed before it
+    // should stop counting as a floor.
+    bool create(unsigned width, unsigned height, bool want_depth, bool want_stencil, bool exact,
                 std::string* error);
     void destroy();
 

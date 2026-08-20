@@ -33,7 +33,7 @@ std::string framebuffer_status_text(GLenum status) {
 HwRenderTarget::~HwRenderTarget() { destroy(); }
 
 bool HwRenderTarget::create(unsigned width, unsigned height, bool want_depth, bool want_stencil,
-                            std::string* error) {
+                            bool exact, std::string* error) {
     if (width == 0 || height == 0) {
         if (error != nullptr) *error = "the core asked for a zero-sized framebuffer";
         return false;
@@ -44,15 +44,23 @@ bool HwRenderTarget::create(unsigned width, unsigned height, bool want_depth, bo
         }
         return false;
     }
-    // Already big enough, and already carrying everything the core wants.
-    if (valid() && width <= width_ && height <= height_ && has_depth_ >= want_depth &&
-        has_stencil_ >= want_stencil) {
-        return true;
+    if (exact) {
+        // Nothing to do only when it already matches exactly.
+        if (valid() && width == width_ && height == height_ && has_depth_ >= want_depth &&
+            has_stencil_ >= want_stencil) {
+            return true;
+        }
+    } else {
+        // Already big enough, and already carrying everything the core wants.
+        if (valid() && width <= width_ && height <= height_ && has_depth_ >= want_depth &&
+            has_stencil_ >= want_stencil) {
+            return true;
+        }
+        // Growing rather than shrinking: a core that reports a smaller size
+        // later still draws into the same texture.
+        width = width > width_ ? width : width_;
+        height = height > height_ ? height : height_;
     }
-    // Growing rather than shrinking: a core that reports a smaller size later
-    // still draws into the top-left of the same texture.
-    width = width > width_ ? width : width_;
-    height = height > height_ ? height : height_;
     want_depth = want_depth || has_depth_;
     want_stencil = want_stencil || has_stencil_;
     destroy();

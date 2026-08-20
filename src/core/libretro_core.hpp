@@ -212,6 +212,12 @@ public:
 private:
     bool hw_context_reset_done_ = false;
     // What the core last said it presented, so a change is reported once.
+    // True until the core declares a real output size, so the guess made
+    // before that can be replaced rather than grown from.
+    bool hw_size_is_placeholder_ = true;
+    // Raised when a core presents something larger than it declared.
+    unsigned minimum_hw_width_ = 0;
+    unsigned minimum_hw_height_ = 0;
     unsigned reported_frame_width_ = 0;
     unsigned reported_frame_height_ = 0;
     bool accept_hw_render(struct retro_hw_render_callback* callback);

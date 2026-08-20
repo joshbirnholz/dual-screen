@@ -99,6 +99,7 @@ private:
     // Reused for every crop: the destination texture is swapped in each time
     // rather than a framebuffer being created per screen per frame.
     GLuint screen_framebuffer_ = 0;
+    void probe_core_framebuffer(const CoreVideoFrame& frame);
     bool blit_unavailable_reported_ = false;
     bool first_gpu_crop_reported_ = false;
     bool silence_reported_ = false;

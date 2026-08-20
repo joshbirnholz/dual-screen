@@ -180,6 +180,24 @@ option values, twice over: **a mock that is better behaved than the real core
 tests nothing.** Each time this project has been surprised by Citra, the mock had
 been written to match an assumption rather than the source.
 
+**Size the core's framebuffer to what it draws, not to what it might.** Citra's
+`retro_get_system_av_info` declares `max_width`/`max_height` as ten times its
+base — room for a resolution multiplier it is not using — while
+`base_width`/`base_height` stay 400x480. Sizing the framebuffer from the maximum
+leaves the picture in one corner of a buffer a hundred times its area, and every
+read out of it then depends on knowing *which* corner. libretro says the origin
+is bottom-left when the core asks for that, but a mock written by the same
+person who wrote the reader will always agree about where the picture went, so
+the mock cannot settle it.
+
+Sizing from the base removes the question: buffer and picture are the same
+rectangle, and it is the same rectangle whichever convention the core used. It
+also reclaims 76MB on a handheld. Growth is still handled — a core announces a
+size change through `SET_GEOMETRY` or `SET_SYSTEM_AV_INFO` before drawing at the
+new size, `run_frame` re-checks in case one ever draws larger unannounced, and
+the placeholder allocated before any size is declared is replaced by the real
+size rather than becoming a floor it cannot shrink below.
+
 **What is still unverified:** all of this is exercised against a mock core that
 requests the same context Citra does and renders through it, not against a real
 Citra build, which was not available in this environment. The frontend's runtime
