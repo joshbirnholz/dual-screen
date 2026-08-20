@@ -211,6 +211,9 @@ public:
 
 private:
     bool hw_context_reset_done_ = false;
+    // What the core last said it presented, so a change is reported once.
+    unsigned reported_frame_width_ = 0;
+    unsigned reported_frame_height_ = 0;
     bool accept_hw_render(struct retro_hw_render_callback* callback);
     bool ensure_hw_target();
     void reset_hw_context();

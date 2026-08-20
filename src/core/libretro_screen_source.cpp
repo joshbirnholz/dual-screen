@@ -404,10 +404,22 @@ bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
 void LibretroCoreScreenSource::upload_screens() {
     const CoreVideoFrame& frame = core_->video_frame();
     if (!frame.valid() || !split_.valid || frame.serial == uploaded_serial_) {
+        // A picture that never arrives looks exactly like one that arrives and
+        // is drawn wrong, so say which it is rather than leaving a black screen
+        // to be interpreted.
+        if (!first_gpu_crop_reported_ && !silence_reported_ && ++quiet_frames_ > 120) {
+            silence_reported_ = true;
+            log_warn(std::string("120 frames in and nothing has been drawn: ") +
+                     (!frame.valid() ? "the core has not presented a picture"
+                                     : (!split_.valid ? "the frame could not be split"
+                                                      : "the same frame keeps arriving")));
+        }
         return;
     }
+    quiet_frames_ = 0;
 
     if (frame.source == FrameSource::Texture) {
+        gl::log_error_once("OpenGL was already unhappy before the screens were cropped");
         // Nothing to upload: the picture is already on the GPU. The two screens
         // are cropped straight out of it into the textures the compositor draws.
         if (!gl::has_blit()) {
@@ -425,6 +437,16 @@ void LibretroCoreScreenSource::upload_screens() {
                         split_.bottom_width, split_.bottom_height);
         if (ok) {
             uploaded_serial_ = frame.serial;
+            gl::log_error_once("cropping the screens out of the core's framebuffer failed");
+            if (!first_gpu_crop_reported_) {
+                first_gpu_crop_reported_ = true;
+                log_info("cropped the first GPU frame: a " +
+                         dimensions(split_.top_width, split_.top_height) + " upper screen at " +
+                         std::to_string(split_.top_x) + "," + std::to_string(split_.top_y) +
+                         " and a " + dimensions(split_.bottom_width, split_.bottom_height) +
+                         " touch screen at " + std::to_string(split_.bottom_x) + "," +
+                         std::to_string(split_.bottom_y));
+            }
         }
         return;
     }

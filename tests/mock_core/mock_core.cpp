@@ -452,8 +452,13 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
     std::memset(info, 0, sizeof(*info));
     info->geometry.base_width = kFrameWidth;
     info->geometry.base_height = kFrameHeight;
-    info->geometry.max_width = kFrameWidth;
-    info->geometry.max_height = kFrameHeight;
+    // Citra declares a maximum ten times its base, because that is its largest
+    // resolution multiplier, while still rendering at the base size until the
+    // player asks for more. The frontend sizes the core's framebuffer from the
+    // maximum, so on the GPU path the picture occupies a small corner of a much
+    // larger buffer -- and anything that assumed the two matched breaks there.
+    info->geometry.max_width = kFrameWidth * (kUsesHwRender ? 10 : 1);
+    info->geometry.max_height = kFrameHeight * (kUsesHwRender ? 10 : 1);
     info->geometry.aspect_ratio = 0.0f;
     info->timing.fps = 59.8261;
     info->timing.sample_rate = 32823.6;

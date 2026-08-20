@@ -163,6 +163,14 @@ extern PFN_BindVertexArray BindVertexArray;
 // startup is gone after the first frame of such a core.
 void reset_render_state();
 
+// Drains the GL error queue and reports the first error, if any, as text.
+// Empty when there was none. GL errors are sticky and otherwise invisible, so
+// this is the only way to tell "the driver rejected that" from "that worked".
+std::string take_error();
+// Logs take_error() against a label, at most once per label. For paths where a
+// failure is silent and fatal to what the player sees.
+void log_error_once(const char* label);
+
 // Whether the optional entry points above turned up. A GL 3.3 core profile has
 // both; an ES 2.0 context has neither.
 bool has_blit();

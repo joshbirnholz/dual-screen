@@ -3,6 +3,7 @@
 #include <SDL.h>
 
 #include <cstdlib>
+#include <set>
 #include <vector>
 
 #include "util/log.hpp"
@@ -107,6 +108,37 @@ void reset_render_state() {
     Disable(GL_DITHER);
     if (ColorMask != nullptr) ColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     if (ActiveTexture != nullptr) ActiveTexture(GL_TEXTURE0);
+}
+
+std::string take_error() {
+    if (GetError == nullptr) return std::string();
+    std::string first;
+    // Drain: the queue can hold several, and leaving them behind would blame
+    // the next caller for this one's mistake.
+    for (int guard = 0; guard < 16; ++guard) {
+        const GLenum error = GetError();
+        if (error == GL_NO_ERROR) break;
+        if (!first.empty()) continue;
+        switch (error) {
+            case GL_INVALID_ENUM: first = "GL_INVALID_ENUM"; break;
+            case GL_INVALID_VALUE: first = "GL_INVALID_VALUE"; break;
+            case GL_INVALID_OPERATION: first = "GL_INVALID_OPERATION"; break;
+            case GL_INVALID_FRAMEBUFFER_OPERATION:
+                first = "GL_INVALID_FRAMEBUFFER_OPERATION";
+                break;
+            case GL_OUT_OF_MEMORY: first = "GL_OUT_OF_MEMORY"; break;
+            default: first = "GL error " + std::to_string(error); break;
+        }
+    }
+    return first;
+}
+
+void log_error_once(const char* label) {
+    static std::set<std::string> reported;
+    const std::string error = take_error();
+    if (error.empty()) return;
+    if (!reported.insert(label).second) return;
+    log_warn(std::string(label) + ": " + error);
 }
 
 bool is_gles() { return g_is_gles; }

@@ -100,6 +100,9 @@ private:
     // rather than a framebuffer being created per screen per frame.
     GLuint screen_framebuffer_ = 0;
     bool blit_unavailable_reported_ = false;
+    bool first_gpu_crop_reported_ = false;
+    bool silence_reported_ = false;
+    int quiet_frames_ = 0;
     // Says what the framebuffer was cut into, which is the first thing worth
     // knowing when a core turns out not to be arranged the way we asked.
     void log_split();

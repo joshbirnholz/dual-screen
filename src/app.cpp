@@ -533,6 +533,11 @@ bool App::Impl::rebuild_renderer(std::string* error) {
     if (!quads.initialize(error) || !text.initialize(error)) {
         return false;
     }
+    log_info("renderer rebuilt against the new context: font atlas " +
+             std::to_string(text.atlas_width()) + "x" + std::to_string(text.atlas_height()) +
+             (gl::is_core_profile() ? ", core profile" : "") +
+             (gl::has_vertex_arrays() ? ", vertex arrays available" : ", no vertex arrays"));
+    gl::log_error_once("rebuilding the renderer");
     if (picker) {
         picker->set_bezel_art(bezel_art.texture());
     }
@@ -1158,6 +1163,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 void App::Impl::render() {
     const float width = static_cast<float>(output_width);
     const float height = static_cast<float>(output_height);
+    // A GL error is sticky and otherwise invisible: the picture is simply wrong
+    // and nothing says why. Reported once, since a failing draw fails every
+    // frame and one line is the useful amount.
+    gl::log_error_once("something in the last frame was rejected by OpenGL");
 
     if (state == State::Browser) {
         browser->render(quads, text, width, height, input.menu_labels());
@@ -1336,7 +1345,14 @@ int App::run(const AppOptions& options) {
     // straight away: a 3DS core needs a context an ES 2.0 one cannot stand in
     // for, and starting with the right one avoids rebuilding it a moment later.
     GlContextNeed initial_context = GlContextNeed::Any;
-    if (!options.game_path.empty()) {
+    // Picking a game from the browser starts on whatever context the launcher
+    // got and rebuilds the window for the game's console. Booting straight into
+    // a game skips that, so this forces the rebuild for tests that need to
+    // cover the path a player actually takes.
+    const char* force_rebuild = std::getenv("DUALSCREEN_FORCE_CONTEXT_REBUILD");
+    const bool skip_initial_context =
+        force_rebuild != nullptr && force_rebuild[0] != '\0' && force_rebuild[0] != '0';
+    if (!skip_initial_context && !options.game_path.empty()) {
         SystemId booting = SystemId::Ds;
         if (system_for_rom(options.game_path, booting)) {
             initial_context = system_profile(booting).gl_context;

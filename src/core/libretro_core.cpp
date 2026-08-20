@@ -861,6 +861,18 @@ void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned h
         video_frame_.height = height;
         video_frame_.stride_pixels = 0;
         video_frame_.serial = ++video_serial_;
+        // Once, and again whenever the size changes. Without this there is no
+        // way to tell a core that is not presenting from one presenting
+        // something the frontend then mishandles.
+        if (width != reported_frame_width_ || height != reported_frame_height_) {
+            reported_frame_width_ = width;
+            reported_frame_height_ = height;
+            log_info("the core presented a " + std::to_string(width) + "x" +
+                     std::to_string(height) + " picture on the GPU, in a " +
+                     std::to_string(hw_render_.width()) + "x" +
+                     std::to_string(hw_render_.height()) + " framebuffer, origin " +
+                     (video_frame_.bottom_left_origin ? "bottom-left" : "top-left"));
+        }
         return;
     }
 

@@ -48,6 +48,14 @@ public:
 
 private:
     Texture atlas_;
+
+public:
+    // For the startup diagnostics: an atlas that did not upload is the
+    // difference between text and blank rectangles.
+    int atlas_width() const { return atlas_.width(); }
+    int atlas_height() const { return atlas_.height(); }
+
+private:
 };
 
 }  // namespace ds
