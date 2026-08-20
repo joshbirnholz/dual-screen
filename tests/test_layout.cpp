@@ -217,8 +217,10 @@ void test_handedness_mirrors_the_layout() {
     CHECK_NEAR(left_big.rect.w, right_big.rect.w);
     CHECK_NEAR(left_small.rect.w, right_small.rect.w);
     CHECK_NEAR(left_big.rect.y, right_big.rect.y);
-    CHECK_NEAR(left_big.rect.x, width - right_big.rect.x - right_big.rect.w);
-    CHECK_NEAR(left_small.rect.x, width - right_small.rect.x - right_small.rect.w);
+    // Within a pixel: a screen that lands at its own size is snapped to whole
+    // pixels, and the two hands round independently.
+    CHECK(std::abs(left_big.rect.x - (width - right_big.rect.x - right_big.rect.w)) <= 1.0f);
+    CHECK(std::abs(left_small.rect.x - (width - right_small.rect.x - right_small.rect.w)) <= 1.0f);
     // Right-handed puts the touch screen on the right, left-handed on the left.
     CHECK(right_small.rect.x > right_big.rect.x);
     CHECK(left_small.rect.x < left_big.rect.x);

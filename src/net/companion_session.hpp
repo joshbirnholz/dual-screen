@@ -86,7 +86,6 @@ public:
     const ScreenTextures& screens() override;
     ScreenSize native_screen_size() const override;
     bool wants_shutdown() const override { return false; }
-    void set_filtering(bool linear) override;
 
 private:
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);

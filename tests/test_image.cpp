@@ -121,11 +121,122 @@ void test_standard_screens_sit_in_the_artwork() {
         CHECK(found);
     }
 
-    // The padding keeps the console clear of the window's edges.
-    const PixelRect padded = layout_frame(standard, 1280.0f, 800.0f);
+    // The padding keeps the console clear of the window's edges, on a display
+    // big enough for the artwork to be scaled up at all.
+    const PixelRect padded = layout_frame(standard, 1920.0f, 1200.0f);
     CHECK(padded.y > 1.0f);
     CHECK(padded.x > 1.0f);
-    CHECK(padded.y + padded.h < 799.0f);
+    CHECK(padded.y + padded.h < 1199.0f);
+}
+
+// On a display no bigger than a Deck's, Standard is drawn at the artwork's own
+// size: the screens come out one screen pixel per display pixel, on whole
+// pixels, and are marked as such so nothing tries to smooth them.
+void test_standard_locks_to_native_on_small_displays() {
+    const LayoutRegistry registry;
+    const Layout& standard = *registry.find("standard");
+
+    struct Case {
+        float width;
+        float height;
+        bool locked;
+    };
+    const Case cases[] = {
+        {1280.0f, 800.0f, true},    // a Deck, exactly on the threshold
+        {1280.0f, 720.0f, true},    // and anything smaller
+        {800.0f, 480.0f, true},     // small enough that the console overflows
+        {1920.0f, 1080.0f, false},  // room to scale, so it is scaled
+        {1366.0f, 768.0f, false},   // wider than the threshold
+        {1280.0f, 1024.0f, false},  // taller than it
+    };
+
+    for (const Case& test : cases) {
+        const PixelRect frame = layout_frame(standard, test.width, test.height);
+        const std::string where =
+            std::to_string(static_cast<int>(test.width)) + "x" +
+            std::to_string(static_cast<int>(test.height));
+        if (test.locked) {
+            CHECK_MSG(std::abs(frame.w - 615.0f) < 0.01f && std::abs(frame.h - 630.0f) < 0.01f,
+                      where + ": the console is " + std::to_string(frame.w) + "x" +
+                          std::to_string(frame.h) + ", not its own size");
+            // Centred, on whole pixels, and allowed over the edge.
+            CHECK_NEAR(frame.x, std::round((test.width - 615.0f) * 0.5f));
+            CHECK_NEAR(frame.y, std::round((test.height - 630.0f) * 0.5f));
+        } else {
+            CHECK_MSG(std::abs(frame.h - 630.0f) > 1.0f,
+                      where + ": the console was locked to its own size with room to scale");
+        }
+
+        for (const PlacedScreen& placed : place_screens(standard, test.width, test.height)) {
+            const std::string screen = where + " " + to_string(placed.screen) + " screen";
+            if (test.locked) {
+                CHECK_MSG(placed.native, screen + " is not one-to-one");
+                CHECK_NEAR(placed.rect.w, static_cast<float>(kDsScreenWidth));
+                CHECK_NEAR(placed.rect.h, static_cast<float>(kDsScreenHeight));
+                // On the pixel grid, or the texels land between pixels and the
+                // picture is resampled however it is filtered.
+                CHECK_NEAR(placed.rect.x, std::round(placed.rect.x));
+                CHECK_NEAR(placed.rect.y, std::round(placed.rect.y));
+            } else {
+                CHECK_MSG(!placed.native, screen + " claims to be one-to-one while scaled");
+            }
+        }
+    }
+}
+
+// The rule is not Standard's alone: any screen that lands at its own size is
+// left alone. The focus layouts' small screen does exactly that on a Deck.
+void test_native_screens_are_spotted_anywhere() {
+    const LayoutRegistry registry;
+    for (const char* id : {"upper_focus", "touch_focus"}) {
+        bool found_native = false;
+        for (const PlacedScreen& placed : place_screens(*registry.find(id), 1280.0f, 800.0f)) {
+            if (placed.native) {
+                found_native = true;
+                CHECK_NEAR(placed.rect.w, static_cast<float>(kDsScreenWidth));
+                CHECK_NEAR(placed.rect.h, static_cast<float>(kDsScreenHeight));
+            }
+        }
+        CHECK_MSG(found_native,
+                  std::string(id) + "'s small screen is not one-to-one at 1280x800");
+    }
+
+    // A screen that is merely close is not called native, or it would be snapped
+    // to a size it never had.
+    const std::vector<PlacedScreen> stretched =
+        place_screens(*registry.find("vertical"), 1280.0f, 800.0f);
+    for (const PlacedScreen& placed : stretched) {
+        CHECK(!placed.native);
+    }
+}
+
+// A preview tile is not a display. Everything about a layout that depends on how
+// big the display is has to be left behind when it is drawn into one, or the
+// console is drawn at full size across the rest of the menu -- which is exactly
+// what happened before as_preview() existed.
+void test_previews_are_not_displays() {
+    const LayoutRegistry registry;
+    const Layout& standard = *registry.find("standard");
+
+    // A tile is smaller than the threshold in both dimensions, so the lock would
+    // fire on it if nothing stripped it.
+    const PixelRect tile{80.0f, 120.0f, 340.0f, 190.0f};
+    CHECK(standard.native_frame.applies(tile.w, tile.h));
+
+    const Layout preview = as_preview(standard);
+    CHECK(!preview.native_frame.applies(tile.w, tile.h));
+
+    for (const PlacedScreen& placed : place_screens(preview, tile)) {
+        const std::string screen = std::string(to_string(placed.screen)) + " screen";
+        CHECK_MSG(placed.rect.x >= tile.x - 0.5f && placed.rect.y >= tile.y - 0.5f &&
+                      placed.rect.x + placed.rect.w <= tile.x + tile.w + 0.5f &&
+                      placed.rect.y + placed.rect.h <= tile.y + tile.h + 0.5f,
+                  "a preview's " + screen + " spilled outside its tile");
+    }
+
+    // And the layout itself is untouched: previewing one must not change what
+    // the display does with it.
+    CHECK(standard.native_frame.applies(1280.0f, 800.0f));
 }
 
 }  // namespace
@@ -134,5 +245,8 @@ int main() {
     test_bezel_decodes();
     test_bad_images_are_refused();
     test_standard_screens_sit_in_the_artwork();
+    test_standard_locks_to_native_on_small_displays();
+    test_native_screens_are_spotted_anywhere();
+    test_previews_are_not_displays();
     return test::finish("image");
 }

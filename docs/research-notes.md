@@ -514,3 +514,32 @@ coloured block. Publishing now happens whether or not the game advanced, and the
 host re-sends the current frame once whenever what the companion needs changes.
 Both halves are load-bearing: removing either one leaves the test looking at an
 empty screen.
+
+**Why smoothing is decided where a screen is drawn.** It used to be a property of
+the textures: the app called `set_filtering` on the source and both screens took
+it. That cannot express "smooth this one, leave that one alone", which is what is
+actually wanted -- a screen drawn at its own size has nothing to gain from being
+resampled, and the same texture can be drawn large in the game and small in a
+preview tile in the same frame. Sampling is now a parameter of the draw call, the
+`ScreenSource` seam has no opinion about it, and the compositor decides per
+screen: the player's setting, unless the screen came out one-to-one.
+
+Spotting "one-to-one" needs a tolerance rather than an equality test. A layout
+fitted to a window lands on round numbers only by accident: the focus layouts put
+their small screen at 256.5 x 192.4 on a Deck, which is a DS screen in every
+sense that matters. Within a pixel counts, and such a screen is then snapped to
+whole pixels -- moving it a fraction of a pixel is invisible, while leaving it
+half a pixel off the grid resamples it however it is filtered.
+
+**Why a layout can be locked to its own pixel size.** The console artwork is
+drawn at 615 x 630 with its screens at 256 x 192. Scaling that to a display
+barely bigger resamples both the illustration and the game to gain nothing, so
+below a threshold -- a Deck's 1280x800 -- the frame is drawn at exactly its own
+size, centred, and allowed over the edges of anything smaller.
+
+This immediately went wrong in the one place a layout is drawn into something
+that is not a display. A preview tile is a couple of hundred pixels across, which
+is below any such threshold, so the picker drew a full-size console across the
+rest of the menu. The lesson was not "remember to clear that field": it was that
+"drawn to the display" and "drawn into a box" are different enough to name, so
+`as_preview()` strips the display-only parts and a test holds it to that.

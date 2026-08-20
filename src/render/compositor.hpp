@@ -65,6 +65,11 @@ public:
     // GL context exists; null simply means nothing is drawn behind the screens.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
 
+    // Whether the player asked for smooth scaling. It is a request rather than
+    // an instruction: a screen drawn at its own size is left alone regardless,
+    // since smoothing it could only make it worse.
+    void set_smoothing(bool smooth) { smoothing_ = smooth; }
+
     void render(QuadRenderer& quads,
                 const Layout& layout,
                 const ScreenTextures& screens,
@@ -75,6 +80,7 @@ public:
 private:
     CompositorStyle style_;
     const Texture* bezel_art_ = nullptr;
+    bool smoothing_ = false;
 };
 
 }  // namespace ds

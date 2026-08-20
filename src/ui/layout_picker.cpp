@@ -299,11 +299,14 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
 }
 
 void LayoutPicker::draw_preview(QuadRenderer& quads,
-                                const Layout& layout,
+                                const Layout& tile_layout,
                                 const PixelRect& box,
                                 const ScreenTextures* screens,
-                                const Texture* bezel_art) {
+                                const Texture* bezel_art,
+                                bool smoothing) {
     const UiTheme& theme = ui_theme();
+    // A tile is not a display -- see as_preview().
+    const Layout layout = as_preview(tile_layout);
     // The tile shows what the layout shows, background included.
     quads.draw_solid(box, layout.bezel ? Color{37.0f / 255.0f, 37.0f / 255.0f, 37.0f / 255.0f, 1.0f}
                                        : Color{0.02f, 0.03f, 0.05f, 1.0f});
@@ -323,7 +326,8 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
         // blocks are still there for when there is no frame to show -- a
         // companion that has not received one yet, or a core still booting.
         if (texture != nullptr && texture->valid()) {
-            quads.draw_screen(rect, *texture, Color{}, placed.rotation);
+            quads.draw_screen(rect, *texture, Color{}, placed.rotation,
+                              smoothing && !placed.native);
         } else {
             const Color color =
                 placed.screen == ScreenId::Top ? theme.top_screen : theme.bottom_screen;
@@ -386,7 +390,7 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.h - padding * 2.0f - label_height,
         };
         draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens,
-                     bezel_art_);
+                     bezel_art_, smoothing_);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,

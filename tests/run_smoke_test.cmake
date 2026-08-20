@@ -325,8 +325,10 @@ if(FILTER_SHOT_COUNT EQUAL 2)
     endif()
 endif()
 
-# ...including the Standard layout, whose screens are small enough inside the
-# console artwork that it would be easy for the setting never to reach them.
+# ...except on the Standard layout at this size. The smoke test's window is
+# 1280x800, where that layout locks to the artwork's own pixel size and the
+# screens come out one-to-one -- and a screen drawn one-to-one is never smoothed,
+# whatever the setting says, because there is nothing to resample.
 set(STANDARD_SHOTS "")
 foreach(FILTERING true false)
     set(STANDARD_HOME "${WORK_DIR}/standard-${FILTERING}")
@@ -366,14 +368,14 @@ if(STANDARD_SHOT_COUNT EQUAL 2)
     list(GET STANDARD_SHOTS 0 STANDARD_ON_SHOT)
     list(GET STANDARD_SHOTS 1 STANDARD_OFF_SHOT)
     execute_process(
-        COMMAND "${CHECKER}" "${STANDARD_ON_SHOT}" "differs=${STANDARD_OFF_SHOT}"
+        COMMAND "${CHECKER}" "${STANDARD_ON_SHOT}" "same=${STANDARD_OFF_SHOT}"
         RESULT_VARIABLE CHECK_RESULT
         OUTPUT_VARIABLE CHECK_OUTPUT
         ERROR_VARIABLE CHECK_ERROR)
     message(STATUS "standard, smoothing on vs off:\n${CHECK_OUTPUT}")
     if(NOT CHECK_RESULT EQUAL 0)
         message(STATUS "${CHECK_ERROR}")
-        message(SEND_ERROR "smoothing did not reach the Standard layout's screens")
+        message(SEND_ERROR "the Standard layout was smoothed at its own pixel size")
         set(ANY_FAILED TRUE)
     endif()
 endif()

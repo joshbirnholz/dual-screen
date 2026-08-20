@@ -124,6 +124,23 @@ struct Layout {
     // edges of the display.
     float frame_margin = 0.0f;
 
+    // Some frames are a picture drawn at a particular size, with the screens
+    // sized to it. Scaling that picture to a display barely bigger than itself
+    // resamples both it and the game for no gain, so below a threshold the frame
+    // is drawn at its own size instead -- centred, and overflowing if it must.
+    struct NativeFrame {
+        float width = 0.0f;
+        float height = 0.0f;
+        float max_output_width = 0.0f;
+        float max_output_height = 0.0f;
+
+        bool applies(float output_width, float output_height) const {
+            return width > 0.0f && height > 0.0f && output_width <= max_output_width &&
+                   output_height <= max_output_height;
+        }
+    };
+    NativeFrame native_frame;
+
     // Draw the DS's own shell around the screens. Only Standard does: it is the
     // layout that says "this is a Nintendo DS" rather than "these are two
     // pictures".
@@ -138,6 +155,15 @@ const char* to_string(Handedness handedness);
 const char* handedness_key(Handedness handedness);
 Handedness handedness_from_key(const std::string& key);
 Handedness other_hand(Handedness handedness);
+
+// The layout as it should be drawn into something that is not the display: a
+// preview tile, or anything else smaller than the real thing.
+//
+// It exists because one property -- drawing the frame at its own pixel size on a
+// small display -- is about the display and nothing else. A tile is smaller than
+// any such threshold, so a layout drawn into one without this drew a full-size
+// console across the rest of the menu.
+Layout as_preview(const Layout& layout);
 
 // The layout as it should be drawn for a given hand: right-handed as written,
 // left-handed mirrored left to right, with any quarter turns reversed to match.
@@ -161,13 +187,18 @@ struct PixelRect {
     }
 };
 
-// A screen as it should actually be drawn: where it goes and which way up.
-// Everything that cares -- the compositor, the preview tiles, touch mapping --
-// reads this and nothing else, so they cannot disagree about where a screen is.
+// A screen as it should actually be drawn: where it goes, which way up, and
+// whether it landed at exactly its own size. Everything that cares -- the
+// compositor, the preview tiles, touch mapping -- reads this and nothing else,
+// so they cannot disagree about where a screen is.
 struct PlacedScreen {
     ScreenId screen = ScreenId::Top;
     PixelRect rect;
     ScreenRotation rotation = ScreenRotation::None;
+    // One screen pixel per display pixel, snapped to the pixel grid. Such a
+    // screen is never smoothed: there is nothing to resample, and sampling it
+    // anyway would only soften an image that was already exact.
+    bool native = false;
 };
 
 std::vector<PlacedScreen> place_screens(const Layout& layout,

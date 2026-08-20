@@ -65,6 +65,7 @@ public:
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
+    void set_smoothing(bool smooth) { smoothing_ = smooth; }
     Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
     void set_selected_layout(const std::string& layout_id) { selected_layout_id_ = layout_id; }
@@ -97,7 +98,8 @@ public:
                              const Layout& layout,
                              const PixelRect& box,
                              const ScreenTextures* screens = nullptr,
-                             const Texture* bezel_art = nullptr);
+                             const Texture* bezel_art = nullptr,
+                             bool smoothing = true);
 
 private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
@@ -135,6 +137,7 @@ private:
     std::vector<Footer> footer_;
     LayoutPickerState state_;
     const Texture* bezel_art_ = nullptr;
+    bool smoothing_ = true;
 };
 
 }  // namespace ds

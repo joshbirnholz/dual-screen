@@ -67,6 +67,12 @@ exactly where its own are, on a #252525 surround rather than black — that is t
 artwork's own background colour, so the picture has no visible edge. See
 [THIRD_PARTY.md](THIRD_PARTY.md) for a note about where that image came from.
 
+On a display no bigger than a Deck's (1280x800), that layout is drawn at the
+artwork's own pixel size rather than scaled to fit, so each DS pixel is one
+display pixel. On a smaller display the console runs off the edges, which is the
+right trade: an exact picture with its corners over the sides beats a soft one
+that fits.
+
 `upper_on_tv` is the two-device layout: each device fills itself with the screen
 it owns. Pick any other and both devices show the whole thing, which is what you
 want when someone is watching over your shoulder. With no second device
@@ -118,8 +124,13 @@ memory. A game remembers which it was last given; the setting a game starts
 from is `"default_bilinear_filtering"` in `settings.json`.
 
 It applies to streamed screens too, and while two devices are connected it is one
-choice for both of them, like everything else on that menu. The Standard layout
-does not offer it at all — see above.
+choice for both of them, like everything else on that menu.
+
+It is a request rather than an instruction. A screen that lands at exactly its
+own size is drawn untouched whatever the setting says — there is nothing to
+resample, and sampling it anyway could only soften it. That covers the Standard
+layout on a Deck, and the small screen of either focus layout, which comes out
+one-to-one at 1280x800 by arithmetic rather than by design.
 
 Screens go over the wire as deflated RGB565, which measures around 1.3 Mbit/s
 for both screens at 60fps on DS-like content — no video encoder involved, and

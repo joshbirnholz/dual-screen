@@ -80,6 +80,12 @@ Handedness other_hand(Handedness handedness) {
     return handedness == Handedness::Left ? Handedness::Right : Handedness::Left;
 }
 
+Layout as_preview(const Layout& layout) {
+    Layout preview = layout;
+    preview.native_frame = Layout::NativeFrame();
+    return preview;
+}
+
 Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
     if (handedness == Handedness::Right) {
         return layout;
@@ -203,22 +209,56 @@ std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
 
 }  // namespace
 
+namespace {
+
+// Notices a screen that came out at its own size and makes it exactly that,
+// on whole pixels.
+//
+// Within a pixel counts. A layout fitted to a window lands on round numbers only
+// by accident -- the Wii U's focus layouts put their small screen at 256.5 x
+// 192.4 on a Deck, which is a DS screen in every sense that matters -- and
+// insisting on equality would leave those being resampled for the sake of half a
+// pixel nobody can see. Moving a screen a fraction of a pixel is invisible;
+// the difference between a resampled picture and an exact one is not.
+constexpr float kNativeTolerance = 1.0f;
+
+void mark_native(PlacedScreen& placed, int source_width, int source_height) {
+    const bool turned = rotation_is_quarter_turn(placed.rotation);
+    const float natural_width = static_cast<float>(turned ? source_height : source_width);
+    const float natural_height = static_cast<float>(turned ? source_width : source_height);
+    if (std::fabs(placed.rect.w - natural_width) > kNativeTolerance ||
+        std::fabs(placed.rect.h - natural_height) > kNativeTolerance) {
+        return;
+    }
+    placed.native = true;
+    placed.rect.x = std::round(placed.rect.x);
+    placed.rect.y = std::round(placed.rect.y);
+    placed.rect.w = natural_width;
+    placed.rect.h = natural_height;
+}
+
+}  // namespace
+
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         const PixelRect& window,
                                         int source_width,
                                         int source_height) {
     const PixelRect frame = layout_frame(layout, window);
-    if (layout.composition.used) {
-        return place_composed(layout.composition, frame, source_width, source_height);
-    }
     std::vector<PlacedScreen> placed;
-    placed.reserve(layout.placements.size());
-    for (const ScreenPlacement& placement : layout.placements) {
-        PlacedScreen entry;
-        entry.screen = placement.screen;
-        entry.rotation = placement.rotation;
-        entry.rect = placement_pixel_rect(placement, frame, source_width, source_height);
-        placed.push_back(entry);
+    if (layout.composition.used) {
+        placed = place_composed(layout.composition, frame, source_width, source_height);
+    } else {
+        placed.reserve(layout.placements.size());
+        for (const ScreenPlacement& placement : layout.placements) {
+            PlacedScreen entry;
+            entry.screen = placement.screen;
+            entry.rotation = placement.rotation;
+            entry.rect = placement_pixel_rect(placement, frame, source_width, source_height);
+            placed.push_back(entry);
+        }
+    }
+    for (PlacedScreen& entry : placed) {
+        mark_native(entry, source_width, source_height);
     }
     return placed;
 }
@@ -235,6 +275,17 @@ std::vector<PlacedScreen> place_screens(const Layout& layout,
 PixelRect layout_frame(const Layout& layout, const PixelRect& window) {
     if (layout.frame_aspect <= 0.0f || window.w <= 0.0f || window.h <= 0.0f) {
         return window;
+    }
+    if (layout.native_frame.applies(window.w, window.h)) {
+        // Whole pixels, so the screens inside land on the pixel grid rather than
+        // half a pixel off it. Bigger than the window is allowed: an exact
+        // picture with its edges over the sides beats a soft one that fits.
+        PixelRect frame;
+        frame.w = layout.native_frame.width;
+        frame.h = layout.native_frame.height;
+        frame.x = std::round(window.x + (window.w - frame.w) * 0.5f);
+        frame.y = std::round(window.y + (window.h - frame.h) * 0.5f);
+        return frame;
     }
     PixelRect frame = window;
     if (layout.frame_margin > 0.0f) {

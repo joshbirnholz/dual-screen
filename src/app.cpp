@@ -560,11 +560,13 @@ bool App::Impl::sound_plays_here() const {
 }
 
 void App::Impl::apply_filtering() {
-    if (ScreenSource* drawing = active_source()) {
-        drawing->set_filtering(bilinear_filtering);
-    }
+    // Only ever a request. Whether a given screen is actually smoothed is
+    // decided where it is drawn, since a screen that came out at its own size
+    // has nothing to gain from it.
+    compositor.set_smoothing(bilinear_filtering);
     if (picker) {
         picker->set_filtering(bilinear_filtering);
+        picker->set_smoothing(bilinear_filtering);
     }
 }
 

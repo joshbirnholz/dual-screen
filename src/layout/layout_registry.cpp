@@ -117,6 +117,13 @@ LayoutRegistry::LayoutRegistry() {
         layout.display_name = "Standard Nintendo DS";
         layout.frame_aspect = kShellAspect;
         layout.frame_margin = kShellMargin;
+        // On a display no bigger than a Deck's there is not enough room to scale
+        // the console up without softening it, so it is drawn at its own size
+        // and the screens come out exact. Larger displays scale it as usual.
+        layout.native_frame.width = kShellImageWidth;
+        layout.native_frame.height = kShellImageHeight;
+        layout.native_frame.max_output_width = 1280.0f;
+        layout.native_frame.max_output_height = 800.0f;
         layout.bezel = true;
         // Stretch rather than contain: these rects are already the screens'
         // exact shape, and letterboxing inside them would leave a hairline of

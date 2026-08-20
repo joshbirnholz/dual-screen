@@ -169,7 +169,8 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
                                 const Texture* texture,
                                 const Color& color,
                                 Mode mode,
-                                const float corner_uv[8]) {
+                                const float corner_uv[8],
+                                const bool* smooth) {
     if (program_ == 0 || rect.w <= 0.0f || rect.h <= 0.0f || output_width_ <= 0 || output_height_ <= 0) {
         return;
     }
@@ -209,6 +210,11 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
         gl::ActiveTexture(GL_TEXTURE0);
         gl::BindTexture(GL_TEXTURE_2D, texture->id());
         gl::Uniform1i(uniform_sampler_, 0);
+        if (smooth != nullptr) {
+            const GLint filter = *smooth ? GL_LINEAR : GL_NEAREST;
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+        }
     }
 
     gl::BindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
@@ -237,24 +243,26 @@ void QuadRenderer::draw_solid(const PixelRect& rect, const Color& color) {
 void QuadRenderer::draw_screen(const PixelRect& rect,
                                const Texture& texture,
                                const Color& tint,
-                               ScreenRotation rotation) {
+                               ScreenRotation rotation,
+                               bool smooth) {
     // Which source corner each destination corner samples. Turning the picture
     // clockwise means the destination's top-left shows what used to be the
     // bottom-left, and so on round.
     switch (rotation) {
         case ScreenRotation::Clockwise: {
             const float corners[8] = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f};
-            draw_corners(rect, &texture, tint, Mode::Screen, corners);
+            draw_corners(rect, &texture, tint, Mode::Screen, corners, &smooth);
             return;
         }
         case ScreenRotation::CounterClockwise: {
             const float corners[8] = {1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-            draw_corners(rect, &texture, tint, Mode::Screen, corners);
+            draw_corners(rect, &texture, tint, Mode::Screen, corners, &smooth);
             return;
         }
         case ScreenRotation::None: break;
     }
-    draw(rect, &texture, tint, Mode::Screen, 0.0f, 0.0f, 1.0f, 1.0f);
+    const float upright[8] = {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
+    draw_corners(rect, &texture, tint, Mode::Screen, upright, &smooth);
 }
 
 void QuadRenderer::draw_alpha_mask(const PixelRect& rect,

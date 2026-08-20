@@ -12,7 +12,9 @@ void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame, const Texture* a
     if (frame.w <= 0.0f || frame.h <= 0.0f || art == nullptr || !art->valid()) {
         return;
     }
-    quads.draw_screen(frame, *art);
+    // Always smoothed: it is a photograph of plastic drawn at whatever size the
+    // window is, not pixel art.
+    quads.draw_screen(frame, *art, Color{}, ScreenRotation::None, /*smooth=*/true);
 }
 
 void Compositor::render(QuadRenderer& quads,
@@ -43,7 +45,8 @@ void Compositor::render(QuadRenderer& quads,
         }
 
         if (texture != nullptr && texture->valid()) {
-            quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation);
+            quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation,
+                              smoothing_ && !placed.native);
         } else {
             // No frame yet (core still booting): keep the layout's shape visible
             // rather than flashing the background colour.

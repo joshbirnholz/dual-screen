@@ -38,10 +38,15 @@ public:
     // Draws an XRGB8888 screen texture; alpha comes from `tint`, not the texture.
     // A quarter turn is a permutation of the corner texture coordinates, so a
     // sideways screen costs exactly as much to draw as an upright one.
+    //
+    // `smooth` is decided per draw rather than held on the texture, because the
+    // same screen can be drawn large in the game and small in a preview tile in
+    // the same frame, and how it should be sampled depends on which.
     void draw_screen(const PixelRect& rect,
                      const Texture& texture,
                      const Color& tint = Color{},
-                     ScreenRotation rotation = ScreenRotation::None);
+                     ScreenRotation rotation = ScreenRotation::None,
+                     bool smooth = true);
     // Draws a coverage/alpha texture (a font atlas) in a flat colour.
     void draw_alpha_mask(const PixelRect& rect,
                          const Texture& texture,
@@ -70,7 +75,8 @@ private:
                       const Texture* texture,
                       const Color& color,
                       Mode mode,
-                      const float corner_uv[8]);
+                      const float corner_uv[8],
+                      const bool* smooth = nullptr);
 
     GLuint program_ = 0;
     GLuint vertex_buffer_ = 0;

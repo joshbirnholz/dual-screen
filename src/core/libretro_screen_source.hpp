@@ -67,7 +67,6 @@ public:
     const ScreenTextures& screens() override;
     ScreenSize native_screen_size() const override;
     bool wants_shutdown() const override;
-    void set_filtering(bool linear) override;
 
     double frames_per_second() const;
     double audio_sample_rate() const;
