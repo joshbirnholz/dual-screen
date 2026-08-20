@@ -27,13 +27,14 @@ rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR/host/config/dualscreen" "$WORK_DIR/companion/config/dualscreen"
 printf 'dualscreen two device test rom' > "$WORK_DIR/fake.nds"
 
-# The companion is given the opposite of the host's settings on purpose. Every
+# The companion is given the opposite of the host's settings on purpose --
+# smoothing, where the sound comes out, and which hand holds the stylus. Every
 # setting the two devices share belongs to the host, so a companion that used
 # its own would be the bug: what it starts with has to be thrown away in favour
 # of what the host says.
-printf '{"default_bilinear_filtering": true, "audio_target": "top"}' \
+printf '{"default_bilinear_filtering": true, "audio_target": "top", "handedness": "left"}' \
     > "$WORK_DIR/companion/config/dualscreen/settings.json"
-printf '{"default_bilinear_filtering": false, "audio_target": "both"}' \
+printf '{"default_bilinear_filtering": false, "audio_target": "both", "handedness": "right"}' \
     > "$WORK_DIR/host/config/dualscreen/settings.json"
 
 HOST_SHOT="$WORK_DIR/host.ppm"
@@ -57,7 +58,7 @@ SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
     "$DUALSCREEN" \
         --game "$WORK_DIR/fake.nds" \
         --core "$MOCK_CORE" \
-        --layout split_devices \
+        --layout upper_on_tv \
         --windowed \
         --exit-after-seconds 16 \
         --screenshot-at-seconds 9 \
@@ -121,6 +122,10 @@ if ! grep -q "following the host: smoothing off" "$WORK_DIR/companion.log" 2>/de
 fi
 if ! grep -q "following the host: sound both screens" "$WORK_DIR/companion.log" 2>/dev/null; then
     echo "the companion kept its own sound target instead of following the host" >&2
+    FAILED=1
+fi
+if ! grep -q "following the host: right-handed" "$WORK_DIR/companion.log" 2>/dev/null; then
+    echo "the companion kept its own handedness instead of following the host" >&2
     FAILED=1
 fi
 

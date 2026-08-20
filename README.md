@@ -39,24 +39,33 @@ one running the game.
 
 ## Layouts
 
+These are the Wii U Virtual Console's own Screen Settings, in its order and
+under its names — that list is what this app is trying to be.
+
 | id | what it shows |
 | --- | --- |
-| `vertical` | top screen above, bottom screen below (the DS's own arrangement) |
-| `vertical_swapped` | bottom screen above, top screen below |
-| `horizontal` | side by side, top screen on the left |
-| `horizontal_swapped` | side by side, bottom screen on the left |
-| `split_devices` | one screen per device, each filling its own display |
-| `top_only` | top screen filling the window |
-| `bottom_only` | bottom screen filling the window |
+| `standard` | both screens inside a drawing of the console itself |
+| `upper_focus` | the upper screen large, the touch screen small in the corner |
+| `touch_focus` | the touch screen large, the upper screen small in the corner |
+| `vertical` | the DS's arrangement without the console around it |
+| `side_by_side` | held sideways: both screens turned a quarter turn |
+| `upper_on_tv` | one screen per device, each filling its own display |
 
-Swapping the screens is a layout rather than a separate toggle, which keeps the
-picker to one decision.
+**Hands** in the menu mirrors the layouts that put one screen beside another, so
+the touch screen is under whichever hand holds the stylus. It is one toggle
+rather than a left-handed twin of every layout, and it turns the sideways
+screens the other way too.
 
-`split_devices` is the two-device layout: each device fills itself with the
-screen it owns. Pick any other layout and both devices show the whole thing,
-which is what you want when someone is watching over your shoulder. With no
-second device connected it falls back to showing both screens, since half a
-game is not useful.
+`standard` is the only layout that is never smoothed: it draws the console's
+plastic around the screens, and a blurred picture inside a crisp shell reads as
+a mistake. The **Smoothing** entry disappears while it is selected, which is
+what the Wii U does as well.
+
+`upper_on_tv` is the two-device layout: each device fills itself with the screen
+it owns. Pick any other and both devices show the whole thing, which is what you
+want when someone is watching over your shoulder. With no second device
+connected it falls back to showing both screens, since half a game is not
+useful.
 
 ## Playing across two devices
 
@@ -103,7 +112,8 @@ memory. A game remembers which it was last given; the setting a game starts
 from is `"default_bilinear_filtering"` in `settings.json`.
 
 It applies to streamed screens too, and while two devices are connected it is one
-choice for both of them, like everything else on that menu.
+choice for both of them, like everything else on that menu. The Standard layout
+does not offer it at all — see above.
 
 Screens go over the wire as deflated RGB565, which measures around 1.3 Mbit/s
 for both screens at 60fps on DS-like content — no video encoder involved, and
@@ -111,12 +121,10 @@ comfortably within wifi. Only screens the current layout actually needs are
 sent, and an unchanged frame is not sent at all.
 
 Adding a layout is meant to be adding data, not code: a `Layout` is a list of
-normalized rects with a screen id each (`src/layout/layout_registry.cpp`).
-Touch mapping is derived from the active layout's bottom-screen placement, so a
-new layout gets working touch for free.
-
-The two single-screen layouts are also the base case the networked companion
-mode will reuse later: each device renders one screen full-window.
+normalized rects with a screen id, a fit and an optional quarter turn each
+(`src/layout/layout_registry.cpp`). Touch mapping is derived from the active
+layout's bottom-screen placement — including the turn, inverted — so a new
+layout gets working touch for free, sideways or not.
 
 ## Building on SteamOS
 
@@ -345,8 +353,9 @@ SDL has no entry for, or a wrong one, can be corrected without a rebuild by
 dropping a `gamecontrollerdb.txt` next to `settings.json`.
 
 The two-finger tap matters: on a tablet with no buttons attached, it is the
-only way into the menu. Emulation pauses while the menu is open, so you can
-compare layouts against the frame you were actually looking at.
+only way into the menu. Emulation pauses while the menu is open, and each tile
+draws that paused frame in its own arrangement, so you are comparing layouts
+against the game rather than against a diagram.
 
 ### Adding a Steam shortcut
 
@@ -370,13 +379,14 @@ V1 does not script `shortcuts.vdf` for you.
 
 ```json
 {
-  "default_layout_id": "vertical",
+  "default_layout_id": "standard",
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
   "default_bilinear_filtering": false,
   "audio_target": "both",
   "cursor_mode": "shown",
+  "handedness": "right",
   "stick_deadzone": 0.35,
   "trigger_deadzone": 0.3,
   "vsync": true
@@ -424,8 +434,10 @@ The per-game config already keys on `rom_sha1` and reserves `role_default` and
 ctest --test-dir build --output-on-failure
 ```
 
-- `test_layout` — placement geometry, the swapped layouts mirroring their
-  counterparts, and touch mapping round-trips for every layout.
+- `test_layout` — placement geometry, the console shell keeping its proportions
+  in any window, handedness mirroring a layout rather than duplicating it, and
+  touch mapping round-trips for every layout in both hands, quarter turns
+  included.
 - `test_config` — SHA-1 against the FIPS vectors, path handling, config
   round-trips including preservation of keys a future version might add.
 - `test_browser` — which files the game browser offers, how it sorts and where

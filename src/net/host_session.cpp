@@ -61,16 +61,12 @@ void HostSession::set_host_screen(ScreenId screen) {
     config_.host_screen = screen;
 }
 
-void HostSession::set_session_state(const std::string& layout_id,
-                                   bool paused,
-                                   bool bilinear_filtering,
-                                   AudioTarget audio_target) {
-    if (layout_id != layout_id_ || paused != paused_ ||
-        bilinear_filtering != bilinear_filtering_ || audio_target != audio_target_) {
-        layout_id_ = layout_id;
-        paused_ = paused;
-        bilinear_filtering_ = bilinear_filtering;
-        audio_target_ = audio_target;
+void HostSession::set_session_state(const SharedState& state) {
+    if (state.layout_id != shared_.layout_id ||
+        state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
+        state.bilinear_filtering != shared_.bilinear_filtering ||
+        state.audio_target != shared_.audio_target || state.handedness != shared_.handedness) {
+        shared_ = state;
         session_state_dirty_ = true;
     }
 }
@@ -112,9 +108,9 @@ bool HostSession::companion_wants(ScreenId screen) const {
     if (!has_companion()) {
         return false;
     }
-    // Under the split layout the companion only needs its own screen. Under any
-    // other layout it draws the whole thing, so it needs both.
-    if (layout_id_ == "split_devices") {
+    // Under a per-device layout the companion only needs its own screen. Under
+    // any other it draws the whole thing, so it needs both.
+    if (shared_.per_device_layout) {
         return screen == companion_screen_;
     }
     return true;
@@ -205,6 +201,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_audio_target = true;
                 request.audio_target = request_.audio_target;
             }
+            if (have_request_ && !request.wants_handedness && request_.wants_handedness) {
+                request.wants_handedness = true;
+                request.handedness = request_.handedness;
+            }
             request_ = request;
             have_request_ = true;
             if (request.menu_open != companion_menu_open_) {
@@ -251,11 +251,12 @@ void HostSession::poll(uint64_t now_ms) {
 
     if (session_state_dirty_ && handshake_done_) {
         SessionStateMessage state;
-        state.layout_id = layout_id_;
+        state.layout_id = shared_.layout_id;
         state.companion_screen = companion_screen_;
-        state.paused = paused_;
-        state.bilinear_filtering = bilinear_filtering_;
-        state.audio_target = audio_target_;
+        state.paused = shared_.paused;
+        state.bilinear_filtering = shared_.bilinear_filtering;
+        state.audio_target = shared_.audio_target;
+        state.handedness = shared_.handedness;
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);

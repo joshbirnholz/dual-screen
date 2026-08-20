@@ -46,6 +46,16 @@ struct CompositorStyle {
     Color remote_placeholder{0.10f, 0.18f, 0.26f, 1.0f};
 };
 
+// Draws the DS's own shell into `frame`, behind the screens the Standard layout
+// places inside it. Shared with the layout picker so a preview tile looks like
+// what picking it will give you.
+//
+// It is built from flat rectangles because that is the whole of the renderer:
+// no image ships with the app, and a photograph of a console would be someone
+// else's artwork. What it aims for is a silhouette that reads as a DS at a
+// glance, at both tile size and full screen.
+void draw_ds_shell(QuadRenderer& quads, const PixelRect& frame);
+
 // Draws a resolved layout's screens into the output window.
 class Compositor {
 public:

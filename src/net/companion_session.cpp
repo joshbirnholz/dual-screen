@@ -113,6 +113,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_paused_ = state.paused;
             host_filtering_ = state.bilinear_filtering;
             host_audio_target_ = state.audio_target;
+            host_handedness_ = state.handedness;
             granted_screen_ = state.companion_screen;
             break;
         }
@@ -279,6 +280,13 @@ void CompanionSession::request_audio_target(AudioTarget target) {
     RequestMessage request;
     request.wants_audio_target = true;
     request.audio_target = target;
+    send_request(request);
+}
+
+void CompanionSession::request_handedness(Handedness handedness) {
+    RequestMessage request;
+    request.wants_handedness = true;
+    request.handedness = handedness;
     send_request(request);
 }
 

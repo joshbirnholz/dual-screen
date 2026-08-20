@@ -11,7 +11,7 @@ namespace ds {
 
 // App-level defaults, stored in ~/.config/dualscreen/settings.json.
 struct Settings {
-    std::string default_layout_id = "vertical";
+    std::string default_layout_id = "standard";
 
     // How this device identifies itself to the other one. Defaults to the
     // machine's hostname, which is what a player will recognise in a list.
@@ -39,6 +39,10 @@ struct Settings {
 
     // Whether this device has a mouse pointer at all.
     CursorMode cursor_mode = CursorMode::Shown;
+
+    // Which hand holds the stylus. Decides which side the small screen sits on
+    // in the layouts that have a side.
+    Handedness handedness = Handedness::Right;
 
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;

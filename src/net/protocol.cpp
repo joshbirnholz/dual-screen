@@ -136,6 +136,16 @@ bool audio_target_from_wire(uint8_t value, AudioTarget& out) {
     return false;
 }
 
+uint8_t handedness_to_wire(Handedness handedness) {
+    return handedness == Handedness::Left ? 1u : 0u;
+}
+
+bool handedness_from_wire(uint8_t value, Handedness& out) {
+    if (value > 1u) return false;
+    out = (value == 1u) ? Handedness::Left : Handedness::Right;
+    return true;
+}
+
 bool screen_from_wire(uint8_t value, ScreenId& out) {
     if (value == 0) {
         out = ScreenId::Top;
@@ -186,6 +196,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.paused ? 1u : 0u);
     put_u8(out, message.bilinear_filtering ? 1u : 0u);
     put_u8(out, audio_target_to_wire(message.audio_target));
+    put_u8(out, handedness_to_wire(message.handedness));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -288,6 +299,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.bilinear_filtering ? 1u : 0u);
     put_u8(out, message.wants_audio_target ? 1u : 0u);
     put_u8(out, audio_target_to_wire(message.audio_target));
+    put_u8(out, message.wants_handedness ? 1u : 0u);
+    put_u8(out, handedness_to_wire(message.handedness));
     put_u8(out, message.menu_open ? 1u : 0u);
     finish_message(out, start, MessageType::Request);
 }
@@ -298,18 +311,24 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     uint8_t filtering = 0;
     uint8_t wants_audio = 0;
     uint8_t audio = 0;
+    uint8_t wants_hands = 0;
+    uint8_t hands = 0;
     uint8_t menu_open = 0;
     reader.string(out.layout_id);
     reader.u8(wants_filtering);
     reader.u8(filtering);
     reader.u8(wants_audio);
     reader.u8(audio);
+    reader.u8(wants_hands);
+    reader.u8(hands);
     reader.u8(menu_open);
     if (!reader.ok()) return false;
     out.wants_filtering = (wants_filtering != 0);
     out.bilinear_filtering = (filtering != 0);
     out.wants_audio_target = (wants_audio != 0);
+    out.wants_handedness = (wants_hands != 0);
     out.menu_open = (menu_open != 0);
+    if (!handedness_from_wire(hands, out.handedness)) return false;
     return audio_target_from_wire(audio, out.audio_target);
 }
 
@@ -363,15 +382,18 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     uint8_t paused = 0;
     uint8_t filtering = 0;
     uint8_t audio = 0;
+    uint8_t hands = 0;
     reader.string(out.layout_id);
     reader.u8(screen);
     reader.u8(paused);
     reader.u8(filtering);
     reader.u8(audio);
+    reader.u8(hands);
     if (!reader.ok()) return false;
     out.paused = (paused != 0);
     out.bilinear_filtering = (filtering != 0);
     if (!audio_target_from_wire(audio, out.audio_target)) return false;
+    if (!handedness_from_wire(hands, out.handedness)) return false;
     return screen_from_wire(screen, out.companion_screen);
 }
 

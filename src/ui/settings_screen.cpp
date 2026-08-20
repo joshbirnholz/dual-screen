@@ -109,10 +109,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
-        case Row::Cursor:
-            settings_.cursor_mode = next_cursor_mode(settings_.cursor_mode);
-            result.settings_changed = true;
-            break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -193,7 +189,6 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"BIOS / system folder", settings_.system_dir},
         {"melonDS DS core", core_found ? resolved_core_path_ : std::string("not found")},
         {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
-        {"Mouse pointer", to_string(settings_.cursor_mode)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"Back", ""},
     };

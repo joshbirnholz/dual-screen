@@ -65,13 +65,14 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(received.screen_width, 256);
 
     SessionStateMessage state;
-    state.layout_id = "split_devices";
+    state.layout_id = "upper_on_tv";
     state.companion_screen = ScreenId::Bottom;
     state.paused = true;
     // Deliberately not the defaults: a field that never made it across would
     // otherwise decode to the value that was sent and look like it worked.
     state.bilinear_filtering = true;
     state.audio_target = AudioTarget::TopScreen;
+    state.handedness = Handedness::Left;
 
     buffer.clear();
     encode_session_state(state, buffer);
@@ -80,11 +81,12 @@ void test_welcome_and_session_round_trip() {
 
     SessionStateMessage received_state;
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
-    CHECK_STR_EQ(received_state.layout_id, "split_devices");
+    CHECK_STR_EQ(received_state.layout_id, "upper_on_tv");
     CHECK(received_state.companion_screen == ScreenId::Bottom);
     CHECK_EQ(received_state.paused, true);
     CHECK_EQ(received_state.bilinear_filtering, true);
     CHECK(received_state.audio_target == AudioTarget::TopScreen);
+    CHECK(received_state.handedness == Handedness::Left);
 }
 
 // Everything a companion can ask the host for travels in one message, each
@@ -92,11 +94,13 @@ void test_welcome_and_session_round_trip() {
 // silently also ask for a layout.
 void test_request_round_trip() {
     RequestMessage sent;
-    sent.layout_id = "horizontal";
+    sent.layout_id = "side_by_side";
     sent.wants_filtering = true;
     sent.bilinear_filtering = true;
     sent.wants_audio_target = true;
     sent.audio_target = AudioTarget::BottomScreen;
+    sent.wants_handedness = true;
+    sent.handedness = Handedness::Left;
     sent.menu_open = true;
 
     std::vector<uint8_t> buffer;
@@ -108,11 +112,13 @@ void test_request_round_trip() {
 
     RequestMessage received;
     CHECK(decode_request(payload.data(), payload.size(), received));
-    CHECK_STR_EQ(received.layout_id, "horizontal");
+    CHECK_STR_EQ(received.layout_id, "side_by_side");
     CHECK_EQ(received.wants_filtering, true);
     CHECK_EQ(received.bilinear_filtering, true);
     CHECK_EQ(received.wants_audio_target, true);
     CHECK(received.audio_target == AudioTarget::BottomScreen);
+    CHECK_EQ(received.wants_handedness, true);
+    CHECK(received.handedness == Handedness::Left);
     CHECK_EQ(received.menu_open, true);
 
     // A request that means none of it round-trips as such rather than as an
@@ -126,12 +132,13 @@ void test_request_round_trip() {
     CHECK(received_quiet.layout_id.empty());
     CHECK_EQ(received_quiet.wants_filtering, false);
     CHECK_EQ(received_quiet.wants_audio_target, false);
+    CHECK_EQ(received_quiet.wants_handedness, false);
     CHECK_EQ(received_quiet.menu_open, false);
 
     // An audio target outside the three that exist is refused rather than
     // becoming one of them by accident.
     std::vector<uint8_t> corrupt(payload);
-    corrupt[corrupt.size() - 2] = 9;
+    corrupt[corrupt.size() - 4] = 9;  // the audio target byte
     RequestMessage rejected;
     CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
 }

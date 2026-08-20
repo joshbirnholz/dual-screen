@@ -8,6 +8,12 @@
 //   regions: upper lower left right center topleft
 //   colours: blue green black orange
 //
+// `at=<x>,<y>,<colour>` checks one point given as fractions of the window, for
+// the layouts that put a screen somewhere none of the named regions land.
+//
+// `same=<other.ppm>` is the inverse of `differs`, for checking that something
+// which should have had no effect had none.
+//
 // `differs=<other.ppm>` asserts that two runs did not produce the same picture.
 // That is how the smoothing toggle is checked: nearest and linear sampling of
 // the same frame differ in thousands of pixels along every edge, and comparing
@@ -110,6 +116,34 @@ void average_patch(const Image& image, float cx, float cy, double& r, double& g,
     b = sum_b / samples;
 }
 
+// The one place a colour name is decided, so a named region and an explicit
+// point can never disagree about what "blue" means.
+bool matches_colour(const std::string& expected, double r, double g, double b) {
+    if (expected == "blue") {
+        return (b > g + 8.0) && (b > r + 8.0);
+    }
+    if (expected == "green") {
+        return (g > b + 8.0) && (g > r + 8.0);
+    }
+    if (expected == "orange") {
+        // The mock core paints this band only when it found save data.
+        return (r > 150.0) && (g > 60.0) && (g < 200.0) && (b < 80.0);
+    }
+    if (expected == "black") {
+        // The letterbox around the screens has to be genuinely black, not
+        // merely dark: a lifted background reads as a frame on an OLED.
+        return (r < 2.0) && (g < 2.0) && (b < 2.0);
+    }
+    if (expected == "shell") {
+        // The Standard layout's console body: bright, and near enough grey that
+        // no screen of the mock core's could be mistaken for it.
+        return (r > 150.0) && (g > 150.0) && (b > 150.0) &&
+               std::fabs(r - b) < 30.0 && std::fabs(r - g) < 30.0;
+    }
+    std::fprintf(stderr, "check_screenshot: unknown colour '%s'\n", expected.c_str());
+    return false;
+}
+
 bool region_center(const std::string& region, float& x, float& y) {
     if (region == "topleft"){ x = 0.03f; y = 0.06f; return true; }
     if (region == "upper")  { x = 0.5f; y = 0.25f; return true; }
@@ -171,7 +205,29 @@ int main(int argc, char** argv) {
         const std::string region = argument.substr(0, equals);
         const std::string expected = argument.substr(equals + 1);
 
-        if (region == "differs") {
+        if (region == "at") {
+            const std::size_t first = expected.find(',');
+            const std::size_t second = expected.find(',', first + 1);
+            if (first == std::string::npos || second == std::string::npos) {
+                std::fprintf(stderr, "check_screenshot: at wants x,y,colour\n");
+                ++failures;
+                continue;
+            }
+            const float x = std::strtof(expected.substr(0, first).c_str(), nullptr);
+            const float y = std::strtof(expected.substr(first + 1, second - first - 1).c_str(),
+                                        nullptr);
+            const std::string colour = expected.substr(second + 1);
+            double r = 0, g = 0, b = 0;
+            average_patch(image, x, y, r, g, b);
+            const bool ok = matches_colour(colour, r, g, b);
+            std::printf("%-9s expected %-6s at %.2f,%.2f  got rgb(%3.0f, %3.0f, %3.0f) -> %s\n",
+                        "at", colour.c_str(), x, y, r, g, b, ok ? "ok" : "FAIL");
+            if (!ok) ++failures;
+            continue;
+        }
+
+        if (region == "differs" || region == "same") {
+            const bool want_difference = (region == "differs");
             const Image other = load_ppm(expected);
             if (!other.ok) {
                 ++failures;
@@ -194,10 +250,12 @@ int main(int argc, char** argv) {
             }
             // Smoothing repaints every scaled edge, so the difference is in the
             // thousands. A threshold well above stray noise keeps this from
-            // passing on an accidental single-pixel wobble.
-            const bool ok = differing > 1000;
-            std::printf("%-9s expected a different picture  got %-16ld -> %s\n", "differs",
-                        differing, ok ? "ok" : "FAIL");
+            // passing on an accidental single-pixel wobble -- and, the other way
+            // round, lets "same" tolerate the mock core's own moving parts.
+            const bool ok = want_difference ? (differing > 1000) : (differing <= 1000);
+            std::printf("%-9s expected %-21s got %-16ld -> %s\n", region.c_str(),
+                        want_difference ? "a different picture" : "the same picture", differing,
+                        ok ? "ok" : "FAIL");
             if (!ok) ++failures;
             continue;
         }
@@ -255,24 +313,7 @@ int main(int argc, char** argv) {
         double r = 0, g = 0, b = 0;
         average_patch(image, x, y, r, g, b);
 
-        bool passed = false;
-        if (expected == "blue") {
-            passed = (b > g + 8.0) && (b > r + 8.0);
-        } else if (expected == "green") {
-            passed = (g > b + 8.0) && (g > r + 8.0);
-        } else if (expected == "orange") {
-            // The mock core paints this band only when it found save data.
-            passed = (r > 150.0) && (g > 60.0) && (g < 200.0) && (b < 80.0);
-        } else if (expected == "black") {
-            // The letterbox around the screens has to be genuinely black, not
-            // merely dark: a lifted background reads as a frame on an OLED.
-            passed = (r < 2.0) && (g < 2.0) && (b < 2.0);
-        } else {
-            std::fprintf(stderr, "check_screenshot: unknown colour '%s'\n", expected.c_str());
-            ++failures;
-            continue;
-        }
-
+        const bool passed = matches_colour(expected, r, g, b);
         std::printf("%-7s expected %-5s got rgb(%.0f, %.0f, %.0f) -> %s\n", region.c_str(),
                     expected.c_str(), r, g, b, passed ? "ok" : "FAIL");
         if (!passed) {

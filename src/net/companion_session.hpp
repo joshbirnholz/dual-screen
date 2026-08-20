@@ -47,6 +47,7 @@ public:
     bool host_paused() const { return host_paused_; }
     bool host_filtering() const { return host_filtering_; }
     AudioTarget host_audio_target() const { return host_audio_target_; }
+    Handedness host_handedness() const { return host_handedness_; }
 
     // Sends this device's input to the host. Only what changed goes out.
     void send_input(const DsInputState& state);
@@ -57,6 +58,7 @@ public:
     void request_layout(const std::string& layout_id);
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
+    void request_handedness(Handedness handedness);
 
     // Tells the host whether a menu is up on this device, so it pauses too.
     // Sent whenever it changes, and repeated with every other request.
@@ -105,6 +107,7 @@ private:
     bool host_paused_ = false;
     bool host_filtering_ = false;
     AudioTarget host_audio_target_ = AudioTarget::Both;
+    Handedness host_handedness_ = Handedness::Right;
     bool menu_open_ = false;
     bool said_hello_ = false;
 

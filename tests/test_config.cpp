@@ -109,14 +109,14 @@ void test_game_config_round_trip() {
     const AppPaths paths = AppPaths::resolve();
 
     Settings settings;
-    settings.default_layout_id = "horizontal";
+    settings.default_layout_id = "side_by_side";
     settings.default_bilinear_filtering = true;
 
     const std::string sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d";
 
     // With no file on disk, the app-level defaults apply.
     GameConfig fresh = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
-    CHECK_STR_EQ(fresh.layout_id, "horizontal");
+    CHECK_STR_EQ(fresh.layout_id, "side_by_side");
     CHECK_EQ(fresh.bilinear_filtering, true);
     CHECK_STR_EQ(fresh.rom_sha1, sha1);
 
@@ -155,26 +155,26 @@ void test_game_config_preserves_unknown_keys() {
     const std::string path = GameConfig::file_path(paths, sha1);
     {
         std::ofstream file(path);
-        file << R"({"rom_sha1":")" << sha1 << R"(","layout_id":"top_only",)"
+        file << R"({"rom_sha1":")" << sha1 << R"(","layout_id":"touch_focus",)"
              << R"("role_default":"host","companion_device_id":"deck-1",)"
              << R"("a_key_from_the_future":42})";
     }
 
     Settings settings;
     GameConfig config = GameConfig::load_or_default(paths, settings, sha1, "Future Game");
-    CHECK_STR_EQ(config.layout_id, "top_only");
+    CHECK_STR_EQ(config.layout_id, "touch_focus");
     // Keys reserved for the networked phase round-trip untouched.
     CHECK_STR_EQ(config.role_default, "host");
     CHECK_STR_EQ(config.companion_device_id, "deck-1");
 
-    config.layout_id = "horizontal";
+    config.layout_id = "side_by_side";
     CHECK(config.save(paths));
 
     const std::string contents = read_file(path);
     CHECK(contents.find("a_key_from_the_future") != std::string::npos);
     CHECK(contents.find("\"host\"") != std::string::npos);
     CHECK(contents.find("deck-1") != std::string::npos);
-    CHECK(contents.find("horizontal") != std::string::npos);
+    CHECK(contents.find("side_by_side") != std::string::npos);
 }
 
 void test_game_config_survives_a_corrupt_file() {
@@ -189,9 +189,9 @@ void test_game_config_survives_a_corrupt_file() {
         file << "{ this is not json";
     }
     Settings settings;
-    settings.default_layout_id = "bottom_only";
+    settings.default_layout_id = "touch_focus";
     const GameConfig config = GameConfig::load_or_default(paths, settings, sha1, "Broken");
-    CHECK_STR_EQ(config.layout_id, "bottom_only");
+    CHECK_STR_EQ(config.layout_id, "touch_focus");
 
     // A config with no hash has nothing to key a file on and must refuse to save.
     GameConfig unkeyed;
@@ -205,10 +205,10 @@ void test_settings_round_trip() {
     const AppPaths paths = AppPaths::resolve();
 
     Settings defaults = Settings::load(paths);
-    CHECK_STR_EQ(defaults.default_layout_id, "vertical");
+    CHECK_STR_EQ(defaults.default_layout_id, "standard");
     CHECK_STR_EQ(defaults.system_dir, paths.default_system_dir);
 
-    defaults.default_layout_id = "horizontal";
+    defaults.default_layout_id = "side_by_side";
     defaults.last_browse_dir = "/tmp/roms";
     defaults.vsync = false;
     defaults.stick_deadzone = 0.5f;
@@ -218,7 +218,7 @@ void test_settings_round_trip() {
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
-    CHECK_STR_EQ(reloaded.default_layout_id, "horizontal");
+    CHECK_STR_EQ(reloaded.default_layout_id, "side_by_side");
     CHECK_STR_EQ(reloaded.last_browse_dir, "/tmp/roms");
     CHECK_EQ(reloaded.vsync, false);
     CHECK_NEAR(reloaded.stick_deadzone, 0.5f);
@@ -232,7 +232,7 @@ void test_settings_round_trip() {
         file << "not json at all";
     }
     const Settings recovered = Settings::load(paths);
-    CHECK_STR_EQ(recovered.default_layout_id, "vertical");
+    CHECK_STR_EQ(recovered.default_layout_id, "standard");
     CHECK_EQ(recovered.default_bilinear_filtering, false);
     CHECK(recovered.audio_target == AudioTarget::Both);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
@@ -260,12 +260,12 @@ void test_settings_round_trip() {
 }
 
 void test_command_line() {
-    const char* argv[] = {"dualscreen", "--game", "/roms/a.nds", "--layout", "horizontal",
+    const char* argv[] = {"dualscreen", "--game", "/roms/a.nds", "--layout", "side_by_side",
                           "--windowed"};
     const AppOptions options = parse_command_line(6, const_cast<char**>(argv));
     CHECK(options.parse_error.empty());
     CHECK_STR_EQ(options.game_path, "/roms/a.nds");
-    CHECK_STR_EQ(options.layout_id, "horizontal");
+    CHECK_STR_EQ(options.layout_id, "side_by_side");
     CHECK_EQ(options.windowed, true);
 
     // A bare path works too, so a shortcut can just pass the ROM.

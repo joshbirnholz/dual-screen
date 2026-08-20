@@ -7,6 +7,7 @@
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
+#include "render/compositor.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -27,6 +28,8 @@ struct LayoutPickerResult {
     // The pointer mode was cycled. Unlike the two above it belongs to this
     // device alone -- the other one has its own pointer, or none.
     bool cursor_mode_changed = false;
+    // Which hand holds the stylus was toggled, mirroring the handed layouts.
+    bool handedness_changed = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -43,6 +46,7 @@ struct LayoutPickerState {
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
     CursorMode cursor_mode = CursorMode::Shown;
+    Handedness handedness = Handedness::Right;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -58,8 +62,15 @@ public:
     void set_filtering(bool bilinear) { state_.bilinear_filtering = bilinear; }
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
+    void set_handedness(Handedness handedness) { state_.handedness = handedness; }
+    Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
-    void set_selected_layout(const std::string& layout_id) { selected_layout_id_ = layout_id; }
+    void set_selected_layout(const std::string& layout_id) {
+        if (layout_id != selected_layout_id_) {
+            selected_layout_id_ = layout_id;
+            rebuild_footer();
+        }
+    }
     bool filtering() const { return state_.bilinear_filtering; }
     AudioTarget audio_target() const { return state_.audio_target; }
     bool is_open() const { return open_; }
@@ -70,24 +81,31 @@ public:
                               float output_width,
                               float output_height);
 
+    // `screens` are the frames the game is paused on, drawn into the previews so
+    // a tile shows the actual game in that arrangement. Null falls back to the
+    // coloured blocks.
     void render(QuadRenderer& quads,
                 TextRenderer& text,
                 float output_width,
                 float output_height,
                 const std::string& game_title,
-                const MenuButtonLabels& labels);
+                const MenuButtonLabels& labels,
+                const ScreenTextures* screens = nullptr);
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
 
-    // Draws a layout as two coloured rectangles arranged per its placements.
-    // Shared with any other screen that wants to show a layout at a glance.
-    static void draw_preview(QuadRenderer& quads, const Layout& layout, const PixelRect& box);
+    // Draws a layout at a glance: the game's own screens where there are frames
+    // to draw, two coloured rectangles where there are not.
+    static void draw_preview(QuadRenderer& quads,
+                             const Layout& layout,
+                             const PixelRect& box,
+                             const ScreenTextures* screens = nullptr);
 
 private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
-    enum class Footer { Filtering, Sound, Cursor, Resume, Disconnect, Quit };
+    enum class Footer { Filtering, Hands, Sound, Cursor, Resume, Disconnect, Quit };
 
     struct Geometry {
         std::vector<PixelRect> tiles;
@@ -108,6 +126,9 @@ private:
     bool activate_focus(LayoutPickerResult& result);
 
     std::string footer_label(Footer kind) const;
+    // Which buttons the footer carries depends on the session and on which
+    // layout is selected, so it is built rather than fixed.
+    void rebuild_footer();
 
     const LayoutRegistry* registry_;
     bool open_ = false;

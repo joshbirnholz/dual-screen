@@ -36,7 +36,12 @@ public:
 
     void draw_solid(const PixelRect& rect, const Color& color);
     // Draws an XRGB8888 screen texture; alpha comes from `tint`, not the texture.
-    void draw_screen(const PixelRect& rect, const Texture& texture, const Color& tint = Color{});
+    // A quarter turn is a permutation of the corner texture coordinates, so a
+    // sideways screen costs exactly as much to draw as an upright one.
+    void draw_screen(const PixelRect& rect,
+                     const Texture& texture,
+                     const Color& tint = Color{},
+                     ScreenRotation rotation = ScreenRotation::None);
     // Draws a coverage/alpha texture (a font atlas) in a flat colour.
     void draw_alpha_mask(const PixelRect& rect,
                          const Texture& texture,
@@ -59,6 +64,13 @@ private:
               float v0,
               float u1,
               float v1);
+    // The general form: texture coordinates given per corner, clockwise from
+    // the top-left of the destination rect.
+    void draw_corners(const PixelRect& rect,
+                      const Texture* texture,
+                      const Color& color,
+                      Mode mode,
+                      const float corner_uv[8]);
 
     GLuint program_ = 0;
     GLuint vertex_buffer_ = 0;

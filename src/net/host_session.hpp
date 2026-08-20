@@ -46,15 +46,23 @@ public:
 
     // The host's own screen assignment, which the split layout follows.
     void set_host_screen(ScreenId screen);
-    // The session state the companion has to agree with: which layout is
-    // active, whether the game is paused, and the two settings both devices
-    // share. The host is the only writer, which is what stops the two ends
-    // drifting apart. Cheap to call every frame; nothing is sent unless
-    // something actually changed.
-    void set_session_state(const std::string& layout_id,
-                           bool paused,
-                           bool bilinear_filtering,
-                           AudioTarget audio_target);
+    // Everything the two devices have to agree on. The host is the only writer,
+    // which is what stops the two ends drifting apart.
+    struct SharedState {
+        std::string layout_id;
+        // Whether that layout puts one screen on each device. Passed in rather
+        // than matched against an id here: which layouts are per-device is the
+        // registry's business, and a hardcoded id here would quietly stop being
+        // true the next time the layout set changed.
+        bool per_device_layout = false;
+        bool paused = false;
+        bool bilinear_filtering = false;
+        AudioTarget audio_target = AudioTarget::Both;
+        Handedness handedness = Handedness::Right;
+    };
+
+    // Cheap to call every frame; nothing is sent unless something changed.
+    void set_session_state(const SharedState& state);
 
     // Sends the game's audio to the companion. DS and 3DS mirror it, so both
     // devices play the same thing; the stream id leaves room for Wii U, where
@@ -111,10 +119,7 @@ private:
     ScreenId companion_screen_ = ScreenId::Bottom;
     std::string last_notice_;
 
-    std::string layout_id_;
-    bool paused_ = false;
-    bool bilinear_filtering_ = false;
-    AudioTarget audio_target_ = AudioTarget::Both;
+    SharedState shared_;
     bool session_state_dirty_ = true;
 
     DsInputState companion_input_;

@@ -24,13 +24,16 @@ set(SAVE_FILE "${WORK_DIR}/data/dualscreen/saves/fake.srm")
 # layout id -> expectations passed to check_screenshot. Expectations are joined
 # with '+': a semicolon would split the CMake list itself, and a comma appears
 # inside the crosshair expectations.
+# Every layout the picker offers, in its order. Where a screen lands somewhere
+# none of the named regions reach -- the small screen of the two focus layouts --
+# the point is given outright.
 set(CASES
+    "standard|upper=blue+lower=green+topleft=black+at=0.5,0.55,shell"
+    "upper_focus|left=blue+at=0.86,0.785,green"
+    "touch_focus|right=green+at=0.115,0.145,blue"
     "vertical|upper=blue+lower=green+topleft=black"
-    "vertical_swapped|upper=green+lower=blue"
-    "horizontal|left=blue+right=green+topleft=black"
-    "horizontal_swapped|left=green+right=blue"
-    "top_only|center=blue"
-    "bottom_only|center=green"
+    "side_by_side|left=blue+right=green"
+    "upper_on_tv|upper=blue+lower=green"
 )
 
 set(ANY_FAILED FALSE)
@@ -113,7 +116,7 @@ foreach(RUN_INDEX RANGE 1 2)
                 "${DUALSCREEN}"
                     --game "${WORK_DIR}/fake.nds"
                     --core "${MOCK_CORE}"
-                    --layout top_only
+                    --layout vertical
                     --windowed
                     --exit-after-frames ${FRAME_COUNT}
                     --screenshot "${SHOT}"
@@ -131,13 +134,13 @@ foreach(RUN_INDEX RANGE 1 2)
 
     if(RUN_INDEX EQUAL 1)
         # Nothing to restore yet, so the plain top screen shows through.
-        set(EXPECTATION "center=blue")
+        set(EXPECTATION "upper=blue")
         if(NOT EXISTS "${SAVE_FILE}")
             message(SEND_ERROR "no save file was written to ${SAVE_FILE}")
             set(ANY_FAILED TRUE)
         endif()
     else()
-        set(EXPECTATION "center=orange")
+        set(EXPECTATION "upper=orange")
     endif()
 
     execute_process(
@@ -165,14 +168,21 @@ endforeach()
 # mapping puts the crosshair exactly under the touch. A layout that shows no
 # bottom screen, or a touch that lands on the top screen, must pass nothing
 # through at all.
+# A touch has to come back out where it went in, whatever the layout did to the
+# screen on the way. Side-by-Side is the one that matters most here: it turns
+# both screens a quarter turn, so the drawing code and the touch code have to
+# agree about which way round that is, and nothing else would notice if they
+# stopped agreeing.
 set(TOUCH_CASES
     "vertical|0.45,0.80|crosshair=0.45,0.80"
     "vertical|0.50,0.25|nocrosshair=1"
-    "vertical_swapped|0.50,0.25|crosshair=0.50,0.25"
-    "horizontal|0.75,0.50|crosshair=0.75,0.50"
-    "horizontal_swapped|0.25,0.50|crosshair=0.25,0.50"
-    "bottom_only|0.60,0.40|crosshair=0.60,0.40"
-    "top_only|0.50,0.50|nocrosshair=1"
+    "standard|0.50,0.72|crosshair=0.50,0.72"
+    "standard|0.50,0.20|nocrosshair=1"
+    "side_by_side|0.75,0.40|crosshair=0.75,0.40"
+    "side_by_side|0.25,0.40|nocrosshair=1"
+    "touch_focus|0.70,0.50|crosshair=0.70,0.50"
+    "upper_focus|0.86,0.785|crosshair=0.86,0.785"
+    "upper_focus|0.30,0.50|nocrosshair=1"
 )
 
 foreach(CASE IN LISTS TOUCH_CASES)
@@ -261,10 +271,12 @@ endif()
 # come out identical. Checking that the toggle reaches the screen takes a real
 # run -- a unit test can see the flag being stored, but not the texture being
 # sampled differently. Separate config homes keep this off the persistence
-# check below, which expects the last run to have been top_only.
+# check below, which expects the last run to have been vertical.
+set(SMOOTHING_LAYOUT "touch_focus")
 set(FILTER_SHOTS "")
 foreach(FILTERING true false)
     set(FILTER_HOME "${WORK_DIR}/filter-${FILTERING}")
+    set(FILTER_LAYOUT "${SMOOTHING_LAYOUT}")
     file(REMOVE_RECURSE "${FILTER_HOME}")
     file(WRITE "${FILTER_HOME}/config/dualscreen/settings.json"
         "{\"default_bilinear_filtering\": ${FILTERING}}")
@@ -279,7 +291,7 @@ foreach(FILTERING true false)
                 "${DUALSCREEN}"
                     --game "${WORK_DIR}/fake.nds"
                     --core "${MOCK_CORE}"
-                    --layout bottom_only
+                    --layout "${FILTER_LAYOUT}"
                     --windowed
                     --exit-after-frames ${FRAME_COUNT}
                     --screenshot "${SHOT}"
@@ -313,6 +325,60 @@ if(FILTER_SHOT_COUNT EQUAL 2)
     endif()
 endif()
 
+# ...and the Standard layout is the one place it must make no difference at all,
+# whatever settings.json remembers. A blurred screen inside a crisp plastic body
+# reads as a mistake, so that layout refuses smoothing outright.
+set(STANDARD_SHOTS "")
+foreach(FILTERING true false)
+    set(STANDARD_HOME "${WORK_DIR}/standard-${FILTERING}")
+    file(REMOVE_RECURSE "${STANDARD_HOME}")
+    file(WRITE "${STANDARD_HOME}/config/dualscreen/settings.json"
+        "{\"default_bilinear_filtering\": ${FILTERING}}")
+    set(SHOT "${STANDARD_HOME}/shot.ppm")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env
+                "XDG_CONFIG_HOME=${STANDARD_HOME}/config"
+                "XDG_DATA_HOME=${STANDARD_HOME}/data"
+                "SDL_AUDIODRIVER=dummy"
+                "SDL_VIDEODRIVER=x11"
+                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+                "${DUALSCREEN}"
+                    --game "${WORK_DIR}/fake.nds"
+                    --core "${MOCK_CORE}"
+                    --layout standard
+                    --windowed
+                    --exit-after-frames ${FRAME_COUNT}
+                    --screenshot "${SHOT}"
+        RESULT_VARIABLE RUN_RESULT
+        OUTPUT_VARIABLE RUN_OUTPUT
+        ERROR_VARIABLE RUN_ERROR)
+    if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${SHOT}")
+        message(STATUS "${RUN_OUTPUT}")
+        message(STATUS "${RUN_ERROR}")
+        message(SEND_ERROR "standard smoothing run (${FILTERING}) failed")
+        set(ANY_FAILED TRUE)
+    else()
+        list(APPEND STANDARD_SHOTS "${SHOT}")
+    endif()
+endforeach()
+
+list(LENGTH STANDARD_SHOTS STANDARD_SHOT_COUNT)
+if(STANDARD_SHOT_COUNT EQUAL 2)
+    list(GET STANDARD_SHOTS 0 STANDARD_ON_SHOT)
+    list(GET STANDARD_SHOTS 1 STANDARD_OFF_SHOT)
+    execute_process(
+        COMMAND "${CHECKER}" "${STANDARD_ON_SHOT}" "same=${STANDARD_OFF_SHOT}"
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "standard, smoothing on vs off:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        message(SEND_ERROR "the Standard layout was smoothed after all")
+        set(ANY_FAILED TRUE)
+    endif()
+endif()
+
 # The per-game config must exist afterwards, keyed by the ROM's SHA-1.
 file(GLOB SAVED_CONFIGS "${WORK_DIR}/config/dualscreen/games/*.json")
 list(LENGTH SAVED_CONFIGS CONFIG_COUNT)
@@ -323,8 +389,9 @@ else()
     list(GET SAVED_CONFIGS 0 SAVED_CONFIG)
     file(READ "${SAVED_CONFIG}" SAVED_TEXT)
     message(STATUS "saved config ${SAVED_CONFIG}:\n${SAVED_TEXT}")
-    # The last run used top_only, and that is what should have been persisted.
-    string(FIND "${SAVED_TEXT}" "\"layout_id\": \"top_only\"" LAYOUT_POSITION)
+    # The last run against this config home was the final touch case, and that
+    # is the layout that should have been persisted.
+    string(FIND "${SAVED_TEXT}" "\"layout_id\": \"upper_focus\"" LAYOUT_POSITION)
     if(LAYOUT_POSITION EQUAL -1)
         message(SEND_ERROR "the last layout used was not persisted")
         set(ANY_FAILED TRUE)

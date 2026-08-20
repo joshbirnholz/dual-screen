@@ -25,6 +25,10 @@ public:
     // The layout used when a game has no saved choice and settings name none.
     const Layout& fallback() const;
     static const char* fallback_id();
+    // Old ids from before the layout set was replaced with the Wii U's, mapped
+    // to whichever new layout is closest. Returns the id unchanged when it is
+    // not one of them.
+    static std::string migrated_id(const std::string& id);
 
     // Resolves an id to a layout, falling back (with a log line) if unknown.
     const Layout& resolve(const std::string& id) const;

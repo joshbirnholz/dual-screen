@@ -34,8 +34,19 @@ enum class ScreenFit {
     Stretch,  // fill the rect exactly, distorting if it does not match
 };
 
+// A quarter turn applied to a screen before it is drawn. Side-by-Side is the
+// DS held sideways, which turns both screens; which way it turns is which hand
+// holds the stylus.
+enum class ScreenRotation { None, Clockwise, CounterClockwise };
+
+ScreenRotation mirror_rotation(ScreenRotation rotation);
+// True when the turn swaps the screen's width and height.
+bool rotation_is_quarter_turn(ScreenRotation rotation);
+
 struct ScreenPlacement {
-    // Normalized [0,1] rect within the output window this screen is drawn into.
+    // Normalized [0,1] rect within the layout's frame this screen is drawn
+    // into. The frame is the whole window unless the layout gives an aspect
+    // ratio of its own -- see Layout::frame_aspect.
     float x = 0.0f;
     float y = 0.0f;
     float w = 1.0f;
@@ -43,6 +54,7 @@ struct ScreenPlacement {
     // Which logical screen ("top" or "bottom") this placement shows.
     ScreenId screen = ScreenId::Top;
     ScreenFit fit = ScreenFit::Contain;
+    ScreenRotation rotation = ScreenRotation::None;
 };
 
 struct Layout {
@@ -57,7 +69,33 @@ struct Layout {
     // means anything with two devices connected, and `placements` is then
     // resolved per device by resolve_for_device().
     bool per_device = false;
+
+    // When non-zero, placements are relative to a box of this aspect ratio
+    // (width / height) letterboxed inside the window, rather than to the window
+    // itself. Standard uses it so the DS's shell keeps the proportions of a real
+    // one whatever shape the window is.
+    float frame_aspect = 0.0f;
+
+    // Draw the DS's own shell around the screens. Only Standard does: it is the
+    // layout that says "this is a Nintendo DS" rather than "these are two
+    // pictures", and that is also why it is not smoothed -- a shell drawn around
+    // a blurred screen looks like a mistake rather than a console.
+    bool bezel = false;
+    bool forbids_filtering = false;
 };
+
+// Which hand holds the stylus. Layouts that put one screen beside another are
+// defined right-handed and mirrored for the other, exactly as the Wii U does.
+enum class Handedness { Right, Left };
+
+const char* to_string(Handedness handedness);
+const char* handedness_key(Handedness handedness);
+Handedness handedness_from_key(const std::string& key);
+Handedness other_hand(Handedness handedness);
+
+// The layout as it should be drawn for a given hand: right-handed as written,
+// left-handed mirrored left to right, with any quarter turns reversed to match.
+Layout resolve_for_handedness(const Layout& layout, Handedness handedness);
 
 // The placements this device should actually draw. For an ordinary layout that
 // is the layout itself; for a per-device one it is a single full-window
@@ -77,9 +115,19 @@ struct PixelRect {
     }
 };
 
-// Where a placement actually lands, in pixels, for a given output size. This is
-// the single source of truth shared by the compositor and by touch mapping — if
-// they ever disagreed, touches would land in the wrong place.
+// The box a layout's placements are relative to: the whole window, unless the
+// layout asked for an aspect ratio of its own, in which case the largest box of
+// that shape that fits, centred.
+PixelRect layout_frame(const Layout& layout, const PixelRect& window);
+PixelRect layout_frame(const Layout& layout, float output_width, float output_height);
+
+// Where a placement actually lands, in pixels, within a frame. This is the
+// single source of truth shared by the compositor, the previews and touch
+// mapping — if they ever disagreed, touches would land in the wrong place.
+PixelRect placement_pixel_rect(const ScreenPlacement& placement,
+                               const PixelRect& frame,
+                               int source_width = kDsScreenWidth,
+                               int source_height = kDsScreenHeight);
 PixelRect placement_pixel_rect(const ScreenPlacement& placement,
                                float output_width,
                                float output_height,

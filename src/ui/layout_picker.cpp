@@ -18,11 +18,25 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     state_ = state;
     selected_layout_id_ = state.layout_id;
 
+    rebuild_footer();
+    const int index = registry_->index_of(state.layout_id);
+    focus_ = index >= 0 ? index : 0;
+}
+
+void LayoutPicker::rebuild_footer() {
     footer_.clear();
-    footer_.push_back(Footer::Filtering);
+    // Standard draws the console around the screens, and a blurred screen inside
+    // a crisp plastic body looks like a mistake rather than a console -- so that
+    // layout does not offer smoothing at all, exactly as the Wii U does not.
+    if (!registry_->resolve(selected_layout_id_).forbids_filtering) {
+        footer_.push_back(Footer::Filtering);
+    }
+    // Which hand holds the stylus decides which side the small screen sits on.
+    // One button rather than a left-handed twin of every layout.
+    footer_.push_back(Footer::Hands);
     // Which device makes the sound is only a question when there are two of
     // them, so the entry appears with the session and not before.
-    if (state.session_active) {
+    if (state_.session_active) {
         footer_.push_back(Footer::Sound);
     }
     // The pointer is this device's own, and it is the one thing worth reaching
@@ -32,14 +46,16 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     // launcher and not here.
     footer_.push_back(Footer::Cursor);
     footer_.push_back(Footer::Resume);
-    if (state.session_active) {
+    if (state_.session_active) {
         footer_.push_back(Footer::Disconnect);
     }
-    if (!state.companion) {
+    if (!state_.companion) {
         footer_.push_back(Footer::Quit);
     }
-    const int index = registry_->index_of(state.layout_id);
-    focus_ = index >= 0 ? index : 0;
+    // Focus can be sitting on a footer button that just went away.
+    if (focus_ >= focus_count()) {
+        focus_ = std::max(0, focus_count() - 1);
+    }
 }
 
 std::string LayoutPicker::footer_label(Footer kind) const {
@@ -55,6 +71,8 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             return "Sound: Both";
         case Footer::Cursor:
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
+        case Footer::Hands:
+            return state_.handedness == Handedness::Left ? "Hands: Left" : "Hands: Right";
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: break;
@@ -193,6 +211,8 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         if (id != selected_layout_id_) {
             selected_layout_id_ = id;
             result.selection_changed = true;
+            // Whether Smoothing is on offer depends on which layout is chosen.
+            rebuild_footer();
         }
         return true;
     }
@@ -213,6 +233,9 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::Cursor:
             result.cursor_mode_changed = true;
+            return true;
+        case Footer::Hands:
+            result.handedness_changed = true;
             return true;
         case Footer::Resume:
             result.close_requested = true;
@@ -282,16 +305,35 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     return result;
 }
 
-void LayoutPicker::draw_preview(QuadRenderer& quads, const Layout& layout, const PixelRect& box) {
+void LayoutPicker::draw_preview(QuadRenderer& quads,
+                                const Layout& layout,
+                                const PixelRect& box,
+                                const ScreenTextures* screens) {
     const UiTheme& theme = ui_theme();
     quads.draw_solid(box, Color{0.02f, 0.03f, 0.05f, 1.0f});
 
+    const PixelRect frame = layout_frame(layout, box);
+    if (layout.bezel) {
+        draw_ds_shell(quads, frame);
+    }
+
     for (const ScreenPlacement& placement : layout.placements) {
-        const PixelRect rect = placement_pixel_rect(placement, box.w, box.h);
-        const PixelRect shifted{box.x + rect.x, box.y + rect.y, rect.w, rect.h};
-        const Color color =
-            placement.screen == ScreenId::Top ? theme.top_screen : theme.bottom_screen;
-        quads.draw_solid(shifted, color);
+        const PixelRect rect = placement_pixel_rect(placement, frame);
+        const Texture* texture = nullptr;
+        if (screens != nullptr) {
+            texture = (placement.screen == ScreenId::Top) ? screens->top : screens->bottom;
+        }
+        // The paused game itself, which says what picking this will actually
+        // look like far better than two coloured blocks and a key can. The
+        // blocks are still there for when there is no frame to show -- a
+        // companion that has not received one yet, or a core still booting.
+        if (texture != nullptr && texture->valid()) {
+            quads.draw_screen(rect, *texture, Color{}, placement.rotation);
+        } else {
+            const Color color =
+                placement.screen == ScreenId::Top ? theme.top_screen : theme.bottom_screen;
+            quads.draw_solid(rect, color);
+        }
     }
 }
 
@@ -300,7 +342,8 @@ void LayoutPicker::render(QuadRenderer& quads,
                           float output_width,
                           float output_height,
                           const std::string& game_title,
-                          const MenuButtonLabels& labels) {
+                          const MenuButtonLabels& labels,
+                          const ScreenTextures* screens) {
     if (!open_) {
         return;
     }
@@ -319,10 +362,17 @@ void LayoutPicker::render(QuadRenderer& quads,
         text.draw(quads, game_title, geometry.panel.x + geometry.panel.w, geometry.panel.y,
                   scale, theme.text_dim, TextAlign::Right);
     }
-    text.draw(quads, "Top screen", geometry.panel.x, geometry.panel.y + line * 2.0f, scale,
-              theme.top_screen);
-    text.draw(quads, "Bottom screen", geometry.panel.x + TextRenderer::measure_width("Top screen  ", scale),
-              geometry.panel.y + line * 2.0f, scale, theme.bottom_screen);
+    // The colour key only earns its space when the previews are colours. With
+    // the game's own screens in the tiles there is nothing to decode.
+    const bool previews_are_coloured =
+        screens == nullptr || screens->top == nullptr || !screens->top->valid();
+    if (previews_are_coloured) {
+        text.draw(quads, "Top screen", geometry.panel.x, geometry.panel.y + line * 2.0f, scale,
+                  theme.top_screen);
+        text.draw(quads, "Bottom screen",
+                  geometry.panel.x + TextRenderer::measure_width("Top screen  ", scale),
+                  geometry.panel.y + line * 2.0f, scale, theme.bottom_screen);
+    }
 
     for (std::size_t index = 0; index < geometry.tiles.size(); ++index) {
         const PixelRect& tile = geometry.tiles[index];
@@ -340,7 +390,7 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, layout, preview);
+        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,

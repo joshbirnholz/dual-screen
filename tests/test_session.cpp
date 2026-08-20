@@ -44,6 +44,22 @@ bool paired(HostSession& host, CompanionSession& companion) {
     });
 }
 
+// The host's shared state, which is what both devices follow. Spelled out here
+// because most tests only care about one field of it.
+void set_shared(HostSession& host,
+                const std::string& layout_id,
+                bool bilinear_filtering = false,
+                AudioTarget audio_target = AudioTarget::Both,
+                Handedness handedness = Handedness::Right) {
+    HostSession::SharedState shared;
+    shared.layout_id = layout_id;
+    shared.per_device_layout = (layout_id == "upper_on_tv");
+    shared.bilinear_filtering = bilinear_filtering;
+    shared.audio_target = audio_target;
+    shared.handedness = handedness;
+    host.set_session_state(shared);
+}
+
 std::vector<uint32_t> flat_screen(uint32_t colour) {
     return std::vector<uint32_t>(static_cast<std::size_t>(kDsScreenWidth) * kDsScreenHeight, colour);
 }
@@ -61,7 +77,7 @@ void test_host_and_companion_pair_up() {
         std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
         return;
     }
-    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
 
     CompanionSession companion;
     CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
@@ -89,7 +105,7 @@ void test_host_and_companion_pair_up() {
     CHECK_STR_EQ(companion.game_title(), "Test Game");
     CHECK(companion.granted_screen() == ScreenId::Bottom);
     CHECK_STR_EQ(host.companion_name(), "Test Deck");
-    CHECK_STR_EQ(companion.host_layout_id(), "split_devices");
+    CHECK_STR_EQ(companion.host_layout_id(), "upper_on_tv");
 
     // --- screens -----------------------------------------------------------
     // Under the split layout the companion needs only its own screen, so the
@@ -154,7 +170,7 @@ void test_non_split_layout_sends_both_screens() {
     if (!host.start(config, &error)) {
         return;  // covered by the first test's skip
     }
-    host.set_session_state("vertical", false, false, AudioTarget::Both);
+    set_shared(host, "vertical", false, AudioTarget::Both);
 
     CompanionSession companion;
     if (!companion.begin_search("Deck 2", ScreenId::Bottom, &error)) {
@@ -213,7 +229,7 @@ void test_companion_gets_the_screen_it_asked_for() {
         if (!host.start(config, &error)) {
             return;  // covered by the first test's skip
         }
-        host.set_session_state("split_devices", false, false, AudioTarget::Both);
+        set_shared(host, "upper_on_tv", false, AudioTarget::Both);
 
         CompanionSession companion;
         if (!companion.begin_search("Chooser", wanted, &error)) {
@@ -278,7 +294,7 @@ void test_audio_reaches_the_companion() {
 
     std::string error;
     if (!host.start(config, &error)) return;
-    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
 
     CompanionSession companion;
     std::size_t frames_heard = 0;
@@ -345,7 +361,7 @@ void test_companion_can_request_a_layout() {
 
     std::string error;
     if (!host.start(config, &error)) return;
-    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
 
     CompanionSession companion;
     if (!companion.begin_search("Asker", ScreenId::Bottom, &error)) {
@@ -377,7 +393,7 @@ void test_companion_can_request_a_layout() {
     }
 
     // And the host's answer comes back, so both devices agree.
-    host.set_session_state("vertical", false, false, AudioTarget::Both);
+    set_shared(host, "vertical", false, AudioTarget::Both);
     const bool agreed =
         spin(host, companion, [&] { return companion.host_layout_id() == "vertical"; });
     CHECK_MSG(agreed, "the host's layout change never reached the companion");
@@ -397,7 +413,7 @@ void test_shared_settings_stay_in_sync() {
 
     std::string error;
     if (!host.start(config, &error)) return;
-    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
 
     CompanionSession companion;
     if (!companion.begin_search("Sync Deck", ScreenId::Bottom, &error)) {
@@ -427,7 +443,7 @@ void test_shared_settings_stay_in_sync() {
     CHECK(request.layout_id.empty());
     CHECK_EQ(request.wants_audio_target, false);
 
-    host.set_session_state("split_devices", false, true, AudioTarget::Both);
+    set_shared(host, "upper_on_tv", true, AudioTarget::Both);
     CHECK_MSG(spin(host, companion, [&] { return companion.host_filtering(); }),
               "the host's smoothing never reached the companion");
 
@@ -439,10 +455,23 @@ void test_shared_settings_stay_in_sync() {
     CHECK_MSG(asked_audio, "the sound request never reached the host");
     CHECK(request.audio_target == AudioTarget::TopScreen);
 
-    host.set_session_state("split_devices", false, true, AudioTarget::TopScreen);
+    set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen);
     CHECK_MSG(spin(host, companion,
                    [&] { return companion.host_audio_target() == AudioTarget::TopScreen; }),
               "the host's sound target never reached the companion");
+
+    // And which hand holds the stylus, which mirrors what both devices draw.
+    companion.request_handedness(Handedness::Left);
+    const bool asked_hand = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_handedness;
+    });
+    CHECK_MSG(asked_hand, "the handedness request never reached the host");
+    CHECK(request.handedness == Handedness::Left);
+
+    set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return companion.host_handedness() == Handedness::Left; }),
+              "the host's handedness never reached the companion");
 
     companion.disconnect();
     host.stop();
@@ -458,7 +487,7 @@ void test_companion_menu_pauses_the_host() {
 
     std::string error;
     if (!host.start(config, &error)) return;
-    host.set_session_state("split_devices", false, false, AudioTarget::Both);
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
 
     CompanionSession companion;
     if (!companion.begin_search("Pause Deck", ScreenId::Bottom, &error)) {

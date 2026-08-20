@@ -396,3 +396,54 @@ for the frame loop to read `settings.cursor_mode` directly each frame, so there
 is no apply step left to forget. The smoke test starts the app with the mode set
 in settings.json and checks it comes up in that mode, which fails against the old
 code and would keep failing if the read were ever dropped again.
+
+**Why the layout set is the Wii U's, exactly.** The layouts were invented for
+V1 -- vertical, horizontal, their swapped twins, one screen each -- and were
+fine, but they were not the thing being copied. The Wii U Virtual Console's six
+are: the console drawn around both screens; either screen large with the other
+tucked in a corner; both stacked without the shell; both turned sideways; one
+per device. They are better thought out than the originals, and the ones this
+app was always describing. Old ids from the first set are mapped to the nearest
+new one rather than dropped, so a game that remembered `horizontal` opens on
+Side-by-Side instead of jumping back to the default.
+
+Left- and right-handed variants are one layout and a toggle here, rather than
+the Wii U's ten separate entries. Mirroring is `x -> 1 - x - w` on every
+placement, plus reversing any quarter turn; a centred layout comes back
+unchanged, which is why the ones with no handed variant on the Wii U need no
+special case. The mirror is its own inverse, so the toggle cannot drift.
+
+**Why a layout can carry a frame aspect.** Standard has to keep a real DS's
+proportions -- the body is 148.7 x 84.7 mm per half and the screen's active area
+is 61.8 x 46.4 mm, which is what makes the screens look small inside it and the
+whole thing read as a console. Expressing that as normalized rects in the window
+would have stretched the console into whatever shape the display is. So a layout
+may name an aspect ratio, its placements are relative to a box of that shape
+letterboxed inside the window, and everything downstream -- the compositor, the
+previews, the touch mapping -- goes through the same `layout_frame()`. One place
+computes it, so they cannot disagree about where a screen is.
+
+**Why the shell is rectangles.** No image ships with this app, and a photograph
+of a console would be someone else's artwork. `draw_ds_shell()` is flat quads:
+two body halves, a hinge, the wells the screens sit in, speaker grilles, a
+d-pad, four face buttons. It aims to read as a DS at a glance rather than to be
+a rendering of one, and the same function draws the preview tile, so what the
+tile shows is what picking it gives you.
+
+**Why a quarter turn is texture coordinates.** Side-by-Side turns both screens.
+Rotating the geometry would have meant a transform in the renderer and a matrix
+in the layout; permuting which source corner each destination corner samples
+costs nothing and keeps every rect axis-aligned. The turn also swaps which
+dimension the letterbox fits against, and it has to be undone when mapping a
+touch back -- two pieces of code applying the same rotation in opposite
+directions, which is exactly the kind of pair that drifts. The smoke test drives
+a touch through the sideways layout and checks the crosshair comes back where
+the finger went in, which is what would catch them disagreeing.
+
+**Why the previews are the game.** Two coloured blocks and a key told you which
+screen went where, but not what it would look like -- the thing you actually
+want to know is whether the touch screen ends up big enough to aim at. The menu
+already pauses emulation, so the frames are sitting there; the tiles draw them
+through the same placement code the compositor uses. The key survives for the
+case where there is no frame yet: a companion that has not received one, or a
+core still booting.

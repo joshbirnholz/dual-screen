@@ -161,6 +161,15 @@ void QuadRenderer::draw(const PixelRect& rect,
                         float v0,
                         float u1,
                         float v1) {
+    const float corners[8] = {u0, v0, u1, v0, u1, v1, u0, v1};
+    draw_corners(rect, texture, color, mode, corners);
+}
+
+void QuadRenderer::draw_corners(const PixelRect& rect,
+                                const Texture* texture,
+                                const Color& color,
+                                Mode mode,
+                                const float corner_uv[8]) {
     if (program_ == 0 || rect.w <= 0.0f || rect.h <= 0.0f || output_width_ <= 0 || output_height_ <= 0) {
         return;
     }
@@ -170,13 +179,24 @@ void QuadRenderer::draw(const PixelRect& rect,
     const float x1 = rect.x + rect.w;
     const float y1 = rect.y + rect.h;
 
+    // Destination corners, clockwise from the top-left, each with the texture
+    // coordinate it samples.
+    const float& tl_u = corner_uv[0];
+    const float& tl_v = corner_uv[1];
+    const float& tr_u = corner_uv[2];
+    const float& tr_v = corner_uv[3];
+    const float& br_u = corner_uv[4];
+    const float& br_v = corner_uv[5];
+    const float& bl_u = corner_uv[6];
+    const float& bl_v = corner_uv[7];
+
     const float vertices[24] = {
-        x0, y0, u0, v0,
-        x1, y0, u1, v0,
-        x1, y1, u1, v1,
-        x0, y0, u0, v0,
-        x1, y1, u1, v1,
-        x0, y1, u0, v1,
+        x0, y0, tl_u, tl_v,
+        x1, y0, tr_u, tr_v,
+        x1, y1, br_u, br_v,
+        x0, y0, tl_u, tl_v,
+        x1, y1, br_u, br_v,
+        x0, y1, bl_u, bl_v,
     };
 
     gl::UseProgram(program_);
@@ -214,7 +234,26 @@ void QuadRenderer::draw_solid(const PixelRect& rect, const Color& color) {
     draw(rect, nullptr, color, Mode::Solid, 0.0f, 0.0f, 1.0f, 1.0f);
 }
 
-void QuadRenderer::draw_screen(const PixelRect& rect, const Texture& texture, const Color& tint) {
+void QuadRenderer::draw_screen(const PixelRect& rect,
+                               const Texture& texture,
+                               const Color& tint,
+                               ScreenRotation rotation) {
+    // Which source corner each destination corner samples. Turning the picture
+    // clockwise means the destination's top-left shows what used to be the
+    // bottom-left, and so on round.
+    switch (rotation) {
+        case ScreenRotation::Clockwise: {
+            const float corners[8] = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f};
+            draw_corners(rect, &texture, tint, Mode::Screen, corners);
+            return;
+        }
+        case ScreenRotation::CounterClockwise: {
+            const float corners[8] = {1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+            draw_corners(rect, &texture, tint, Mode::Screen, corners);
+            return;
+        }
+        case ScreenRotation::None: break;
+    }
     draw(rect, &texture, tint, Mode::Screen, 0.0f, 0.0f, 1.0f, 1.0f);
 }
 

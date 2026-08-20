@@ -69,6 +69,8 @@ Settings Settings::load(const AppPaths& paths) {
         get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
+    settings.handedness = handedness_from_key(
+        get_or<std::string>(document, "handedness", handedness_key(settings.handedness)));
     settings.cursor_mode = cursor_mode_from_key(
         get_or<std::string>(document, "cursor_mode", cursor_mode_key(settings.cursor_mode)));
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
@@ -95,6 +97,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
+    document["handedness"] = handedness_key(handedness);
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;

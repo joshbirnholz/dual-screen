@@ -212,6 +212,9 @@ struct App::Impl {
     bool bilinear_filtering = false;
     // Which device makes the sound. Only meaningful once two are connected.
     AudioTarget audio_target = AudioTarget::Both;
+    // Which hand holds the stylus. Shared with the other device, since it
+    // changes what both of them are drawing.
+    Handedness handedness = Handedness::Right;
     std::string game_title;
     std::string resolved_core_path;
 
@@ -253,9 +256,14 @@ struct App::Impl {
     // which is what keeps the two devices from ever disagreeing.
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
-    // Applies and persists a host-side change to either of them.
+    void request_handedness(Handedness hand);
+    // Applies and persists a host-side change to any of them.
     void adopt_filtering(bool bilinear);
     void adopt_audio_target(AudioTarget target);
+    void adopt_handedness(Handedness hand);
+    // Smoothing as it should actually be applied. The Standard layout draws the
+    // console around the screens and is never smoothed, whatever is remembered.
+    bool effective_filtering() const;
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
@@ -406,7 +414,9 @@ void App::Impl::refresh_output_size() {
 const Layout& App::Impl::active_layout() const { return registry.resolve(active_layout_id); }
 
 Layout App::Impl::device_layout() const {
-    const Layout& chosen = active_layout();
+    // Handedness first: it mirrors the arrangement, and everything downstream --
+    // what is drawn, and where a touch lands -- has to see the same one.
+    const Layout chosen = resolve_for_handedness(active_layout(), handedness);
     if (!chosen.per_device) {
         return chosen;
     }
@@ -446,15 +456,48 @@ void App::Impl::open_picker() {
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
+    picker_state.handedness = handedness;
     picker->open(picker_state);
 }
 
+bool App::Impl::effective_filtering() const {
+    return bilinear_filtering && !active_layout().forbids_filtering;
+}
+
 void App::Impl::request_filtering(bool bilinear) {
+    if (active_layout().forbids_filtering) {
+        return;  // not on offer for this layout, so R3 means nothing here
+    }
     if (is_companion()) {
         companion_session->request_filtering(bilinear);
         return;  // the host decides; it will tell us
     }
     adopt_filtering(bilinear);
+}
+
+void App::Impl::request_handedness(Handedness hand) {
+    if (is_companion()) {
+        companion_session->request_handedness(hand);
+        return;
+    }
+    adopt_handedness(hand);
+}
+
+void App::Impl::adopt_handedness(Handedness hand) {
+    if (hand == handedness) {
+        return;
+    }
+    handedness = hand;
+    if (picker) {
+        picker->set_handedness(handedness);
+    }
+    // Which hand you hold a stylus in does not change from game to game, so it
+    // is remembered once rather than per ROM.
+    if (!is_companion()) {
+        settings.handedness = handedness;
+        settings.save(paths);
+    }
+    log_info(std::string(is_companion() ? "following the host: " : "") + to_string(handedness));
 }
 
 void App::Impl::request_audio_target(AudioTarget target) {
@@ -507,7 +550,7 @@ bool App::Impl::sound_plays_here() const {
 
 void App::Impl::apply_filtering() {
     if (ScreenSource* drawing = active_source()) {
-        drawing->set_filtering(bilinear_filtering);
+        drawing->set_filtering(effective_filtering());
     }
     if (picker) {
         picker->set_filtering(bilinear_filtering);
@@ -565,6 +608,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     // come from it instead -- see the companion branch of the frame loop.
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
+    handedness = settings.handedness;
     apply_filtering();
     if (!host_picker) {
         host_picker.reset(new HostPickerScreen());
@@ -615,6 +659,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     active_layout_id = settings.default_layout_id;
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
+    handedness = settings.handedness;
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
     if (rom_sha1.empty()) {
@@ -860,6 +905,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             if (result.audio_target_changed) {
                 request_audio_target(next_audio_target(audio_target));
             }
+            if (result.handedness_changed) {
+                request_handedness(other_hand(handedness));
+            }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
                 // asked of the host -- the other device has its own.
@@ -953,15 +1001,20 @@ void App::Impl::render() {
         return;
     }
 
+    const ScreenTextures* frames = nullptr;
     if (ScreenSource* drawing = active_source()) {
-        compositor.render(quads, device_layout(), drawing->screens(), width, height, router);
+        const ScreenTextures& screens = drawing->screens();
+        compositor.render(quads, device_layout(), screens, width, height, router);
+        frames = &screens;
     } else {
         quads.begin_frame(output_width, output_height);
         quads.clear(compositor.style().background);
     }
 
     if (state == State::Menu) {
-        picker->render(quads, text, width, height, game_title, input.menu_labels());
+        // The previews are drawn from the frame the game is paused on, so each
+        // tile shows what picking it will actually look like.
+        picker->render(quads, text, width, height, game_title, input.menu_labels(), frames);
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, width, height);
     } else if (state == State::Message) {
@@ -1140,6 +1193,7 @@ int App::run(const AppOptions& options) {
             impl.local_screen = wanted;
             impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
             impl.audio_target = impl.settings.audio_target;
+            impl.handedness = impl.settings.handedness;
             impl.apply_filtering();
             impl.state = Impl::State::Companion;
             impl.awaiting_auto_connect = true;
@@ -1162,12 +1216,12 @@ int App::run(const AppOptions& options) {
         impl.start_game(expand_user_path(options.game_path), true);
     }
 
-    // Test hook: bring a menu up before the first frame so the UI can be
-    // captured without synthesising input events.
+    // Test hook: bring a menu up without synthesising input events. The layout
+    // menu waits for a frame to exist first -- its previews are drawn from the
+    // game, and a menu opened before the core has run shows none of it.
+    bool open_layout_menu_when_playing = false;
     if (options.start_screen == "layout" && impl.state == Impl::State::Playing) {
-        impl.open_picker();
-        impl.state = Impl::State::Menu;
-        impl.input.set_game_input_enabled(false);
+        open_layout_menu_when_playing = true;
     } else if (options.start_screen == "settings" && impl.state == Impl::State::Playing) {
         impl.settings_screen->open(impl.settings, impl.resolved_core_path);
         impl.state = Impl::State::Settings;
@@ -1280,9 +1334,14 @@ int App::run(const AppOptions& options) {
             // A menu on either device pauses the game, so the two are always
             // looking at the same frame.
             const bool paused_here = impl.state != Impl::State::Playing;
-            impl.host_session->set_session_state(
-                impl.active_layout_id, paused_here || impl.host_session->companion_menu_open(),
-                impl.bilinear_filtering, impl.audio_target);
+            net::HostSession::SharedState shared;
+            shared.layout_id = impl.active_layout_id;
+            shared.per_device_layout = impl.active_layout().per_device;
+            shared.paused = paused_here || impl.host_session->companion_menu_open();
+            shared.bilinear_filtering = impl.bilinear_filtering;
+            shared.audio_target = impl.audio_target;
+            shared.handedness = impl.handedness;
+            impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
             // The companion can ask for any of the shared settings; the host
@@ -1306,6 +1365,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_audio_target) {
                     impl.adopt_audio_target(request.audio_target);
+                }
+                if (request.wants_handedness) {
+                    impl.adopt_handedness(request.handedness);
                 }
             }
             // Whichever screen the companion took, the host shows the other.
@@ -1332,6 +1394,7 @@ int App::run(const AppOptions& options) {
                              (impl.bilinear_filtering ? "on" : "off"));
                 }
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
+                impl.adopt_handedness(impl.companion_session->host_handedness());
                 impl.local_screen = impl.companion_session->granted_screen();
             }
             // --connect joins the first host that offers the screen we asked
@@ -1346,6 +1409,17 @@ int App::run(const AppOptions& options) {
                     }
                 }
             }
+        }
+
+        // A rendered frame is not an emulated one: without vsync the loop spins
+        // far faster than the core runs, so this waits for the core's own
+        // output rather than for a swap.
+        if (open_layout_menu_when_playing && impl.state == Impl::State::Playing &&
+            impl.source && impl.source->core_frame_for_test().valid()) {
+            open_layout_menu_when_playing = false;
+            impl.open_picker();
+            impl.state = Impl::State::Menu;
+            impl.input.set_game_input_enabled(false);
         }
 
         impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());
