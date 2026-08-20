@@ -1,3 +1,5 @@
+find_program(XVFB_RUN_EXECUTABLE xvfb-run)
+
 # The mock libretro core: a real .so with the libretro C ABI, so the frontend's
 # dlopen path is exercised exactly as it would be with a real core. Built twice
 # from one source -- shaped like a DS, and like a 3DS, whose screens are
@@ -26,11 +28,21 @@ function(dualscreen_add_test name)
     target_link_libraries(${name} PRIVATE dualscreen_core)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_options(${name} PRIVATE -Wall -Wextra)
-    add_test(NAME ${name} COMMAND ${name})
-    # These need no display. Pinning the driver keeps them independent of
-    # whatever SDL_VIDEODRIVER happens to be set in the caller's environment.
+    # Most tests need no display, and pinning the dummy driver keeps them
+    # independent of whatever SDL_VIDEODRIVER is set in the caller's
+    # environment. NEEDS_GL marks the ones that do need a real context -- a
+    # core rendering on the GPU cannot be tested without one -- and those run
+    # under Xvfb where it is available.
+    cmake_parse_arguments(ARG "NEEDS_GL" "" "" ${ARGN})
+    if(ARG_NEEDS_GL AND XVFB_RUN_EXECUTABLE)
+        add_test(NAME ${name} COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 320x240x24" $<TARGET_FILE:${name}>)
+        set(driver "x11")
+    else()
+        add_test(NAME ${name} COMMAND ${name})
+        set(driver "dummy")
+    endif()
     set_tests_properties(${name} PROPERTIES
-        ENVIRONMENT "DUALSCREEN_MOCK_CORE=${MOCK_CORE_PATH};DUALSCREEN_MOCK_CORE_3DS=${MOCK_CORE_3DS_PATH};SDL_VIDEODRIVER=dummy")
+        ENVIRONMENT "DUALSCREEN_MOCK_CORE=${MOCK_CORE_PATH};DUALSCREEN_MOCK_CORE_3DS=${MOCK_CORE_3DS_PATH};SDL_VIDEODRIVER=${driver}")
 endfunction()
 
 # A helper binary, not a test itself: the smoke test uses it to inspect output.
@@ -46,12 +58,11 @@ dualscreen_add_test(test_config)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_controller_mapping)
 dualscreen_add_test(test_controller_input)
-dualscreen_add_test(test_core_host)
+dualscreen_add_test(test_core_host NEEDS_GL)
 add_dependencies(test_core_host mock_core mock_core_3ds)
 
 # End-to-end smoke test: runs the real binary against the mock core under a
 # headless X server and checks the composited output pixel by pixel.
-find_program(XVFB_RUN_EXECUTABLE xvfb-run)
 if(XVFB_RUN_EXECUTABLE)
     add_test(NAME smoke_headless
         COMMAND ${CMAKE_COMMAND}

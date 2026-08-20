@@ -59,7 +59,7 @@ public:
     void draw_outline(const PixelRect& rect, const Color& color, float thickness);
 
 private:
-    enum class Mode { Solid = 0, Screen = 1, AlphaMask = 2 };
+    enum class Mode { Solid = 0, Screen = 1, AlphaMask = 2, ScreenRgba = 3 };
 
     void draw(const PixelRect& rect,
               const Texture* texture,
@@ -80,6 +80,7 @@ private:
 
     GLuint program_ = 0;
     GLuint vertex_buffer_ = 0;
+    GLuint vertex_array_ = 0;
     GLint attr_position_ = -1;
     GLint attr_texcoord_ = -1;
     GLint uniform_viewport_ = -1;

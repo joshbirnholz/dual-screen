@@ -17,7 +17,8 @@ one running the game.
 ## What it does today
 
 - Plays **Nintendo DS** and **Nintendo 3DS** games, picking the console from
-  the ROM's extension and loading that console's core.
+  the ROM's extension and loading that console's core — including cores that
+  render on the GPU, which is the only way Citra runs at all.
 - Embeds the libretro core directly — **melonDS DS** for DS games, **Citra**
   (or a fork) for 3DS ones — `dlopen`'d as a library, with the libretro
   frontend implemented here. RetroArch is not involved and does not need to be
@@ -244,6 +245,13 @@ console. Override with the `core_path` and `core_path_3ds` settings, or with
 
 You only need the core for the console you actually play; a missing one is
 reported when you try to load a game for it, not before.
+
+3DS emulation needs **OpenGL 3.3**. Citra has no software renderer: it asks for
+a 3.3 context and refuses to load a game without one, so dualscreen builds the
+window for whichever console you are about to play. Any machine that can run a
+3DS emulator at all has this; a driver that does not gets a plain error screen
+saying so rather than a game that never starts. DS games are unaffected and
+still run on the OpenGL ES 2.0 baseline.
 
 **BIOS/firmware, if you want them.** melonDS DS boots DS games using its own
 open-source BIOS replacement, so nothing is strictly required for DS. For

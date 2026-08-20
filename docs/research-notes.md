@@ -77,12 +77,59 @@ no change. It is covered by `test_screen_source_handles_a_3ds_core`, which runs
 against a mock core shaped like Citra and checks the crop lands on the colours
 the mock painted.
 
-**What is still unverified:** this is derived from Citra's option definitions
-and exercised against a mock, not against a real Citra build, which was not
-available in this environment. The same runtime guard as the DS applies — a
-forced option the core does not declare becomes a visible warning rather than a
-silently wrong picture — so a core that has moved on says so instead of
-mis-splitting.
+**Citra does not render on the CPU at all.** This is the part a reading of the
+option definitions alone missed, and it cost a release: `retro_load_game` calls
+`RETRO_ENVIRONMENT_SET_HW_RENDER` before anything else and returns false if the
+frontend declines. This frontend used to decline every hardware context — it
+answered `GET_PREFERRED_HW_RENDER` with `RETRO_HW_CONTEXT_NONE`, which is honest
+for a CPU-composited frontend and fatal for Citra. The symptom is "Failed to set
+HW renderer" and no game.
+
+What Citra asks for, read out of `citra_libretro.cpp` rather than guessed:
+
+| field | value |
+| --- | --- |
+| `context_type` | `RETRO_HW_CONTEXT_OPENGL_CORE` on desktop Linux builds |
+| `version_major.minor` | 3.3 |
+| `bottom_left_origin` | true |
+| `cache_context` | false |
+
+It also calls `SET_HW_SHARED_CONTEXT` first, and `SET_PIXEL_FORMAT` with
+XRGB8888 before either.
+
+So the frontend implements the hardware-render path: it owns a framebuffer
+object, hands the core its name through `get_current_framebuffer` and the
+driver's entry points through `get_proc_address`, calls `context_reset` once the
+framebuffer exists, and binds that framebuffer around `retro_run`. A frame then
+arrives as `RETRO_HW_FRAME_BUFFER_VALID` rather than as pixels, and the two
+screens are cropped out of it with `glBlitFramebuffer` — which also does the
+vertical flip `bottom_left_origin` implies, for free.
+
+Three consequences worth knowing:
+
+- **The window's context depends on which console is being played.** ES 2.0
+  cannot service a core asking for desktop 3.3, so the context a system needs is
+  part of its profile and the window is rebuilt when a game needs a different
+  one. A context stronger than a system needs is left alone, so going from a 3DS
+  game back to a DS one rebuilds nothing.
+- **A core profile removed the GLSL the renderer is written in.** `#version 120`
+  with `attribute`/`varying`/`gl_FragColor` is not accepted there, and there is
+  no default vertex array object to draw with. The shaders get a preamble that
+  defines the old spelling back, rather than a second copy of themselves, and
+  the renderer creates one VAO.
+- **A GPU-rendered screen is already in RGBA order.** Core output arrives as
+  XRGB8888 and the shader swizzles it back; doing that to a texture the GPU
+  filled would turn it inside out. The texture carries its own channel order and
+  the draw picks the matching shader path, so no caller has to know where a
+  screen came from.
+
+**What is still unverified:** all of this is exercised against a mock core that
+requests the same context Citra does and renders through it, not against a real
+Citra build, which was not available in this environment. The frontend's runtime
+guards are what stand in: a forced option the core does not declare becomes a
+visible warning, a hardware context this window cannot service is declined with
+a reason rather than half-accepted, and a driver too old for 3.3 produces a
+readable error screen instead of a failed start.
 
 **3DS system files.** As with the DS: none ship here and none are downloaded.
 Citra needs files that come off your own console, and the Settings screen's

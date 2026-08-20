@@ -85,6 +85,10 @@ SystemProfile make_three_ds() {
     profile.core_filenames = {"citra_libretro.so", "citra2018_libretro.so",
                               "citra_canary_libretro.so", "azahar_libretro.so"};
     profile.core_description = "Citra";
+    // Citra has no software renderer. It asks for a 3.3 core profile through
+    // the hardware-render callback and refuses to load the game if it does not
+    // get one, so the window has to be built for it before the core is loaded.
+    profile.gl_context = GlContextNeed::OpenGl33Core;
     return profile;
 }
 

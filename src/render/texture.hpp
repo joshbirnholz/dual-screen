@@ -9,6 +9,11 @@ namespace ds {
 // A 2D RGBA texture whose storage is (re)allocated on demand. Filtering is
 // nearest by default — DS output is 256x192 pixel art and bilinear scaling
 // makes it mushy.
+// How the bytes in a texture are arranged. Core output arrives as XRGB8888 and
+// is uploaded verbatim, so the shader has to swizzle it back; a texture the GPU
+// filled itself is already in the right order and must not be swizzled again.
+enum class ChannelOrder { XrgbBytes, Rgba };
+
 class Texture {
 public:
     Texture() = default;
@@ -36,6 +41,12 @@ public:
     // with the given alpha), used by the text renderer.
     void upload_alpha8(const uint8_t* source, int width, int height);
 
+    // Storage with no data in it, for a texture something else will render
+    // into. The contents are whatever the GPU puts there, in RGBA order.
+    void allocate_rgba(int width, int height);
+
+    ChannelOrder channel_order() const { return channel_order_; }
+
     void set_linear_filtering(bool linear);
 
     GLuint id() const { return id_; }
@@ -51,6 +62,7 @@ private:
     GLuint id_ = 0;
     int width_ = 0;
     int height_ = 0;
+    ChannelOrder channel_order_ = ChannelOrder::XrgbBytes;
     bool linear_ = false;
     bool filter_dirty_ = true;
 };

@@ -59,6 +59,28 @@ using PFN_VertexAttribPointer = void (*)(GLuint, GLint, GLenum, GLboolean, GLsiz
 using PFN_EnableVertexAttribArray = void (*)(GLuint);
 using PFN_DisableVertexAttribArray = void (*)(GLuint);
 using PFN_DrawArrays = void (*)(GLenum, GLint, GLsizei);
+using PFN_GetIntegerv = void (*)(GLenum, GLint*);
+
+// Framebuffer objects. Core to ES 2.0 and to desktop GL 3.0, so these are
+// required: the hardware-rendering path draws the core's picture into one.
+using PFN_GenFramebuffers = void (*)(GLsizei, GLuint*);
+using PFN_DeleteFramebuffers = void (*)(GLsizei, const GLuint*);
+using PFN_BindFramebuffer = void (*)(GLenum, GLuint);
+using PFN_FramebufferTexture2D = void (*)(GLenum, GLenum, GLenum, GLuint, GLint);
+using PFN_CheckFramebufferStatus = GLenum (*)(GLenum);
+using PFN_GenRenderbuffers = void (*)(GLsizei, GLuint*);
+using PFN_DeleteRenderbuffers = void (*)(GLsizei, const GLuint*);
+using PFN_BindRenderbuffer = void (*)(GLenum, GLuint);
+using PFN_RenderbufferStorage = void (*)(GLenum, GLenum, GLsizei, GLsizei);
+using PFN_FramebufferRenderbuffer = void (*)(GLenum, GLenum, GLenum, GLuint);
+
+// GL 3.0 / ES 3.0 and later only, so these are optional -- see has_blit() and
+// has_vertex_arrays().
+using PFN_BlitFramebuffer =
+    void (*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+using PFN_GenVertexArrays = void (*)(GLsizei, GLuint*);
+using PFN_DeleteVertexArrays = void (*)(GLsizei, const GLuint*);
+using PFN_BindVertexArray = void (*)(GLuint);
 
 extern PFN_Viewport Viewport;
 extern PFN_ClearColor ClearColor;
@@ -106,10 +128,43 @@ extern PFN_VertexAttribPointer VertexAttribPointer;
 extern PFN_EnableVertexAttribArray EnableVertexAttribArray;
 extern PFN_DisableVertexAttribArray DisableVertexAttribArray;
 extern PFN_DrawArrays DrawArrays;
+extern PFN_GetIntegerv GetIntegerv;
+extern PFN_GenFramebuffers GenFramebuffers;
+extern PFN_DeleteFramebuffers DeleteFramebuffers;
+extern PFN_BindFramebuffer BindFramebuffer;
+extern PFN_FramebufferTexture2D FramebufferTexture2D;
+extern PFN_CheckFramebufferStatus CheckFramebufferStatus;
+extern PFN_GenRenderbuffers GenRenderbuffers;
+extern PFN_DeleteRenderbuffers DeleteRenderbuffers;
+extern PFN_BindRenderbuffer BindRenderbuffer;
+extern PFN_RenderbufferStorage RenderbufferStorage;
+extern PFN_FramebufferRenderbuffer FramebufferRenderbuffer;
+extern PFN_BlitFramebuffer BlitFramebuffer;
+extern PFN_GenVertexArrays GenVertexArrays;
+extern PFN_DeleteVertexArrays DeleteVertexArrays;
+extern PFN_BindVertexArray BindVertexArray;
+
+// Whether the optional entry points above turned up. A GL 3.3 core profile has
+// both; an ES 2.0 context has neither.
+bool has_blit();
+bool has_vertex_arrays();
 
 // Whether the current context is OpenGL ES (decides which GLSL preamble the
 // shaders get).
 bool is_gles();
+// Whether it is a desktop core profile, which removed the GLSL 1.20 syntax the
+// shaders are written in and needs the compatibility defines putting back.
+bool is_core_profile();
+
+// The context's version, as reported by the context itself rather than by
+// whatever was asked for. Zero when it could not be determined.
+void version(int& out_major, int& out_minor);
+// True when the current context is at least this version.
+bool at_least(int major, int minor);
+
+// Drops every resolved entry point. Call before deleting a context, so a
+// stale function pointer from the old one can never be called against the new.
+void unload();
 
 // Must be called with a current GL context. Returns false and fills `error`
 // when an entry point the renderer needs is missing.

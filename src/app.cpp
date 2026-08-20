@@ -256,8 +256,16 @@ struct App::Impl {
     uint32_t companion_audio_rate = 0;
     int frames_rendered = 0;
 
-    bool create_window(std::string* error);
+    bool create_window(GlContextNeed need, std::string* error);
     void destroy_window();
+    // Rebuilds the window and everything that lives in its GL context when the
+    // system about to be played needs a different one. A no-op when the context
+    // already in hand will do.
+    bool ensure_gl_context(GlContextNeed need, std::string* error);
+    // Rebuilds what lives in the GL context after the window is replaced.
+    bool rebuild_renderer(std::string* error);
+    // What the current context was built for.
+    GlContextNeed gl_context_need = GlContextNeed::Any;
     void refresh_output_size();
     const Layout& active_layout() const;
     // What this device actually draws: the chosen layout, resolved for this
@@ -316,11 +324,7 @@ struct App::Impl {
 App::App() : impl_(new Impl()) {}
 App::~App() = default;
 
-bool App::Impl::create_window(std::string* error) {
-    // Try an OpenGL ES 2.0 context first: it is the common subset across every
-    // platform on the roadmap, so the renderer is exercised against the same
-    // feature set everywhere. Desktop GL 2.1 is the fallback for drivers that
-    // will not hand out an ES context.
+bool App::Impl::create_window(GlContextNeed need, std::string* error) {  // NOLINT
     struct ContextAttempt {
         int profile;
         int major;
@@ -332,13 +336,41 @@ bool App::Impl::create_window(std::string* error) {
     // all and takes whatever the driver's default context is: under gamescope
     // an explicitly-profiled request can be refused where the default succeeds,
     // and a working context of some kind always beats refusing to start.
-    const ContextAttempt attempts[] = {
+    //
+    // OpenGL ES 2.0 comes first by default: it is the common subset across
+    // every platform on the roadmap, so the renderer is exercised against the
+    // same feature set everywhere. Desktop GL 2.1 is the fallback for drivers
+    // that will not hand out an ES context.
+    const ContextAttempt any_attempts[] = {
         {SDL_GL_CONTEXT_PROFILE_ES, 2, 0, true, "OpenGL ES 2.0"},
         {SDL_GL_CONTEXT_PROFILE_ES, 3, 0, true, "OpenGL ES 3.0"},
         {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1 compatibility"},
         {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
         {0, 0, 0, false, "the driver's default context"},
     };
+    // A GPU-rendering core will not load without the context it asked for, so
+    // when one is going to be loaded the order is reversed and the ES entries
+    // drop out entirely -- an ES 2.0 context here would only mean starting up
+    // and then failing to open the game.
+    const ContextAttempt gl33_attempts[] = {
+        {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
+        {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 3, 3, false, "OpenGL 3.3 compatibility"},
+        {0, 0, 0, false, "the driver's default context"},
+    };
+
+    // A way to exercise the 3.3 path on a machine whose driver would otherwise
+    // hand over an ES context, which is what the tests use.
+    const char* forced = std::getenv("DUALSCREEN_FORCE_GL33");
+    if (forced != nullptr && forced[0] != '\0' && forced[0] != '0') {
+        need = GlContextNeed::OpenGl33Core;
+    }
+
+    const ContextAttempt* attempts =
+        (need == GlContextNeed::OpenGl33Core) ? gl33_attempts : any_attempts;
+    const std::size_t attempt_count = (need == GlContextNeed::OpenGl33Core)
+                                          ? std::size(gl33_attempts)
+                                          : std::size(any_attempts);
+    gl_context_need = need;
 
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (!options.windowed) {
@@ -348,7 +380,8 @@ bool App::Impl::create_window(std::string* error) {
     }
 
     std::string last_error;
-    for (const ContextAttempt& attempt : attempts) {
+    for (std::size_t index = 0; index < attempt_count; ++index) {
+        const ContextAttempt& attempt = attempts[index];
         SDL_GL_ResetAttributes();
         if (attempt.profile != 0) {
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, attempt.profile);
@@ -390,6 +423,24 @@ bool App::Impl::create_window(std::string* error) {
         if (!gl::load(is_gles, &load_error)) {
             last_error = load_error;
             log_warn(std::string("cannot use the ") + attempt.description + ": " + load_error);
+            SDL_GL_DeleteContext(gl_context);
+            gl_context = nullptr;
+            SDL_DestroyWindow(window);
+            window = nullptr;
+            continue;
+        }
+
+        // What was asked for and what arrived are not the same thing, least of
+        // all for the unprofiled attempt. A core that needs 3.3 has to be told
+        // now rather than after it has failed to load a game.
+        if (need == GlContextNeed::OpenGl33Core && !gl::at_least(3, 3)) {
+            int have_major = 0;
+            int have_minor = 0;
+            gl::version(have_major, have_minor);
+            last_error = "this driver offers OpenGL " + std::to_string(have_major) + "." +
+                         std::to_string(have_minor) + ", and 3DS emulation needs 3.3";
+            log_warn(last_error);
+            gl::unload();
             SDL_GL_DeleteContext(gl_context);
             gl_context = nullptr;
             SDL_DestroyWindow(window);
@@ -441,6 +492,52 @@ void App::Impl::destroy_window() {
         SDL_DestroyWindow(window);
         window = nullptr;
     }
+}
+
+bool App::Impl::ensure_gl_context(GlContextNeed need, std::string* error) {
+    // The question is whether the context in hand can do the job, not whether
+    // it is the one that would have been asked for. A context stronger than a
+    // system needs is fine, so going from a 3DS game back to a DS one does not
+    // rebuild anything.
+    const bool satisfied =
+        window != nullptr && (need != GlContextNeed::OpenGl33Core || gl::at_least(3, 3));
+    if (satisfied) {
+        return true;
+    }
+    log_info("rebuilding the window for a different OpenGL context");
+
+    // Everything living in the old context goes with it, and comes back
+    // against the new one. Nothing else holds GL objects at this point: the
+    // screen textures belong to the source, which is opened after this.
+    destroy_window();
+    if (create_window(need, error)) {
+        return rebuild_renderer(error);
+    }
+
+    // The window is gone and the one that was wanted could not be built. Put
+    // *some* window back before returning the failure, or there is nothing left
+    // to show the player the error on -- which on a Deck in Game Mode means the
+    // app simply vanishes.
+    const std::string original_error = (error != nullptr) ? *error : std::string();
+    std::string fallback_error;
+    if (create_window(GlContextNeed::Any, &fallback_error) && rebuild_renderer(&fallback_error)) {
+        log_warn("carrying on with the context this driver will give: " + original_error);
+    } else {
+        log_error("could not rebuild any window: " + fallback_error);
+    }
+    if (error != nullptr) *error = original_error;
+    return false;
+}
+
+bool App::Impl::rebuild_renderer(std::string* error) {
+    if (!quads.initialize(error) || !text.initialize(error)) {
+        return false;
+    }
+    if (picker) {
+        picker->set_bezel_art(bezel_art.texture());
+    }
+    refresh_output_size();
+    return true;
 }
 
 void App::Impl::refresh_output_size() {
@@ -733,6 +830,18 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
+
+    // Before the core is loaded, not after: a core that renders on the GPU asks
+    // for its context while the game is being opened and refuses to open it at
+    // all if the answer is no.
+    std::string context_error;
+    if (!ensure_gl_context(profile.gl_context, &context_error)) {
+        enter_message(MessageKind::Error, "Cannot set up the display for " + profile.name,
+                      context_error,
+                      {profile.core_description + " renders on the GPU and needs OpenGL 3.3."},
+                      fatal_on_failure);
+        return false;
+    }
 
     LibretroSourceConfig source_config;
     source_config.system = system;
@@ -1223,8 +1332,26 @@ int App::run(const AppOptions& options) {
     log_info("controls are Nintendo positional: east is A, south is B, in menus and in game");
     log_info(std::string("pointer: ") + to_string(impl.settings.cursor_mode));
 
+    // When the game is already known, build the window for its console's core
+    // straight away: a 3DS core needs a context an ES 2.0 one cannot stand in
+    // for, and starting with the right one avoids rebuilding it a moment later.
+    GlContextNeed initial_context = GlContextNeed::Any;
+    if (!options.game_path.empty()) {
+        SystemId booting = SystemId::Ds;
+        if (system_for_rom(options.game_path, booting)) {
+            initial_context = system_profile(booting).gl_context;
+        }
+    }
+
     std::string error;
-    if (!impl.create_window(&error)) {
+    if (initial_context != GlContextNeed::Any && !impl.create_window(initial_context, &error)) {
+        // Start anyway, on whatever context there is. The game will fail to
+        // load and say why on a screen the player can actually read, which
+        // beats exiting to a terminal nobody is looking at.
+        log_warn("could not build the context this game's console needs: " + error);
+        impl.gl_context_need = GlContextNeed::Any;
+    }
+    if (impl.window == nullptr && !impl.create_window(GlContextNeed::Any, &error)) {
         log_error(error);
         log_error("no usable OpenGL context was available, so there is nothing to draw into");
         std::fprintf(stderr, "dualscreen: %s\n", error.c_str());

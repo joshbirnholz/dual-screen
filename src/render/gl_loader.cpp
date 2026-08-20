@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 
+#include <cstdlib>
 #include <vector>
 
 #include "util/log.hpp"
@@ -10,6 +11,7 @@ namespace ds::gl {
 namespace {
 
 bool g_is_gles = false;
+bool g_is_core_profile = false;
 std::vector<std::string>* g_missing = nullptr;
 
 template <typename T>
@@ -73,11 +75,83 @@ PFN_VertexAttribPointer VertexAttribPointer = nullptr;
 PFN_EnableVertexAttribArray EnableVertexAttribArray = nullptr;
 PFN_DisableVertexAttribArray DisableVertexAttribArray = nullptr;
 PFN_DrawArrays DrawArrays = nullptr;
+PFN_GetIntegerv GetIntegerv = nullptr;
+PFN_GenFramebuffers GenFramebuffers = nullptr;
+PFN_DeleteFramebuffers DeleteFramebuffers = nullptr;
+PFN_BindFramebuffer BindFramebuffer = nullptr;
+PFN_FramebufferTexture2D FramebufferTexture2D = nullptr;
+PFN_CheckFramebufferStatus CheckFramebufferStatus = nullptr;
+PFN_GenRenderbuffers GenRenderbuffers = nullptr;
+PFN_DeleteRenderbuffers DeleteRenderbuffers = nullptr;
+PFN_BindRenderbuffer BindRenderbuffer = nullptr;
+PFN_RenderbufferStorage RenderbufferStorage = nullptr;
+PFN_FramebufferRenderbuffer FramebufferRenderbuffer = nullptr;
+PFN_BlitFramebuffer BlitFramebuffer = nullptr;
+PFN_GenVertexArrays GenVertexArrays = nullptr;
+PFN_DeleteVertexArrays DeleteVertexArrays = nullptr;
+PFN_BindVertexArray BindVertexArray = nullptr;
 
 bool is_gles() { return g_is_gles; }
+bool is_core_profile() { return g_is_core_profile; }
+
+void version(int& out_major, int& out_minor) {
+    out_major = 0;
+    out_minor = 0;
+    // GL_MAJOR_VERSION only exists from 3.0 on, so a failure here is itself the
+    // answer: parse the version string, which every context has had since 1.0.
+    if (GetString == nullptr) return;
+    const GLubyte* text = GetString(GL_VERSION);
+    if (text == nullptr) return;
+    const char* cursor = reinterpret_cast<const char*>(text);
+    // Desktop reports "3.3.0 ...", ES reports "OpenGL ES 3.2 ..."; in both the
+    // first digit run is the major version.
+    while (*cursor != '\0' && (*cursor < '0' || *cursor > '9')) ++cursor;
+    if (*cursor == '\0') return;
+    out_major = std::atoi(cursor);
+    while (*cursor >= '0' && *cursor <= '9') ++cursor;
+    if (*cursor == '.') out_minor = std::atoi(cursor + 1);
+}
+
+bool at_least(int major, int minor) {
+    int have_major = 0;
+    int have_minor = 0;
+    version(have_major, have_minor);
+    return have_major > major || (have_major == major && have_minor >= minor);
+}
+bool has_blit() { return BlitFramebuffer != nullptr; }
+bool has_vertex_arrays() {
+    return GenVertexArrays != nullptr && BindVertexArray != nullptr &&
+           DeleteVertexArrays != nullptr;
+}
+
+void unload() {
+    // Everything the resolver can fill in, back to null in one sweep. Anything
+    // added to load() has to be added here too, which is why they sit together.
+    Viewport = nullptr; ClearColor = nullptr; Clear = nullptr; Enable = nullptr;
+    Disable = nullptr; BlendFunc = nullptr; GetError = nullptr; GetString = nullptr;
+    PixelStorei = nullptr; ReadPixels = nullptr; Scissor = nullptr; GenTextures = nullptr;
+    DeleteTextures = nullptr; BindTexture = nullptr; TexImage2D = nullptr;
+    TexSubImage2D = nullptr; TexParameteri = nullptr; ActiveTexture = nullptr;
+    CreateShader = nullptr; ShaderSource = nullptr; CompileShader = nullptr;
+    GetShaderiv = nullptr; GetShaderInfoLog = nullptr; DeleteShader = nullptr;
+    CreateProgram = nullptr; AttachShader = nullptr; LinkProgram = nullptr;
+    GetProgramiv = nullptr; GetProgramInfoLog = nullptr; UseProgram = nullptr;
+    DeleteProgram = nullptr; GetAttribLocation = nullptr; GetUniformLocation = nullptr;
+    Uniform1i = nullptr; Uniform1f = nullptr; Uniform2f = nullptr; Uniform4f = nullptr;
+    GenBuffers = nullptr; DeleteBuffers = nullptr; BindBuffer = nullptr;
+    BufferData = nullptr; BufferSubData = nullptr; VertexAttribPointer = nullptr;
+    EnableVertexAttribArray = nullptr; DisableVertexAttribArray = nullptr;
+    DrawArrays = nullptr; GetIntegerv = nullptr; GenFramebuffers = nullptr;
+    DeleteFramebuffers = nullptr; BindFramebuffer = nullptr; FramebufferTexture2D = nullptr;
+    CheckFramebufferStatus = nullptr; GenRenderbuffers = nullptr;
+    DeleteRenderbuffers = nullptr; BindRenderbuffer = nullptr; RenderbufferStorage = nullptr;
+    FramebufferRenderbuffer = nullptr; BlitFramebuffer = nullptr; GenVertexArrays = nullptr;
+    DeleteVertexArrays = nullptr; BindVertexArray = nullptr;
+}
 
 bool load(bool gles_context, std::string* error) {
     g_is_gles = gles_context;
+    g_is_core_profile = false;
 
     std::vector<std::string> missing;
     g_missing = &missing;
@@ -128,8 +202,27 @@ bool load(bool gles_context, std::string* error) {
     resolve(EnableVertexAttribArray, "glEnableVertexAttribArray");
     resolve(DisableVertexAttribArray, "glDisableVertexAttribArray");
     resolve(DrawArrays, "glDrawArrays");
+    resolve(GetIntegerv, "glGetIntegerv");
+    resolve(GenFramebuffers, "glGenFramebuffers");
+    resolve(DeleteFramebuffers, "glDeleteFramebuffers");
+    resolve(BindFramebuffer, "glBindFramebuffer");
+    resolve(FramebufferTexture2D, "glFramebufferTexture2D");
+    resolve(CheckFramebufferStatus, "glCheckFramebufferStatus");
+    resolve(GenRenderbuffers, "glGenRenderbuffers");
+    resolve(DeleteRenderbuffers, "glDeleteRenderbuffers");
+    resolve(BindRenderbuffer, "glBindRenderbuffer");
+    resolve(RenderbufferStorage, "glRenderbufferStorage");
+    resolve(FramebufferRenderbuffer, "glFramebufferRenderbuffer");
 
     g_missing = nullptr;
+
+    // Optional: present on GL 3.0 / ES 3.0 and later, absent on ES 2.0. Their
+    // absence is not an error -- only a core that asks for a modern context
+    // needs them, and that context is what brings them along.
+    resolve(BlitFramebuffer, "glBlitFramebuffer");
+    resolve(GenVertexArrays, "glGenVertexArrays");
+    resolve(DeleteVertexArrays, "glDeleteVertexArrays");
+    resolve(BindVertexArray, "glBindVertexArray");
 
     if (!missing.empty()) {
         std::string names;
@@ -143,11 +236,23 @@ bool load(bool gles_context, std::string* error) {
         return false;
     }
 
+    // Desktop 3.2 and later report which profile they are; ES contexts and
+    // anything older are not core profiles by definition.
+    if (!g_is_gles && GetIntegerv != nullptr && at_least(3, 2)) {
+        GLint mask = 0;
+        GetIntegerv(GL_CONTEXT_PROFILE_MASK, &mask);
+        // A driver that does not answer leaves the error flag set and mask 0;
+        // clear it so the first real draw is not blamed for this query.
+        if (GetError != nullptr) GetError();
+        g_is_core_profile = (mask & GL_CONTEXT_CORE_PROFILE_BIT) != 0;
+    }
+
     if (GetString != nullptr) {
         const GLubyte* version = GetString(GL_VERSION);
         const GLubyte* renderer = GetString(GL_RENDERER);
         log_info(std::string("GL renderer: ") + (renderer ? reinterpret_cast<const char*>(renderer) : "?") +
-                 " / version: " + (version ? reinterpret_cast<const char*>(version) : "?"));
+                 " / version: " + (version ? reinterpret_cast<const char*>(version) : "?") +
+                 (g_is_core_profile ? " (core profile)" : ""));
     }
     return true;
 }

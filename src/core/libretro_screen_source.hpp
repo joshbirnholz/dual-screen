@@ -89,6 +89,17 @@ private:
     void upload_screens();
     // Tells the core where the touch screen sits in its own framebuffer.
     void apply_pointer_rect();
+    // Crops one screen out of a GPU-rendered frame into `destination`.
+    bool blit_screen(const CoreVideoFrame& frame,
+                     Texture& destination,
+                     int source_x,
+                     int source_y,
+                     int width,
+                     int height);
+    // Reused for every crop: the destination texture is swapped in each time
+    // rather than a framebuffer being created per screen per frame.
+    GLuint screen_framebuffer_ = 0;
+    bool blit_unavailable_reported_ = false;
     // Says what the framebuffer was cut into, which is the first thing worth
     // knowing when a core turns out not to be arranged the way we asked.
     void log_split();

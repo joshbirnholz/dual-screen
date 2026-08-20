@@ -8,7 +8,9 @@ namespace ds {
 namespace {
 
 // GLSL 1.00 ES and GLSL 1.20 desktop share the attribute/varying syntax used
-// here, so the only difference between the two is the preamble.
+// here, so the only difference between the two is the preamble. A desktop core
+// profile removed that syntax outright, so it gets a preamble that defines it
+// back rather than a second copy of both shaders -- see core_preamble().
 const char* kVertexBody = R"(
 attribute vec2 a_position;   // in output pixels, origin top-left
 attribute vec2 a_texcoord;
@@ -26,7 +28,7 @@ void main() {
 const char* kFragmentBody = R"(
 uniform sampler2D u_texture;
 uniform vec4 u_color;
-uniform int u_mode;          // 0 solid, 1 screen (XRGB), 2 alpha mask
+uniform int u_mode;          // 0 solid, 1 screen (XRGB), 2 alpha mask, 3 screen (RGBA)
 varying vec2 v_texcoord;
 void main() {
     if (u_mode == 0) {
@@ -36,12 +38,40 @@ void main() {
         // channels come back reversed and the X byte must be ignored.
         vec4 texel = texture2D(u_texture, v_texcoord);
         gl_FragColor = vec4(texel.bgr * u_color.rgb, u_color.a);
-    } else {
+    } else if (u_mode == 2) {
         float coverage = texture2D(u_texture, v_texcoord).a;
         gl_FragColor = vec4(u_color.rgb, u_color.a * coverage);
+    } else {
+        // A screen the GPU filled in itself: already in RGBA order, so
+        // swizzling it the way core output needs would turn it inside out.
+        vec4 texel = texture2D(u_texture, v_texcoord);
+        gl_FragColor = vec4(texel.rgb * u_color.rgb, u_color.a);
     }
 }
 )";
+
+// What a GLSL 1.20 shader needs spelled differently under a core profile:
+// attribute/varying became in/out, gl_FragColor became a declared output, and
+// texture2D became texture. Defining them back keeps one copy of each shader.
+std::string core_preamble(GLenum type) {
+    std::string preamble = "#version 150\n#define texture2D texture\n";
+    if (type == GL_VERTEX_SHADER) {
+        preamble += "#define attribute in\n#define varying out\n";
+    } else {
+        preamble +=
+            "#define varying in\nout vec4 ds_FragColor;\n#define gl_FragColor ds_FragColor\n";
+    }
+    return preamble;
+}
+
+std::string preamble_for(GLenum type) {
+    if (gl::is_gles()) return "#version 100\nprecision mediump float;\n";
+    // A core profile is the one that will not take #version 120. Asking the
+    // context rather than assuming from what was requested, because the app
+    // takes whatever context it can get.
+    if (gl::is_core_profile()) return core_preamble(type);
+    return "#version 120\n";
+}
 
 GLuint compile_shader(GLenum type, const std::string& source, std::string* error) {
     const GLuint shader = gl::CreateShader(type);
@@ -75,12 +105,11 @@ GLuint compile_shader(GLenum type, const std::string& source, std::string* error
 QuadRenderer::~QuadRenderer() { shutdown(); }
 
 bool QuadRenderer::initialize(std::string* error) {
-    const std::string preamble = gl::is_gles() ? "#version 100\nprecision mediump float;\n"
-                                               : "#version 120\n";
-
-    const GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, preamble + kVertexBody, error);
+    const GLuint vertex_shader =
+        compile_shader(GL_VERTEX_SHADER, preamble_for(GL_VERTEX_SHADER) + kVertexBody, error);
     if (vertex_shader == 0) return false;
-    const GLuint fragment_shader = compile_shader(GL_FRAGMENT_SHADER, preamble + kFragmentBody, error);
+    const GLuint fragment_shader =
+        compile_shader(GL_FRAGMENT_SHADER, preamble_for(GL_FRAGMENT_SHADER) + kFragmentBody, error);
     if (fragment_shader == 0) {
         gl::DeleteShader(vertex_shader);
         return false;
@@ -121,6 +150,14 @@ bool QuadRenderer::initialize(std::string* error) {
         return false;
     }
 
+    // A core profile refuses to draw with no vertex array object bound, and
+    // there is no default one to fall back on. One for the whole renderer is
+    // enough: every draw uses the same single buffer and attribute layout.
+    if (gl::has_vertex_arrays()) {
+        gl::GenVertexArrays(1, &vertex_array_);
+        gl::BindVertexArray(vertex_array_);
+    }
+
     gl::GenBuffers(1, &vertex_buffer_);
     gl::BindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
     gl::BufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(float) * 24), nullptr, GL_DYNAMIC_DRAW);
@@ -132,6 +169,10 @@ bool QuadRenderer::initialize(std::string* error) {
 }
 
 void QuadRenderer::shutdown() {
+    if (vertex_array_ != 0 && gl::DeleteVertexArrays != nullptr) {
+        gl::DeleteVertexArrays(1, &vertex_array_);
+        vertex_array_ = 0;
+    }
     if (vertex_buffer_ != 0 && gl::DeleteBuffers != nullptr) {
         gl::DeleteBuffers(1, &vertex_buffer_);
         vertex_buffer_ = 0;
@@ -245,24 +286,28 @@ void QuadRenderer::draw_screen(const PixelRect& rect,
                                const Color& tint,
                                ScreenRotation rotation,
                                bool smooth) {
+    // The texture itself says which order its bytes are in, so a caller never
+    // has to know whether this screen came from the CPU or the GPU.
+    const Mode mode = texture.channel_order() == ChannelOrder::Rgba ? Mode::ScreenRgba
+                                                                    : Mode::Screen;
     // Which source corner each destination corner samples. Turning the picture
     // clockwise means the destination's top-left shows what used to be the
     // bottom-left, and so on round.
     switch (rotation) {
         case ScreenRotation::Clockwise: {
             const float corners[8] = {0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f};
-            draw_corners(rect, &texture, tint, Mode::Screen, corners, &smooth);
+            draw_corners(rect, &texture, tint, mode, corners, &smooth);
             return;
         }
         case ScreenRotation::CounterClockwise: {
             const float corners[8] = {1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-            draw_corners(rect, &texture, tint, Mode::Screen, corners, &smooth);
+            draw_corners(rect, &texture, tint, mode, corners, &smooth);
             return;
         }
         case ScreenRotation::None: break;
     }
     const float upright[8] = {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
-    draw_corners(rect, &texture, tint, Mode::Screen, upright, &smooth);
+    draw_corners(rect, &texture, tint, mode, upright, &smooth);
 }
 
 void QuadRenderer::draw_alpha_mask(const PixelRect& rect,

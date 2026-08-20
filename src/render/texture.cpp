@@ -65,6 +65,7 @@ void Texture::upload_xrgb8888(const uint32_t* source,
         return;
     }
     ensure_created();
+    channel_order_ = ChannelOrder::XrgbBytes;
     gl::BindTexture(GL_TEXTURE_2D, id_);
 
     if (filter_dirty_) {
@@ -100,6 +101,28 @@ void Texture::upload_xrgb8888(const uint32_t* source,
     } else {
         gl::TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, upload_from);
     }
+}
+
+void Texture::allocate_rgba(int width, int height) {
+    if (width <= 0 || height <= 0) return;
+    ensure_created();
+    channel_order_ = ChannelOrder::Rgba;
+    gl::BindTexture(GL_TEXTURE_2D, id_);
+    if (filter_dirty_) {
+        const GLint filter = linear_ ? GL_LINEAR : GL_NEAREST;
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        filter_dirty_ = false;
+    }
+    if (width != width_ || height != height_) {
+        gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width),
+                       static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        width_ = width;
+        height_ = height;
+    }
+    gl::BindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Texture::upload_alpha8(const uint8_t* source, int width, int height) {

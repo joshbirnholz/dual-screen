@@ -41,6 +41,13 @@ constexpr unsigned kFrameHeight = kTopHeight + kBottomHeight;
 constexpr unsigned kTopX = (kFrameWidth - kTopWidth) / 2;
 constexpr unsigned kBottomX = (kFrameWidth - kBottomWidth) / 2;
 
+// The 3DS build renders on the GPU, the way Citra does: it asks the frontend
+// for an OpenGL context and a framebuffer, draws into that framebuffer, and
+// reports RETRO_HW_FRAME_BUFFER_VALID instead of handing over pixels. Without
+// this the hardware-render path in the frontend would never be exercised, and
+// that path is the whole reason a 3DS core loads at all.
+constexpr bool kUsesHwRender = kIsThreeDs;
+
 retro_environment_t g_environment = nullptr;
 retro_video_refresh_t g_video_refresh = nullptr;
 retro_audio_sample_batch_t g_audio_batch = nullptr;
@@ -48,6 +55,123 @@ retro_input_poll_t g_input_poll = nullptr;
 retro_input_state_t g_input_state = nullptr;
 
 uint32_t g_framebuffer[kFrameWidth * kFrameHeight];
+
+// --- the GPU path ---------------------------------------------------------
+// Everything below is resolved through the frontend's get_proc_address, which
+// is the only way a libretro core is allowed to reach GL.
+struct retro_hw_render_callback g_hw_render;
+bool g_hw_ready = false;
+
+using GLenum_ = unsigned;
+using GLuint_ = unsigned;
+using GLint_ = int;
+using GLsizei_ = int;
+using GLbitfield_ = unsigned;
+
+void (*gl_GenTextures)(GLsizei_, GLuint_*) = nullptr;
+void (*gl_DeleteTextures)(GLsizei_, const GLuint_*) = nullptr;
+void (*gl_BindTexture)(GLenum_, GLuint_) = nullptr;
+void (*gl_TexImage2D)(GLenum_, GLint_, GLint_, GLsizei_, GLsizei_, GLint_, GLenum_, GLenum_,
+                      const void*) = nullptr;
+void (*gl_TexParameteri)(GLenum_, GLenum_, GLint_) = nullptr;
+void (*gl_GenFramebuffers)(GLsizei_, GLuint_*) = nullptr;
+void (*gl_DeleteFramebuffers)(GLsizei_, const GLuint_*) = nullptr;
+void (*gl_BindFramebuffer)(GLenum_, GLuint_) = nullptr;
+void (*gl_FramebufferTexture2D)(GLenum_, GLenum_, GLenum_, GLuint_, GLint_) = nullptr;
+void (*gl_BlitFramebuffer)(GLint_, GLint_, GLint_, GLint_, GLint_, GLint_, GLint_, GLint_,
+                           GLbitfield_, GLenum_) = nullptr;
+
+constexpr GLenum_ kGlTexture2d = 0x0DE1;
+constexpr GLenum_ kGlRgba = 0x1908;
+constexpr GLenum_ kGlBgra = 0x80E1;
+constexpr GLenum_ kGlUnsignedByte = 0x1401;
+constexpr GLenum_ kGlNearest = 0x2600;
+constexpr GLenum_ kGlTextureMinFilter = 0x2801;
+constexpr GLenum_ kGlTextureMagFilter = 0x2800;
+constexpr GLenum_ kGlReadFramebuffer = 0x8CA8;
+constexpr GLenum_ kGlDrawFramebuffer = 0x8CA9;
+constexpr GLenum_ kGlFramebuffer = 0x8D40;
+constexpr GLenum_ kGlColorAttachment0 = 0x8CE0;
+constexpr GLbitfield_ kGlColorBufferBit = 0x00004000;
+
+GLuint_ g_gpu_texture = 0;
+GLuint_ g_gpu_framebuffer = 0;
+
+template <typename T>
+void resolve_gl(T& out, const char* name) {
+    if (g_hw_render.get_proc_address == nullptr) return;
+    out = reinterpret_cast<T>(g_hw_render.get_proc_address(name));
+}
+
+void RETRO_CALLCONV hw_context_reset() {
+    resolve_gl(gl_GenTextures, "glGenTextures");
+    resolve_gl(gl_DeleteTextures, "glDeleteTextures");
+    resolve_gl(gl_BindTexture, "glBindTexture");
+    resolve_gl(gl_TexImage2D, "glTexImage2D");
+    resolve_gl(gl_TexParameteri, "glTexParameteri");
+    resolve_gl(gl_GenFramebuffers, "glGenFramebuffers");
+    resolve_gl(gl_DeleteFramebuffers, "glDeleteFramebuffers");
+    resolve_gl(gl_BindFramebuffer, "glBindFramebuffer");
+    resolve_gl(gl_FramebufferTexture2D, "glFramebufferTexture2D");
+    resolve_gl(gl_BlitFramebuffer, "glBlitFramebuffer");
+
+    g_hw_ready = gl_GenTextures != nullptr && gl_BlitFramebuffer != nullptr &&
+                 gl_GenFramebuffers != nullptr && gl_TexImage2D != nullptr;
+    if (!g_hw_ready) return;
+
+    gl_GenTextures(1, &g_gpu_texture);
+    gl_BindTexture(kGlTexture2d, g_gpu_texture);
+    gl_TexParameteri(kGlTexture2d, kGlTextureMinFilter, static_cast<GLint_>(kGlNearest));
+    gl_TexParameteri(kGlTexture2d, kGlTextureMagFilter, static_cast<GLint_>(kGlNearest));
+    gl_TexImage2D(kGlTexture2d, 0, static_cast<GLint_>(kGlRgba), kFrameWidth, kFrameHeight, 0,
+                  kGlBgra, kGlUnsignedByte, nullptr);
+    gl_BindTexture(kGlTexture2d, 0);
+
+    gl_GenFramebuffers(1, &g_gpu_framebuffer);
+    gl_BindFramebuffer(kGlFramebuffer, g_gpu_framebuffer);
+    gl_FramebufferTexture2D(kGlFramebuffer, kGlColorAttachment0, kGlTexture2d, g_gpu_texture, 0);
+    gl_BindFramebuffer(kGlFramebuffer, 0);
+}
+
+void RETRO_CALLCONV hw_context_destroy() {
+    if (g_gpu_framebuffer != 0 && gl_DeleteFramebuffers != nullptr) {
+        gl_DeleteFramebuffers(1, &g_gpu_framebuffer);
+    }
+    if (g_gpu_texture != 0 && gl_DeleteTextures != nullptr) {
+        gl_DeleteTextures(1, &g_gpu_texture);
+    }
+    g_gpu_framebuffer = 0;
+    g_gpu_texture = 0;
+    g_hw_ready = false;
+}
+
+// Puts the frame that was just drawn on the CPU into the framebuffer the
+// frontend handed over. A real GPU core would render straight in; this only
+// has to prove the handover works.
+void present_through_gpu() {
+    if (!g_hw_ready) return;
+
+    // XRGB8888 in a uint32 is B,G,R,X in memory, so it goes up as BGRA and
+    // lands in the texture in the right order.
+    gl_BindTexture(kGlTexture2d, g_gpu_texture);
+    gl_TexImage2D(kGlTexture2d, 0, static_cast<GLint_>(kGlRgba), kFrameWidth, kFrameHeight, 0,
+                  kGlBgra, kGlUnsignedByte, g_framebuffer);
+    gl_BindTexture(kGlTexture2d, 0);
+
+    const GLuint_ target = g_hw_render.get_current_framebuffer != nullptr
+                               ? static_cast<GLuint_>(g_hw_render.get_current_framebuffer())
+                               : 0;
+    gl_BindFramebuffer(kGlReadFramebuffer, g_gpu_framebuffer);
+    gl_BindFramebuffer(kGlDrawFramebuffer, target);
+    // Flipped on the way over: the frame is stored top row first, and this core
+    // declares bottom_left_origin, so the frontend expects the bottom row at
+    // y = 0.
+    gl_BlitFramebuffer(0, 0, kFrameWidth, kFrameHeight, 0, kFrameHeight, kFrameWidth, 0,
+                       kGlColorBufferBit, kGlNearest);
+    gl_BindFramebuffer(kGlReadFramebuffer, 0);
+    gl_BindFramebuffer(kGlDrawFramebuffer, 0);
+}
+
 int16_t g_silence[1024 * 2];
 unsigned g_frame_counter = 0;
 bool g_layout_option_honoured = false;
@@ -280,6 +404,24 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
         !g_environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format)) {
         return false;
     }
+    if (kUsesHwRender) {
+        // Exactly what Citra asks for, and in the same order: a 3.3 core
+        // profile, bottom-left origin, no cached context. A frontend that
+        // refuses gets the same "cannot load" a real 3DS core would give.
+        g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
+        g_hw_render.version_major = 3;
+        g_hw_render.version_minor = 3;
+        g_hw_render.context_reset = hw_context_reset;
+        g_hw_render.context_destroy = hw_context_destroy;
+        g_hw_render.depth = true;
+        g_hw_render.stencil = false;
+        g_hw_render.bottom_left_origin = true;
+        if (g_environment == nullptr ||
+            !g_environment(RETRO_ENVIRONMENT_SET_HW_RENDER, &g_hw_render)) {
+            return false;
+        }
+    }
+
     // Report whether the frontend actually pinned the layout we depend on, in
     // whichever core's language this build speaks.
     if (kIsThreeDs) {
@@ -314,7 +456,13 @@ RETRO_API void retro_run(void) {
     ++g_frame_counter;
 
     if (g_video_refresh != nullptr) {
-        g_video_refresh(g_framebuffer, kFrameWidth, kFrameHeight, kFrameWidth * sizeof(uint32_t));
+        if (kUsesHwRender) {
+            present_through_gpu();
+            g_video_refresh(RETRO_HW_FRAME_BUFFER_VALID, kFrameWidth, kFrameHeight, 0);
+        } else {
+            g_video_refresh(g_framebuffer, kFrameWidth, kFrameHeight,
+                            kFrameWidth * sizeof(uint32_t));
+        }
     }
     if (g_audio_batch != nullptr) {
         g_audio_batch(g_silence, 548);

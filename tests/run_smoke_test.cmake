@@ -440,6 +440,19 @@ foreach(CASE IN LISTS THREE_DS_CASES)
         message(SEND_ERROR "the 3DS framebuffer was not split into two differently shaped screens")
         set(ANY_FAILED TRUE)
     endif()
+    # The 3DS core renders on the GPU, as Citra does. If the frontend ever went
+    # back to declining that, the core would simply refuse to load the game --
+    # so the handshake is checked outright rather than inferred from the picture.
+    if(NOT RUN_OUTPUT MATCHES "the core renders on the GPU")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "the 3DS core did not get a hardware-rendering context")
+        set(ANY_FAILED TRUE)
+    endif()
+    if(NOT RUN_OUTPUT MATCHES "OpenGL 3.3 core context")
+        message(STATUS "${RUN_OUTPUT}")
+        message(SEND_ERROR "a 3DS game did not get the OpenGL 3.3 context its core needs")
+        set(ANY_FAILED TRUE)
+    endif()
 
     execute_process(
         COMMAND "${CHECKER}" "${SHOT}" ${EXPECTATIONS}

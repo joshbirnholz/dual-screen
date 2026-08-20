@@ -1,5 +1,6 @@
 #include "core/libretro_core.hpp"
 
+#include <SDL.h>
 #include <dlfcn.h>
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 
 #include "input/ds_input.hpp"
 #include "libretro/libretro.h"
+#include "render/gl_loader.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -19,6 +21,21 @@ namespace {
 // The libretro callback surface is plain C function pointers with no user-data
 // parameter, so the active core instance has to be reachable statically.
 LibretroCore* g_active_core = nullptr;
+
+// Handed to a GPU-rendering core so it knows where to draw. libretro calls
+// these with its own calling convention, so they are free functions here
+// rather than members.
+uintptr_t RETRO_CALLCONV hw_get_current_framebuffer_thunk() {
+    if (g_active_core == nullptr) return 0;
+    return static_cast<uintptr_t>(g_active_core->hw_framebuffer_name());
+}
+
+retro_proc_address_t RETRO_CALLCONV hw_get_proc_address_thunk(const char* symbol) {
+    if (symbol == nullptr) return nullptr;
+    // The same resolver the frontend's own renderer uses, so the core and the
+    // frontend are talking to one driver rather than two.
+    return reinterpret_cast<retro_proc_address_t>(SDL_GL_GetProcAddress(symbol));
+}
 
 std::vector<std::string> split_values(const std::string& text, char separator) {
     std::vector<std::string> parts;
@@ -294,6 +311,22 @@ bool LibretroCore::load_game(const std::string& rom_path, std::string* error) {
     game_loaded_ = true;
     api_->retro_set_controller_port_device(0, RETRO_DEVICE_JOYPAD);
     refresh_av_info();
+
+    if (hw_render_requested_) {
+        // Now that av_info is in, the framebuffer can be sized to what the core
+        // will really draw rather than the placeholder it was given during
+        // load. Only then is the core told its context is ready.
+        if (!ensure_hw_target()) {
+            if (error != nullptr) {
+                *error = "could not give the core a framebuffer to render into";
+            }
+            api_->retro_unload_game();
+            game_loaded_ = false;
+            rom_data_.clear();
+            return false;
+        }
+        reset_hw_context();
+    }
     return true;
 }
 
@@ -323,8 +356,119 @@ void LibretroCore::refresh_av_info() {
     av_info_.sample_rate = info.timing.sample_rate > 0.0 ? info.timing.sample_rate : 48000.0;
 }
 
+// --- hardware rendering ----------------------------------------------------
+
+bool LibretroCore::accept_hw_render(struct retro_hw_render_callback* callback) {
+    if (callback == nullptr) return false;
+
+    // Only OpenGL, and only a context this window can actually service. Saying
+    // no here is the honest answer -- the core reports it as a failure to load
+    // the game, which is far better than drawing nothing and calling it success.
+    const char* refusal = nullptr;
+    switch (callback->context_type) {
+        case RETRO_HW_CONTEXT_OPENGL:
+        case RETRO_HW_CONTEXT_OPENGL_CORE:
+            if (gl::is_gles()) {
+                refusal = "this window has an OpenGL ES context and the core wants desktop OpenGL";
+            } else if (!gl::at_least(static_cast<int>(callback->version_major),
+                                     static_cast<int>(callback->version_minor))) {
+                refusal = "this driver's OpenGL is older than the core asked for";
+            }
+            break;
+        case RETRO_HW_CONTEXT_OPENGLES2:
+        case RETRO_HW_CONTEXT_OPENGLES3:
+        case RETRO_HW_CONTEXT_OPENGLES_VERSION:
+            if (!gl::is_gles()) {
+                refusal = "this window has a desktop OpenGL context and the core wants OpenGL ES";
+            }
+            break;
+        default:
+            refusal = "this frontend only renders cores through OpenGL";
+            break;
+    }
+    if (refusal != nullptr) {
+        const std::string message =
+            std::string("declining the core's request for a hardware context: ") + refusal;
+        log_error(message);
+        option_warnings_.push_back(message);
+        return false;
+    }
+
+    hw_callback_ = callback;
+    hw_render_requested_ = true;
+    hw_context_reset_done_ = false;
+    callback->get_current_framebuffer = &hw_get_current_framebuffer_thunk;
+    callback->get_proc_address = &hw_get_proc_address_thunk;
+
+    log_info("the core renders on the GPU; giving it a framebuffer to draw into");
+    // The framebuffer has to exist before context_reset, because the core sets
+    // up its own GL state there and may bind ours immediately after.
+    return ensure_hw_target();
+}
+
+bool LibretroCore::ensure_hw_target() {
+    if (!hw_render_requested_) return false;
+
+    // The core declares its largest output through av_info. Before that arrives
+    // this falls back to the current geometry, which load_game() then corrects.
+    unsigned width = av_info_.max_width != 0 ? av_info_.max_width : av_info_.base_width;
+    unsigned height = av_info_.max_height != 0 ? av_info_.max_height : av_info_.base_height;
+    if (width == 0 || height == 0) {
+        // Nothing declared yet. A modest default keeps the framebuffer valid
+        // until the real size arrives; it only ever grows from here.
+        width = 1024;
+        height = 1024;
+    }
+
+    const GLuint before = hw_render_.framebuffer();
+    std::string error;
+    if (!hw_render_.create(width, height, hw_callback_ != nullptr && hw_callback_->depth,
+                           hw_callback_ != nullptr && hw_callback_->stencil, &error)) {
+        log_error(error);
+        option_warnings_.push_back(error);
+        return false;
+    }
+    if (hw_render_.framebuffer() != before) {
+        // Growing throws the old framebuffer away. Any frame still pointing at
+        // it describes a texture that no longer exists, so it is dropped rather
+        // than left to be read from.
+        video_frame_ = CoreVideoFrame();
+    }
+    return true;
+}
+
+void LibretroCore::reset_hw_context() {
+    if (!hw_render_requested_ || hw_callback_ == nullptr) return;
+    if (hw_callback_->context_reset == nullptr) return;
+    if (hw_context_reset_done_) return;
+    // The core builds its GL resources in here, so it must run with our context
+    // current and its own framebuffer already allocated.
+    hw_callback_->context_reset();
+    hw_context_reset_done_ = true;
+}
+
+void LibretroCore::destroy_hw_context() {
+    if (hw_render_requested_ && hw_callback_ != nullptr && hw_context_reset_done_ &&
+        hw_callback_->context_destroy != nullptr) {
+        hw_callback_->context_destroy();
+    }
+    hw_context_reset_done_ = false;
+    hw_render_.destroy();
+    hw_callback_ = nullptr;
+    hw_render_requested_ = false;
+}
+
 void LibretroCore::run_frame() {
     if (handle_ == nullptr || !game_loaded_) {
+        return;
+    }
+    if (hw_render_requested_) {
+        // The core draws into its own framebuffer, not the window. Binding it
+        // here rather than trusting the core to means a core that leaves the
+        // binding somewhere else cannot scribble over the window.
+        gl::BindFramebuffer(GL_FRAMEBUFFER, hw_render_.framebuffer());
+        api_->retro_run();
+        gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
         return;
     }
     api_->retro_run();
@@ -334,6 +478,9 @@ void LibretroCore::unload_game() {
     if (handle_ != nullptr && game_loaded_) {
         api_->retro_unload_game();
     }
+    // After retro_unload_game, so the core still has its context while it is
+    // shutting the game down.
+    destroy_hw_context();
     game_loaded_ = false;
     rom_data_.clear();
     video_frame_ = CoreVideoFrame();
@@ -568,6 +715,10 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             av_info_.aspect_ratio = info->geometry.aspect_ratio;
             if (info->timing.fps > 0.0) av_info_.fps = info->timing.fps;
             if (info->timing.sample_rate > 0.0) av_info_.sample_rate = info->timing.sample_rate;
+            // A GPU-rendering core resizes its output when its resolution
+            // multiplier changes, and then draws that much on the very next
+            // frame -- so the framebuffer has to grow now, not later.
+            if (hw_render_requested_) ensure_hw_target();
             return true;
         }
         case RETRO_ENVIRONMENT_SET_GEOMETRY: {
@@ -578,6 +729,7 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             if (geometry->max_width > 0) av_info_.max_width = geometry->max_width;
             if (geometry->max_height > 0) av_info_.max_height = geometry->max_height;
             av_info_.aspect_ratio = geometry->aspect_ratio;
+            if (hw_render_requested_) ensure_hw_target();
             return true;
         }
         case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS: {
@@ -609,9 +761,23 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             return true;
         }
         case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: {
-            // V1 composites from a CPU-side framebuffer, so the core should
-            // stay on its software renderer.
-            *static_cast<unsigned*>(data) = RETRO_HW_CONTEXT_NONE;
+            // Answer with what this window can actually service. A core that
+            // asks is deciding which API to request next, so saying "none" to a
+            // core with no software renderer just makes it fail later.
+            *static_cast<unsigned*>(data) =
+                gl::is_gles() ? RETRO_HW_CONTEXT_OPENGLES2
+                              : (gl::at_least(3, 3) ? RETRO_HW_CONTEXT_OPENGL_CORE
+                                                    : RETRO_HW_CONTEXT_OPENGL);
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_HW_RENDER: {
+            return accept_hw_render(static_cast<struct retro_hw_render_callback*>(data));
+        }
+        case RETRO_ENVIRONMENT_SET_HW_SHARED_CONTEXT: {
+            // "Give me a context of my own rather than yours." This frontend
+            // runs the core on the same context it draws with, which is what
+            // the shared-context contract allows; accepting it is what lets the
+            // core go on to ask for the context itself.
             return true;
         }
         case RETRO_ENVIRONMENT_SET_MESSAGE: {
@@ -673,6 +839,25 @@ void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned h
         return;
     }
 
+    if (data == RETRO_HW_FRAME_BUFFER_VALID) {
+        // Nothing to copy: the picture is already in the texture we handed the
+        // core. All this frame carries is how much of it is used.
+        if (!hw_render_.valid()) return;
+        video_frame_.source = FrameSource::Texture;
+        video_frame_.pixels = nullptr;
+        video_frame_.texture = hw_render_.texture();
+        video_frame_.framebuffer = hw_render_.framebuffer();
+        video_frame_.texture_width = hw_render_.width();
+        video_frame_.texture_height = hw_render_.height();
+        video_frame_.bottom_left_origin =
+            hw_callback_ != nullptr && hw_callback_->bottom_left_origin;
+        video_frame_.width = width;
+        video_frame_.height = height;
+        video_frame_.stride_pixels = 0;
+        video_frame_.serial = ++video_serial_;
+        return;
+    }
+
     const std::size_t needed = static_cast<std::size_t>(width) * height;
     if (video_buffer_.size() < needed) {
         video_buffer_.resize(needed);
@@ -686,6 +871,9 @@ void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned h
                     row_bytes);
     }
 
+    video_frame_.source = FrameSource::Pixels;
+    video_frame_.texture = 0;
+    video_frame_.framebuffer = 0;
     video_frame_.pixels = video_buffer_.data();
     video_frame_.width = width;
     video_frame_.height = height;

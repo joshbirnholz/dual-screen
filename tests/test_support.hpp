@@ -29,6 +29,12 @@ inline bool nearly_equal(double a, double b, double tolerance = 1e-4) {
     return std::fabs(a - b) <= tolerance;
 }
 
+// Announced rather than silent: a test that could not run at all is not the
+// same as one that passed, and the reason belongs in the output.
+inline void skip(const std::string& reason) {
+    std::fprintf(stderr, "SKIP: %s\n", reason.c_str());
+}
+
 inline int finish(const char* suite) {
     if (failure_count() == 0) {
         std::printf("ok - %s\n", suite);

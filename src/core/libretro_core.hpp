@@ -1,10 +1,15 @@
 #pragma once
 
 #include <cstdint>
+
+// Opaque here on purpose: libretro.h stays out of this header.
+struct retro_hw_render_callback;
 #include <functional>
 #include <map>
 #include <string>
 #include <vector>
+
+#include "core/hw_render_target.hpp"
 
 namespace ds {
 
@@ -21,13 +26,35 @@ struct CoreAvInfo {
 };
 
 // The most recent frame the core produced, in XRGB8888, owned by LibretroCore.
+// Where a frame's picture actually is. A core that renders on the CPU hands
+// over pixels; one that renders on the GPU leaves the picture in the
+// framebuffer the frontend gave it and only says how much of it is used.
+enum class FrameSource { None, Pixels, Texture };
+
 struct CoreVideoFrame {
+    FrameSource source = FrameSource::None;
+    // Set when source == Pixels.
     const uint32_t* pixels = nullptr;
+    // Set when source == Texture: the colour texture of the core's framebuffer,
+    // with the picture in its lower-left corner when `bottom_left_origin`.
+    GLuint texture = 0;
+    // The framebuffer that texture is attached to, which is what a copy out of
+    // it reads from.
+    GLuint framebuffer = 0;
+    unsigned texture_width = 0;   // the whole texture, which is >= width
+    unsigned texture_height = 0;
+    bool bottom_left_origin = false;
+    // The part of either that holds this frame.
     unsigned width = 0;
     unsigned height = 0;
     unsigned stride_pixels = 0;
-    uint64_t serial = 0;  // increments whenever new pixels arrive
-    bool valid() const { return pixels != nullptr && width > 0 && height > 0; }
+    uint64_t serial = 0;  // increments whenever a new frame arrives
+    bool valid() const {
+        if (width == 0 || height == 0) return false;
+        if (source == FrameSource::Pixels) return pixels != nullptr;
+        if (source == FrameSource::Texture) return texture != 0;
+        return false;
+    }
 };
 
 // One declared core option, as reported by the core itself. We keep these so
@@ -81,6 +108,10 @@ public:
         int screen_height = 192;
     };
     void set_pointer_source(const PointerSource& source);
+
+    // Whether the loaded core renders on the GPU, which it declares while the
+    // game is being opened. Only meaningful after load_game().
+    bool uses_hw_render() const { return hw_render_.valid(); }
     // Forces a core option to a value. Applied on top of the core's declared
     // defaults, and validated against the core's own option definitions once
     // those arrive (a mismatch is reported through option_warnings()).
@@ -163,6 +194,25 @@ private:
     std::map<std::string, std::string> forced_options_;
     std::vector<std::string> option_warnings_;
     std::vector<std::string> core_messages_;
+
+    // --- hardware rendering ---
+    // Set when the core asked for a GPU context. The callback is the core's
+    // own struct, kept because context_reset/context_destroy live in it.
+    bool hw_render_requested_ = false;
+    struct retro_hw_render_callback* hw_callback_ = nullptr;
+    HwRenderTarget hw_render_;
+
+public:
+    // For the thunks in the .cpp, which cannot be members without dragging
+    // libretro's calling convention into this header.
+    GLuint hw_framebuffer_name() const { return hw_render_.framebuffer(); }
+
+private:
+    bool hw_context_reset_done_ = false;
+    bool accept_hw_render(struct retro_hw_render_callback* callback);
+    bool ensure_hw_target();
+    void reset_hw_context();
+    void destroy_hw_context();
 
     AudioCallback audio_callback_;
     const DsInputState* input_state_ = nullptr;

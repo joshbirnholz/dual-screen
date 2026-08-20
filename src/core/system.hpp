@@ -12,6 +12,17 @@ namespace ds {
 // core plays it, what its ROMs are called -- hangs off this and nowhere else.
 enum class SystemId { Ds, ThreeDs };
 
+// What kind of OpenGL context a system's cores need. A core that renders on the
+// CPU is happy with anything; one that renders on the GPU is not, and asks for
+// a specific context through the libretro hardware-render callback -- refuse it
+// and the core will not load the game at all.
+enum class GlContextNeed {
+    // Whatever the driver hands over; the renderer's own ES 2.0 baseline.
+    Any,
+    // A desktop OpenGL 3.3 core profile, which is what Citra asks for.
+    OpenGl33Core,
+};
+
 struct SystemProfile {
     SystemId id = SystemId::Ds;
     // Shown to the player, so it is the console's name rather than an id.
@@ -25,6 +36,8 @@ struct SystemProfile {
     std::vector<std::string> core_filenames;
     // What to call the core when telling the player one is missing.
     std::string core_description;
+    // The context this system's cores need to be given.
+    GlContextNeed gl_context = GlContextNeed::Any;
 };
 
 const SystemProfile& system_profile(SystemId id);

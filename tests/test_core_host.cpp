@@ -1,8 +1,16 @@
 // Exercises the libretro hosting layer against the mock core: option forcing,
 // geometry, video capture, button mapping and touch-to-pointer conversion.
-// No GL context is involved, so this runs anywhere.
+//
+// Most of it needs no GL context. The 3DS core does: it renders on the GPU, the
+// way Citra does, so that test builds a real context and skips where there is
+// none.
 
 #include "test_support.hpp"
+
+#include <SDL.h>
+
+#include "render/gl_loader.hpp"
+#include "render/texture.hpp"
 
 #include <cstdlib>
 #include <fstream>
@@ -135,13 +143,77 @@ void test_screen_source_reports_a_valid_split() {
     source.close();
 }
 
+// A window and an OpenGL context, for the tests that need one. A 3DS core
+// renders on the GPU, so without a real context there is nothing for it to draw
+// into and it will not load a game at all -- which is exactly what the frontend
+// should do, and exactly why this cannot be tested against a dummy driver.
+// Reads one pixel back out of a texture, which is the only way to check what
+// the GPU actually put there.
+bool read_texture_pixel(const Texture& texture, int x, int y, uint8_t out_rgba[4]) {
+    if (!texture.valid() || gl::GenFramebuffers == nullptr) return false;
+    GLuint framebuffer = 0;
+    gl::GenFramebuffers(1, &framebuffer);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.id(), 0);
+    const bool complete = gl::CheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if (complete) {
+        gl::ReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, out_rgba);
+    }
+    gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl::DeleteFramebuffers(1, &framebuffer);
+    return complete;
+}
+
+class GlFixture {
+public:
+    bool start() {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
+        initialized_ = true;
+        SDL_GL_ResetAttributes();
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        window_ = SDL_CreateWindow("test", 0, 0, 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+        if (window_ == nullptr) return false;
+        context_ = SDL_GL_CreateContext(window_);
+        if (context_ == nullptr) return false;
+        SDL_GL_MakeCurrent(window_, context_);
+        std::string error;
+        return gl::load(false, &error) && gl::at_least(3, 3);
+    }
+
+    ~GlFixture() {
+        if (context_ != nullptr) {
+            gl::unload();
+            SDL_GL_DeleteContext(context_);
+        }
+        if (window_ != nullptr) SDL_DestroyWindow(window_);
+        if (initialized_) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    }
+
+private:
+    SDL_Window* window_ = nullptr;
+    SDL_GLContext context_ = nullptr;
+    bool initialized_ = false;
+};
+
 // The same frontend against a core shaped like a 3DS: two screens of different
-// widths, the narrower one centred under the wider. Every step from the core
-// option through the crop to the reported geometry has to follow the console
-// rather than a remembered 256x192.
+// widths, the narrower one centred under the wider, drawn on the GPU rather
+// than handed over as pixels. Every step from the core option through the
+// hardware-render handshake and the crop to the reported geometry has to follow
+// the console rather than a remembered 256x192.
 void test_screen_source_handles_a_3ds_core() {
     const char* path = std::getenv("DUALSCREEN_MOCK_CORE_3DS");
     if (path == nullptr || path[0] == '\0') return;
+
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        // No GL here at all, so there is nothing this test can say. It runs
+        // under Xvfb in CI; skipping is better than a failure that means
+        // "this machine has no display".
+        test::skip("no OpenGL 3.3 context available for the 3DS core");
+        return;
+    }
 
     LibretroCoreScreenSource source;
     LibretroSourceConfig config;
@@ -168,23 +240,32 @@ void test_screen_source_handles_a_3ds_core() {
 
     CHECK_MSG(source.advance_frame(&error), error);
 
-    // The crop really does take the touch screen from where the core put it:
-    // the mock draws it in greens, and the upper screen in blues.
+    // The frame is a texture, not pixels: the core drew it into the framebuffer
+    // the frontend handed over. Anything still reaching for frame.pixels here
+    // would be reading a null pointer.
     const CoreVideoFrame& frame = source.core_frame_for_test();
-    CHECK(frame.valid());
-    if (frame.valid()) {
-        const ScreenSplit& split = source.split();
-        const uint32_t top_pixel =
-            frame.pixels[(static_cast<std::size_t>(split.top_y) + 100) * frame.stride_pixels +
-                         split.top_x + 100];
-        const uint32_t bottom_pixel =
-            frame.pixels[(static_cast<std::size_t>(split.bottom_y) + 100) * frame.stride_pixels +
-                         split.bottom_x + 100];
-        const auto blue = [](uint32_t p) { return p & 0xffu; };
-        const auto green = [](uint32_t p) { return (p >> 8) & 0xffu; };
-        CHECK_MSG(blue(top_pixel) > green(top_pixel), "the upper screen was not where it should be");
-        CHECK_MSG(green(bottom_pixel) > blue(bottom_pixel),
-                  "the touch screen was not where it should be");
+    CHECK_MSG(frame.source == FrameSource::Texture, "the 3DS core did not render on the GPU");
+    CHECK_MSG(frame.valid(), "the GPU frame did not describe a usable texture");
+    CHECK_MSG(frame.pixels == nullptr, "a GPU frame should carry no CPU pixels");
+    CHECK_MSG(frame.bottom_left_origin, "the core's origin convention was not carried through");
+    CHECK_EQ(static_cast<int>(frame.width), 400);
+    CHECK_EQ(static_cast<int>(frame.height), 480);
+
+    // And the crop really lands on the right part of it: the mock draws the
+    // upper screen in blues and the touch screen in greens, so reading the two
+    // screen textures back tells us the split and the vertical flip are right.
+    const ScreenTextures& screens = source.screens();
+    CHECK_MSG(screens.top != nullptr && screens.bottom != nullptr,
+              "the GPU frame did not become two screen textures");
+    if (screens.top != nullptr && screens.bottom != nullptr) {
+        CHECK_EQ(screens.top->width(), 400);
+        CHECK_EQ(screens.bottom->width(), 320);
+        uint8_t top_rgba[4] = {0, 0, 0, 0};
+        uint8_t bottom_rgba[4] = {0, 0, 0, 0};
+        CHECK(read_texture_pixel(*screens.top, 200, 120, top_rgba));
+        CHECK(read_texture_pixel(*screens.bottom, 160, 120, bottom_rgba));
+        CHECK_MSG(top_rgba[2] > top_rgba[1], "the upper screen was not where it should be");
+        CHECK_MSG(bottom_rgba[1] > bottom_rgba[2], "the touch screen was not where it should be");
     }
     source.close();
 }

@@ -4,7 +4,15 @@
 #include <cstring>
 
 #include "config/paths.hpp"
+#include "render/gl_loader.hpp"
 #include "util/log.hpp"
+
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
 
 namespace ds {
 namespace {
@@ -184,6 +192,10 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
 void LibretroCoreScreenSource::close() {
     // Before the core goes away, not after: unloading frees the buffer.
     flush_save_ram(true);
+    if (screen_framebuffer_ != 0 && gl::DeleteFramebuffers != nullptr) {
+        gl::DeleteFramebuffers(1, &screen_framebuffer_);
+        screen_framebuffer_ = 0;
+    }
     if (core_) {
         core_->unload();
     }
@@ -195,6 +207,7 @@ void LibretroCoreScreenSource::close() {
     uploaded_serial_ = 0;
     split_ = ScreenSplit();
     split_reported_ = false;
+    blit_unavailable_reported_ = false;
 }
 
 bool LibretroCoreScreenSource::advance_frame(std::string* error) {
@@ -337,9 +350,66 @@ void LibretroCoreScreenSource::apply_pointer_rect() {
     core_->set_pointer_source(source);
 }
 
+bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
+                                           Texture& destination,
+                                           int source_x,
+                                           int source_y,
+                                           int width,
+                                           int height) {
+    destination.allocate_rgba(width, height);
+    if (!destination.valid()) return false;
+
+    if (screen_framebuffer_ == 0) {
+        gl::GenFramebuffers(1, &screen_framebuffer_);
+    }
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, frame.framebuffer);
+    gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, screen_framebuffer_);
+    gl::FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                             destination.id(), 0);
+
+    // The core's picture sits in the bottom-left of a texture that may be
+    // bigger than the frame, and the split is expressed with a top-left origin.
+    // Flipping the source rows in the blit is what turns one into the other,
+    // and costs nothing extra.
+    int y0 = source_y;
+    int y1 = source_y + height;
+    if (frame.bottom_left_origin) {
+        y0 = static_cast<int>(frame.height) - source_y;
+        y1 = static_cast<int>(frame.height) - (source_y + height);
+    }
+    gl::BlitFramebuffer(source_x, y0, source_x + width, y1, 0, 0, width, height,
+                        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    return true;
+}
+
 void LibretroCoreScreenSource::upload_screens() {
     const CoreVideoFrame& frame = core_->video_frame();
     if (!frame.valid() || !split_.valid || frame.serial == uploaded_serial_) {
+        return;
+    }
+
+    if (frame.source == FrameSource::Texture) {
+        // Nothing to upload: the picture is already on the GPU. The two screens
+        // are cropped straight out of it into the textures the compositor draws.
+        if (!gl::has_blit()) {
+            if (!blit_unavailable_reported_) {
+                log_error("this OpenGL driver cannot copy between framebuffers, "
+                          "which is how a GPU-rendered picture is split into two screens");
+                blit_unavailable_reported_ = true;
+            }
+            return;
+        }
+        const bool ok =
+            blit_screen(frame, top_texture_, split_.top_x, split_.top_y, split_.top_width,
+                        split_.top_height) &&
+            blit_screen(frame, bottom_texture_, split_.bottom_x, split_.bottom_y,
+                        split_.bottom_width, split_.bottom_height);
+        if (ok) {
+            uploaded_serial_ = frame.serial;
+        }
         return;
     }
 
