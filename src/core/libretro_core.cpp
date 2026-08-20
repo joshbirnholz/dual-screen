@@ -1,5 +1,7 @@
 #include "core/libretro_core.hpp"
 
+#include "core/gl_call_trace.hpp"
+
 #include <SDL.h>
 #include <dlfcn.h>
 
@@ -43,6 +45,11 @@ retro_proc_address_t RETRO_CALLCONV hw_get_proc_address_thunk(const char* symbol
     if (symbol == nullptr) return nullptr;
     // The same resolver the frontend's own renderer uses, so the core and the
     // frontend are talking to one driver rather than two.
+    // A traced wrapper when tracing is on, so a call the driver rejects names
+    // itself instead of surfacing as "an error happened somewhere this frame".
+    if (void* traced = gl_trace::wrapper_for(symbol)) {
+        return reinterpret_cast<retro_proc_address_t>(traced);
+    }
     void* address = SDL_GL_GetProcAddress(symbol);
     if (address == nullptr) {
         // A core that silently loses an entry point renders nothing and says
@@ -514,6 +521,7 @@ void LibretroCore::run_frame() {
         // buffer it was given, and black means the core cleared it and then
         // drew nothing. One needs the handover fixed, the other the core's
         // rendering, and there is otherwise no way to tell them apart.
+        gl_trace::begin_frame();
         if (!hw_stain_done_) {
             hw_stain_done_ = true;
             gl::BindFramebuffer(GL_FRAMEBUFFER, hw_render_.framebuffer());
