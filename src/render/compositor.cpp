@@ -1,5 +1,7 @@
 #include "render/compositor.hpp"
 
+#include "util/log.hpp"
+
 namespace ds {
 
 void OutputRouter::hand_off(ScreenId, const Texture&, const PixelRect&) {
@@ -53,6 +55,22 @@ void Compositor::render(QuadRenderer& quads,
         }
 
         if (texture != nullptr && texture->valid()) {
+            // Once. "The window is black" has several possible meanings and this
+            // separates them: whether a screen was placed at all, where, from
+            // which texture, and with what tint.
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                log_info("compositing a screen: rect " + std::to_string((int)rect.x) + "," +
+                         std::to_string((int)rect.y) + " " + std::to_string((int)rect.w) + "x" +
+                         std::to_string((int)rect.h) + " from texture " +
+                         std::to_string(texture->id()) + " " + std::to_string(texture->width()) +
+                         "x" + std::to_string(texture->height()) + ", tint rgba(" +
+                         std::to_string(style_.screen_tint.r) + "," +
+                         std::to_string(style_.screen_tint.g) + "," +
+                         std::to_string(style_.screen_tint.b) + "," +
+                         std::to_string(style_.screen_tint.a) + ")");
+            }
             quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation,
                               smoothing_ && !placed.native);
         } else {

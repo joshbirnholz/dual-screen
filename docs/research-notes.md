@@ -253,8 +253,46 @@ This is the tool that should have existed before any of the 3DS work. Every
 wrong turn in this file came from a mock that agreed with an assumption instead
 of with the core.
 
-**What is still unverified:** the rendering itself is exercised against a mock
-core that
+**The bug: a sampler object the core left bound.** This was the black screen,
+and nothing short of running the real core found it.
+
+Citra binds an OpenGL *sampler object* to texture unit 0 and does not unbind it.
+A sampler object bound to a unit **overrides the filter and wrap settings of
+whatever texture is bound there** — the texture's own parameters are ignored
+entirely. Citra's sampler asks for a mipmapped minification filter. This app's
+screen textures have no mipmaps, so under that sampler they are *incomplete*,
+and sampling an incomplete texture yields solid black.
+
+Everything else kept working, which is what made it so hard to see:
+
+| what | why it still worked |
+| --- | --- |
+| solid quads (menus, panels, letterbox) | no texture, so no sampler involved |
+| DS games | melonDS renders on the CPU and never binds a sampler |
+| the core's own rendering | Citra's textures suit Citra's sampler |
+| every GL error check | nothing here is an error; an incomplete texture is legal and samples black |
+
+So the window was *perfectly* black — not dark, not wrong-coloured, but every
+pixel exactly zero — while the picture sat correctly in the screen texture the
+whole time. `gl::reset_render_state()` now calls `glBindSampler(0, 0)`.
+
+**How it was found.** By working backwards along the picture's path with probes,
+once the real core and a homebrew ROM made it reproducible locally:
+
+1. The core's framebuffer had content (`brightest pixel 765`), so Citra rendered.
+2. The screen texture had it too — a pixel-for-pixel match with the source
+   (`source rgb(91,68,5) -> destination rgb(91,68,5)`), so the crop was fine.
+3. The compositor was placing it (`rect 344,11 591x354 from texture 13, tint white`).
+4. A solid red rectangle drawn at the same moment appeared; the textured draw
+   next to it did not.
+
+Step 4 is the one that named it. Solid drawing working while textured drawing
+silently produced nothing points at exactly one thing.
+
+**What is still unverified:** the rendering itself is now verified against the
+real Citra core with a homebrew ROM, in all three shared layouts. What remains
+untested here is a commercial game and real hardware. The earlier caveat that
+this was exercised against a mock core that
 requests the same context Citra does and renders through it, not against a real
 Citra build, which was not available in this environment. The frontend's runtime
 guards are what stand in: a forced option the core does not declare becomes a

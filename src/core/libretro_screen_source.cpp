@@ -417,8 +417,18 @@ void LibretroCoreScreenSource::probe_core_framebuffer(const CoreVideoFrame& fram
         report += "y=" + std::to_string(y) + " rgb(" + std::to_string(rgba[0]) + "," +
                   std::to_string(rgba[1]) + "," + std::to_string(rgba[2]) + ")";
     }
+    int brightest = 0;
+    for (int y = 0; y < static_cast<int>(frame.height); y += 32) {
+        for (int px = 0; px < static_cast<int>(frame.width); px += 32) {
+            uint8_t rgba[4] = {0, 0, 0, 0};
+            gl::ReadPixels(px, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            const int sum = rgba[0] + rgba[1] + rgba[2];
+            if (sum > brightest) brightest = sum;
+        }
+    }
     gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    log_info("down the core's framebuffer at x=" + std::to_string(x) + ": " + report);
+    log_info("down the core's framebuffer at x=" + std::to_string(x) + ": " + report +
+             " (brightest sampled pixel " + std::to_string(brightest) + ")");
     gl::log_error_once("reading back the core's framebuffer");
 
     // The symptom, recognised in the one place it can be: the core said it
@@ -467,7 +477,6 @@ bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
     }
     gl::BlitFramebuffer(source_x, y0, source_x + width, y1, 0, 0, width, height,
                         GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
     gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     return true;

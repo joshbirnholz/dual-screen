@@ -85,6 +85,7 @@ PFN_CullFace CullFace = nullptr;
 PFN_FrontFace FrontFace = nullptr;
 PFN_StencilMask StencilMask = nullptr;
 PFN_IsEnabled IsEnabled = nullptr;
+PFN_BindSampler BindSampler = nullptr;
 PFN_GenFramebuffers GenFramebuffers = nullptr;
 PFN_DeleteFramebuffers DeleteFramebuffers = nullptr;
 PFN_BindFramebuffer BindFramebuffer = nullptr;
@@ -102,6 +103,13 @@ PFN_BindVertexArray BindVertexArray = nullptr;
 
 void reset_render_state() {
     if (Enable == nullptr) return;
+    // A sampler object bound to a texture unit overrides that texture's own
+    // filter and wrap settings. A core that leaves one bound -- and any core
+    // with a modern renderer uses them -- silently reinterprets every texture
+    // this app samples afterwards. If its filter asks for mipmaps and the
+    // texture has none, the texture is incomplete and samples as black: solid
+    // quads keep drawing, textured ones quietly stop.
+    if (BindSampler != nullptr) BindSampler(0, 0);
     Enable(GL_BLEND);
     BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (BlendEquation != nullptr) BlendEquation(GL_FUNC_ADD);
@@ -225,7 +233,7 @@ void unload() {
     EnableVertexAttribArray = nullptr; DisableVertexAttribArray = nullptr;
     DrawArrays = nullptr; GetIntegerv = nullptr; DepthMask = nullptr; ColorMask = nullptr;
     BlendEquation = nullptr; DepthFunc = nullptr; CullFace = nullptr; FrontFace = nullptr;
-    StencilMask = nullptr; IsEnabled = nullptr; GenFramebuffers = nullptr;
+    StencilMask = nullptr; IsEnabled = nullptr; BindSampler = nullptr; GenFramebuffers = nullptr;
     DeleteFramebuffers = nullptr; BindFramebuffer = nullptr; FramebufferTexture2D = nullptr;
     CheckFramebufferStatus = nullptr; GenRenderbuffers = nullptr;
     DeleteRenderbuffers = nullptr; BindRenderbuffer = nullptr; RenderbufferStorage = nullptr;
@@ -312,6 +320,7 @@ bool load(bool gles_context, std::string* error) {
     // absence is not an error -- only a core that asks for a modern context
     // needs them, and that context is what brings them along.
     resolve(BlitFramebuffer, "glBlitFramebuffer");
+    resolve(BindSampler, "glBindSampler");
     resolve(GenVertexArrays, "glGenVertexArrays");
     resolve(DeleteVertexArrays, "glDeleteVertexArrays");
     resolve(BindVertexArray, "glBindVertexArray");

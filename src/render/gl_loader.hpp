@@ -68,6 +68,9 @@ using PFN_CullFace = void (*)(GLenum);
 using PFN_FrontFace = void (*)(GLenum);
 using PFN_StencilMask = void (*)(GLuint);
 using PFN_IsEnabled = GLboolean (*)(GLenum);
+// GL 3.3 and later. A sampler object bound to a texture unit overrides the
+// filter and wrap settings of whatever texture is bound there.
+using PFN_BindSampler = void (*)(GLuint, GLuint);
 
 // Framebuffer objects. Core to ES 2.0 and to desktop GL 3.0, so these are
 // required: the hardware-rendering path draws the core's picture into one.
@@ -145,6 +148,7 @@ extern PFN_CullFace CullFace;
 extern PFN_FrontFace FrontFace;
 extern PFN_StencilMask StencilMask;
 extern PFN_IsEnabled IsEnabled;
+extern PFN_BindSampler BindSampler;
 extern PFN_GenFramebuffers GenFramebuffers;
 extern PFN_DeleteFramebuffers DeleteFramebuffers;
 extern PFN_BindFramebuffer BindFramebuffer;

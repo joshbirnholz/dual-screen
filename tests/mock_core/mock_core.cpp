@@ -96,6 +96,10 @@ void (*gl_Scissor)(GLint_, GLint_, GLsizei_, GLsizei_) = nullptr;
 void (*gl_Clear)(GLbitfield_) = nullptr;
 void (*gl_ClearColor)(float, float, float, float) = nullptr;
 unsigned char (*gl_IsEnabled)(GLenum_) = nullptr;
+void (*gl_GenSamplers)(GLsizei_, GLuint_*) = nullptr;
+void (*gl_BindSampler)(GLuint_, GLuint_) = nullptr;
+void (*gl_SamplerParameteri)(GLuint_, GLenum_, GLint_) = nullptr;
+GLuint_ g_sampler = 0;
 bool g_state_checked = false;
 
 constexpr GLenum_ kGlTexture2d = 0x0DE1;
@@ -118,6 +122,7 @@ constexpr GLenum_ kGlZero = 0;
 constexpr GLenum_ kGlCullFace = 0x0B44;
 constexpr GLenum_ kGlScissorTest = 0x0C11;
 constexpr GLenum_ kGlStencilTest = 0x0B90;
+constexpr GLenum_ kGlNearestMipmapLinear = 0x2702;
 constexpr GLenum_ kGlTexture3 = 0x84C3;
 
 GLuint_ g_gpu_texture = 0;
@@ -152,6 +157,9 @@ void RETRO_CALLCONV hw_context_reset() {
     resolve_gl(gl_Clear, "glClear");
     resolve_gl(gl_ClearColor, "glClearColor");
     resolve_gl(gl_IsEnabled, "glIsEnabled");
+    resolve_gl(gl_GenSamplers, "glGenSamplers");
+    resolve_gl(gl_BindSampler, "glBindSampler");
+    resolve_gl(gl_SamplerParameteri, "glSamplerParameteri");
 
     g_hw_ready = gl_GenTextures != nullptr && gl_BlitFramebuffer != nullptr &&
                  gl_GenFramebuffers != nullptr && gl_TexImage2D != nullptr;
@@ -193,6 +201,23 @@ void trash_gl_state_like_a_real_core() {
     gl_Enable(kGlScissorTest);
     gl_Scissor(0, 0, 4, 4);
     gl_BindTexture(kGlTexture2d, 0);
+
+    // And a sampler object left bound to texture unit 0, which is what any
+    // renderer of this kind does and none of them undo. A bound sampler
+    // overrides the filter settings of whatever texture is bound to that unit,
+    // so a frontend that samples a texture afterwards gets this object's rules
+    // instead of its own -- and a mipmap filter on a texture with no mipmaps
+    // makes it incomplete, which samples as solid black.
+    if (gl_GenSamplers != nullptr && gl_BindSampler != nullptr) {
+        if (g_sampler == 0) {
+            gl_GenSamplers(1, &g_sampler);
+            gl_SamplerParameteri(g_sampler, kGlTextureMinFilter,
+                                 static_cast<GLint_>(kGlNearestMipmapLinear));
+            gl_SamplerParameteri(g_sampler, kGlTextureMagFilter,
+                                 static_cast<GLint_>(kGlNearest));
+        }
+        gl_BindSampler(0, g_sampler);
+    }
 }
 
 void RETRO_CALLCONV hw_context_destroy() {

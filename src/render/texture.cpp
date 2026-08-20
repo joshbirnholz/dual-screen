@@ -1,5 +1,9 @@
 #include "render/texture.hpp"
 
+#ifndef GL_RGBA8
+#define GL_RGBA8 0x8058
+#endif
+
 #include <algorithm>
 #include <utility>
 #include <vector>
@@ -117,7 +121,12 @@ void Texture::allocate_rgba(int width, int height) {
         filter_dirty_ = false;
     }
     if (width != width_ || height != height_) {
-        gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(width),
+        // GL_RGBA8, sized, rather than plain GL_RGBA. This texture exists to be
+        // rendered into and copied into, and only the sized formats are
+        // guaranteed colour-renderable in a core profile -- an unsized one can
+        // leave the framebuffer it is attached to incomplete, at which point a
+        // copy into it quietly does nothing.
+        gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width),
                        static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         width_ = width;
         height_ = height;
