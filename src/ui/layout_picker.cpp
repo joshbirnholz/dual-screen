@@ -25,12 +25,12 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     if (state.session_active) {
         footer_.push_back(Footer::Sound);
     }
-    // Not on a companion: everything in Settings is either about this device's
-    // own files or a default for starting a game, and a companion is doing
-    // neither. What it can change here is the session, which is shared.
-    if (!state.companion) {
-        footer_.push_back(Footer::Settings);
-    }
+    // The pointer is this device's own, and it is the one thing worth reaching
+    // quickly while playing: a trackpad you cannot see is a trackpad you cannot
+    // aim. Everything else in Settings is a file path or a default for starting
+    // a game, which is not a mid-game question, so Settings itself lives on the
+    // launcher and not here.
+    footer_.push_back(Footer::Cursor);
     footer_.push_back(Footer::Resume);
     if (state.session_active) {
         footer_.push_back(Footer::Disconnect);
@@ -53,7 +53,13 @@ std::string LayoutPicker::footer_label(Footer kind) const {
                 case AudioTarget::Both: break;
             }
             return "Sound: Both";
-        case Footer::Settings: return "Settings";
+        case Footer::Cursor:
+            switch (state_.cursor_mode) {
+                case CursorMode::AlwaysShown: return "Pointer: On";
+                case CursorMode::AlwaysHidden: return "Pointer: Off";
+                case CursorMode::AutoHide: break;
+            }
+            return "Pointer: Auto";
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: break;
@@ -210,8 +216,8 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         case Footer::Sound:
             result.audio_target_changed = true;
             return true;
-        case Footer::Settings:
-            result.open_settings = true;
+        case Footer::Cursor:
+            result.cursor_mode_changed = true;
             return true;
         case Footer::Resume:
             result.close_requested = true;
@@ -275,8 +281,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         }
     }
 
-    if (result.close_requested || result.quit_requested || result.open_settings ||
-        result.disconnect_requested) {
+    if (result.close_requested || result.quit_requested || result.disconnect_requested) {
         open_ = false;
     }
     return result;

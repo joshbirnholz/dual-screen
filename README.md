@@ -82,9 +82,10 @@ one soundtrack, so "both" is the two devices playing the same thing — useful w
 the Deck is across the room from the TV, and worth turning off on one of them
 when they are not.
 
-A companion has no **Settings** entry while it is connected: everything in there
-is about that device's own files, or what a game starts with, and a companion is
-doing neither. Set those up from the launcher, before connecting.
+**Settings** is not on that menu at all, on either device. What is in there —
+folders, the core, what a new game starts with — is setup, not something to
+reach for mid-game, so it lives on the launcher: before you load a game or
+connect to anything.
 
 ```sh
 # Skip the menus entirely, for a Steam shortcut on the companion device:
@@ -243,7 +244,7 @@ Full options:
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
 | Touch the DS touchscreen | tap or drag on whichever screen is showing the bottom screen |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Change what the pointer does | **Mouse pointer** in Settings: hide when still, always shown, or always hidden |
+| Change what the pointer does | **Pointer** in the layout menu, cycling auto / always on / always off |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 

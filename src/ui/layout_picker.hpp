@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "input/controller_mapping.hpp"
+#include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/text_renderer.hpp"
@@ -14,7 +15,7 @@ namespace ds {
 struct LayoutPickerResult {
     bool close_requested = false;
     bool selection_changed = false;  // the layout changed; worth persisting
-    bool open_settings = false;
+
     bool quit_requested = false;
     // Ends the two-device session. Offered on both devices, since either end
     // should be able to stop it.
@@ -23,6 +24,9 @@ struct LayoutPickerResult {
     bool filtering_toggled = false;
     // The sound target was cycled; same deal.
     bool audio_target_changed = false;
+    // The pointer mode was cycled. Unlike the two above it belongs to this
+    // device alone -- the other one has its own pointer, or none.
+    bool cursor_mode_changed = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -38,6 +42,7 @@ struct LayoutPickerState {
     bool companion = false;
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
+    CursorMode cursor_mode = CursorMode::AutoHide;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -52,6 +57,7 @@ public:
     // whenever it says so.
     void set_filtering(bool bilinear) { state_.bilinear_filtering = bilinear; }
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
+    void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     // The host can change the layout under a companion's open menu.
     void set_selected_layout(const std::string& layout_id) { selected_layout_id_ = layout_id; }
     bool filtering() const { return state_.bilinear_filtering; }
@@ -81,7 +87,7 @@ private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
-    enum class Footer { Filtering, Sound, Settings, Resume, Disconnect, Quit };
+    enum class Footer { Filtering, Sound, Cursor, Resume, Disconnect, Quit };
 
     struct Geometry {
         std::vector<PixelRect> tiles;

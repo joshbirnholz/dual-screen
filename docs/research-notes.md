@@ -375,3 +375,21 @@ about 170px, and "Smoothing: Off" does not fit in that at a readable size. Five
 or more wrap onto a second row instead, and focus moves through the two rows as a
 grid. Shrinking every label to fit would have kept the code simpler and made the
 menu worse.
+
+**Why Settings left the in-game menu, and the pointer took its place.** Nothing
+in Settings is a mid-game question: it is folders, the core, and what a new game
+starts with. It now opens from the launcher only -- before a game is loaded or a
+host is joined -- which is also the answer for a device used only as a screen,
+since that is the one screen it always passes through. The pointer went the other
+way. It is the one device-local thing worth reaching without leaving the game: a
+trackpad you cannot see is a trackpad you cannot aim, and whether the pointer
+should be visible depends on what you have in your hands right now.
+
+**Why the pointer mode is read every frame.** It was stored in settings.json,
+loaded on startup, offered in the UI -- and never handed to the object that acts
+on it, so all three modes behaved as the default and "always hidden" still
+auto-hid. The fix is not an extra call at the four places that change it: it is
+for the frame loop to read `settings.cursor_mode` directly each frame, so there
+is no apply step left to forget. The smoke test starts the app with the mode set
+in settings.json and checks it comes up in that mode, which fails against the old
+code and would keep failing if the read were ever dropped again.

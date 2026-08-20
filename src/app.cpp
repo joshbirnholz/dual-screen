@@ -212,9 +212,6 @@ struct App::Impl {
     bool bilinear_filtering = false;
     // Which device makes the sound. Only meaningful once two are connected.
     AudioTarget audio_target = AudioTarget::Both;
-    // Settings can be reached from the launcher as well as from the layout
-    // menu, and backing out has to return where it came from.
-    bool settings_from_launcher = false;
     std::string game_title;
     std::string resolved_core_path;
 
@@ -448,6 +445,7 @@ void App::Impl::open_picker() {
     picker_state.companion = (source == nullptr);
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
+    picker_state.cursor_mode = settings.cursor_mode;
     picker->open(picker_state);
 }
 
@@ -774,7 +772,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     break;
                 case LauncherChoice::Settings:
                     settings_screen->open(settings, resolved_core_path);
-                    settings_from_launcher = true;
                     state = State::Settings;
                     break;
                 case LauncherChoice::Quit:
@@ -863,6 +860,14 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             if (result.audio_target_changed) {
                 request_audio_target(next_audio_target(audio_target));
             }
+            if (result.cursor_mode_changed) {
+                // This device's own pointer, so it is decided here and not
+                // asked of the host -- the other device has its own.
+                settings.cursor_mode = next_cursor_mode(settings.cursor_mode);
+                picker->set_cursor_mode(settings.cursor_mode);
+                settings.save(paths);
+                log_info(std::string("pointer: ") + to_string(settings.cursor_mode));
+            }
             if (result.disconnect_requested) {
                 if (host_session) {
                     host_session->disconnect_companion("you ended the session");
@@ -874,10 +879,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
             } else if (result.quit_requested) {
                 running = false;
-            } else if (result.open_settings) {
-                settings_screen->open(settings, resolved_core_path);
-                settings_from_launcher = false;
-                state = State::Settings;
             } else if (result.close_requested) {
                 if (is_companion()) {
                     companion_session->set_menu_open(false);
@@ -902,13 +903,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
             }
             if (result.close_requested) {
-                // Back where it was opened from.
-                if (settings_from_launcher) {
-                    open_launcher();
-                } else {
-                    open_picker();
-                    state = State::Menu;
-                }
+                // Settings is only reachable before a game is running, so there
+                // is only one place to go back to.
+                open_launcher();
             }
             break;
         }
@@ -1040,6 +1037,7 @@ int App::run(const AppOptions& options) {
         impl.settings.system_dir = expand_user_path(options.system_dir);
     }
 
+
     if (options.list_layouts) {
         for (const Layout& layout : impl.registry.layouts()) {
             std::printf("%-20s %s\n", layout.id.c_str(), layout.display_name.c_str());
@@ -1098,6 +1096,7 @@ int App::run(const AppOptions& options) {
         }
     }
     log_info("controls are Nintendo positional: east is A, south is B, in menus and in game");
+    log_info(std::string("pointer: ") + to_string(impl.settings.cursor_mode));
 
     std::string error;
     if (!impl.create_window(&error)) {
@@ -1206,6 +1205,10 @@ int App::run(const AppOptions& options) {
         }
 
         impl.last_delta_seconds = elapsed;
+        // Read from the setting every frame rather than pushed in when it
+        // changes. An "apply this setting" step is a step that can be forgotten,
+        // and forgetting it made every pointer mode behave as the default.
+        impl.cursor.set_mode(impl.settings.cursor_mode);
         impl.cursor.update(elapsed);
         impl.input.begin_frame();
 

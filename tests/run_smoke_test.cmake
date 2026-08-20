@@ -226,6 +226,37 @@ foreach(CASE IN LISTS TOUCH_CASES)
     endif()
 endforeach()
 
+# The pointer mode has to survive the trip from settings.json into the running
+# app. It was read and stored and then never handed to the thing that acts on
+# it, so every mode behaved as the default; nothing on screen shows that, but
+# the app says which mode it came up in.
+set(POINTER_HOME "${WORK_DIR}/pointer")
+file(REMOVE_RECURSE "${POINTER_HOME}")
+file(WRITE "${POINTER_HOME}/config/dualscreen/settings.json" "{\"cursor_mode\": \"hidden\"}")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CONFIG_HOME=${POINTER_HOME}/config"
+            "XDG_DATA_HOME=${POINTER_HOME}/data"
+            "SDL_AUDIODRIVER=dummy"
+            "SDL_VIDEODRIVER=x11"
+            "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+            "${DUALSCREEN}"
+                --game "${WORK_DIR}/fake.nds"
+                --core "${MOCK_CORE}"
+                --windowed
+                --exit-after-frames 10
+    RESULT_VARIABLE POINTER_RESULT
+    OUTPUT_VARIABLE POINTER_OUTPUT
+    ERROR_VARIABLE POINTER_ERROR)
+if(NOT POINTER_OUTPUT MATCHES "pointer: Always hidden")
+    message(STATUS "${POINTER_OUTPUT}")
+    message(STATUS "${POINTER_ERROR}")
+    message(SEND_ERROR "the stored pointer mode did not reach the running app")
+    set(ANY_FAILED TRUE)
+else()
+    message(STATUS "pointer mode read from settings.json: ok")
+endif()
+
 # Smoothing: the same frame drawn with nearest and with linear sampling must not
 # come out identical. Checking that the toggle reaches the screen takes a real
 # run -- a unit test can see the flag being stored, but not the texture being
