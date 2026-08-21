@@ -91,6 +91,18 @@ public:
     // reads a menu is two people looking at different games.
     bool companion_menu_open() const { return companion_menu_open_; }
 
+    // The companion's own window, in device pixels, if it has said. Not part
+    // of the shared session state -- it is never broadcast anywhere, just kept
+    // so the caller can decide how much detail a screen it sends is worth
+    // being sent at. False before the companion has reported anything, which
+    // is the same as not knowing: the caller falls back to the console's own
+    // resolution.
+    bool companion_display_size(int& out_width, int& out_height) const {
+        out_width = companion_display_width_;
+        out_height = companion_display_height_;
+        return companion_display_width_ > 0 && companion_display_height_ > 0;
+    }
+
     // One screen's pixels inside the core's framebuffer. The two are described
     // separately because they are not always the same size.
     struct ScreenPixels {
@@ -121,6 +133,9 @@ private:
     void refresh_beacon();
     void drop_companion(const std::string& reason);
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
+    // How much may sit unsent before a frame is dropped rather than queued --
+    // see kMaxQueuedFrames.
+    std::size_t queue_limit() const;
 
     Config config_;
     TcpListener listener_;
@@ -141,6 +156,14 @@ private:
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
     bool companion_menu_open_ = false;
+    int companion_display_width_ = 0;
+    int companion_display_height_ = 0;
+    // The size of the last screen payload actually sent, both screens
+    // combined. Bounds how much backlog is allowed to build up before a frame
+    // is dropped -- in frame-times rather than a fixed byte count, so the
+    // limit rises and falls with whatever resolution is currently being
+    // streamed instead of being tuned for one console and wrong for another.
+    std::size_t last_screen_payload_bytes_ = 0;
     // Send the current screens once more even if nothing has changed, because
     // what the companion needs has.
     bool resend_screens_ = true;

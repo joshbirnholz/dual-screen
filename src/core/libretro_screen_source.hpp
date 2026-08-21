@@ -79,7 +79,10 @@ public:
 
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
-    bool read_screen(ScreenId screen, ScreenReadback& out) override;
+    bool read_screen(ScreenId screen,
+                     ScreenReadback& out,
+                     int target_width = 0,
+                     int target_height = 0) override;
     SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override;
 
@@ -114,9 +117,14 @@ private:
                      int height,
                      int destination_width = 0,
                      int destination_height = 0);
-    // Copies one screen off the GPU into `readbacks_`. Only what is being sent
-    // somewhere is ever asked for.
-    bool read_screen_from_gpu(ScreenId screen, const CoreVideoFrame& frame, ScreenReadback& out);
+    // Copies one screen off the GPU into `readbacks_`, at `target_width` x
+    // `target_height` (already clamped to [native, rendered] by the caller).
+    // Only what is being sent somewhere is ever asked for.
+    bool read_screen_from_gpu(ScreenId screen,
+                              const CoreVideoFrame& frame,
+                              ScreenReadback& out,
+                              int target_width,
+                              int target_height);
     // Reused for every crop: the destination texture is swapped in each time
     // rather than a framebuffer being created per screen per frame.
     GLuint screen_framebuffer_ = 0;

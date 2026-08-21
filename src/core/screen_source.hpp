@@ -57,9 +57,26 @@ public:
     // Only what is actually being sent should be asked for: on a source that
     // renders on the GPU this reads back off the card, which is not free.
     // False when there is nothing to read yet.
-    virtual bool read_screen(ScreenId screen, ScreenReadback& out) {
+    //
+    // `target_width`/`target_height` say how big a picture the recipient
+    // actually needs -- typically the pixel rect that screen occupies in
+    // their own window. Zero means the caller doesn't know or doesn't care,
+    // which gets the console's own resolution, the same as always. A source
+    // that can offer more than that (a core rendering above native) is free
+    // to use the hint to send exactly as much as is useful and no more; one
+    // that cannot (nothing rendered above native to send) ignores it. Either
+    // way the result is never smaller than the console's own resolution and
+    // never bigger than what was actually rendered -- there is nothing
+    // sharper than native to send, and sending more than was asked for is
+    // never a saving.
+    virtual bool read_screen(ScreenId screen,
+                             ScreenReadback& out,
+                             int target_width = 0,
+                             int target_height = 0) {
         (void)screen;
         (void)out;
+        (void)target_width;
+        (void)target_height;
         return false;
     }
 

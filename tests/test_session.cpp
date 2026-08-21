@@ -497,6 +497,21 @@ void test_shared_settings_stay_in_sync() {
     CHECK_MSG(spin(host, companion, [&] { return companion.host_render_scale() == 2; }),
               "the host's render scale never reached the companion");
 
+    // The companion's window size travels the other way from everything
+    // above: the host keeps it privately, to decide how much detail a screen
+    // it sends is worth, rather than adopting and broadcasting it like a
+    // shared setting. Unknown until told, which is what a companion that has
+    // not reported yet looks like from the host's side.
+    int reported_width = 0;
+    int reported_height = 0;
+    CHECK(!host.companion_display_size(reported_width, reported_height));
+    companion.request_display_size(1920, 1080);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return host.companion_display_size(reported_width, reported_height); }),
+              "the companion's display size never reached the host");
+    CHECK_EQ(reported_width, 1920);
+    CHECK_EQ(reported_height, 1080);
+
     companion.disconnect();
     host.stop();
 }

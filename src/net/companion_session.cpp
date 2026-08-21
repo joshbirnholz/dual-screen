@@ -1,5 +1,7 @@
 #include "net/companion_session.hpp"
 
+#include <algorithm>
+
 #include "util/log.hpp"
 
 namespace ds::net {
@@ -300,6 +302,17 @@ void CompanionSession::request_render_scale(int scale) {
     RequestMessage request;
     request.wants_render_scale = true;
     request.render_scale = static_cast<uint8_t>(scale < 1 ? 1 : scale);
+    send_request(request);
+}
+
+void CompanionSession::request_display_size(int width, int height) {
+    RequestMessage request;
+    request.wants_display_size = true;
+    // Clamped rather than rejected: a window can be zero-sized for a moment
+    // while minimised, and 1 is a harmless value to send rather than a value
+    // worth guarding against on the host too.
+    request.display_width = static_cast<uint16_t>(std::clamp(width, 1, 65535));
+    request.display_height = static_cast<uint16_t>(std::clamp(height, 1, 65535));
     send_request(request);
 }
 

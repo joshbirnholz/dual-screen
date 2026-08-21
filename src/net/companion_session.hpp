@@ -65,6 +65,11 @@ public:
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness handedness);
     void request_render_scale(int scale);
+    // Not one of the choices above -- the host does not adopt or broadcast
+    // this, it just uses it privately to decide how much detail a screen sent
+    // here is worth being sent at. Call it once after connecting and again
+    // whenever this device's own window resizes.
+    void request_display_size(int width, int height);
 
     // Tells the host whether a menu is up on this device, so it pauses too.
     // Sent whenever it changes, and repeated with every other request.

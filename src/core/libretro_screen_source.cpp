@@ -542,7 +542,10 @@ bool LibretroCoreScreenSource::blit_screen(const CoreVideoFrame& frame,
     return true;
 }
 
-bool LibretroCoreScreenSource::read_screen(ScreenId screen, ScreenReadback& out) {
+bool LibretroCoreScreenSource::read_screen(ScreenId screen,
+                                           ScreenReadback& out,
+                                           int target_width,
+                                           int target_height) {
     out = ScreenReadback();
     if (!core_ || !split_.valid) {
         return false;
@@ -562,8 +565,10 @@ bool LibretroCoreScreenSource::read_screen(ScreenId screen, ScreenReadback& out)
     }
 
     if (frame.source == FrameSource::Pixels) {
-        // Already on the CPU: hand back a view into the core's own framebuffer
-        // rather than copying it.
+        // Already on the CPU, at exactly the console's own resolution: a
+        // software-rendered core has nothing above native to offer, so the
+        // target size hint has nothing to act on. Hand back a view into the
+        // core's own framebuffer rather than copying it.
         out.pixels = frame.pixels + static_cast<std::size_t>(source_y) * frame.stride_pixels +
                      source_x;
         out.width = width;
@@ -571,12 +576,26 @@ bool LibretroCoreScreenSource::read_screen(ScreenId screen, ScreenReadback& out)
         out.stride_pixels = static_cast<int>(frame.stride_pixels);
         return true;
     }
-    return read_screen_from_gpu(screen, frame, out);
+
+    // Bounded to what is actually useful: never sharper than what was
+    // rendered (there is nothing more to send), and never softer than the
+    // console's own resolution (below that a picture stops being legible, and
+    // it is the floor every other part of this app already assumes). `width`
+    // and `height` here are the crop out of the core's framebuffer, i.e. the
+    // resolution this screen was actually rendered at.
+    const ScreenSize native = system_profile(system_).screens.size_of(screen);
+    int want_width = target_width > 0 ? target_width : native.width;
+    int want_height = target_height > 0 ? target_height : native.height;
+    want_width = std::clamp(want_width, native.width, width);
+    want_height = std::clamp(want_height, native.height, height);
+    return read_screen_from_gpu(screen, frame, out, want_width, want_height);
 }
 
 bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
                                                     const CoreVideoFrame& frame,
-                                                    ScreenReadback& out) {
+                                                    ScreenReadback& out,
+                                                    int target_width,
+                                                    int target_height) {
     if (gl::ReadPixels == nullptr || gl::GenFramebuffers == nullptr || !gl::has_blit()) {
         if (!readback_failure_reported_) {
             readback_failure_reported_ = true;
@@ -587,26 +606,30 @@ bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
 
     const bool is_top = (screen == ScreenId::Top);
     Readback& readback = readbacks_[is_top ? 0 : 1];
-    // The console's own resolution, not the core's. A core rendering at 2x has
-    // no more to say to a device that is going to draw one screen: sending the
-    // larger picture would cost twice the bandwidth for a picture the other end
-    // scales anyway.
-    const ScreenSize native = system_profile(system_).screens.size_of(screen);
-    if (readback.filled && readback.serial == frame.serial && readback.width == native.width &&
-        readback.height == native.height) {
+    if (readback.filled && readback.serial == frame.serial && readback.width == target_width &&
+        readback.height == target_height) {
         out.pixels = readback.pixels.data();
         out.width = readback.width;
         out.height = readback.height;
         out.stride_pixels = readback.width;
-        return true;  // already read this frame, for the other caller
+        return true;  // already read this frame at this size, for the other caller
+    }
+
+    // Worth knowing when a stream looks softer or costlier than expected: the
+    // one line that ties "what was rendered" to "what is actually going out".
+    // Only when the size actually changes, so a companion drawing steadily
+    // does not put one of these in the log every frame.
+    if (readback.width != target_width || readback.height != target_height) {
+        log_info("streaming the " + std::string(to_string(screen)) + " screen at " +
+                 std::to_string(target_width) + "x" + std::to_string(target_height));
     }
 
     const int source_x = is_top ? split_.top_x : split_.bottom_x;
     const int source_y = is_top ? split_.top_y : split_.bottom_y;
     const int width = is_top ? split_.top_width : split_.bottom_width;
     const int height = is_top ? split_.top_height : split_.bottom_height;
-    if (!blit_screen(frame, readback.texture, source_x, source_y, width, height, native.width,
-                     native.height)) {
+    if (!blit_screen(frame, readback.texture, source_x, source_y, width, height, target_width,
+                     target_height)) {
         return false;
     }
 
@@ -617,11 +640,11 @@ bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
     gl::FramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                              readback.texture.id(), 0);
 
-    const std::size_t count = static_cast<std::size_t>(native.width) * native.height;
+    const std::size_t count = static_cast<std::size_t>(target_width) * target_height;
     readback.pixels.resize(count);
     // GL_RGBA rather than a BGRA read: every driver takes this one, and the
     // swizzle below costs a fraction of what compressing the frame costs.
-    gl::ReadPixels(0, 0, native.width, native.height, GL_RGBA, GL_UNSIGNED_BYTE,
+    gl::ReadPixels(0, 0, target_width, target_height, GL_RGBA, GL_UNSIGNED_BYTE,
                    readback.pixels.data());
     gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
@@ -636,8 +659,8 @@ bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
                 ((pixel & 0x00ff0000u) >> 16);
     }
 
-    readback.width = native.width;
-    readback.height = native.height;
+    readback.width = target_width;
+    readback.height = target_height;
     readback.serial = frame.serial;
     readback.filled = true;
     gl::take_error();

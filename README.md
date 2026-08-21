@@ -158,10 +158,27 @@ sent, and an unchanged frame is not sent at all.
 
 A 3DS game is served the same way, but it takes more work to get there: Citra
 renders on the GPU, so there is no copy of the frame in memory to send. Each
-screen the other device needs is read back off the card at the console's own
-resolution — 400x240 and 320x240 — whatever the render scale is set to. Rendering
-at 2x is for the screen you are looking at; sending twice the pixels to a device
-that is going to draw one screen would just cost twice the wifi.
+screen the other device needs is read back off the card at **the resolution
+that device actually needs it at** — not always the console's own 400x240 and
+320x240, and not always the full render scale either. A companion tells the
+host its own window size when it connects and again whenever it resizes; the
+host works out, from the shared layout, how big a box that screen actually
+fills in that window, and reads it back at that size — never sharper than what
+was rendered (there is nothing more to send), never softer than the console's
+own resolution (below that a picture stops being worth looking at). Turning
+the render scale up sharpens what a companion sees precisely because of this:
+before, every screen was always sent at 400x240 regardless of the render
+scale, which is exactly backwards for two devices playing on real screens
+instead of a phantom "native" one. A companion that has not reported a size
+yet — the first frame or two after connecting — gets the console's own
+resolution, the safe fallback it always used.
+
+The send queue's backlog limit follows the same reasoning: it is measured in
+frame-times (roughly three frames' worth of whatever was last actually sent)
+rather than a fixed byte count, so a companion that cannot keep up sees
+dropped frames whether it is looking at a DS's picture or something several
+times the size, instead of a limit tuned for one and silently wrong for the
+other.
 
 Adding a layout is meant to be adding data, not code. A layout says how its
 screens are *arranged* — along which axis, at what relative sizes, how far apart,
@@ -540,7 +557,10 @@ ctest --test-dir build --output-on-failure
   collapse to one menu action.
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture, the frontend's own validation
-  of what the core accepted, and the cartridge-save round trip.
+  of what the core accepted, and the cartridge-save round trip. Also checks
+  that a screen read back for streaming is never sharper than what was
+  actually rendered and never softer than the console's own resolution,
+  whatever resolution is asked for.
 - `test_quick_settings` — taps a grid over the layout menu and counts which
   taps do what, so the render-scale button is checked by being *found* rather
   than by being told where it is: present on a 3DS game, absent on a DS game and
@@ -557,8 +577,9 @@ ctest --test-dir build --output-on-failure
 - `test_session` — a real host paired with a real companion: that the split
   layout sends one screen and other layouts send both, that a companion is
   granted the screen it asked for, that audio arrives and stops when switched
-  off, that a layout request reaches the host and its answer comes back, and
-  that either end can end the session.
+  off, that a layout request reaches the host and its answer comes back, that
+  the companion's reported window size reaches the host (and is unknown, not
+  wrong, before it has said), and that either end can end the session.
 - `two_device_headless` / `two_device_top_headless` — launch **two real
   processes** under `Xvfb`, one hosting and one joining, and check each ends up
   showing its own half. Run twice, once for each screen the companion can ask

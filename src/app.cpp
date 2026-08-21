@@ -232,6 +232,17 @@ struct App::Impl {
     std::unique_ptr<net::HostSession> host_session;
     std::unique_ptr<net::CompanionSession> companion_session;
     ScreenId local_screen = ScreenId::Top;
+    // The window size last told to the host, on a companion. Compared every
+    // frame against the real one so a resize is reported without a dedicated
+    // resize hook, and so the very first report (0 against whatever the
+    // window actually is) goes out the moment there is a host to tell.
+    int companion_reported_width = 0;
+    int companion_reported_height = 0;
+    // Whether the companion was connected as of last frame, purely to catch
+    // the edge into a fresh connection: a new host has no memory of a size we
+    // told a previous one, so that edge has to force a resend even when the
+    // window happens not to have changed since.
+    bool companion_was_connected = false;
 
     State state = State::Playing;
     bool message_is_fatal = false;
@@ -281,6 +292,12 @@ struct App::Impl {
     // What this device actually draws: the chosen layout, resolved for this
     // device's role when it is a per-device layout.
     Layout device_layout() const;
+    // The same, but for the companion rather than this device -- what decides
+    // how big a picture a screen streamed to it is actually worth being. Zero
+    // in both when there is no companion or it has not reported its window
+    // size yet, which read_screen() already treats as "use the console's own
+    // resolution".
+    void companion_target_size(ScreenId screen, int& out_width, int& out_height) const;
     // The screen source currently feeding the compositor, whichever role we are
     // in. Null before anything is running.
     ScreenSource* active_source();
@@ -602,6 +619,49 @@ Layout App::Impl::device_layout() const {
         return both;
     }
     return resolve_for_device(chosen, local_screen);
+}
+
+void App::Impl::companion_target_size(ScreenId screen, int& out_width, int& out_height) const {
+    out_width = 0;
+    out_height = 0;
+    if (!host_session) {
+        return;
+    }
+    int companion_width = 0;
+    int companion_height = 0;
+    if (!host_session->companion_display_size(companion_width, companion_height)) {
+        return;
+    }
+
+    // The companion's own version of device_layout(): the same layout, but
+    // resolved for whichever screen the companion holds rather than this
+    // device's. A companion is by definition paired the moment there is a
+    // reported size to act on, so there is no unpaired fallback to consider.
+    Layout companion_layout = resolve_for_handedness(active_layout(), handedness);
+    if (companion_layout.per_device) {
+        companion_layout = resolve_for_device(companion_layout, host_session->companion_screen());
+    }
+
+    for (const PlacedScreen& placed : place_screens(companion_layout, static_cast<float>(companion_width),
+                                                     static_cast<float>(companion_height),
+                                                     screens_geometry())) {
+        if (placed.screen != screen || placed.rect.w <= 0.0f || placed.rect.h <= 0.0f) {
+            continue;
+        }
+        // rect is the box this screen fills in the companion's own window,
+        // which is what its resolution should match -- except a rotated
+        // placement measures that box turned, while the texture sent over the
+        // wire is always in the screen's own unrotated axes (rotation is
+        // applied by whichever device draws it, not baked into the picture).
+        int width = static_cast<int>(std::ceil(placed.rect.w));
+        int height = static_cast<int>(std::ceil(placed.rect.h));
+        if (rotation_is_quarter_turn(placed.rotation)) {
+            std::swap(width, height);
+        }
+        out_width = width;
+        out_height = height;
+        return;
+    }
 }
 
 ScreenSource* App::Impl::active_source() {
@@ -1689,6 +1749,25 @@ int App::run(const AppOptions& options) {
         }
         if (impl.companion_session) {
             impl.companion_session->poll(network_now);
+            // Told to the host so it knows how much detail a screen sent here
+            // is actually worth -- checked every frame rather than only on a
+            // resize event, which also covers the first report once a
+            // connection exists to send it to.
+            const bool companion_now_connected = impl.is_companion();
+            if (companion_now_connected && !impl.companion_was_connected) {
+                // Freshly connected: a new host has no memory of what we told
+                // whatever we were connected to before, even if it happens to
+                // be the same number.
+                impl.companion_reported_width = 0;
+                impl.companion_reported_height = 0;
+            }
+            impl.companion_was_connected = companion_now_connected;
+            if (companion_now_connected && (impl.output_width != impl.companion_reported_width ||
+                                            impl.output_height != impl.companion_reported_height)) {
+                impl.companion_session->request_display_size(impl.output_width, impl.output_height);
+                impl.companion_reported_width = impl.output_width;
+                impl.companion_reported_height = impl.output_height;
+            }
             // A companion follows the host on everything the two devices share
             // -- layout, smoothing, where the sound comes out. It decides none
             // of it locally, which is why they cannot drift apart. This applies
@@ -1824,10 +1903,16 @@ int App::run(const AppOptions& options) {
             ScreenReadback top;
             ScreenReadback bottom;
             if (impl.host_session->companion_wants(ScreenId::Top)) {
-                impl.source->read_screen(ScreenId::Top, top);
+                int target_width = 0;
+                int target_height = 0;
+                impl.companion_target_size(ScreenId::Top, target_width, target_height);
+                impl.source->read_screen(ScreenId::Top, top, target_width, target_height);
             }
             if (impl.host_session->companion_wants(ScreenId::Bottom)) {
-                impl.source->read_screen(ScreenId::Bottom, bottom);
+                int target_width = 0;
+                int target_height = 0;
+                impl.companion_target_size(ScreenId::Bottom, target_width, target_height);
+                impl.source->read_screen(ScreenId::Bottom, bottom, target_width, target_height);
             }
             if (top.valid() || bottom.valid()) {
                 net::HostSession::ScreenPixels top_pixels;

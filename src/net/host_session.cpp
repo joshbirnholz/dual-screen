@@ -9,7 +9,17 @@ namespace {
 
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
-constexpr std::size_t kMaxQueuedBytes = 512 * 1024;
+//
+// The bound is measured in frame-times rather than a fixed byte count, so it
+// rises and falls with whatever resolution is actually being streamed: a
+// constant sized for a DS's picture would either starve a companion showing
+// something bigger or, worse, be too small to ever hold one whole frame of
+// it -- silently dropping every single one rather than the occasional frame a
+// backlog limit is supposed to catch. kMinQueuedBytes is the floor for before
+// a size is known and for content compact enough that frame-times alone would
+// allow almost nothing through.
+constexpr std::size_t kMinQueuedBytes = 96 * 1024;
+constexpr std::size_t kMaxQueuedFrames = 3;
 
 }  // namespace
 
@@ -106,6 +116,12 @@ void HostSession::drop_companion(const std::string& reason) {
     request_ = RequestMessage();
     // Nobody is holding a menu open on a device that has gone.
     companion_menu_open_ = false;
+    // Whoever connects next says its own size; a stale one from this
+    // companion is worse than not knowing, since it might be wrong in either
+    // direction.
+    companion_display_width_ = 0;
+    companion_display_height_ = 0;
+    last_screen_payload_bytes_ = 0;
     resend_screens_ = false;
     sent_serial_ = 0;
     refresh_beacon();
@@ -198,6 +214,16 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             RequestMessage request;
             if (!decode_request(payload.data(), payload.size(), request)) {
                 return;  // not worth dropping a session over
+            }
+            // Not one of the choices the app adopts and broadcasts back --
+            // just the companion telling us how big a picture it can use.
+            // Applied immediately rather than merged sticky-field style: the
+            // companion resends this whenever it actually changes, so the
+            // latest value is always the current one and there is nothing to
+            // carry forward from a request that did not mention it.
+            if (request.wants_display_size) {
+                companion_display_width_ = request.display_width;
+                companion_display_height_ = request.display_height;
             }
             // Held for the app to validate: the host owns these choices and
             // will not adopt a layout id it does not recognise.
@@ -331,6 +357,10 @@ bool HostSession::take_request(RequestMessage& out_request) {
     return true;
 }
 
+std::size_t HostSession::queue_limit() const {
+    return std::max(kMinQueuedBytes, last_screen_payload_bytes_ * kMaxQueuedFrames);
+}
+
 void HostSession::publish_audio(const int16_t* interleaved_stereo,
                                 std::size_t frames,
                                 uint32_t sample_rate) {
@@ -339,7 +369,7 @@ void HostSession::publish_audio(const int16_t* interleaved_stereo,
     }
     // Audio is dropped rather than queued when the link is behind, for the same
     // reason as video: a growing queue is heard as drift, not as buffering.
-    if (companion_.pending_bytes() > kMaxQueuedBytes) {
+    if (companion_.pending_bytes() > queue_limit()) {
         return;
     }
 
@@ -369,7 +399,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
     }
     // Never let the send queue grow without bound: a companion that cannot keep
     // up should see dropped frames, not mounting latency.
-    if (companion_.pending_bytes() > kMaxQueuedBytes) {
+    if (companion_.pending_bytes() > queue_limit()) {
         return;
     }
 
@@ -399,6 +429,11 @@ void HostSession::publish_screens(const ScreenPixels& top,
 
     if (!out.empty()) {
         companion_.send(out);
+        // What the next frame's backlog limit is measured against -- see
+        // queue_limit(). A frame that was skipped for having nothing to send
+        // (both screens unchanged) leaves the estimate as the last real one,
+        // which is the right answer for what a frame actually costs right now.
+        last_screen_payload_bytes_ = out.size();
     }
     sent_serial_ = serial;
     resend_screens_ = false;

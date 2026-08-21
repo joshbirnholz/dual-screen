@@ -104,6 +104,9 @@ void test_request_round_trip() {
     sent.handedness = Handedness::Left;
     sent.wants_render_scale = true;
     sent.render_scale = 2;
+    sent.wants_display_size = true;
+    sent.display_width = 1920;
+    sent.display_height = 1080;
     sent.menu_open = true;
 
     std::vector<uint8_t> buffer;
@@ -124,6 +127,9 @@ void test_request_round_trip() {
     CHECK(received.handedness == Handedness::Left);
     CHECK_EQ(received.wants_render_scale, true);
     CHECK_EQ(static_cast<int>(received.render_scale), 2);
+    CHECK_EQ(received.wants_display_size, true);
+    CHECK_EQ(static_cast<int>(received.display_width), 1920);
+    CHECK_EQ(static_cast<int>(received.display_height), 1080);
     CHECK_EQ(received.menu_open, true);
 
     // A request that means none of it round-trips as such rather than as an
@@ -139,12 +145,13 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_audio_target, false);
     CHECK_EQ(received_quiet.wants_handedness, false);
     CHECK_EQ(received_quiet.wants_render_scale, false);
+    CHECK_EQ(received_quiet.wants_display_size, false);
     CHECK_EQ(received_quiet.menu_open, false);
 
     // An audio target outside the three that exist is refused rather than
     // becoming one of them by accident.
     std::vector<uint8_t> corrupt(payload);
-    corrupt[corrupt.size() - 6] = 9;  // the audio target byte
+    corrupt[corrupt.size() - 11] = 9;  // the audio target byte
     RequestMessage rejected;
     CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
 }

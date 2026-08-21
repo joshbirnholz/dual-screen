@@ -531,11 +531,9 @@ Three things fall out of that:
 - **Only what is being sent is read.** A read back off the GPU stalls the
   pipeline, so `companion_wants()` is public and the caller skips the screen
   nobody is going to see.
-- **At the console's resolution, not the core's.** The crop into the staging
-  texture scales, so a core rendering at 2x is read back at 400x240. Rendering
-  above native is for the screen in front of you; the other device is going to
-  draw one screen either way, and would only pay twice the bandwidth for it. The
-  scaling blit filters linearly for the same reason the compositor does.
+- **At whatever resolution the recipient actually needs, not always the
+  console's.** The crop into the staging texture scales, so this is a hint the
+  caller can act on. See below for what decides the hint.
 - **RGBA in, XRGB out.** `glReadPixels` is asked for `GL_RGBA` rather than
   `GL_BGRA` -- every driver takes that one -- and the swizzle costs a fraction
   of what compressing the frame costs. Getting it wrong turns the upper screen
@@ -549,6 +547,90 @@ them already turned the core's bottom-left origin into the top-row-first order
 everything here is uploaded in. The touch round-trip in the two-device test is
 what proves it -- a flipped picture would put the crosshair at 0.75 instead of
 0.25.
+
+**Every screen used to be streamed at the console's own resolution, whatever
+the render scale was set to** -- reported as a bug once render scale existed
+to make it visible: turning it up sharpened the picture on the device running
+the core and did nothing at all for a companion, which is backwards for two
+devices meant to be looking at real screens. The fix has to answer two
+questions the render scale alone cannot: how much *can* be sent (bounded by
+what was actually rendered -- there is nothing above that to send), and how
+much is actually *worth* sending (bounded by what the recipient can do with
+it, which nothing on the host side knew until now).
+
+The second bound needed a fact the protocol had never carried: the
+companion's own window size. It travels as one more field on `RequestMessage`
+-- `wants_display_size`/`display_width`/`display_height` -- sent once on
+connecting and again on every resize, protocol version 7. It does not belong
+in `SessionStateMessage` alongside layout and smoothing: those are choices the
+host owns and broadcasts back so the two devices cannot disagree, but a
+display size is not a choice at all, just a fact one device is reporting about
+itself, and broadcasting it back to the companion that already knows its own
+window size would be pointless. `HostSession` keeps it privately -- a getter,
+nothing more -- the same way it already keeps `companion_menu_open_` outside
+the request/adopt machinery built for the shared settings.
+
+Turning a window size into a target resolution reuses machinery that already
+existed for a different question. `device_layout()` answers "what does *this*
+device draw", resolving handedness and, for a per-device layout, which screen
+this device holds; `App::Impl::companion_target_size()` is the same question
+asked about the companion instead -- `resolve_for_device()` already took a
+screen ID rather than "the local one", so nothing there had to change -- and
+then hands the result to `place_screens()`, the function the compositor, the
+menu previews and touch mapping already treat as the single source of truth
+for where a screen lands. The box that function says a screen fills in the
+companion's window is what its resolution should match. One piece of this
+needs to be undone: `place_screens()` reports that box already turned for a
+rotated placement (`side_by_side` draws both screens a quarter turn), but the
+picture sent over the wire is always in the screen's own unrotated axes --
+rotation is applied by whichever device draws it, not baked into what is
+sent -- so a quarter-turned box has its width and height swapped back before
+it becomes the target.
+
+`LibretroCoreScreenSource::read_screen()` treats that target as a hint, not an
+instruction: `want = clamp(hint or native, native, rendered)`. Below native,
+clamped up -- a picture duller than the console's own resolution stops being
+worth looking at, and every other part of this app already treats native as
+the floor. Above what was rendered, clamped down -- there is nothing sharper
+to send, and sending it anyway would cost bandwidth for detail that does not
+exist. A software-rendered core (melonDS, still) has nothing above native to
+offer in the first place, so the hint has nowhere to act and the CPU
+zero-copy path is untouched. Verified against the real Citra core with two
+live processes at once: a `vertical` companion at its full 1280x800 window
+asked for less than 2x rendered and got exactly that (592x355, not 800x480);
+an `upper_on_tv` companion at 3x asked for more than was rendered and was
+capped to exactly what 3x produced (960x720, not the 1066x800 its window
+geometry alone would have wanted). One log line per screen, only when the
+target size actually changes, names which case fired.
+
+**What this does not do.** The wire format is still deflated RGB565 -- the
+same encoder as before, just handed a differently-sized frame. That is fine
+for what a DS or a 3DS actually produces: mostly flat 2D content that deflate
+compresses well, at a resolution low enough that even an incompressible frame
+is cheap. It stops being fine long before Wii U resolutions: full-motion 3D
+content deflates poorly, and a general-purpose byte compressor recompressing
+an entire frame from scratch every tick, with no motion compensation and no
+reference to the frame before it, is not what real-time video at those sizes
+needs. Adaptive resolution is the right first move regardless -- it is
+wasteful to send more than the recipient can use whatever the codec -- but it
+is a bound on *how much* is sent, not a different way of encoding it, and a
+real video pipeline (hardware encode on the host, hardware decode on
+whichever device is receiving) is a separate, larger piece of work that this
+did not attempt.
+
+**Why the send queue's backlog limit is measured in frame-times now, not a
+fixed byte count.** `kMaxQueuedBytes` was 512 KiB, sized for a DS's picture.
+Once a screen can legitimately be sent at several times that -- a 3DS at 2x
+with real content deflates far short of the ~4x pixel-count savings 2D content
+gets -- the same constant either starves a companion that could actually keep
+up, or is too small to ever hold one whole frame at all, which silently drops
+*every* frame rather than the occasional one a backlog limit exists to catch.
+`HostSession::queue_limit()` is `max(kMinQueuedBytes, last frame's payload x
+3)` instead: it rises and falls with whatever is actually being streamed,
+`kMinQueuedBytes` is only the floor for before a size is known, and the
+bound that matters -- how many frames of staleness a companion is allowed to
+fall behind by -- is now a property of frames rather than of bytes, which is
+what it was always meant to mean.
 
 **The left stick is the circle pad, and on a 3DS that is all it is.** The stick
 used to set the d-pad bits unconditionally, on the reasoning that a DS has no

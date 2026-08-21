@@ -20,7 +20,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 6;
+constexpr uint16_t kProtocolVersion = 7;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -115,6 +115,15 @@ struct RequestMessage {
     // it asks the host the same way it asks for anything else.
     bool wants_render_scale = false;
     uint8_t render_scale = 1;
+    // The companion's own window, in device pixels. Not a shared setting --
+    // the host never echoes this back in SessionState, it just remembers it
+    // privately and uses it to decide how big a picture that screen actually
+    // needs to be. Sent once on connecting and again whenever the window
+    // resizes; zero means not known yet, which falls back to the console's
+    // own resolution.
+    bool wants_display_size = false;
+    uint16_t display_width = 0;
+    uint16_t display_height = 0;
     // The companion has a menu up. The host pauses while either device does, so
     // both are looking at the same still frame.
     bool menu_open = false;

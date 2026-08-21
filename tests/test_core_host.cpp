@@ -360,6 +360,80 @@ void test_render_scale_only_changes_the_resolution() {
     source.close();
 }
 
+// read_screen()'s target size is a hint, not an instruction: the picture it
+// hands back is never sharper than what the core actually rendered, and never
+// softer than the console's own resolution, whatever the caller asks for.
+void test_read_screen_bounds_the_target_size() {
+    const char* path = std::getenv("DUALSCREEN_MOCK_CORE_3DS");
+    if (path == nullptr || path[0] == '\0') return;
+
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        test::skip("no OpenGL 3.3 context available for the 3DS core");
+        return;
+    }
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.system = SystemId::ThreeDs;
+    config.core_path = path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    config.render_scale = 2;  // rendered at 800x480 / 640x480
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK_MSG(source.advance_frame(&error), error);
+
+    ScreenReadback top;
+
+    // No hint at all -- the default every caller got before this existed --
+    // is still the console's own resolution, not the rendered one. A caller
+    // that does not know better should not accidentally start sending more.
+    CHECK(source.read_screen(ScreenId::Top, top));
+    CHECK_EQ(top.width, 400);
+    CHECK_EQ(top.height, 240);
+
+    // Between native and rendered: honoured exactly. This is the ordinary
+    // case -- a companion whose window makes this screen some size in between.
+    CHECK(source.read_screen(ScreenId::Top, top, 600, 360));
+    CHECK_EQ(top.width, 600);
+    CHECK_EQ(top.height, 360);
+
+    // More than was ever rendered: there is nothing sharper to send, so this
+    // clamps down to what 2x actually produced rather than upscaling into a
+    // bigger, blurrier picture that costs more to send for no more detail.
+    CHECK(source.read_screen(ScreenId::Top, top, 4000, 4000));
+    CHECK_EQ(top.width, 800);
+    CHECK_EQ(top.height, 480);
+
+    // Smaller than the console's own resolution: clamped up rather than down,
+    // since a picture duller than native stops being worth looking at, and
+    // every other part of this app already treats native as the floor.
+    CHECK(source.read_screen(ScreenId::Top, top, 10, 10));
+    CHECK_EQ(top.width, 400);
+    CHECK_EQ(top.height, 240);
+
+    // And the picture itself is still correct at an arbitrary in-between size
+    // -- not just the right dimensions but the right screen, right way up.
+    CHECK(source.read_screen(ScreenId::Top, top, 600, 360));
+    ScreenReadback bottom;
+    CHECK(source.read_screen(ScreenId::Bottom, bottom, 480, 360));
+    CHECK_EQ(bottom.width, 480);
+    CHECK_EQ(bottom.height, 360);
+    const uint32_t top_pixel = top.pixels[(top.height / 2) * top.stride_pixels + top.width / 2];
+    const uint32_t bottom_pixel =
+        bottom.pixels[(bottom.height / 2) * bottom.stride_pixels + bottom.width / 2];
+    // Packed XRGB8888: blue in the low byte, green in the next one up.
+    CHECK_MSG((top_pixel & 0xff) > ((top_pixel >> 8) & 0xff),
+              "the upper screen was not where it should be at an arbitrary size");
+    CHECK_MSG(((bottom_pixel >> 8) & 0xff) > (bottom_pixel & 0xff),
+              "the touch screen was not where it should be at an arbitrary size");
+
+    source.close();
+}
+
 // melonDS is pinned to its software renderer, so there is no scale to set and
 // asking for one changes nothing.
 void test_render_scale_is_ignored_where_there_is_none() {
@@ -379,6 +453,15 @@ void test_render_scale_is_ignored_where_there_is_none() {
     CHECK_EQ(source.render_scale(), 1);
     CHECK_MSG(source.advance_frame(&error), error);
     CHECK_EQ(source.split().top_width, 256);
+
+    // A software-rendered core has nothing above native to offer, so a target
+    // size hint has nothing to act on: read_screen() hands back the same
+    // view into the core's own framebuffer regardless of what is asked for.
+    ScreenReadback top;
+    CHECK(source.read_screen(ScreenId::Top, top, 4000, 4000));
+    CHECK_EQ(top.width, 256);
+    CHECK_EQ(top.height, 192);
+
     source.set_render_scale(3);
     CHECK_EQ(source.render_scale(), 1);
     source.close();
@@ -508,6 +591,7 @@ int main() {
     test_screen_source_reports_a_valid_split();
     test_screen_source_handles_a_3ds_core();
     test_render_scale_only_changes_the_resolution();
+    test_read_screen_bounds_the_target_size();
     test_render_scale_is_ignored_where_there_is_none();
     test_screen_source_reports_missing_files_clearly();
     test_save_ram_round_trip();
