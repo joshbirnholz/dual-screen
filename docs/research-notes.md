@@ -702,6 +702,18 @@ the Wii U Virtual Console's own Screen Settings picture actually shows --
 the previous measurement read a screenshot that made it look smaller than
 it is.
 
+**The focus layouts still looked small even at the new measurement, because
+the margin around the pair was never re-measured with it.** `kFocusMargin`
+was 32/378 of the frame -- several times wider than what `kVerticalMargin`
+and `kSideBySideMargin` leave clear on the layouts either side of it in the
+Wii U's own menu, and enough on its own to make the group look adrift in the
+window no matter how big the two screens were relative to each other.
+Reduced to 8/378, matching the tighter margins those other layouts already
+use, with `kFocusSmallScale` and `kFocusGap` untouched -- the two screens'
+size and spacing relative to each other is a separate, already-correct
+measurement, and shrinking the margin around them changes only how much air
+is left at the edges of the window.
+
 **A 3DS game's own software keyboard never came up.** Citra's swkbd needs
 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` to actually receive what is typed;
 without it the core has no way to get real input and falls back to a default

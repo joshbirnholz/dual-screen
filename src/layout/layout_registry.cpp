@@ -13,13 +13,16 @@ namespace {
 // Settings shots. Numbers rather than eyeballing, because "a bit smaller, over
 // to the right" is exactly the kind of thing that ends up subtly wrong.
 //
-// Focus layouts: a 227 x 170 screen beside a 110 x 82 one, 12 px apart, the
-// pair inset 32 px from each side of a 378-wide picture. The small screen was
-// re-measured off a fresh Tetris DS reference shot -- the previous 76 x 57
-// read the earlier screenshot too small.
+// Focus layouts: a 227 x 170 screen beside a 110 x 82 one, 12 px apart. The
+// small screen was re-measured off a fresh Tetris DS reference shot -- the
+// previous 76 x 57 read the earlier screenshot too small. The margin was
+// re-measured too: the original 32 px read as a wide gutter around the pair,
+// several times what the other layouts leave clear (kVerticalMargin,
+// kSideBySideMargin below), and left the group looking small and adrift in
+// the window rather than filling it with just a little air at the edges.
 constexpr float kFocusSmallScale = 110.0f / 227.0f;  // 0.485
 constexpr float kFocusGap = 12.0f / 227.0f;          // 0.053 of the large screen
-constexpr float kFocusMargin = 32.0f / 378.0f;       // 0.085
+constexpr float kFocusMargin = 8.0f / 378.0f;        // 0.021
 
 // Vertical: two 126 x 94 screens 18 px apart, 3 px clear of a 212-tall picture.
 constexpr float kVerticalGap = 18.0f / 94.0f;        // 0.19 of a screen's height
