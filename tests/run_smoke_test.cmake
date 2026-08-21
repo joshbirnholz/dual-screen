@@ -176,6 +176,11 @@ endforeach()
 set(TOUCH_CASES
     "vertical|0.45,0.80|crosshair=0.45,0.80"
     "vertical|0.50,0.25|nocrosshair=1"
+    # In the pillarbox beside the touch screen rather than on it: a finger that
+    # lands there is nowhere near the upper screen, so it clamps to the near
+    # edge instead of being dropped. The expected position is the touch
+    # screen's own measured left edge, not the tap point.
+    "vertical|0.05,0.80|crosshair=0.320,0.798"
     "standard|0.50,0.72|crosshair=0.50,0.72"
     "standard|0.50,0.20|nocrosshair=1"
     "side_by_side|0.75,0.40|crosshair=0.75,0.40"
@@ -679,6 +684,47 @@ else()
     if(NOT CHECK_RESULT EQUAL 0)
         message(STATUS "${CHECK_ERROR}")
         message(SEND_ERROR "a touch on a 3DS did not come back where it went in")
+        set(ANY_FAILED TRUE)
+    endif()
+endif()
+
+# The same clamp-to-edge behaviour, on a 3DS's own touch screen rather than a
+# DS's -- this is generic layout code, not console-specific, and only a run
+# against each console actually proves that.
+file(REMOVE "${THREE_DS_HOME}/data/dualscreen/saves/game.srm")
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CONFIG_HOME=${THREE_DS_HOME}/config"
+            "XDG_DATA_HOME=${THREE_DS_HOME}/data"
+            "SDL_AUDIODRIVER=dummy"
+            "SDL_VIDEODRIVER=x11"
+            "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+            "${DUALSCREEN}"
+                --game "${THREE_DS_HOME}/game.3ds"
+                --core "${MOCK_CORE_3DS}"
+                --layout vertical
+                --windowed
+                --exit-after-frames ${FRAME_COUNT}
+                --simulate-touch "0.05,0.80"
+                --screenshot "${THREE_DS_HOME}/touch_edge.ppm"
+    RESULT_VARIABLE RUN_RESULT
+    OUTPUT_VARIABLE RUN_OUTPUT
+    ERROR_VARIABLE RUN_ERROR)
+if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${THREE_DS_HOME}/touch_edge.ppm")
+    message(STATUS "${RUN_OUTPUT}")
+    message(STATUS "${RUN_ERROR}")
+    message(SEND_ERROR "the 3DS edge-touch run failed")
+    set(ANY_FAILED TRUE)
+else()
+    execute_process(
+        COMMAND "${CHECKER}" "${THREE_DS_HOME}/touch_edge.ppm" "crosshair=0.320,0.798"
+        RESULT_VARIABLE CHECK_RESULT
+        OUTPUT_VARIABLE CHECK_OUTPUT
+        ERROR_VARIABLE CHECK_ERROR)
+    message(STATUS "3DS touch in the pillarbox at 0.05,0.80:\n${CHECK_OUTPUT}")
+    if(NOT CHECK_RESULT EQUAL 0)
+        message(STATUS "${CHECK_ERROR}")
+        message(SEND_ERROR "a 3DS touch beside the touch screen did not clamp to its edge")
         set(ANY_FAILED TRUE)
     endif()
 endif()

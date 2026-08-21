@@ -370,9 +370,22 @@ void test_touch_maps_through_bottom_placement() {
 
     // A touch on the top screen is not a touch at all.
     CHECK(!map_output_point_to_ds(vertical, width, height, width * 0.5f, height * 0.25f, point, ds_screens()));
-    // Nor is one in the pillarbox beside the bottom screen.
-    CHECK(!map_output_point_to_ds(vertical, width, height, rect.x - 4.0f,
-                                  rect.y + rect.h * 0.5f, point, ds_screens()));
+
+    // One in the pillarbox beside the bottom screen clamps to the near edge
+    // instead: a finger that lands just off the touch screen almost always
+    // meant to land on it, and the nearest edge is where a stylus dragged past
+    // the glass would actually have stopped.
+    CHECK(map_output_point_to_ds(vertical, width, height, rect.x - 4.0f, rect.y + rect.h * 0.5f,
+                                 point, ds_screens()));
+    CHECK_EQ(point.x, 0);
+    CHECK(std::abs(point.y - 96) <= 1);
+
+    // Off past two edges at once -- squarely in a corner of the window that is
+    // neither screen -- clamps to that corner of the touch screen.
+    CHECK(map_output_point_to_ds(vertical, width, height, rect.x - 40.0f, rect.y - 40.0f, point,
+                                 ds_screens()));
+    CHECK_EQ(point.x, 0);
+    CHECK_EQ(point.y, 0);
 }
 
 void test_touch_round_trips_for_every_layout() {

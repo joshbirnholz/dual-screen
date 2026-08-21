@@ -439,19 +439,51 @@ bool map_output_point_to_ds(const Layout& layout,
     }
 
     const ScreenSize touch = screens.bottom;
-    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height, screens)) {
-        if (placed.screen != ScreenId::Bottom) {
-            continue;
+    const std::vector<PlacedScreen> placed_screens =
+        place_screens(layout, output_width, output_height, screens);
+
+    const PlacedScreen* touch_screen = nullptr;
+    for (const PlacedScreen& placed : placed_screens) {
+        if (placed.screen == ScreenId::Bottom && placed.rect.w > 0.0f && placed.rect.h > 0.0f) {
+            touch_screen = &placed;
+            break;
         }
-        const PixelRect& rect = placed.rect;
-        if (rect.w <= 0.0f || rect.h <= 0.0f || !rect.contains(point_x, point_y)) {
-            continue;
+    }
+
+    if (touch_screen != nullptr) {
+        // A tap that landed on some other screen -- the upper one, on every
+        // layout that shows both -- is a look at that screen, not a miss of
+        // this one, so it still registers no touch. Everywhere else in the
+        // window is fair game: bezel plastic, the gap between two stacked
+        // screens, the letterbox around a screen that does not fill its
+        // device. A finger that lands there is clamped to the nearest edge of
+        // the touch screen, which is where a stylus aimed at that edge would
+        // actually have landed.
+        for (const PlacedScreen& placed : placed_screens) {
+            if (&placed == touch_screen) {
+                continue;
+            }
+            if (placed.rect.w > 0.0f && placed.rect.h > 0.0f &&
+                placed.rect.contains(point_x, point_y)) {
+                touch_screen = nullptr;
+                break;
+            }
         }
-        float u = (point_x - rect.x) / rect.w;
-        float v = (point_y - rect.y) / rect.h;
+    }
+
+    if (touch_screen != nullptr) {
+        const PixelRect& rect = touch_screen->rect;
+        // Clamped here, before the rotation below, rather than on the final
+        // touch-space coordinate: turning the screen is just a relabelling and
+        // reflection of u and v, so clamping first and rotating after lands on
+        // exactly the same point as the other order would -- and it is the
+        // point outside the rect that can be arbitrarily far away, so this is
+        // the step that has to bound it.
+        float u = std::clamp((point_x - rect.x) / rect.w, 0.0f, 1.0f);
+        float v = std::clamp((point_y - rect.y) / rect.h, 0.0f, 1.0f);
         // Undo whatever turn the screen was drawn with, so a touch on a sideways
         // screen lands where the finger is pointing rather than 90 degrees off.
-        switch (placed.rotation) {
+        switch (touch_screen->rotation) {
             case ScreenRotation::Clockwise: {
                 const float turned_u = v;
                 const float turned_v = 1.0f - u;

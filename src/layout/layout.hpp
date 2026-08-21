@@ -263,8 +263,12 @@ struct DsTouchPoint {
 };
 
 // Maps a point in output-window pixels back into the touch screen's own space,
-// using the inverse of the bottom screen's placement. Returns false when the
-// point is not over a touchable bottom screen. This is derived generically from
+// using the inverse of the bottom screen's placement. A point outside the
+// screen's own rect -- bezel plastic, a letterbox bar, the gap between two
+// stacked screens -- clamps to the nearest edge rather than missing, the way a
+// stylus dragged past the edge of a real touch screen would. Returns false only
+// when there is no touchable bottom screen to map onto, or the point landed on
+// another screen instead (the upper one, typically). Derived generically from
 // the layout data, so a new layout is new data, not new code.
 bool map_output_point_to_ds(const Layout& layout,
                             float output_width,

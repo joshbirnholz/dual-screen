@@ -435,6 +435,32 @@ DS's 256x192. The smoke test verifies the whole round trip on both consoles: a
 touch at a given point in the window makes the mock core draw its crosshair at
 exactly that point.
 
+**Why a touch that misses the screen clamps to its edge instead of being
+dropped.** `map_output_point_to_ds` used to require the point to land inside the
+bottom screen's own pixel rect, and reject it otherwise. That is stricter than
+a real touch screen: the small screen of a focus layout, the bezel plastic
+around `standard`, the gap between two stacked screens in `vertical` are all
+places a finger legitimately lands a few pixels short, and a real stylus
+dragged past the glass stops at the edge rather than registering nothing. The
+fix computes `u, v` the same way as before but clamps each to `[0, 1]` before
+the rotation switch rather than requiring containment first. Clamping before
+the switch rather than after works out to the same point either way -- the
+rotation cases are just a relabelling and reflection of `u` and `v`, so
+`clamp(1 - u)` and `1 - clamp(u)` agree at every value -- and it is the point
+this is a fix for, so it is where the reasoning is worth spelling out rather
+than trusted by inspection.
+
+The one place this must *not* apply is a tap that landed on another screen
+instead: the upper one, on every layout that shows both. That is not a miss, it
+is a look at a different picture, so the touch screen still ignores it
+entirely. The function now finds the bottom placement, then checks the tap
+against every *other* placed screen and only clamps if none of them claim it --
+generic across DS and 3DS and every layout, since it works from `place_screens`
+rather than anything system-specific. Covered by the round-trip test's existing
+corner cases, extended to the pillarbox beside the touch screen and a point
+past two edges at once, both landing on the near point or corner rather than
+being lost.
+
 **Why the console picture is per system and where its numbers come from.** The
 Standard layout is the one that draws a console, and a 3DS is not a DS with
 different screens: different body, different proportions, different holes. So
