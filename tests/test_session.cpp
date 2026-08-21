@@ -169,6 +169,65 @@ void test_host_and_companion_pair_up() {
     host.stop();
 }
 
+// A screen streamed above the console's own resolution -- what a 3DS at its
+// maximum render scale, read back for a companion with a big enough window,
+// actually produces -- must still arrive rather than being read as corrupt.
+// The companion's own sanity check on incoming frame dimensions was written
+// when every screen was always sent at native resolution and never revisited
+// once that stopped being true, so a real 3DS top screen at 3x (1200x720)
+// tripped it and the companion dropped the connection reporting "impossible
+// dimensions" on a perfectly good frame.
+void test_a_screen_above_the_old_native_only_size_still_arrives() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    // The companion holds the top screen, the same role the bug report's PC
+    // was in: connected to a Deck hosting, showing the top screen.
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test PC", ScreenId::Top, &error), error);
+    const bool found = spin(host, companion, [&] { return !companion.hosts().empty(); });
+    CHECK_MSG(found, "the companion never discovered the host");
+    if (!found) return;
+
+    companion.connect_to(companion.hosts().front());
+    const bool connected = spin(host, companion, [&] {
+        return companion.status() == CompanionSession::Status::Connected && host.has_companion();
+    });
+    CHECK_MSG(connected, std::string("handshake did not complete: ") + companion.status_detail());
+    if (!connected) return;
+
+    // The exact size named in the guard's own comment: a 3DS top screen read
+    // back at its maximum render scale.
+    constexpr int kWidth = 1200;
+    constexpr int kHeight = 720;
+    const std::vector<uint32_t> pixels(static_cast<std::size_t>(kWidth) * kHeight, 0x00204080u);
+    HostSession::ScreenPixels top;
+    top.pixels = pixels.data();
+    top.width = kWidth;
+    top.height = kHeight;
+    top.stride_pixels = kWidth;
+    host.publish_screens(top, HostSession::ScreenPixels(), 1);
+
+    const bool got_it = spin(host, companion, [&] { return companion.has_screen(ScreenId::Top); });
+    CHECK_MSG(got_it, std::string("a legitimate 1200x720 screen never arrived (") +
+                          companion.status_detail() + ")");
+    CHECK_MSG(companion.status() == CompanionSession::Status::Connected,
+              "the companion dropped a connection over a screen bigger than the old cap");
+
+    companion.disconnect();
+    host.stop();
+}
+
 // A companion asking for a screen while a non-split layout is active must
 // receive both screens, because it draws the whole layout itself.
 void test_non_split_layout_sends_both_screens() {
@@ -683,6 +742,7 @@ void test_host_can_disconnect_the_companion() {
 
 int main() {
     test_host_and_companion_pair_up();
+    test_a_screen_above_the_old_native_only_size_still_arrives();
     test_non_split_layout_sends_both_screens();
     test_companion_gets_the_screen_it_asked_for();
     test_audio_reaches_the_companion();

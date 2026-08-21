@@ -127,9 +127,18 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 fail("the host sent a frame we could not read");
                 return;
             }
-            // Bounded before allocating: these dimensions came off a socket.
-            if (frame.width == 0 || frame.height == 0 || frame.width > 1024 ||
-                frame.height > 1024) {
+            // Bounded before allocating: these dimensions came off a socket,
+            // and decode_screen_pixels() sizes its buffers from them alone,
+            // before it has even looked at the payload. 4096 is not tied to
+            // any one console -- it only has to comfortably clear whatever a
+            // real screen, read back at whatever resolution the recipient
+            // asked for, could actually come out to (a 3DS top screen at its
+            // maximum render scale is 1200 wide), with headroom for larger
+            // consoles this app plays later rather than needing to be raised
+            // again the next time one arrives.
+            constexpr uint16_t kMaxFrameDimension = 4096;
+            if (frame.width == 0 || frame.height == 0 || frame.width > kMaxFrameDimension ||
+                frame.height > kMaxFrameDimension) {
                 fail("the host sent a frame with impossible dimensions");
                 return;
             }
