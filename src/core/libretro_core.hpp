@@ -108,6 +108,11 @@ public:
         int screen_height = 192;
     };
     void set_pointer_source(const PointerSource& source);
+    // Forwards one physical key event to the core's own on-screen keyboard,
+    // if it has registered one -- a no-op otherwise. `retro_keycode` and
+    // `modifiers` are RETROK_*/RETROKMOD_* from libretro.h, kept as plain
+    // integers here so this header does not need it.
+    void send_key_event(bool down, unsigned retro_keycode, uint32_t character, uint16_t modifiers);
 
     // Whether the loaded core renders on the GPU, which it declares while the
     // game is being opened. Only meaningful after load_game().
@@ -229,6 +234,11 @@ private:
     AudioCallback audio_callback_;
     const DsInputState* input_state_ = nullptr;
     PointerSource pointer_source_;
+    // The core's own keyboard-event handler, if it registered one -- same
+    // signature as libretro's retro_keyboard_event_t, spelled out locally so
+    // this header does not need to include libretro.h for it.
+    void (*keyboard_callback_)(bool down, unsigned keycode, uint32_t character,
+                               uint16_t key_modifiers) = nullptr;
 
     // Resolved core entry points.
     struct Api;

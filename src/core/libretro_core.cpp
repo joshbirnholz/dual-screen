@@ -165,6 +165,15 @@ void LibretroCore::set_input_state(const DsInputState* state) { input_state_ = s
 
 void LibretroCore::set_pointer_source(const PointerSource& source) { pointer_source_ = source; }
 
+void LibretroCore::send_key_event(bool down, unsigned retro_keycode, uint32_t character,
+                                  uint16_t modifiers) {
+    // A no-op until a core actually registers one -- most never do, since
+    // most never need text entry.
+    if (keyboard_callback_ != nullptr) {
+        keyboard_callback_(down, retro_keycode, character, modifiers);
+    }
+}
+
 int16_t LibretroCore::pointer_axis(bool horizontal) const {
     // Sample the centre of the addressed touch-screen pixel, then place it
     // inside the core's framebuffer and scale to libretro's [-0x7fff, 0x7fff]
@@ -862,6 +871,16 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             // runs the core on the same context it draws with, which is what
             // the shared-context contract allows; accepting it is what lets the
             // core go on to ask for the context itself.
+            return true;
+        }
+        case RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK: {
+            // What a core's own on-screen keyboard (a 3DS's swkbd, chiefly)
+            // actually reads from. Without this registered, the core has no
+            // way to receive what is typed and falls back to a default the
+            // moment it opens -- keys are forwarded to it from the SDL event
+            // loop in send_key_event() below.
+            const auto* callback = static_cast<const struct retro_keyboard_callback*>(data);
+            keyboard_callback_ = callback != nullptr ? callback->callback : nullptr;
             return true;
         }
         case RETRO_ENVIRONMENT_SET_MESSAGE: {

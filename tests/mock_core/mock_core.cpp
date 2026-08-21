@@ -65,6 +65,18 @@ retro_input_state_t g_input_state = nullptr;
 
 uint32_t g_framebuffer[kFrameWidth * kFrameHeight];
 
+// Reports what the frontend actually forwarded, the same way the GL-state
+// check above does: a message a test can read back off stdout, rather than
+// a rendering side effect that would be a stretch to notice by eye.
+void mock_keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers) {
+    if (g_environment == nullptr) return;
+    static char text[128];
+    std::snprintf(text, sizeof(text), "keyboard event: down=%d keycode=%u character=%u modifiers=%u",
+                 down ? 1 : 0, keycode, character, static_cast<unsigned>(key_modifiers));
+    struct retro_message message = {text, 300};
+    g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+}
+
 // --- the GPU path ---------------------------------------------------------
 // Everything below is resolved through the frontend's get_proc_address, which
 // is the only way a libretro core is allowed to reach GL.
@@ -532,6 +544,12 @@ RETRO_API void retro_set_environment(retro_environment_t callback) {
         options.definitions = const_cast<retro_core_option_v2_definition*>(kOptions);
         callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &options);
     }
+
+    // Stands in for a 3DS's swkbd asking to actually receive what is typed,
+    // rather than falling back to a default the moment it opens.
+    retro_keyboard_callback keyboard {};
+    keyboard.callback = mock_keyboard_event;
+    callback(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &keyboard);
 }
 
 RETRO_API void retro_set_video_refresh(retro_video_refresh_t callback) { g_video_refresh = callback; }

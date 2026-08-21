@@ -18,6 +18,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
+#include "input/retro_keymap.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/bezel_art.hpp"
 #include "render/compositor.hpp"
@@ -168,6 +169,8 @@ AppOptions parse_command_line(int argc, char** argv) {
                 options.simulate_touch_x = std::strtof(value.substr(0, comma).c_str(), nullptr);
                 options.simulate_touch_y = std::strtof(value.substr(comma + 1).c_str(), nullptr);
             }
+        } else if (argument == "--simulate-key") {
+            options.simulate_key = next_argument(argc, argv, index, "--simulate-key", options.parse_error);
         } else if (argument == "--exit-after-seconds") {
             const std::string value =
                 next_argument(argc, argv, index, "--exit-after-seconds", options.parse_error);
@@ -1608,6 +1611,7 @@ int App::run(const AppOptions& options) {
     const uint64_t counter_frequency = SDL_GetPerformanceFrequency();
     impl.last_counter = SDL_GetPerformanceCounter();
     const uint64_t started_counter = impl.last_counter;
+    bool simulate_key_sent = false;
 
     while (impl.running) {
         const uint64_t now = SDL_GetPerformanceCounter();
@@ -1648,9 +1652,45 @@ int App::run(const AppOptions& options) {
             impl.input.handle_event(touch);
         }
 
+        // Test hook: a single tap of one key, so the path from a physical
+        // keypress to a core's own keyboard callback can be exercised
+        // headless. Sent once the core has had a frame to register one.
+        if (!options.simulate_key.empty() && !simulate_key_sent && impl.frames_rendered >= 2) {
+            const SDL_Keycode key = SDL_GetKeyFromName(options.simulate_key.c_str());
+            if (key != SDLK_UNKNOWN) {
+                SDL_Event down {};
+                down.type = SDL_KEYDOWN;
+                down.key.state = SDL_PRESSED;
+                down.key.keysym.sym = key;
+                SDL_PushEvent(&down);
+                SDL_Event up = down;
+                up.type = SDL_KEYUP;
+                up.key.state = SDL_RELEASED;
+                SDL_PushEvent(&up);
+            } else {
+                log_warn("--simulate-key does not name a key SDL knows: " + options.simulate_key);
+            }
+            simulate_key_sent = true;
+        }
+
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
             impl.input.handle_event(event);
+            // Forwarded to the core's own on-screen keyboard, if it has one --
+            // a 3DS's swkbd, chiefly. This is independent of everything
+            // input_manager just did with the same event (a hotkey, a DS
+            // button): those still fire, since the two are meant to overlap
+            // rather than fight over the key -- a keyboard callback only ever
+            // matters while the core's own keyboard is actually up waiting
+            // for text, and does nothing the rest of the time.
+            if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && impl.source) {
+                const SDL_Keycode key = event.key.keysym.sym;
+                const uint16_t modifiers = retro_key_modifiers();
+                const bool down = event.type == SDL_KEYDOWN;
+                impl.source->send_key_event(down, retro_keycode_for_sdl(key),
+                                            down ? retro_character_for_sdl(key, modifiers) : 0,
+                                            modifiers);
+            }
             // A real mouse brings the pointer back; a finger does not. SDL
             // reports touches as mouse events from SDL_TOUCH_MOUSEID, and a tap
             // on the touchscreen should not put an arrow on the screen.

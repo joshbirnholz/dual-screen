@@ -702,6 +702,33 @@ the Wii U Virtual Console's own Screen Settings picture actually shows --
 the previous measurement read a screenshot that made it look smaller than
 it is.
 
+**A 3DS game's own software keyboard never came up.** Citra's swkbd needs
+`RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` to actually receive what is typed;
+without it the core has no way to get real input and falls back to a default
+the moment it opens, which reads as the keyboard not coming up at all.
+Nothing here handled that environment command, so `LibretroCore` now stores
+whatever `retro_keyboard_callback` a core registers and a new
+`ScreenSource::send_key_event()` forwards physical key events to it --
+declined by default, like every other seam method a source that isn't
+running a live core has no use for. The translation from an SDL keysym to
+libretro's RETROK_*/RETROKMOD_* constants lives in `input/retro_keymap.cpp`:
+printable ASCII passes straight through (both tables share it, a common
+inheritance from SDL 1.2's own keysym table), everything else -- arrows,
+function keys, the modifiers themselves -- needs an explicit table, since
+SDL2 moved those to scancode-flagged values nothing like libretro's small
+integers. What a key actually *types* (`character`, for a text field) is
+worked out against a US layout: correct for a keyboard plugged into a Deck
+or a PC, which covers what a 3DS's own swkbd realistically needs -- names,
+search terms, friend codes -- even though a different physical layout would
+still navigate and delete correctly, since those never depended on it.
+
+Verified with a `--simulate-key` test hook that taps one key through the
+real SDL event loop, and a mock-core keyboard callback that reports every
+event it receives back as a core message: `keyboard event: down=1
+keycode=97 character=97` for the press, `down=0 ... character=0` for the
+release. Confirmed the smoke test actually catches a regression here by
+reverting the environment handler and watching that exact assertion fail.
+
 **The left stick is the circle pad, and on a 3DS that is all it is.** The stick
 used to set the d-pad bits unconditionally, on the reasoning that a DS has no
 stick and a player will reach for one anyway. That is right for a DS and wrong

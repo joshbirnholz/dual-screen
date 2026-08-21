@@ -88,6 +88,20 @@ public:
     // frontend to shut down).
     virtual bool wants_shutdown() const { return false; }
 
+    // Forwards one physical key event to whatever the source is running, for
+    // a core's own on-screen keyboard (a 3DS's swkbd, chiefly) to read.
+    // `retro_keycode`/`modifiers` are RETROK_*/RETROKMOD_* from libretro.h.
+    // A no-op on anything not hosting a live core -- a companion has nothing
+    // local to forward to, and the source that does own the core it should
+    // reach is a decision this seam exists so callers never have to make.
+    virtual void send_key_event(bool down, unsigned retro_keycode, uint32_t character,
+                                uint16_t modifiers) {
+        (void)down;
+        (void)retro_keycode;
+        (void)character;
+        (void)modifiers;
+    }
+
 };
 
 }  // namespace ds

@@ -41,6 +41,10 @@ struct AppOptions {
     // no simulated touch.
     float simulate_touch_x = -1.0f;
     float simulate_touch_y = -1.0f;
+    // Taps this one key (an SDL key name, e.g. "a" or "Return") a couple of
+    // frames in, so a core's own keyboard callback can be exercised
+    // headless. Empty means no simulated key.
+    std::string simulate_key;
     // Joins the first host discovered, as "top" or "bottom", without going
     // through the picker. Used by the two-process test; also genuinely handy
     // when there is only ever one host on the network.

@@ -753,6 +753,13 @@ bool LibretroCoreScreenSource::wants_shutdown() const {
     return core_ && core_->wants_shutdown();
 }
 
+void LibretroCoreScreenSource::send_key_event(bool down, unsigned retro_keycode,
+                                              uint32_t character, uint16_t modifiers) {
+    if (core_) {
+        core_->send_key_event(down, retro_keycode, character, modifiers);
+    }
+}
+
 double LibretroCoreScreenSource::frames_per_second() const {
     return core_ ? core_->av_info().fps : 60.0;
 }

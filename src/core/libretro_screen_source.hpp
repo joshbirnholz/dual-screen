@@ -85,6 +85,8 @@ public:
                      int target_height = 0) override;
     SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override;
+    void send_key_event(bool down, unsigned retro_keycode, uint32_t character,
+                        uint16_t modifiers) override;
 
     double frames_per_second() const;
     double audio_sample_rate() const;

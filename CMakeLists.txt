@@ -79,6 +79,7 @@ add_library(dualscreen_core STATIC
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp
     src/input/input_manager.cpp
+    src/input/retro_keymap.cpp
     src/layout/layout.cpp
     src/net/companion_session.cpp
     src/net/discovery.cpp

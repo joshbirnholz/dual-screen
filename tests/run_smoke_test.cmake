@@ -94,6 +94,46 @@ foreach(CASE IN LISTS CASES)
     endif()
 endforeach()
 
+# --- keyboard forwarding -----------------------------------------------------
+#
+# A core's own on-screen keyboard (a 3DS's swkbd, chiefly) reads what is
+# typed through RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK. The mock core
+# registers one and reports every event it receives back as a core message,
+# which --simulate-key exercises with a single tap of the 'a' key.
+execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CONFIG_HOME=${WORK_DIR}/config"
+            "XDG_DATA_HOME=${WORK_DIR}/data"
+            "SDL_AUDIODRIVER=dummy"
+            "SDL_VIDEODRIVER=x11"
+            "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
+            "${DUALSCREEN}"
+                --game "${WORK_DIR}/fake.nds"
+                --core "${MOCK_CORE}"
+                --layout standard
+                --windowed
+                --simulate-key a
+                --exit-after-frames ${FRAME_COUNT}
+    RESULT_VARIABLE RUN_RESULT
+    OUTPUT_VARIABLE RUN_OUTPUT
+    ERROR_VARIABLE RUN_ERROR)
+if(NOT RUN_RESULT EQUAL 0)
+    message(STATUS "${RUN_OUTPUT}")
+    message(STATUS "${RUN_ERROR}")
+    message(SEND_ERROR "the simulated key run failed")
+    set(ANY_FAILED TRUE)
+endif()
+if(NOT RUN_OUTPUT MATCHES "keyboard event: down=1 keycode=97 character=97")
+    message(STATUS "${RUN_OUTPUT}")
+    message(SEND_ERROR "a key press was not forwarded to the core's keyboard callback")
+    set(ANY_FAILED TRUE)
+endif()
+if(NOT RUN_OUTPUT MATCHES "keyboard event: down=0 keycode=97 character=0")
+    message(STATUS "${RUN_OUTPUT}")
+    message(SEND_ERROR "a key release was not forwarded to the core's keyboard callback")
+    set(ANY_FAILED TRUE)
+endif()
+
 # --- cartridge saves --------------------------------------------------------
 #
 # In libretro the frontend owns save RAM entirely: the core never touches the
