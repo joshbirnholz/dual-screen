@@ -714,11 +714,37 @@ size and spacing relative to each other is a separate, already-correct
 measurement, and shrinking the margin around them changes only how much air
 is left at the edges of the window.
 
-**A 3DS game's own software keyboard never came up.** Citra's swkbd needs
-`RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` to actually receive what is typed;
-without it the core has no way to get real input and falls back to a default
-the moment it opens, which reads as the keyboard not coming up at all.
-Nothing here handled that environment command, so `LibretroCore` now stores
+**A 3DS game's own software keyboard never came up -- and, for the
+`citra_libretro` core specifically, still doesn't.** The first attempt at
+this assumed Citra's swkbd needed
+`RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` to receive what is typed, and that
+the frontend simply never having implemented it was the whole story. It
+wasn't: `citra_libretro.so`'s own strings and the glue source
+(`citra_libretro.cpp`) that builds it settle the question directly rather
+than by further guessing. Its `retro_set_environment()` calls
+`Frontend::RegisterDefaultApplets()` and nothing else -- no
+`Core::System::RegisterSoftwareKeyboard()` with a real implementation -- so
+every save-name prompt in every game runs through Citra's own
+`Frontend::DefaultKeyboard`, a stub that `Execute()`s with a canned default
+immediately, without ever asking the frontend for anything. No environment
+command exists that would reach it: the core does not merely fail to *use*
+`RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` when it is offered, it never asks
+for a keyboard at all. That makes this a limitation of that specific core
+build rather than something a frontend change can route around -- Azahar's
+libretro core (`azahar_libretro.so`, listed as an alternative core in the
+README) is a further-along Citra fork and might have replaced
+`DefaultKeyboard` with something real, but that has not been checked against
+an actual binary the way this was, so it is a thing to try rather than a
+fix confirmed to exist.
+
+The keyboard-forwarding plumbing below is left in rather than reverted --
+`RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK` is real libretro API surface a
+different core (or a future citra_libretro/Azahar build with a real swkbd)
+could still use, and there is nothing wrong with it; it is just not what
+makes Majora's Mask 3D's save-name prompt work, because nothing here can
+make that core ask for one.
+
+`LibretroCore` now stores
 whatever `retro_keyboard_callback` a core registers and a new
 `ScreenSource::send_key_event()` forwards physical key events to it --
 declined by default, like every other seam method a source that isn't
