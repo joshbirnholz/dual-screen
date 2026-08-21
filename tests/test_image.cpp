@@ -132,76 +132,94 @@ void test_standard_screens_sit_in_the_artwork() {
     CHECK(padded.y + padded.h < 1199.0f);
 }
 
-// On a display no bigger than a Deck's, Standard is drawn at the artwork's own
-// size: the screens come out one screen pixel per display pixel, on whole
-// pixels, and are marked as such so nothing tries to smooth them.
-void test_standard_locks_to_native_on_small_displays() {
+// Standard scales the console art to fit the window at every size, including
+// a Deck's own resolution and below -- it used to lock to the artwork's own
+// 615x630 pixel size there instead, leaving black bars around a picture much
+// smaller than the window had room for. Above that size the art was already
+// scaled to fit, and still is.
+void test_standard_scales_to_fit_at_every_size() {
     const LayoutRegistry registry;
     const Layout& standard = *registry.find("standard");
 
-    struct Case {
-        float width;
-        float height;
-        bool locked;
-    };
-    const Case cases[] = {
-        {1280.0f, 800.0f, true},    // a Deck, exactly on the threshold
-        {1280.0f, 720.0f, true},    // and anything smaller
-        {800.0f, 480.0f, true},     // small enough that the console overflows
-        {1920.0f, 1080.0f, false},  // room to scale, so it is scaled
-        {1366.0f, 768.0f, false},   // wider than the threshold
-        {1280.0f, 1024.0f, false},  // taller than it
+    const std::pair<float, float> sizes[] = {
+        {1280.0f, 800.0f},   // a Deck, where this used to lock to 615x630
+        {1280.0f, 720.0f},
+        {800.0f, 480.0f},    // smaller still
+        {1920.0f, 1080.0f},
+        {1366.0f, 768.0f},
+        {1280.0f, 1024.0f},
     };
 
-    for (const Case& test : cases) {
-        const PixelRect frame = layout_frame(standard, test.width, test.height, ds_screens());
+    for (const auto& size : sizes) {
+        const float width = size.first;
+        const float height = size.second;
+        const PixelRect frame = layout_frame(standard, width, height, ds_screens());
         const std::string where =
-            std::to_string(static_cast<int>(test.width)) + "x" +
-            std::to_string(static_cast<int>(test.height));
-        if (test.locked) {
-            CHECK_MSG(std::abs(frame.w - 615.0f) < 0.01f && std::abs(frame.h - 630.0f) < 0.01f,
-                      where + ": the console is " + std::to_string(frame.w) + "x" +
-                          std::to_string(frame.h) + ", not its own size");
-            // Centred, on whole pixels, and allowed over the edge.
-            CHECK_NEAR(frame.x, std::round((test.width - 615.0f) * 0.5f));
-            CHECK_NEAR(frame.y, std::round((test.height - 630.0f) * 0.5f));
-        } else {
-            CHECK_MSG(std::abs(frame.h - 630.0f) > 1.0f,
-                      where + ": the console was locked to its own size with room to scale");
-        }
-
-        for (const PlacedScreen& placed : place_screens(standard, test.width, test.height, ds_screens())) {
-            const std::string screen = where + " " + to_string(placed.screen) + " screen";
-            if (test.locked) {
-                CHECK_MSG(placed.native, screen + " is not one-to-one");
-                CHECK_NEAR(placed.rect.w, static_cast<float>(kDsScreenWidth));
-                CHECK_NEAR(placed.rect.h, static_cast<float>(kDsScreenHeight));
-                // On the pixel grid, or the texels land between pixels and the
-                // picture is resampled however it is filtered.
-                CHECK_NEAR(placed.rect.x, std::round(placed.rect.x));
-                CHECK_NEAR(placed.rect.y, std::round(placed.rect.y));
-            } else {
-                CHECK_MSG(!placed.native, screen + " claims to be one-to-one while scaled");
-            }
-        }
+            std::to_string(static_cast<int>(width)) + "x" + std::to_string(static_cast<int>(height));
+        CHECK_NEAR(frame.w / frame.h, ds_screens().console.aspect);
+        // Filling the window rather than pinned to the artwork's own 615x630:
+        // the smaller side comes within a margin of the window's own size.
+        const bool fills_width = frame.w > width * 0.9f;
+        const bool fills_height = frame.h > height * 0.9f;
+        CHECK_MSG(fills_width || fills_height,
+                  where + ": the console did not scale to fill the window (" +
+                      std::to_string(frame.w) + "x" + std::to_string(frame.h) + ")");
     }
+
+    // The padding still keeps the console clear of the window's edges, on a
+    // display no bigger than a Deck's just as much as on a larger one.
+    const PixelRect padded = layout_frame(standard, 1280.0f, 800.0f, ds_screens());
+    CHECK(padded.y > 1.0f);
+    CHECK(padded.x > 1.0f);
+    CHECK(padded.y + padded.h < 799.0f);
+}
+
+// The exact window a composed layout's group lands at its own natural size in
+// -- scale exactly 1, no scaling up or down -- computed from the layout's own
+// fields rather than a resolution chosen by hand, so this stays correct
+// however the focus layouts' proportions are tuned.
+PixelRect natural_group_window(const LayoutComposition& composition, const SystemScreens& screens) {
+    const bool horizontal = composition.axis == LayoutAxis::Horizontal;
+    float along = 0.0f;
+    float across = 0.0f;
+    float largest_along = 0.0f;
+    for (const ScreenItem& item : composition.items) {
+        const ScreenSize size = screens.size_of(item.screen);
+        const bool turned = rotation_is_quarter_turn(item.rotation);
+        const float width = static_cast<float>(turned ? size.height : size.width) * item.scale;
+        const float height = static_cast<float>(turned ? size.width : size.height) * item.scale;
+        const float item_along = horizontal ? width : height;
+        along += item_along;
+        across = std::max(across, horizontal ? height : width);
+        largest_along = std::max(largest_along, item_along);
+    }
+    along += composition.gap * largest_along * static_cast<float>(composition.items.size() - 1);
+    const float usable_scale = 1.0f - composition.margin * 2.0f;
+    const float along_window = along / usable_scale;
+    const float across_window = across / usable_scale;
+    return horizontal ? PixelRect{0.0f, 0.0f, along_window, across_window}
+                      : PixelRect{0.0f, 0.0f, across_window, along_window};
 }
 
 // The rule is not Standard's alone: any screen that lands at its own size is
-// left alone. The focus layouts' small screen does exactly that on a Deck.
+// left alone. The focus layouts' small screen does exactly that at the one
+// window size where the whole group needs no scaling.
 void test_native_screens_are_spotted_anywhere() {
     const LayoutRegistry registry;
     for (const char* id : {"upper_focus", "touch_focus"}) {
+        const Layout& layout = *registry.find(id);
+        const PixelRect window = natural_group_window(layout.composition, ds_screens());
         bool found_native = false;
-        for (const PlacedScreen& placed : place_screens(*registry.find(id), 1280.0f, 800.0f, ds_screens())) {
+        for (const PlacedScreen& placed : place_screens(layout, window, ds_screens())) {
             if (placed.native) {
                 found_native = true;
                 CHECK_NEAR(placed.rect.w, static_cast<float>(kDsScreenWidth));
                 CHECK_NEAR(placed.rect.h, static_cast<float>(kDsScreenHeight));
             }
         }
-        CHECK_MSG(found_native,
-                  std::string(id) + "'s small screen is not one-to-one at 1280x800");
+        CHECK_MSG(found_native, std::string(id) + "'s small screen is not one-to-one at " +
+                                     std::to_string(static_cast<int>(window.w)) + "x" +
+                                     std::to_string(static_cast<int>(window.h)));
     }
 
     // A screen that is merely close is not called native, or it would be snapped
@@ -213,35 +231,22 @@ void test_native_screens_are_spotted_anywhere() {
     }
 }
 
-// A preview tile is not a display. Everything about a layout that depends on how
-// big the display is has to be left behind when it is drawn into one, or the
-// console is drawn at full size across the rest of the menu -- which is exactly
-// what happened before as_preview() existed.
-void test_previews_are_not_displays() {
+// A layout drawn into a preview tile fits inside it whatever the tile's size
+// -- Standard always scales its console art to fit whatever rect it is given,
+// so there is no fixed pixel size for it to fall back to and spill out of a
+// tile smaller than that.
+void test_previews_fit_inside_their_tile() {
     const LayoutRegistry registry;
     const Layout& standard = *registry.find("standard");
 
-    // A tile is smaller than the threshold in both dimensions, so the console
-    // would be drawn at its own size on it if nothing stripped that.
     const PixelRect tile{80.0f, 120.0f, 340.0f, 190.0f};
-    const SystemScreens preview = as_preview(ds_screens());
-    CHECK(ds_screens().console.native_width > 0.0f);
-    CHECK_MSG(preview.console.native_width == 0.0f,
-              "a preview kept the console's own pixel size");
-
-    for (const PlacedScreen& placed : place_screens(standard, tile, preview)) {
+    for (const PlacedScreen& placed : place_screens(standard, tile, ds_screens())) {
         const std::string screen = std::string(to_string(placed.screen)) + " screen";
         CHECK_MSG(placed.rect.x >= tile.x - 0.5f && placed.rect.y >= tile.y - 0.5f &&
                       placed.rect.x + placed.rect.w <= tile.x + tile.w + 0.5f &&
                       placed.rect.y + placed.rect.h <= tile.y + tile.h + 0.5f,
                   "a preview's " + screen + " spilled outside its tile");
     }
-
-    // And the system's own geometry is untouched: previewing must not change
-    // what the display does with it.
-    CHECK(ds_screens().console.native_width > 0.0f);
-    const PixelRect display = layout_frame(standard, 1280.0f, 800.0f, ds_screens());
-    CHECK_NEAR(display.w, 615.0f);
 }
 
 }  // namespace
@@ -250,8 +255,8 @@ int main() {
     test_bezel_decodes();
     test_bad_images_are_refused();
     test_standard_screens_sit_in_the_artwork();
-    test_standard_locks_to_native_on_small_displays();
+    test_standard_scales_to_fit_at_every_size();
     test_native_screens_are_spotted_anywhere();
-    test_previews_are_not_displays();
+    test_previews_fit_inside_their_tile();
     return test::finish("image");
 }

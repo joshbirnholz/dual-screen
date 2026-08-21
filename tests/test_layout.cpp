@@ -80,15 +80,18 @@ void test_layouts_match_the_wii_u() {
         ScreenId screen;
         float x, y, w, h;
     };
-    // Upper Screen Focus: 227x170 at (32,21) beside 76x57 at (270,134).
-    // Touch Screen Focus: 76x57 at (32,21) beside 227x170 at (119,21).
+    // Upper Screen Focus: a 227x170 screen beside a 110x82 one, once the group
+    // (bigger now that the small screen is) is scaled down to fit the same
+    // 378x212 frame -- 204x153 at (32,29) beside 99x74 at (247,108).
+    // Touch Screen Focus: the same pair the other way round, 99x74 at (32,29)
+    // beside 204x153 at (142,29).
     // Vertical:           126x94 at (126,3) above 126x94 at (126,115).
     // Side-by-Side:       154x204 at (19,4) beside 154x204 at (205,4).
     const Expected cases[] = {
-        {"upper_focus", ScreenId::Top, 32, 21, 227, 170},
-        {"upper_focus", ScreenId::Bottom, 270, 134, 76, 57},
-        {"touch_focus", ScreenId::Top, 32, 21, 76, 57},
-        {"touch_focus", ScreenId::Bottom, 119, 21, 227, 170},
+        {"upper_focus", ScreenId::Top, 32, 29, 204, 153},
+        {"upper_focus", ScreenId::Bottom, 247, 108, 99, 74},
+        {"touch_focus", ScreenId::Top, 32, 29, 99, 74},
+        {"touch_focus", ScreenId::Bottom, 142, 29, 204, 153},
         {"vertical", ScreenId::Top, 126, 3, 126, 94},
         {"vertical", ScreenId::Bottom, 126, 115, 126, 94},
         {"side_by_side", ScreenId::Top, 19, 4, 154, 204},

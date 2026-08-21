@@ -1902,17 +1902,17 @@ int App::run(const AppOptions& options) {
             const uint64_t serial = impl.source->core_frame_for_test().serial;
             ScreenReadback top;
             ScreenReadback bottom;
+            // Sent at the console's own resolution regardless of the render
+            // scale, for now: a general-purpose CPU codec was never going to
+            // keep pace with several times the pixels every frame, and a
+            // choppy stream at a sharper resolution is a worse trade than a
+            // smooth one at a softer one. Revisit once a real hardware video
+            // pipeline exists to carry the extra detail instead.
             if (impl.host_session->companion_wants(ScreenId::Top)) {
-                int target_width = 0;
-                int target_height = 0;
-                impl.companion_target_size(ScreenId::Top, target_width, target_height);
-                impl.source->read_screen(ScreenId::Top, top, target_width, target_height);
+                impl.source->read_screen(ScreenId::Top, top);
             }
             if (impl.host_session->companion_wants(ScreenId::Bottom)) {
-                int target_width = 0;
-                int target_height = 0;
-                impl.companion_target_size(ScreenId::Bottom, target_width, target_height);
-                impl.source->read_screen(ScreenId::Bottom, bottom, target_width, target_height);
+                impl.source->read_screen(ScreenId::Bottom, bottom);
             }
             if (top.valid() || bottom.valid()) {
                 const auto wire_order = [](ChannelOrder order) {

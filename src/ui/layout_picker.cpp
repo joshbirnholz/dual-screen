@@ -78,7 +78,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::Cursor:
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Hands:
-            return state_.handedness == Handedness::Left ? "Hands: Left" : "Hands: Right";
+            return state_.handedness == Handedness::Left ? "Left-Handed" : "Right-Handed";
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: break;
@@ -322,8 +322,7 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
                                 const Texture* bezel_art,
                                 bool smoothing) {
     const UiTheme& theme = ui_theme();
-    // A tile is not a display -- see as_preview().
-    const SystemScreens geometry = as_preview(tile_geometry);
+    const SystemScreens& geometry = tile_geometry;
     const bool draws_console = layout.uses_console_frame && geometry.console.exists();
     const bool has_art = draws_console && geometry.console.has_art;
     // The tile shows what the layout shows, background included.

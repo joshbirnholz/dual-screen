@@ -663,6 +663,45 @@ the OS default of two hours to about ten seconds, on both the accepting and the
 connecting side, so a truly dead peer is noticed and dropped automatically
 rather than requiring the host to be restarted.
 
+**Adaptive streaming resolution is reverted to native-only, for now.** The
+channel-order fix above halved the CPU cost of streaming a GPU-rendered
+screen, but at 2x and 3x render scale that was still not enough for a smooth
+picture: the RGB565-pack-and-deflate encoder is a general-purpose byte
+codec, not a video one, and its cost is still proportional to the pixel
+count a render scale multiplies. Rather than ship a choppy "sharper"
+picture, `App::Impl` no longer asks `read_screen()` for a companion-sized
+target at all -- every screen streams at the console's own resolution
+regardless of render scale, which is what made the picture smooth in the
+first place. The adaptive-resolution plumbing itself (`RequestMessage`'s
+display-size fields, `HostSession::companion_display_size()`) is left in
+place rather than torn out, since it is exactly what a real hardware video
+pipeline -- encode on the GPU, decode on the GPU, an actual codec bitstream
+instead of deflated RGB565 -- will need in order to be worth turning back on;
+that is also what Wii U-scale full-motion content requires, and is future
+work, not something this reverts.
+
+**The Standard layout no longer locks to the console artwork's own pixel
+size on a small display.** It used to: on a window no bigger than a Deck's
+(1280x800), the console frame was pinned to its own pixel dimensions rather
+than scaled up, so that every screen came out exactly one-to-one and never
+needed resampling. That traded away too much -- on a Deck-sized window the
+console ended up much smaller than the screen, nothing like the Wii U
+Virtual Console's own Screen Settings picture, which fills the display at
+any size. `layout_frame()` now always scales the console art to fit,
+the same as it already did above that threshold; a screen landing exactly
+on its own pixel size is still caught and left unsmoothed by the
+general-purpose `mark_native()` mechanism (see `test_native_screens_are_
+spotted_anywhere`), it just no longer happens by construction at one
+specific window size. The now-unused `native_width`/`native_height`/
+`native_max_output_*` fields and the `as_preview()` helper that stripped
+them for preview tiles are gone with it -- a preview tile was always just
+`place_screens()` given a smaller rect, and now that is all it needs.
+
+The focus layouts' small screen was also re-measured larger, closer to what
+the Wii U Virtual Console's own Screen Settings picture actually shows --
+the previous measurement read a screenshot that made it look smaller than
+it is.
+
 **The left stick is the circle pad, and on a 3DS that is all it is.** The stick
 used to set the d-pad bits unconditionally, on the reasoning that a DS has no
 stick and a player will reach for one anyway. That is right for a DS and wrong

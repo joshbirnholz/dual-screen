@@ -36,10 +36,6 @@ SystemProfile make_ds() {
     console.bottom = console_screen(179.0f / 615.0f, 337.0f / 630.0f, 256.0f / 615.0f,
                                     192.0f / 630.0f, ScreenId::Bottom);
     console.margin = 0.03f;
-    console.native_width = 615.0f;
-    console.native_height = 630.0f;
-    console.native_max_output_width = 1280.0f;
-    console.native_max_output_height = 800.0f;
     console.has_art = true;
 
     profile.rom_extensions = {"nds", "dsi", "ids", "srl"};
@@ -70,12 +66,6 @@ SystemProfile make_three_ds() {
     console.bottom = console_screen(171.0f / kArtWidth, 391.0f / kArtHeight, 320.0f / kArtWidth,
                                     240.0f / kArtHeight, ScreenId::Bottom);
     console.margin = 0.03f;
-    console.native_width = kArtWidth;
-    console.native_height = kArtHeight;
-    // One image pixel per 3DS pixel, so a display this size or smaller gets the
-    // artwork at its own size and both screens land exactly one-to-one.
-    console.native_max_output_width = 1280.0f;
-    console.native_max_output_height = 800.0f;
     console.has_art = true;
 
     profile.rom_extensions = {"3ds", "3dsx", "cci", "cxi", "app", "elf", "axf", "cia"};

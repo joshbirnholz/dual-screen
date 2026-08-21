@@ -80,15 +80,6 @@ Handedness other_hand(Handedness handedness) {
     return handedness == Handedness::Left ? Handedness::Right : Handedness::Left;
 }
 
-SystemScreens as_preview(const SystemScreens& screens) {
-    SystemScreens preview = screens;
-    // A tile is smaller than any threshold, so leaving this in would draw the
-    // console at full size across the rest of the menu.
-    preview.console.native_width = 0.0f;
-    preview.console.native_height = 0.0f;
-    return preview;
-}
-
 Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
     if (handedness == Handedness::Right) {
         return layout;
@@ -291,20 +282,6 @@ PixelRect layout_frame(const Layout& layout,
     const ConsoleFrame& console = screens.console;
     if (!layout.uses_console_frame || !console.exists() || window.w <= 0.0f || window.h <= 0.0f) {
         return window;
-    }
-    const bool native_fits = console.native_width > 0.0f && console.native_height > 0.0f &&
-                             window.w <= console.native_max_output_width &&
-                             window.h <= console.native_max_output_height;
-    if (native_fits) {
-        // Whole pixels, so the screens inside land on the pixel grid rather than
-        // half a pixel off it. Bigger than the window is allowed: an exact
-        // picture with its edges over the sides beats a soft one that fits.
-        PixelRect frame;
-        frame.w = console.native_width;
-        frame.h = console.native_height;
-        frame.x = std::round(window.x + (window.w - frame.w) * 0.5f);
-        frame.y = std::round(window.y + (window.h - frame.h) * 0.5f);
-        return frame;
     }
     PixelRect frame = window;
     if (console.margin > 0.0f) {

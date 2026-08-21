@@ -30,7 +30,7 @@ set(SAVE_FILE "${WORK_DIR}/data/dualscreen/saves/fake.srm")
 set(CASES
     "standard|upper=blue+lower=green+at=0.03,0.06,bezel+at=0.30,0.20,shell"
     "upper_focus|left=blue+at=0.86,0.785,green"
-    "touch_focus|right=green+at=0.115,0.145,blue"
+    "touch_focus|right=green+at=0.216,0.333,blue"
     "vertical|upper=blue+lower=green+topleft=black"
     "side_by_side|left=blue+right=green"
     "upper_on_tv|upper=blue+lower=green"
@@ -330,61 +330,6 @@ if(FILTER_SHOT_COUNT EQUAL 2)
     endif()
 endif()
 
-# ...except on the Standard layout at this size. The smoke test's window is
-# 1280x800, where that layout locks to the artwork's own pixel size and the
-# screens come out one-to-one -- and a screen drawn one-to-one is never smoothed,
-# whatever the setting says, because there is nothing to resample.
-set(STANDARD_SHOTS "")
-foreach(FILTERING true false)
-    set(STANDARD_HOME "${WORK_DIR}/standard-${FILTERING}")
-    file(REMOVE_RECURSE "${STANDARD_HOME}")
-    file(WRITE "${STANDARD_HOME}/config/dualscreen/settings.json"
-        "{\"default_bilinear_filtering\": ${FILTERING}}")
-    set(SHOT "${STANDARD_HOME}/shot.ppm")
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} -E env
-                "XDG_CONFIG_HOME=${STANDARD_HOME}/config"
-                "XDG_DATA_HOME=${STANDARD_HOME}/data"
-                "SDL_AUDIODRIVER=dummy"
-                "SDL_VIDEODRIVER=x11"
-                "${XVFB_RUN}" -a -s "-screen 0 1600x1000x24"
-                "${DUALSCREEN}"
-                    --game "${WORK_DIR}/fake.nds"
-                    --core "${MOCK_CORE}"
-                    --layout standard
-                    --windowed
-                    --exit-after-frames ${FRAME_COUNT}
-                    --screenshot "${SHOT}"
-        RESULT_VARIABLE RUN_RESULT
-        OUTPUT_VARIABLE RUN_OUTPUT
-        ERROR_VARIABLE RUN_ERROR)
-    if(NOT RUN_RESULT EQUAL 0 OR NOT EXISTS "${SHOT}")
-        message(STATUS "${RUN_OUTPUT}")
-        message(STATUS "${RUN_ERROR}")
-        message(SEND_ERROR "standard smoothing run (${FILTERING}) failed")
-        set(ANY_FAILED TRUE)
-    else()
-        list(APPEND STANDARD_SHOTS "${SHOT}")
-    endif()
-endforeach()
-
-list(LENGTH STANDARD_SHOTS STANDARD_SHOT_COUNT)
-if(STANDARD_SHOT_COUNT EQUAL 2)
-    list(GET STANDARD_SHOTS 0 STANDARD_ON_SHOT)
-    list(GET STANDARD_SHOTS 1 STANDARD_OFF_SHOT)
-    execute_process(
-        COMMAND "${CHECKER}" "${STANDARD_ON_SHOT}" "same=${STANDARD_OFF_SHOT}"
-        RESULT_VARIABLE CHECK_RESULT
-        OUTPUT_VARIABLE CHECK_OUTPUT
-        ERROR_VARIABLE CHECK_ERROR)
-    message(STATUS "standard, smoothing on vs off:\n${CHECK_OUTPUT}")
-    if(NOT CHECK_RESULT EQUAL 0)
-        message(STATUS "${CHECK_ERROR}")
-        message(SEND_ERROR "the Standard layout was smoothed at its own pixel size")
-        set(ANY_FAILED TRUE)
-    endif()
-endif()
-
 # The same app against a 3DS game: a different core, a different ROM extension,
 # and two screens that are different shapes from each other. The upper screen is
 # 5:3 and the touch screen 4:3, so a frontend still assuming they match would
@@ -402,7 +347,7 @@ set(THREE_DS_CASES
     # the picture: a point well inside every edge is the game, a point just
     # outside is plastic. Those pairs are what would catch a screen rectangle
     # measured wrong -- the picture alone would still look plausible.
-    "standard|upper=blue+lower=green+topleft=bezel+at=0.2996,0.6200,shell+at=0.3582,0.2950,blue+at=0.3285,0.2950,shell+at=0.6410,0.2950,blue+at=0.6723,0.2950,shell+at=0.3895,0.6950,green+at=0.6410,0.6950,shell+at=0.4988,0.8325,green+at=0.4988,0.8888,shell"
+    "standard|upper=blue+lower=green+topleft=bezel+at=0.4859,0.4700,shell+at=0.3398,0.2838,blue+at=0.3133,0.2838,shell+at=0.6578,0.2838,blue+at=0.6852,0.2838,shell+at=0.3750,0.7275,green+at=0.2852,0.6013,shell+at=0.6250,0.7275,green+at=0.6727,0.5825,shell"
     "side_by_side|left=blue+right=green"
 )
 

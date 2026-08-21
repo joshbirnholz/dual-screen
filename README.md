@@ -73,11 +73,10 @@ picture per console, a DS and a 3DS, and the game being played decides which is
 drawn. See [THIRD_PARTY.md](THIRD_PARTY.md) for a note about where those images
 came from.
 
-Both are drawn at one image pixel per console pixel, so on a display no bigger
-than a Deck's (1280x800) that layout is drawn at the artwork's own size rather
-than scaled to fit and every screen lands exactly one-to-one. On a smaller
-display the console runs off the edges, which is the right trade: an exact
-picture with its corners over the sides beats a soft one that fits.
+Both are scaled to fit whatever display they are drawn on, the same picture
+the Wii U Virtual Console's own Screen Settings shows at any size — filling
+the screen rather than sitting pinned to the artwork's own pixel size on a
+small display.
 
 Every layout works on both consoles. A 3DS's two screens are different shapes —
 400x240 above, 320x240 below — and each layout measures each screen against its
@@ -141,9 +140,10 @@ choice for both of them, like everything else on that menu.
 It is a request rather than an instruction, and what happens to it depends on
 how the screen actually lands. One texture pixel per display pixel is drawn
 untouched whatever the setting says — there is nothing to resample, and sampling
-it anyway could only soften it. That covers the Standard layout on a Deck, and
-the small screen of either focus layout, which comes out one-to-one at 1280x800
-by arithmetic rather than by design.
+it anyway could only soften it. That still happens wherever a screen's own
+arithmetic lands it exactly on its own pixel size — the small screen of either
+focus layout does this at some window sizes — but it is caught wherever it
+happens rather than something any one layout is built around.
 
 A screen with *more* texture than there is room for is always resampled, setting
 or no setting: that is what a core rendering at 2x into a smaller rect produces,
@@ -157,21 +157,19 @@ comfortably within wifi. Only screens the current layout actually needs are
 sent, and an unchanged frame is not sent at all.
 
 A 3DS game is served the same way, but it takes more work to get there: Citra
-renders on the GPU, so there is no copy of the frame in memory to send. Each
-screen the other device needs is read back off the card at **the resolution
-that device actually needs it at** — not always the console's own 400x240 and
-320x240, and not always the full render scale either. A companion tells the
-host its own window size when it connects and again whenever it resizes; the
-host works out, from the shared layout, how big a box that screen actually
-fills in that window, and reads it back at that size — never sharper than what
-was rendered (there is nothing more to send), never softer than the console's
-own resolution (below that a picture stops being worth looking at). Turning
-the render scale up sharpens what a companion sees precisely because of this:
-before, every screen was always sent at 400x240 regardless of the render
-scale, which is exactly backwards for two devices playing on real screens
-instead of a phantom "native" one. A companion that has not reported a size
-yet — the first frame or two after connecting — gets the console's own
-resolution, the safe fallback it always used.
+renders on the GPU, so there is no copy of the frame in memory to send. Every
+screen streams at the console's own resolution — 400x240 and 320x240 —
+regardless of the render scale, which stays a local sharpening on the device
+running the core rather than something a companion also pays for. A render
+scale above 1x means more to read back off the card and pack down for the
+wire, and deflated RGB565 is a general-purpose byte codec, not a video one:
+its cost is proportional to the pixel count a render scale multiplies, and at
+2x or 3x that made for a choppy stream rather than a sharper one. Streaming a
+companion more than the console's own resolution when it can use it — a
+companion's window is usually bigger than 400x240 — is worth doing, but not
+with this encoder; it needs a real hardware video pipeline (encode on the
+GPU, decode on the GPU, an actual codec bitstream) to be worth the bandwidth,
+which is future work.
 
 The send queue's backlog limit follows the same reasoning: it is measured in
 frame-times (roughly three frames' worth of whatever was last actually sent)

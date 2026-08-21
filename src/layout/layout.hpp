@@ -121,12 +121,6 @@ struct ConsoleFrame {
     ScreenPlacement bottom;
     // Padding around the console, as a fraction of the window.
     float margin = 0.0f;
-    // The artwork's own pixel size, when there is artwork, and the largest
-    // display that gets it drawn at that size rather than scaled.
-    float native_width = 0.0f;
-    float native_height = 0.0f;
-    float native_max_output_width = 0.0f;
-    float native_max_output_height = 0.0f;
     // Whether an illustration is drawn behind the screens. Without one the
     // arrangement is the same and the surround is left blank.
     bool has_art = false;
@@ -179,15 +173,6 @@ const char* to_string(Handedness handedness);
 const char* handedness_key(Handedness handedness);
 Handedness handedness_from_key(const std::string& key);
 Handedness other_hand(Handedness handedness);
-
-// The system's screens as they should be drawn into something that is not the
-// display: a preview tile, or anything else smaller than the real thing.
-//
-// It exists because one property -- drawing the console at its own pixel size on
-// a small display -- is about the display and nothing else. A tile is smaller
-// than any such threshold, so a layout drawn into one without this drew a
-// full-size console across the rest of the menu.
-SystemScreens as_preview(const SystemScreens& screens);
 
 // The layout as it should be drawn for a given hand: right-handed as written,
 // left-handed mirrored left to right, with any quarter turns reversed to match.
