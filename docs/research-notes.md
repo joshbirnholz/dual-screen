@@ -744,6 +744,22 @@ centred says nothing about the other, so reusing a single mask bit would
 have let a C-Stick still deflected from the menu leak into the game the
 same way an unmasked circle pad used to.
 
+**Reconnecting after leaving via the in-menu Disconnect button left the host
+paused forever, with no way for the companion to un-pause it.** Disconnect
+is only reachable from the layout menu, so `CompanionSession::menu_open_`
+was `true` at the exact moment a companion left that way -- and nothing
+reset it afterwards. The very first request the reconnected companion sent
+carried that stale `true`, telling the host the companion's menu was still
+open and pausing the game: no new frames, no new audio, which is exactly
+what reads as "connected but showing nothing." Worse, there was no way out
+of it from the companion's own side, since the menu that would send
+`menu_open = false` again is the one this device's own UI no longer thought
+was open -- only disconnecting yet again, this time from the host, actually
+cleared it (`drop_companion()` already reset the host's own copy correctly;
+it was always the companion's copy that leaked). `connect_to()`,
+`disconnect()` and `fail()` all reset `menu_open_` now, so a fresh session
+never starts already believing a menu is open.
+
 **The left stick is the circle pad, and on a 3DS that is all it is.** The stick
 used to set the d-pad bits unconditionally, on the reasoning that a DS has no
 stick and a player will reach for one anyway. That is right for a DS and wrong

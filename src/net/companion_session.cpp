@@ -41,6 +41,10 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     inbox_.clear();
     said_hello_ = false;
     ever_sent_input_ = false;
+    // Belt and suspenders alongside disconnect()'s and fail()'s own resets:
+    // whichever path the last session ended by, a fresh one starts with
+    // nothing carried over from it, this included.
+    menu_open_ = false;
 
     std::string error;
     if (!stream_.start_connect(host.address, host.session_port, &error)) {
@@ -65,6 +69,7 @@ void CompanionSession::disconnect() {
     stream_.close();
     inbox_.clear();
     said_hello_ = false;
+    menu_open_ = false;
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
         status_detail_.clear();
@@ -75,6 +80,7 @@ void CompanionSession::fail(const std::string& reason) {
     stream_.close();
     inbox_.clear();
     said_hello_ = false;
+    menu_open_ = false;
     status_ = Status::Failed;
     status_detail_ = reason;
     log_warn("companion session failed: " + reason);

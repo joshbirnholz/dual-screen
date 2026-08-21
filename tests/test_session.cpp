@@ -637,6 +637,63 @@ void test_companion_menu_pauses_the_host() {
     host.stop();
 }
 
+// Disconnecting is only reachable from the menu -- the Disconnect button is
+// on it -- so a device that just left had its own menu_open_ set at that
+// exact moment. If that survived into the next session, the very first
+// request the reconnected companion sends would tell the host its menu was
+// still open, pausing the host permanently with no way for the companion to
+// clear it: the menu that would send menu_open = false again is the one this
+// device no longer thinks is open.
+void test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Reconnect Host";
+    config.game_title = "Reconnecting";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Reconnect Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    const DiscoveredHost discovered = companion.hosts().front();
+    companion.connect_to(discovered);
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    // Leaves exactly the way the in-menu Disconnect button does: with the
+    // menu open.
+    companion.set_menu_open(true);
+    CHECK(spin(host, companion, [&] { return host.companion_menu_open(); }));
+    companion.disconnect();
+    CHECK(spin(host, companion, [&] { return !host.has_companion(); }));
+
+    companion.connect_to(discovered);
+    CHECK_MSG(paired(host, companion), "the companion could not reconnect");
+
+    // Any request carries the menu state, so an unrelated one is enough to
+    // show what the new session's first message actually said -- without
+    // this, host.companion_menu_open() reading false here would only prove
+    // drop_companion() reset the *host's* copy, which was never in question.
+    companion.request_filtering(true);
+    RequestMessage received;
+    const bool got_request = spin(host, companion, [&] { return host.take_request(received); });
+    CHECK_MSG(got_request, "the reconnected companion's request never reached the host");
+    CHECK_MSG(!received.menu_open,
+              "a stale menu_open_ from the last session leaked into the new one");
+
+    host.stop();
+}
+
 // A companion showing one screen still needs both the moment its menu opens: the
 // preview tiles draw every layout, including the one it is not being sent. The
 // catch is that a menu also pauses the game, so no new frame is coming to carry
@@ -749,6 +806,7 @@ int main() {
     test_companion_can_request_a_layout();
     test_shared_settings_stay_in_sync();
     test_companion_menu_pauses_the_host();
+    test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
     test_menu_gets_the_companion_both_screens();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
