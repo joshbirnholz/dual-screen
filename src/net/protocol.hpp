@@ -219,12 +219,22 @@ bool take_message(std::vector<uint8_t>& buffer,
 
 // --- pixel conversion -------------------------------------------------------
 
-// XRGB8888 -> deflated RGB565. `stride_pixels` is the source's row stride.
+// Which byte in each source pixel holds which channel. A CPU-rendered core's
+// framebuffer (and everything else in this app) is XRGB8888. A GPU-rendered
+// core's screen, read back with glReadPixels(GL_RGBA), comes off the card as
+// four bytes in R,G,B,A order and used to be swizzled into XRGB8888 to match
+// -- a second full-frame CPU pass on top of the one below, for a console
+// whose whole point is running above native resolution. Reading the source
+// order directly here instead means that pass is gone.
+enum class PixelChannelOrder { XrgbBytes, Rgba };
+
+// -> deflated RGB565. `stride_pixels` is the source's row stride.
 bool encode_screen_pixels(const uint32_t* pixels,
                           int width,
                           int height,
                           int stride_pixels,
-                          std::vector<uint8_t>& out);
+                          std::vector<uint8_t>& out,
+                          PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes);
 
 // The inverse, producing XRGB8888 the renderer can upload unchanged.
 bool decode_screen_pixels(const std::vector<uint8_t>& payload,

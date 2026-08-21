@@ -632,6 +632,37 @@ bound that matters -- how many frames of staleness a companion is allowed to
 fall behind by -- is now a property of frames rather than of bytes, which is
 what it was always meant to mean.
 
+**Streaming above native resolution was much slower than 1x, and the cost was
+self-inflicted.** A GPU-rendered screen's readback used to spend a full pass
+over every pixel swizzling `glReadPixels`'s R,G,B,A order into the XRGB8888
+`encode_screen_pixels()` expects, right before that same encoder spent a
+second full pass over the same pixels packing them down to RGB565. Local
+rendering never pays this at all -- `Texture::ChannelOrder` lets the shader
+read a texture in whatever order it actually arrived in, so `upload_screens()`
+uploads GPU output straight through with no CPU touching it. The network path
+had quietly reinvented the CPU-side conversion the render path had already
+learned to avoid, and at a render scale above 1x it is the same waste multiplied
+by however many times more pixels that scale produces. `ScreenReadback` now
+carries a `channel_order`, set to `Rgba` by the GPU path instead of swizzling;
+`encode_screen_pixels()` reads whichever byte holds red and which holds blue
+directly rather than assuming XRGB8888. One pass over the frame instead of two,
+scaling with render resolution the same way the rest of the cost already does.
+
+**A companion that vanished without saying goodbye could wedge the host's one
+connection slot shut, permanently.** Sleep, a dead Wi-Fi link, or the app being
+killed outright never sends `Bye`, and nothing was watching for that: sockets
+here had no keepalive, so a stream with a gone peer looks exactly like an idle,
+healthy one -- `recv()` just returns "try again" forever. `HostSession::poll()`
+only calls `accept()` while its one companion slot is empty, so that phantom
+connection sat in the slot indefinitely, and every real reconnect attempt after
+it completed its own TCP handshake (the kernel accepts into the listen backlog
+whether or not the app has called `accept()` yet) and then simply waited, since
+the host never got around to noticing it was there. `TcpStream` now turns on
+`SO_KEEPALIVE` with `TCP_KEEPIDLE`/`TCP_KEEPINTVL`/`TCP_KEEPCNT` shortened from
+the OS default of two hours to about ten seconds, on both the accepting and the
+connecting side, so a truly dead peer is noticed and dropped automatically
+rather than requiring the host to be restarted.
+
 **The left stick is the circle pad, and on a 3DS that is all it is.** The stick
 used to set the d-pad bits unconditionally, on the reasoning that a DS has no
 stick and a player will reach for one anyway. That is right for a DS and wrong

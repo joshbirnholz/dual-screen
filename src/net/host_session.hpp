@@ -110,6 +110,7 @@ public:
         int width = 0;
         int height = 0;
         int stride_pixels = 0;
+        PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes;
     };
 
     // Which screens the companion needs right now. Public because reading a

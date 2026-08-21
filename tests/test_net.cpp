@@ -3,6 +3,10 @@
 
 #include "test_support.hpp"
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <string>
@@ -230,6 +234,54 @@ void test_tcp_carries_framed_messages() {
     CHECK_MSG(client_saw_disconnect, "a closed peer was not reported as a disconnect");
 }
 
+// A peer that vanishes without closing (sleep, dead Wi-Fi, power loss) looks
+// identical to one still there unless something actively probes for it. If
+// nothing does, that connection sits "open" forever and, on the host side,
+// permanently occupies the one slot a real reconnect needs. Keepalive is what
+// notices, so both ends need it turned on with a short enough idle time to be
+// useful.
+void test_streams_enable_keepalive_with_a_short_idle_time() {
+    TcpListener listener;
+    std::string error;
+    CHECK_MSG(listener.start(0, &error), error);
+    const uint16_t port = listener.port();
+
+    TcpStream client;
+    CHECK_MSG(client.start_connect("127.0.0.1", port, &error), error);
+
+    TcpStream server;
+    const uint64_t deadline = monotonic_millis() + 2000;
+    while (!server.open() && monotonic_millis() < deadline) {
+        listener.accept(server);
+        std::vector<uint8_t> ignored;
+        client.pump(ignored, &error);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    CHECK_MSG(server.open(), "the listener never accepted the connection");
+    if (!server.open()) return;
+
+    for (const TcpStream* stream : {&client, &server}) {
+        const int descriptor = stream->descriptor_for_test();
+
+        int keepalive = 0;
+        socklen_t length = sizeof(keepalive);
+        CHECK(::getsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, &keepalive, &length) == 0);
+        CHECK_MSG(keepalive != 0, "a stream did not enable SO_KEEPALIVE");
+
+        int idle_seconds = 0;
+        length = sizeof(idle_seconds);
+        CHECK(::getsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, &idle_seconds, &length) == 0);
+        // The OS default is two hours -- ten seconds' worth of probing has to
+        // have actually been configured, not left at that default.
+        CHECK_MSG(idle_seconds > 0 && idle_seconds <= 10,
+                 "TCP_KEEPIDLE was left near the OS default (" +
+                     std::to_string(idle_seconds) + "s)");
+    }
+
+    client.close();
+    server.close();
+}
+
 // A refused connection has to surface as a failure rather than hanging.
 void test_connect_to_nothing_fails() {
     TcpStream stream;
@@ -257,6 +309,7 @@ int main() {
     test_browser_merges_and_expires();
     test_discovery_over_loopback();
     test_tcp_carries_framed_messages();
+    test_streams_enable_keepalive_with_a_short_idle_time();
     test_connect_to_nothing_fails();
     return test::finish("net");
 }

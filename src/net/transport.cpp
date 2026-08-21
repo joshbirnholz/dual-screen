@@ -25,6 +25,28 @@ bool set_non_blocking(int descriptor) {
     return flags >= 0 && ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 
+// Neither side ever sends anything the other doesn't need to reply to, so an
+// idle stream is normal, not a sign of trouble -- but a peer that vanished
+// without closing (a device that slept, lost Wi-Fi, or was powered off) looks
+// exactly the same from here as one still there, since nothing short of a
+// probe tells the two apart. Without this, that stream sits "open" forever:
+// the host's one companion slot is pinned on a connection that is never
+// coming back, so every real reconnect attempt after it completes its own TCP
+// handshake and then just waits, since the host never calls accept() while
+// the phantom still holds the slot. The OS default idle time before the first
+// probe is two hours, which is not useful here, so it is shortened to notice
+// within about ten seconds instead.
+void enable_keepalive(int descriptor) {
+    const int one = 1;
+    ::setsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+    const int idle_seconds = 3;
+    const int interval_seconds = 2;
+    const int probe_count = 3;
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, &idle_seconds, sizeof(idle_seconds));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPINTVL, &interval_seconds, sizeof(interval_seconds));
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPCNT, &probe_count, sizeof(probe_count));
+}
+
 std::string describe(const sockaddr_in& address) {
     char text[INET_ADDRSTRLEN] = {0};
     ::inet_ntop(AF_INET, &address.sin_addr, text, sizeof(text));
@@ -76,6 +98,7 @@ TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
     // Frames are latency-sensitive and small; waiting to coalesce them adds
     // exactly the delay this is meant to avoid.
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    enable_keepalive(descriptor);
     return stream;
 }
 
@@ -90,6 +113,7 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
     set_non_blocking(descriptor_);
     const int one = 1;
     ::setsockopt(descriptor_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    enable_keepalive(descriptor_);
 
     sockaddr_in target {};
     target.sin_family = AF_INET;

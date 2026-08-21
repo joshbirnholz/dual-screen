@@ -421,7 +421,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
         frame.width = static_cast<uint16_t>(source.width);
         frame.height = static_cast<uint16_t>(source.height);
         if (!encode_screen_pixels(source.pixels, source.width, source.height,
-                                  source.stride_pixels, frame.payload)) {
+                                  source.stride_pixels, frame.payload, source.channel_order)) {
             continue;
         }
         encode_frame(frame, out);

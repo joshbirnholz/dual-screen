@@ -425,10 +425,16 @@ void test_read_screen_bounds_the_target_size() {
     const uint32_t top_pixel = top.pixels[(top.height / 2) * top.stride_pixels + top.width / 2];
     const uint32_t bottom_pixel =
         bottom.pixels[(bottom.height / 2) * bottom.stride_pixels + bottom.width / 2];
-    // Packed XRGB8888: blue in the low byte, green in the next one up.
-    CHECK_MSG((top_pixel & 0xff) > ((top_pixel >> 8) & 0xff),
+    // A GPU readback comes back R,G,B,A off the card rather than XRGB8888, and
+    // is tagged as such rather than paying to swizzle it -- see ChannelOrder.
+    CHECK(top.channel_order == ChannelOrder::Rgba);
+    CHECK(bottom.channel_order == ChannelOrder::Rgba);
+    // Red in the low byte, green next, blue the one above that.
+    CHECK_MSG(((top_pixel >> 16) & 0xff) > (top_pixel & 0xff) &&
+                  ((top_pixel >> 16) & 0xff) > ((top_pixel >> 8) & 0xff),
               "the upper screen was not where it should be at an arbitrary size");
-    CHECK_MSG(((bottom_pixel >> 8) & 0xff) > (bottom_pixel & 0xff),
+    CHECK_MSG(((bottom_pixel >> 8) & 0xff) > (bottom_pixel & 0xff) &&
+                  ((bottom_pixel >> 8) & 0xff) > ((bottom_pixel >> 16) & 0xff),
               "the touch screen was not where it should be at an arbitrary size");
 
     source.close();

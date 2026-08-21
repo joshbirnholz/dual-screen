@@ -612,6 +612,7 @@ bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
         out.width = readback.width;
         out.height = readback.height;
         out.stride_pixels = readback.width;
+        out.channel_order = ChannelOrder::Rgba;
         return true;  // already read this frame at this size, for the other caller
     }
 
@@ -642,22 +643,20 @@ bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
 
     const std::size_t count = static_cast<std::size_t>(target_width) * target_height;
     readback.pixels.resize(count);
-    // GL_RGBA rather than a BGRA read: every driver takes this one, and the
-    // swizzle below costs a fraction of what compressing the frame costs.
+    // GL_RGBA rather than a BGRA read: every driver takes this one. What comes
+    // back is R,G,B,A in memory rather than the XRGB8888 everything else in
+    // this app uses -- it used to be swizzled into that order right here, a
+    // second full-frame CPU pass on top of the RGB565 one encode_screen_pixels
+    // already has to do. Tagging it Rgba instead lets that encoder read the
+    // source order directly, so the swizzle is gone rather than merely cheap.
     gl::ReadPixels(0, 0, target_width, target_height, GL_RGBA, GL_UNSIGNED_BYTE,
                    readback.pixels.data());
     gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
-    // What came back is R,G,B,A in memory; what the encoder reads is XRGB8888.
-    //
     // The rows need no flipping. glReadPixels starts at the framebuffer's
     // bottom-left, which for these textures is the screen's top row: the crop
     // that filled this texture already turned the core's bottom-left origin
     // into the top-row-first order every texture here is uploaded in.
-    for (uint32_t& pixel : readback.pixels) {
-        pixel = ((pixel & 0x000000ffu) << 16) | (pixel & 0x0000ff00u) |
-                ((pixel & 0x00ff0000u) >> 16);
-    }
 
     readback.width = target_width;
     readback.height = target_height;
@@ -669,6 +668,7 @@ bool LibretroCoreScreenSource::read_screen_from_gpu(ScreenId screen,
     out.width = readback.width;
     out.height = readback.height;
     out.stride_pixels = readback.width;
+    out.channel_order = ChannelOrder::Rgba;
     return true;
 }
 

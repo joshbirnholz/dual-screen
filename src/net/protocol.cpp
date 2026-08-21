@@ -494,23 +494,29 @@ bool encode_screen_pixels(const uint32_t* pixels,
                           int width,
                           int height,
                           int stride_pixels,
-                          std::vector<uint8_t>& out) {
+                          std::vector<uint8_t>& out,
+                          PixelChannelOrder channel_order) {
     out.clear();
     if (pixels == nullptr || width <= 0 || height <= 0) {
         return false;
     }
 
-    // XRGB8888 -> RGB565 halves the bytes before compression, and the two bits
-    // per channel this drops are not visible on a DS screen scaled to a TV.
+    // -> RGB565 halves the bytes before compression, and the two bits per
+    // channel this drops are not visible on a DS screen scaled to a TV. Which
+    // byte holds red and which holds blue depends on the source; green is
+    // always the middle byte either way.
+    const bool rgba = (channel_order == PixelChannelOrder::Rgba);
     std::vector<uint8_t> raw(static_cast<std::size_t>(width) * height * 2);
     std::size_t offset = 0;
     for (int row = 0; row < height; ++row) {
         const uint32_t* source = pixels + static_cast<std::size_t>(row) * stride_pixels;
         for (int column = 0; column < width; ++column) {
             const uint32_t pixel = source[column];
-            const uint16_t packed = static_cast<uint16_t>((((pixel >> 19) & 0x1fu) << 11) |
+            const uint32_t red_bits = rgba ? (pixel >> 3) : (pixel >> 19);
+            const uint32_t blue_bits = rgba ? (pixel >> 19) : (pixel >> 3);
+            const uint16_t packed = static_cast<uint16_t>(((red_bits & 0x1fu) << 11) |
                                                           (((pixel >> 10) & 0x3fu) << 5) |
-                                                          ((pixel >> 3) & 0x1fu));
+                                                          (blue_bits & 0x1fu));
             raw[offset++] = static_cast<uint8_t>(packed & 0xffu);
             raw[offset++] = static_cast<uint8_t>((packed >> 8) & 0xffu);
         }

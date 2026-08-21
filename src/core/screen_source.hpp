@@ -22,11 +22,15 @@ struct ScreenTextures {
 // what this machine draws and this is what leaves it: a source that renders on
 // the GPU has no CPU copy of its frame at all and has to be asked for one.
 struct ScreenReadback {
-    // XRGB8888, the byte order the wire encoder reads.
+    // Usually XRGB8888, the byte order the wire encoder reads by default --
+    // except a screen read back off the GPU, whose channel_order says so, so
+    // the CPU pass that would otherwise put it back in that order can be
+    // skipped rather than paid for on every frame.
     const uint32_t* pixels = nullptr;
     int width = 0;
     int height = 0;
     int stride_pixels = 0;
+    ChannelOrder channel_order = ChannelOrder::XrgbBytes;
     bool valid() const { return pixels != nullptr && width > 0 && height > 0; }
 };
 

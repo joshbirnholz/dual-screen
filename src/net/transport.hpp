@@ -41,6 +41,9 @@ public:
     // Takes ownership of an accepted descriptor.
     static TcpStream adopt(int descriptor, std::string peer_address);
 
+    // The raw descriptor, for a test to inspect socket options directly.
+    int descriptor_for_test() const { return descriptor_; }
+
 private:
     int descriptor_ = -1;
     bool connecting_ = false;

@@ -1915,16 +1915,22 @@ int App::run(const AppOptions& options) {
                 impl.source->read_screen(ScreenId::Bottom, bottom, target_width, target_height);
             }
             if (top.valid() || bottom.valid()) {
+                const auto wire_order = [](ChannelOrder order) {
+                    return order == ChannelOrder::Rgba ? net::PixelChannelOrder::Rgba
+                                                       : net::PixelChannelOrder::XrgbBytes;
+                };
                 net::HostSession::ScreenPixels top_pixels;
                 top_pixels.pixels = top.pixels;
                 top_pixels.width = top.width;
                 top_pixels.height = top.height;
                 top_pixels.stride_pixels = top.stride_pixels;
+                top_pixels.channel_order = wire_order(top.channel_order);
                 net::HostSession::ScreenPixels bottom_pixels;
                 bottom_pixels.pixels = bottom.pixels;
                 bottom_pixels.width = bottom.width;
                 bottom_pixels.height = bottom.height;
                 bottom_pixels.stride_pixels = bottom.stride_pixels;
+                bottom_pixels.channel_order = wire_order(bottom.channel_order);
                 impl.host_session->publish_screens(top_pixels, bottom_pixels, serial);
             }
         }
