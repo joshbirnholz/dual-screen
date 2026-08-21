@@ -156,6 +156,31 @@ void test_stick_click_is_not_a_ds_button() {
     CHECK_EQ(state.buttons, 0u);
 }
 
+// The right stick is a second, independent axis -- the C-Stick a Circle Pad
+// Pro or New 3DS reads, unrelated to the circle pad on the left.
+void test_right_stick_reaches_the_c_stick() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_RIGHTX, -32000);
+    SDL_GameControllerUpdate();
+    input.begin_frame();
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::ThreeDs).screens);
+    const DsInputState state = input.ds_state();
+
+    input.shutdown();
+    pad.detach();
+
+    CHECK_MSG(state.c_stick_x < -16000, "the C-Stick did not follow the right stick");
+    CHECK_EQ(state.circle_x, 0);
+}
+
 // Counts the UI actions of one kind that a single press produces. Once, not
 // twice: Steam Input presents the pad twice over, and a doubled toggle would
 // cancel itself out and look like the button doing nothing.
@@ -321,6 +346,7 @@ int main() {
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();
     test_stick_click_is_not_a_ds_button();
+    test_right_stick_reaches_the_c_stick();
     test_stick_click_toggles_filtering();
     test_face_buttons_reach_the_core();
 

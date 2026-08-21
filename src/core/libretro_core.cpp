@@ -1030,14 +1030,16 @@ int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned in
     }
 
     if (device == RETRO_DEVICE_ANALOG) {
-        // Only the left stick is the circle pad. The right one is Citra's
-        // C-stick, which nothing here maps yet, and reporting a centred stick
-        // for it is the same as reporting nothing.
-        if (index != RETRO_DEVICE_INDEX_ANALOG_LEFT) {
-            return 0;
+        // The left stick is the circle pad; the right one is Citra's C-Stick,
+        // which stands in for a Circle Pad Pro or New 3DS -- games built for
+        // neither simply never read it.
+        if (index == RETRO_DEVICE_INDEX_ANALOG_LEFT) {
+            if (id == RETRO_DEVICE_ID_ANALOG_X) return input_state_->circle_x;
+            if (id == RETRO_DEVICE_ID_ANALOG_Y) return input_state_->circle_y;
+        } else if (index == RETRO_DEVICE_INDEX_ANALOG_RIGHT) {
+            if (id == RETRO_DEVICE_ID_ANALOG_X) return input_state_->c_stick_x;
+            if (id == RETRO_DEVICE_ID_ANALOG_Y) return input_state_->c_stick_y;
         }
-        if (id == RETRO_DEVICE_ID_ANALOG_X) return input_state_->circle_x;
-        if (id == RETRO_DEVICE_ID_ANALOG_Y) return input_state_->circle_y;
         return 0;
     }
 

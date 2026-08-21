@@ -29,6 +29,12 @@ struct DsInputState {
     // A Link Between Worlds cannot be moved without them.
     int16_t circle_x = 0;
     int16_t circle_y = 0;
+    // The right stick, standing in for a Circle Pad Pro or New 3DS's C-Stick.
+    // Only the handful of 3DS games built for one of those read it at all; a
+    // DS and a plain Old 3DS both ignore it, the same as the circle pad does
+    // on a DS.
+    int16_t c_stick_x = 0;
+    int16_t c_stick_y = 0;
 
     bool pressed(DsButton button) const {
         return (buttons & (1u << static_cast<unsigned>(button))) != 0u;
@@ -44,6 +50,8 @@ struct DsInputState {
         touch_y = 0;
         circle_x = 0;
         circle_y = 0;
+        c_stick_x = 0;
+        c_stick_y = 0;
     }
 };
 

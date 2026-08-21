@@ -167,6 +167,9 @@ void test_input_round_trip() {
     // push the wrong way.
     sent.circle_x = -12345;
     sent.circle_y = 32000;
+    // Same reasoning, and the same wire slot shape, as the circle pad above.
+    sent.c_stick_x = -30000;
+    sent.c_stick_y = 8000;
 
     std::vector<uint8_t> buffer;
     encode_input(sent, buffer);
@@ -183,6 +186,8 @@ void test_input_round_trip() {
     CHECK_EQ(received.touch_y, 150);
     CHECK_EQ(received.circle_x, -12345);
     CHECK_EQ(received.circle_y, 32000);
+    CHECK_EQ(received.c_stick_x, -30000);
+    CHECK_EQ(received.c_stick_y, 8000);
 }
 
 // Several messages written back to back must come out one at a time, in order,

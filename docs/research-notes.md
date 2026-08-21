@@ -729,6 +729,21 @@ keycode=97 character=97` for the press, `down=0 ... character=0` for the
 release. Confirmed the smoke test actually catches a regression here by
 reverting the environment handler and watching that exact assertion fail.
 
+**The right stick never reached a 3DS game's Circle Pad Pro / New 3DS
+C-Stick support.** `on_input_state()` only ever answered
+`RETRO_DEVICE_INDEX_ANALOG_LEFT`; the right stick's index was declined
+outright, with a comment admitting nothing mapped it yet. `DsInputState`
+now carries `c_stick_x`/`c_stick_y` alongside the circle pad, filled in from
+`SDL_CONTROLLER_AXIS_RIGHTX`/`RIGHTY` the same way the left stick already
+was, and `RETRO_DEVICE_INDEX_ANALOG_RIGHT` answers with them. Every layer
+the circle pad already crossed needed the same second lane: the wire
+protocol (`InputMessage`, protocol version 8), the host's merge of local
+and companion input (strongest deflection wins, same as the circle pad), and
+`HeldInputGate`, which now masks the two sticks independently -- one being
+centred says nothing about the other, so reusing a single mask bit would
+have let a C-Stick still deflected from the menu leak into the game the
+same way an unmasked circle pad used to.
+
 **The left stick is the circle pad, and on a 3DS that is all it is.** The stick
 used to set the d-pad bits unconditionally, on the reasoning that a DS has no
 stick and a player will reach for one anyway. That is right for a DS and wrong

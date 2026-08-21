@@ -90,12 +90,19 @@ void test_core_loads_and_runs() {
     // core simply ignores it, so it is always sent.
     input.circle_x = -20000;
     input.circle_y = 15000;
+    // Same for the right stick, standing in for a Circle Pad Pro or New
+    // 3DS's C-Stick.
+    input.c_stick_x = 9000;
+    input.c_stick_y = -4000;
     core.run_frame();
     bool saw_circle = false;
+    bool saw_c_stick = false;
     for (const std::string& message : core.core_messages()) {
         if (message == "circle -20000,15000") saw_circle = true;
+        if (message == "c_stick 9000,-4000") saw_c_stick = true;
     }
     CHECK_MSG(saw_circle, "the circle pad never reached the core");
+    CHECK_MSG(saw_c_stick, "the C-Stick never reached the core");
 
     const CoreVideoFrame& frame = core.video_frame();
     CHECK(frame.valid());

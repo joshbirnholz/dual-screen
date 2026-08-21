@@ -1889,6 +1889,12 @@ int App::run(const AppOptions& options) {
                 if (std::abs(remote.circle_y) > std::abs(combined.circle_y)) {
                     combined.circle_y = remote.circle_y;
                 }
+                if (std::abs(remote.c_stick_x) > std::abs(combined.c_stick_x)) {
+                    combined.c_stick_x = remote.c_stick_x;
+                }
+                if (std::abs(remote.c_stick_y) > std::abs(combined.c_stick_y)) {
+                    combined.c_stick_y = remote.c_stick_y;
+                }
                 if (remote.touching && !combined.touching) {
                     combined.touching = true;
                     combined.touch_x = remote.touch_x;

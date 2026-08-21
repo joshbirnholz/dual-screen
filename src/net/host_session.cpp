@@ -207,6 +207,8 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             companion_input_.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
             companion_input_.circle_x = input.circle_x;
             companion_input_.circle_y = input.circle_y;
+            companion_input_.c_stick_x = input.c_stick_x;
+            companion_input_.c_stick_y = input.c_stick_y;
             companion_input_fresh_ = true;
             break;
         }

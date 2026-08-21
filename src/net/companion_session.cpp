@@ -231,6 +231,8 @@ void CompanionSession::send_input(const DsInputState& state) {
         state.touching == last_sent_input_.touching &&
         state.circle_x == last_sent_input_.circle_x &&
         state.circle_y == last_sent_input_.circle_y &&
+        state.c_stick_x == last_sent_input_.c_stick_x &&
+        state.c_stick_y == last_sent_input_.c_stick_y &&
         (!state.touching || (state.touch_x == last_sent_input_.touch_x &&
                              state.touch_y == last_sent_input_.touch_y))) {
         return;
@@ -243,6 +245,8 @@ void CompanionSession::send_input(const DsInputState& state) {
     message.touch_y = static_cast<int16_t>(state.touch_y);
     message.circle_x = state.circle_x;
     message.circle_y = state.circle_y;
+    message.c_stick_x = state.c_stick_x;
+    message.c_stick_y = state.c_stick_y;
     std::vector<uint8_t> out;
     encode_input(message, out);
     stream_.send(out);

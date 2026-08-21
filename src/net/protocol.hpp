@@ -20,7 +20,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 7;
+constexpr uint16_t kProtocolVersion = 8;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -178,6 +178,9 @@ struct InputMessage {
     // did not send these would be able to press buttons but not walk.
     int16_t circle_x = 0;
     int16_t circle_y = 0;
+    // The right stick, standing in for a Circle Pad Pro or New 3DS's C-Stick.
+    int16_t c_stick_x = 0;
+    int16_t c_stick_y = 0;
 };
 
 // --- encoding ---------------------------------------------------------------

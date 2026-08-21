@@ -27,15 +27,21 @@ public:
         masked_buttons_ = 0;
         masked_touch_ = false;
         masked_stick_ = false;
+        masked_c_stick_ = false;
     }
 
     // Feeds one frame of physically-held state. Call this every frame, even
     // while the game is not listening, so that arming captures the real state.
-    void update(uint32_t held_buttons, bool touch_down, bool stick_off_centre = false) {
+    // The two sticks are masked independently -- the circle pad and the
+    // C-Stick are unrelated axes, and one being centred says nothing about
+    // the other.
+    void update(uint32_t held_buttons, bool touch_down, bool stick_off_centre = false,
+               bool c_stick_off_centre = false) {
         if (arming_) {
             masked_buttons_ = held_buttons;
             masked_touch_ = touch_down;
             masked_stick_ = stick_off_centre;
+            masked_c_stick_ = c_stick_off_centre;
             arming_ = false;
         }
         // A mask bit survives only as long as the input stays held.
@@ -46,29 +52,38 @@ public:
         if (!stick_off_centre) {
             masked_stick_ = false;
         }
+        if (!c_stick_off_centre) {
+            masked_c_stick_ = false;
+        }
         buttons_ = held_buttons & ~masked_buttons_;
         touching_ = touch_down && !masked_touch_;
         stick_live_ = !masked_stick_;
+        c_stick_live_ = !masked_c_stick_;
     }
 
     // What the game should actually see this frame.
     uint32_t buttons() const { return buttons_; }
     bool touching() const { return touching_; }
-    // False while the stick is still where the menu left it. The value itself
+    // False while a stick is still where the menu left it. The value itself
     // is analogue, so there is nothing to mask bit by bit: it is passed on or
     // it reads as centred.
     bool stick_live() const { return stick_live_; }
+    bool c_stick_live() const { return c_stick_live_; }
 
-    bool is_masking() const { return masked_buttons_ != 0 || masked_touch_ || masked_stick_; }
+    bool is_masking() const {
+        return masked_buttons_ != 0 || masked_touch_ || masked_stick_ || masked_c_stick_;
+    }
 
 private:
     bool arming_ = false;
     uint32_t masked_buttons_ = 0;
     bool masked_touch_ = false;
     bool masked_stick_ = false;
+    bool masked_c_stick_ = false;
     uint32_t buttons_ = 0;
     bool touching_ = false;
     bool stick_live_ = true;
+    bool c_stick_live_ = true;
 };
 
 }  // namespace ds

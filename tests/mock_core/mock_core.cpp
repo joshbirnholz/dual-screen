@@ -307,6 +307,8 @@ unsigned g_frame_counter = 0;
 bool g_layout_option_honoured = false;
 int16_t g_reported_circle_x = 0;
 int16_t g_reported_circle_y = 0;
+int16_t g_reported_c_stick_x = 0;
+int16_t g_reported_c_stick_y = 0;
 
 // Stand-in for cartridge save RAM. The "game" stamps a magic value into it as
 // it runs; on a later launch, finding that magic proves the frontend both wrote
@@ -725,6 +727,22 @@ RETRO_API void retro_run(void) {
             g_reported_circle_y = circle_y;
             static char text[64];
             std::snprintf(text, sizeof(text), "circle %d,%d", circle_x, circle_y);
+            struct retro_message message = {text, 60};
+            g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+        }
+        // Same idea, for the right stick -- a Circle Pad Pro or New 3DS's
+        // C-Stick.
+        const int16_t c_stick_x = g_input_state(0, RETRO_DEVICE_ANALOG,
+                                                RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                                RETRO_DEVICE_ID_ANALOG_X);
+        const int16_t c_stick_y = g_input_state(0, RETRO_DEVICE_ANALOG,
+                                                RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+                                                RETRO_DEVICE_ID_ANALOG_Y);
+        if (c_stick_x != g_reported_c_stick_x || c_stick_y != g_reported_c_stick_y) {
+            g_reported_c_stick_x = c_stick_x;
+            g_reported_c_stick_y = c_stick_y;
+            static char text[64];
+            std::snprintf(text, sizeof(text), "c_stick %d,%d", c_stick_x, c_stick_y);
             struct retro_message message = {text, 60};
             g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
         }

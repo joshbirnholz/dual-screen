@@ -397,6 +397,13 @@ DsInputState InputManager::poll_held_state() const {
         if (std::abs(raw_x) > std::abs(held.circle_x)) held.circle_x = raw_x;
         if (std::abs(raw_y) > std::abs(held.circle_y)) held.circle_y = raw_y;
 
+        // The right stick stands in for a Circle Pad Pro or New 3DS's
+        // C-Stick, the same way the left one is the circle pad.
+        const int16_t raw_c_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
+        const int16_t raw_c_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
+        if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
+        if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
+
         // The triggers double as L and R. The DS's shoulder buttons are
         // digital, but plenty of people reach for the triggers first, and a
         // pad that has both should honour either.
@@ -472,21 +479,27 @@ void InputManager::end_frame(const Layout& layout,
     const bool pointer_down = update_pointer(output_width, output_height);
     // Off centre by enough that the menu would have moved on it, which is the
     // deflection worth holding back after the menu closes.
+    const int16_t deadzone_threshold = static_cast<int16_t>(settings_.stick_deadzone * 32767.0f);
     const bool stick_off_centre =
-        std::abs(held.circle_x) > static_cast<int>(settings_.stick_deadzone * 32767.0f) ||
-        std::abs(held.circle_y) > static_cast<int>(settings_.stick_deadzone * 32767.0f);
-    held_input_gate_.update(held.buttons, pointer_down, stick_off_centre);
+        std::abs(held.circle_x) > deadzone_threshold || std::abs(held.circle_y) > deadzone_threshold;
+    const bool c_stick_off_centre = std::abs(held.c_stick_x) > deadzone_threshold ||
+                                    std::abs(held.c_stick_y) > deadzone_threshold;
+    held_input_gate_.update(held.buttons, pointer_down, stick_off_centre, c_stick_off_centre);
 
     ds_state_.clear();
     if (game_input_enabled_) {
         ds_state_.buttons = held_input_gate_.buttons();
-        // The stick reaches the game as itself. Every layer below this one --
-        // the wire, the core's analog callback -- already carried it; nothing
-        // filled it in, so a 3DS could be handed a circle pad that was always
-        // centred.
+        // The sticks reach the game as themselves. Every layer below this one
+        // -- the wire, the core's analog callback -- already carries them;
+        // nothing filled them in, so a 3DS could be handed a stick that was
+        // always centred.
         if (held_input_gate_.stick_live()) {
             ds_state_.circle_x = held.circle_x;
             ds_state_.circle_y = held.circle_y;
+        }
+        if (held_input_gate_.c_stick_live()) {
+            ds_state_.c_stick_x = held.c_stick_x;
+            ds_state_.c_stick_y = held.c_stick_y;
         }
         if (held_input_gate_.touching()) {
             DsTouchPoint point;
