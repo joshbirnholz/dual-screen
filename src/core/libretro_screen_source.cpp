@@ -387,6 +387,14 @@ void LibretroCoreScreenSource::set_render_scale(int scale) {
     log_info("render scale " + std::to_string(render_scale_) + "x");
 }
 
+void LibretroCoreScreenSource::reset() {
+    if (!core_) {
+        return;
+    }
+    core_->reset();
+    log_info("game reset");
+}
+
 void LibretroCoreScreenSource::apply_render_scale() {
     if (!core_) {
         return;

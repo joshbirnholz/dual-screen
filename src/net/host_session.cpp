@@ -250,6 +250,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_render_scale = true;
                 request.render_scale = request_.render_scale;
             }
+            if (have_request_ && !request.wants_reset && request_.wants_reset) {
+                request.wants_reset = true;
+            }
             request_ = request;
             have_request_ = true;
             if (request.menu_open != companion_menu_open_) {

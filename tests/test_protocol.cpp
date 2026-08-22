@@ -108,6 +108,7 @@ void test_request_round_trip() {
     sent.display_width = 1920;
     sent.display_height = 1080;
     sent.menu_open = true;
+    sent.wants_reset = true;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -131,6 +132,7 @@ void test_request_round_trip() {
     CHECK_EQ(static_cast<int>(received.display_width), 1920);
     CHECK_EQ(static_cast<int>(received.display_height), 1080);
     CHECK_EQ(received.menu_open, true);
+    CHECK_EQ(received.wants_reset, true);
 
     // A request that means none of it round-trips as such rather than as an
     // accidental instruction.
@@ -147,11 +149,12 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_render_scale, false);
     CHECK_EQ(received_quiet.wants_display_size, false);
     CHECK_EQ(received_quiet.menu_open, false);
+    CHECK_EQ(received_quiet.wants_reset, false);
 
     // An audio target outside the three that exist is refused rather than
     // becoming one of them by accident.
     std::vector<uint8_t> corrupt(payload);
-    corrupt[corrupt.size() - 11] = 9;  // the audio target byte
+    corrupt[corrupt.size() - 12] = 9;  // the audio target byte
     RequestMessage rejected;
     CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
 }

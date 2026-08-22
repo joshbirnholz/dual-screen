@@ -33,6 +33,9 @@ struct LayoutPickerResult {
     // The render scale was cycled. Like the pointer, it belongs to this device
     // alone -- it is a setting on the core, and only one device runs one.
     bool render_scale_changed = false;
+    // Reset was chosen. Unlike the settings above there is no new value to
+    // adopt -- the caller just restarts the game.
+    bool reset_requested = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -118,7 +121,7 @@ private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
-    enum class Footer { Filtering, RenderScale, Hands, Sound, Cursor, Resume, Disconnect, Quit };
+    enum class Footer { Filtering, RenderScale, Hands, Sound, Cursor, Reset, Resume, Disconnect, Quit };
 
     struct Geometry {
         std::vector<PixelRect> tiles;

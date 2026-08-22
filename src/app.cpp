@@ -330,6 +330,10 @@ struct App::Impl {
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
     void request_render_scale(int scale);
+    // Restarts the running game. On a companion this asks the host, since only
+    // the host runs a core to restart; there is nothing to adopt back, since
+    // there is no value beyond the moment it happens.
+    void request_reset();
     // Applies and persists a host-side change to any of them.
     void adopt_filtering(bool bilinear);
     void adopt_render_scale(int scale);
@@ -749,6 +753,16 @@ void App::Impl::adopt_render_scale(int scale) {
     } else {
         settings.default_render_scale = render_scale;
         settings.save(paths);
+    }
+}
+
+void App::Impl::request_reset() {
+    if (is_companion()) {
+        companion_session->request_reset();
+        return;  // only the host has a core to reset
+    }
+    if (source) {
+        source->reset();
     }
 }
 
@@ -1256,6 +1270,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 settings.save(paths);
                 log_info(std::string("pointer: ") + to_string(settings.cursor_mode));
             }
+            if (result.reset_requested) {
+                request_reset();
+            }
             if (result.disconnect_requested) {
                 if (host_session) {
                     host_session->disconnect_companion("you ended the session");
@@ -1267,7 +1284,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
             } else if (result.quit_requested) {
                 running = false;
-            } else if (result.close_requested) {
+            } else if (result.close_requested || result.reset_requested) {
                 if (is_companion()) {
                     companion_session->set_menu_open(false);
                     state = State::Companion;
@@ -1782,6 +1799,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_render_scale) {
                     impl.adopt_render_scale(request.render_scale);
+                }
+                if (request.wants_reset && impl.source) {
+                    impl.source->reset();
                 }
             }
             // Whichever screen the companion took, the host shows the other.

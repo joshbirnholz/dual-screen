@@ -134,6 +134,51 @@ void test_core_loads_and_runs() {
     core.unload();
 }
 
+// A reset restarts the core's own internal state, the way a console's reset
+// button would -- not just a fresh video frame, but retro_reset() actually
+// reaching the core.
+void test_reset_restarts_the_core() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    LibretroCore core;
+    DsInputState input;
+    core.set_input_state(&input);
+    core.force_option("melonds_number_of_screen_layouts", "1");
+    core.force_option("melonds_screen_layout1", "top-bottom");
+    core.force_option("melonds_screen_gap", "0");
+    core.force_option("melonds_render_mode", "software");
+    core.force_option("melonds_touch_mode", "touch");
+    core.force_option("melonds_show_cursor", "disabled");
+
+    std::string error;
+    CHECK_MSG(core.load(core_path, &error), error);
+    const std::string rom = make_fake_rom();
+    CHECK_MSG(core.load_game(rom, &error), error);
+
+    // A no-op with nothing loaded must not crash.
+    LibretroCore unloaded;
+    unloaded.reset();
+
+    // The mock mirrors its own frame counter into byte 4 of its save RAM on
+    // every frame, which is a simpler way to see whether retro_reset() reached
+    // it than decoding the moving bar out of the video frame.
+    auto save_counter_byte = [&]() {
+        return static_cast<const uint8_t*>(core.save_ram_data())[4];
+    };
+    core.run_frame();
+    core.run_frame();
+    core.run_frame();
+    CHECK_EQ(static_cast<int>(save_counter_byte()), 2);
+
+    core.reset();
+    core.run_frame();
+    CHECK_MSG(save_counter_byte() == 0,
+              "resetting the core did not restart its internal state");
+
+    core.unload();
+}
+
 void test_screen_source_reports_a_valid_split() {
     const std::string core_path = mock_core_path();
     if (core_path.empty()) return;
@@ -601,6 +646,7 @@ void test_save_ram_is_skipped_without_a_path() {
 
 int main() {
     test_core_loads_and_runs();
+    test_reset_restarts_the_core();
     test_screen_source_reports_a_valid_split();
     test_screen_source_handles_a_3ds_core();
     test_render_scale_only_changes_the_resolution();

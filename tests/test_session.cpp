@@ -556,6 +556,14 @@ void test_shared_settings_stay_in_sync() {
     CHECK_MSG(spin(host, companion, [&] { return companion.host_render_scale() == 2; }),
               "the host's render scale never reached the companion");
 
+    // Reset is one-shot: there is no value to broadcast back, just the request
+    // itself reaching the host.
+    companion.request_reset();
+    const bool asked_reset = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_reset;
+    });
+    CHECK_MSG(asked_reset, "the reset request never reached the host");
+
     // The companion's window size travels the other way from everything
     // above: the host keeps it privately, to decide how much detail a screen
     // it sends is worth, rather than adopting and broadcasting it like a

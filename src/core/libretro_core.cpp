@@ -561,6 +561,13 @@ void LibretroCore::run_frame() {
     api_->retro_run();
 }
 
+void LibretroCore::reset() {
+    if (handle_ == nullptr || !game_loaded_) {
+        return;
+    }
+    api_->retro_reset();
+}
+
 void LibretroCore::unload_game() {
     if (handle_ != nullptr && game_loaded_) {
         api_->retro_unload_game();

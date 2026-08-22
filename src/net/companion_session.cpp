@@ -324,6 +324,12 @@ void CompanionSession::request_render_scale(int scale) {
     send_request(request);
 }
 
+void CompanionSession::request_reset() {
+    RequestMessage request;
+    request.wants_reset = true;
+    send_request(request);
+}
+
 void CompanionSession::request_display_size(int width, int height) {
     RequestMessage request;
     request.wants_display_size = true;

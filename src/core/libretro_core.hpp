@@ -126,6 +126,9 @@ public:
     bool load(const std::string& core_path, std::string* error);
     bool load_game(const std::string& rom_path, std::string* error);
     void run_frame();
+    // Restarts the running game from power-on, the way a console's own reset
+    // button would -- a no-op with nothing loaded.
+    void reset();
     void unload_game();
     void unload();
 

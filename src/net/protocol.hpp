@@ -20,7 +20,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 8;
+constexpr uint16_t kProtocolVersion = 9;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -127,6 +127,10 @@ struct RequestMessage {
     // The companion has a menu up. The host pauses while either device does, so
     // both are looking at the same still frame.
     bool menu_open = false;
+    // Restart the running game. One-shot rather than a value to agree on: it is
+    // not echoed back in SessionState, since there is nothing to stay in sync
+    // about once the moment has passed.
+    bool wants_reset = false;
 };
 
 struct RejectMessage {

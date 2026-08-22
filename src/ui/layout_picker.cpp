@@ -49,6 +49,10 @@ void LayoutPicker::rebuild_footer() {
     // a game, which is not a mid-game question, so Settings itself lives on the
     // launcher and not here.
     footer_.push_back(Footer::Cursor);
+    // Restarting the game, wherever the menu was opened from -- a companion
+    // asks the host the same way it asks for anything else, since only the
+    // host actually runs a core to reset.
+    footer_.push_back(Footer::Reset);
     footer_.push_back(Footer::Resume);
     if (state_.session_active) {
         footer_.push_back(Footer::Disconnect);
@@ -79,6 +83,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Hands:
             return state_.handedness == Handedness::Left ? "Left-Handed" : "Right-Handed";
+        case Footer::Reset: return "Reset Game";
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: break;
@@ -246,6 +251,9 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         case Footer::Hands:
             result.handedness_changed = true;
             return true;
+        case Footer::Reset:
+            result.reset_requested = true;
+            return true;
         case Footer::Resume:
             result.close_requested = true;
             return true;
@@ -308,7 +316,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         }
     }
 
-    if (result.close_requested || result.quit_requested || result.disconnect_requested) {
+    if (result.close_requested || result.quit_requested || result.disconnect_requested ||
+        result.reset_requested) {
         open_ = false;
     }
     return result;
@@ -432,7 +441,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         const Footer kind = footer_[index];
         const std::string label = footer_label(kind);
         Color color = theme.text;
-        if (kind == Footer::Disconnect) {
+        if (kind == Footer::Reset || kind == Footer::Disconnect) {
             color = theme.warning;
         } else if (kind == Footer::Quit) {
             color = theme.danger;

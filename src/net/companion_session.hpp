@@ -65,6 +65,9 @@ public:
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness handedness);
     void request_render_scale(int scale);
+    // One-shot: asks the host to restart the game. There is nothing to adopt
+    // back, since there is no value beyond the moment it happens.
+    void request_reset();
     // Not one of the choices above -- the host does not adopt or broadcast
     // this, it just uses it privately to decide how much detail a screen sent
     // here is worth being sent at. Call it once after connecting and again

@@ -67,6 +67,10 @@ public:
     // told. A system with no scale to choose ignores this.
     void set_render_scale(int scale);
     int render_scale() const { return render_scale_; }
+    // Restarts the running game from power-on, the way a console's own reset
+    // button would. Save RAM is untouched -- this restarts execution, not the
+    // cartridge's saved progress.
+    void reset();
     // The sink whose latched state the core reads each frame.
     CoreInputSink& input_sink() { return input_sink_; }
 

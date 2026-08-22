@@ -106,7 +106,9 @@ the host decides and broadcasts the result, and only then does either device
 change. That is what makes the two ends impossible to get out of step, rather
 than merely unlikely. Opening the menu on either device pauses the game on both,
 so nobody is left playing on alone. The menu carries a **Disconnect** entry on
-both ends, so either device can end the session.
+both ends, so either device can end the session, and a **Reset Game** entry on
+both too, since only the host runs a core but either device can ask it to
+restart.
 
 **Sound** is on the same menu, once two devices are connected, and cycles between
 the top screen's device, the bottom screen's device, and both. DS and 3DS have
