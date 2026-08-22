@@ -330,6 +330,12 @@ void CompanionSession::request_reset() {
     send_request(request);
 }
 
+void CompanionSession::request_quit() {
+    RequestMessage request;
+    request.wants_quit = true;
+    send_request(request);
+}
+
 void CompanionSession::request_display_size(int width, int height) {
     RequestMessage request;
     request.wants_display_size = true;

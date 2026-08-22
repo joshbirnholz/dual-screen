@@ -46,9 +46,6 @@ struct LayoutPickerState {
     // Two devices are connected: adds Disconnect, and a sound target worth
     // choosing.
     bool session_active = false;
-    // This device is the companion. It has no game of its own to quit out of,
-    // so leaving the session is the only exit that means anything.
-    bool companion = false;
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
     CursorMode cursor_mode = CursorMode::Shown;

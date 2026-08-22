@@ -700,7 +700,6 @@ void App::Impl::open_picker() {
     LayoutPickerState picker_state;
     picker_state.layout_id = active_layout_id;
     picker_state.session_active = paired();
-    picker_state.companion = (source == nullptr);
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
@@ -1283,7 +1282,17 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     open_launcher();
                 }
             } else if (result.quit_requested) {
-                running = false;
+                if (is_companion()) {
+                    // Quit here means the whole session ends, not just this
+                    // device's part of it: ask the host to shut down too, the
+                    // same as if Quit had been pressed there, then leave the
+                    // way Disconnect would.
+                    companion_session->request_quit();
+                    companion_session->disconnect();
+                    open_launcher();
+                } else {
+                    running = false;
+                }
             } else if (result.close_requested || result.reset_requested) {
                 if (is_companion()) {
                     companion_session->set_menu_open(false);
@@ -1802,6 +1811,12 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_reset && impl.source) {
                     impl.source->reset();
+                }
+                if (request.wants_quit) {
+                    // The same as choosing Quit here: the whole app shuts
+                    // down. The companion that asked is leaving on its own
+                    // right after, not waiting to be told to.
+                    impl.running = false;
                 }
             }
             // Whichever screen the companion took, the host shows the other.

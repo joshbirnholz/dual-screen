@@ -108,7 +108,9 @@ than merely unlikely. Opening the menu on either device pauses the game on both,
 so nobody is left playing on alone. The menu carries a **Disconnect** entry on
 both ends, so either device can end the session, and a **Reset Game** entry on
 both too, since only the host runs a core but either device can ask it to
-restart.
+restart. **Quit** is there on both ends as well: choosing it on the companion
+asks the host to quit too, the same as choosing it there, and then leaves the
+session the way Disconnect would, back to that device's own main menu.
 
 **Sound** is on the same menu, once two devices are connected, and cycles between
 the top screen's device, the bottom screen's device, and both. DS and 3DS have

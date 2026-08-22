@@ -57,9 +57,10 @@ void LayoutPicker::rebuild_footer() {
     if (state_.session_active) {
         footer_.push_back(Footer::Disconnect);
     }
-    if (!state_.companion) {
-        footer_.push_back(Footer::Quit);
-    }
+    // Offered on both devices, like Disconnect: whichever one runs the game,
+    // Quit ends it for both -- a companion's press asks the host to shut down
+    // too before it leaves.
+    footer_.push_back(Footer::Quit);
     // Focus can be sitting on a footer button that just went away.
     if (focus_ >= focus_count()) {
         focus_ = std::max(0, focus_count() - 1);

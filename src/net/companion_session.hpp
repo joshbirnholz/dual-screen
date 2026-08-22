@@ -68,6 +68,10 @@ public:
     // One-shot: asks the host to restart the game. There is nothing to adopt
     // back, since there is no value beyond the moment it happens.
     void request_reset();
+    // One-shot: asks the host to shut down entirely, the same as choosing Quit
+    // there. Does not itself end this device's session -- the caller still
+    // calls disconnect() to leave, the same as it would for Disconnect.
+    void request_quit();
     // Not one of the choices above -- the host does not adopt or broadcast
     // this, it just uses it privately to decide how much detail a screen sent
     // here is worth being sent at. Call it once after connecting and again

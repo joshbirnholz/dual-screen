@@ -57,7 +57,6 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
     // The companion end of the same 3DS session: the same button, the same
     // size, because it is the same menu.
     LayoutPickerState companion = playing;
-    companion.companion = true;
     companion.session_active = true;
     CHECK(taps_that_cycle_the_scale(registry, companion) > 0);
 
@@ -69,7 +68,6 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
     CHECK_EQ(taps_that_cycle_the_scale(registry, ds), 0);
 
     LayoutPickerState ds_companion = ds;
-    ds_companion.companion = true;
     ds_companion.session_active = true;
     CHECK_EQ(taps_that_cycle_the_scale(registry, ds_companion), 0);
 }

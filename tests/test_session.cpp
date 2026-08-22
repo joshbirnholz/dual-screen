@@ -564,6 +564,14 @@ void test_shared_settings_stay_in_sync() {
     });
     CHECK_MSG(asked_reset, "the reset request never reached the host");
 
+    // Quit is the same shape: one-shot, nothing to broadcast back. The app
+    // layer is what actually shuts the host down on seeing it.
+    companion.request_quit();
+    const bool asked_quit = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_quit;
+    });
+    CHECK_MSG(asked_quit, "the quit request never reached the host");
+
     // The companion's window size travels the other way from everything
     // above: the host keeps it privately, to decide how much detail a screen
     // it sends is worth, rather than adopting and broadcasting it like a

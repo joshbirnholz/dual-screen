@@ -253,6 +253,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             if (have_request_ && !request.wants_reset && request_.wants_reset) {
                 request.wants_reset = true;
             }
+            if (have_request_ && !request.wants_quit && request_.wants_quit) {
+                request.wants_quit = true;
+            }
             request_ = request;
             have_request_ = true;
             if (request.menu_open != companion_menu_open_) {
