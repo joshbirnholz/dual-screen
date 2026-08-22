@@ -86,6 +86,13 @@ public:
     // them and they come back to the companion as session state.
     bool take_request(RequestMessage& out_request);
 
+    // A companion asking to quit is latched here the instant its request
+    // arrives, separately from take_request() above. A quit is always
+    // followed straight away by the companion's own Bye, which lands in the
+    // same poll() and would otherwise wipe an unconsumed request_ (via
+    // drop_companion()) before the app next got to read it.
+    bool take_companion_quit_request();
+
     // The companion has its own menu open, so the game is paused there. The
     // host pauses too: a session where one device is playing on while the other
     // reads a menu is two people looking at different games.
@@ -170,6 +177,7 @@ private:
     bool resend_screens_ = true;
     bool have_request_ = false;
     RequestMessage request_;
+    bool companion_wants_quit_ = false;
 };
 
 }  // namespace ds::net

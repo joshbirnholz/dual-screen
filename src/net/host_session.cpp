@@ -59,6 +59,9 @@ void HostSession::stop() {
     companion_name_.clear();
     companion_input_ = DsInputState();
     companion_input_fresh_ = false;
+    // Not reset by drop_companion() like everything else above -- that is the
+    // whole point of it -- so a fresh hosting session has to clear it itself.
+    companion_wants_quit_ = false;
 }
 
 void HostSession::set_host_screen(ScreenId screen) {
@@ -253,11 +256,15 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             if (have_request_ && !request.wants_reset && request_.wants_reset) {
                 request.wants_reset = true;
             }
-            if (have_request_ && !request.wants_quit && request_.wants_quit) {
-                request.wants_quit = true;
-            }
             request_ = request;
             have_request_ = true;
+            if (request.wants_quit) {
+                // Latched immediately rather than left for take_request(): the
+                // companion's Bye is typically already queued right behind
+                // this in the same poll(), and drop_companion() below would
+                // otherwise clear request_ before the app next reads it.
+                companion_wants_quit_ = true;
+            }
             if (request.menu_open != companion_menu_open_) {
                 companion_menu_open_ = request.menu_open;
                 // What it needs has just changed, and a paused game will not
@@ -319,11 +326,14 @@ void HostSession::poll(uint64_t now_ms) {
     }
 
     std::string error;
-    if (!companion_.pump(inbox_, &error)) {
-        drop_companion(error);
-        return;
-    }
+    const bool pumped = companion_.pump(inbox_, &error);
 
+    // Processed even when pump() itself failed: a companion's closing message
+    // -- typically a Bye, sent right behind whatever it was last asking for --
+    // reads as a clean EOF the moment the socket is drained, and pump() reports
+    // that as an error. Bailing out here on that error, before ever looking at
+    // what was actually read, would silently drop a request that arrived in
+    // the same batch but had not been parsed yet.
     while (true) {
         MessageType type = MessageType::Ping;
         std::vector<uint8_t> payload;
@@ -338,6 +348,12 @@ void HostSession::poll(uint64_t now_ms) {
         if (!companion_.open()) {
             break;
         }
+    }
+
+    // Only reported now, and only if nothing already handled above (a Bye,
+    // most often) beat it to closing the connection.
+    if (!pumped && companion_.open()) {
+        drop_companion(error);
     }
 }
 
@@ -362,6 +378,14 @@ bool HostSession::take_request(RequestMessage& out_request) {
     out_request = request_;
     request_ = RequestMessage();
     have_request_ = false;
+    return true;
+}
+
+bool HostSession::take_companion_quit_request() {
+    if (!companion_wants_quit_) {
+        return false;
+    }
+    companion_wants_quit_ = false;
     return true;
 }
 

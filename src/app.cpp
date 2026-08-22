@@ -1812,12 +1812,18 @@ int App::run(const AppOptions& options) {
                 if (request.wants_reset && impl.source) {
                     impl.source->reset();
                 }
-                if (request.wants_quit) {
-                    // The same as choosing Quit here: the whole app shuts
-                    // down. The companion that asked is leaving on its own
-                    // right after, not waiting to be told to.
-                    impl.running = false;
-                }
+            }
+            // Checked separately from the request above, rather than as
+            // request.wants_quit there: the companion sends its Bye right
+            // behind a quit request, and both are normally handled in this
+            // same poll() -- which would clear the pending request before
+            // this code next ran, if quit rode along with it instead of its
+            // own latch that survives that disconnect.
+            if (impl.host_session->take_companion_quit_request()) {
+                // The same as choosing Quit here: the whole app shuts down.
+                // The companion that asked is leaving on its own right after,
+                // not waiting to be told to.
+                impl.running = false;
             }
             // Whichever screen the companion took, the host shows the other.
             impl.local_screen = impl.host_session->host_screen();

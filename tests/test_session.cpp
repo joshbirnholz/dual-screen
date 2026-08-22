@@ -710,6 +710,46 @@ void test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused() 
     host.stop();
 }
 
+// The Quit button on the companion sends its quit request immediately
+// followed by its own Bye -- both usually land in the same poll(). That has
+// to still reach the app: drop_companion() (triggered by the Bye) clears the
+// generic request_/have_request_ pair, which would otherwise silently lose a
+// quit request that arrived in the same batch but had not been read yet.
+void test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Quit Host";
+    config.game_title = "Quitting";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Quit Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    // Exactly what the Quit button does: ask, then leave right after.
+    companion.request_quit();
+    companion.disconnect();
+
+    CHECK_MSG(spin(host, companion, [&] { return host.take_companion_quit_request(); }),
+              "the quit request was lost behind the companion's own disconnect");
+
+    host.stop();
+}
+
 // A companion showing one screen still needs both the moment its menu opens: the
 // preview tiles draw every layout, including the one it is not being sent. The
 // catch is that a menu also pauses the game, so no new frame is coming to carry
@@ -823,6 +863,7 @@ int main() {
     test_shared_settings_stay_in_sync();
     test_companion_menu_pauses_the_host();
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
+    test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it();
     test_menu_gets_the_companion_both_screens();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
