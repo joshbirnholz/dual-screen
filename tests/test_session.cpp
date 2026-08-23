@@ -51,7 +51,8 @@ void set_shared(HostSession& host,
                 bool bilinear_filtering = false,
                 AudioTarget audio_target = AudioTarget::Both,
                 Handedness handedness = Handedness::Right,
-                int render_scale = 1) {
+                int render_scale = 1,
+                bool vertical_gap = true) {
     HostSession::SharedState shared;
     shared.layout_id = layout_id;
     shared.per_device_layout = (layout_id == "upper_on_tv");
@@ -59,6 +60,7 @@ void set_shared(HostSession& host,
     shared.audio_target = audio_target;
     shared.handedness = handedness;
     shared.render_scale = render_scale;
+    shared.vertical_gap = vertical_gap;
     host.set_session_state(shared);
 }
 
@@ -555,6 +557,19 @@ void test_shared_settings_stay_in_sync() {
     set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2);
     CHECK_MSG(spin(host, companion, [&] { return companion.host_render_scale() == 2; }),
               "the host's render scale never reached the companion");
+
+    // And Vertical Screens' gap, the same shape as everything above: the
+    // companion asks, the host decides and broadcasts.
+    companion.request_vertical_gap(false);
+    const bool asked_gap = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_vertical_gap;
+    });
+    CHECK_MSG(asked_gap, "the vertical gap request never reached the host");
+    CHECK_EQ(request.vertical_gap, false);
+
+    set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2, false);
+    CHECK_MSG(spin(host, companion, [&] { return companion.host_vertical_gap() == false; }),
+              "the host's vertical gap choice never reached the companion");
 
     // Reset is one-shot: there is no value to broadcast back, just the request
     // itself reaching the host.

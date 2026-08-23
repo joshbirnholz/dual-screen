@@ -49,6 +49,12 @@ void LayoutPicker::rebuild_footer() {
     // a game, which is not a mid-game question, so Settings itself lives on the
     // launcher and not here.
     footer_.push_back(Footer::Cursor);
+    // Only Vertical Screens' gap is a player's choice -- see
+    // LayoutComposition::gap_toggleable -- so the button appears only while
+    // that layout is the one actually selected.
+    if (state_.vertical_gap_toggleable) {
+        footer_.push_back(Footer::VerticalGap);
+    }
     // Restarting the game, wherever the menu was opened from -- a companion
     // asks the host the same way it asks for anything else, since only the
     // host actually runs a core to reset.
@@ -84,6 +90,8 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Hands:
             return state_.handedness == Handedness::Left ? "Left-Handed" : "Right-Handed";
+        case Footer::VerticalGap:
+            return state_.vertical_gap ? "Gap: On" : "Gap: Off";
         case Footer::Reset: return "Reset Game";
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
@@ -251,6 +259,9 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::Hands:
             result.handedness_changed = true;
+            return true;
+        case Footer::VerticalGap:
+            result.vertical_gap_toggled = true;
             return true;
         case Footer::Reset:
             result.reset_requested = true;

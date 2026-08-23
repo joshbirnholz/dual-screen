@@ -137,6 +137,10 @@ LayoutRegistry::LayoutRegistry() {
             LayoutAxis::Vertical,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
             kVerticalGap, kVerticalMargin);
+        // The only layout whose gap is a player's choice rather than part of
+        // the arrangement: two screens either side of nothing has no real
+        // equivalent on a Wii U, so there is no "correct" answer to defer to.
+        layout.composition.gap_toggleable = true;
         layouts_.push_back(layout);
     }
 

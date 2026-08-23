@@ -73,6 +73,7 @@ void test_welcome_and_session_round_trip() {
     state.audio_target = AudioTarget::TopScreen;
     state.handedness = Handedness::Left;
     state.render_scale = 3;
+    state.vertical_gap = false;
 
     buffer.clear();
     encode_session_state(state, buffer);
@@ -88,6 +89,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.audio_target == AudioTarget::TopScreen);
     CHECK(received_state.handedness == Handedness::Left);
     CHECK_EQ(static_cast<int>(received_state.render_scale), 3);
+    CHECK_EQ(received_state.vertical_gap, false);
 }
 
 // Everything a companion can ask the host for travels in one message, each
@@ -110,6 +112,8 @@ void test_request_round_trip() {
     sent.menu_open = true;
     sent.wants_reset = true;
     sent.wants_quit = true;
+    sent.wants_vertical_gap = true;
+    sent.vertical_gap = false;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -135,6 +139,8 @@ void test_request_round_trip() {
     CHECK_EQ(received.menu_open, true);
     CHECK_EQ(received.wants_reset, true);
     CHECK_EQ(received.wants_quit, true);
+    CHECK_EQ(received.wants_vertical_gap, true);
+    CHECK_EQ(received.vertical_gap, false);
 
     // A request that means none of it round-trips as such rather than as an
     // accidental instruction.
@@ -153,11 +159,12 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.menu_open, false);
     CHECK_EQ(received_quiet.wants_reset, false);
     CHECK_EQ(received_quiet.wants_quit, false);
+    CHECK_EQ(received_quiet.wants_vertical_gap, false);
 
     // An audio target outside the three that exist is refused rather than
     // becoming one of them by accident.
     std::vector<uint8_t> corrupt(payload);
-    corrupt[corrupt.size() - 13] = 9;  // the audio target byte
+    corrupt[corrupt.size() - 15] = 9;  // the audio target byte
     RequestMessage rejected;
     CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
 }

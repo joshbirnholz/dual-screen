@@ -72,6 +72,46 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
     CHECK_EQ(taps_that_cycle_the_scale(registry, ds_companion), 0);
 }
 
+// Taps every point on a coarse grid over the menu and reports how many of them
+// toggled the Vertical Screens gap.
+int taps_that_toggle_the_gap(const LayoutRegistry& registry, const LayoutPickerState& state) {
+    int hits = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker picker(registry);
+            picker.open(state);
+            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            if (result.vertical_gap_toggled) ++hits;
+        }
+    }
+    return hits;
+}
+
+// The gap button is Vertical Screens' own: it appears while that layout is
+// selected and nowhere else, on either device, driven by the caller telling
+// the picker so rather than the picker guessing from a layout id itself.
+void test_the_gap_button_appears_only_for_vertical_screens() {
+    LayoutRegistry registry;
+
+    LayoutPickerState vertical;
+    vertical.layout_id = "vertical";
+    vertical.vertical_gap_toggleable = true;
+    CHECK(taps_that_toggle_the_gap(registry, vertical) > 0);
+
+    // The companion end of the same session: the same button, because it is
+    // the same menu.
+    LayoutPickerState vertical_companion = vertical;
+    vertical_companion.session_active = true;
+    CHECK(taps_that_toggle_the_gap(registry, vertical_companion) > 0);
+
+    // Any other layout: nothing to press, because the gap there is not a
+    // choice -- see LayoutComposition::gap_toggleable.
+    LayoutPickerState side_by_side = vertical;
+    side_by_side.layout_id = "side_by_side";
+    side_by_side.vertical_gap_toggleable = false;
+    CHECK_EQ(taps_that_toggle_the_gap(registry, side_by_side), 0);
+}
+
 // The other footer buttons keep working with an eighth one among them: the row
 // wraps rather than dropping anything, and each button still reports its own
 // intent and no one else's.
@@ -81,11 +121,13 @@ void test_the_other_buttons_still_work() {
     state.layout_id = registry.at(0).id;
     state.session_active = true;
     state.max_render_scale = 3;
+    state.vertical_gap_toggleable = true;
 
     int filtering = 0;
     int sound = 0;
     int hands = 0;
     int cursor = 0;
+    int gap = 0;
     int reset = 0;
     int resume = 0;
     int disconnect = 0;
@@ -99,6 +141,7 @@ void test_the_other_buttons_still_work() {
             if (result.audio_target_changed) ++sound;
             if (result.handedness_changed) ++hands;
             if (result.cursor_mode_changed) ++cursor;
+            if (result.vertical_gap_toggled) ++gap;
             if (result.reset_requested) ++reset;
             if (result.close_requested) ++resume;
             if (result.disconnect_requested) ++disconnect;
@@ -109,6 +152,7 @@ void test_the_other_buttons_still_work() {
     CHECK(sound > 0);
     CHECK(hands > 0);
     CHECK(cursor > 0);
+    CHECK(gap > 0);
     CHECK(reset > 0);
     CHECK(resume > 0);
     CHECK(disconnect > 0);
@@ -145,6 +189,7 @@ void test_reset_closes_the_menu() {
 
 int main() {
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
+    test_the_gap_button_appears_only_for_vertical_screens();
     test_the_other_buttons_still_work();
     test_reset_closes_the_menu();
     return test::finish("quick-settings");

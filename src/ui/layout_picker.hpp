@@ -36,6 +36,9 @@ struct LayoutPickerResult {
     // Reset was chosen. Unlike the settings above there is no new value to
     // adopt -- the caller just restarts the game.
     bool reset_requested = false;
+    // The Vertical Screens gap toggle was used; the caller applies and
+    // persists it, the same as filtering.
+    bool vertical_gap_toggled = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -55,6 +58,11 @@ struct LayoutPickerState {
     // button does not appear.
     int render_scale = 1;
     int max_render_scale = 1;
+    // Whether Vertical Screens shows the gap between its two screens. Only
+    // meaningful -- and only offered -- while that layout is the one selected;
+    // see `vertical_gap_toggleable`.
+    bool vertical_gap = true;
+    bool vertical_gap_toggleable = false;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -72,6 +80,7 @@ public:
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
     void set_render_scale(int scale) { state_.render_scale = scale; }
+    void set_vertical_gap(bool include_gap) { state_.vertical_gap = include_gap; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -123,7 +132,18 @@ private:
     // Footer buttons, in focus order after the layout tiles. Which of them are
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
-    enum class Footer { Filtering, RenderScale, Hands, Sound, Cursor, Reset, Resume, Disconnect, Quit };
+    enum class Footer {
+        Filtering,
+        RenderScale,
+        Hands,
+        Sound,
+        Cursor,
+        VerticalGap,
+        Reset,
+        Resume,
+        Disconnect,
+        Quit
+    };
 
     struct Geometry {
         std::vector<PixelRect> tiles;

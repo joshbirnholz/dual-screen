@@ -108,6 +108,15 @@ Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
     return mirrored;
 }
 
+Layout resolve_gap_choice(const Layout& layout, bool include_gap) {
+    if (include_gap || !layout.composition.gap_toggleable) {
+        return layout;
+    }
+    Layout resolved = layout;
+    resolved.composition.gap = 0.0f;
+    return resolved;
+}
+
 namespace {
 
 // Above this, screen real estate is plentiful enough to spare a few percent of

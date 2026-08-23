@@ -335,6 +335,49 @@ void test_handedness_mirrors_the_layout() {
     CHECK_NEAR(lefty.rect.y, upright.rect.y);
 }
 
+// Vertical Screens is the only layout whose gap is a player's choice. Turning
+// it off closes the gap between the two screens; every other layout ignores
+// the choice entirely, because their gap is part of the arrangement itself.
+void test_vertical_gap_is_toggleable_and_nothing_else_is() {
+    const LayoutRegistry registry;
+    const float width = 1280.0f;
+    const float height = 800.0f;
+
+    const Layout& vertical = *registry.find("vertical");
+    CHECK(vertical.composition.gap_toggleable);
+
+    PlacedScreen top_with_gap;
+    PlacedScreen bottom_with_gap;
+    CHECK(placed_screen(vertical, ScreenId::Top, width, height, top_with_gap));
+    CHECK(placed_screen(vertical, ScreenId::Bottom, width, height, bottom_with_gap));
+    const float gap_present = bottom_with_gap.rect.y - (top_with_gap.rect.y + top_with_gap.rect.h);
+    CHECK_MSG(gap_present > 1.0f, "vertical had no gap before it was ever turned off");
+
+    const Layout no_gap = resolve_gap_choice(vertical, false);
+    PlacedScreen top_without_gap;
+    PlacedScreen bottom_without_gap;
+    CHECK(placed_screen(no_gap, ScreenId::Top, width, height, top_without_gap));
+    CHECK(placed_screen(no_gap, ScreenId::Bottom, width, height, bottom_without_gap));
+    const float gap_removed =
+        bottom_without_gap.rect.y - (top_without_gap.rect.y + top_without_gap.rect.h);
+    CHECK_MSG(std::abs(gap_removed) < 1.0f,
+              "turning the gap off left " + std::to_string(gap_removed) + "px between the screens");
+
+    // Explicitly asking to keep it is a no-op, same as the layout untouched.
+    const Layout kept_gap = resolve_gap_choice(vertical, true);
+    CHECK_NEAR(kept_gap.composition.gap, vertical.composition.gap);
+
+    // Every other layout has a gap that means something -- the focus layouts'
+    // sliver next to the small screen, Side-by-Side's hinge -- so the same
+    // "off" choice must leave them untouched.
+    for (const char* id : {"upper_focus", "touch_focus", "side_by_side"}) {
+        const Layout& layout = *registry.find(id);
+        CHECK_MSG(!layout.composition.gap_toggleable, std::string(id) + " should not offer the choice");
+        const Layout unaffected = resolve_gap_choice(layout, false);
+        CHECK_NEAR(unaffected.composition.gap, layout.composition.gap);
+    }
+}
+
 // A quarter-turned screen is 3:4 where an upright one is 4:3, and the letterbox
 // has to be computed against the shape actually drawn.
 void test_rotated_screens_letterbox_sideways() {
@@ -692,6 +735,7 @@ int main() {
     test_small_displays_drop_the_margin();
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
+    test_vertical_gap_is_toggleable_and_nothing_else_is();
     test_rotated_screens_letterbox_sideways();
     test_touch_follows_a_quarter_turn();
     test_contain_preserves_aspect();

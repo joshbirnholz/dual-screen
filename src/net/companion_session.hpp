@@ -53,6 +53,7 @@ public:
     AudioTarget host_audio_target() const { return host_audio_target_; }
     Handedness host_handedness() const { return host_handedness_; }
     int host_render_scale() const { return host_render_scale_; }
+    bool host_vertical_gap() const { return host_vertical_gap_; }
 
     // Sends this device's input to the host. Only what changed goes out.
     void send_input(const DsInputState& state);
@@ -65,6 +66,7 @@ public:
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness handedness);
     void request_render_scale(int scale);
+    void request_vertical_gap(bool include_gap);
     // One-shot: asks the host to restart the game. There is nothing to adopt
     // back, since there is no value beyond the moment it happens.
     void request_reset();
@@ -127,6 +129,7 @@ private:
     AudioTarget host_audio_target_ = AudioTarget::Both;
     Handedness host_handedness_ = Handedness::Right;
     int host_render_scale_ = 1;
+    bool host_vertical_gap_ = true;
     bool menu_open_ = false;
     bool said_hello_ = false;
 

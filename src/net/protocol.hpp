@@ -20,7 +20,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 10;
+constexpr uint16_t kProtocolVersion = 11;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -135,6 +135,9 @@ struct RequestMessage {
     // like the reset above; the companion leaves the session on its own right
     // after asking, rather than waiting to be told to.
     bool wants_quit = false;
+    // Whether Vertical Screens shows the gap between its two screens.
+    bool wants_vertical_gap = false;
+    bool vertical_gap = true;
 };
 
 struct RejectMessage {
@@ -152,6 +155,7 @@ struct SessionStateMessage {
     AudioTarget audio_target = AudioTarget::Both;
     Handedness handedness = Handedness::Right;
     uint8_t render_scale = 1;
+    bool vertical_gap = true;
 };
 
 struct FrameMessage {

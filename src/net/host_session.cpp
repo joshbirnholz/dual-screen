@@ -83,7 +83,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
         state.bilinear_filtering != shared_.bilinear_filtering ||
         state.audio_target != shared_.audio_target || state.handedness != shared_.handedness ||
-        state.render_scale != shared_.render_scale) {
+        state.render_scale != shared_.render_scale ||
+        state.vertical_gap != shared_.vertical_gap) {
         shared_ = state;
         session_state_dirty_ = true;
     }
@@ -256,6 +257,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             if (have_request_ && !request.wants_reset && request_.wants_reset) {
                 request.wants_reset = true;
             }
+            if (have_request_ && !request.wants_vertical_gap && request_.wants_vertical_gap) {
+                request.wants_vertical_gap = true;
+                request.vertical_gap = request_.vertical_gap;
+            }
             request_ = request;
             have_request_ = true;
             if (request.wants_quit) {
@@ -319,6 +324,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.audio_target = shared_.audio_target;
         state.handedness = shared_.handedness;
         state.render_scale = static_cast<uint8_t>(shared_.render_scale);
+        state.vertical_gap = shared_.vertical_gap;
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);

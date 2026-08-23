@@ -71,6 +71,8 @@ Settings Settings::load(const AppPaths& paths) {
         get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
     settings.default_render_scale =
         get_or<int>(document, "default_render_scale", settings.default_render_scale);
+    settings.default_vertical_gap =
+        get_or<bool>(document, "default_vertical_gap", settings.default_vertical_gap);
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
     settings.handedness = handedness_from_key(
@@ -101,6 +103,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["core_path_3ds"] = core_path_3ds;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
+    document["default_vertical_gap"] = default_vertical_gap;
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
     document["handedness"] = handedness_key(handedness);

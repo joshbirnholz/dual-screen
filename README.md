@@ -66,6 +66,12 @@ the touch screen is under whichever hand holds the stylus. It is one toggle
 rather than a left-handed twin of every layout, and it turns the sideways
 screens the other way too.
 
+`vertical`'s gap between the two screens is a **Gap** toggle in the menu, on
+by default. Every other layout's gap is part of its own arrangement — the
+focus layouts' sliver next to the small screen, Side-by-Side's hinge — but two
+screens stacked with nothing between them is a real option, not a broken one,
+so it is the one gap left up to the player.
+
 `standard` draws an illustration of the console itself and puts the two screens
 exactly where its own are, on a #252525 surround rather than black — that is the
 artwork's own background colour, so the picture has no visible edge. There is one
