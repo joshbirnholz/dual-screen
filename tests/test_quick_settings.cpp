@@ -73,7 +73,7 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
 }
 
 // Taps every point on a coarse grid over the menu and reports how many of them
-// toggled the Vertical Screens gap.
+// toggled the screen gap.
 int taps_that_toggle_the_gap(const LayoutRegistry& registry, const LayoutPickerState& state) {
     int hits = 0;
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
@@ -81,35 +81,72 @@ int taps_that_toggle_the_gap(const LayoutRegistry& registry, const LayoutPickerS
             LayoutPicker picker(registry);
             picker.open(state);
             const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
-            if (result.vertical_gap_toggled) ++hits;
+            if (result.screen_gap_toggled) ++hits;
         }
     }
     return hits;
 }
 
-// The gap button is Vertical Screens' own: it appears while that layout is
-// selected and nowhere else, on either device, driven by the caller telling
-// the picker so rather than the picker guessing from a layout id itself.
-void test_the_gap_button_appears_only_for_vertical_screens() {
+// The gap button appears while a layout that offers the choice is selected
+// -- Vertical Screens and the two focus layouts -- and nowhere else, on
+// either device, driven by the caller telling the picker so rather than the
+// picker guessing from a layout id itself.
+void test_the_gap_button_appears_only_where_the_layout_offers_it() {
     LayoutRegistry registry;
 
-    LayoutPickerState vertical;
-    vertical.layout_id = "vertical";
-    vertical.vertical_gap_toggleable = true;
-    CHECK(taps_that_toggle_the_gap(registry, vertical) > 0);
+    for (const char* id : {"vertical", "upper_focus", "touch_focus"}) {
+        LayoutPickerState state;
+        state.layout_id = id;
+        state.screen_gap_toggleable = true;
+        CHECK_MSG(taps_that_toggle_the_gap(registry, state) > 0,
+                  std::string(id) + " should offer the gap button");
 
-    // The companion end of the same session: the same button, because it is
-    // the same menu.
-    LayoutPickerState vertical_companion = vertical;
-    vertical_companion.session_active = true;
-    CHECK(taps_that_toggle_the_gap(registry, vertical_companion) > 0);
+        // The companion end of the same session: the same button, because it
+        // is the same menu.
+        LayoutPickerState companion = state;
+        companion.session_active = true;
+        CHECK_MSG(taps_that_toggle_the_gap(registry, companion) > 0,
+                  std::string(id) + " (companion) should offer the gap button");
+    }
 
-    // Any other layout: nothing to press, because the gap there is not a
-    // choice -- see LayoutComposition::gap_toggleable.
-    LayoutPickerState side_by_side = vertical;
+    // Side-by-Side: nothing to press, because its gap is the DS's own hinge,
+    // not a choice -- see LayoutComposition::gap_toggleable.
+    LayoutPickerState side_by_side;
     side_by_side.layout_id = "side_by_side";
-    side_by_side.vertical_gap_toggleable = false;
+    side_by_side.screen_gap_toggleable = false;
     CHECK_EQ(taps_that_toggle_the_gap(registry, side_by_side), 0);
+}
+
+// Toggling Gap has to change what the tiles themselves draw, not just what a
+// resumed game looks like -- the whole point of a preview is showing the
+// player the arrangement they are about to get. render() draws every tile
+// through resolved_layout_for_preview(), so this checks that one function
+// rather than needing a GL context to read pixels back out of a render.
+void test_toggling_the_gap_updates_what_the_previews_would_draw() {
+    LayoutRegistry registry;
+    const Layout& upper_focus = *registry.find("upper_focus");
+
+    LayoutPickerState state;
+    state.layout_id = "vertical";
+    state.screen_gap = true;
+
+    LayoutPicker picker(registry);
+    picker.open(state);
+    const Layout with_gap = picker.resolved_layout_for_preview(upper_focus);
+    CHECK_NEAR(with_gap.composition.gap, upper_focus.composition.gap);
+
+    // Same picker, same open menu -- just the toggle changing, the way
+    // set_screen_gap() does when the app applies a request. The next preview
+    // drawn has to reflect it immediately, without reopening the menu.
+    picker.set_screen_gap(false);
+    const Layout without_gap = picker.resolved_layout_for_preview(upper_focus);
+    CHECK_NEAR(without_gap.composition.gap, 0.0f);
+
+    // Side-by-Side's gap is not a choice, so it must come back unchanged
+    // whichever way the toggle is set.
+    const Layout& side_by_side = *registry.find("side_by_side");
+    const Layout side_by_side_preview = picker.resolved_layout_for_preview(side_by_side);
+    CHECK_NEAR(side_by_side_preview.composition.gap, side_by_side.composition.gap);
 }
 
 // The other footer buttons keep working with an eighth one among them: the row
@@ -121,7 +158,7 @@ void test_the_other_buttons_still_work() {
     state.layout_id = registry.at(0).id;
     state.session_active = true;
     state.max_render_scale = 3;
-    state.vertical_gap_toggleable = true;
+    state.screen_gap_toggleable = true;
 
     int filtering = 0;
     int sound = 0;
@@ -141,7 +178,7 @@ void test_the_other_buttons_still_work() {
             if (result.audio_target_changed) ++sound;
             if (result.handedness_changed) ++hands;
             if (result.cursor_mode_changed) ++cursor;
-            if (result.vertical_gap_toggled) ++gap;
+            if (result.screen_gap_toggled) ++gap;
             if (result.reset_requested) ++reset;
             if (result.close_requested) ++resume;
             if (result.disconnect_requested) ++disconnect;
@@ -189,7 +226,8 @@ void test_reset_closes_the_menu() {
 
 int main() {
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
-    test_the_gap_button_appears_only_for_vertical_screens();
+    test_the_gap_button_appears_only_where_the_layout_offers_it();
+    test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
     test_reset_closes_the_menu();
     return test::finish("quick-settings");

@@ -261,10 +261,10 @@ struct App::Impl {
     // core, but the menu is one menu wherever it is opened from, so this is
     // shared like everything else on it.
     int render_scale = 1;
-    // Whether Vertical Screens shows the gap between its two screens. Shared
-    // like the settings above, though it is only ever asked about while that
-    // layout is the active one.
-    bool vertical_gap = true;
+    // Whether the current layout shows the gap between its screens. Shared
+    // like the settings above, though it is only ever asked about while the
+    // active layout offers the choice -- see LayoutComposition::gap_toggleable.
+    bool screen_gap = true;
     std::string game_title;
     std::string resolved_core_path;
     // Which console the loaded game belongs to, and its screens. On a companion
@@ -334,7 +334,7 @@ struct App::Impl {
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
     void request_render_scale(int scale);
-    void request_vertical_gap(bool include_gap);
+    void request_screen_gap(bool include_gap);
     // Restarts the running game. On a companion this asks the host, since only
     // the host runs a core to restart; there is nothing to adopt back, since
     // there is no value beyond the moment it happens.
@@ -346,7 +346,7 @@ struct App::Impl {
     int next_render_scale() const;
     void adopt_audio_target(AudioTarget target);
     void adopt_handedness(Handedness hand);
-    void adopt_vertical_gap(bool include_gap);
+    void adopt_screen_gap(bool include_gap);
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
@@ -619,7 +619,7 @@ Layout App::Impl::device_layout() const {
     // what is drawn, and where a touch lands -- has to see the same one. The
     // gap choice does not interact with either, so its order does not matter.
     const Layout chosen =
-        resolve_for_handedness(resolve_gap_choice(active_layout(), vertical_gap), handedness);
+        resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap), handedness);
     if (!chosen.per_device) {
         return chosen;
     }
@@ -653,7 +653,7 @@ void App::Impl::companion_target_size(ScreenId screen, int& out_width, int& out_
     // device's. A companion is by definition paired the moment there is a
     // reported size to act on, so there is no unpaired fallback to consider.
     Layout companion_layout =
-        resolve_for_handedness(resolve_gap_choice(active_layout(), vertical_gap), handedness);
+        resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap), handedness);
     if (companion_layout.per_device) {
         companion_layout = resolve_for_device(companion_layout, host_session->companion_screen());
     }
@@ -719,8 +719,8 @@ void App::Impl::open_picker() {
     // connected. Outside a game there is nothing to scale.
     picker_state.max_render_scale =
         (source || is_companion()) ? system_profile(system).max_render_scale : 1;
-    picker_state.vertical_gap = vertical_gap;
-    picker_state.vertical_gap_toggleable = active_layout().composition.gap_toggleable;
+    picker_state.screen_gap = screen_gap;
+    picker_state.screen_gap_toggleable = active_layout().composition.gap_toggleable;
     picker->set_screens(screens_geometry());
     picker->open(picker_state);
 }
@@ -766,33 +766,33 @@ void App::Impl::adopt_render_scale(int scale) {
     }
 }
 
-void App::Impl::request_vertical_gap(bool include_gap) {
+void App::Impl::request_screen_gap(bool include_gap) {
     if (is_companion()) {
-        companion_session->request_vertical_gap(include_gap);
+        companion_session->request_screen_gap(include_gap);
         return;  // the host decides; it will tell us
     }
-    adopt_vertical_gap(include_gap);
+    adopt_screen_gap(include_gap);
 }
 
-void App::Impl::adopt_vertical_gap(bool include_gap) {
-    if (include_gap == vertical_gap) {
+void App::Impl::adopt_screen_gap(bool include_gap) {
+    if (include_gap == screen_gap) {
         return;
     }
-    vertical_gap = include_gap;
+    screen_gap = include_gap;
     if (picker) {
-        picker->set_vertical_gap(vertical_gap);
+        picker->set_screen_gap(screen_gap);
     }
     if (is_companion()) {
-        log_info(std::string("following the host: vertical gap ") + (vertical_gap ? "on" : "off"));
+        log_info(std::string("following the host: screen gap ") + (screen_gap ? "on" : "off"));
         return;
     }
     if (have_game_config) {
         persist_game_config();
     } else {
-        settings.default_vertical_gap = vertical_gap;
+        settings.default_screen_gap = screen_gap;
         settings.save(paths);
     }
-    log_info(std::string("vertical gap ") + (vertical_gap ? "on" : "off"));
+    log_info(std::string("screen gap ") + (screen_gap ? "on" : "off"));
 }
 
 void App::Impl::request_reset() {
@@ -950,7 +950,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     render_scale = settings.default_render_scale;
     audio_target = settings.audio_target;
     handedness = settings.handedness;
-    vertical_gap = settings.default_vertical_gap;
+    screen_gap = settings.default_screen_gap;
     apply_filtering();
     if (!host_picker) {
         host_picker.reset(new HostPickerScreen());
@@ -1002,7 +1002,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
     handedness = settings.handedness;
-    vertical_gap = settings.default_vertical_gap;
+    screen_gap = settings.default_screen_gap;
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
     if (rom_sha1.empty()) {
@@ -1013,7 +1013,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         active_layout_id = game_config.layout_id;
         bilinear_filtering = game_config.bilinear_filtering;
         render_scale = game_config.render_scale;
-        vertical_gap = game_config.vertical_gap;
+        screen_gap = game_config.screen_gap;
     }
     if (!options.layout_id.empty()) {
         active_layout_id = options.layout_id;
@@ -1142,7 +1142,7 @@ void App::Impl::persist_game_config() {
     game_config.layout_id = active_layout_id;
     game_config.bilinear_filtering = bilinear_filtering;
     game_config.render_scale = render_scale;
-    game_config.vertical_gap = vertical_gap;
+    game_config.screen_gap = screen_gap;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
@@ -1305,8 +1305,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             if (result.handedness_changed) {
                 request_handedness(other_hand(handedness));
             }
-            if (result.vertical_gap_toggled) {
-                request_vertical_gap(!vertical_gap);
+            if (result.screen_gap_toggled) {
+                request_screen_gap(!screen_gap);
             }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
@@ -1640,7 +1640,7 @@ int App::run(const AppOptions& options) {
             impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
             impl.audio_target = impl.settings.audio_target;
             impl.handedness = impl.settings.handedness;
-            impl.vertical_gap = impl.settings.default_vertical_gap;
+            impl.screen_gap = impl.settings.default_screen_gap;
             impl.apply_filtering();
             impl.state = Impl::State::Companion;
             impl.awaiting_auto_connect = true;
@@ -1826,7 +1826,7 @@ int App::run(const AppOptions& options) {
             shared.audio_target = impl.audio_target;
             shared.handedness = impl.handedness;
             shared.render_scale = impl.render_scale;
-            shared.vertical_gap = impl.vertical_gap;
+            shared.screen_gap = impl.screen_gap;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
@@ -1858,8 +1858,8 @@ int App::run(const AppOptions& options) {
                 if (request.wants_render_scale) {
                     impl.adopt_render_scale(request.render_scale);
                 }
-                if (request.wants_vertical_gap) {
-                    impl.adopt_vertical_gap(request.vertical_gap);
+                if (request.wants_screen_gap) {
+                    impl.adopt_screen_gap(request.screen_gap);
                 }
                 if (request.wants_reset && impl.source) {
                     impl.source->reset();
@@ -1921,7 +1921,7 @@ int App::run(const AppOptions& options) {
                 }
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
                 impl.adopt_handedness(impl.companion_session->host_handedness());
-                impl.adopt_vertical_gap(impl.companion_session->host_vertical_gap());
+                impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 if (impl.system != impl.companion_session->system()) {
                     impl.system = impl.companion_session->system();
                     impl.apply_system();

@@ -36,9 +36,9 @@ struct LayoutPickerResult {
     // Reset was chosen. Unlike the settings above there is no new value to
     // adopt -- the caller just restarts the game.
     bool reset_requested = false;
-    // The Vertical Screens gap toggle was used; the caller applies and
-    // persists it, the same as filtering.
-    bool vertical_gap_toggled = false;
+    // The gap toggle was used; the caller applies and persists it, the same
+    // as filtering.
+    bool screen_gap_toggled = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -58,11 +58,11 @@ struct LayoutPickerState {
     // button does not appear.
     int render_scale = 1;
     int max_render_scale = 1;
-    // Whether Vertical Screens shows the gap between its two screens. Only
-    // meaningful -- and only offered -- while that layout is the one selected;
-    // see `vertical_gap_toggleable`.
-    bool vertical_gap = true;
-    bool vertical_gap_toggleable = false;
+    // Whether the current layout shows the gap between its screens. Only
+    // meaningful -- and only offered -- while a layout that has one selected;
+    // see `screen_gap_toggleable`.
+    bool screen_gap = true;
+    bool screen_gap_toggleable = false;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -80,7 +80,7 @@ public:
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
     void set_render_scale(int scale) { state_.render_scale = scale; }
-    void set_vertical_gap(bool include_gap) { state_.vertical_gap = include_gap; }
+    void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -113,6 +113,13 @@ public:
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
 
+    // The layout a tile actually draws: `layout` with this device's handedness
+    // and the current gap choice applied, the same as the game itself would
+    // be drawn with. Exposed so a preview -- and a test -- do not have to
+    // reimplement the combination; render() uses this for every tile, which is
+    // what makes toggling Gap or Hands update the previews immediately.
+    Layout resolved_layout_for_preview(const Layout& layout) const;
+
     // Draws a layout at a glance: the game's own screens where there are frames
     // to draw, two coloured rectangles where there are not. `display_width`/
     // `display_height` are the real output size the menu itself is drawn at --
@@ -138,7 +145,7 @@ private:
         Hands,
         Sound,
         Cursor,
-        VerticalGap,
+        ScreenGap,
         Reset,
         Resume,
         Disconnect,

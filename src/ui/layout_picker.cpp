@@ -49,11 +49,11 @@ void LayoutPicker::rebuild_footer() {
     // a game, which is not a mid-game question, so Settings itself lives on the
     // launcher and not here.
     footer_.push_back(Footer::Cursor);
-    // Only Vertical Screens' gap is a player's choice -- see
+    // Only some layouts' gap is a player's choice -- see
     // LayoutComposition::gap_toggleable -- so the button appears only while
-    // that layout is the one actually selected.
-    if (state_.vertical_gap_toggleable) {
-        footer_.push_back(Footer::VerticalGap);
+    // one of those is the layout actually selected.
+    if (state_.screen_gap_toggleable) {
+        footer_.push_back(Footer::ScreenGap);
     }
     // Restarting the game, wherever the menu was opened from -- a companion
     // asks the host the same way it asks for anything else, since only the
@@ -90,8 +90,8 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Hands:
             return state_.handedness == Handedness::Left ? "Left-Handed" : "Right-Handed";
-        case Footer::VerticalGap:
-            return state_.vertical_gap ? "Gap: On" : "Gap: Off";
+        case Footer::ScreenGap:
+            return state_.screen_gap ? "Gap: On" : "Gap: Off";
         case Footer::Reset: return "Reset Game";
         case Footer::Resume: return "Resume";
         case Footer::Disconnect: return "Disconnect";
@@ -260,8 +260,8 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         case Footer::Hands:
             result.handedness_changed = true;
             return true;
-        case Footer::VerticalGap:
-            result.vertical_gap_toggled = true;
+        case Footer::ScreenGap:
+            result.screen_gap_toggled = true;
             return true;
         case Footer::Reset:
             result.reset_requested = true;
@@ -333,6 +333,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         open_ = false;
     }
     return result;
+}
+
+Layout LayoutPicker::resolved_layout_for_preview(const Layout& layout) const {
+    return resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap), state_.handedness);
 }
 
 void LayoutPicker::draw_preview(QuadRenderer& quads,
@@ -432,8 +436,8 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview,
-                     output_width, output_height, screens_, textures, bezel_art_, smoothing_);
+        draw_preview(quads, resolved_layout_for_preview(layout), preview, output_width,
+                     output_height, screens_, textures, bezel_art_, smoothing_);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,

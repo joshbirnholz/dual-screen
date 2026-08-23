@@ -45,9 +45,10 @@ struct Settings {
     // ignores it.
     int default_render_scale = 1;
 
-    // Starting point for whether Vertical Screens shows the gap between its
-    // two screens; each game remembers its own choice afterwards.
-    bool default_vertical_gap = true;
+    // Starting point for whether a layout shows the gap between its screens,
+    // for whichever layouts offer the choice; each game remembers its own
+    // choice afterwards.
+    bool default_screen_gap = true;
 
     // Which device plays the sound while two are connected. Chosen from the
     // layout menu rather than here, since it is the kind of thing that changes

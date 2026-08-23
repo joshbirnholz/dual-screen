@@ -65,8 +65,9 @@ public:
         // The host is the only device running a core, but the setting is shown
         // and changed on both, so it travels with everything else they share.
         int render_scale = 1;
-        // Whether Vertical Screens shows the gap between its two screens.
-        bool vertical_gap = true;
+        // Whether a layout shows the gap between its screens, for whichever
+        // layouts offer the choice -- see LayoutComposition::gap_toggleable.
+        bool screen_gap = true;
     };
 
     // Cheap to call every frame; nothing is sent unless something changed.

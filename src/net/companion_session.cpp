@@ -124,7 +124,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_audio_target_ = state.audio_target;
             host_handedness_ = state.handedness;
             host_render_scale_ = state.render_scale;
-            host_vertical_gap_ = state.vertical_gap;
+            host_screen_gap_ = state.screen_gap;
             granted_screen_ = state.companion_screen;
             break;
         }
@@ -325,10 +325,10 @@ void CompanionSession::request_render_scale(int scale) {
     send_request(request);
 }
 
-void CompanionSession::request_vertical_gap(bool include_gap) {
+void CompanionSession::request_screen_gap(bool include_gap) {
     RequestMessage request;
-    request.wants_vertical_gap = true;
-    request.vertical_gap = include_gap;
+    request.wants_screen_gap = true;
+    request.screen_gap = include_gap;
     send_request(request);
 }
 

@@ -135,9 +135,10 @@ struct RequestMessage {
     // like the reset above; the companion leaves the session on its own right
     // after asking, rather than waiting to be told to.
     bool wants_quit = false;
-    // Whether Vertical Screens shows the gap between its two screens.
-    bool wants_vertical_gap = false;
-    bool vertical_gap = true;
+    // Whether a layout shows the gap between its screens, for whichever
+    // layouts offer the choice -- see LayoutComposition::gap_toggleable.
+    bool wants_screen_gap = false;
+    bool screen_gap = true;
 };
 
 struct RejectMessage {
@@ -155,7 +156,7 @@ struct SessionStateMessage {
     AudioTarget audio_target = AudioTarget::Both;
     Handedness handedness = Handedness::Right;
     uint8_t render_scale = 1;
-    bool vertical_gap = true;
+    bool screen_gap = true;
 };
 
 struct FrameMessage {

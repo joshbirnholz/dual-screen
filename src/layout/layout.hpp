@@ -107,10 +107,11 @@ struct LayoutComposition {
     // inside what is left and then centred.
     float margin = 0.0f;
     // Whether `gap` is a player's choice rather than fixed as part of the
-    // arrangement. Only Vertical Screens offers it: everywhere else the gap is
-    // load-bearing -- the focus layouts' small screen sits beside the large one
-    // with a deliberate sliver of air, and Side-by-Side's gap is the DS's own
-    // hinge -- so removing it would not tighten the layout, it would break it.
+    // arrangement. Vertical Screens and the two focus layouts offer it, since
+    // closing their gap still leaves a real arrangement -- two screens flush
+    // against each other. Side-by-Side is the exception: its gap stands in
+    // for the DS's own hinge, so removing it would misrepresent the console
+    // rather than just tighten the picture.
     bool gap_toggleable = false;
 };
 
@@ -184,8 +185,8 @@ Handedness other_hand(Handedness handedness);
 // left-handed mirrored left to right, with any quarter turns reversed to match.
 Layout resolve_for_handedness(const Layout& layout, Handedness handedness);
 
-// Applies the player's choice of whether Vertical Screens shows its gap.
-// A no-op on every other layout: see LayoutComposition::gap_toggleable.
+// Applies the player's choice of whether a layout shows its gap. A no-op on
+// a layout whose gap is not a choice: see LayoutComposition::gap_toggleable.
 Layout resolve_gap_choice(const Layout& layout, bool include_gap);
 
 // The placements this device should actually draw. For an ordinary layout that

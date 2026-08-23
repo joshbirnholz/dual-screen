@@ -22,10 +22,10 @@ struct GameConfig {
     // How many pixels the core renders per console pixel. Per game for the same
     // reason: how much a game can afford is a judgement about that game.
     int render_scale = 1;
-    // Whether Vertical Screens shows the gap between its two screens. Per game
-    // like the two above, though it only ever matters while that layout is
-    // the one chosen.
-    bool vertical_gap = true;
+    // Whether the current layout shows the gap between its screens, for
+    // whichever layouts offer the choice. Per game like the two above, though
+    // it only ever matters while one of those is the one chosen.
+    bool screen_gap = true;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

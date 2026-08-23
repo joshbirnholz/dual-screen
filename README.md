@@ -66,11 +66,12 @@ the touch screen is under whichever hand holds the stylus. It is one toggle
 rather than a left-handed twin of every layout, and it turns the sideways
 screens the other way too.
 
-`vertical`'s gap between the two screens is a **Gap** toggle in the menu, on
-by default. Every other layout's gap is part of its own arrangement — the
-focus layouts' sliver next to the small screen, Side-by-Side's hinge — but two
-screens stacked with nothing between them is a real option, not a broken one,
-so it is the one gap left up to the player.
+`vertical` and the two focus layouts have a **Gap** toggle in the menu, on by
+default, for the space between their screens. Side-by-Side is the one
+exception — its gap stands in for the DS's own hinge, so it stays fixed —
+but everywhere else, screens flush against each other are a real option, not
+a broken one, so the gap is left up to the player. The layout previews update
+live as the toggle changes, the same as picking a different layout does.
 
 `standard` draws an illustration of the console itself and puts the two screens
 exactly where its own are, on a #252525 surround rather than black — that is the

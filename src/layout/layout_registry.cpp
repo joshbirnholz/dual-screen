@@ -107,6 +107,11 @@ LayoutRegistry::LayoutRegistry() {
                 make_item(ScreenId::Bottom, kFocusSmallScale, CrossAlign::End),
             },
             kFocusGap, kFocusMargin);
+        // A player's choice like Vertical Screens' below -- closing it just
+        // brings the small screen flush against the large one, which is a
+        // real arrangement rather than a broken one. See
+        // LayoutComposition::gap_toggleable.
+        layout.composition.gap_toggleable = true;
         layouts_.push_back(layout);
     }
 
@@ -124,6 +129,7 @@ LayoutRegistry::LayoutRegistry() {
                 make_item(ScreenId::Bottom),
             },
             kFocusGap, kFocusMargin);
+        layout.composition.gap_toggleable = true;
         layouts_.push_back(layout);
     }
 
@@ -137,9 +143,12 @@ LayoutRegistry::LayoutRegistry() {
             LayoutAxis::Vertical,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
             kVerticalGap, kVerticalMargin);
-        // The only layout whose gap is a player's choice rather than part of
-        // the arrangement: two screens either side of nothing has no real
-        // equivalent on a Wii U, so there is no "correct" answer to defer to.
+        // A player's choice rather than part of the arrangement: two screens
+        // either side of nothing has no real equivalent on a Wii U, so there
+        // is no "correct" answer to defer to. Side-by-Side below is the one
+        // layout that keeps its gap fixed -- it stands in for the DS's own
+        // hinge, so removing it would misrepresent the console rather than
+        // just tighten the picture.
         layout.composition.gap_toggleable = true;
         layouts_.push_back(layout);
     }
