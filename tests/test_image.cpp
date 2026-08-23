@@ -166,12 +166,18 @@ void test_standard_scales_to_fit_at_every_size() {
                       std::to_string(frame.w) + "x" + std::to_string(frame.h) + ")");
     }
 
-    // The padding still keeps the console clear of the window's edges, on a
-    // display no bigger than a Deck's just as much as on a larger one.
+    // On a display no bigger than a Deck's, the deliberate margin is gone: it
+    // is a few percent of screen a small display cannot spare, unlike a
+    // living-room TV. The frame fills the window's shorter side exactly. What
+    // is left is not "padding" in that sense: it is whatever letterboxing the
+    // console's own aspect ratio still needs against a window shaped
+    // differently from it, the unavoidable price of not stretching or
+    // cropping the artwork.
     const PixelRect padded = layout_frame(standard, 1280.0f, 800.0f, ds_screens());
-    CHECK(padded.y > 1.0f);
+    CHECK_NEAR(padded.y, 0.0f);
+    CHECK_NEAR(padded.h, 800.0f);
     CHECK(padded.x > 1.0f);
-    CHECK(padded.y + padded.h < 799.0f);
+    CHECK(padded.x + padded.w < 1279.0f);
 }
 
 // The exact window a composed layout's group lands at its own natural size in
@@ -194,11 +200,13 @@ PixelRect natural_group_window(const LayoutComposition& composition, const Syste
         largest_along = std::max(largest_along, item_along);
     }
     along += composition.gap * largest_along * static_cast<float>(composition.items.size() - 1);
-    const float usable_scale = 1.0f - composition.margin * 2.0f;
-    const float along_window = along / usable_scale;
-    const float across_window = across / usable_scale;
-    return horizontal ? PixelRect{0.0f, 0.0f, along_window, across_window}
-                      : PixelRect{0.0f, 0.0f, across_window, along_window};
+    // Margin left out of this formula on purpose: a group of real screens is
+    // always well under the small-display threshold (1280x800) at its own
+    // native size, where production code trims the margin to zero -- so the
+    // window that lands the group at scale exactly 1 has to assume zero
+    // margin too, or this would land at some other scale instead.
+    return horizontal ? PixelRect{0.0f, 0.0f, along, across}
+                      : PixelRect{0.0f, 0.0f, across, along};
 }
 
 // The rule is not Standard's alone: any screen that lands at its own size is

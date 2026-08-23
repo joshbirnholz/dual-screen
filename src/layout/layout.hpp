@@ -210,22 +210,40 @@ struct PlacedScreen {
     bool native = false;
 };
 
-// The geometry is not optional: a system's screens are the whole basis of where
-// anything lands, and defaulting it would let a caller silently get a DS's.
+// `display_width`/`display_height` are the real output device's resolution,
+// used only to decide whether the margin around a layout's screens -- the
+// console frame's own, or a composed layout's -- is worth leaving at all: on
+// a display no bigger than a Deck's (1280x800), every one of those pixels is
+// better spent on the screens than on clear space at their edges, so it drops
+// to nothing there. Left at zero, they default to `window`'s own size, which
+// is what every caller means except one drawing a layout into a preview tile
+// smaller than the display it is actually being judged against -- a tile
+// should show the margin (or lack of it) the real render would have, not
+// react to its own small size.
+//
+// The geometry is not optional: a system's screens are the whole basis of
+// where anything lands, and defaulting it would let a caller silently get a
+// DS's.
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         const PixelRect& window,
-                                        const SystemScreens& screens);
+                                        const SystemScreens& screens,
+                                        float display_width = 0.0f,
+                                        float display_height = 0.0f);
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         float output_width,
                                         float output_height,
                                         const SystemScreens& screens);
 
 // The box a layout's placements are relative to: the whole window, unless the
-// layout draws the console, in which case the largest box of the console's shape
-// that fits, centred -- or the artwork's own pixel size on a small display.
+// layout draws the console, in which case the largest box of the console's
+// shape that fits, centred, with a small margin kept clear around it -- unless
+// the display is small enough that the margin is dropped instead. See the
+// `display_width`/`display_height` note above `place_screens`.
 PixelRect layout_frame(const Layout& layout,
                        const PixelRect& window,
-                       const SystemScreens& screens);
+                       const SystemScreens& screens,
+                       float display_width = 0.0f,
+                       float display_height = 0.0f);
 PixelRect layout_frame(const Layout& layout,
                        float output_width,
                        float output_height,

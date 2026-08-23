@@ -110,6 +110,17 @@ Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
 
 namespace {
 
+// Above this, screen real estate is plentiful enough to spare a few percent of
+// it on margin. At or below it -- a Steam Deck's own resolution -- every pixel
+// the screens could use instead is worth more than the clear space around
+// them, so the margin is dropped rather than shrunk.
+constexpr float kSmallDisplayWidth = 1280.0f;
+constexpr float kSmallDisplayHeight = 800.0f;
+
+bool is_small_display(float width, float height) {
+    return width <= kSmallDisplayWidth && height <= kSmallDisplayHeight;
+}
+
 // The size one screen occupies, in source pixels, given its own dimensions and
 // its rotation. Each item measures against its own screen, so "a third the size"
 // means a third of that screen rather than a third of some shared unit -- which
@@ -126,7 +137,8 @@ void item_source_size(const ScreenItem& item,
 
 std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
                                          const PixelRect& frame,
-                                         const SystemScreens& screens) {
+                                         const SystemScreens& screens,
+                                         bool no_margin) {
     std::vector<PlacedScreen> placed;
     if (composition.items.empty() || frame.w <= 0.0f || frame.h <= 0.0f) {
         return placed;
@@ -154,9 +166,11 @@ std::vector<PlacedScreen> place_composed(const LayoutComposition& composition,
         return placed;
     }
 
-    // The largest scale that fits inside the frame once the margin is taken off.
-    const float usable_width = frame.w * (1.0f - composition.margin * 2.0f);
-    const float usable_height = frame.h * (1.0f - composition.margin * 2.0f);
+    // The largest scale that fits inside the frame once the margin is taken off
+    // -- or nothing taken off at all, on a small enough display.
+    const float margin = no_margin ? 0.0f : composition.margin;
+    const float usable_width = frame.w * (1.0f - margin * 2.0f);
+    const float usable_height = frame.h * (1.0f - margin * 2.0f);
     const float usable_along = horizontal ? usable_width : usable_height;
     const float usable_across = horizontal ? usable_height : usable_width;
     const float scale = std::min(usable_along / along, usable_across / across);
@@ -238,11 +252,16 @@ void mark_native(PlacedScreen& placed, const SystemScreens& screens) {
 
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         const PixelRect& window,
-                                        const SystemScreens& screens) {
-    const PixelRect frame = layout_frame(layout, window, screens);
+                                        const SystemScreens& screens,
+                                        float display_width,
+                                        float display_height) {
+    const PixelRect frame = layout_frame(layout, window, screens, display_width, display_height);
+    const bool no_margin =
+        is_small_display(display_width > 0.0f ? display_width : window.w,
+                         display_height > 0.0f ? display_height : window.h);
     std::vector<PlacedScreen> placed;
     if (layout.composition.used) {
-        placed = place_composed(layout.composition, frame, screens);
+        placed = place_composed(layout.composition, frame, screens, no_margin);
     } else if (layout.uses_console_frame && screens.console.exists()) {
         // The console's own arrangement, from whichever system is running.
         for (const ScreenPlacement* placement : {&screens.console.top, &screens.console.bottom}) {
@@ -278,17 +297,23 @@ std::vector<PlacedScreen> place_screens(const Layout& layout,
 
 PixelRect layout_frame(const Layout& layout,
                        const PixelRect& window,
-                       const SystemScreens& screens) {
+                       const SystemScreens& screens,
+                       float display_width,
+                       float display_height) {
     const ConsoleFrame& console = screens.console;
     if (!layout.uses_console_frame || !console.exists() || window.w <= 0.0f || window.h <= 0.0f) {
         return window;
     }
+    const bool no_margin =
+        is_small_display(display_width > 0.0f ? display_width : window.w,
+                         display_height > 0.0f ? display_height : window.h);
+    const float margin = no_margin ? 0.0f : console.margin;
     PixelRect frame = window;
-    if (console.margin > 0.0f) {
-        frame.x += window.w * console.margin;
-        frame.y += window.h * console.margin;
-        frame.w -= window.w * console.margin * 2.0f;
-        frame.h -= window.h * console.margin * 2.0f;
+    if (margin > 0.0f) {
+        frame.x += window.w * margin;
+        frame.y += window.h * margin;
+        frame.w -= window.w * margin * 2.0f;
+        frame.h -= window.h * margin * 2.0f;
         if (frame.w <= 0.0f || frame.h <= 0.0f) {
             return window;
         }

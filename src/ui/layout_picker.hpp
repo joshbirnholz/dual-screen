@@ -105,10 +105,15 @@ public:
     const std::string& selected_layout_id() const { return selected_layout_id_; }
 
     // Draws a layout at a glance: the game's own screens where there are frames
-    // to draw, two coloured rectangles where there are not.
+    // to draw, two coloured rectangles where there are not. `display_width`/
+    // `display_height` are the real output size the menu itself is drawn at --
+    // not `box`, which is only this one tile -- so a preview shows the margin
+    // (or lack of it) the real layout would actually have.
     static void draw_preview(QuadRenderer& quads,
                              const Layout& layout,
                              const PixelRect& box,
+                             float display_width,
+                             float display_height,
                              const SystemScreens& geometry,
                              const ScreenTextures* textures,
                              const Texture* bezel_art,

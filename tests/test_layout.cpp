@@ -71,9 +71,15 @@ void test_registry_contents() {
 // The window here is that same 378 x 212 so the numbers can be read directly.
 void test_layouts_match_the_wii_u() {
     const LayoutRegistry registry;
-    const float width = 378.0f;
-    const float height = 212.0f;
-    const float tolerance = 2.5f;  // a pixel or two off a measured screenshot
+    // Scaled well past the small-display threshold (1280x800): at 378x212
+    // itself the margin below would be trimmed to zero, same as any other
+    // small window, which is not what this test is checking. The layout math
+    // is purely proportional, so scaling the window and the expectations
+    // together changes nothing but that.
+    const float kScale = 4.0f;
+    const float width = 378.0f * kScale;
+    const float height = 212.0f * kScale;
+    const float tolerance = 2.5f * kScale;  // a pixel or two off a measured screenshot
 
     struct Expected {
         const char* id;
@@ -106,18 +112,18 @@ void test_layouts_match_the_wii_u() {
                   std::string(expected.id) + " did not place its " + to_string(expected.screen) +
                       " screen");
         const std::string where = std::string(expected.id) + "'s " + to_string(expected.screen);
-        CHECK_MSG(std::abs(placed.rect.x - expected.x) < tolerance,
+        CHECK_MSG(std::abs(placed.rect.x - expected.x * kScale) < tolerance,
                   where + " x is " + std::to_string(placed.rect.x) + ", the Wii U's is " +
-                      std::to_string(expected.x));
-        CHECK_MSG(std::abs(placed.rect.y - expected.y) < tolerance,
+                      std::to_string(expected.x * kScale));
+        CHECK_MSG(std::abs(placed.rect.y - expected.y * kScale) < tolerance,
                   where + " y is " + std::to_string(placed.rect.y) + ", the Wii U's is " +
-                      std::to_string(expected.y));
-        CHECK_MSG(std::abs(placed.rect.w - expected.w) < tolerance,
+                      std::to_string(expected.y * kScale));
+        CHECK_MSG(std::abs(placed.rect.w - expected.w * kScale) < tolerance,
                   where + " width is " + std::to_string(placed.rect.w) + ", the Wii U's is " +
-                      std::to_string(expected.w));
-        CHECK_MSG(std::abs(placed.rect.h - expected.h) < tolerance,
+                      std::to_string(expected.w * kScale));
+        CHECK_MSG(std::abs(placed.rect.h - expected.h * kScale) < tolerance,
                   where + " height is " + std::to_string(placed.rect.h) + ", the Wii U's is " +
-                      std::to_string(expected.h));
+                      std::to_string(expected.h * kScale));
     }
 
     // The alignment those numbers encode, stated outright so it survives a
@@ -168,6 +174,69 @@ void test_layouts_match_the_wii_u() {
                   "the side-by-side gap is " + std::to_string(side_gap / top.rect.w) +
                       " of a screen, the Wii U's is 0.21");
     }
+}
+
+// The bounding box every screen a layout placed actually lands in.
+PixelRect placed_bounds(const std::vector<PlacedScreen>& placed) {
+    PixelRect bounds{1e9f, 1e9f, 0.0f, 0.0f};
+    float max_x = -1e9f;
+    float max_y = -1e9f;
+    for (const PlacedScreen& entry : placed) {
+        if (entry.rect.x < bounds.x) bounds.x = entry.rect.x;
+        if (entry.rect.y < bounds.y) bounds.y = entry.rect.y;
+        if (entry.rect.x + entry.rect.w > max_x) max_x = entry.rect.x + entry.rect.w;
+        if (entry.rect.y + entry.rect.h > max_y) max_y = entry.rect.y + entry.rect.h;
+    }
+    bounds.w = max_x - bounds.x;
+    bounds.h = max_y - bounds.y;
+    return bounds;
+}
+
+// On a display no bigger than a Deck's (1280x800), no layout leaves any of the
+// deliberate margin around its screens -- every pixel of screen matters more
+// there than a percent or two of clear space at the edges does. Above that
+// size the margin comes back, on both a composed layout and Standard's
+// console frame alike.
+void test_small_displays_drop_the_margin() {
+    const LayoutRegistry registry;
+    const SystemScreens& screens = ds_screens();
+
+    for (const char* id : {"upper_focus", "touch_focus", "vertical", "side_by_side"}) {
+        const Layout& layout = *registry.find(id);
+        // Small on its own: well under the threshold in both dimensions.
+        const PixelRect small_bounds =
+            placed_bounds(place_screens(layout, 600.0f, 400.0f, screens));
+        CHECK_MSG(small_bounds.x < 1.0f || small_bounds.y < 1.0f,
+                  std::string(id) + " left a margin on a small display");
+
+        // Comfortably past the threshold: the margin should be visible again.
+        const PixelRect big_bounds =
+            placed_bounds(place_screens(layout, 3000.0f, 3000.0f, screens));
+        CHECK_MSG(big_bounds.x > 1.0f && big_bounds.y > 1.0f,
+                  std::string(id) + " dropped its margin on a large display");
+    }
+
+    // Standard's console frame follows the same rule.
+    const Layout& standard = *registry.find("standard");
+    const PixelRect small_frame = layout_frame(standard, 1280.0f, 800.0f, screens);
+    CHECK_MSG(small_frame.y < 1.0f, "standard left a margin on a small display");
+    const PixelRect big_frame = layout_frame(standard, 2560.0f, 1600.0f, screens);
+    CHECK_MSG(big_frame.y > 1.0f, "standard dropped its margin on a large display");
+
+    // The margin follows the real display, not whatever box a layout happens
+    // to be drawn into: a small preview tile on a large display still has to
+    // show the margin the real render would have, and a caller that does not
+    // say what the real display is falls back to the box's own size, which is
+    // what a full-window render always passes.
+    const Layout& vertical = *registry.find("vertical");
+    const PixelRect tile{0.0f, 0.0f, 300.0f, 300.0f};
+    const PixelRect tile_alone = placed_bounds(place_screens(vertical, tile, screens));
+    CHECK_MSG(tile_alone.x < 1.0f || tile_alone.y < 1.0f,
+              "a preview tile with no display size given kept a margin");
+    const PixelRect tile_on_big_display =
+        placed_bounds(place_screens(vertical, tile, screens, 3000.0f, 3000.0f));
+    CHECK_MSG(tile_on_big_display.x > 0.2f || tile_on_big_display.y > 0.2f,
+              "a preview tile on a large display lost its margin because the tile itself is small");
 }
 
 // Standard is the console itself: its shape comes from whichever system is
@@ -620,6 +689,7 @@ void test_smoothing_follows_the_texture_not_just_the_setting() {
 int main() {
     test_registry_contents();
     test_layouts_match_the_wii_u();
+    test_small_displays_drop_the_margin();
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
     test_rotated_screens_letterbox_sideways();

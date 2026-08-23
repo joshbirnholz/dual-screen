@@ -327,6 +327,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
 void LayoutPicker::draw_preview(QuadRenderer& quads,
                                 const Layout& layout,
                                 const PixelRect& box,
+                                float display_width,
+                                float display_height,
                                 const SystemScreens& tile_geometry,
                                 const ScreenTextures* textures,
                                 const Texture* bezel_art,
@@ -340,10 +342,12 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
                                   : Color{0.02f, 0.03f, 0.05f, 1.0f});
 
     if (draws_console) {
-        draw_ds_shell(quads, layout_frame(layout, box, geometry), has_art ? bezel_art : nullptr);
+        draw_ds_shell(quads, layout_frame(layout, box, geometry, display_width, display_height),
+                     has_art ? bezel_art : nullptr);
     }
 
-    for (const PlacedScreen& placed : place_screens(layout, box, geometry)) {
+    for (const PlacedScreen& placed :
+        place_screens(layout, box, geometry, display_width, display_height)) {
         const PixelRect& rect = placed.rect;
         const Texture* texture = nullptr;
         if (textures != nullptr) {
@@ -417,8 +421,8 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview, screens_,
-                     textures, bezel_art_, smoothing_);
+        draw_preview(quads, resolve_for_handedness(layout, state_.handedness), preview,
+                     output_width, output_height, screens_, textures, bezel_art_, smoothing_);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,
