@@ -192,6 +192,16 @@ private:
     uint64_t stats_at_ms_ = 0;
     unsigned stats_decoded_ = 0;
 
+public:
+    // Counted by whoever is drawing, once per presented frame. Decoded and
+    // drawn are different questions: a device can be handed every frame and
+    // still show a fraction of them, and only the second is what the player
+    // sees. Told apart here because the difference is the whole diagnosis.
+    void note_frame_drawn() { ++stats_drawn_; }
+
+private:
+    unsigned stats_drawn_ = 0;
+
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.
     struct ScreenBuffer {

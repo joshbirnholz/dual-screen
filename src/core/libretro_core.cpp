@@ -894,7 +894,10 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             const auto* message = static_cast<const struct retro_message*>(data);
             if (message != nullptr && message->msg != nullptr) {
                 core_messages_.emplace_back(message->msg);
-                log_info(std::string("core message: ") + message->msg);
+                if (core_messages_.back() != last_logged_core_message_) {
+                    last_logged_core_message_ = core_messages_.back();
+                    log_info("core message: " + last_logged_core_message_);
+                }
             }
             return true;
         }
@@ -906,7 +909,11 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             const auto* message = static_cast<const struct retro_message_ext*>(data);
             if (message != nullptr && message->msg != nullptr) {
                 core_messages_.emplace_back(message->msg);
-                log_message(translate_log_level(message->level), std::string("core message: ") + message->msg);
+                if (core_messages_.back() != last_logged_core_message_) {
+                    last_logged_core_message_ = core_messages_.back();
+                    log_message(translate_log_level(message->level),
+                                "core message: " + last_logged_core_message_);
+                }
             }
             return true;
         }

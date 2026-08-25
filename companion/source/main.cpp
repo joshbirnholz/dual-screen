@@ -776,6 +776,7 @@ void Client::run() {
                     write_screenshot(output_width_, output_height_, options_.screenshot_path);
             }
             SDL_GL_SwapWindow(gl_.window);
+            session_.note_frame_drawn();
         } else {
             SDL_Delay(16);
         }

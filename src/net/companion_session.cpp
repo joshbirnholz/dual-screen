@@ -495,9 +495,11 @@ void CompanionSession::report_stream(uint64_t now_ms) {
         return;
     }
     log_debug("stream: " + std::to_string(stats_decoded_ * 1000 / elapsed) +
-              " frames decoded/s, newest is " + std::to_string(acked_serial_));
+              " decoded/s, " + std::to_string(stats_drawn_ * 1000 / elapsed) +
+              " drawn/s, newest is " + std::to_string(acked_serial_));
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
+    stats_drawn_ = 0;
 }
 
 void CompanionSession::forget_screen_textures() {

@@ -204,6 +204,10 @@ private:
     // What has already been written to the log, so a revalidation is quiet.
     std::vector<std::string> logged_option_warnings_;
     std::vector<std::string> core_messages_;
+    // The last one written to the log. A core is entitled to re-send the same
+    // message every frame -- melonDS restates its layout that often -- and
+    // logging each one buries everything else at sixty lines a second.
+    std::string last_logged_core_message_;
 
     // --- hardware rendering ---
     // Set when the core asked for a GPU context. The callback is the core's

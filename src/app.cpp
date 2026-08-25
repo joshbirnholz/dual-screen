@@ -1425,6 +1425,11 @@ void App::Impl::render() {
 
     SDL_GL_SwapWindow(window);
     ++frames_rendered;
+    // Only the game path gets here, which is the one whose rate says whether a
+    // companion is showing what it is being sent.
+    if (companion_session) {
+        companion_session->note_frame_drawn();
+    }
 }
 
 bool App::Impl::write_screenshot(const std::string& path) {
