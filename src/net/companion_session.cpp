@@ -72,6 +72,7 @@ void CompanionSession::disconnect() {
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
+    pending_frames_.clear();
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
         status_detail_.clear();
@@ -152,22 +153,9 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 fail("the host sent a frame with impossible dimensions");
                 return;
             }
-            ScreenBuffer& target = (frame.screen == ScreenId::Top) ? top_ : bottom_;
-            // A tiled frame is a difference from the last one, so it is
-            // applied onto what is already here; a whole one replaces it.
-            const bool decoded =
-                frame.encoding == FrameEncoding::Rgb565DeflateTiles
-                    ? decode_screen_tiles(frame.payload, frame.width, frame.height, target.rgb565)
-                    : decode_screen_rgb565(frame.payload, frame.width, frame.height,
-                                           target.rgb565);
-            if (!decoded) {
-                fail("a frame from the host could not be decompressed");
-                return;
-            }
-            target.width = frame.width;
-            target.height = frame.height;
-            target.serial = frame.serial;
-            ++stats_decoded_;
+            // Held rather than applied here: poll() shows one frame per pass
+            // so the cadence on screen is even, whatever the arrivals did.
+            pending_frames_.push_back(std::move(frame));
             break;
         }
         case MessageType::Audio: {
@@ -259,6 +247,21 @@ void CompanionSession::poll(uint64_t now_ms) {
         if (!stream_.open()) {
             break;
         }
+    }
+
+    // Show one frame per pass, whatever arrived during it. Anything that came
+    // early waits its turn, which is what makes a frame that came late free of
+    // charge: the picture advances once per pass either way.
+    //
+    // Beyond a few frames the wait is no longer jitter but a backlog, and
+    // holding it would only show old pictures late, so it is caught up on.
+    constexpr std::size_t kJitterFrames = 3;
+    std::size_t budget = 1;
+    const std::size_t waiting = buffered_frames();
+    if (waiting > kJitterFrames) {
+        budget = waiting - kJitterFrames + 1;
+    }
+    for (std::size_t shown = 0; shown < budget && decode_next_frame(); ++shown) {
     }
 
     // Tell the host which frame has actually been decoded here. This is the
@@ -500,6 +503,52 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
+}
+
+void CompanionSession::apply_frame(const FrameMessage& frame) {
+    ScreenBuffer& target = (frame.screen == ScreenId::Top) ? top_ : bottom_;
+    // A tiled frame is a difference from the last one, so it is applied onto
+    // what is already here; a whole one replaces it.
+    const bool decoded =
+        frame.encoding == FrameEncoding::Rgb565DeflateTiles
+            ? decode_screen_tiles(frame.payload, frame.width, frame.height, target.rgb565)
+            : decode_screen_rgb565(frame.payload, frame.width, frame.height, target.rgb565);
+    if (!decoded) {
+        fail("a frame from the host could not be decompressed");
+        return;
+    }
+    target.width = frame.width;
+    target.height = frame.height;
+    target.serial = frame.serial;
+    ++stats_decoded_;
+}
+
+// One whole frame: every screen the host sent under the same serial, so the
+// two screens never show different moments.
+bool CompanionSession::decode_next_frame() {
+    if (pending_frames_.empty()) {
+        return false;
+    }
+    const uint64_t serial = pending_frames_.front().serial;
+    while (!pending_frames_.empty() && pending_frames_.front().serial == serial) {
+        apply_frame(pending_frames_.front());
+        pending_frames_.pop_front();
+    }
+    return true;
+}
+
+std::size_t CompanionSession::buffered_frames() const {
+    std::size_t frames = 0;
+    bool counting = false;
+    uint64_t previous = 0;
+    for (const FrameMessage& frame : pending_frames_) {
+        if (!counting || frame.serial != previous) {
+            ++frames;
+            previous = frame.serial;
+            counting = true;
+        }
+    }
+    return frames;
 }
 
 void CompanionSession::forget_screen_textures() {

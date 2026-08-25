@@ -141,6 +141,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_display_width_ = 0;
     companion_display_height_ = 0;
     frame_marks_.clear();
+    frame_sent_at_.clear();
     resend_screens_ = false;
     sent_serial_ = 0;
     acked_serial_ = 0;
@@ -312,6 +313,19 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             uint64_t serial = 0;
             if (decode_frame_ack(payload.data(), payload.size(), serial)) {
                 acked_serial_ = std::max(acked_serial_, serial);
+                // Everything up to the acked frame has arrived, so time the
+                // newest of them and discard the rest.
+                const uint64_t now = monotonic_millis();
+                while (!frame_sent_at_.empty() && frame_sent_at_.front().first <= serial) {
+                    const uint64_t sent_at = frame_sent_at_.front().second;
+                    frame_sent_at_.pop_front();
+                    if (frame_sent_at_.empty() || frame_sent_at_.front().first > serial) {
+                        const uint64_t trip = now - sent_at;
+                        ++stats_round_trips_;
+                        stats_round_trip_total_ms_ += trip;
+                        stats_round_trip_worst_ms_ = std::max(stats_round_trip_worst_ms_, trip);
+                    }
+                }
             }
             break;
         }
@@ -459,11 +473,18 @@ void HostSession::report_stream(uint64_t now_ms) {
               std::to_string(dropped) + " dropped, " +
               std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, companion " +
               std::to_string(behind) + " frames behind, " +
-              std::to_string(companion_.backlog_bytes()) + " B unsent");
+              std::to_string(companion_.backlog_bytes()) + " B unsent, round trip " +
+              std::to_string(stats_round_trips_ > 0
+                                 ? stats_round_trip_total_ms_ / stats_round_trips_
+                                 : 0) +
+              "ms avg " + std::to_string(stats_round_trip_worst_ms_) + "ms worst");
     stats_at_ms_ = now_ms;
     stats_bytes_ = companion_.queued_total();
     stats_produced_ = 0;
     stats_sent_ = 0;
+    stats_round_trips_ = 0;
+    stats_round_trip_total_ms_ = 0;
+    stats_round_trip_worst_ms_ = 0;
 }
 
 std::size_t HostSession::frames_in_flight() {
@@ -558,6 +579,11 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // Where this frame ends, so frames_in_flight() can tell later whether
         // it has actually gone.
         frame_marks_.push_back(companion_.queued_total());
+        frame_sent_at_.emplace_back(serial, monotonic_millis());
+        // A companion that stops acking must not make this grow for ever.
+        while (frame_sent_at_.size() > 240) {
+            frame_sent_at_.pop_front();
+        }
         ++stats_sent_;
     }
     sent_serial_ = serial;

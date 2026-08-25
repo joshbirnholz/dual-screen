@@ -1041,6 +1041,85 @@ void test_a_real_host_is_not_timed_out() {
 // device whose link cannot carry the stream looks like from the host: frames
 // keep being handed to the socket, and nothing comes back to say any of them
 // arrived.
+// Frames that arrive together are shown one at a time.
+//
+// The host produces on its own clock and a companion shows on its own, so a
+// frame or two lands inside one display interval and none inside the next.
+// Showing everything that has arrived turns that into a frame skipped and then
+// a frame repeated, which is what a stream running at a healthy sixty frames a
+// second still looks choppy at.
+void test_frames_that_arrive_together_are_shown_one_at_a_time() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "vertical", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!spin(host, companion, [&] {
+            return companion.status() == CompanionSession::Status::Connected &&
+                   host.has_companion();
+        })) {
+        CHECK_MSG(false, "handshake did not complete");
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    const auto publish = [&](uint64_t serial) {
+        bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        host.poll(monotonic_millis());
+    };
+
+    // Settle, so the first frame is not still in flight when the burst lands.
+    publish(1);
+    if (!spin(host, companion, [&] { return companion.newest_frame_serial_for_test() == 1; })) {
+        CHECK_MSG(false, "the first frame never arrived");
+        return;
+    }
+
+    // Three at once, as a moment of network jitter delivers them.
+    publish(2);
+    publish(3);
+    publish(4);
+    // Long enough that all three are certainly readable in one pass.
+    for (int wait = 0; wait < 50 && companion.buffered_frames() < 3; ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        host.poll(monotonic_millis());
+        companion.poll(monotonic_millis());
+        if (companion.newest_frame_serial_for_test() > 1) {
+            break;  // a pass has already shown one, which is the point
+        }
+    }
+
+    CHECK_MSG(companion.newest_frame_serial_for_test() == 2,
+              "a pass showed serial " +
+                  std::to_string(companion.newest_frame_serial_for_test()) +
+                  " rather than advancing one frame from 1");
+    // The rest are held, not thrown away: each is a difference from the last.
+    CHECK_MSG(companion.buffered_frames() == 2,
+              std::to_string(companion.buffered_frames()) + " frames were held rather than 2");
+
+    companion.poll(monotonic_millis());
+    CHECK_MSG(companion.newest_frame_serial_for_test() == 3, "the next pass did not show serial 3");
+    companion.poll(monotonic_millis());
+    CHECK_MSG(companion.newest_frame_serial_for_test() == 4, "the pass after did not show serial 4");
+}
+
 void test_a_companion_that_falls_behind_stops_being_sent_frames() {
     HostSession host;
     HostSession::Config config;
@@ -1155,6 +1234,7 @@ int main() {
     test_menu_gets_the_companion_both_screens();
     test_joining_gives_up_on_a_host_that_never_answers();
     test_a_real_host_is_not_timed_out();
+    test_frames_that_arrive_together_are_shown_one_at_a_time();
     test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_host_can_disconnect_the_companion();
     return test::finish("session");

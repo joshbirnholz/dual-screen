@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <functional>
 #include <string>
 #include <vector>
@@ -145,6 +146,9 @@ public:
     // taken away and given back -- Android, when the app is backgrounded --
     // where the texture names survive as numbers that no longer mean anything.
     void forget_screen_textures();
+
+    // How many whole frames have arrived and not yet been shown.
+    std::size_t buffered_frames() const;
     // The newest frame actually decoded here, which is what the host is told.
     uint64_t newest_frame_serial_for_test() const {
         return std::max(top_.serial, bottom_.serial);
@@ -156,6 +160,22 @@ private:
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
     void send_request(RequestMessage request);
     void fail(const std::string& reason);
+
+    // Frames that have arrived but not yet been applied.
+    //
+    // The host produces on its own clock and this device shows on its own, and
+    // the two are never quite the same: a frame or two arrives inside one
+    // display interval and none inside the next. Applying everything that has
+    // arrived, as this used to, turns that into a shown frame skipped and then
+    // a shown frame repeated -- which is what a stream at a healthy sixty
+    // frames a second still looks choppy at.
+    //
+    // Kept whole rather than collapsed because a tiled frame is a difference
+    // from the one before it: they have to be applied in order, and none can
+    // be thrown away without corrupting the picture.
+    std::deque<FrameMessage> pending_frames_;
+    void apply_frame(const FrameMessage& frame);
+    bool decode_next_frame();
 
     HostBrowser browser_;
     TcpStream stream_;
