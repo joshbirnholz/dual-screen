@@ -375,6 +375,34 @@ void test_connect_to_nothing_fails() {
     }
 }
 
+// A connect that has not finished must not claim it has. SO_ERROR only means
+// anything once the socket reports itself writable; asked before that it reads
+// zero, which is indistinguishable from success -- and taking that for a
+// finished handshake makes an address this device cannot route to look exactly
+// like a host that is connected and simply quiet.
+//
+// 203.0.113.0/24 is TEST-NET-3, reserved for documentation and routed nowhere,
+// so a connect to it hangs in SYN retries rather than being refused.
+void test_a_connect_in_progress_does_not_claim_to_be_connected() {
+    TcpStream stream;
+    std::string error;
+    if (!stream.start_connect("203.0.113.7", kSessionPort, &error)) {
+        return;  // this machine refuses the route outright, which is not the case under test
+    }
+    CHECK(!stream.connected());
+    std::vector<uint8_t> inbox;
+    const uint64_t deadline = monotonic_millis() + 500;
+    while (monotonic_millis() < deadline) {
+        std::string reason;
+        if (!stream.pump(inbox, &reason)) {
+            return;  // an outright failure is a legitimate answer; claiming success is not
+        }
+        CHECK_MSG(!stream.connected(),
+                  "a connect that cannot possibly have completed reported itself connected");
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -384,5 +412,6 @@ int main() {
     test_streams_enable_keepalive_with_a_short_idle_time();
     test_the_kernel_send_queue_is_small_enough_to_notice();
     test_connect_to_nothing_fails();
+    test_a_connect_in_progress_does_not_claim_to_be_connected();
     return test::finish("net");
 }

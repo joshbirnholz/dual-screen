@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
@@ -201,14 +202,31 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
     }
 
     if (connecting_) {
+        // SO_ERROR only means anything once the socket reports itself
+        // writable, which is how a non-blocking connect says it has finished
+        // -- either way. Asked before that it reads 0, which is
+        // indistinguishable from success: the old code took that for a
+        // completed handshake on the very first poll, milliseconds after the
+        // connect started, and the hello then went into a socket still in
+        // SYN_SENT. Against a host at an address this device cannot route to
+        // that looks exactly like being connected, right up until the join
+        // times out.
+        pollfd waiting {};
+        waiting.fd = descriptor_;
+        waiting.events = POLLOUT;
+        const int ready = ::poll(&waiting, 1, 0);
+        if (ready < 0 && errno != EINTR) {
+            if (error != nullptr) *error = std::string("poll: ") + std::strerror(errno);
+            return false;
+        }
+        if (ready <= 0 || (waiting.revents & (POLLOUT | POLLERR | POLLHUP)) == 0) {
+            return true;  // still handshaking
+        }
         int result = 0;
         socklen_t length = sizeof(result);
         if (::getsockopt(descriptor_, SOL_SOCKET, SO_ERROR, &result, &length) != 0) {
             if (error != nullptr) *error = std::string("getsockopt: ") + std::strerror(errno);
             return false;
-        }
-        if (result == EINPROGRESS) {
-            return true;  // still handshaking
         }
         if (result != 0) {
             if (error != nullptr) *error = std::string("connect: ") + std::strerror(result);
