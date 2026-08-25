@@ -708,7 +708,8 @@ void Client::run() {
         const Layout layout =
             state_ == State::Playing ? session_layout() : registry_.fallback();
         input_.end_frame(layout, static_cast<float>(output_width_),
-                         static_cast<float>(output_height_), session_.screens_geometry());
+                         static_cast<float>(output_height_), session_.screens_geometry(),
+                         static_cast<float>(panel_width_), static_cast<float>(panel_height_));
         if (input_.quit_requested()) {
             running_ = false;
         }

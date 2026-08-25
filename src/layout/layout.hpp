@@ -291,13 +291,19 @@ struct DsTouchPoint {
 // when there is no touchable bottom screen to map onto, or the point landed on
 // another screen instead (the upper one, typically). Derived generically from
 // the layout data, so a new layout is new data, not new code.
+// `display_width`/`display_height` mean what they do for `place_screens`, and
+// have to match what was drawn: this maps a point back through the layout, so
+// laying it out against a different size than the compositor used puts every
+// touch somewhere the player did not press.
 bool map_output_point_to_ds(const Layout& layout,
                             float output_width,
                             float output_height,
                             float point_x,
                             float point_y,
                             DsTouchPoint& out_point,
-                            const SystemScreens& screens);
+                            const SystemScreens& screens,
+                            float display_width = 0.0f,
+                            float display_height = 0.0f);
 
 // True if this layout shows the bottom screen at all (and so can accept touch).
 bool layout_has_touchable_bottom(const Layout& layout);

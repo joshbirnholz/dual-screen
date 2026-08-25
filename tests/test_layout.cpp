@@ -266,6 +266,40 @@ void test_the_display_size_wins_over_the_window() {
               "the screens did not span the window's height: " + std::to_string(bounds.h));
 }
 
+// Where a touch lands has to be worked out from the layout that was actually
+// drawn. Both go through place_screens, so both have to be told the same
+// display size -- on a handheld Switch, where the window is bigger than the
+// panel, laying the touch mapping out against the window puts every press
+// somewhere the player did not touch.
+void test_touch_follows_the_layout_that_was_drawn() {
+    const LayoutRegistry registry;
+    const SystemScreens& screens = ds_screens();
+    const Layout& standard = *registry.find("standard");
+    const PixelRect window{0.0f, 0.0f, 1920.0f, 1080.0f};
+    const float panel_w = 1280.0f;
+    const float panel_h = 720.0f;
+
+    // The middle of the touch screen as the compositor drew it.
+    PixelRect touch_rect{};
+    for (const PlacedScreen& placed :
+         place_screens(standard, window, screens, panel_w, panel_h)) {
+        if (placed.screen == ScreenId::Bottom) {
+            touch_rect = placed.rect;
+        }
+    }
+    CHECK(touch_rect.w > 0.0f);
+    const float centre_x = touch_rect.x + touch_rect.w * 0.5f;
+    const float centre_y = touch_rect.y + touch_rect.h * 0.5f;
+
+    DsTouchPoint point;
+    CHECK(map_output_point_to_ds(standard, window.w, window.h, centre_x, centre_y, point, screens,
+                                 panel_w, panel_h));
+    CHECK_MSG(std::abs(point.x - kDsScreenWidth / 2) <= 1,
+              "touch x came back as " + std::to_string(point.x));
+    CHECK_MSG(std::abs(point.y - kDsScreenHeight / 2) <= 1,
+              "touch y came back as " + std::to_string(point.y));
+}
+
 // Standard is the console itself: its shape comes from whichever system is
 // running, and the screens sit exactly where that console's own screens are.
 void test_standard_is_the_console() {
@@ -817,6 +851,7 @@ int main() {
     test_layouts_match_the_wii_u();
     test_small_displays_drop_the_margin();
     test_the_display_size_wins_over_the_window();
+    test_touch_follows_the_layout_that_was_drawn();
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
     test_the_gap_choice_applies_to_every_layout_that_offers_it();

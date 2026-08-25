@@ -64,10 +64,16 @@ public:
     // Call after the event pump. `layout` is the layout actually being drawn,
     // which is what decides where a touch on the bottom screen lands in DS
     // coordinates.
+    // `display_width`/`display_height` are the size of the display the picture
+    // actually lands on, when that is not the size being drawn at -- see
+    // Compositor::set_display_size(). Touches are mapped back through the same
+    // layout the compositor drew, so this has to be the same answer.
     void end_frame(const Layout& layout,
                    float output_width,
                    float output_height,
-                   const SystemScreens& screens);
+                   const SystemScreens& screens,
+                   float display_width = 0.0f,
+                   float display_height = 0.0f);
 
     const DsInputState& ds_state() const { return ds_state_; }
     const std::vector<UiAction>& ui_actions() const { return ui_actions_; }

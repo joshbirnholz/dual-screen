@@ -478,14 +478,17 @@ bool map_output_point_to_ds(const Layout& layout,
                             float point_x,
                             float point_y,
                             DsTouchPoint& out_point,
-                            const SystemScreens& screens) {
+                            const SystemScreens& screens,
+                            float display_width,
+                            float display_height) {
     if (!layout.accepts_touch_on_bottom || output_width <= 0.0f || output_height <= 0.0f) {
         return false;
     }
 
     const ScreenSize touch = screens.bottom;
     const std::vector<PlacedScreen> placed_screens =
-        place_screens(layout, output_width, output_height, screens);
+        place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
+                      display_width, display_height);
 
     const PlacedScreen* touch_screen = nullptr;
     for (const PlacedScreen& placed : placed_screens) {
