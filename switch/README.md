@@ -35,7 +35,7 @@ the two from ever disagreeing.
 | Choose top or bottom screen | Left / Right on the host list |
 | Join, and confirm in menus | the east face button (A) |
 | Leave the list, or a menu | the south face button (B) |
-| Open this device's menu | a **two-finger tap** on the screen |
+| Open this device's menu | **+ and -** together, or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** — the host applies it on both devices |
 | Swap the two focus layouts | **L3** — likewise |
 | Touch the touchscreen | tap or drag, when this device is the bottom screen |

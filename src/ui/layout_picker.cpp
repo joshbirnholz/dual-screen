@@ -500,7 +500,9 @@ void LayoutPicker::render(QuadRenderer& quads,
     const std::string prompts = format_prompts({{labels.confirm, "Select"},
                                                 {labels.cancel, "Resume"},
                                                 {"R3", "Smoothing"},
-                                                {"F1", "Toggle menu"}});
+                                                // Named rather than F1, which
+                                                // is not a key a console has.
+                                                {"Start+Select", "Toggle menu"}});
     text.draw(quads, prompts, geometry.panel.x + geometry.panel.w * 0.5f,
               geometry.panel.y + geometry.panel.h + line * 0.2f, scale * 0.9f, theme.text_dim,
               TextAlign::Center);

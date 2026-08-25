@@ -233,6 +233,70 @@ void test_left_stick_click_swaps_the_layout() {
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::SwapLayout), 0);
 }
 
+// Start and Select together open the menu. That chord is the only way in on a
+// device with no Steam Input in front of the pad -- a Switch running this as a
+// companion -- so it has to fire once for the pair however they are pressed,
+// and the game must not also see the two buttons: plenty of DS games read them
+// together as a soft reset.
+void test_start_and_select_open_the_menu() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+
+    const auto frame = [&input]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+    };
+    const auto menu_opens = [&input]() {
+        int count = 0;
+        for (const UiAction action : input.ui_actions()) {
+            if (action == UiAction::ToggleMenu) ++count;
+        }
+        return count;
+    };
+
+    // Select on its own is just Select, and reaches the game as itself.
+    pad.press(SDL_CONTROLLER_BUTTON_BACK, true);
+    frame();
+    CHECK_EQ(menu_opens(), 0);
+    CHECK_MSG(input.ds_state().pressed(DsButton::Select), "Select alone did not reach the game");
+
+    // The pair opens the menu, and neither button goes through.
+    pad.press(SDL_CONTROLLER_BUTTON_START, true);
+    frame();
+    CHECK_EQ(menu_opens(), 1);
+    CHECK_MSG(!input.ds_state().pressed(DsButton::Start), "Start leaked into the game");
+    CHECK_MSG(!input.ds_state().pressed(DsButton::Select), "Select leaked into the game");
+
+    // Still held. Opening once a frame would toggle the menu sixty times a
+    // second, which reads as the shortcut not working at all.
+    frame();
+    CHECK_EQ(menu_opens(), 0);
+    frame();
+    CHECK_EQ(menu_opens(), 0);
+
+    // Releasing either one arms it again, and the pair fires a second time --
+    // which is what makes the same chord close the menu it opened.
+    pad.press(SDL_CONTROLLER_BUTTON_START, false);
+    frame();
+    CHECK_EQ(menu_opens(), 0);
+    pad.press(SDL_CONTROLLER_BUTTON_START, true);
+    frame();
+    CHECK_EQ(menu_opens(), 1);
+
+    input.shutdown();
+    pad.detach();
+}
+
 // The mock core lights an indicator square per libretro joypad button. Their
 // positions come from mock_core.cpp's draw_button_indicators().
 struct Indicator {
@@ -361,6 +425,7 @@ int main() {
     test_right_stick_reaches_the_c_stick();
     test_stick_click_toggles_filtering();
     test_left_stick_click_swaps_the_layout();
+    test_start_and_select_open_the_menu();
     test_face_buttons_reach_the_core();
 
     SDL_Quit();

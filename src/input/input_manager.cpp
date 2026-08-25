@@ -481,6 +481,22 @@ void InputManager::end_frame(const Layout& layout,
     emit_navigation_from_axes();
 
     const DsInputState held = poll_held_state();
+
+    // Start and Select together open the menu, the chord every emulator
+    // frontend already has. R3 does it too, and on a Deck it is the better one
+    // -- but a Switch running this as a companion has no Steam Input in front
+    // of the pad to bind anything with, and its own menu has to be reachable
+    // from the buttons the console actually has. Fires once for the pair
+    // however they are pressed, rather than once a frame for as long as they
+    // are held.
+    const bool menu_chord = held.pressed(DsButton::Start) && held.pressed(DsButton::Select);
+    if (!menu_chord) {
+        menu_chord_consumed_ = false;
+    } else if (!menu_chord_consumed_) {
+        menu_chord_consumed_ = true;
+        push_action(UiAction::ToggleMenu);
+    }
+
     const bool pointer_down = update_pointer(output_width, output_height);
     // Off centre by enough that the menu would have moved on it, which is the
     // deflection worth holding back after the menu closes.
@@ -494,6 +510,13 @@ void InputManager::end_frame(const Layout& layout,
     ds_state_.clear();
     if (game_input_enabled_) {
         ds_state_.buttons = held_input_gate_.buttons();
+        // Held together the two are a shortcut rather than two buttons. Plenty
+        // of DS games read the pair as a soft reset, which is a poor thing to
+        // do to someone on their way into the menu.
+        if (menu_chord) {
+            ds_state_.set(DsButton::Start, false);
+            ds_state_.set(DsButton::Select, false);
+        }
         // The sticks reach the game as themselves. Every layer below this one
         // -- the wire, the core's analog callback -- already carries them;
         // nothing filled them in, so a 3DS could be handed a stick that was

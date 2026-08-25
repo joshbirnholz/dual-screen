@@ -381,7 +381,7 @@ Full options:
 
 | | |
 | --- | --- |
-| Open/close the layout menu | **F1** or a **two-finger tap** |
+| Open/close the layout menu | **Start + Select**, **F1**, or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
 | Swap the two focus layouts | **L3** (or **F3**), while a game is on screen |
 | Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |

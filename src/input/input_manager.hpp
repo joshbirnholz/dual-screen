@@ -128,6 +128,10 @@ private:
 
     // Keeps the press that dismissed a menu from also registering in the game.
     HeldInputGate held_input_gate_;
+    // Whether the Start+Select menu chord has already been acted on. It is
+    // held for as long as it takes to press two buttons, which is several
+    // frames, and the menu should open once rather than flicker.
+    bool menu_chord_consumed_ = false;
 
     // Touch tracking. The first finger down drives the DS touchscreen; a second
     // simultaneous finger opens the menu, which is the only way in on a device
