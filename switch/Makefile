@@ -87,6 +87,24 @@ LIBS    := $(shell $(SDL2_CONFIG) --libs) -lz -lnx
 
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 
+# Which compiler driver does the link. devkitPro's base_rules sets CC, CXX, AS
+# and the rest but deliberately leaves this one to the project, because only
+# the project knows whether there is any C++ to link a runtime for -- and make
+# has a built-in default of a bare `ld`, which is not a cross-linker and not
+# even on the PATH, so leaving it unset fails at the last step with "ld: No
+# such file or directory" after everything has compiled.
+ifeq ($(strip $(CPPFILES)),)
+export LD := $(CC)
+else
+export LD := $(CXX)
+endif
+
+# A missing portlib otherwise shows up as several hundred undefined SDL
+# symbols at the link, which says nothing about what to install.
+ifeq ($(wildcard $(SDL2_CONFIG)),)
+$(error Cannot find $(SDL2_CONFIG) -- install it with: dkp-pacman -S switch-sdl2)
+endif
+
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------

@@ -1,0 +1,7 @@
+# What the devkitPro build leaves behind next to the Makefile. `build/` itself
+# is covered by the .gitignore at the top of the repo.
+*.nro
+*.nacp
+*.elf
+*.map
+*.lst
