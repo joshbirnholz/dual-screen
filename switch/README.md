@@ -154,8 +154,12 @@ Nearly all of it is the desktop app's own sources, compiled again: the wire
 protocol, LAN discovery, the session, the layout arithmetic, the controller
 mapping, the compositor that draws the screens, the quick menu and the host
 picker. There is one implementation of each rather than a second to keep in
-step, which is why this directory holds a single file — the loop around them
-and the console's own start-up.
+step, which is why this directory holds no source at all — only the build.
+
+The client itself is `../companion/source/main.cpp`, one program for three
+devices: this console, an Android handheld (see
+[../android/README.md](../android/README.md)) and a desktop. Only start-up,
+shutdown and how a device describes its own screen differ between them.
 
 That is deliberate down to the pixels. Every rule about how a screen is drawn
 — the margin that drops away on a display no bigger than a Deck's, which a

@@ -1,0 +1,13 @@
+# The SDL2 source tree, fetched rather than vendored -- see README.md.
+app/jni/SDL/
+
+.gradle/
+build/
+app/build/
+app/.cxx/
+local.properties
+# Completed by `gradle wrapper` or by Android Studio; the version it should
+# fetch is pinned in gradle/wrapper/gradle-wrapper.properties.
+gradlew
+gradlew.bat
+gradle/wrapper/gradle-wrapper.jar

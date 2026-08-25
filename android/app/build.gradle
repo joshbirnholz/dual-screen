@@ -1,0 +1,79 @@
+apply plugin: 'com.android.application'
+
+// Where the SDL2 source tree is. It is not vendored here -- it is large, it is
+// not this project's code, and the version wants to be the reader's choice --
+// so the build asks for it and says how to get it if it is missing. See
+// android/README.md.
+def sdlDir = file(System.getenv('SDL2_ANDROID_SRC') ?: 'jni/SDL')
+
+android {
+    namespace 'com.dualscreen.companion'
+    // 33 is what the current SDL2 activity targets; the G Cloud runs 11 (30).
+    compileSdk 33
+    // No ndkVersion pin: whichever NDK is installed alongside the SDK is used.
+    // Pinning one only turns a working machine into "NDK not found".
+
+    defaultConfig {
+        applicationId 'com.dualscreen.companion'
+        // SDL2 needs 16+; 21 is the floor for the 64-bit ABIs and for the
+        // toolchain to stop warning about it.
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName '0.1.0'
+
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared'
+            }
+        }
+        // The G Cloud is arm64. The 32-bit ABI is here because plenty of
+        // Android handhelds are not, and neither build is large.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    sourceSets {
+        main {
+            // SDL2's own Java lives in its source tree and is compiled here,
+            // because SDLActivity and libSDL2.so are two halves of one thing.
+            java.srcDirs += "${sdlDir}/android-project/app/src/main/java"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// A missing SDL2 otherwise shows up as several hundred unresolved Java symbols,
+// which says nothing about what to do.
+tasks.configureEach { task ->
+    if (task.name.startsWith('compile') || task.name.startsWith('externalNativeBuild')) {
+        task.doFirst {
+            if (!sdlDir.exists()) {
+                throw new GradleException(
+                    "Cannot find the SDL2 source at ${sdlDir}.\n" +
+                    "Get it with:\n" +
+                    "  git clone --depth 1 --branch release-2.30.9 " +
+                    "https://github.com/libsdl-org/SDL android/app/jni/SDL\n" +
+                    "or point SDL2_ANDROID_SRC at a copy you already have.")
+            }
+        }
+    }
+}

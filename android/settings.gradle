@@ -1,0 +1,5 @@
+// SDL2 builds as part of the app rather than being pulled in as a binary: the
+// companion needs its Java activity as well as its native library, and the two
+// have to be the same version.
+include ':app'
+rootProject.name = 'dualscreen-companion'

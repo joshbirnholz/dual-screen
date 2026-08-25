@@ -151,14 +151,19 @@ connect to anything.
 dualscreen --connect bottom
 ```
 
-### A Switch as the second screen
+### A Switch or an Android handheld as the second screen
 
 The other device does not have to be running this app, or be a PC at all.
-`switch/` is a Nintendo Switch homebrew build that does one thing: join a game
-running somewhere else and be one of its two screens. It has no emulator in it
-and needs no ROM, no BIOS and no core — everything is being played on the other
-device. See [switch/README.md](switch/README.md) for how to build and install
-it.
+The **companion** does one thing: join a game running somewhere else and be one
+of its two screens. It has no emulator in it and needs no ROM, no BIOS and no
+core — everything is being played on the other device.
+
+It is one program, in `companion/`, built for three kinds of device:
+
+- a **Nintendo Switch**, as homebrew — see [switch/README.md](switch/README.md)
+- an **Android** handheld, phone or tablet — see
+  [android/README.md](android/README.md); aimed at a Logitech G Cloud
+- this **desktop app** itself, with *Connect as top/bottom screen*
 
 It shares the parts that describe a session — the protocol, discovery, the
 layout arithmetic, the controller mapping — with this app rather than
@@ -722,9 +727,10 @@ The mock core means all of this runs with no melonDS core and no commercial ROM.
 
 ## Not built yet
 
-3DS and Wii U support, an Android companion, save states, cheats, rewind,
-shaders. More than one companion per host. The Switch companion in `switch/` is
-built and tested here as a desktop program; the console build itself needs a
-devkitPro toolchain and has to be checked by hand. See `docs/research-notes.md`
+3DS and Wii U support, save states, cheats, rewind, shaders. More than one
+companion per host. The companion in `companion/` is built and tested here as a
+desktop program; the Switch build needs a devkitPro toolchain and the Android
+build needs the Android SDK and NDK, so both have to be checked by hand on the
+device. See `docs/research-notes.md`
 for what was verified against the real melonDS DS core and what still has to be
 checked on hardware.
