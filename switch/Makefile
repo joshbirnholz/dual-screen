@@ -26,6 +26,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET      := dualscreen-companion
 BUILD       := build
 SHARED      := ../src
+CLIENT      := ../companion/source
 
 APP_TITLE   := dualscreen companion
 APP_AUTHOR  := dualscreen
@@ -42,7 +43,7 @@ THIRD_PARTY := ../third_party
 # before SOURCE_DIRS, which expands it immediately.
 GENERATED   := generated
 
-SOURCE_DIRS := source \
+SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
                $(SHARED)/audio \
                $(SHARED)/core \
@@ -65,7 +66,7 @@ CPPFILES    := main.cpp \
                log.cpp \
                kDsBezelPng.cpp kThreeDsBezelPng.cpp
 
-INCLUDES    := source $(SHARED) $(THIRD_PARTY)
+INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY)
 
 #---------------------------------------------------------------------------------
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE

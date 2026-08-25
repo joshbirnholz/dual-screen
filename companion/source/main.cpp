@@ -1,4 +1,4 @@
-// dualscreen companion for the Nintendo Switch.
+// The dualscreen companion.
 //
 // It runs no core and holds no ROM. It finds a device on the LAN that is
 // already playing something, joins as that game's top or bottom screen, draws
@@ -20,15 +20,21 @@
 // screen is smoothed -- should be the one rule rather than two that agree
 // until one of them is changed.
 //
-// The same source builds and runs on a desktop, where it is the easiest way to
-// exercise all of that against a real host -- see tests/run_switch_client.sh.
-// Only start-up and shutdown differ, which is the whole of the __SWITCH__ in
-// this file.
+// One program for three devices: a Nintendo Switch, an Android handheld, and a
+// desktop -- where it is the easiest way to exercise all of the above against a
+// real host (see tests/run_switch_client_test.sh). Only start-up, shutdown and
+// how a device describes its own screen differ, which is the whole of the
+// __SWITCH__ and __ANDROID__ in this file. Everything a player sees is the
+// same code on all three.
 
 #include <SDL.h>
 
 #ifdef __SWITCH__
 #include <switch.h>
+#endif
+
+#ifdef __ANDROID__
+#include <SDL_system.h>
 #endif
 
 #include <algorithm>
@@ -202,6 +208,9 @@ private:
     void open_menu();
     void close_menu();
     void draw();
+    // Builds every GL object this program owns. Called at start-up, and again
+    // whenever the context may have been taken away and given back.
+    bool load_gl_resources(std::string* error);
 
     Options options_;
     GlWindow gl_;
@@ -240,6 +249,9 @@ private:
     std::string failure_;
     bool menu_open_ = false;
     bool running_ = true;
+    // Whether there is a surface to draw on. Only ever false on a device that
+    // can take the app off screen without ending it.
+    bool foreground_ = true;
 };
 
 bool Client::start() {
@@ -270,18 +282,9 @@ bool Client::start() {
         return false;
     }
 
-    std::string error;
-    if (!quads_.initialize(&error) || !text_.initialize(&error)) {
-        start_error_ = "the renderer would not start: " + error;
+    if (!load_gl_resources(&start_error_)) {
         log_error(start_error_);
         return false;
-    }
-    // Not fatal: the Standard layout still puts the screens where the console
-    // puts them, it just has nothing drawn behind them.
-    if (bezel_art_.load(&error)) {
-        log_info("console artwork loaded");
-    } else {
-        log_warn("cannot draw the console artwork: " + error);
     }
     refresh_output_size();
 
@@ -628,6 +631,29 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     }
 }
 
+bool Client::load_gl_resources(std::string* error) {
+    quads_.shutdown();
+    text_.shutdown();
+    bezel_art_.destroy();
+
+    std::string reason;
+    if (!quads_.initialize(&reason) || !text_.initialize(&reason)) {
+        if (error != nullptr) *error = "the renderer would not start: " + reason;
+        return false;
+    }
+    // Not fatal: the Standard layout still puts the screens where the console
+    // puts them, it just has nothing drawn behind them.
+    if (bezel_art_.load(&reason)) {
+        log_info("console artwork loaded");
+    } else {
+        log_warn("cannot draw the console artwork: " + reason);
+    }
+    // The streamed screens live in textures too, and those are named by
+    // numbers that mean nothing in a new context.
+    session_.forget_screen_textures();
+    return true;
+}
+
 void Client::run() {
     const uint64_t started_ms = net::monotonic_millis();
     bool screenshot_taken = false;
@@ -645,6 +671,24 @@ void Client::run() {
         input_.begin_frame();
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
+            // Android can take the surface away while the app keeps running --
+            // the task switcher, a notification pulled down, the screen locked.
+            // Drawing has to stop for as long as that lasts, and every GL
+            // object has to be assumed gone when it comes back: the context is
+            // not promised to survive, and a texture that did not survive is
+            // still a valid-looking number.
+            if (event.type == SDL_APP_WILLENTERBACKGROUND) {
+                log_info("going off screen");
+                foreground_ = false;
+            } else if (event.type == SDL_APP_DIDENTERFOREGROUND) {
+                log_info("back on screen");
+                foreground_ = true;
+                std::string reload_error;
+                if (!load_gl_resources(&reload_error)) {
+                    log_error("cannot draw any more: " + reload_error);
+                    running_ = false;
+                }
+            }
             input_.handle_event(event);
         }
         refresh_output_size();
@@ -719,15 +763,22 @@ void Client::run() {
             session_.send_input(input_.ds_state());
         }
 
-        draw();
-
         const double alive = static_cast<double>(now - started_ms) / 1000.0;
-        if (options_.screenshot_at_seconds > 0.0 && !screenshot_taken &&
-            !options_.screenshot_path.empty() && alive >= options_.screenshot_at_seconds) {
-            screenshot_taken =
-                write_screenshot(output_width_, output_height_, options_.screenshot_path);
+        // Off screen there is no surface to draw on, and swapping against one
+        // that has gone away is at best wasted work. The session is still
+        // polled, so a glance at something else and back does not cost the
+        // connection.
+        if (foreground_) {
+            draw();
+            if (options_.screenshot_at_seconds > 0.0 && !screenshot_taken &&
+                !options_.screenshot_path.empty() && alive >= options_.screenshot_at_seconds) {
+                screenshot_taken =
+                    write_screenshot(output_width_, output_height_, options_.screenshot_path);
+            }
+            SDL_GL_SwapWindow(gl_.window);
+        } else {
+            SDL_Delay(16);
         }
-        SDL_GL_SwapWindow(gl_.window);
         if (options_.exit_after_seconds > 0.0 && alive >= options_.exit_after_seconds) {
             running_ = false;
         }
@@ -843,6 +894,17 @@ int main(int argc, char** argv) {
     }
     nxlinkStdio();
     log_info("sockets are up");
+#endif
+
+#ifdef __ANDROID__
+    // The app's own external files directory: readable over USB or by a file
+    // manager without any storage permission, and taken away with the app when
+    // it is uninstalled. Everything here also goes to logcat -- see log.cpp --
+    // which is the equivalent of the Switch build's nxlink.
+    if (const char* storage = SDL_AndroidGetExternalStoragePath()) {
+        set_log_file(std::string(storage) + "/dualscreen-companion.log");
+    }
+    log_info("dualscreen companion starting");
 #endif
 
     int status = 0;

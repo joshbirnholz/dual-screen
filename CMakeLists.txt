@@ -136,52 +136,28 @@ endif()
 
 install(TARGETS dualscreen RUNTIME DESTINATION bin)
 
-# The Nintendo Switch companion. It is a separate program rather than a mode of
-# the app: it runs no core, draws through SDL's renderer instead of the GL
-# compositor, and shares only the parts that describe the session -- the wire
-# protocol, discovery, the layout arithmetic and the controller mapping.
+# The companion clients: the same program for a desktop, a Nintendo Switch and
+# an Android device. It runs no core and holds no ROM -- it joins a game
+# already running elsewhere and becomes one of its screens -- and shares
+# everything that describes the session with the app: the wire protocol,
+# discovery, the layout arithmetic, the controller mapping, the compositor and
+# the quick menu.
 #
-# switch/Makefile builds the same sources with devkitPro for the console; this
-# target builds them for this machine, which is what lets the client be run
-# against a real host and looked at (see tests/run_switch_client_test.sh). The
-# two source lists are the same list, and it is this one that gets compiled on
-# every build, so a file added to the client cannot quietly go missing from it.
-set(DUALSCREEN_COMPANION_SHARED_SOURCES
-    ${BEZEL_SOURCES}
-    src/audio/audio_output.cpp
-    src/core/system.cpp
-    src/input/controller_mapping.cpp
-    src/input/cursor_visibility.cpp
-    src/input/ds_input.cpp
-    src/input/input_manager.cpp
-    src/layout/layout.cpp
-    src/layout/layout_registry.cpp
-    src/net/companion_session.cpp
-    src/net/discovery.cpp
-    src/net/protocol.cpp
-    src/net/transport.cpp
-    src/render/bezel_art.cpp
-    src/render/compositor.cpp
-    src/render/font.cpp
-    src/render/gl_loader.cpp
-    src/render/gl_window.cpp
-    src/render/png_image.cpp
-    src/render/quad_renderer.cpp
-    src/render/text_renderer.cpp
-    src/render/texture.cpp
-    src/ui/connecting_screen.cpp
-    src/ui/launcher_screen.cpp
-    src/ui/layout_picker.cpp
-    src/util/log.cpp
-)
+# switch/Makefile and android/app/CMakeLists.txt build the same sources for
+# those devices; this target builds them for this machine, which is what lets
+# the client be run against a real host and looked at (see
+# tests/run_switch_client_test.sh). It is compiled on every build, so a file
+# added to the client cannot quietly go missing from the ones that are not.
+set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/companion_sources.cmake)
 
 add_executable(dualscreen-companion
-    switch/source/main.cpp
-    ${DUALSCREEN_COMPANION_SHARED_SOURCES}
+    ${BEZEL_SOURCES}
+    ${DUALSCREEN_COMPANION_SOURCES}
 )
 target_include_directories(dualscreen-companion PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source
+    ${CMAKE_CURRENT_SOURCE_DIR}/companion/source
 )
 target_link_libraries(dualscreen-companion PRIVATE
     SDL2::SDL2

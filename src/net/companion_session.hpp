@@ -140,6 +140,11 @@ public:
     // --- ScreenSource ---
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
+    // Drops the GL textures the streamed screens were uploaded into, so the
+    // next screens() uploads them again. For a device whose GL context can be
+    // taken away and given back -- Android, when the app is backgrounded --
+    // where the texture names survive as numbers that no longer mean anything.
+    void forget_screen_textures();
     SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override { return false; }
 
