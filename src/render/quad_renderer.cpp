@@ -1,5 +1,7 @@
 #include "render/quad_renderer.hpp"
 
+#include <cmath>
+
 #include <vector>
 
 #include "util/log.hpp"
@@ -198,6 +200,22 @@ void QuadRenderer::begin_frame(int output_width, int output_height) {
         gl::BindVertexArray(vertex_array_);
     }
 }
+
+void QuadRenderer::set_clip(const PixelRect& rect) {
+    if (output_height_ <= 0) {
+        return;
+    }
+    // GL measures from the bottom-left; everything above measures from the
+    // top-left, so the box is flipped on its way down.
+    const int x = static_cast<int>(std::floor(rect.x));
+    const int width = static_cast<int>(std::ceil(rect.x + rect.w)) - x;
+    const int top = static_cast<int>(std::floor(rect.y));
+    const int height = static_cast<int>(std::ceil(rect.y + rect.h)) - top;
+    gl::Enable(GL_SCISSOR_TEST);
+    gl::Scissor(x, output_height_ - top - height, std::max(0, width), std::max(0, height));
+}
+
+void QuadRenderer::clear_clip() { gl::Disable(GL_SCISSOR_TEST); }
 
 void QuadRenderer::clear(const Color& color) {
     gl::ClearColor(color.r, color.g, color.b, color.a);

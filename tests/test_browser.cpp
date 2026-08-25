@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "config/paths.hpp"
+#include "ui/launcher_screen.hpp"
 #include "input/ds_input.hpp"
 #include "input/cursor_visibility.hpp"
 #include "input/held_input_gate.hpp"
@@ -353,6 +354,91 @@ void test_a_relative_directory_never_traps_the_browser() {
     }
 }
 
+// Every choice the opening screen can reach, by tapping over the whole thing:
+// the rows' positions are the screen's own business, so this finds them rather
+// than being told where they are.
+std::vector<LauncherChoice> launcher_choices(bool runs_games) {
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    std::vector<LauncherChoice> found;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LauncherScreen launcher;
+            launcher.open(runs_games);
+            PointerEvent tap;
+            tap.x = x;
+            tap.y = y;
+            tap.released = true;
+            const LauncherChoice choice =
+                launcher.update({}, {tap}, kWidth, kHeight).choice;
+            if (choice != LauncherChoice::None &&
+                std::find(found.begin(), found.end(), choice) == found.end()) {
+                found.push_back(choice);
+            }
+        }
+    }
+    return found;
+}
+
+bool offers(const std::vector<LauncherChoice>& choices, LauncherChoice choice) {
+    return std::find(choices.begin(), choices.end(), choice) != choices.end();
+}
+
+// A companion client has no ROMs of its own to load and nothing in Settings
+// that would apply to it -- folders, cores and what a new game starts with all
+// belong to the device actually running one. What is left is which screen to
+// be, and leaving.
+void test_the_opening_screen_offers_what_the_device_can_do() {
+    const std::vector<LauncherChoice> full = launcher_choices(/*runs_games=*/true);
+    CHECK(offers(full, LauncherChoice::LoadGame));
+    CHECK(offers(full, LauncherChoice::ConnectAsTopScreen));
+    CHECK(offers(full, LauncherChoice::ConnectAsBottomScreen));
+    CHECK(offers(full, LauncherChoice::Settings));
+    CHECK(offers(full, LauncherChoice::Quit));
+
+    const std::vector<LauncherChoice> companion = launcher_choices(/*runs_games=*/false);
+    CHECK_MSG(!offers(companion, LauncherChoice::LoadGame),
+              "a companion offered a game to load");
+    CHECK_MSG(!offers(companion, LauncherChoice::Settings),
+              "a companion offered Settings");
+    // Both screens, because which one to be is the whole question there.
+    CHECK(offers(companion, LauncherChoice::ConnectAsTopScreen));
+    CHECK(offers(companion, LauncherChoice::ConnectAsBottomScreen));
+    CHECK(offers(companion, LauncherChoice::Quit));
+}
+
+// Moving down the list reaches every row and comes back round, whichever set
+// of rows this device has -- a wrap counted against the wrong number would
+// skip the last entry or stop on nothing.
+void test_the_opening_screen_wraps_around_its_own_rows() {
+    for (const bool runs_games : {true, false}) {
+        LauncherScreen launcher;
+        launcher.open(runs_games);
+        const std::size_t rows = launcher_choices(runs_games).size();
+        CHECK(rows > 0);
+
+        std::vector<LauncherChoice> seen;
+        for (std::size_t step = 0; step < rows; ++step) {
+            LauncherScreen walker;
+            walker.open(runs_games);
+            for (std::size_t down = 0; down < step; ++down) {
+                walker.update({UiAction::Down}, {}, 1280.0f, 800.0f);
+            }
+            seen.push_back(walker.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice);
+        }
+        CHECK_EQ(seen.size(), rows);
+
+        // One more Down than there are rows lands back on the first.
+        LauncherScreen wrapped;
+        wrapped.open(runs_games);
+        for (std::size_t down = 0; down < rows; ++down) {
+            wrapped.update({UiAction::Down}, {}, 1280.0f, 800.0f);
+        }
+        CHECK_MSG(wrapped.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice == seen.front(),
+                  "moving past the last row did not come back to the first");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -366,5 +452,7 @@ int main() {
     test_cursor_auto_hides();
     test_duplicate_confirms_navigate_once();
     test_confirm_on_a_rom_chooses_it();
+    test_the_opening_screen_offers_what_the_device_can_do();
+    test_the_opening_screen_wraps_around_its_own_rows();
     return test::finish("browser");
 }

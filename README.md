@@ -80,6 +80,15 @@ but everywhere else, screens flush against each other are a real option, not
 a broken one, so the gap is left up to the player. The layout previews update
 live as the toggle changes, the same as picking a different layout does.
 
+On a display no bigger than a Deck's — a Switch's 1280x720 included — `standard`
+fills it with the **screens** rather than with the picture around them. Fitting
+the whole console in leaves the screens at a fraction of the display with the
+rest given over to plastic and grey: measured on a 1280x720 panel, a 3DS's two
+screens came to 89% of the height of a picture only 694 pixels wide. The console
+is scaled up until the screens span the display and the artwork simply runs off
+the top and bottom, which is what a handheld held in two hands should look like.
+A display with room to spare still gets the whole console, uncropped.
+
 `standard` draws an illustration of the console itself and puts the two screens
 exactly where its own are, on a #252525 surround rather than black — that is the
 artwork's own background colour, so the picture has no visible edge. There is one

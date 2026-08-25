@@ -10,24 +10,16 @@ namespace {
 
 const LauncherScreen* unused_tag = nullptr;
 
-constexpr int kLauncherRowCount = 5;
-
-const char* const kTitles[kLauncherRowCount] = {
-    "Load a game",
-    "Connect as top screen",
-    "Connect as bottom screen",
-    "Settings",
-    "Quit",
-};
-
-LauncherChoice choice_for_row(int row) {
-    switch (row) {
-        case 0: return LauncherChoice::LoadGame;
-        case 1: return LauncherChoice::ConnectAsTopScreen;
-        case 2: return LauncherChoice::ConnectAsBottomScreen;
-        case 3: return LauncherChoice::Settings;
-        default: return LauncherChoice::Quit;
+const char* title_for(LauncherChoice choice) {
+    switch (choice) {
+        case LauncherChoice::LoadGame: return "Load a game";
+        case LauncherChoice::ConnectAsTopScreen: return "Connect as top screen";
+        case LauncherChoice::ConnectAsBottomScreen: return "Connect as bottom screen";
+        case LauncherChoice::Settings: return "Settings";
+        case LauncherChoice::Quit: return "Quit";
+        case LauncherChoice::None: break;
     }
+    return "";
 }
 
 }  // namespace
@@ -43,16 +35,28 @@ std::vector<PixelRect> LauncherScreen::compute_rows(float output_width,
     const float top = std::round(output_height * 0.30f);
 
     std::vector<PixelRect> rows;
-    for (int index = 0; index < kLauncherRowCount; ++index) {
-        rows.push_back(PixelRect{margin, top + index * (row_height + line * 0.5f), width,
-                                 row_height});
+    for (std::size_t index = 0; index < rows_.size(); ++index) {
+        rows.push_back(PixelRect{margin,
+                                 top + static_cast<float>(index) * (row_height + line * 0.5f),
+                                 width, row_height});
     }
     return rows;
 }
 
-void LauncherScreen::open() {
+void LauncherScreen::open(bool runs_games) {
     open_ = true;
     focus_ = 0;
+    runs_games_ = runs_games;
+    rows_.clear();
+    if (runs_games) {
+        rows_.push_back(LauncherChoice::LoadGame);
+    }
+    rows_.push_back(LauncherChoice::ConnectAsTopScreen);
+    rows_.push_back(LauncherChoice::ConnectAsBottomScreen);
+    if (runs_games) {
+        rows_.push_back(LauncherChoice::Settings);
+    }
+    rows_.push_back(LauncherChoice::Quit);
 }
 
 LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
@@ -66,17 +70,21 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
 
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
+    const int count = static_cast<int>(rows_.size());
+    if (count == 0) {
+        return result;
+    }
 
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
-                focus_ = (focus_ + kLauncherRowCount - 1) % kLauncherRowCount;
+                focus_ = (focus_ + count - 1) % count;
                 break;
             case UiAction::Down:
-                focus_ = (focus_ + 1) % kLauncherRowCount;
+                focus_ = (focus_ + 1) % count;
                 break;
             case UiAction::Confirm:
-                result.choice = choice_for_row(focus_);
+                result.choice = rows_[static_cast<std::size_t>(focus_)];
                 break;
             case UiAction::Quit:
                 result.choice = LauncherChoice::Quit;
@@ -91,7 +99,7 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
         for (std::size_t index = 0; index < rows.size(); ++index) {
             if (rows[index].contains(pointer.x, pointer.y)) {
                 focus_ = static_cast<int>(index);
-                result.choice = choice_for_row(focus_);
+                result.choice = rows_[index];
             }
         }
     }
@@ -124,7 +132,10 @@ void LauncherScreen::render(QuadRenderer& quads,
     const float margin = rows.empty() ? 0.0f : rows.front().x;
     text.draw(quads, "dualscreen", margin, std::round(output_height * 0.14f), scale * 2.0f,
               theme.text);
-    text.draw(quads, "Play a DS game here, or be a screen for one running on another device",
+    text.draw(quads,
+              runs_games_
+                  ? "Play a DS game here, or be a screen for one running on another device"
+                  : "Be a screen for a game running on another device",
               margin, std::round(output_height * 0.14f) + line * 2.4f, scale * 0.95f,
               theme.text_dim);
 
@@ -137,10 +148,10 @@ void LauncherScreen::render(QuadRenderer& quads,
         }
 
         const float pad = line * 0.7f;
-        const bool is_quit = (choice_for_row(static_cast<int>(index)) == LauncherChoice::Quit);
+        const bool is_quit = (rows_[index] == LauncherChoice::Quit);
         // Centred on the row, since there is nothing under it any more: the
         // names say what they do without a sentence explaining them.
-        text.draw(quads, kTitles[index], row.x + pad,
+        text.draw(quads, title_for(rows_[index]), row.x + pad,
                   row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
                   is_quit ? theme.danger : theme.text);
     }

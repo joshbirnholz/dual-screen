@@ -328,6 +328,40 @@ PixelRect layout_frame(const Layout& layout,
         }
     }
     const PixelRect available = frame;
+
+    if (no_margin) {
+        // On a small display it is the *screens* that fill it, not the picture
+        // around them. Fitting the whole console inside leaves the screens at
+        // a fraction of the display -- measured on a 1280x720 panel, a 3DS's
+        // two screens came to 89% of the height of a picture that was itself
+        // only 694 pixels wide, with the rest of the display grey. Here the
+        // console is scaled until the screens span the display and the artwork
+        // simply runs off the edges, which is what a handheld held in two
+        // hands should look like.
+        const float left = std::min(console.top.x, console.bottom.x);
+        const float right =
+            std::max(console.top.x + console.top.w, console.bottom.x + console.bottom.w);
+        const float top = std::min(console.top.y, console.bottom.y);
+        const float bottom =
+            std::max(console.top.y + console.top.h, console.bottom.y + console.bottom.h);
+        const float span_x = right - left;
+        const float span_y = bottom - top;
+        if (span_x > 0.0f && span_y > 0.0f) {
+            // The tallest picture whose screens still fit the display in both
+            // directions. Overflow is the artwork's alone; the screens are
+            // what has to stay whole.
+            const float by_height = available.h / span_y;
+            const float by_width = (available.w / span_x) / console.aspect;
+            frame.h = std::min(by_height, by_width);
+            frame.w = frame.h * console.aspect;
+            // Centred on the screens rather than on the picture, so what is
+            // cropped comes off both edges evenly.
+            frame.x = available.x + available.w * 0.5f - (left + span_x * 0.5f) * frame.w;
+            frame.y = available.y + available.h * 0.5f - (top + span_y * 0.5f) * frame.h;
+            return frame;
+        }
+    }
+
     const float window_aspect = available.w / available.h;
     if (window_aspect > console.aspect) {
         frame.w = available.h * console.aspect;

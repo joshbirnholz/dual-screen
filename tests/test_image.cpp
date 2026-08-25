@@ -81,7 +81,12 @@ void test_standard_screens_sit_in_the_artwork() {
                            static_cast<float>(image.height)};
     SystemScreens unpadded = ds_screens();
     unpadded.console.margin = 0.0f;  // the padding is around the console, not in it
-    const std::vector<PlacedScreen> placed = place_screens(standard, window, unpadded);
+    // Told it is being drawn on a large display, because this is not a display
+    // at all: it is the picture itself, at its own size. A small one gets the
+    // console scaled up until its screens fill it, which is the right answer
+    // there and would make this comparison meaningless here.
+    const std::vector<PlacedScreen> placed =
+        place_screens(standard, window, unpadded, 1920.0f, 1080.0f);
     CHECK_EQ(placed.size(), 2u);
 
     // The overlay that came with the artwork puts the screens here, one image
@@ -166,18 +171,36 @@ void test_standard_scales_to_fit_at_every_size() {
                       std::to_string(frame.w) + "x" + std::to_string(frame.h) + ")");
     }
 
-    // On a display no bigger than a Deck's, the deliberate margin is gone: it
-    // is a few percent of screen a small display cannot spare, unlike a
-    // living-room TV. The frame fills the window's shorter side exactly. What
-    // is left is not "padding" in that sense: it is whatever letterboxing the
-    // console's own aspect ratio still needs against a window shaped
-    // differently from it, the unavoidable price of not stretching or
-    // cropping the artwork.
-    const PixelRect padded = layout_frame(standard, 1280.0f, 800.0f, ds_screens());
-    CHECK_NEAR(padded.y, 0.0f);
-    CHECK_NEAR(padded.h, 800.0f);
-    CHECK(padded.x > 1.0f);
-    CHECK(padded.x + padded.w < 1279.0f);
+    // On a display no bigger than a Deck's it is the screens that fill it, not
+    // the picture around them. Fitting the whole console in leaves the screens
+    // at a fraction of the display with the rest given over to plastic and
+    // grey, which on a handheld is the wrong trade: the console is scaled up
+    // until its screens span the display and the artwork runs off the edges.
+    const float width = 1280.0f;
+    const float height = 800.0f;
+    const PixelRect filled = layout_frame(standard, width, height, ds_screens());
+    CHECK_MSG(filled.y < 0.0f && filled.y + filled.h > height,
+              "the artwork was not allowed to run off the top and bottom (" +
+                  std::to_string(filled.y) + " to " + std::to_string(filled.y + filled.h) + ")");
+
+    // What actually matters is where that leaves the screens: they have to
+    // reach the top and bottom of the display, and still be whole across it.
+    float top = height;
+    float bottom = 0.0f;
+    for (const PlacedScreen& screen : place_screens(standard, width, height, ds_screens())) {
+        top = std::min(top, screen.rect.y);
+        bottom = std::max(bottom, screen.rect.y + screen.rect.h);
+        CHECK_MSG(screen.rect.x >= 0.0f && screen.rect.x + screen.rect.w <= width,
+                  std::string(to_string(screen.screen)) + " screen is cut off at the side");
+    }
+    CHECK_MSG(top < 2.0f && bottom > height - 2.0f,
+              "the screens span " + std::to_string(top) + " to " + std::to_string(bottom) +
+                  " of " + std::to_string(height));
+
+    // A display with room to spare still gets the whole console, uncropped.
+    const PixelRect roomy = layout_frame(standard, 1920.0f, 1080.0f, ds_screens());
+    CHECK(roomy.y >= 0.0f);
+    CHECK(roomy.y + roomy.h <= 1080.0f);
 }
 
 // The exact window a composed layout's group lands at its own natural size in

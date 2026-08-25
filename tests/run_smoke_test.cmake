@@ -28,7 +28,11 @@ set(SAVE_FILE "${WORK_DIR}/data/dualscreen/saves/fake.srm")
 # none of the named regions reach -- the small screen of the two focus layouts --
 # the point is given outright.
 set(CASES
-    "standard|upper=blue+lower=green+at=0.03,0.06,bezel+at=0.30,0.20,shell"
+    # The screens fill the window's height here and the artwork runs off the
+    # top and bottom -- see layout_frame() -- so each screen is probed well
+    # inside both side edges and out on the plastic beyond them. The points
+    # come from the placements rather than from a screenshot.
+    "standard|upper=blue+lower=green+at=0.03,0.06,bezel+at=0.3704,0.2047,blue+at=0.2613,0.2047,shell+at=0.6297,0.2047,blue+at=0.7389,0.2047,shell+at=0.3704,0.7953,green+at=0.2613,0.7953,shell+at=0.6297,0.7953,green+at=0.7389,0.7953,shell"
     "upper_focus|left=blue+at=0.86,0.785,green"
     "touch_focus|right=green+at=0.216,0.333,blue"
     "vertical|upper=blue+lower=green+topleft=black"
@@ -387,7 +391,12 @@ set(THREE_DS_CASES
     # the picture: a point well inside every edge is the game, a point just
     # outside is plastic. Those pairs are what would catch a screen rectangle
     # measured wrong -- the picture alone would still look plausible.
-    "standard|upper=blue+lower=green+topleft=bezel+at=0.4859,0.4700,shell+at=0.3398,0.2838,blue+at=0.3133,0.2838,shell+at=0.6578,0.2838,blue+at=0.6852,0.2838,shell+at=0.3750,0.7275,green+at=0.2852,0.6013,shell+at=0.6250,0.7275,green+at=0.6727,0.5825,shell"
+    #
+    # This window is 1280x800, so the screens fill its height and the artwork
+    # runs off the top and bottom -- see layout_frame(). The points are derived
+    # from the placements rather than read off a screenshot, so they move with
+    # the rule rather than pinning yesterday's picture.
+    "standard|upper=blue+lower=green+topleft=bezel+at=0.4859,0.4700,shell+at=0.3319,0.2124,blue+at=0.2678,0.2124,shell+at=0.6681,0.2124,blue+at=0.7322,0.2124,shell+at=0.3655,0.7876,green+at=0.3121,0.7876,shell+at=0.6345,0.7876,green+at=0.6879,0.7876,shell"
     "side_by_side|left=blue+right=green"
 )
 

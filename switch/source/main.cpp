@@ -174,11 +174,13 @@ public:
     const std::string& start_error() const { return start_error_; }
 
 private:
-    // Browsing is the host picker; Playing is a live session, with or without
-    // this device's own menu up over it.
-    enum class State { Browsing, Connecting, Playing, Failed };
+    // Launcher is the opening screen -- which screen to be; Browsing is the
+    // host picker; Playing is a live session, with or without this device's
+    // own menu up over it.
+    enum class State { Launcher, Browsing, Connecting, Playing, Failed };
 
-    void begin_search();
+    void open_launcher();
+    void begin_search(ScreenId wanted);
     void join(const net::DiscoveredHost& host);
     void leave(const std::string& reason);
 
@@ -213,9 +215,10 @@ private:
     LocalOutputRouter router_;
     BezelArt bezel_art_;
     LayoutPicker picker_{registry_};
+    LauncherScreen launcher_;
     HostPickerScreen host_picker_;
 
-    State state_ = State::Browsing;
+    State state_ = State::Launcher;
     std::string start_error_;
     std::string failure_;
     bool menu_open_ = false;
@@ -288,8 +291,13 @@ bool Client::start() {
             audio_.push(samples, frames);
         });
 
-    host_picker_.open(options_.wanted_screen);
-    begin_search();
+    // Straight in when the command line said which screen to be; otherwise
+    // the opening screen asks.
+    if (options_.auto_connect) {
+        begin_search(options_.wanted_screen);
+    } else {
+        open_launcher();
+    }
     return true;
 }
 
@@ -307,13 +315,23 @@ void Client::stop() {
     SDL_Quit();
 }
 
-void Client::begin_search() {
+void Client::open_launcher() {
+    state_ = State::Launcher;
+    close_menu();
+    session_.disconnect();
+    // The app's own opening screen, minus the two entries that mean nothing
+    // here: this device has no ROMs to load and nothing in Settings that would
+    // apply to it. What is left is which screen to be, and leaving.
+    launcher_.open(/*runs_games=*/false);
+}
+
+void Client::begin_search(ScreenId wanted) {
     state_ = State::Browsing;
     close_menu();
-    host_picker_.open(host_picker_.wanted_screen());
+    host_picker_.open(wanted);
 
     std::string error;
-    if (!session_.begin_search(options_.device_name, host_picker_.wanted_screen(), &error)) {
+    if (!session_.begin_search(options_.device_name, wanted, &error)) {
         state_ = State::Failed;
         failure_ = error;
         log_error("cannot look for hosts: " + error);
@@ -331,10 +349,9 @@ void Client::leave(const std::string& reason) {
     if (!reason.empty()) {
         log_info("left the session: " + reason);
     }
-    session_.disconnect();
     audio_.close();
     audio_rate_ = 0;
-    begin_search();
+    open_launcher();
 }
 
 Layout Client::session_layout() const {
@@ -480,6 +497,26 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         return;
     }
 
+    if (state_ == State::Launcher) {
+        const LauncherResult result =
+            launcher_.update(actions, pointers, static_cast<float>(output_width_),
+                             static_cast<float>(output_height_));
+        switch (result.choice) {
+            case LauncherChoice::ConnectAsTopScreen:
+                begin_search(ScreenId::Top);
+                break;
+            case LauncherChoice::ConnectAsBottomScreen:
+                begin_search(ScreenId::Bottom);
+                break;
+            case LauncherChoice::Quit:
+                running_ = false;
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
     if (state_ == State::Browsing) {
         const HostPickerResult result =
             host_picker_.update(session_.hosts(), actions, pointers,
@@ -488,7 +525,9 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         if (result.chosen) {
             join(result.host);
         } else if (result.cancelled) {
-            running_ = false;
+            // Back to choosing which screen to be, rather than out of the app:
+            // that is what the button that got here undoes.
+            open_launcher();
         }
         return;
     }
@@ -502,8 +541,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 break;
             case State::Failed:
                 if (action == UiAction::Confirm || action == UiAction::Cancel) {
-                    begin_search();
+                    open_launcher();
                 }
+                break;
+            case State::Launcher:
                 break;
             case State::Playing:
                 switch (action) {
@@ -555,6 +596,8 @@ void Client::run() {
 
         session_.poll(now);
         switch (state_) {
+            case State::Launcher:
+                break;
             case State::Browsing:
                 if (options_.auto_connect) {
                     for (const net::DiscoveredHost& host : session_.hosts()) {
@@ -598,7 +641,7 @@ void Client::run() {
                     const std::string detail = session_.status_detail();
                     audio_.close();
                     audio_rate_ = 0;
-                    begin_search();
+                    open_launcher();
                     log_info("the session ended: " + detail);
                 }
                 break;
@@ -639,6 +682,13 @@ void Client::draw() {
     const float height = static_cast<float>(output_height_);
     gl::log_error_once("something in the last frame was rejected by OpenGL");
 
+    if (state_ == State::Launcher) {
+        // The app's own opening screen, so choosing which screen to be looks
+        // the same here as picking it there does.
+        launcher_.render(quads_, text_, width, height, input_.menu_labels(),
+                         static_cast<int>(session_.hosts().size()));
+        return;
+    }
     if (state_ != State::Playing) {
         // The app's own host picker, so finding a game looks the same here as
         // it does there. A failure is shown in the same place, as its status.

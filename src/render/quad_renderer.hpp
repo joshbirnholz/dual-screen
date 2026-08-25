@@ -34,6 +34,13 @@ public:
     void begin_frame(int output_width, int output_height);
     void clear(const Color& color);
 
+    // Confines everything drawn until clear_clip() to `rect`. A layout can now
+    // deliberately overflow the box it is drawn into -- a console picture
+    // filling a small display runs off the edges -- and a preview tile drawing
+    // one must not spill over its neighbours.
+    void set_clip(const PixelRect& rect);
+    void clear_clip();
+
     void draw_solid(const PixelRect& rect, const Color& color);
     // Draws an XRGB8888 screen texture; alpha comes from `tint`, not the texture.
     // A quarter turn is a permutation of the corner texture coordinates, so a

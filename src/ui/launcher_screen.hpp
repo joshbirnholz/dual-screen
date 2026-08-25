@@ -29,7 +29,12 @@ struct LauncherResult {
 // already running on another device and be one of its screens.
 class LauncherScreen {
 public:
-    void open();
+    // `runs_games` is false on a companion client, which has no ROMs of its
+    // own to load and nothing in Settings that would mean anything there --
+    // folders, cores and what a new game starts with all belong to the device
+    // actually running one. What is left is joining a game running somewhere
+    // else, and leaving.
+    void open(bool runs_games = true);
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
@@ -57,6 +62,9 @@ private:
 
     bool open_ = false;
     int focus_ = 0;
+    // Which entries this device is offering, built when the screen opens.
+    std::vector<LauncherChoice> rows_;
+    bool runs_games_ = true;
 };
 
 // Picks which host to join, from whatever discovery has found.

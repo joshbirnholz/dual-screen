@@ -31,10 +31,10 @@ the two from ever disagreeing.
 
 | | |
 | --- | --- |
-| Move around the host list | d-pad or left stick |
-| Choose top or bottom screen | Left / Right on the host list |
+| Choose which screen to be | the opening screen, with the d-pad or left stick |
+| Move around the menus | d-pad or left stick |
 | Join, and confirm in menus | the east face button (A) |
-| Leave the list, or a menu | the south face button (B) |
+| Go back, or leave a menu | the south face button (B) |
 | Open this device's menu | **+ and -** together, or a **two-finger tap** |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Smooth or sharpen the screens | **R3** — the host applies it on both devices |
@@ -54,7 +54,11 @@ none of it, the host decides and broadcasts the result, which is what keeps the
 two ends from ever disagreeing. A change made on the host appears here too,
 under the open menu.
 
-Finding a game uses the app's own host picker, for the same reason.
+The opening screen and the host picker are the app's own too, for the same
+reason. The opening screen is that menu with the two entries that mean nothing
+here left out — this device has no ROMs to load, and nothing in Settings would
+apply to it — so what is left is **Connect as top screen**, **Connect as bottom
+screen** and **Quit**.
 
 ## Building
 

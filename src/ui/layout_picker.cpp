@@ -383,6 +383,10 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
     const SystemScreens& geometry = tile_geometry;
     const bool draws_console = layout.uses_console_frame && geometry.console.exists();
     const bool has_art = draws_console && geometry.console.has_art;
+    // A layout can run off the edges of what it is drawn into -- a console
+    // picture filling a small display does exactly that -- and inside a tile
+    // that would land on the neighbours.
+    quads.set_clip(box);
     // The tile shows what the layout shows, background included.
     quads.draw_solid(box, has_art ? Color{37.0f / 255.0f, 37.0f / 255.0f, 37.0f / 255.0f, 1.0f}
                                   : Color{0.02f, 0.03f, 0.05f, 1.0f});
@@ -412,6 +416,7 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
             quads.draw_solid(rect, color);
         }
     }
+    quads.clear_clip();
 }
 
 void LayoutPicker::render(QuadRenderer& quads,
