@@ -3,14 +3,23 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <ifaddrs.h>
-#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+
+// The Switch's BSD sockets are a subset of the usual ones: libnx has no
+// getifaddrs(). Only a host enumerating its own interfaces to broadcast on
+// needs it, and the Switch build is a companion -- it connects out and listens
+// for broadcasts -- so the one function that wants it falls back to the
+// all-subnets address there rather than this file being forked in two.
+#if !defined(__SWITCH__)
+#define DS_HAVE_GETIFADDRS 1
+#include <ifaddrs.h>
+#include <net/if.h>
+#endif
 
 #include <cstring>
 #include <utility>
@@ -39,12 +48,19 @@ bool set_non_blocking(int descriptor) {
 void enable_keepalive(int descriptor) {
     const int one = 1;
     ::setsockopt(descriptor, SOL_SOCKET, SO_KEEPALIVE, &one, sizeof(one));
+    // How soon the probes start and how often they repeat is a per-socket
+    // option only where the TCP stack exposes one. Where it does not -- the
+    // Switch's does not -- keepalive is still on, just on that stack's own
+    // schedule, which is the difference between noticing a vanished peer late
+    // and never noticing at all.
+#if defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL) && defined(TCP_KEEPCNT)
     const int idle_seconds = 3;
     const int interval_seconds = 2;
     const int probe_count = 3;
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, &idle_seconds, sizeof(idle_seconds));
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPINTVL, &interval_seconds, sizeof(interval_seconds));
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPCNT, &probe_count, sizeof(probe_count));
+#endif
 }
 
 std::string describe(const sockaddr_in& address) {
@@ -367,6 +383,7 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address) {
 std::vector<std::string> broadcast_addresses() {
     std::vector<std::string> addresses;
 
+#if defined(DS_HAVE_GETIFADDRS)
     ifaddrs* list = nullptr;
     if (::getifaddrs(&list) == 0) {
         for (ifaddrs* entry = list; entry != nullptr; entry = entry->ifa_next) {
@@ -387,6 +404,7 @@ std::vector<std::string> broadcast_addresses() {
         }
         ::freeifaddrs(list);
     }
+#endif
 
     if (addresses.empty()) {
         addresses.push_back("255.255.255.255");
