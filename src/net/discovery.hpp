@@ -70,4 +70,10 @@ private:
 constexpr uint64_t kBeaconIntervalMs = 1000;
 constexpr uint64_t kHostExpiryMs = 5000;
 
+// How long joining a host is given before it is called off. Generous against a
+// LAN handshake, which is a few round trips, and short enough that picking a
+// host that cannot answer costs a moment rather than the two minutes the
+// operating system would otherwise spend retrying.
+constexpr uint64_t kJoinTimeoutMs = 6000;
+
 }  // namespace ds::net

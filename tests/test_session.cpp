@@ -940,6 +940,93 @@ void test_menu_gets_the_companion_both_screens() {
 }
 
 // Either end can end the session.
+// Joining has to either happen or stop happening. A host that accepts the
+// connection and then never says hello -- one that has wedged, or one reached
+// at an address that goes nowhere useful -- used to leave the companion
+// sitting in "connecting" forever, with nothing on screen changing and every
+// button appearing to do nothing. That is what makes joining look like it
+// needs several tries.
+void test_joining_gives_up_on_a_host_that_never_answers() {
+    // A listener that accepts and then says nothing at all. Not a HostSession:
+    // the point is a peer that completes the TCP handshake and no more.
+    TcpListener silent;
+    std::string error;
+    if (!silent.start(0, &error)) {
+        std::fprintf(stderr, "skipping: cannot listen (%s)\n", error.c_str());
+        return;
+    }
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+
+    DiscoveredHost host;
+    host.address = "127.0.0.1";
+    host.session_port = silent.port();
+    host.device_name = "Wedged PC";
+    companion.connect_to(host);
+    CHECK(companion.status() == CompanionSession::Status::Connecting);
+
+    // Driven on a clock of this test's own, the way the frame loop drives it.
+    // Well inside the deadline it is still trying, which is what stops a slow
+    // handshake being called a failure.
+    TcpStream accepted;
+    uint64_t now = 1'000'000;
+    for (int i = 0; i < 40; ++i) {
+        silent.accept(accepted);
+        now += 50;
+        companion.poll(now);
+    }
+    CHECK_MSG(companion.status() == CompanionSession::Status::Connecting,
+              std::string("gave up too early: ") + to_string(companion.status()));
+
+    // Past it, it stops rather than waiting on the operating system.
+    now += kJoinTimeoutMs;
+    companion.poll(now);
+    CHECK_MSG(companion.status() == CompanionSession::Status::Failed,
+              std::string("still ") + to_string(companion.status()) + " after " +
+                  std::to_string(kJoinTimeoutMs) + "ms");
+    CHECK(!companion.status_detail().empty());
+
+    companion.disconnect();
+    silent.stop();
+}
+
+// And a host that does answer is not caught by that deadline: the timer is
+// only ever running while a connection is still arriving.
+void test_a_real_host_is_not_timed_out() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    CHECK_MSG(paired(host, companion), "the handshake did not complete");
+
+    // Long past the deadline, and still connected: nothing re-arms it.
+    const uint64_t later = monotonic_millis() + kJoinTimeoutMs * 4;
+    host.poll(later);
+    companion.poll(later);
+    CHECK(companion.status() == CompanionSession::Status::Connected);
+
+    companion.disconnect();
+    host.stop();
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -990,6 +1077,8 @@ int main() {
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
     test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it();
     test_menu_gets_the_companion_both_screens();
+    test_joining_gives_up_on_a_host_that_never_answers();
+    test_a_real_host_is_not_timed_out();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
 }

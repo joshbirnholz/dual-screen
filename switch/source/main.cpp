@@ -186,6 +186,9 @@ private:
 
     Layout session_layout() const;
     void refresh_output_size();
+#ifdef __SWITCH__
+    void follow_console_output();
+#endif
 
     void handle_actions(const std::vector<UiAction>& actions,
                         const std::vector<PointerEvent>& pointers);
@@ -367,7 +370,39 @@ Layout Client::session_layout() const {
     return resolve_for_device(chosen, session_.granted_screen());
 }
 
+#ifdef __SWITCH__
+
+void Client::follow_console_output() {
+    // The console hands SDL a window the size of its docked output whatever is
+    // actually in front of you: undocked, the panel is 1280x720 and a 1080p
+    // picture is scaled down onto it. Drawing at the panel's own size instead
+    // is sharper, costs less to draw and to stream, and is what tells the
+    // layout code it is on a small display -- which is what makes Standard
+    // fill the screen rather than sit in a field of grey.
+    //
+    // Checked every frame because it changes when the console is docked or
+    // picked up, which is not an event this app is told about.
+    const bool handheld = appletGetOperationMode() == AppletOperationMode_Handheld;
+    const int wanted_width = handheld ? 1280 : 1920;
+    const int wanted_height = handheld ? 720 : 1080;
+
+    int width = 0;
+    int height = 0;
+    SDL_GetWindowSize(gl_.window, &width, &height);
+    if (width == wanted_width && height == wanted_height) {
+        return;
+    }
+    SDL_SetWindowSize(gl_.window, wanted_width, wanted_height);
+    log_info(std::string(handheld ? "handheld" : "docked") + ": drawing at " +
+             std::to_string(wanted_width) + "x" + std::to_string(wanted_height));
+}
+
+#endif
+
 void Client::refresh_output_size() {
+#ifdef __SWITCH__
+    follow_console_output();
+#endif
     int width = 0;
     int height = 0;
     SDL_GL_GetDrawableSize(gl_.window, &width, &height);
@@ -376,6 +411,12 @@ void Client::refresh_output_size() {
     }
     output_width_ = width;
     output_height_ = height;
+    // Logged because it decides a great deal: whether this counts as a small
+    // display, how big a picture the host is asked for, and how much there is
+    // to draw. A device drawing at a size nobody expected explains most of
+    // what could look wrong here.
+    log_info("drawing at " + std::to_string(output_width_) + "x" +
+             std::to_string(output_height_));
     // The host sends each screen at the size it will actually be drawn at, so
     // it has to be told when that changes -- docking a Switch is such a change.
     if (state_ == State::Playing) {

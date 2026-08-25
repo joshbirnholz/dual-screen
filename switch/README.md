@@ -95,6 +95,21 @@ network — the app calls `nxlinkStdio()` at start-up, so its output arrives
 there. That needs the console to already be listening (`nxlink` is launched
 from the homebrew menu's own network loader), which is why the file exists too.
 
+## Docked and handheld
+
+The console hands SDL a window the size of its *docked* output whichever way
+it is being used: undocked, the panel is 1280x720 and a 1080p picture is
+scaled down onto it. The app draws at the panel's own size instead — 1280x720
+undocked, 1920x1080 docked, switched as the console is picked up or put down.
+
+That is sharper and cheaper both to draw and to stream, and it is also what
+tells the layout code it is on a display no bigger than a Deck's, which is
+what makes the Standard layout fill the screen with the console's screens
+rather than sit the whole picture in a field of grey.
+
+The log says which it is on every change (`handheld: drawing at 1280x720`),
+which is the first thing to check if a layout looks the wrong size.
+
 ## If it exits straight back to the homebrew menu
 
 **No log file on the SD card at all** means the app never ran: the log is

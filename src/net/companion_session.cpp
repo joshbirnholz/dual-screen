@@ -52,6 +52,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
         return;
     }
     status_ = Status::Connecting;
+    connect_deadline_ms_ = 0;  // set on the first poll, off the caller's clock
     status_detail_ = "connecting to " + host.device_name;
     game_title_ = host.game_title;
     log_info("connecting to " + host.device_name + " at " + host.address);
@@ -200,6 +201,24 @@ void CompanionSession::poll(uint64_t now_ms) {
 
     if (!stream_.open()) {
         return;
+    }
+
+    // Joining has to either happen or stop happening. A host that has gone
+    // since it last announced itself, or one reachable at an address this
+    // device cannot route to -- a machine that broadcasts from more than one
+    // interface offers several, and only some of them work from here -- leaves
+    // a connect sitting in the operating system's own retries for two minutes,
+    // during which nothing on screen changes and no button appears to do
+    // anything. The deadline covers the whole of joining rather than just the
+    // socket: a host that accepts the connection and then never says hello is
+    // the same problem wearing a different hat.
+    if (status_ == Status::Connecting) {
+        if (connect_deadline_ms_ == 0) {
+            connect_deadline_ms_ = now_ms + kJoinTimeoutMs;
+        } else if (now_ms >= connect_deadline_ms_) {
+            fail("that device did not answer");
+            return;
+        }
     }
 
     std::string error;

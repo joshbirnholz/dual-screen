@@ -169,6 +169,10 @@ private:
     bool host_screen_gap_ = true;
     bool menu_open_ = false;
     bool said_hello_ = false;
+    // When to give up on a connection that has not finished arriving. Zero
+    // until the first poll() after connect_to(), so the whole timer runs on
+    // the caller's clock rather than half on one and half on another.
+    uint64_t connect_deadline_ms_ = 0;
 
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.
