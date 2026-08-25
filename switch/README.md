@@ -57,6 +57,11 @@ cd switch && make
 That produces `dualscreen-companion.nro`. Copy it to `/switch/` on the console's
 SD card and start it from the homebrew menu.
 
+A finished `.nro` carries an asset section on the end — `icon.jpg` and the name
+and version from the top of the `Makefile` — so a menu shows it as *dualscreen
+companion* with the two-screen icon rather than as a bare filename. If a loader
+says it **cannot parse the nro**, that section is what it is missing.
+
 ## Reading the log
 
 The app writes everything it does to the SD card, at
@@ -76,11 +81,18 @@ from the homebrew menu's own network loader), which is why the file exists too.
 
 ## If it exits straight back to the homebrew menu
 
-That is the app deciding it cannot start, not a crash — a crash gets a fatal
-error screen from the console. It should now say why on screen before it goes,
-and the reason is in the log either way.
+**No log file on the SD card at all** means the app never ran: the log is
+opened before anything else can fail, so its absence is not a clue about what
+the app did, it is the answer that nothing did. That is a loader refusing the
+`.nro` — the same thing Sphaira reports as "cannot parse nro" — and it is a
+packaging problem rather than a running one. Rebuild after `make clean` and
+check the asset section is there, as above.
 
-The usual cause is **applet mode**. Launching homebrew from the album gives it
+**A log file that stops part-way** is the app deciding it cannot start, which
+is not a crash — a crash gets a fatal error screen from the console. It says
+why on screen before it goes, and the last line of the log is where it got to.
+
+The usual cause there is **applet mode**. Launching homebrew from the album gives it
 about 50 MB of heap, which is not enough for SDL and the graphics stack behind
 it, and the failure comes out as a window or renderer that will not open. Start
 the homebrew menu in full-memory mode instead: hold **R** while launching a

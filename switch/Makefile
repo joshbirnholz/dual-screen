@@ -30,6 +30,9 @@ SHARED      := ../src
 APP_TITLE   := dualscreen companion
 APP_AUTHOR  := dualscreen
 APP_VERSION := 0.1.0
+# 256x256 JPEG -- a Switch icon is not a PNG, whatever the 3DS and Wii U
+# templates do.
+ICON        := icon.jpg
 
 # Directories the sources live in. Whole directories are not listed, because
 # most of them hold files this program has no business compiling -- an emulator
@@ -105,6 +108,12 @@ ifeq ($(wildcard $(SDL2_CONFIG)),)
 $(error Cannot find $(SDL2_CONFIG) -- install it with: dkp-pacman -S switch-sdl2)
 endif
 
+# $(TOPDIR), not $(CURDIR): the sub-make re-reads this file from $(BUILD),
+# where $(CURDIR) is that directory rather than the project's.
+ifeq ($(wildcard $(TOPDIR)/$(ICON)),)
+$(error Cannot find $(ICON), which the .nro needs an asset section built from)
+endif
+
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
@@ -118,6 +127,17 @@ export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                    $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                    -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+
+# What goes in the .nro's asset section: the icon, and the name and version a
+# menu shows. Without them elf2nro is still handed a good ELF and still writes
+# a file, but one with no asset header on the end at all -- which is what a
+# loader means when it says it cannot parse the nro, and why launching it drops
+# straight back to the menu with nothing having run. Set here rather than at
+# the top of the file because $(CURDIR) is the project directory only out here:
+# the sub-make runs in $(BUILD) and inherits these through the environment, the
+# same way it inherits OUTPUT and VPATH.
+export APP_ICON := $(CURDIR)/$(ICON)
+export NROFLAGS := --icon=$(APP_ICON) --nacp=$(OUTPUT).nacp
 
 .PHONY: all clean
 
