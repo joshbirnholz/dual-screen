@@ -282,6 +282,78 @@ void test_streams_enable_keepalive_with_a_short_idle_time() {
     server.close();
 }
 
+// How much can vanish into the kernel's send queue before the app can see it.
+//
+// The frame publisher drops a frame rather than queueing it when the link is
+// behind, so a companion that cannot keep up sees dropped frames instead of
+// mounting latency. It decides that from pending_bytes(), which counts only
+// what is still in this process -- so everything the kernel has taken is
+// latency the publisher cannot see and cannot drop. Left to autotune that
+// queue reached 3.9 MB here, some ninety-five frames of a DS screen, and the
+// drop logic never once fired.
+void test_the_kernel_send_queue_is_small_enough_to_notice() {
+    TcpListener listener;
+    std::string error;
+    CHECK_MSG(listener.start(0, &error), error);
+
+    TcpStream client;
+    CHECK_MSG(client.start_connect("127.0.0.1", listener.port(), &error), error);
+
+    TcpStream server;
+    std::vector<uint8_t> inbox;
+    const uint64_t deadline = monotonic_millis() + 2000;
+    while (!server.open() && monotonic_millis() < deadline) {
+        listener.accept(server);
+        client.pump(inbox, &error);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    CHECK_MSG(server.open(), "the listener never accepted the connection");
+    if (!server.open()) return;
+
+    // Both ends, because a bound that was only applied to one of them would
+    // leave whichever path this test does not walk unbounded.
+    for (const TcpStream* stream : {&client, &server}) {
+        int send_buffer = 0;
+        socklen_t length = sizeof(send_buffer);
+        CHECK(::getsockopt(stream->descriptor_for_test(), SOL_SOCKET, SO_SNDBUF, &send_buffer,
+                           &length) == 0);
+        // Linux reports back roughly twice what was asked for, so this is a
+        // check that a bound was set at all rather than one on its exact size.
+        CHECK_MSG(send_buffer > 0 && send_buffer <= 512 * 1024,
+                  "a stream's send queue was left to autotune (" + std::to_string(send_buffer) +
+                      " bytes)");
+    }
+
+    // The measurement itself runs on the accepted socket, because that is the
+    // one the host streams frames down: it accepts a companion rather than
+    // connecting to one. A receiver that never reads a byte, with a small
+    // window of its own, so what this measures is the sending side.
+    const int receive_buffer = 32 * 1024;
+    ::setsockopt(client.descriptor_for_test(), SOL_SOCKET, SO_RCVBUF, &receive_buffer,
+                 sizeof(receive_buffer));
+
+    // 40 KB a frame: what one dynamic DS screen actually costs after RGB565
+    // and deflate.
+    constexpr std::size_t kFrameBytes = 40 * 1024;
+    const std::vector<uint8_t> frame(kFrameBytes, 0xa5);
+    std::size_t accepted = 0;
+    for (int i = 0; i < 200; ++i) {
+        server.send(frame);
+        if (!server.pump(inbox, &error)) break;
+        if (server.pending_bytes() > 0) break;  // the backlog is finally visible
+        accepted += frame.size();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    const double hidden_frames = static_cast<double>(accepted) / static_cast<double>(kFrameBytes);
+    CHECK_MSG(hidden_frames < 16.0,
+              "the kernel took " + std::to_string(hidden_frames) +
+                  " frames before the backlog became visible");
+
+    client.close();
+    server.close();
+}
+
 // A refused connection has to surface as a failure rather than hanging.
 void test_connect_to_nothing_fails() {
     TcpStream stream;
@@ -310,6 +382,7 @@ int main() {
     test_discovery_over_loopback();
     test_tcp_carries_framed_messages();
     test_streams_enable_keepalive_with_a_short_idle_time();
+    test_the_kernel_send_queue_is_small_enough_to_notice();
     test_connect_to_nothing_fails();
     return test::finish("net");
 }

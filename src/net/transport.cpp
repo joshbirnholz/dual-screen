@@ -63,6 +63,27 @@ void enable_keepalive(int descriptor) {
 #endif
 }
 
+// The kernel's own send queue, which nothing above this file can see.
+//
+// That invisibility is the whole point of bounding it. The frame publisher
+// drops a frame rather than queueing it when the link is behind, so that a
+// companion that cannot keep up sees dropped frames instead of mounting
+// latency -- but it decides that from the bytes still sitting in *this*
+// process, and bytes handed to the kernel have left. Left to autotune, that
+// queue grows into the megabytes: measured on loopback, 3.9 MB -- some
+// ninety-five frames of a DS screen -- was accepted before one byte backed up
+// where the publisher could see it. Every one of those frames is a frame the
+// player is behind, and none of them can be dropped.
+//
+// Small enough that what hides in it is a frame or two rather than a second
+// and a half, and still several times the bandwidth-delay product of a LAN at
+// the bitrates this streams at, so a healthy link stays saturated.
+constexpr int kSendQueueBytes = 64 * 1024;
+
+void bound_send_queue(int descriptor) {
+    ::setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &kSendQueueBytes, sizeof(kSendQueueBytes));
+}
+
 std::string describe(const sockaddr_in& address) {
     char text[INET_ADDRSTRLEN] = {0};
     ::inet_ntop(AF_INET, &address.sin_addr, text, sizeof(text));
@@ -114,6 +135,7 @@ TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
     // Frames are latency-sensitive and small; waiting to coalesce them adds
     // exactly the delay this is meant to avoid.
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    bound_send_queue(descriptor);
     enable_keepalive(descriptor);
     return stream;
 }
@@ -129,6 +151,7 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
     set_non_blocking(descriptor_);
     const int one = 1;
     ::setsockopt(descriptor_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    bound_send_queue(descriptor_);
     enable_keepalive(descriptor_);
 
     sockaddr_in target {};
