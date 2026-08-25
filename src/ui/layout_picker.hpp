@@ -100,6 +100,13 @@ public:
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
+    // The display the previews are judged against, when that is not the size
+    // being drawn at -- see Compositor::set_display_size(). A tile has to show
+    // the margin the real render would have, which is decided by the panel.
+    void set_display_size(float width, float height) {
+        display_width_ = width;
+        display_height_ = height;
+    }
     // The console being played, which decides the screens' shapes and what the
     // Standard tile draws.
     void set_screens(const SystemScreens& screens) { screens_ = screens; }
@@ -200,6 +207,8 @@ private:
     LayoutPickerState state_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;
+    float display_width_ = 0.0f;
+    float display_height_ = 0.0f;
     SystemScreens screens_;
 };
 

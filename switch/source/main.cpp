@@ -186,9 +186,13 @@ private:
 
     Layout session_layout() const;
     void refresh_output_size();
-#ifdef __SWITCH__
-    void follow_console_output();
-#endif
+    // The display the picture actually lands on, which is not always the size
+    // being drawn at -- see Compositor::set_display_size().
+    void panel_size(int& width, int& height) const;
+    // Hands that size to everything that decides anything from it. Called
+    // every frame: on a console it changes when the thing is docked or picked
+    // up, which is not an event this app is told about.
+    void follow_panel_size();
 
     void handle_actions(const std::vector<UiAction>& actions,
                         const std::vector<PointerEvent>& pointers);
@@ -220,6 +224,11 @@ private:
     LayoutPicker picker_{registry_};
     LauncherScreen launcher_;
     HostPickerScreen host_picker_;
+
+    // The panel size last acted on, so a change is noticed rather than
+    // re-announced every frame.
+    int panel_width_ = 0;
+    int panel_height_ = 0;
 
     State state_ = State::Launcher;
     std::string start_error_;
@@ -370,39 +379,47 @@ Layout Client::session_layout() const {
     return resolve_for_device(chosen, session_.granted_screen());
 }
 
+void Client::panel_size(int& width, int& height) const {
+    width = output_width_;
+    height = output_height_;
 #ifdef __SWITCH__
-
-void Client::follow_console_output() {
-    // The console hands SDL a window the size of its docked output whatever is
-    // actually in front of you: undocked, the panel is 1280x720 and a 1080p
-    // picture is scaled down onto it. Drawing at the panel's own size instead
-    // is sharper, costs less to draw and to stream, and is what tells the
-    // layout code it is on a small display -- which is what makes Standard
-    // fill the screen rather than sit in a field of grey.
-    //
-    // Checked every frame because it changes when the console is docked or
-    // picked up, which is not an event this app is told about.
+    // The console hands SDL a window the size of its docked output whichever
+    // way it is being held: undocked, the panel is 1280x720 and a 1080p
+    // picture is scaled down onto it. Asking the console which it is gives the
+    // screen that is actually in front of the player, whatever size the
+    // framebuffer happens to be -- and that is what decides whether there is
+    // room to spend on margin.
     const bool handheld = appletGetOperationMode() == AppletOperationMode_Handheld;
-    const int wanted_width = handheld ? 1280 : 1920;
-    const int wanted_height = handheld ? 720 : 1080;
-
-    int width = 0;
-    int height = 0;
-    SDL_GetWindowSize(gl_.window, &width, &height);
-    if (width == wanted_width && height == wanted_height) {
-        return;
-    }
-    SDL_SetWindowSize(gl_.window, wanted_width, wanted_height);
-    log_info(std::string(handheld ? "handheld" : "docked") + ": drawing at " +
-             std::to_string(wanted_width) + "x" + std::to_string(wanted_height));
+    width = handheld ? 1280 : 1920;
+    height = handheld ? 720 : 1080;
+#endif
 }
 
-#endif
+void Client::follow_panel_size() {
+    int width = 0;
+    int height = 0;
+    panel_size(width, height);
+
+    // Every layout decision that is about how much room there really is reads
+    // this rather than the window: chiefly whether to spend any of it on
+    // margin, which on a handheld it should not.
+    compositor_.set_display_size(static_cast<float>(width), static_cast<float>(height));
+    picker_.set_display_size(static_cast<float>(width), static_cast<float>(height));
+
+    if (width == panel_width_ && height == panel_height_) {
+        return;
+    }
+    panel_width_ = width;
+    panel_height_ = height;
+    log_info("the panel is " + std::to_string(width) + "x" + std::to_string(height));
+    // How big a picture is worth sending here: more than the panel can show is
+    // bandwidth spent on detail it will throw away.
+    if (state_ == State::Playing) {
+        session_.request_display_size(width, height);
+    }
+}
 
 void Client::refresh_output_size() {
-#ifdef __SWITCH__
-    follow_console_output();
-#endif
     int width = 0;
     int height = 0;
     SDL_GL_GetDrawableSize(gl_.window, &width, &height);
@@ -411,17 +428,8 @@ void Client::refresh_output_size() {
     }
     output_width_ = width;
     output_height_ = height;
-    // Logged because it decides a great deal: whether this counts as a small
-    // display, how big a picture the host is asked for, and how much there is
-    // to draw. A device drawing at a size nobody expected explains most of
-    // what could look wrong here.
     log_info("drawing at " + std::to_string(output_width_) + "x" +
              std::to_string(output_height_));
-    // The host sends each screen at the size it will actually be drawn at, so
-    // it has to be told when that changes -- docking a Switch is such a change.
-    if (state_ == State::Playing) {
-        session_.request_display_size(output_width_, output_height_);
-    }
 }
 
 void Client::open_menu() {
@@ -634,6 +642,7 @@ void Client::run() {
             input_.handle_event(event);
         }
         refresh_output_size();
+        follow_panel_size();
 
         session_.poll(now);
         switch (state_) {
@@ -654,7 +663,7 @@ void Client::run() {
                     state_ = State::Playing;
                     close_menu();
                     input_.set_game_input_enabled(true);
-                    session_.request_display_size(output_width_, output_height_);
+                    session_.request_display_size(panel_width_, panel_height_);
                     // A console with a stick of its own reads the stick as that
                     // stick; one without lets it stand in for the d-pad.
                     const SystemProfile& profile = system_profile(session_.system());

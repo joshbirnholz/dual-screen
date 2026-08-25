@@ -81,6 +81,19 @@ public:
     // since smoothing it could only make it worse.
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
 
+    // The display the picture actually lands on, when that is not the size
+    // being drawn at. A console hands its window the size of its docked
+    // output whichever way it is being held, and scales a 1080p picture down
+    // onto a 720p panel undocked -- so the window says one thing and the
+    // screen in front of the player is another. Layout decisions that are
+    // about how much room there really is, chiefly whether to spend any of it
+    // on margin, want the panel. Zero means they are the same thing, which is
+    // true of every ordinary display.
+    void set_display_size(float width, float height) {
+        display_width_ = width;
+        display_height_ = height;
+    }
+
     void render(QuadRenderer& quads,
                 const Layout& layout,
                 const ScreenTextures& textures,
@@ -93,6 +106,8 @@ private:
     CompositorStyle style_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = false;
+    float display_width_ = 0.0f;
+    float display_height_ = 0.0f;
 };
 
 }  // namespace ds

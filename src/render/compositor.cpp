@@ -76,11 +76,15 @@ void Compositor::render(QuadRenderer& quads,
                                                          : style_.background);
 
     if (draws_console) {
-        draw_ds_shell(quads, layout_frame(layout, output_width, output_height, screens),
+        draw_ds_shell(quads,
+                      layout_frame(layout, PixelRect{0.0f, 0.0f, output_width, output_height},
+                                   screens, display_width_, display_height_),
                       screens.console.has_art ? bezel_art_ : nullptr);
     }
 
-    for (const PlacedScreen& placed : place_screens(layout, output_width, output_height, screens)) {
+    for (const PlacedScreen& placed :
+         place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
+                       display_width_, display_height_)) {
         const PixelRect& rect = placed.rect;
         const Texture* texture = (placed.screen == ScreenId::Top) ? textures.top : textures.bottom;
 

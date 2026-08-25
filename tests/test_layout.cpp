@@ -239,6 +239,33 @@ void test_small_displays_drop_the_margin() {
               "a preview tile on a large display lost its margin because the tile itself is small");
 }
 
+// A Switch in handheld mode renders at the docked framebuffer size and the
+// console scales the result down to the 720p panel, so the window says
+// 1920x1080 while the display being looked at is small. Following the window
+// there leaves the handheld screen with the margin only a big display has room
+// for, which is what the console's own client has to override.
+void test_the_display_size_wins_over_the_window() {
+    const LayoutRegistry registry;
+    const SystemScreens& screens = ds_screens();
+    const Layout& standard = *registry.find("standard");
+    const PixelRect window{0.0f, 0.0f, 1920.0f, 1080.0f};
+
+    const PixelRect by_window = layout_frame(standard, window, screens);
+    CHECK_MSG(by_window.y > 1.0f, "a 1080p window kept no margin");
+
+    const PixelRect by_panel = layout_frame(standard, window, screens, 1280.0f, 720.0f);
+    CHECK_MSG(by_panel.y < by_window.y,
+              "a 1080p window told it is a 720p panel kept its margin: frame y is " +
+                  std::to_string(by_panel.y));
+
+    // Dropping the margin is not the whole rule: a small display is filled by
+    // the screens, with the artwork round them running off the edges.
+    const PixelRect bounds =
+        placed_bounds(place_screens(standard, window, screens, 1280.0f, 720.0f));
+    CHECK_MSG(std::abs(bounds.h - window.h) < 2.0f,
+              "the screens did not span the window's height: " + std::to_string(bounds.h));
+}
+
 // Standard is the console itself: its shape comes from whichever system is
 // running, and the screens sit exactly where that console's own screens are.
 void test_standard_is_the_console() {
@@ -789,6 +816,7 @@ int main() {
     test_registry_contents();
     test_layouts_match_the_wii_u();
     test_small_displays_drop_the_margin();
+    test_the_display_size_wins_over_the_window();
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
     test_the_gap_choice_applies_to_every_layout_that_offers_it();

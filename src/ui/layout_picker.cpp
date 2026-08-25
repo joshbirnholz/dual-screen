@@ -472,8 +472,10 @@ void LayoutPicker::render(QuadRenderer& quads,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
         };
-        draw_preview(quads, resolved_layout_for_preview(layout), preview, output_width,
-                     output_height, screens_, textures, bezel_art_, smoothing_);
+        draw_preview(quads, resolved_layout_for_preview(layout), preview,
+                     display_width_ > 0.0f ? display_width_ : output_width,
+                     display_height_ > 0.0f ? display_height_ : output_height, screens_, textures,
+                     bezel_art_, smoothing_);
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,

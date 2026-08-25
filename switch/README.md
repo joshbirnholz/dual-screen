@@ -97,18 +97,28 @@ from the homebrew menu's own network loader), which is why the file exists too.
 
 ## Docked and handheld
 
-The console hands SDL a window the size of its *docked* output whichever way
-it is being used: undocked, the panel is 1280x720 and a 1080p picture is
-scaled down onto it. The app draws at the panel's own size instead — 1280x720
-undocked, 1920x1080 docked, switched as the console is picked up or put down.
+The console can hand SDL a window the size of its *docked* output even when it
+is being held: undocked, the panel is 1280x720 and a 1080p picture is scaled
+down onto it. So the window's size is not the size of the screen in front of
+the player, and a layout that trusts it gets the handheld case wrong — it
+keeps the margin that only a big display has room for.
 
-That is sharper and cheaper both to draw and to stream, and it is also what
-tells the layout code it is on a display no bigger than a Deck's, which is
-what makes the Standard layout fill the screen with the console's screens
-rather than sit the whole picture in a field of grey.
+The client asks the console instead. `appletGetOperationMode()` says handheld
+or docked, and that decides the display size the layout is worked out
+against: 1280x720 held, 1920x1080 docked. Drawing still fills whatever window
+there is; it is only the question of *how much room there really is* that
+follows the panel. That is what makes the Standard layout fill a handheld
+screen with the console's own screens, cropping the artwork around them,
+rather than sitting the whole picture in a field of grey — the same rule a
+Deck gets.
 
-The log says which it is on every change (`handheld: drawing at 1280x720`),
-which is the first thing to check if a layout looks the wrong size.
+It also caps what is worth streaming: the host is asked for frames at the
+panel's size, so nothing is sent that the panel would only throw away.
+
+The log says which it is on every change (`the panel is 1280x720`), and says
+the window size separately (`drawing at 1920x1080`). The two disagreeing is
+normal, and those two lines are the first thing to check if a layout looks
+the wrong size.
 
 ## If it exits straight back to the homebrew menu
 
