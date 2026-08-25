@@ -145,6 +145,10 @@ public:
     // taken away and given back -- Android, when the app is backgrounded --
     // where the texture names survive as numbers that no longer mean anything.
     void forget_screen_textures();
+    // The newest frame actually decoded here, which is what the host is told.
+    uint64_t newest_frame_serial_for_test() const {
+        return std::max(top_.serial, bottom_.serial);
+    }
     SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override { return false; }
 
@@ -180,6 +184,13 @@ private:
     uint64_t connect_deadline_ms_ = 0;
     // The newest frame serial already reported to the host.
     uint64_t acked_serial_ = 0;
+
+    // The other half of the host's once-a-second summary: what actually
+    // arrived here. The two together say whether frames are being lost on the
+    // wire or never sent in the first place.
+    void report_stream(uint64_t now_ms);
+    uint64_t stats_at_ms_ = 0;
+    unsigned stats_decoded_ = 0;
 
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.

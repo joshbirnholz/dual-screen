@@ -192,6 +192,15 @@ private:
     // The newest frame the companion says it has decoded. Zero until it has
     // said anything.
     uint64_t acked_serial_ = 0;
+
+    // Once-a-second streaming summary, for working out on real hardware where
+    // a slow stream is actually being lost. Debug level, so --verbose asks for
+    // it and an ordinary run is not filled with it.
+    void report_stream(uint64_t now_ms);
+    uint64_t stats_at_ms_ = 0;
+    uint64_t stats_bytes_ = 0;
+    unsigned stats_produced_ = 0;
+    unsigned stats_sent_ = 0;
     // The last frame of each screen that was actually put on the wire, in
     // RGB565, which the next one is sent as the difference from. The frame
     // *sent* rather than the one produced: a frame skipped because the link

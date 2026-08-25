@@ -167,6 +167,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             target.width = frame.width;
             target.height = frame.height;
             target.serial = frame.serial;
+            ++stats_decoded_;
             break;
         }
         case MessageType::Audio: {
@@ -222,23 +223,14 @@ void CompanionSession::poll(uint64_t now_ms) {
         }
     }
 
+    if (status_ == Status::Connected) {
+        report_stream(now_ms);
+    }
+
     std::string error;
     if (!stream_.pump(inbox_, &error)) {
         fail(error);
         return;
-    }
-
-    // Tell the host which frame has actually been decoded here, as soon as
-    // that changes. This is the only thing that lets it know how far behind
-    // this device is: everything else it can measure sits on its own side of
-    // the wire, and a frame that has left the host may still be waiting in
-    // this machine's receive buffer.
-    const uint64_t newest = std::max(top_.serial, bottom_.serial);
-    if (status_ == Status::Connected && newest != acked_serial_) {
-        acked_serial_ = newest;
-        std::vector<uint8_t> ack;
-        encode_frame_ack(newest, ack);
-        stream_.send(ack);
     }
 
     // The hello waits until the TCP handshake has actually completed, so it is
@@ -266,6 +258,27 @@ void CompanionSession::poll(uint64_t now_ms) {
         handle_message(type, payload);
         if (!stream_.open()) {
             break;
+        }
+    }
+
+    // Tell the host which frame has actually been decoded here. This is the
+    // only thing that lets it know how far behind this device is: everything
+    // else it could measure sits on its own side of the wire, and a frame that
+    // has left the host may still be waiting in this machine's receive buffer.
+    //
+    // After the messages above, not before them, and flushed here rather than
+    // left for the next poll: an ack that describes the state of things two
+    // polls ago reads to the host as a device two frames further behind than
+    // it is, and the host throttles on exactly that number.
+    const uint64_t newest = std::max(top_.serial, bottom_.serial);
+    if (status_ == Status::Connected && stream_.open() && newest != acked_serial_) {
+        acked_serial_ = newest;
+        std::vector<uint8_t> ack;
+        encode_frame_ack(newest, ack);
+        stream_.send(ack);
+        std::string flush_error;
+        if (!stream_.pump(inbox_, &flush_error)) {
+            fail(flush_error);
         }
     }
 }
@@ -470,6 +483,21 @@ const ScreenTextures& CompanionSession::screens() {
     textures_.top = top_.texture.valid() ? &top_.texture : nullptr;
     textures_.bottom = bottom_.texture.valid() ? &bottom_.texture : nullptr;
     return textures_;
+}
+
+void CompanionSession::report_stream(uint64_t now_ms) {
+    if (stats_at_ms_ == 0) {
+        stats_at_ms_ = now_ms;
+        return;
+    }
+    const uint64_t elapsed = now_ms - stats_at_ms_;
+    if (elapsed < 1000) {
+        return;
+    }
+    log_debug("stream: " + std::to_string(stats_decoded_ * 1000 / elapsed) +
+              " frames decoded/s, newest is " + std::to_string(acked_serial_));
+    stats_at_ms_ = now_ms;
+    stats_decoded_ = 0;
 }
 
 void CompanionSession::forget_screen_textures() {

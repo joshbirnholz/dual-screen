@@ -1027,20 +1027,21 @@ void test_a_real_host_is_not_timed_out() {
     host.stop();
 }
 
-// A companion that cannot keep up must be sent fewer frames, not all of them
-// late.
+// A companion that falls behind must stop being sent frames it cannot show.
 //
 // This is what regressed when frames became differences from the last one
 // rather than whole pictures. The backlog limit was a byte count standing in
 // for "two or three frames", and a DS screen with little moving on it now
-// compresses to well under a hundred bytes, so the same budget held over a
-// thousand frames. Every one of them was queued and had to be decoded in
-// order by a device that was already behind, which is what watching the game
-// a second late looks like from the inside.
+// compresses to well under a hundred bytes -- measured on a real session, a
+// 57-byte median frame against a 98304-byte limit, which is over a thousand
+// frames of backlog before a single one is dropped. That is not a limit, it
+// is half a minute of delay that nothing is ever dropped to relieve.
 //
-// The companion here is polled once for every four frames the host produces,
-// which is what a device rendering at a fraction of the host's rate does.
-void test_a_slow_companion_is_sent_fewer_frames_rather_than_late_ones() {
+// The companion here acks a few frames and then goes quiet, which is what a
+// device whose link cannot carry the stream looks like from the host: frames
+// keep being handed to the socket, and nothing comes back to say any of them
+// arrived.
+void test_a_companion_that_falls_behind_stops_being_sent_frames() {
     HostSession host;
     HostSession::Config config;
     config.device_name = "Test PC";
@@ -1071,30 +1072,35 @@ void test_a_slow_companion_is_sent_fewer_frames_rather_than_late_ones() {
 
     const std::vector<uint32_t> top = flat_screen(0x00204080u);
     std::vector<uint32_t> bottom = flat_screen(0x00801020u);
-
-    constexpr uint64_t kFrames = 400;
-    std::size_t queued = 0;
-    for (uint64_t serial = 1; serial <= kFrames; ++serial) {
-        // Different every frame, so none is skipped for having nothing to say.
+    // Different every frame, so none is skipped for having nothing to say.
+    const auto publish = [&](uint64_t serial) {
         bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
-        const uint64_t before = host.queued_bytes_for_test();
         host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
         host.poll(monotonic_millis());
+    };
+
+    // Keeping up: the host must be free to send, and the acks must come back.
+    for (uint64_t serial = 1; serial <= 12; ++serial) {
+        publish(serial);
+        companion.poll(monotonic_millis());
+    }
+    CHECK_MSG(companion.newest_frame_serial_for_test() > 0,
+              "the companion never decoded a frame while it was keeping up");
+
+    // Now it stops answering.
+    constexpr uint64_t kSilentFrames = 400;
+    std::size_t queued = 0;
+    for (uint64_t serial = 13; serial < 13 + kSilentFrames; ++serial) {
+        const uint64_t before = host.queued_bytes_for_test();
+        publish(serial);
         if (host.queued_bytes_for_test() != before) {
             ++queued;
         }
-        if (serial % 4 == 0) {
-            companion.poll(monotonic_millis());
-        }
     }
 
-    // A quarter of the frames is what this companion could actually show. The
-    // bound is generous -- acks take a moment to come back, and the host is
-    // right to keep a couple in flight -- but it is a bound, and before the
-    // fix this was every frame.
-    CHECK_MSG(queued < kFrames / 2,
-              "the host queued " + std::to_string(queued) + " of " + std::to_string(kFrames) +
-                  " frames for a companion showing one in four");
+    CHECK_MSG(queued <= 16, "the host queued " + std::to_string(queued) + " of " +
+                                std::to_string(kSilentFrames) +
+                                " frames for a companion that had stopped answering");
 }
 
 void test_host_can_disconnect_the_companion() {
@@ -1149,7 +1155,7 @@ int main() {
     test_menu_gets_the_companion_both_screens();
     test_joining_gives_up_on_a_host_that_never_answers();
     test_a_real_host_is_not_timed_out();
-    test_a_slow_companion_is_sent_fewer_frames_rather_than_late_ones();
+    test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
 }

@@ -20,7 +20,15 @@ namespace {
 //
 // What the limit is really about is how far behind what the player sees is
 // allowed to fall, and that has always been a number of frames.
-constexpr std::size_t kMaxQueuedFrames = 3;
+//
+// Eight rather than two or three, because the companion's answer takes a
+// moment to come back and nothing may be sent while the host waits for it. At
+// most this many frames can be outstanding per round trip, so a tight number
+// stops being a backlog limit and becomes a frame rate cap: three frames
+// against a 50 ms wifi round trip is 60fps exactly, with nothing left for
+// jitter. Eight leaves the pipeline full on a link like that and still bounds
+// how far behind the picture can fall at about an eighth of a second.
+constexpr std::size_t kMaxQueuedFrames = 8;
 
 // Audio still goes by bytes, because a sound packet is a fixed span of time
 // and its size does not wander. This is a little under a fifth of a second of
@@ -321,6 +329,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
 
 void HostSession::poll(uint64_t now_ms) {
     announcer_.poll(now_ms);
+    if (has_companion()) {
+        report_stream(now_ms);
+    }
 
     if (!companion_.open()) {
         TcpStream incoming;
@@ -423,6 +434,38 @@ bool HostSession::take_companion_quit_request() {
 
 std::size_t HostSession::queue_limit() const { return kMaxQueuedAudioBytes; }
 
+// Where a slow stream is actually being lost is not something that can be
+// worked out from the far end, or from a machine that is not on the same
+// network. This says, once a second: how many frames the game produced, how
+// many were worth sending, how many were dropped for the companion being
+// behind, the rate on the wire, and how far behind the companion says it is.
+void HostSession::report_stream(uint64_t now_ms) {
+    if (stats_at_ms_ == 0) {
+        stats_at_ms_ = now_ms;
+        stats_bytes_ = companion_.queued_total();
+        return;
+    }
+    const uint64_t elapsed = now_ms - stats_at_ms_;
+    if (elapsed < 1000) {
+        return;
+    }
+    const uint64_t bytes = companion_.queued_total() - stats_bytes_;
+    const unsigned dropped = stats_produced_ - stats_sent_;
+    const uint64_t behind = (acked_serial_ != 0 && sent_serial_ > acked_serial_)
+                                ? sent_serial_ - acked_serial_
+                                : 0;
+    log_debug("stream: " + std::to_string(stats_produced_ * 1000 / elapsed) + " produced/s, " +
+              std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
+              std::to_string(dropped) + " dropped, " +
+              std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, companion " +
+              std::to_string(behind) + " frames behind, " +
+              std::to_string(companion_.backlog_bytes()) + " B unsent");
+    stats_at_ms_ = now_ms;
+    stats_bytes_ = companion_.queued_total();
+    stats_produced_ = 0;
+    stats_sent_ = 0;
+}
+
 std::size_t HostSession::frames_in_flight() {
     const uint64_t departed = companion_.departed_total();
     while (!frame_marks_.empty() && frame_marks_.front() <= departed) {
@@ -467,6 +510,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
     if (serial == sent_serial_ && !resend_screens_) {
         return;
     }
+    ++stats_produced_;
     // Never let the send queue grow without bound: a companion that cannot keep
     // up should see dropped frames, not mounting latency.
     //
@@ -514,6 +558,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // Where this frame ends, so frames_in_flight() can tell later whether
         // it has actually gone.
         frame_marks_.push_back(companion_.queued_total());
+        ++stats_sent_;
     }
     sent_serial_ = serial;
     resend_screens_ = false;
