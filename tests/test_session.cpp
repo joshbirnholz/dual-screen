@@ -5,6 +5,7 @@
 
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -179,6 +180,95 @@ void test_host_and_companion_pair_up() {
 // once that stopped being true, so a real 3DS top screen at 3x (1200x720)
 // tripped it and the companion dropped the connection reporting "impossible
 // dimensions" on a perfectly good frame.
+// The whole received screen, not just its corner: a client that draws through
+// something other than the GL compositor -- the Switch one does -- uploads
+// these pixels to a texture of its own, so the buffer has to be readable in
+// full, at the size the frame actually arrived at, with a serial that moves
+// when a new frame lands.
+void test_a_received_screen_is_readable_as_pixels() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Switch", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+
+    // Nothing has arrived yet, so there is nothing to draw and the caller has
+    // to be able to tell -- a client that trusted a pointer here would upload
+    // whatever the buffer happened to contain.
+    CHECK(!companion.screen_pixels(ScreenId::Bottom).valid());
+
+    // A gradient rather than a flat fill: a buffer handed back at the wrong
+    // stride, or only partly filled, looks exactly like a flat one.
+    std::vector<uint32_t> bottom(static_cast<std::size_t>(kDsScreenWidth) * kDsScreenHeight);
+    for (int y = 0; y < kDsScreenHeight; ++y) {
+        for (int x = 0; x < kDsScreenWidth; ++x) {
+            const uint32_t red = static_cast<uint32_t>(x) & 0xf8u;
+            const uint32_t green = static_cast<uint32_t>(y) & 0xf8u;
+            bottom[static_cast<std::size_t>(y) * kDsScreenWidth + x] = (red << 16) | (green << 8);
+        }
+    }
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    host.publish_screens(screen_pixels(top), screen_pixels(bottom), 7);
+
+    if (!spin(host, companion, [&] { return companion.has_screen(ScreenId::Bottom); })) {
+        CHECK_MSG(false, "the companion's own screen never arrived");
+        return;
+    }
+
+    const CompanionSession::ScreenPixels frame = companion.screen_pixels(ScreenId::Bottom);
+    CHECK(frame.valid());
+    CHECK_EQ(frame.width, kDsScreenWidth);
+    CHECK_EQ(frame.height, kDsScreenHeight);
+    CHECK_EQ(frame.serial, static_cast<uint64_t>(7));
+
+    // Every pixel, at the far corner as well as the near one. RGB565 is lossy,
+    // so this asks for close rather than equal.
+    int worst = 0;
+    for (int y = 0; y < frame.height; ++y) {
+        for (int x = 0; x < frame.width; ++x) {
+            const uint32_t got = frame.pixels[static_cast<std::size_t>(y) * frame.width + x];
+            const uint32_t want = bottom[static_cast<std::size_t>(y) * kDsScreenWidth + x];
+            for (int shift : {16, 8, 0}) {
+                const int difference = std::abs(static_cast<int>((got >> shift) & 0xff) -
+                                                static_cast<int>((want >> shift) & 0xff));
+                worst = std::max(worst, difference);
+            }
+        }
+    }
+    CHECK_MSG(worst <= 8, "the decoded screen was off by " + std::to_string(worst));
+
+    // A new frame has to be distinguishable from the one already drawn, which
+    // is the whole point of the serial travelling with the pixels.
+    host.publish_screens(screen_pixels(top), screen_pixels(flat_screen(0x00112233u)), 8);
+    const bool moved = spin(host, companion, [&] {
+        return companion.screen_pixels(ScreenId::Bottom).serial == 8;
+    });
+    CHECK_MSG(moved, "a second frame never replaced the first");
+
+    companion.disconnect();
+    host.stop();
+}
+
 void test_a_screen_above_the_old_native_only_size_still_arrives() {
     HostSession host;
     HostSession::Config config;
@@ -870,6 +960,7 @@ void test_host_can_disconnect_the_companion() {
 
 int main() {
     test_host_and_companion_pair_up();
+    test_a_received_screen_is_readable_as_pixels();
     test_a_screen_above_the_old_native_only_size_still_arrives();
     test_non_split_layout_sends_both_screens();
     test_companion_gets_the_screen_it_asked_for();

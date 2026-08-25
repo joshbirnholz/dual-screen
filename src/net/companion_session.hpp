@@ -92,6 +92,26 @@ public:
     // The rate the host said it produces audio at, known from the handshake.
     uint32_t audio_sample_rate() const { return audio_sample_rate_; }
 
+    // The last frame received for a screen, as XRGB8888 pixels on the CPU,
+    // with the serial that identifies it so a caller can tell a new frame from
+    // one it has already drawn. Valid until the next poll(). Empty until
+    // something has arrived.
+    //
+    // screens() hands the same pixels over as GL textures, which is what the
+    // desktop compositor draws. A device that does not have that renderer --
+    // the Switch client, which draws through SDL's own -- uploads these to a
+    // texture of its own instead, rather than there being a second copy of
+    // the receiving and decoding to keep in step with this one.
+    struct ScreenPixels {
+        const uint32_t* pixels = nullptr;
+        int width = 0;
+        int height = 0;
+        uint64_t serial = 0;
+
+        bool valid() const { return pixels != nullptr && width > 0 && height > 0; }
+    };
+    ScreenPixels screen_pixels(ScreenId screen) const;
+
     // Whether a screen has ever arrived, and the serial of the last one. The
     // split layout only sends one screen, so "did the other one arrive?" is a
     // real question worth being able to answer.

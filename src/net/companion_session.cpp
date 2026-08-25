@@ -262,9 +262,21 @@ void CompanionSession::send_input(const DsInputState& state) {
     ever_sent_input_ = true;
 }
 
-bool CompanionSession::has_screen(ScreenId screen) const {
+CompanionSession::ScreenPixels CompanionSession::screen_pixels(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
-    return buffer.width > 0 && !buffer.pixels.empty();
+    ScreenPixels out;
+    if (buffer.pixels.empty() || buffer.width <= 0 || buffer.height <= 0) {
+        return out;
+    }
+    out.pixels = buffer.pixels.data();
+    out.width = buffer.width;
+    out.height = buffer.height;
+    out.serial = buffer.serial;
+    return out;
+}
+
+bool CompanionSession::has_screen(ScreenId screen) const {
+    return screen_pixels(screen).valid();
 }
 
 uint64_t CompanionSession::received_serial(ScreenId screen) const {
@@ -272,8 +284,8 @@ uint64_t CompanionSession::received_serial(ScreenId screen) const {
 }
 
 uint32_t CompanionSession::sample_pixel(ScreenId screen) const {
-    const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
-    return buffer.pixels.empty() ? 0u : (buffer.pixels[0] & 0x00ffffffu);
+    const ScreenPixels frame = screen_pixels(screen);
+    return frame.valid() ? (frame.pixels[0] & 0x00ffffffu) : 0u;
 }
 
 void CompanionSession::send_request(RequestMessage request) {
