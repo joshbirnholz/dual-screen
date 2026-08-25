@@ -152,8 +152,8 @@ void test_the_stick_is_the_dpad_only_where_there_is_no_stick() {
 
 // The stick click must not reach the game at all.
 void test_stick_click_is_not_a_ds_button() {
-    const DsInputState state = press_and_read(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
-    CHECK_EQ(state.buttons, 0u);
+    CHECK_EQ(press_and_read(SDL_CONTROLLER_BUTTON_RIGHTSTICK).buttons, 0u);
+    CHECK_EQ(press_and_read(SDL_CONTROLLER_BUTTON_LEFTSTICK).buttons, 0u);
 }
 
 // The right stick is a second, independent axis -- the C-Stick a Circle Pad
@@ -219,6 +219,18 @@ void test_stick_click_toggles_filtering() {
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::ToggleFilter), 1);
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::Confirm), 0);
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_A, UiAction::ToggleFilter), 0);
+}
+
+// L3 is the layout swap, and the same rules apply as to R3 above: exactly one
+// action per press, and no DS button of its own, so a game never loses a press
+// to it.
+void test_left_stick_click_swaps_the_layout() {
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_LEFTSTICK, UiAction::SwapLayout), 1);
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_LEFTSTICK, UiAction::Confirm), 0);
+    // The two stick clicks do not bleed into each other: R3 still only smooths
+    // and L3 still only swaps.
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_LEFTSTICK, UiAction::ToggleFilter), 0);
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::SwapLayout), 0);
 }
 
 // The mock core lights an indicator square per libretro joypad button. Their
@@ -348,6 +360,7 @@ int main() {
     test_stick_click_is_not_a_ds_button();
     test_right_stick_reaches_the_c_stick();
     test_stick_click_toggles_filtering();
+    test_left_stick_click_swaps_the_layout();
     test_face_buttons_reach_the_core();
 
     SDL_Quit();

@@ -112,6 +112,8 @@ LayoutRegistry::LayoutRegistry() {
         // real arrangement rather than a broken one. See
         // LayoutComposition::gap_toggleable.
         layout.composition.gap_toggleable = true;
+        // L3 flips between the two focus layouts -- see Layout::swap_layout_id.
+        layout.swap_layout_id = "touch_focus";
         layouts_.push_back(layout);
     }
 
@@ -130,6 +132,7 @@ LayoutRegistry::LayoutRegistry() {
             },
             kFocusGap, kFocusMargin);
         layout.composition.gap_toggleable = true;
+        layout.swap_layout_id = "upper_focus";
         layouts_.push_back(layout);
     }
 

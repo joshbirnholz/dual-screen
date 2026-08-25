@@ -184,6 +184,10 @@ void InputManager::handle_event(const SDL_Event& event) {
                 // R3 toggles filtering. It reaches no DS button, so it is free
                 // to mean this everywhere without stealing a press from a game.
                 case SDL_CONTROLLER_BUTTON_RIGHTSTICK: push_action(UiAction::ToggleFilter); break;
+                // L3 is free for the same reason R3 is: no DS or 3DS button
+                // reaches it, so it can mean this without a game ever missing
+                // a press.
+                case SDL_CONTROLLER_BUTTON_LEFTSTICK: push_action(UiAction::SwapLayout); break;
                 default: break;
             }
             break;
@@ -208,6 +212,7 @@ void InputManager::handle_event(const SDL_Event& event) {
                 // The keyboard equivalent, so a Steam Input layout that sends
                 // keystrokes rather than pad buttons can reach it too.
                 case SDLK_F2: push_action(UiAction::ToggleFilter); break;
+                case SDLK_F3: push_action(UiAction::SwapLayout); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
                 // Return doubles as DS Start in game, but game input is off
                 // while a menu is open, so there is no conflict.

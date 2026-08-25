@@ -61,6 +61,13 @@ In the two focus layouts the small screen sits where that screen sits on a real
 DS — the touch screen low, the upper screen high — so one pair is bottom-aligned
 and the other top-aligned.
 
+The two focus layouts are the same pair of screens with the emphasis reversed,
+and which one you want changes with what the game is doing, so **L3** swaps
+between them while playing — no menu, no pause. It does nothing under any other
+layout, and like everything else on that menu it is one choice for both devices:
+pressing it on the companion asks the host, the same as picking the layout from
+the menu would. **F3** does the same from a keyboard.
+
 **Hands** in the menu mirrors the layouts that put one screen beside another, so
 the touch screen is under whichever hand holds the stylus. It is one toggle
 rather than a left-handed twin of every layout, and it turns the sideways
@@ -362,6 +369,7 @@ Full options:
 | --- | --- |
 | Open/close the layout menu | **F1** or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** (or **F2**), in a game or in any menu |
+| Swap the two focus layouts | **L3** (or **F3**), while a game is on screen |
 | Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |
 | Move with the C-Stick | the right stick, in the handful of 3DS games built for a Circle Pad Pro or New 3DS |
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |

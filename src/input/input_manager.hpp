@@ -30,6 +30,10 @@ enum class UiAction {
     // Smooth or sharp screen scaling. Works wherever you are -- in a game or
     // in a menu -- so the difference can be judged against what is on screen.
     ToggleFilter,
+    // Move to the layout the current one pairs with, if it has one -- see
+    // Layout::swap_layout_id. Only means anything with a game on screen; in a
+    // menu every layout is already a tile away.
+    SwapLayout,
     Quit,
 };
 

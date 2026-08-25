@@ -170,6 +170,13 @@ struct Layout {
     // Standard does; everything else composes its screens for itself and looks
     // the same on any console.
     bool uses_console_frame = false;
+
+    // The layout a swap press (L3) moves to from here, if there is one. The two
+    // focus layouts are each other's: they show the same pair of screens with
+    // the emphasis reversed, so which one you want is a question that comes up
+    // mid-game -- often enough to be worth a button rather than a trip through
+    // the menu. Empty means the press does nothing while this layout is on.
+    std::string swap_layout_id;
 };
 
 // Which hand holds the stylus. Layouts that put one screen beside another are

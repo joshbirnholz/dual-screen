@@ -304,6 +304,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             // as it does in a game; the app pushes the result back in with
             // set_filtering(). Toggling it again here would undo that.
             case UiAction::ToggleFilter: break;
+            // L3 only swaps layouts with a game on screen: here every layout
+            // is a tile away already, and jumping the selection out from under
+            // the focus would be the opposite of a menu.
+            case UiAction::SwapLayout: break;
             case UiAction::PageUp:
             case UiAction::PageDown: break;  // nothing here scrolls
         }

@@ -748,6 +748,43 @@ void test_smoothing_follows_the_texture_not_just_the_setting() {
 
 }  // namespace
 
+// L3 swaps a layout for the one it pairs with. The pairing is data on the
+// layout rather than two ids written into the app, so this checks the registry
+// carries it: the two focus layouts point at each other, the swap round-trips,
+// and every other layout leaves the press meaning nothing.
+void test_the_focus_layouts_swap_with_each_other() {
+    LayoutRegistry registry;
+
+    const Layout& upper = *registry.find("upper_focus");
+    const Layout& touch = *registry.find("touch_focus");
+    CHECK_MSG(upper.swap_layout_id == "touch_focus",
+              "upper_focus swaps to '" + upper.swap_layout_id + "'");
+    CHECK_MSG(touch.swap_layout_id == "upper_focus",
+              "touch_focus swaps to '" + touch.swap_layout_id + "'");
+
+    // Pressing it twice has to land back where it started, which is what makes
+    // one button enough for both directions.
+    const Layout& there = registry.resolve(upper.swap_layout_id);
+    const Layout& back = registry.resolve(there.swap_layout_id);
+    CHECK_MSG(back.id == upper.id, "swapping twice landed on '" + back.id + "'");
+
+    // A partner that is not a real layout would silently fall back to Standard
+    // and swap the player out of the pair entirely.
+    for (std::size_t index = 0; index < registry.size(); ++index) {
+        const Layout& layout = registry.at(index);
+        if (layout.swap_layout_id.empty()) {
+            continue;
+        }
+        CHECK_MSG(registry.find(layout.swap_layout_id) != nullptr,
+                  layout.id + " swaps to an unknown layout '" + layout.swap_layout_id + "'");
+    }
+
+    for (const char* id : {"standard", "vertical", "side_by_side", "upper_on_tv"}) {
+        CHECK_MSG(registry.find(id)->swap_layout_id.empty(),
+                  std::string(id) + " should have nothing to swap to");
+    }
+}
+
 int main() {
     test_registry_contents();
     test_layouts_match_the_wii_u();
@@ -755,6 +792,7 @@ int main() {
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
     test_the_gap_choice_applies_to_every_layout_that_offers_it();
+    test_the_focus_layouts_swap_with_each_other();
     test_rotated_screens_letterbox_sideways();
     test_touch_follows_a_quarter_turn();
     test_contain_preserves_aspect();

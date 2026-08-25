@@ -147,6 +147,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::ToggleMenu: result.close_requested = true; break;
             case UiAction::Quit: break;
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
+            case UiAction::SwapLayout:    // nothing here is a layout
             case UiAction::PageUp:
             case UiAction::PageDown: break;  // nothing here scrolls
         }

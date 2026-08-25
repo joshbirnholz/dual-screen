@@ -330,6 +330,7 @@ struct App::Impl {
     // The two settings both devices share. On a companion these ask the host
     // and change nothing locally; the host owns them and broadcasts the result,
     // which is what keeps the two devices from ever disagreeing.
+    void request_layout(const std::string& layout_id);
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
@@ -766,6 +767,22 @@ void App::Impl::adopt_render_scale(int scale) {
     }
 }
 
+void App::Impl::request_layout(const std::string& layout_id) {
+    if (layout_id.empty() || layout_id == active_layout_id) {
+        return;
+    }
+    if (is_companion()) {
+        companion_session->request_layout(layout_id);
+        return;  // the host decides; it will tell us
+    }
+    active_layout_id = layout_id;
+    persist_game_config();
+    if (picker) {
+        picker->set_selected_layout(active_layout_id);
+    }
+    log_info("layout: " + active_layout().display_name);
+}
+
 void App::Impl::request_screen_gap(bool include_gap) {
     if (is_companion()) {
         companion_session->request_screen_gap(include_gap);
@@ -1161,6 +1178,19 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
     }
 
+    // L3 flips between a layout and the one it pairs with -- the two focus
+    // layouts -- without stopping the game to open a menu. Only with a game on
+    // screen, on either device: anywhere else there is no layout being played
+    // to swap, and in the menu itself every layout is already a tile away.
+    if (state == State::Playing || state == State::Companion) {
+        for (const UiAction action : actions) {
+            if (action == UiAction::SwapLayout) {
+                request_layout(active_layout().swap_layout_id);
+                break;
+            }
+        }
+    }
+
     switch (state) {
         case State::Message: {
             if (message.update(actions, pointers, last_delta_seconds)) {
@@ -1284,14 +1314,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 picker->update(actions, pointers, static_cast<float>(output_width),
                                static_cast<float>(output_height));
             if (result.selection_changed) {
-                if (is_companion()) {
-                    // A companion does not own the choice: it asks, and adopts
-                    // whatever the host broadcasts back.
-                    companion_session->request_layout(picker->selected_layout_id());
-                } else {
-                    active_layout_id = picker->selected_layout_id();
-                    persist_game_config();
-                }
+                // A companion does not own the choice: request_layout() asks,
+                // and this device adopts whatever the host broadcasts back.
+                request_layout(picker->selected_layout_id());
             }
             if (result.filtering_toggled) {
                 request_filtering(!bilinear_filtering);
