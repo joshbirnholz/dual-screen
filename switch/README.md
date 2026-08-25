@@ -60,6 +60,12 @@ here left out — this device has no ROMs to load, and nothing in Settings would
 apply to it — so what is left is **Connect as top screen**, **Connect as bottom
 screen** and **Quit**.
 
+Picking a host puts up a screen that says so, naming the device and its game.
+The list on its own looked identical whether or not the press had landed, and
+with every button ignored until the handshake finishes, a host that is slow to
+answer was indistinguishable from the button doing nothing. **B** stops
+waiting; a host that never answers is given a few seconds and then says so.
+
 ## Building
 
 Needs devkitPro with the Switch toolchain and two portlibs:

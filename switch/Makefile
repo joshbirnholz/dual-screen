@@ -61,7 +61,7 @@ CPPFILES    := main.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
                bezel_art.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
                png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
-               launcher_screen.cpp layout_picker.cpp \
+               connecting_screen.cpp launcher_screen.cpp layout_picker.cpp \
                log.cpp \
                kDsBezelPng.cpp kThreeDsBezelPng.cpp
 

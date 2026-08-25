@@ -96,6 +96,7 @@ add_library(dualscreen_core STATIC
     src/render/quad_renderer.cpp
     src/render/text_renderer.cpp
     src/render/texture.cpp
+    src/ui/connecting_screen.cpp
     src/ui/game_browser.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
@@ -168,6 +169,7 @@ set(DUALSCREEN_COMPANION_SHARED_SOURCES
     src/render/quad_renderer.cpp
     src/render/text_renderer.cpp
     src/render/texture.cpp
+    src/ui/connecting_screen.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
     src/util/log.cpp

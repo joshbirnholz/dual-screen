@@ -53,6 +53,7 @@
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/layout_picker.hpp"
 #include "util/log.hpp"
@@ -230,6 +231,10 @@ private:
     int panel_width_ = 0;
     int panel_height_ = 0;
 
+    // The host being joined, kept so the connecting screen can name it and its
+    // game before the handshake has said anything.
+    net::DiscoveredHost joining_;
+
     State state_ = State::Launcher;
     std::string start_error_;
     std::string failure_;
@@ -354,6 +359,7 @@ void Client::join(const net::DiscoveredHost& host) {
     log_info("joining " + host.device_name + " (" + host.address + ") as the " +
              to_string(host_picker_.wanted_screen()) + " screen");
     session_.connect_to(host);
+    joining_ = host;
     state_ = State::Connecting;
 }
 
@@ -737,6 +743,11 @@ void Client::draw() {
         // the same here as picking it there does.
         launcher_.render(quads_, text_, width, height, input_.menu_labels(),
                          static_cast<int>(session_.hosts().size()));
+        return;
+    }
+    if (state_ == State::Connecting) {
+        render_connecting_screen(quads_, text_, width, height, joining_.device_name,
+                                 joining_.game_title, input_.menu_labels());
         return;
     }
     if (state_ != State::Playing) {

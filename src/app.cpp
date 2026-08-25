@@ -29,6 +29,7 @@
 #include "ui/layout_picker.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
+#include "ui/connecting_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/message_screen.hpp"
@@ -283,6 +284,9 @@ struct App::Impl {
     double frame_accumulator = 0.0;
     double save_flush_accumulator = 0.0;
     bool awaiting_auto_connect = false;
+    // The host being joined, kept so the connecting screen can name it before
+    // the handshake has told this device anything.
+    net::DiscoveredHost joining_host;
     bool screenshot_taken = false;
     uint32_t companion_audio_rate = 0;
     int frames_rendered = 0;
@@ -1189,16 +1193,29 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 companion_session->disconnect();
                 open_launcher();
             } else if (result.chosen) {
+                joining_host = result.host;
                 companion_session->connect_to(result.host);
                 state = State::Companion;
-                // The companion's own touchscreen and buttons drive the host's
-                // game, so local input is live from here on.
-                input.set_game_input_enabled(true);
             }
             break;
         }
 
         case State::Companion: {
+            // Still joining: the connecting screen is up, its only offer is to
+            // stop waiting, and nothing is connected for a button to drive.
+            if (companion_session->status() == net::CompanionSession::Status::Connecting) {
+                for (const UiAction action : actions) {
+                    if (action == UiAction::Cancel || action == UiAction::ToggleMenu) {
+                        companion_session->disconnect();
+                        open_launcher();
+                        break;
+                    }
+                }
+                break;
+            }
+            // Connected: the companion's own touchscreen and buttons drive the
+            // host's game from here on.
+            input.set_game_input_enabled(true);
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
                     // The same layout menu as on the host, showing the same
@@ -1372,6 +1389,14 @@ void App::Impl::render() {
     if (state == State::HostPicker) {
         host_picker->render(quads, text, width, height, companion_session->hosts(),
                             input.menu_labels(), companion_session->status_detail());
+        SDL_GL_SwapWindow(window);
+        ++frames_rendered;
+        return;
+    }
+    if (companion_session &&
+        companion_session->status() == net::CompanionSession::Status::Connecting) {
+        render_connecting_screen(quads, text, width, height, joining_host.device_name,
+                                 joining_host.game_title, input.menu_labels());
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
@@ -1903,6 +1928,7 @@ int App::run(const AppOptions& options) {
                 impl.companion_session->status() == net::CompanionSession::Status::Searching) {
                 for (const net::DiscoveredHost& host : impl.companion_session->hosts()) {
                     if (host.offers(impl.local_screen)) {
+                        impl.joining_host = host;
                         impl.companion_session->connect_to(host);
                         impl.awaiting_auto_connect = false;
                         break;
