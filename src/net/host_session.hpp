@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -148,6 +149,16 @@ private:
     // How much may sit unsent before a frame is dropped rather than queued --
     // see kMaxQueuedFrames.
     std::size_t queue_limit() const;
+public:
+    // Total bytes ever handed to the companion's socket. Lets a test see
+    // whether a frame was queued at all, which is the thing the backlog limit
+    // decides.
+    uint64_t queued_bytes_for_test() const { return companion_.queued_total(); }
+
+private:
+    // How many whole frames have been queued but have not yet left the
+    // machine. Prunes the ones that have.
+    std::size_t frames_in_flight();
 
     Config config_;
     TcpListener listener_;
@@ -175,7 +186,12 @@ private:
     // is dropped -- in frame-times rather than a fixed byte count, so the
     // limit rises and falls with whatever resolution is currently being
     // streamed instead of being tuned for one console and wrong for another.
-    std::size_t last_screen_payload_bytes_ = 0;
+    // Where each queued frame ends, counted in bytes ever handed to the
+    // socket. A frame has gone once that many bytes have actually departed.
+    std::deque<uint64_t> frame_marks_;
+    // The newest frame the companion says it has decoded. Zero until it has
+    // said anything.
+    uint64_t acked_serial_ = 0;
     // The last frame of each screen that was actually put on the wire, in
     // RGB565, which the next one is sent as the difference from. The frame
     // *sent* rather than the one produced: a frame skipped because the link

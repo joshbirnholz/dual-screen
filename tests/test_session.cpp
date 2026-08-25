@@ -1027,6 +1027,76 @@ void test_a_real_host_is_not_timed_out() {
     host.stop();
 }
 
+// A companion that cannot keep up must be sent fewer frames, not all of them
+// late.
+//
+// This is what regressed when frames became differences from the last one
+// rather than whole pictures. The backlog limit was a byte count standing in
+// for "two or three frames", and a DS screen with little moving on it now
+// compresses to well under a hundred bytes, so the same budget held over a
+// thousand frames. Every one of them was queued and had to be decoded in
+// order by a device that was already behind, which is what watching the game
+// a second late looks like from the inside.
+//
+// The companion here is polled once for every four frames the host produces,
+// which is what a device rendering at a fraction of the host's rate does.
+void test_a_slow_companion_is_sent_fewer_frames_rather_than_late_ones() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "vertical", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!spin(host, companion, [&] {
+            return companion.status() == CompanionSession::Status::Connected &&
+                   host.has_companion();
+        })) {
+        CHECK_MSG(false, "handshake did not complete");
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+
+    constexpr uint64_t kFrames = 400;
+    std::size_t queued = 0;
+    for (uint64_t serial = 1; serial <= kFrames; ++serial) {
+        // Different every frame, so none is skipped for having nothing to say.
+        bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
+        const uint64_t before = host.queued_bytes_for_test();
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        host.poll(monotonic_millis());
+        if (host.queued_bytes_for_test() != before) {
+            ++queued;
+        }
+        if (serial % 4 == 0) {
+            companion.poll(monotonic_millis());
+        }
+    }
+
+    // A quarter of the frames is what this companion could actually show. The
+    // bound is generous -- acks take a moment to come back, and the host is
+    // right to keep a couple in flight -- but it is a bound, and before the
+    // fix this was every frame.
+    CHECK_MSG(queued < kFrames / 2,
+              "the host queued " + std::to_string(queued) + " of " + std::to_string(kFrames) +
+                  " frames for a companion showing one in four");
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -1079,6 +1149,7 @@ int main() {
     test_menu_gets_the_companion_both_screens();
     test_joining_gives_up_on_a_host_that_never_answers();
     test_a_real_host_is_not_timed_out();
+    test_a_slow_companion_is_sent_fewer_frames_rather_than_late_ones();
     test_host_can_disconnect_the_companion();
     return test::finish("session");
 }

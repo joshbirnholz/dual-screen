@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
@@ -193,6 +194,29 @@ void TcpStream::send(const uint8_t* data, std::size_t size) {
         return;
     }
     outbox_.insert(outbox_.end(), data, data + size);
+    queued_total_ += size;
+}
+
+// The backlog nobody can see from outside: what this process is still holding,
+// plus what the kernel has accepted but not yet put on the wire.
+//
+// That second part matters as much as the first. A sender that decides how far
+// behind it is from its own queue alone believes it is keeping up right until
+// the socket buffer is full, and everything sitting in that buffer is picture
+// the player has not been shown yet. SIOCOUTQ is how Linux answers it; where a
+// stack does not, the bound on SO_SNDBUF is what keeps the invisible part small
+// enough not to matter.
+std::size_t TcpStream::backlog_bytes() const {
+    std::size_t total = pending_bytes();
+#ifdef SIOCOUTQ
+    if (descriptor_ >= 0) {
+        int unsent = 0;
+        if (::ioctl(descriptor_, SIOCOUTQ, &unsent) == 0 && unsent > 0) {
+            total += static_cast<std::size_t>(unsent);
+        }
+    }
+#endif
+    return total;
 }
 
 bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {

@@ -401,6 +401,18 @@ void encode_bye(std::vector<uint8_t>& out) {
     finish_message(out, begin_message(out), MessageType::Bye);
 }
 
+void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u64(out, serial);
+    finish_message(out, start, MessageType::FrameAck);
+}
+
+bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial) {
+    Reader reader(data, size);
+    reader.u64(out_serial);
+    return reader.ok();
+}
+
 void encode_ping(std::vector<uint8_t>& out) {
     finish_message(out, begin_message(out), MessageType::Ping);
 }

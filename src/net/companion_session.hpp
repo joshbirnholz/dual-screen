@@ -178,6 +178,8 @@ private:
     // until the first poll() after connect_to(), so the whole timer runs on
     // the caller's clock rather than half on one and half on another.
     uint64_t connect_deadline_ms_ = 0;
+    // The newest frame serial already reported to the host.
+    uint64_t acked_serial_ = 0;
 
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.

@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 13;
+constexpr uint16_t kProtocolVersion = 14;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -36,6 +36,10 @@ enum class MessageType : uint16_t {
     Input = 2,
     Bye = 3,
     Request = 4,
+    // Which frame the companion has actually decoded. The only thing that
+    // tells the host how far behind the picture really is: a sender can see
+    // its own queues, but not the ones on the far side of the wire.
+    FrameAck = 5,
     // host -> companion
     Welcome = 10,
     Reject = 11,
@@ -229,6 +233,8 @@ void encode_input(const InputMessage& message, std::vector<uint8_t>& out);
 void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 void encode_bye(std::vector<uint8_t>& out);
+void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out);
+bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial);
 // The beacon is not framed -- it replaces the buffer with one datagram.
 void encode_beacon(const BeaconMessage& message, std::vector<uint8_t>& out);
 bool decode_beacon(const uint8_t* data, std::size_t size, BeaconMessage& out);

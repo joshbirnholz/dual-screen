@@ -30,7 +30,16 @@ public:
     // Queues bytes for sending. They go out during pump().
     void send(const uint8_t* data, std::size_t size);
     void send(const std::vector<uint8_t>& data) { send(data.data(), data.size()); }
+    // What is still waiting in this process.
     std::size_t pending_bytes() const { return outbox_.size() - outbox_sent_; }
+
+    // Everything ever handed to send(), and how much of it has actually left
+    // the machine. The difference is the whole backlog -- this process's queue
+    // *and* the kernel's, which is otherwise invisible and, on a link that
+    // cannot keep up, is where most of the delay accumulates.
+    uint64_t queued_total() const { return queued_total_; }
+    uint64_t departed_total() const { return queued_total_ - backlog_bytes(); }
+    std::size_t backlog_bytes() const;
 
     // Moves queued writes out and available reads into `inbox`. Returns false
     // once the connection is finished, with the reason in `error`.
@@ -50,6 +59,7 @@ private:
     std::string peer_address_;
     std::vector<uint8_t> outbox_;
     std::size_t outbox_sent_ = 0;
+    uint64_t queued_total_ = 0;
 };
 
 class TcpListener {

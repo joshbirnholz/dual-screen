@@ -53,6 +53,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     }
     status_ = Status::Connecting;
     connect_deadline_ms_ = 0;  // set on the first poll, off the caller's clock
+    acked_serial_ = 0;
     status_detail_ = "connecting to " + host.device_name;
     game_title_ = host.game_title;
     log_info("connecting to " + host.device_name + " at " + host.address);
@@ -225,6 +226,19 @@ void CompanionSession::poll(uint64_t now_ms) {
     if (!stream_.pump(inbox_, &error)) {
         fail(error);
         return;
+    }
+
+    // Tell the host which frame has actually been decoded here, as soon as
+    // that changes. This is the only thing that lets it know how far behind
+    // this device is: everything else it can measure sits on its own side of
+    // the wire, and a frame that has left the host may still be waiting in
+    // this machine's receive buffer.
+    const uint64_t newest = std::max(top_.serial, bottom_.serial);
+    if (status_ == Status::Connected && newest != acked_serial_) {
+        acked_serial_ = newest;
+        std::vector<uint8_t> ack;
+        encode_frame_ack(newest, ack);
+        stream_.send(ack);
     }
 
     // The hello waits until the TCP handshake has actually completed, so it is

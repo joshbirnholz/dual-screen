@@ -10,16 +10,22 @@ namespace {
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
 //
-// The bound is measured in frame-times rather than a fixed byte count, so it
-// rises and falls with whatever resolution is actually being streamed: a
-// constant sized for a DS's picture would either starve a companion showing
-// something bigger or, worse, be too small to ever hold one whole frame of
-// it -- silently dropping every single one rather than the occasional frame a
-// backlog limit is supposed to catch. kMinQueuedBytes is the floor for before
-// a size is known and for content compact enough that frame-times alone would
-// allow almost nothing through.
-constexpr std::size_t kMinQueuedBytes = 96 * 1024;
+// Counted in frames, not bytes. Bytes were a stand-in for frames back when a
+// frame was the whole picture and they were all much of a size; once frames
+// became differences from the last one they stopped being anything of the
+// sort. A DS screen with little moving on it compresses to well under a
+// hundred bytes, so a byte limit written to hold two or three frames was
+// holding well over a thousand -- which is not a backlog limit at all, it is
+// half a minute of delay that no frame is ever dropped to relieve.
+//
+// What the limit is really about is how far behind what the player sees is
+// allowed to fall, and that has always been a number of frames.
 constexpr std::size_t kMaxQueuedFrames = 3;
+
+// Audio still goes by bytes, because a sound packet is a fixed span of time
+// and its size does not wander. This is a little under a fifth of a second of
+// 48 kHz stereo.
+constexpr std::size_t kMaxQueuedAudioBytes = 32 * 1024;
 
 }  // namespace
 
@@ -126,9 +132,10 @@ void HostSession::drop_companion(const std::string& reason) {
     // direction.
     companion_display_width_ = 0;
     companion_display_height_ = 0;
-    last_screen_payload_bytes_ = 0;
+    frame_marks_.clear();
     resend_screens_ = false;
     sent_serial_ = 0;
+    acked_serial_ = 0;
     previous_top_.clear();
     previous_bottom_.clear();
     refresh_beacon();
@@ -293,6 +300,13 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             }
             break;
         }
+        case MessageType::FrameAck: {
+            uint64_t serial = 0;
+            if (decode_frame_ack(payload.data(), payload.size(), serial)) {
+                acked_serial_ = std::max(acked_serial_, serial);
+            }
+            break;
+        }
         case MessageType::Bye:
             drop_companion("the other device left");
             break;
@@ -407,8 +421,14 @@ bool HostSession::take_companion_quit_request() {
     return true;
 }
 
-std::size_t HostSession::queue_limit() const {
-    return std::max(kMinQueuedBytes, last_screen_payload_bytes_ * kMaxQueuedFrames);
+std::size_t HostSession::queue_limit() const { return kMaxQueuedAudioBytes; }
+
+std::size_t HostSession::frames_in_flight() {
+    const uint64_t departed = companion_.departed_total();
+    while (!frame_marks_.empty() && frame_marks_.front() <= departed) {
+        frame_marks_.pop_front();
+    }
+    return frame_marks_.size();
 }
 
 void HostSession::publish_audio(const int16_t* interleaved_stereo,
@@ -449,7 +469,16 @@ void HostSession::publish_screens(const ScreenPixels& top,
     }
     // Never let the send queue grow without bound: a companion that cannot keep
     // up should see dropped frames, not mounting latency.
-    if (companion_.pending_bytes() > queue_limit()) {
+    //
+    // What the companion says it has decoded is the measure that counts, since
+    // it is the only one that includes the queues on its side of the wire. It
+    // is trusted only once it has said anything at all, so a companion that
+    // never acks falls behind rather than being starved of frames outright.
+    if (acked_serial_ != 0 && sent_serial_ >= acked_serial_ + kMaxQueuedFrames) {
+        return;
+    }
+    // Until then, and as a backstop, what has not yet left this machine.
+    if (frames_in_flight() >= kMaxQueuedFrames) {
         return;
     }
 
@@ -482,11 +511,9 @@ void HostSession::publish_screens(const ScreenPixels& top,
 
     if (!out.empty()) {
         companion_.send(out);
-        // What the next frame's backlog limit is measured against -- see
-        // queue_limit(). A frame that was skipped for having nothing to send
-        // (both screens unchanged) leaves the estimate as the last real one,
-        // which is the right answer for what a frame actually costs right now.
-        last_screen_payload_bytes_ = out.size();
+        // Where this frame ends, so frames_in_flight() can tell later whether
+        // it has actually gone.
+        frame_marks_.push_back(companion_.queued_total());
     }
     sent_serial_ = serial;
     resend_screens_ = false;
