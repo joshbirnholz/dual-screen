@@ -156,6 +156,38 @@ layout arithmetic, the controller mapping — with this app rather than
 reimplementing them, so a host cannot tell the difference between it and
 another PC, and neither can the menu.
 
+## What streaming a screen costs
+
+A DS screen is 256x192. In RGB565, deflated, one frame of *moving* content
+measures around 40 KB here — about **20 Mbit/s at 60fps, per screen**. A layout
+that puts both screens on the companion doubles that. That is a lot to ask of a
+handheld's Wi-Fi, and it is why a mostly-static screen streams fine while a
+scrolling one struggles.
+
+Three things keep it as low as it can go:
+
+- **Only the tiles that changed are sent.** A screen is cut into 16x16 tiles
+  and a frame carries a bitmap of which ones differ from the last frame that
+  device was actually sent. A screen where a marker blinked measured 809 bytes
+  against 42 KB for the whole frame; a screen that scrolls changes every tile
+  and costs what it always did, within a couple of percent.
+- **A frame is only sent when the picture actually changed**, and a frame that
+  cannot be sent promptly is dropped rather than queued, so a device that
+  cannot keep up falls behind in frames rather than in seconds.
+- **The pixels stay in RGB565 all the way to the texture** on a device whose
+  renderer can upload that, which is a whole pass over every frame and half the
+  bytes to the GPU that never happen.
+
+If a companion still cannot keep up, in order of how much they buy:
+
+1. **Use the Upper Screen on TV layout.** One screen per device rather than
+   both on each: half the bandwidth, immediately.
+2. **Get it onto a wire.** A USB Ethernet adapter in a Switch's dock is 100
+   Mbit/s with none of the jitter, and needs nothing from this app — it is the
+   same TCP either way. Docked Wi-Fi is usually better than handheld too.
+3. **Turn the render scale down** on a 3DS game. A screen streamed at 3x is
+   nine times the pixels of one at 1x.
+
 ## Smoothing
 
 A DS screen is 256x192 and a Deck's is 1280x800, so every pixel is drawn several

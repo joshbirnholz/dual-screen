@@ -129,6 +129,8 @@ void HostSession::drop_companion(const std::string& reason) {
     last_screen_payload_bytes_ = 0;
     resend_screens_ = false;
     sent_serial_ = 0;
+    previous_top_.clear();
+    previous_bottom_.clear();
     refresh_beacon();
 }
 
@@ -312,6 +314,9 @@ void HostSession::poll(uint64_t now_ms) {
             companion_ = std::move(incoming);
             inbox_.clear();
             handshake_done_ = false;
+            // Whatever the last companion was sent means nothing to this one.
+            previous_top_.clear();
+            previous_bottom_.clear();
             log_info("a device is connecting from " + companion_.peer_address());
             refresh_beacon();
         }
@@ -452,7 +457,9 @@ void HostSession::publish_screens(const ScreenPixels& top,
     const struct {
         ScreenId screen;
         const ScreenPixels& pixels;
-    } screens[] = {{ScreenId::Top, top}, {ScreenId::Bottom, bottom}};
+        std::vector<uint8_t>& previous;
+    } screens[] = {{ScreenId::Top, top, previous_top_},
+                   {ScreenId::Bottom, bottom, previous_bottom_}};
 
     for (const auto& entry : screens) {
         const ScreenPixels& source = entry.pixels;
@@ -465,8 +472,9 @@ void HostSession::publish_screens(const ScreenPixels& top,
         frame.serial = serial;
         frame.width = static_cast<uint16_t>(source.width);
         frame.height = static_cast<uint16_t>(source.height);
-        if (!encode_screen_pixels(source.pixels, source.width, source.height,
-                                  source.stride_pixels, frame.payload, source.channel_order)) {
+        frame.encoding = FrameEncoding::Rgb565DeflateTiles;
+        if (!encode_screen_tiles(source.pixels, source.width, source.height, source.stride_pixels,
+                                 entry.previous, frame.payload, source.channel_order)) {
             continue;
         }
         encode_frame(frame, out);

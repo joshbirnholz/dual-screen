@@ -434,6 +434,185 @@ void test_pixels_round_trip() {
     CHECK(from_stride == encoded);
 }
 
+// Which encoding a frame was sent with has to survive the trip, because it is
+// what tells the far end whether the payload is a whole screen or a patch onto
+// the one it already has. Reading a patch as a whole frame produces garbage,
+// so an encoding this build has no decoder for is refused outright.
+void test_a_frame_carries_its_encoding() {
+    for (const FrameEncoding encoding :
+         {FrameEncoding::Rgb565Deflate, FrameEncoding::Rgb565DeflateTiles}) {
+        FrameMessage frame;
+        frame.screen = ScreenId::Bottom;
+        frame.serial = 9;
+        frame.width = 16;
+        frame.height = 16;
+        frame.encoding = encoding;
+        frame.payload = {4, 1, 2, 3};
+
+        std::vector<uint8_t> buffer;
+        encode_frame(frame, buffer);
+        MessageType type = MessageType::Ping;
+        std::vector<uint8_t> payload;
+        CHECK(one_message(buffer, type, payload));
+        CHECK(type == MessageType::Frame);
+
+        FrameMessage received;
+        CHECK_MSG(decode_frame(payload.data(), payload.size(), received),
+                  "a frame with encoding " +
+                      std::to_string(static_cast<int>(encoding)) + " was refused");
+        CHECK(received.encoding == encoding);
+        CHECK(received.payload == frame.payload);
+        CHECK_EQ(received.serial, static_cast<uint64_t>(9));
+
+        // The encoding byte sits just before the payload length, which is the
+        // last four bytes of the header ahead of the payload itself.
+        std::vector<uint8_t> unknown(payload);
+        unknown[payload.size() - frame.payload.size() - 5] = 0x7f;
+        FrameMessage rejected;
+        CHECK_MSG(!decode_frame(unknown.data(), unknown.size(), rejected),
+                  "a frame in an encoding this build cannot read was accepted");
+    }
+}
+
+// A DS screen full of tile art, with a small moving thing on it -- which is
+// most of what a game actually puts on a screen from one frame to the next.
+std::vector<uint32_t> screen_with_marker_at(int width, int height, int marker_x) {
+    std::vector<uint32_t> pixels(static_cast<std::size_t>(width) * height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            // Built from 5- and 6-bit values expanded the way the decoder
+            // expands them, so the comparison below is exact rather than
+            // measuring how lossy 5-6-5 is.
+            const uint32_t five = static_cast<uint32_t>(((x / 8) ^ (y / 8)) & 0x1f);
+            const uint32_t six = static_cast<uint32_t>(((x / 8) + (y / 8)) & 0x3f);
+            pixels[static_cast<std::size_t>(y) * width + x] =
+                (((five << 3) | (five >> 2)) << 16) | (((six << 2) | (six >> 4)) << 8) |
+                ((five << 3) | (five >> 2));
+        }
+    }
+    for (int y = 90; y < 96; ++y) {
+        for (int x = marker_x; x < marker_x + 6; ++x) {
+            pixels[static_cast<std::size_t>(y) * width + x] = 0x00ff0000u;
+        }
+    }
+    return pixels;
+}
+
+// Only the tiles that moved go on the wire, and what the far end ends up
+// holding is the frame that was sent -- not an approximation of it.
+void test_only_changed_tiles_are_sent() {
+    constexpr int width = 256;
+    constexpr int height = 192;
+
+    // Nothing to compare against: the first frame carries the whole screen,
+    // and costs about what a whole frame costs.
+    std::vector<uint8_t> previous;
+    const std::vector<uint32_t> first = screen_with_marker_at(width, height, 100);
+    std::vector<uint8_t> keyframe;
+    CHECK(encode_screen_tiles(first.data(), width, height, width, previous, keyframe));
+
+    std::vector<uint8_t> whole;
+    CHECK(encode_screen_pixels(first.data(), width, height, width, whole));
+    CHECK_MSG(keyframe.size() < whole.size() * 2,
+              "a whole frame in tile order cost " + std::to_string(keyframe.size()) +
+                  " against " + std::to_string(whole.size()) + " in row order");
+
+    std::vector<uint8_t> received;
+    CHECK(decode_screen_tiles(keyframe, width, height, received));
+    CHECK(received == previous);
+
+    // Now the marker moves and nothing else does. That is six pixels across
+    // two tiles at most, and it has to cost about that rather than a frame.
+    const std::vector<uint32_t> second = screen_with_marker_at(width, height, 108);
+    std::vector<uint8_t> delta;
+    CHECK(encode_screen_tiles(second.data(), width, height, width, previous, delta));
+    CHECK_MSG(delta.size() * 20 < whole.size(),
+              "a six-pixel change cost " + std::to_string(delta.size()) + " bytes against " +
+                  std::to_string(whole.size()) + " for the whole frame");
+
+    CHECK(decode_screen_tiles(delta, width, height, received));
+    CHECK_MSG(received == previous, "the patched screen is not the frame that was sent");
+
+    // And it really is the second frame, not the first with a hole in it.
+    std::vector<uint32_t> expanded;
+    expand_rgb565(received, expanded);
+    CHECK(expanded == second);
+
+    // A frame where nothing at all moved is a bitmap of zeroes and an empty
+    // compressed body -- the cheapest thing this can send.
+    std::vector<uint8_t> nothing;
+    CHECK(encode_screen_tiles(second.data(), width, height, width, previous, nothing));
+    CHECK_MSG(nothing.size() < 64, "an unchanged screen cost " + std::to_string(nothing.size()) +
+                                       " bytes");
+    CHECK(decode_screen_tiles(nothing, width, height, received));
+    expand_rgb565(received, expanded);
+    CHECK(expanded == second);
+}
+
+// A screen that changes size starts again from a whole frame rather than
+// patching new tiles onto a buffer of the wrong shape.
+void test_a_resized_screen_starts_over() {
+    std::vector<uint8_t> previous;
+    const std::vector<uint32_t> small = screen_with_marker_at(64, 64, 10);
+    std::vector<uint8_t> payload;
+    CHECK(encode_screen_tiles(small.data(), 64, 64, 64, previous, payload));
+    CHECK_EQ(previous.size(), static_cast<std::size_t>(64 * 64 * 2));
+
+    const std::vector<uint32_t> large = screen_with_marker_at(256, 192, 100);
+    CHECK(encode_screen_tiles(large.data(), 256, 192, 256, previous, payload));
+    CHECK_EQ(previous.size(), static_cast<std::size_t>(256 * 192 * 2));
+
+    std::vector<uint8_t> received;
+    CHECK(decode_screen_tiles(payload, 256, 192, received));
+    std::vector<uint32_t> expanded;
+    expand_rgb565(received, expanded);
+    CHECK(expanded == large);
+}
+
+// The decoder reads a tile count out of the payload, so a payload claiming
+// something absurd must be refused rather than believed.
+void test_corrupt_tiled_payload_is_rejected() {
+    constexpr int width = 256;
+    constexpr int height = 192;
+    std::vector<uint8_t> previous;
+    const std::vector<uint32_t> source = screen_with_marker_at(width, height, 100);
+    std::vector<uint8_t> payload;
+    CHECK(encode_screen_tiles(source.data(), width, height, width, previous, payload));
+
+    std::vector<uint8_t> screen;
+    CHECK(decode_screen_tiles(payload, width, height, screen));
+
+    // A tile size nothing produces, which would size the bitmap from a number
+    // this end was told rather than one it worked out.
+    for (const uint8_t shift : {uint8_t{0}, uint8_t{1}, uint8_t{9}, uint8_t{255}}) {
+        std::vector<uint8_t> wild(payload);
+        wild[0] = shift;
+        std::vector<uint8_t> ignored;
+        CHECK_MSG(!decode_screen_tiles(wild, width, height, ignored),
+                  "a tile shift of " + std::to_string(shift) + " was accepted");
+    }
+
+    // Truncated anywhere: the bitmap, the compressed body, or the lot.
+    for (const std::size_t keep : {std::size_t{0}, std::size_t{1}, std::size_t{8},
+                                   payload.size() / 2, payload.size() - 1}) {
+        std::vector<uint8_t> cut(payload.begin(), payload.begin() + static_cast<long>(keep));
+        std::vector<uint8_t> ignored;
+        // Not a crash and not a half-written screen: either it is refused, or
+        // it happened to still be a whole valid payload.
+        decode_screen_tiles(cut, width, height, ignored);
+    }
+
+    // Random bytes with a legal-looking shift in front.
+    std::mt19937 rng(99);
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        std::vector<uint8_t> garbage(payload.size());
+        for (uint8_t& byte : garbage) byte = static_cast<uint8_t>(rng() & 0xff);
+        garbage[0] = 4;
+        std::vector<uint8_t> ignored;
+        decode_screen_tiles(garbage, width, height, ignored);
+    }
+}
+
 void test_corrupt_pixel_payload_is_rejected() {
     std::vector<uint8_t> garbage(512, 0xab);
     std::vector<uint32_t> decoded;
@@ -458,6 +637,10 @@ int main() {
     test_truncation_is_rejected_everywhere();
     test_random_bytes_are_rejected();
     test_pixels_round_trip();
+    test_a_frame_carries_its_encoding();
+    test_only_changed_tiles_are_sent();
+    test_a_resized_screen_starts_over();
+    test_corrupt_tiled_payload_is_rejected();
     test_corrupt_pixel_payload_is_rejected();
     return test::finish("protocol");
 }

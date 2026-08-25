@@ -143,7 +143,12 @@ public:
 
     // Uploads only when a frame this texture has not already been given
     // arrives, which is why the serial travels with the pixels.
-    void update(SDL_Renderer* renderer, const net::CompanionSession::ScreenPixels& frame) {
+    //
+    // The pixels are taken in the form they arrived in -- RGB565 -- and handed
+    // to the GPU that way. Expanding them to 8 bits a channel first would be a
+    // whole extra pass over every frame and twice the bytes to upload, on the
+    // device that can least afford either.
+    void update(SDL_Renderer* renderer, const net::CompanionSession::ScreenBytes& frame) {
         if (!frame.valid()) {
             return;
         }
@@ -151,7 +156,7 @@ public:
             if (texture_ != nullptr) {
                 SDL_DestroyTexture(texture_);
             }
-            texture_ = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+            texture_ = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
                                          SDL_TEXTUREACCESS_STREAMING, frame.width, frame.height);
             if (texture_ == nullptr) {
                 log_warn(std::string("could not make a texture for a screen: ") + SDL_GetError());
@@ -170,8 +175,7 @@ public:
         if (has_frame_ && frame.serial == uploaded_serial_) {
             return;
         }
-        SDL_UpdateTexture(texture_, nullptr, frame.pixels,
-                          frame.width * static_cast<int>(sizeof(uint32_t)));
+        SDL_UpdateTexture(texture_, nullptr, frame.pixels, frame.width * 2);
         uploaded_serial_ = frame.serial;
         has_frame_ = true;
     }
@@ -718,8 +722,8 @@ void Client::draw_browser() {
 }
 
 void Client::draw_session() {
-    top_.update(renderer_, session_.screen_pixels(ScreenId::Top));
-    bottom_.update(renderer_, session_.screen_pixels(ScreenId::Bottom));
+    top_.update(renderer_, session_.screen_rgb565(ScreenId::Top));
+    bottom_.update(renderer_, session_.screen_rgb565(ScreenId::Bottom));
 
     const Layout layout = session_layout();
     const SystemScreens screens = session_.screens_geometry();

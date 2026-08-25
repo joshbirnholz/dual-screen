@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 12;
+constexpr uint16_t kProtocolVersion = 13;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -52,7 +52,18 @@ enum class FrameEncoding : uint8_t {
     // 256x192 screen down to a few kilobytes, which is what makes 60fps over
     // wifi realistic without pulling in a video encoder.
     Rgb565Deflate = 1,
+    // The same, but only the 16x16 tiles that differ from the last frame this
+    // recipient was sent, with a bitmap saying which. A whole frame costs the
+    // same as Rgb565Deflate does -- the bytes are the same bytes in a
+    // different order -- so this is never worse, and a screen where only a
+    // health bar or a blinking marker moved costs a fraction of one.
+    Rgb565DeflateTiles = 2,
 };
+
+// The tile edge used by Rgb565DeflateTiles, as a power of two. Sixteen keeps a
+// moving sprite from dirtying much more than it covers, and the bitmap for a
+// DS screen is 24 bytes, which is nothing against the frame it saves.
+constexpr int kFrameTileShift = 4;
 
 struct HelloMessage {
     uint16_t protocol_version = kProtocolVersion;
@@ -259,7 +270,44 @@ bool encode_screen_pixels(const uint32_t* pixels,
                           std::vector<uint8_t>& out,
                           PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes);
 
-// The inverse, producing XRGB8888 the renderer can upload unchanged.
+// -> deflated RGB565, but only the tiles that differ from `previous`, which is
+// the last frame this recipient was actually sent and which this updates to
+// match. Empty (or the wrong size for these dimensions) sends every tile,
+// which is how a recipient that has just connected, or one whose screen
+// changed size, is given something whole to start from.
+//
+// It is the *sent* frame rather than the produced one on purpose: a frame
+// skipped because the link was behind must still be carried into the next one
+// that goes out, or the tiles it held would never arrive at all.
+bool encode_screen_tiles(const uint32_t* pixels,
+                         int width,
+                         int height,
+                         int stride_pixels,
+                         std::vector<uint8_t>& previous,
+                         std::vector<uint8_t>& out,
+                         PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes);
+
+// Inflates one whole-frame payload to RGB565, the form it travels in.
+bool decode_screen_rgb565(const std::vector<uint8_t>& payload,
+                          int width,
+                          int height,
+                          std::vector<uint8_t>& out);
+
+// Applies one tiled payload onto `screen`, which holds the RGB565 frame this
+// recipient last had. Resized and zeroed if it is not already that frame's
+// size, so a first payload that is not a whole frame cannot read uninitialised
+// pixels back out.
+bool decode_screen_tiles(const std::vector<uint8_t>& payload,
+                         int width,
+                         int height,
+                         std::vector<uint8_t>& screen);
+
+// RGB565 -> XRGB8888, for a renderer that wants it that way. One that can
+// upload 5-6-5 directly should: this is a whole extra pass over the frame and
+// twice the bytes to hand the GPU.
+void expand_rgb565(const std::vector<uint8_t>& raw, std::vector<uint32_t>& out);
+
+// The inverse of encode_screen_pixels, producing XRGB8888 in one step.
 bool decode_screen_pixels(const std::vector<uint8_t>& payload,
                           int width,
                           int height,

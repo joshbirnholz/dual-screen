@@ -114,6 +114,20 @@ public:
     };
     ScreenPixels screen_pixels(ScreenId screen) const;
 
+    // The same frame in the form it arrived in: RGB565, two bytes a pixel.
+    // A renderer that can upload that directly should use this instead --
+    // expanding costs a whole pass over the frame and hands the GPU twice the
+    // bytes, both of which are worth avoiding on a small device.
+    struct ScreenBytes {
+        const uint8_t* pixels = nullptr;
+        int width = 0;
+        int height = 0;
+        uint64_t serial = 0;
+
+        bool valid() const { return pixels != nullptr && width > 0 && height > 0; }
+    };
+    ScreenBytes screen_rgb565(ScreenId screen) const;
+
     // Whether a screen has ever arrived, and the serial of the last one. The
     // split layout only sends one screen, so "did the other one arrive?" is a
     // real question worth being able to answer.
@@ -159,12 +173,24 @@ private:
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.
     struct ScreenBuffer {
-        std::vector<uint32_t> pixels;
+        // The frame as it travels and as tiles are patched onto it. Canonical:
+        // a tiled payload is a difference from this, so it has to survive from
+        // one frame to the next.
+        std::vector<uint8_t> rgb565;
         int width = 0;
         int height = 0;
         uint64_t serial = 0;
         uint64_t uploaded_serial = 0;
+        // Expanded only when somebody asks for XRGB8888, and only once per
+        // frame that does. A client that can upload 5-6-5 straight to a
+        // texture never asks, and so never pays for the pass or the doubled
+        // bytes.
+        mutable std::vector<uint32_t> pixels;
+        mutable uint64_t expanded_serial = 0;
+        mutable bool ever_expanded = false;
         Texture texture;
+
+        const std::vector<uint32_t>& expanded() const;
     };
     ScreenBuffer top_;
     ScreenBuffer bottom_;

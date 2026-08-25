@@ -176,6 +176,14 @@ private:
     // limit rises and falls with whatever resolution is currently being
     // streamed instead of being tuned for one console and wrong for another.
     std::size_t last_screen_payload_bytes_ = 0;
+    // The last frame of each screen that was actually put on the wire, in
+    // RGB565, which the next one is sent as the difference from. The frame
+    // *sent* rather than the one produced: a frame skipped because the link
+    // was behind must still be carried into the next one that goes out, or
+    // the tiles it held would never arrive. Cleared when a companion comes or
+    // goes, so the next one starts from a whole frame.
+    std::vector<uint8_t> previous_top_;
+    std::vector<uint8_t> previous_bottom_;
     // Send the current screens once more even if nothing has changed, because
     // what the companion needs has.
     bool resend_screens_ = true;

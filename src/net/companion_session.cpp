@@ -151,7 +151,14 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 return;
             }
             ScreenBuffer& target = (frame.screen == ScreenId::Top) ? top_ : bottom_;
-            if (!decode_screen_pixels(frame.payload, frame.width, frame.height, target.pixels)) {
+            // A tiled frame is a difference from the last one, so it is
+            // applied onto what is already here; a whole one replaces it.
+            const bool decoded =
+                frame.encoding == FrameEncoding::Rgb565DeflateTiles
+                    ? decode_screen_tiles(frame.payload, frame.width, frame.height, target.rgb565)
+                    : decode_screen_rgb565(frame.payload, frame.width, frame.height,
+                                           target.rgb565);
+            if (!decoded) {
                 fail("a frame from the host could not be decompressed");
                 return;
             }
@@ -263,13 +270,35 @@ void CompanionSession::send_input(const DsInputState& state) {
     ever_sent_input_ = true;
 }
 
+const std::vector<uint32_t>& CompanionSession::ScreenBuffer::expanded() const {
+    if (!ever_expanded || expanded_serial != serial) {
+        expand_rgb565(rgb565, pixels);
+        expanded_serial = serial;
+        ever_expanded = true;
+    }
+    return pixels;
+}
+
 CompanionSession::ScreenPixels CompanionSession::screen_pixels(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
     ScreenPixels out;
-    if (buffer.pixels.empty() || buffer.width <= 0 || buffer.height <= 0) {
+    if (buffer.rgb565.empty() || buffer.width <= 0 || buffer.height <= 0) {
         return out;
     }
-    out.pixels = buffer.pixels.data();
+    out.pixels = buffer.expanded().data();
+    out.width = buffer.width;
+    out.height = buffer.height;
+    out.serial = buffer.serial;
+    return out;
+}
+
+CompanionSession::ScreenBytes CompanionSession::screen_rgb565(ScreenId screen) const {
+    const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
+    ScreenBytes out;
+    if (buffer.rgb565.empty() || buffer.width <= 0 || buffer.height <= 0) {
+        return out;
+    }
+    out.pixels = buffer.rgb565.data();
     out.width = buffer.width;
     out.height = buffer.height;
     out.serial = buffer.serial;
@@ -395,9 +424,9 @@ bool CompanionSession::advance_frame(std::string* error) {
 
 const ScreenTextures& CompanionSession::screens() {
     for (ScreenBuffer* buffer : {&top_, &bottom_}) {
-        if (buffer->serial != buffer->uploaded_serial && !buffer->pixels.empty()) {
-            buffer->texture.upload_xrgb8888(buffer->pixels.data(), buffer->width, buffer->height,
-                                            buffer->width);
+        if (buffer->serial != buffer->uploaded_serial && !buffer->rgb565.empty()) {
+            buffer->texture.upload_xrgb8888(buffer->expanded().data(), buffer->width,
+                                            buffer->height, buffer->width);
             buffer->uploaded_serial = buffer->serial;
         }
     }

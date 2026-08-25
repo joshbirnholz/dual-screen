@@ -487,10 +487,17 @@ bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out) {
     if (!reader.bytes(out.payload, payload_size)) {
         return false;
     }
-    if (encoding != static_cast<uint8_t>(FrameEncoding::Rgb565Deflate)) {
-        return false;
+    switch (static_cast<FrameEncoding>(encoding)) {
+        case FrameEncoding::Rgb565Deflate:
+        case FrameEncoding::Rgb565DeflateTiles:
+            out.encoding = static_cast<FrameEncoding>(encoding);
+            break;
+        default:
+            // An encoding this build has no decoder for. Both ends agreed a
+            // protocol version during the handshake, so this is a corrupt or
+            // hostile frame rather than a newer peer.
+            return false;
     }
-    out.encoding = FrameEncoding::Rgb565Deflate;
     return screen_from_wire(screen, out.screen);
 }
 
@@ -551,23 +558,19 @@ bool take_message(std::vector<uint8_t>& buffer,
 
 // --- pixels -----------------------------------------------------------------
 
-bool encode_screen_pixels(const uint32_t* pixels,
-                          int width,
-                          int height,
-                          int stride_pixels,
-                          std::vector<uint8_t>& out,
-                          PixelChannelOrder channel_order) {
-    out.clear();
-    if (pixels == nullptr || width <= 0 || height <= 0) {
-        return false;
-    }
+namespace {
 
-    // -> RGB565 halves the bytes before compression, and the two bits per
-    // channel this drops are not visible on a DS screen scaled to a TV. Which
-    // byte holds red and which holds blue depends on the source; green is
-    // always the middle byte either way.
-    const bool rgba = (channel_order == PixelChannelOrder::Rgba);
-    std::vector<uint8_t> raw(static_cast<std::size_t>(width) * height * 2);
+// -> RGB565 halves the bytes before compression, and the two bits per channel
+// this drops are not visible on a DS screen scaled to a TV. Which byte holds
+// red and which holds blue depends on the source; green is always the middle
+// byte either way.
+void pack_rgb565(const uint32_t* pixels,
+                 int width,
+                 int height,
+                 int stride_pixels,
+                 bool rgba,
+                 std::vector<uint8_t>& out) {
+    out.resize(static_cast<std::size_t>(width) * height * 2);
     std::size_t offset = 0;
     for (int row = 0; row < height; ++row) {
         const uint32_t* source = pixels + static_cast<std::size_t>(row) * stride_pixels;
@@ -578,39 +581,221 @@ bool encode_screen_pixels(const uint32_t* pixels,
             const uint16_t packed = static_cast<uint16_t>(((red_bits & 0x1fu) << 11) |
                                                           (((pixel >> 10) & 0x3fu) << 5) |
                                                           (blue_bits & 0x1fu));
-            raw[offset++] = static_cast<uint8_t>(packed & 0xffu);
-            raw[offset++] = static_cast<uint8_t>((packed >> 8) & 0xffu);
+            out[offset++] = static_cast<uint8_t>(packed & 0xffu);
+            out[offset++] = static_cast<uint8_t>((packed >> 8) & 0xffu);
         }
     }
+}
 
-    uLongf bound = compressBound(static_cast<uLong>(raw.size()));
-    out.resize(bound);
-    // Level 1: this runs once per screen per frame, so time matters far more
-    // than the last few percent of ratio.
-    const int result = compress2(out.data(), &bound, raw.data(), static_cast<uLong>(raw.size()), 1);
+// Level 1 throughout: this runs once per screen per frame, so time matters far
+// more than the last few percent of ratio -- level 6 was measured at under two
+// percent smaller for four times the work.
+bool deflate_onto(const std::vector<uint8_t>& body, std::vector<uint8_t>& out) {
+    const std::size_t start = out.size();
+    uLongf bound = compressBound(static_cast<uLong>(body.size()));
+    out.resize(start + bound);
+    const int result =
+        compress2(out.data() + start, &bound, body.data(), static_cast<uLong>(body.size()), 1);
     if (result != Z_OK) {
         out.clear();
         return false;
     }
-    out.resize(bound);
+    out.resize(start + bound);
     return true;
 }
 
-bool decode_screen_pixels(const std::vector<uint8_t>& payload,
+// The grid Rgb565DeflateTiles cuts a screen into. Edge tiles are clipped, so a
+// screen whose size is not a multiple of the tile is handled without padding.
+struct TileGrid {
+    int size = 0;
+    int across = 0;
+    int down = 0;
+    std::size_t bitmap_bytes = 0;
+
+    std::size_t count() const { return static_cast<std::size_t>(across) * down; }
+};
+
+TileGrid tile_grid(int width, int height, int shift) {
+    TileGrid grid;
+    grid.size = 1 << shift;
+    grid.across = (width + grid.size - 1) / grid.size;
+    grid.down = (height + grid.size - 1) / grid.size;
+    grid.bitmap_bytes = (grid.count() + 7) / 8;
+    return grid;
+}
+
+bool tile_is_marked(const uint8_t* bitmap, std::size_t index) {
+    return (bitmap[index / 8] & (1u << (index % 8))) != 0;
+}
+
+}  // namespace
+
+bool encode_screen_pixels(const uint32_t* pixels,
                           int width,
                           int height,
-                          std::vector<uint32_t>& out) {
-    if (width <= 0 || height <= 0) {
+                          int stride_pixels,
+                          std::vector<uint8_t>& out,
+                          PixelChannelOrder channel_order) {
+    out.clear();
+    if (pixels == nullptr || width <= 0 || height <= 0) {
         return false;
     }
-    const std::size_t pixel_count = static_cast<std::size_t>(width) * height;
-    std::vector<uint8_t> raw(pixel_count * 2);
-    uLongf raw_size = static_cast<uLongf>(raw.size());
-    if (uncompress(raw.data(), &raw_size, payload.data(), static_cast<uLong>(payload.size())) != Z_OK ||
-        raw_size != raw.size()) {
+    std::vector<uint8_t> raw;
+    pack_rgb565(pixels, width, height, stride_pixels, channel_order == PixelChannelOrder::Rgba,
+                raw);
+    return deflate_onto(raw, out);
+}
+
+bool encode_screen_tiles(const uint32_t* pixels,
+                         int width,
+                         int height,
+                         int stride_pixels,
+                         std::vector<uint8_t>& previous,
+                         std::vector<uint8_t>& out,
+                         PixelChannelOrder channel_order) {
+    out.clear();
+    if (pixels == nullptr || width <= 0 || height <= 0) {
         return false;
     }
 
+    std::vector<uint8_t> raw;
+    pack_rgb565(pixels, width, height, stride_pixels, channel_order == PixelChannelOrder::Rgba,
+                raw);
+
+    const TileGrid grid = tile_grid(width, height, kFrameTileShift);
+    // Nothing to compare against, or something of a different shape: every
+    // tile goes, which is a whole frame in tile order.
+    const bool everything = (previous.size() != raw.size());
+
+    std::vector<uint8_t> bitmap(grid.bitmap_bytes, 0);
+    std::vector<uint8_t> body;
+    body.reserve(raw.size());
+
+    std::size_t index = 0;
+    for (int down = 0; down < grid.down; ++down) {
+        const int top = down * grid.size;
+        const int rows = std::min(grid.size, height - top);
+        for (int across = 0; across < grid.across; ++across, ++index) {
+            const int left = across * grid.size;
+            const std::size_t row_bytes = static_cast<std::size_t>(
+                                              std::min(grid.size, width - left)) * 2;
+
+            bool changed = everything;
+            for (int row = 0; !changed && row < rows; ++row) {
+                const std::size_t offset =
+                    (static_cast<std::size_t>(top + row) * width + left) * 2;
+                changed = std::memcmp(&raw[offset], &previous[offset], row_bytes) != 0;
+            }
+            if (!changed) {
+                continue;
+            }
+            bitmap[index / 8] |= static_cast<uint8_t>(1u << (index % 8));
+            for (int row = 0; row < rows; ++row) {
+                const std::size_t offset =
+                    (static_cast<std::size_t>(top + row) * width + left) * 2;
+                body.insert(body.end(), raw.begin() + offset, raw.begin() + offset + row_bytes);
+            }
+        }
+    }
+
+    out.push_back(static_cast<uint8_t>(kFrameTileShift));
+    out.insert(out.end(), bitmap.begin(), bitmap.end());
+    if (!deflate_onto(body, out)) {
+        return false;
+    }
+    previous = std::move(raw);
+    return true;
+}
+
+bool decode_screen_rgb565(const std::vector<uint8_t>& payload,
+                          int width,
+                          int height,
+                          std::vector<uint8_t>& out) {
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    out.resize(static_cast<std::size_t>(width) * height * 2);
+    uLongf raw_size = static_cast<uLongf>(out.size());
+    if (uncompress(out.data(), &raw_size, payload.data(), static_cast<uLong>(payload.size())) !=
+            Z_OK ||
+        raw_size != out.size()) {
+        return false;
+    }
+    return true;
+}
+
+bool decode_screen_tiles(const std::vector<uint8_t>& payload,
+                         int width,
+                         int height,
+                         std::vector<uint8_t>& screen) {
+    if (width <= 0 || height <= 0 || payload.empty()) {
+        return false;
+    }
+    const int shift = payload[0];
+    // Anything outside this is not a grid any sender here produces, and a
+    // wild shift would size the bitmap from a number this end was told.
+    if (shift < 2 || shift > 8) {
+        return false;
+    }
+    const TileGrid grid = tile_grid(width, height, shift);
+    if (payload.size() < 1 + grid.bitmap_bytes) {
+        return false;
+    }
+    const uint8_t* bitmap = payload.data() + 1;
+
+    const std::size_t frame_bytes = static_cast<std::size_t>(width) * height * 2;
+    if (screen.size() != frame_bytes) {
+        // Nothing to patch onto yet. Black rather than whatever was here, so a
+        // payload that turns out not to cover the screen shows as missing
+        // rather than as somebody else's pixels.
+        screen.assign(frame_bytes, 0);
+    }
+
+    // What the marked tiles come to, so the inflate is bounded by what was
+    // actually asked for rather than by anything the sender claims.
+    std::size_t body_bytes = 0;
+    for (std::size_t index = 0; index < grid.count(); ++index) {
+        if (!tile_is_marked(bitmap, index)) {
+            continue;
+        }
+        const int top = static_cast<int>(index / grid.across) * grid.size;
+        const int left = static_cast<int>(index % grid.across) * grid.size;
+        body_bytes += static_cast<std::size_t>(std::min(grid.size, height - top)) *
+                      static_cast<std::size_t>(std::min(grid.size, width - left)) * 2;
+    }
+    if (body_bytes == 0) {
+        return true;  // nothing moved on this screen
+    }
+
+    std::vector<uint8_t> body(body_bytes);
+    uLongf body_size = static_cast<uLongf>(body.size());
+    const std::size_t header = 1 + grid.bitmap_bytes;
+    if (uncompress(body.data(), &body_size, payload.data() + header,
+                   static_cast<uLong>(payload.size() - header)) != Z_OK ||
+        body_size != body.size()) {
+        return false;
+    }
+
+    std::size_t read = 0;
+    for (std::size_t index = 0; index < grid.count(); ++index) {
+        if (!tile_is_marked(bitmap, index)) {
+            continue;
+        }
+        const int top = static_cast<int>(index / grid.across) * grid.size;
+        const int left = static_cast<int>(index % grid.across) * grid.size;
+        const int rows = std::min(grid.size, height - top);
+        const std::size_t row_bytes = static_cast<std::size_t>(std::min(grid.size, width - left)) * 2;
+        for (int row = 0; row < rows; ++row) {
+            const std::size_t offset = (static_cast<std::size_t>(top + row) * width + left) * 2;
+            std::memcpy(&screen[offset], &body[read], row_bytes);
+            read += row_bytes;
+        }
+    }
+    return true;
+}
+
+void expand_rgb565(const std::vector<uint8_t>& raw, std::vector<uint32_t>& out) {
+    const std::size_t pixel_count = raw.size() / 2;
     out.resize(pixel_count);
     for (std::size_t index = 0; index < pixel_count; ++index) {
         const uint16_t packed =
@@ -622,6 +807,17 @@ bool decode_screen_pixels(const std::vector<uint8_t>& payload,
         out[index] = (((r << 3) | (r >> 2)) << 16) | (((g << 2) | (g >> 4)) << 8) |
                      ((b << 3) | (b >> 2));
     }
+}
+
+bool decode_screen_pixels(const std::vector<uint8_t>& payload,
+                          int width,
+                          int height,
+                          std::vector<uint32_t>& out) {
+    std::vector<uint8_t> raw;
+    if (!decode_screen_rgb565(payload, width, height, raw)) {
+        return false;
+    }
+    expand_rgb565(raw, out);
     return true;
 }
 
