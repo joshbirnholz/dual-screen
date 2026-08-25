@@ -57,7 +57,37 @@ cd switch && make
 That produces `dualscreen-companion.nro`. Copy it to `/switch/` on the console's
 SD card and start it from the homebrew menu.
 
-Run it over the network while developing and its log comes out on `nxlink`.
+## Reading the log
+
+The app writes everything it does to the SD card, at
+
+```
+/switch/dualscreen-companion.log
+```
+
+A fresh one per run, flushed a line at a time, so it survives the app being
+killed rather than exiting. Pull the card, or read it over the network with
+`nxmtp`/`ftpd`.
+
+For the same lines as they happen, run `nxlink -s` from a computer on the same
+network — the app calls `nxlinkStdio()` at start-up, so its output arrives
+there. That needs the console to already be listening (`nxlink` is launched
+from the homebrew menu's own network loader), which is why the file exists too.
+
+## If it exits straight back to the homebrew menu
+
+That is the app deciding it cannot start, not a crash — a crash gets a fatal
+error screen from the console. It should now say why on screen before it goes,
+and the reason is in the log either way.
+
+The usual cause is **applet mode**. Launching homebrew from the album gives it
+about 50 MB of heap, which is not enough for SDL and the graphics stack behind
+it, and the failure comes out as a window or renderer that will not open. Start
+the homebrew menu in full-memory mode instead: hold **R** while launching a
+game from the console's home screen, and run the app from the menu that opens.
+
+Sound is not a reason to refuse to start: if the audio device will not open the
+log says so and the app carries on without it.
 
 ## How it is put together, and how it is tested
 

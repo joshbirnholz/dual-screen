@@ -222,6 +222,9 @@ public:
     bool start();
     void run();
     void stop();
+    // Why start() said no. On a console there is no window to have printed it
+    // in and no terminal behind the app, so the caller has to be able to ask.
+    const std::string& start_error() const { return start_error_; }
 
 private:
     // Browsing is the host picker; Playing is a live session, with or without
@@ -262,6 +265,7 @@ private:
     ScreenTexture bottom_;
 
     State state_ = State::Browsing;
+    std::string start_error_;
     std::string failure_;
     bool menu_open_ = false;
     int menu_focus_ = 0;
@@ -275,9 +279,17 @@ const char* const kMenuEntries[] = {"Resume", "Disconnect", "Quit"};
 constexpr int kMenuEntryCount = 3;
 
 bool Client::start() {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
-        log_error(std::string("SDL would not start: ") + SDL_GetError());
+    // Audio is asked for separately, and its failure is not this program's
+    // failure: a second screen with no sound is still a second screen, and
+    // taking the whole app down over the sound device is the wrong trade.
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
+        start_error_ = std::string("SDL would not start: ") + SDL_GetError();
+        log_error(start_error_);
         return false;
+    }
+    log_info("SDL is up");
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+        log_warn(std::string("no sound on this device: ") + SDL_GetError());
     }
     // The same convention the desktop app uses: face buttons are read by where
     // they are, not by the letter printed on them, so a Switch pad's east
@@ -288,9 +300,11 @@ bool Client::start() {
     window_ = SDL_CreateWindow("dualscreen companion", SDL_WINDOWPOS_CENTERED,
                                SDL_WINDOWPOS_CENTERED, 1280, 720, flags);
     if (window_ == nullptr) {
-        log_error(std::string("no window: ") + SDL_GetError());
+        start_error_ = std::string("no window: ") + SDL_GetError();
+        log_error(start_error_);
         return false;
     }
+    log_info("window created");
     renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer_ == nullptr) {
         // Software is slow but readable, which beats a black screen on a
@@ -299,14 +313,22 @@ bool Client::start() {
         renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE);
     }
     if (renderer_ == nullptr) {
-        log_error(std::string("no renderer: ") + SDL_GetError());
+        start_error_ = std::string("no renderer: ") + SDL_GetError();
+        log_error(start_error_);
         return false;
     }
+    SDL_RendererInfo renderer_info;
+    if (SDL_GetRendererInfo(renderer_, &renderer_info) == 0 && renderer_info.name != nullptr) {
+        log_info(std::string("renderer: ") + renderer_info.name);
+    }
     if (!text_.create(renderer_)) {
-        log_error("could not build the font atlas");
+        start_error_ = std::string("could not build the font atlas: ") + SDL_GetError();
+        log_error(start_error_);
         return false;
     }
     refresh_output_size();
+    log_info("output is " + std::to_string(output_width_) + "x" +
+             std::to_string(output_height_));
 
     input_.initialize(Settings());
     input_.set_game_input_enabled(false);
@@ -764,6 +786,45 @@ void Client::draw() {
     }
 }
 
+#ifdef __SWITCH__
+
+// Where the log goes on a console. There is no terminal behind the app and no
+// shell to have started it from, so the only way to read what it said after
+// the fact is to leave it on the SD card -- and the only way to read it as it
+// happens is nxlink, which needs a computer already listening.
+constexpr const char* kSwitchLogPath = "sdmc:/switch/dualscreen-companion.log";
+
+// Start-up failing has to be visible. Without this the app returns to the
+// homebrew menu the instant something goes wrong, which looks exactly like it
+// working and being asked to leave -- and nothing has a window yet to say
+// otherwise in, so this goes to the console's own framebuffer instead.
+void show_failure(const std::string& message) {
+    consoleInit(nullptr);
+    PadState pad;
+    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
+    padInitializeDefault(&pad);
+
+    std::printf("\x1b[2J");
+    std::printf("dualscreen companion could not start.\n\n");
+    std::printf("  %s\n\n", message.c_str());
+    std::printf("The whole log is on the SD card at\n");
+    std::printf("  /switch/dualscreen-companion.log\n\n");
+    std::printf("If it mentions memory or a renderer, start the homebrew menu\n");
+    std::printf("in full-memory mode: hold R while launching a game.\n\n");
+    std::printf("Press + to close.\n");
+
+    while (appletMainLoop()) {
+        padUpdate(&pad);
+        if ((padGetButtonsDown(&pad) & HidNpadButton_Plus) != 0) {
+            break;
+        }
+        consoleUpdate(nullptr);
+    }
+    consoleExit(nullptr);
+}
+
+#endif
+
 }  // namespace
 }  // namespace ds::sw
 
@@ -775,14 +836,26 @@ int main(int argc, char** argv) {
     set_min_log_level(options.verbose ? LogLevel::Debug : LogLevel::Info);
 
 #ifdef __SWITCH__
+    // Opened before anything else can fail, and written a line at a time, so
+    // the log survives whatever happens next -- including the app being killed
+    // outright rather than exiting.
+    set_log_file(kSwitchLogPath);
+    log_info("dualscreen companion starting");
+
     // Sockets are not on by default, and without them there is nothing this
-    // app can do at all. nxlink, if a computer is listening for it, is where
-    // the log goes -- there is no terminal on a Switch.
+    // app can do at all. nxlink, if a computer is listening for it, gets the
+    // same lines as they happen.
     const Result socket_result = socketInitializeDefault();
     if (R_FAILED(socket_result)) {
+        const std::string reason =
+            "the network would not start (error " + std::to_string(socket_result) + ")";
+        log_error(reason);
+        show_failure(reason);
+        close_log_file();
         return 1;
     }
     nxlinkStdio();
+    log_info("sockets are up");
 #endif
 
     int status = 0;
@@ -795,12 +868,18 @@ int main(int argc, char** argv) {
             client.run();
         } else {
             status = 1;
+#ifdef __SWITCH__
+            show_failure(client.start_error().empty() ? "no reason was recorded"
+                                                      : client.start_error());
+#endif
         }
         client.stop();
     }
 
+    log_info("dualscreen companion exiting");
 #ifdef __SWITCH__
     socketExit();
 #endif
+    close_log_file();
     return status;
 }
