@@ -23,6 +23,15 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     focus_ = index >= 0 ? index : 0;
 }
 
+void LayoutPicker::set_selected_layout(const std::string& layout_id) {
+    if (layout_id == selected_layout_id_) {
+        return;
+    }
+    selected_layout_id_ = layout_id;
+    // The new layout may offer a gap where the old one did not, or the reverse.
+    rebuild_footer();
+}
+
 void LayoutPicker::rebuild_footer() {
     footer_.clear();
     footer_.push_back(Footer::Filtering);
@@ -51,8 +60,11 @@ void LayoutPicker::rebuild_footer() {
     footer_.push_back(Footer::Cursor);
     // Only some layouts' gap is a player's choice -- see
     // LayoutComposition::gap_toggleable -- so the button appears only while
-    // one of those is the layout actually selected.
-    if (state_.screen_gap_toggleable) {
+    // one of those is the layout actually selected. Read off the layout itself
+    // rather than passed in, because the selection changes while the menu is
+    // open and a value handed over at open() would already be stale by the
+    // time anyone went looking for the button.
+    if (registry_->resolve(selected_layout_id_).composition.gap_toggleable) {
         footer_.push_back(Footer::ScreenGap);
     }
     // Restarting the game, wherever the menu was opened from -- a companion
@@ -229,7 +241,7 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
     if (focus_ < tiles) {
         const std::string id = registry_->at(static_cast<std::size_t>(focus_)).id;
         if (id != selected_layout_id_) {
-            selected_layout_id_ = id;
+            set_selected_layout(id);
             result.selection_changed = true;
         }
         return true;

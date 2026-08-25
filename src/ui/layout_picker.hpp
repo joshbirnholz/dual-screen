@@ -59,10 +59,9 @@ struct LayoutPickerState {
     int render_scale = 1;
     int max_render_scale = 1;
     // Whether the current layout shows the gap between its screens. Only
-    // meaningful -- and only offered -- while a layout that has one selected;
-    // see `screen_gap_toggleable`.
+    // meaningful -- and only offered -- while a layout that has one is
+    // selected, which the picker reads off the registry for itself.
     bool screen_gap = true;
-    bool screen_gap_toggleable = false;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -89,7 +88,7 @@ public:
     void set_screens(const SystemScreens& screens) { screens_ = screens; }
     Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
-    void set_selected_layout(const std::string& layout_id) { selected_layout_id_ = layout_id; }
+    void set_selected_layout(const std::string& layout_id);
     bool filtering() const { return state_.bilinear_filtering; }
     AudioTarget audio_target() const { return state_.audio_target; }
     bool is_open() const { return open_; }

@@ -721,7 +721,6 @@ void App::Impl::open_picker() {
     picker_state.max_render_scale =
         (source || is_companion()) ? system_profile(system).max_render_scale : 1;
     picker_state.screen_gap = screen_gap;
-    picker_state.screen_gap_toggleable = active_layout().composition.gap_toggleable;
     picker->set_screens(screens_geometry());
     picker->open(picker_state);
 }
