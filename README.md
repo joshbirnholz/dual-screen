@@ -219,6 +219,31 @@ GamePad: new data rather than new arithmetic. Touch mapping reads the same
 solved rectangles — including any quarter turn, inverted — so a new layout gets
 working touch for free, sideways or not.
 
+## The right stick, on 3DS games
+
+A 3DS has a circle pad of its own, and the handful of games built for a Circle
+Pad Pro or a New 3DS read a second stick as well. Nothing in a ROM says which,
+so **Right Stick** in the layout menu cycles between:
+
+- **C-Stick** — a Circle Pad Pro / New 3DS second stick. The default.
+- **Circle Pad** — a second way to drive the circle pad, alongside the left
+  stick. The stronger of the two wins, so pushing either one walks.
+- **D-Pad** — pressed directions, the way the left stick works on a DS.
+- **Off** — ignored entirely, for a game that does something unwanted with a
+  stick it is handed.
+
+Each mapping reaches exactly one destination. A stick feeding two at once is
+what made the circle pad unusable back when the left stick was also the d-pad:
+a core that reads the d-pad sees a direction held down for as long as the stick
+is off centre.
+
+The button appears only on a console with a stick of its own — a DS's left
+stick is already standing in for its d-pad and the right one has nothing to be.
+A game remembers what it was last set to; the value a new game starts from is
+`"default_right_stick_mode"` in `settings.json`. Like everything else on that
+menu it is one choice for both devices, since both devices' pads drive the same
+game.
+
 ## Render scale
 
 A 3DS renders at 400x240 and 320x240. Citra can draw the same frame at a

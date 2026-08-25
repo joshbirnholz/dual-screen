@@ -73,6 +73,45 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
 }
 
 // Taps every point on a coarse grid over the menu and reports how many of them
+// cycled the right stick's mapping.
+int taps_that_cycle_the_right_stick(const LayoutRegistry& registry, const LayoutPickerState& state) {
+    int hits = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker picker(registry);
+            picker.open(state);
+            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            if (result.right_stick_mode_changed) ++hits;
+        }
+    }
+    return hits;
+}
+
+// What the right stick does is only a question on a console that has a stick
+// of its own. A 3DS gets the button on both devices -- one menu, reachable
+// from either end -- and a DS gets nothing to press, because there its left
+// stick is already standing in for the d-pad and the right one has nothing to
+// be.
+void test_the_right_stick_button_appears_only_where_there_is_a_stick() {
+    LayoutRegistry registry;
+
+    LayoutPickerState three_ds;
+    three_ds.layout_id = registry.at(0).id;
+    three_ds.right_stick_choosable = system_profile(SystemId::ThreeDs).has_analog_stick;
+    CHECK(three_ds.right_stick_choosable);
+    CHECK(taps_that_cycle_the_right_stick(registry, three_ds) > 0);
+
+    LayoutPickerState companion = three_ds;
+    companion.session_active = true;
+    CHECK(taps_that_cycle_the_right_stick(registry, companion) > 0);
+
+    LayoutPickerState ds = three_ds;
+    ds.right_stick_choosable = system_profile(SystemId::Ds).has_analog_stick;
+    CHECK(!ds.right_stick_choosable);
+    CHECK_EQ(taps_that_cycle_the_right_stick(registry, ds), 0);
+}
+
+// Taps every point on a coarse grid over the menu and reports how many of them
 // toggled the screen gap.
 int taps_that_toggle_the_gap(const LayoutRegistry& registry, const LayoutPickerState& state) {
     int hits = 0;
@@ -214,12 +253,14 @@ void test_the_other_buttons_still_work() {
     state.layout_id = "vertical";
     state.session_active = true;
     state.max_render_scale = 3;
+    state.right_stick_choosable = true;
 
     int filtering = 0;
     int sound = 0;
     int hands = 0;
     int cursor = 0;
     int gap = 0;
+    int right_stick = 0;
     int reset = 0;
     int resume = 0;
     int disconnect = 0;
@@ -234,6 +275,7 @@ void test_the_other_buttons_still_work() {
             if (result.handedness_changed) ++hands;
             if (result.cursor_mode_changed) ++cursor;
             if (result.screen_gap_toggled) ++gap;
+            if (result.right_stick_mode_changed) ++right_stick;
             if (result.reset_requested) ++reset;
             if (result.close_requested) ++resume;
             if (result.disconnect_requested) ++disconnect;
@@ -245,6 +287,7 @@ void test_the_other_buttons_still_work() {
     CHECK(hands > 0);
     CHECK(cursor > 0);
     CHECK(gap > 0);
+    CHECK(right_stick > 0);
     CHECK(reset > 0);
     CHECK(resume > 0);
     CHECK(disconnect > 0);
@@ -281,6 +324,7 @@ void test_reset_closes_the_menu() {
 
 int main() {
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
+    test_the_right_stick_button_appears_only_where_there_is_a_stick();
     test_the_gap_button_appears_only_where_the_layout_offers_it();
     test_choosing_a_gap_layout_reveals_the_button();
     test_toggling_the_gap_updates_what_the_previews_would_draw();

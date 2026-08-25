@@ -62,6 +62,7 @@ public:
         bool bilinear_filtering = false;
         AudioTarget audio_target = AudioTarget::Both;
         Handedness handedness = Handedness::Right;
+        RightStickMode right_stick_mode = RightStickMode::CStick;
         // The host is the only device running a core, but the setting is shown
         // and changed on both, so it travels with everything else they share.
         int render_scale = 1;

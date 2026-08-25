@@ -390,6 +390,7 @@ DsInputState InputManager::poll_held_state() const {
         const float axis_x = raw_x / 32767.0f;
         const float axis_y = raw_y / 32767.0f;
         const float deadzone = settings_.stick_deadzone;
+        const int16_t deadzone_threshold = static_cast<int16_t>(deadzone * 32767.0f);
         if (stick_is_dpad_) {
             if (axis_y < -deadzone) held.set(DsButton::Up, true);
             if (axis_y > deadzone) held.set(DsButton::Down, true);
@@ -402,12 +403,32 @@ DsInputState InputManager::poll_held_state() const {
         if (std::abs(raw_x) > std::abs(held.circle_x)) held.circle_x = raw_x;
         if (std::abs(raw_y) > std::abs(held.circle_y)) held.circle_y = raw_y;
 
-        // The right stick stands in for a Circle Pad Pro or New 3DS's
-        // C-Stick, the same way the left one is the circle pad.
+        // What the right stick is depends on what the game wants -- a C-Stick,
+        // a second circle pad, a d-pad, or nothing. See RightStickMode.
         const int16_t raw_c_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
         const int16_t raw_c_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
-        if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
-        if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
+        switch (right_stick_mode_) {
+            case RightStickMode::CStick:
+                if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
+                if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
+                break;
+            case RightStickMode::CirclePad:
+                // Into the same axes as the left stick, competing on
+                // deflection like a second pad does: two sticks that averaged
+                // each other out would leave a player standing still while
+                // pushing one of them.
+                if (std::abs(raw_c_x) > std::abs(held.circle_x)) held.circle_x = raw_c_x;
+                if (std::abs(raw_c_y) > std::abs(held.circle_y)) held.circle_y = raw_c_y;
+                break;
+            case RightStickMode::DPad:
+                if (raw_c_y < -deadzone_threshold) held.set(DsButton::Up, true);
+                if (raw_c_y > deadzone_threshold) held.set(DsButton::Down, true);
+                if (raw_c_x < -deadzone_threshold) held.set(DsButton::Left, true);
+                if (raw_c_x > deadzone_threshold) held.set(DsButton::Right, true);
+                break;
+            case RightStickMode::Off:
+                break;
+        }
 
         // The triggers double as L and R. The DS's shoulder buttons are
         // digital, but plenty of people reach for the triggers first, and a

@@ -5,6 +5,7 @@
 
 #include "config/paths.hpp"
 #include "core/system.hpp"
+#include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "layout/layout.hpp"
 
@@ -49,6 +50,11 @@ struct Settings {
     // for whichever layouts offer the choice; each game remembers its own
     // choice afterwards.
     bool default_screen_gap = true;
+
+    // And for what the right stick is read as, on a console that has sticks of
+    // its own. Which a 3DS game wants is the game's business, so each one
+    // remembers its own; this is only where a new one starts.
+    RightStickMode default_right_stick_mode = RightStickMode::CStick;
 
     // Which device plays the sound while two are connected. Chosen from the
     // layout menu rather than here, since it is the kind of thing that changes

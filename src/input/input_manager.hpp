@@ -85,6 +85,11 @@ public:
     // down on the d-pad for as long as the stick is moved at all.
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
 
+    // What the right stick is read as. Only a console with a stick of its own
+    // has more than one answer worth offering -- see RightStickMode.
+    void set_right_stick_mode(RightStickMode mode) { right_stick_mode_ = mode; }
+    RightStickMode right_stick_mode() const { return right_stick_mode_; }
+
     // Whether a finger or the mouse button is currently down, and where. UI
     // screens use this for drag scrolling; the discrete press/release events in
     // pointer_events() only describe taps.
@@ -117,6 +122,7 @@ private:
 
     Settings settings_;
     bool stick_is_dpad_ = true;
+    RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
 
     DsInputState ds_state_;

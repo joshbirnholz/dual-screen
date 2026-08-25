@@ -83,6 +83,7 @@ void HostSession::set_session_state(const SharedState& state) {
         state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
         state.bilinear_filtering != shared_.bilinear_filtering ||
         state.audio_target != shared_.audio_target || state.handedness != shared_.handedness ||
+        state.right_stick_mode != shared_.right_stick_mode ||
         state.render_scale != shared_.render_scale ||
         state.screen_gap != shared_.screen_gap) {
         shared_ = state;
@@ -246,6 +247,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_audio_target = true;
                 request.audio_target = request_.audio_target;
             }
+            if (have_request_ && !request.wants_right_stick_mode &&
+                request_.wants_right_stick_mode) {
+                request.wants_right_stick_mode = true;
+                request.right_stick_mode = request_.right_stick_mode;
+            }
             if (have_request_ && !request.wants_handedness && request_.wants_handedness) {
                 request.wants_handedness = true;
                 request.handedness = request_.handedness;
@@ -323,6 +329,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.bilinear_filtering = shared_.bilinear_filtering;
         state.audio_target = shared_.audio_target;
         state.handedness = shared_.handedness;
+        state.right_stick_mode = shared_.right_stick_mode;
         state.render_scale = static_cast<uint8_t>(shared_.render_scale);
         state.screen_gap = shared_.screen_gap;
         std::vector<uint8_t> out;

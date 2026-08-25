@@ -69,4 +69,41 @@ const char* to_string(SDL_GameControllerType type) {
     }
 }
 
+const char* to_string(RightStickMode mode) {
+    switch (mode) {
+        case RightStickMode::CStick: return "C-Stick";
+        case RightStickMode::CirclePad: return "Circle Pad";
+        case RightStickMode::DPad: return "D-Pad";
+        case RightStickMode::Off: break;
+    }
+    return "Off";
+}
+
+RightStickMode next_right_stick_mode(RightStickMode mode) {
+    switch (mode) {
+        case RightStickMode::CStick: return RightStickMode::CirclePad;
+        case RightStickMode::CirclePad: return RightStickMode::DPad;
+        case RightStickMode::DPad: return RightStickMode::Off;
+        case RightStickMode::Off: break;
+    }
+    return RightStickMode::CStick;
+}
+
+const char* right_stick_mode_key(RightStickMode mode) {
+    switch (mode) {
+        case RightStickMode::CStick: return "c_stick";
+        case RightStickMode::CirclePad: return "circle_pad";
+        case RightStickMode::DPad: return "dpad";
+        case RightStickMode::Off: break;
+    }
+    return "off";
+}
+
+RightStickMode right_stick_mode_from_key(const std::string& key) {
+    if (key == "circle_pad") return RightStickMode::CirclePad;
+    if (key == "dpad") return RightStickMode::DPad;
+    if (key == "off") return RightStickMode::Off;
+    return RightStickMode::CStick;
+}
+
 }  // namespace ds

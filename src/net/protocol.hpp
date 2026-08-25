@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "core/system.hpp"
 #include "layout/layout.hpp"
@@ -20,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 11;
+constexpr uint16_t kProtocolVersion = 12;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -139,6 +140,11 @@ struct RequestMessage {
     // layouts offer the choice -- see LayoutComposition::gap_toggleable.
     bool wants_screen_gap = false;
     bool screen_gap = true;
+    // What the right stick is read as. Both devices' pads drive the game, so
+    // both read their own stick the same way -- which means this is the host's
+    // to decide like everything else here.
+    bool wants_right_stick_mode = false;
+    RightStickMode right_stick_mode = RightStickMode::CStick;
 };
 
 struct RejectMessage {
@@ -157,6 +163,7 @@ struct SessionStateMessage {
     Handedness handedness = Handedness::Right;
     uint8_t render_scale = 1;
     bool screen_gap = true;
+    RightStickMode right_stick_mode = RightStickMode::CStick;
 };
 
 struct FrameMessage {

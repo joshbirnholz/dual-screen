@@ -597,6 +597,7 @@ void Client::run() {
                     // A console with a stick of its own reads the stick as that
                     // stick; one without lets it stand in for the d-pad.
                     input_.set_stick_is_dpad(!system_profile(session_.system()).has_analog_stick);
+                    input_.set_right_stick_mode(session_.host_right_stick_mode());
                     log_info("connected to " + session_.game_title() + " as the " +
                              to_string(session_.granted_screen()) + " screen");
                 } else if (session_.status() == net::CompanionSession::Status::Failed) {
@@ -606,6 +607,14 @@ void Client::run() {
                 }
                 break;
             case State::Playing:
+                // The host owns what the right stick is read as, and can change
+                // it from its own menu mid-session; this device's pad drives
+                // the same game, so it follows.
+                if (input_.right_stick_mode() != session_.host_right_stick_mode()) {
+                    input_.set_right_stick_mode(session_.host_right_stick_mode());
+                    log_info(std::string("following the host: right stick ") +
+                             to_string(session_.host_right_stick_mode()));
+                }
                 if (session_.status() != net::CompanionSession::Status::Connected) {
                     // The host went away, or ended the session from its end.
                     // Either way this device goes back to looking, which is

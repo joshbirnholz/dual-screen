@@ -74,6 +74,7 @@ void test_welcome_and_session_round_trip() {
     state.handedness = Handedness::Left;
     state.render_scale = 3;
     state.screen_gap = false;
+    state.right_stick_mode = RightStickMode::CirclePad;
 
     buffer.clear();
     encode_session_state(state, buffer);
@@ -88,6 +89,7 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(received_state.bilinear_filtering, true);
     CHECK(received_state.audio_target == AudioTarget::TopScreen);
     CHECK(received_state.handedness == Handedness::Left);
+    CHECK(received_state.right_stick_mode == RightStickMode::CirclePad);
     CHECK_EQ(static_cast<int>(received_state.render_scale), 3);
     CHECK_EQ(received_state.screen_gap, false);
 }
@@ -114,6 +116,8 @@ void test_request_round_trip() {
     sent.wants_quit = true;
     sent.wants_screen_gap = true;
     sent.screen_gap = false;
+    sent.wants_right_stick_mode = true;
+    sent.right_stick_mode = RightStickMode::DPad;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -141,6 +145,8 @@ void test_request_round_trip() {
     CHECK_EQ(received.wants_quit, true);
     CHECK_EQ(received.wants_screen_gap, true);
     CHECK_EQ(received.screen_gap, false);
+    CHECK_EQ(received.wants_right_stick_mode, true);
+    CHECK(received.right_stick_mode == RightStickMode::DPad);
 
     // A request that means none of it round-trips as such rather than as an
     // accidental instruction.
@@ -160,13 +166,53 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_reset, false);
     CHECK_EQ(received_quiet.wants_quit, false);
     CHECK_EQ(received_quiet.wants_screen_gap, false);
+    CHECK_EQ(received_quiet.wants_right_stick_mode, false);
 
-    // An audio target outside the three that exist is refused rather than
-    // becoming one of them by accident.
-    std::vector<uint8_t> corrupt(payload);
-    corrupt[corrupt.size() - 15] = 9;  // the audio target byte
-    RequestMessage rejected;
-    CHECK(!decode_request(corrupt.data(), corrupt.size(), rejected));
+    // Every field this message carries as a small integer is a value outside
+    // the set it means, if the sender says so, and each one has to be refused
+    // rather than becoming one of the real values by accident.
+    //
+    // Everything after the layout id is fixed-width, so the bytes are counted
+    // back from the end -- forwards would have to walk past a string. An
+    // offset that has drifted would still "pass" a rejection check by hitting
+    // some other byte that happens to be refused too, so each one is first
+    // identified positively: a legal value written at that offset has to come
+    // out of the decoder as that field and nothing else.
+    struct EnumByte {
+        const char* name;
+        std::size_t from_end;
+        uint8_t legal;
+        bool (*matches)(const RequestMessage&);
+    };
+    const EnumByte kEnumBytes[] = {
+        {"audio target", 17, 1u,
+         [](const RequestMessage& message) {
+             return message.audio_target == AudioTarget::BottomScreen;
+         }},
+        {"handedness", 15, 1u,
+         [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
+        {"right stick mode", 1, 2u,
+         [](const RequestMessage& message) {
+             return message.right_stick_mode == RightStickMode::DPad;
+         }},
+    };
+
+    for (const EnumByte& field : kEnumBytes) {
+        std::vector<uint8_t> identified(payload);
+        identified[identified.size() - field.from_end] = field.legal;
+        RequestMessage decoded;
+        CHECK_MSG(decode_request(identified.data(), identified.size(), decoded),
+                  std::string("a legal ") + field.name + " byte was refused");
+        CHECK_MSG(field.matches(decoded),
+                  std::string("the byte ") + std::to_string(field.from_end) +
+                      " from the end is not the " + field.name);
+
+        std::vector<uint8_t> corrupt(payload);
+        corrupt[corrupt.size() - field.from_end] = 9;
+        RequestMessage rejected;
+        CHECK_MSG(!decode_request(corrupt.data(), corrupt.size(), rejected),
+                  std::string("an impossible ") + field.name + " was accepted");
+    }
 }
 
 void test_input_round_trip() {

@@ -65,6 +65,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.bilinear_filtering = settings.default_bilinear_filtering;
     config.render_scale = settings.default_render_scale;
     config.screen_gap = settings.default_screen_gap;
+    config.right_stick_mode = settings.default_right_stick_mode;
 
     const std::string path = file_path(paths, rom_sha1);
     std::ifstream file(path);
@@ -93,6 +94,8 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.bilinear_filtering = get_bool(document, "bilinear_filtering", config.bilinear_filtering);
     config.render_scale = get_int(document, "render_scale", config.render_scale);
     config.screen_gap = get_bool(document, "screen_gap", config.screen_gap);
+    config.right_stick_mode = right_stick_mode_from_key(
+        get_string(document, "right_stick_mode", right_stick_mode_key(config.right_stick_mode)));
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -133,6 +136,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["bilinear_filtering"] = bilinear_filtering;
     document["render_scale"] = render_scale;
     document["screen_gap"] = screen_gap;
+    document["right_stick_mode"] = right_stick_mode_key(right_stick_mode);
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

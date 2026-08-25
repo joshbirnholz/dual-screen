@@ -73,6 +73,9 @@ Settings Settings::load(const AppPaths& paths) {
         get_or<int>(document, "default_render_scale", settings.default_render_scale);
     settings.default_screen_gap =
         get_or<bool>(document, "default_screen_gap", settings.default_screen_gap);
+    settings.default_right_stick_mode = right_stick_mode_from_key(get_or<std::string>(
+        document, "default_right_stick_mode",
+        right_stick_mode_key(settings.default_right_stick_mode)));
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
     settings.handedness = handedness_from_key(
@@ -104,6 +107,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;
+    document["default_right_stick_mode"] = right_stick_mode_key(default_right_stick_mode);
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
     document["handedness"] = handedness_key(handedness);

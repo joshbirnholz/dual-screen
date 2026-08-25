@@ -53,7 +53,8 @@ void set_shared(HostSession& host,
                 AudioTarget audio_target = AudioTarget::Both,
                 Handedness handedness = Handedness::Right,
                 int render_scale = 1,
-                bool screen_gap = true) {
+                bool screen_gap = true,
+                RightStickMode right_stick_mode = RightStickMode::CStick) {
     HostSession::SharedState shared;
     shared.layout_id = layout_id;
     shared.per_device_layout = (layout_id == "upper_on_tv");
@@ -62,6 +63,7 @@ void set_shared(HostSession& host,
     shared.handedness = handedness;
     shared.render_scale = render_scale;
     shared.screen_gap = screen_gap;
+    shared.right_stick_mode = right_stick_mode;
     host.set_session_state(shared);
 }
 
@@ -660,6 +662,23 @@ void test_shared_settings_stay_in_sync() {
     set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2, false);
     CHECK_MSG(spin(host, companion, [&] { return companion.host_screen_gap() == false; }),
               "the host's screen gap choice never reached the companion");
+
+    // And what the right stick is read as. Both devices' pads drive the game,
+    // so both have to be reading their own stick the same way -- which is why
+    // this belongs to the host like the rest of it rather than being decided
+    // wherever the menu happened to be opened.
+    companion.request_right_stick_mode(RightStickMode::DPad);
+    const bool asked_stick = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_right_stick_mode;
+    });
+    CHECK_MSG(asked_stick, "the right stick request never reached the host");
+    CHECK(request.right_stick_mode == RightStickMode::DPad);
+
+    set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2, false,
+               RightStickMode::DPad);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return companion.host_right_stick_mode() == RightStickMode::DPad; }),
+              "the host's right stick choice never reached the companion");
 
     // Reset is one-shot: there is no value to broadcast back, just the request
     // itself reaching the host.

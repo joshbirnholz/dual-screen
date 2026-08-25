@@ -265,6 +265,8 @@ struct App::Impl {
     // like the settings above, though it is only ever asked about while the
     // active layout offers the choice -- see LayoutComposition::gap_toggleable.
     bool screen_gap = true;
+    // What the right stick is read as, on a console that has one of its own.
+    RightStickMode right_stick_mode = RightStickMode::CStick;
     std::string game_title;
     std::string resolved_core_path;
     // Which console the loaded game belongs to, and its screens. On a companion
@@ -336,6 +338,7 @@ struct App::Impl {
     void request_handedness(Handedness hand);
     void request_render_scale(int scale);
     void request_screen_gap(bool include_gap);
+    void request_right_stick_mode(RightStickMode mode);
     // Restarts the running game. On a companion this asks the host, since only
     // the host runs a core to restart; there is nothing to adopt back, since
     // there is no value beyond the moment it happens.
@@ -348,6 +351,7 @@ struct App::Impl {
     void adopt_audio_target(AudioTarget target);
     void adopt_handedness(Handedness hand);
     void adopt_screen_gap(bool include_gap);
+    void adopt_right_stick_mode(RightStickMode mode);
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
@@ -721,6 +725,12 @@ void App::Impl::open_picker() {
     picker_state.max_render_scale =
         (source || is_companion()) ? system_profile(system).max_render_scale : 1;
     picker_state.screen_gap = screen_gap;
+    picker_state.right_stick_mode = right_stick_mode;
+    // Only a console with a stick of its own has more than one answer worth
+    // offering: on a DS the left stick is already standing in for the d-pad
+    // and the right one has nothing to be.
+    picker_state.right_stick_choosable =
+        (source || is_companion()) && system_profile(system).has_analog_stick;
     picker->set_screens(screens_geometry());
     picker->open(picker_state);
 }
@@ -780,6 +790,39 @@ void App::Impl::request_layout(const std::string& layout_id) {
         picker->set_selected_layout(active_layout_id);
     }
     log_info("layout: " + active_layout().display_name);
+}
+
+void App::Impl::request_right_stick_mode(RightStickMode mode) {
+    if (is_companion()) {
+        companion_session->request_right_stick_mode(mode);
+        return;  // the host decides; it will tell us
+    }
+    adopt_right_stick_mode(mode);
+}
+
+void App::Impl::adopt_right_stick_mode(RightStickMode mode) {
+    if (mode == right_stick_mode) {
+        return;
+    }
+    right_stick_mode = mode;
+    // Both devices' pads drive the game, so both read their own right stick
+    // the same way -- which is why this is applied here as well as on the
+    // device that owns the setting.
+    input.set_right_stick_mode(right_stick_mode);
+    if (picker) {
+        picker->set_right_stick_mode(right_stick_mode);
+    }
+    if (is_companion()) {
+        log_info(std::string("following the host: right stick ") + to_string(right_stick_mode));
+        return;
+    }
+    if (have_game_config) {
+        persist_game_config();
+    } else {
+        settings.default_right_stick_mode = right_stick_mode;
+        settings.save(paths);
+    }
+    log_info(std::string("right stick: ") + to_string(right_stick_mode));
 }
 
 void App::Impl::request_screen_gap(bool include_gap) {
@@ -967,6 +1010,8 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     audio_target = settings.audio_target;
     handedness = settings.handedness;
     screen_gap = settings.default_screen_gap;
+    right_stick_mode = settings.default_right_stick_mode;
+    input.set_right_stick_mode(right_stick_mode);
     apply_filtering();
     if (!host_picker) {
         host_picker.reset(new HostPickerScreen());
@@ -1019,6 +1064,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     audio_target = settings.audio_target;
     handedness = settings.handedness;
     screen_gap = settings.default_screen_gap;
+    right_stick_mode = settings.default_right_stick_mode;
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
     if (rom_sha1.empty()) {
@@ -1030,7 +1076,9 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         bilinear_filtering = game_config.bilinear_filtering;
         render_scale = game_config.render_scale;
         screen_gap = game_config.screen_gap;
+        right_stick_mode = game_config.right_stick_mode;
     }
+    input.set_right_stick_mode(right_stick_mode);
     if (!options.layout_id.empty()) {
         active_layout_id = options.layout_id;
     }
@@ -1159,6 +1207,7 @@ void App::Impl::persist_game_config() {
     game_config.bilinear_filtering = bilinear_filtering;
     game_config.render_scale = render_scale;
     game_config.screen_gap = screen_gap;
+    game_config.right_stick_mode = right_stick_mode;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
@@ -1331,6 +1380,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (result.screen_gap_toggled) {
                 request_screen_gap(!screen_gap);
+            }
+            if (result.right_stick_mode_changed) {
+                request_right_stick_mode(next_right_stick_mode(right_stick_mode));
             }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
@@ -1851,6 +1903,7 @@ int App::run(const AppOptions& options) {
             shared.handedness = impl.handedness;
             shared.render_scale = impl.render_scale;
             shared.screen_gap = impl.screen_gap;
+            shared.right_stick_mode = impl.right_stick_mode;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
@@ -1884,6 +1937,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_screen_gap) {
                     impl.adopt_screen_gap(request.screen_gap);
+                }
+                if (request.wants_right_stick_mode) {
+                    impl.adopt_right_stick_mode(request.right_stick_mode);
                 }
                 if (request.wants_reset && impl.source) {
                     impl.source->reset();
@@ -1946,6 +2002,7 @@ int App::run(const AppOptions& options) {
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
                 impl.adopt_handedness(impl.companion_session->host_handedness());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
+                impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());
                 if (impl.system != impl.companion_session->system()) {
                     impl.system = impl.companion_session->system();
                     impl.apply_system();

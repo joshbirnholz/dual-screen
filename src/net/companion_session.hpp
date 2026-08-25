@@ -52,6 +52,7 @@ public:
     bool host_filtering() const { return host_filtering_; }
     AudioTarget host_audio_target() const { return host_audio_target_; }
     Handedness host_handedness() const { return host_handedness_; }
+    RightStickMode host_right_stick_mode() const { return host_right_stick_mode_; }
     int host_render_scale() const { return host_render_scale_; }
     bool host_screen_gap() const { return host_screen_gap_; }
 
@@ -65,6 +66,7 @@ public:
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness handedness);
+    void request_right_stick_mode(RightStickMode mode);
     void request_render_scale(int scale);
     void request_screen_gap(bool include_gap);
     // One-shot: asks the host to restart the game. There is nothing to adopt
@@ -148,6 +150,7 @@ private:
     bool host_filtering_ = false;
     AudioTarget host_audio_target_ = AudioTarget::Both;
     Handedness host_handedness_ = Handedness::Right;
+    RightStickMode host_right_stick_mode_ = RightStickMode::CStick;
     int host_render_scale_ = 1;
     bool host_screen_gap_ = true;
     bool menu_open_ = false;

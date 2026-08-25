@@ -39,6 +39,8 @@ struct LayoutPickerResult {
     // The gap toggle was used; the caller applies and persists it, the same
     // as filtering.
     bool screen_gap_toggled = false;
+    // The right stick's mapping was cycled; same deal again.
+    bool right_stick_mode_changed = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -62,6 +64,11 @@ struct LayoutPickerState {
     // meaningful -- and only offered -- while a layout that has one is
     // selected, which the picker reads off the registry for itself.
     bool screen_gap = true;
+    // What the right stick is read as, and whether that is a question at all:
+    // only a console with a stick of its own has more than one answer, so a DS
+    // does not get the button. See RightStickMode.
+    RightStickMode right_stick_mode = RightStickMode::CStick;
+    bool right_stick_choosable = false;
 };
 
 // The layout menu: a grid of visual previews rather than a cycle-through
@@ -80,6 +87,7 @@ public:
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
     void set_render_scale(int scale) { state_.render_scale = scale; }
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
+    void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -144,6 +152,7 @@ private:
         Hands,
         Sound,
         Cursor,
+        RightStick,
         ScreenGap,
         Reset,
         Resume,

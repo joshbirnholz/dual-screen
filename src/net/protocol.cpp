@@ -146,6 +146,27 @@ bool handedness_from_wire(uint8_t value, Handedness& out) {
     return true;
 }
 
+uint8_t right_stick_mode_to_wire(RightStickMode mode) {
+    switch (mode) {
+        case RightStickMode::CStick: return 0u;
+        case RightStickMode::CirclePad: return 1u;
+        case RightStickMode::DPad: return 2u;
+        case RightStickMode::Off: break;
+    }
+    return 3u;
+}
+
+bool right_stick_mode_from_wire(uint8_t value, RightStickMode& out) {
+    switch (value) {
+        case 0u: out = RightStickMode::CStick; return true;
+        case 1u: out = RightStickMode::CirclePad; return true;
+        case 2u: out = RightStickMode::DPad; return true;
+        case 3u: out = RightStickMode::Off; return true;
+        default: break;
+    }
+    return false;
+}
+
 bool screen_from_wire(uint8_t value, ScreenId& out) {
     if (value == 0) {
         out = ScreenId::Top;
@@ -198,6 +219,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, handedness_to_wire(message.handedness));
     put_u8(out, message.render_scale);
     put_u8(out, message.screen_gap ? 1u : 0u);
+    put_u8(out, right_stick_mode_to_wire(message.right_stick_mode));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -316,6 +338,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.wants_quit ? 1u : 0u);
     put_u8(out, message.wants_screen_gap ? 1u : 0u);
     put_u8(out, message.screen_gap ? 1u : 0u);
+    put_u8(out, message.wants_right_stick_mode ? 1u : 0u);
+    put_u8(out, right_stick_mode_to_wire(message.right_stick_mode));
     finish_message(out, start, MessageType::Request);
 }
 
@@ -351,6 +375,10 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     reader.u8(wants_quit);
     reader.u8(wants_screen_gap);
     reader.u8(screen_gap);
+    uint8_t wants_right_stick = 0;
+    uint8_t right_stick = 0;
+    reader.u8(wants_right_stick);
+    reader.u8(right_stick);
     if (!reader.ok()) return false;
     out.wants_filtering = (wants_filtering != 0);
     out.bilinear_filtering = (filtering != 0);
@@ -363,6 +391,8 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     out.wants_quit = (wants_quit != 0);
     out.wants_screen_gap = (wants_screen_gap != 0);
     out.screen_gap = (screen_gap != 0);
+    out.wants_right_stick_mode = (wants_right_stick != 0);
+    if (!right_stick_mode_from_wire(right_stick, out.right_stick_mode)) return false;
     if (!handedness_from_wire(hands, out.handedness)) return false;
     return audio_target_from_wire(audio, out.audio_target);
 }
@@ -428,10 +458,13 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     reader.u8(hands);
     reader.u8(out.render_scale);
     reader.u8(screen_gap);
+    uint8_t right_stick = 0;
+    reader.u8(right_stick);
     if (!reader.ok()) return false;
     out.paused = (paused != 0);
     out.bilinear_filtering = (filtering != 0);
     out.screen_gap = (screen_gap != 0);
+    if (!right_stick_mode_from_wire(right_stick, out.right_stick_mode)) return false;
     if (!audio_target_from_wire(audio, out.audio_target)) return false;
     if (!handedness_from_wire(hands, out.handedness)) return false;
     return screen_from_wire(screen, out.companion_screen);

@@ -233,6 +233,60 @@ void test_left_stick_click_swaps_the_layout() {
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::SwapLayout), 0);
 }
 
+// Pushes the right stick fully right and reads what the game would be handed,
+// under one mapping.
+DsInputState push_right_stick_and_read(RightStickMode mode) {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return DsInputState();
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    input.set_stick_is_dpad(false);  // a 3DS: the console this choice exists for
+    input.set_right_stick_mode(mode);
+
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_RIGHTX, 32000);
+    SDL_GameControllerUpdate();
+
+    input.begin_frame();
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::ThreeDs).screens);
+    const DsInputState state = input.ds_state();
+
+    input.shutdown();
+    pad.detach();
+    return state;
+}
+
+// The right stick is whatever the game wants it to be. Each mapping has to
+// reach exactly one destination: a stick that fed two of them at once is the
+// bug that made the 3DS's circle pad unusable when the left stick did it.
+void test_the_right_stick_maps_where_it_is_told() {
+    const DsInputState c_stick = push_right_stick_and_read(RightStickMode::CStick);
+    CHECK_MSG(c_stick.c_stick_x > 16000, "the C-Stick did not follow the right stick");
+    CHECK_EQ(c_stick.circle_x, 0);
+    CHECK(!c_stick.pressed(DsButton::Right));
+
+    const DsInputState circle_pad = push_right_stick_and_read(RightStickMode::CirclePad);
+    CHECK_MSG(circle_pad.circle_x > 16000, "the circle pad did not follow the right stick");
+    CHECK_EQ(circle_pad.c_stick_x, 0);
+    CHECK(!circle_pad.pressed(DsButton::Right));
+
+    const DsInputState dpad = push_right_stick_and_read(RightStickMode::DPad);
+    CHECK_MSG(dpad.pressed(DsButton::Right), "the d-pad did not follow the right stick");
+    CHECK(!dpad.pressed(DsButton::Left));
+    CHECK_EQ(dpad.c_stick_x, 0);
+    CHECK_EQ(dpad.circle_x, 0);
+
+    // Off has to reach nothing at all -- the whole point of it is a game that
+    // does something unwanted with a stick it is handed.
+    const DsInputState off = push_right_stick_and_read(RightStickMode::Off);
+    CHECK_EQ(off.c_stick_x, 0);
+    CHECK_EQ(off.circle_x, 0);
+    CHECK_EQ(off.buttons, 0u);
+}
+
 // Start and Select together open the menu. That chord is the only way in on a
 // device with no Steam Input in front of the pad -- a Switch running this as a
 // companion -- so it has to fire once for the pair however they are pressed,
@@ -426,6 +480,7 @@ int main() {
     test_stick_click_toggles_filtering();
     test_left_stick_click_swaps_the_layout();
     test_start_and_select_open_the_menu();
+    test_the_right_stick_maps_where_it_is_told();
     test_face_buttons_reach_the_core();
 
     SDL_Quit();

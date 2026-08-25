@@ -58,6 +58,12 @@ void LayoutPicker::rebuild_footer() {
     // a game, which is not a mid-game question, so Settings itself lives on the
     // launcher and not here.
     footer_.push_back(Footer::Cursor);
+    // What the right stick does, where the console has one of its own to have
+    // an opinion about -- a 3DS. Which answer a game wants is a fact about
+    // that game, so it belongs next to the game rather than in Settings.
+    if (state_.right_stick_choosable) {
+        footer_.push_back(Footer::RightStick);
+    }
     // Only some layouts' gap is a player's choice -- see
     // LayoutComposition::gap_toggleable -- so the button appears only while
     // one of those is the layout actually selected. Read off the layout itself
@@ -102,6 +108,8 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Hands:
             return state_.handedness == Handedness::Left ? "Left-Handed" : "Right-Handed";
+        case Footer::RightStick:
+            return std::string("Right Stick: ") + to_string(state_.right_stick_mode);
         case Footer::ScreenGap:
             return state_.screen_gap ? "Gap: On" : "Gap: Off";
         case Footer::Reset: return "Reset Game";
@@ -271,6 +279,11 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::Hands:
             result.handedness_changed = true;
+            return true;
+        case Footer::RightStick:
+            // Cycled by the caller and handed back with set_right_stick_mode(),
+            // the same as the others here: on a companion the host decides.
+            result.right_stick_mode_changed = true;
             return true;
         case Footer::ScreenGap:
             result.screen_gap_toggled = true;

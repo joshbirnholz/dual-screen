@@ -26,6 +26,10 @@ struct GameConfig {
     // whichever layouts offer the choice. Per game like the two above, though
     // it only ever matters while one of those is the one chosen.
     bool screen_gap = true;
+    // What the right stick is read as. Per game because which of the answers a
+    // 3DS game wants is a fact about that game -- see RightStickMode -- and
+    // there is nothing in a ROM that says which.
+    RightStickMode right_stick_mode = RightStickMode::CStick;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1
