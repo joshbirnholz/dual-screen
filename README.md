@@ -142,6 +142,20 @@ connect to anything.
 dualscreen --connect bottom
 ```
 
+### A Switch as the second screen
+
+The other device does not have to be running this app, or be a PC at all.
+`switch/` is a Nintendo Switch homebrew build that does one thing: join a game
+running somewhere else and be one of its two screens. It has no emulator in it
+and needs no ROM, no BIOS and no core — everything is being played on the other
+device. See [switch/README.md](switch/README.md) for how to build and install
+it.
+
+It shares the parts that describe a session — the protocol, discovery, the
+layout arithmetic, the controller mapping — with this app rather than
+reimplementing them, so a host cannot tell the difference between it and
+another PC, and neither can the menu.
+
 ## Smoothing
 
 A DS screen is 256x192 and a Deck's is 1280x800, so every pixel is drawn several
@@ -608,6 +622,16 @@ ctest --test-dir build --output-on-failure
   sent an empty top screen and then segfaulted the host on the bottom one; these
   catch that (the host exits 139) and, in the `top` case, that the colours
   survive the trip.
+- `test_switch_client` — the Switch companion's own logic, which is plain C++
+  and so runs here: the host list keeping its selection on the machine it was
+  on as hosts appear and go quiet under it, and where a quarter-turned screen
+  actually has to be drawn, which is off by a quarter turn everywhere except
+  the one layout that turns anything.
+- `switch_client_headless` / `switch_client_top_headless` — the Switch
+  companion joining a **real host**, both processes under `Xvfb`, checking it
+  ends up drawing the screen it asked for. The client is one program with a
+  small guarded section for the console's own start-up, so everything under the
+  window is the same code that runs on the Switch.
 - `smoke_headless` — runs the real binary against the mock core under `Xvfb`,
   screenshots every layout, and checks pixel by pixel that each screen landed
   where the layout says. It also holds a synthetic touch and verifies the
@@ -625,7 +649,9 @@ The mock core means all of this runs with no melonDS core and no commercial ROM.
 
 ## Not built yet
 
-3DS and Wii U support, Android or Switch companion builds, save states, cheats,
-rewind, shaders. More than one companion per host. See `docs/research-notes.md`
+3DS and Wii U support, an Android companion, save states, cheats, rewind,
+shaders. More than one companion per host. The Switch companion in `switch/` is
+built and tested here as a desktop program; the console build itself needs a
+devkitPro toolchain and has to be checked by hand. See `docs/research-notes.md`
 for what was verified against the real melonDS DS core and what still has to be
 checked on hardware.

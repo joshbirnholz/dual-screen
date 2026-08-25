@@ -134,6 +134,65 @@ endif()
 
 install(TARGETS dualscreen RUNTIME DESTINATION bin)
 
+# The Nintendo Switch companion. It is a separate program rather than a mode of
+# the app: it runs no core, draws through SDL's renderer instead of the GL
+# compositor, and shares only the parts that describe the session -- the wire
+# protocol, discovery, the layout arithmetic and the controller mapping.
+#
+# switch/Makefile builds the same sources with devkitPro for the console; this
+# target builds them for this machine, which is what lets the client be run
+# against a real host and looked at (see tests/run_switch_client_test.sh). The
+# two source lists are the same list, and it is this one that gets compiled on
+# every build, so a file added to the client cannot quietly go missing from it.
+set(DUALSCREEN_COMPANION_SHARED_SOURCES
+    src/audio/audio_output.cpp
+    src/core/system.cpp
+    src/input/controller_mapping.cpp
+    src/input/cursor_visibility.cpp
+    src/input/ds_input.cpp
+    src/input/input_manager.cpp
+    src/layout/layout.cpp
+    src/layout/layout_registry.cpp
+    src/net/companion_session.cpp
+    src/net/discovery.cpp
+    src/net/protocol.cpp
+    src/net/transport.cpp
+    src/render/font.cpp
+    # CompanionSession keeps each screen as a GPU texture as well as pixels,
+    # for the desktop compositor that draws it that way. This client never asks
+    # for those, but the two files still have to be there to link.
+    src/render/gl_loader.cpp
+    src/render/texture.cpp
+    src/util/log.cpp
+)
+# Absolute, because the test target that also compiles them lives in another
+# directory.
+set(DUALSCREEN_COMPANION_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/host_list.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/screen_quad.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/text_painter.cpp
+)
+
+add_executable(dualscreen-companion
+    switch/source/main.cpp
+    ${DUALSCREEN_COMPANION_SOURCES}
+    ${DUALSCREEN_COMPANION_SHARED_SOURCES}
+)
+target_include_directories(dualscreen-companion PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source
+)
+target_link_libraries(dualscreen-companion PRIVATE
+    SDL2::SDL2
+    OpenGL::GL
+    ZLIB::ZLIB
+    Threads::Threads
+)
+target_compile_options(dualscreen-companion PRIVATE -Wall -Wextra)
+if(DUALSCREEN_PORTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(dualscreen-companion PRIVATE -static-libstdc++ -static-libgcc)
+endif()
+
 if(DUALSCREEN_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

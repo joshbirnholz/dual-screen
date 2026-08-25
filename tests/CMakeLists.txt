@@ -61,6 +61,12 @@ dualscreen_add_test(test_controller_mapping)
 dualscreen_add_test(test_retro_keymap)
 dualscreen_add_test(test_controller_input)
 dualscreen_add_test(test_core_host NEEDS_GL)
+# The Switch client's own logic, which lives outside dualscreen_core because the
+# client is a separate program. Everything tested here is plain C++, so it runs
+# on this machine rather than needing the console.
+dualscreen_add_test(test_switch_client)
+target_sources(test_switch_client PRIVATE ${DUALSCREEN_COMPANION_SOURCES})
+target_include_directories(test_switch_client PRIVATE ${CMAKE_SOURCE_DIR}/switch/source)
 add_dependencies(test_core_host mock_core mock_core_3ds)
 
 # End-to-end smoke test: runs the real binary against the mock core under a
@@ -131,6 +137,33 @@ if(XVFB_RUN_EXECUTABLE)
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(two_device_3ds_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
         ENVIRONMENT "COMPANION_SCREEN=top;ROM_NAME=game.3ds;HOST_CORE=${MOCK_CORE_3DS_PATH}")
+    # The Switch companion joining a real host. It is the same protocol and the
+    # same session code as the desktop companion, but its own window, renderer,
+    # host picker and touch mapping -- none of which the other four runs touch.
+    add_test(NAME switch_client_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_client_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:dualscreen-companion>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/switch-client
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(switch_client_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=bottom")
+
+    # And as the other screen, for the same reason the desktop pair is run both
+    # ways round: which screen a device ends up holding is the one thing a
+    # companion cannot check for itself.
+    add_test(NAME switch_client_top_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_client_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:dualscreen-companion>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/switch-client-top
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(switch_client_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=top")
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()
