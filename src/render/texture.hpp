@@ -37,6 +37,15 @@ public:
                          int height,
                          int source_stride_pixels);
 
+    // Uploads tightly packed RGB565, the form a streamed screen arrives in.
+    //
+    // Uploading it as itself rather than expanding to 8 bits a channel first
+    // saves a whole pass over the frame and halves what goes to the GPU, every
+    // frame, on both devices. GL_UNSIGNED_SHORT_5_6_5 is core in both desktop
+    // GL and ES, and the channels come out in the right order, so nothing
+    // downstream has to swizzle -- see ChannelOrder.
+    void upload_rgb565(const uint8_t* source, int width, int height);
+
     // Uploads 8-bit coverage data as an alpha-only-style RGBA texture (white
     // with the given alpha), used by the text renderer.
     void upload_alpha8(const uint8_t* source, int width, int height);
@@ -62,6 +71,10 @@ private:
     GLuint id_ = 0;
     int width_ = 0;
     int height_ = 0;
+    // Which GL format the storage was allocated with. A texture that was
+    // 5-6-5 and is handed 8-bit pixels (or the reverse) has to be reallocated
+    // rather than sub-imaged, whatever its size.
+    GLenum format_ = 0;
     ChannelOrder channel_order_ = ChannelOrder::XrgbBytes;
     bool linear_ = false;
     bool filter_dirty_ = true;

@@ -37,31 +37,35 @@ ICON        := icon.jpg
 # Directories the sources live in. Whole directories are not listed, because
 # most of them hold files this program has no business compiling -- an emulator
 # core loader, a game browser, a GL compositor.
+THIRD_PARTY := ../third_party
+# Where the console artwork lands once it has been turned into source. Defined
+# before SOURCE_DIRS, which expands it immediately.
+GENERATED   := generated
+
 SOURCE_DIRS := source \
+               $(GENERATED) \
                $(SHARED)/audio \
                $(SHARED)/core \
                $(SHARED)/input \
                $(SHARED)/layout \
                $(SHARED)/net \
                $(SHARED)/render \
+               $(SHARED)/ui \
                $(SHARED)/util
 
-CPPFILES    := main.cpp host_list.cpp screen_quad.cpp session_menu.cpp text_painter.cpp \
+CPPFILES    := main.cpp \
                audio_output.cpp \
                system.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp input_manager.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
-               font.cpp \
-               gl_loader.cpp texture.cpp \
-               log.cpp
+               bezel_art.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
+               png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
+               launcher_screen.cpp layout_picker.cpp \
+               log.cpp \
+               kDsBezelPng.cpp kThreeDsBezelPng.cpp
 
-# CompanionSession keeps each received screen as a GPU texture as well as
-# pixels, for the desktop compositor that draws it that way. This client draws
-# through SDL's renderer and never asks for those, but gl_loader.cpp and
-# texture.cpp still have to be compiled for it to link. Nothing in them runs.
-
-INCLUDES    := source $(SHARED)
+INCLUDES    := source $(SHARED) $(THIRD_PARTY)
 
 #---------------------------------------------------------------------------------
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
@@ -114,6 +118,15 @@ ifeq ($(wildcard $(TOPDIR)/$(ICON)),)
 $(error Cannot find $(ICON), which the .nro needs an asset section built from)
 endif
 
+# The console artwork the Standard layout draws, turned into source so it
+# travels inside the binary. The same script the desktop build uses, run the
+# same way, so the two cannot end up with different pictures in them.
+CMAKE ?= cmake
+ifeq ($(shell command -v $(CMAKE) 2>/dev/null),)
+$(error Cannot find cmake, which turns the console artwork into source. \
+        dkp-pacman -S cmake, or set CMAKE to it)
+endif
+
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
@@ -141,15 +154,28 @@ export NROFLAGS := --icon=$(APP_ICON) --nacp=$(OUTPUT).nacp
 
 .PHONY: all clean
 
-all: $(BUILD)
+all: $(BUILD) assets
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):
 	@mkdir -p $@
 
+.PHONY: assets
+assets: $(GENERATED)/kDsBezelPng.cpp $(GENERATED)/kThreeDsBezelPng.cpp
+
+$(GENERATED)/kDsBezelPng.cpp: $(CURDIR)/../assets/ds_bezel.png $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo embedding ds_bezel.png
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kDsBezelPng -P $(CURDIR)/../tools/embed_asset.cmake
+
+$(GENERATED)/kThreeDsBezelPng.cpp: $(CURDIR)/../assets/three_ds_bezel.png $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo embedding three_ds_bezel.png
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kThreeDsBezelPng -P $(CURDIR)/../tools/embed_asset.cmake
+
 clean:
 	@echo clean ...
-	@rm -rf $(BUILD) $(TARGET).nro $(TARGET).nacp $(TARGET).elf
+	@rm -rf $(BUILD) $(GENERATED) $(TARGET).nro $(TARGET).nacp $(TARGET).elf
 
 #---------------------------------------------------------------------------------
 else

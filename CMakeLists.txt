@@ -91,6 +91,7 @@ add_library(dualscreen_core STATIC
     src/render/compositor.cpp
     src/render/font.cpp
     src/render/gl_loader.cpp
+    src/render/gl_window.cpp
     src/render/png_image.cpp
     src/render/quad_renderer.cpp
     src/render/text_renderer.cpp
@@ -145,6 +146,7 @@ install(TARGETS dualscreen RUNTIME DESTINATION bin)
 # two source lists are the same list, and it is this one that gets compiled on
 # every build, so a file added to the client cannot quietly go missing from it.
 set(DUALSCREEN_COMPANION_SHARED_SOURCES
+    ${BEZEL_SOURCES}
     src/audio/audio_output.cpp
     src/core/system.cpp
     src/input/controller_mapping.cpp
@@ -157,26 +159,22 @@ set(DUALSCREEN_COMPANION_SHARED_SOURCES
     src/net/discovery.cpp
     src/net/protocol.cpp
     src/net/transport.cpp
+    src/render/bezel_art.cpp
+    src/render/compositor.cpp
     src/render/font.cpp
-    # CompanionSession keeps each screen as a GPU texture as well as pixels,
-    # for the desktop compositor that draws it that way. This client never asks
-    # for those, but the two files still have to be there to link.
     src/render/gl_loader.cpp
+    src/render/gl_window.cpp
+    src/render/png_image.cpp
+    src/render/quad_renderer.cpp
+    src/render/text_renderer.cpp
     src/render/texture.cpp
+    src/ui/launcher_screen.cpp
+    src/ui/layout_picker.cpp
     src/util/log.cpp
-)
-# Absolute, because the test target that also compiles them lives in another
-# directory.
-set(DUALSCREEN_COMPANION_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/host_list.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/screen_quad.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/session_menu.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/text_painter.cpp
 )
 
 add_executable(dualscreen-companion
     switch/source/main.cpp
-    ${DUALSCREEN_COMPANION_SOURCES}
     ${DUALSCREEN_COMPANION_SHARED_SOURCES}
 )
 target_include_directories(dualscreen-companion PRIVATE

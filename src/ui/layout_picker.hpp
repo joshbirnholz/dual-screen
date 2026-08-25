@@ -54,6 +54,15 @@ struct LayoutPickerState {
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
     CursorMode cursor_mode = CursorMode::Shown;
+    // Whether this device has a pointer to show or hide at all.
+    //
+    // False on a companion client running on hardware with no mouse or
+    // trackpad -- the Switch one, and whatever comes after it. It is the one
+    // entry on this menu that belongs to the device rather than to the host,
+    // which is exactly why it has nothing to say there, and an entry that
+    // cannot do anything is worse than an absent one. Same rule as the render
+    // scale and the right stick: offered where there is something to choose.
+    bool cursor_choosable = true;
     Handedness handedness = Handedness::Right;
     // How many pixels the core renders per console pixel, and the largest this
     // system offers. A maximum of 1 means there is nothing to choose and the

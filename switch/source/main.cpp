@@ -7,11 +7,18 @@
 // which device makes the sound -- belongs to the host, exactly as it does
 // between two desktop devices; this end asks and then follows.
 //
-// The wire protocol, discovery, the session, the layout arithmetic and the
-// controller mapping are the desktop app's own, compiled unchanged, so there
-// is one implementation of each rather than a second one to keep in step. What
-// is here is the shell around them: a window, a renderer, a host picker and a
-// small in-session menu.
+// It is the desktop app's own code doing nearly all of it: the wire protocol,
+// discovery, the session, the layout arithmetic, the controller mapping, the
+// compositor that draws the screens, and the quick menu itself. Not a port of
+// them -- the same source files, compiled again. What is left here is the loop
+// around them and the console's own start-up.
+//
+// That is deliberate down to the pixels. A player moving between the two
+// devices should find the same menu with the same entries in the same places,
+// and every rule about how a screen is drawn -- the margin that drops away on
+// a small display, the console artwork behind the Standard layout, when a
+// screen is smoothed -- should be the one rule rather than two that agree
+// until one of them is changed.
 //
 // The same source builds and runs on a desktop, where it is the easiest way to
 // exercise all of that against a real host -- see tests/run_switch_client.sh.
@@ -40,12 +47,15 @@
 #include "layout/layout_registry.hpp"
 #include "net/companion_session.hpp"
 #include "net/transport.hpp"
+#include "render/bezel_art.hpp"
+#include "render/gl_loader.hpp"
+#include "render/compositor.hpp"
+#include "render/gl_window.hpp"
+#include "render/quad_renderer.hpp"
+#include "render/text_renderer.hpp"
+#include "ui/launcher_screen.hpp"
+#include "ui/layout_picker.hpp"
 #include "util/log.hpp"
-
-#include "host_list.hpp"
-#include "screen_quad.hpp"
-#include "session_menu.hpp"
-#include "text_painter.hpp"
 
 namespace ds::sw {
 namespace {
@@ -123,98 +133,30 @@ Options parse_options(int argc, char** argv) {
     return options;
 }
 
-// One received screen as a texture. The pixels arrive at whatever size the
-// host decided was worth sending -- a 3DS above native resolution sends more
-// than a DS ever does -- so the texture is rebuilt when that changes rather
-// than assuming the console's own size.
-class ScreenTexture {
-public:
-    ~ScreenTexture() { destroy(); }
-
-    void destroy() {
-        if (texture_ != nullptr) {
-            SDL_DestroyTexture(texture_);
-            texture_ = nullptr;
-        }
-        width_ = 0;
-        height_ = 0;
-        uploaded_serial_ = 0;
-        has_frame_ = false;
-    }
-
-    // Uploads only when a frame this texture has not already been given
-    // arrives, which is why the serial travels with the pixels.
-    //
-    // The pixels are taken in the form they arrived in -- RGB565 -- and handed
-    // to the GPU that way. Expanding them to 8 bits a channel first would be a
-    // whole extra pass over every frame and twice the bytes to upload, on the
-    // device that can least afford either.
-    void update(SDL_Renderer* renderer, const net::CompanionSession::ScreenBytes& frame) {
-        if (!frame.valid()) {
-            return;
-        }
-        if (texture_ == nullptr || frame.width != width_ || frame.height != height_) {
-            if (texture_ != nullptr) {
-                SDL_DestroyTexture(texture_);
-            }
-            texture_ = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
-                                         SDL_TEXTUREACCESS_STREAMING, frame.width, frame.height);
-            if (texture_ == nullptr) {
-                log_warn(std::string("could not make a texture for a screen: ") + SDL_GetError());
-                width_ = 0;
-                height_ = 0;
-                return;
-            }
-            // The screens are opaque and the wire format carries no alpha, so
-            // blending them would only read whatever the unused byte holds.
-            SDL_SetTextureBlendMode(texture_, SDL_BLENDMODE_NONE);
-            width_ = frame.width;
-            height_ = frame.height;
-            uploaded_serial_ = 0;
-            has_frame_ = false;
-        }
-        if (has_frame_ && frame.serial == uploaded_serial_) {
-            return;
-        }
-        SDL_UpdateTexture(texture_, nullptr, frame.pixels, frame.width * 2);
-        uploaded_serial_ = frame.serial;
-        has_frame_ = true;
-    }
-
-    void set_smoothing(bool smooth) {
-        if (texture_ != nullptr) {
-            SDL_SetTextureScaleMode(texture_, smooth ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
-        }
-    }
-
-    SDL_Texture* texture() const { return texture_; }
-    bool ready() const { return texture_ != nullptr && has_frame_; }
-
-private:
-    SDL_Texture* texture_ = nullptr;
-    int width_ = 0;
-    int height_ = 0;
-    uint64_t uploaded_serial_ = 0;
-    bool has_frame_ = false;
-};
-
-bool write_screenshot(SDL_Renderer* renderer, int width, int height, const std::string& path) {
+bool write_screenshot(int width, int height, const std::string& path) {
     if (width <= 0 || height <= 0) {
         return false;
     }
-    std::vector<uint8_t> pixels(static_cast<std::size_t>(width) * height * 3);
-    if (SDL_RenderReadPixels(renderer, nullptr, SDL_PIXELFORMAT_RGB24, pixels.data(), width * 3) !=
-        0) {
-        log_warn(std::string("could not read the window back: ") + SDL_GetError());
-        return false;
-    }
+    std::vector<uint8_t> pixels(static_cast<std::size_t>(width) * height * 4);
+    gl::ReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
     std::FILE* file = std::fopen(path.c_str(), "wb");
     if (file == nullptr) {
         log_warn("could not open " + path);
         return false;
     }
     std::fprintf(file, "P6\n%d %d\n255\n", width, height);
-    std::fwrite(pixels.data(), 1, pixels.size(), file);
+    // GL hands back the bottom row first.
+    std::vector<uint8_t> row(static_cast<std::size_t>(width) * 3);
+    for (int y = height - 1; y >= 0; --y) {
+        const uint8_t* source = pixels.data() + static_cast<std::size_t>(y) * width * 4;
+        for (int x = 0; x < width; ++x) {
+            row[static_cast<std::size_t>(x) * 3 + 0] = source[x * 4 + 0];
+            row[static_cast<std::size_t>(x) * 3 + 1] = source[x * 4 + 1];
+            row[static_cast<std::size_t>(x) * 3 + 2] = source[x * 4 + 2];
+        }
+        std::fwrite(row.data(), 1, row.size(), file);
+    }
     std::fclose(file);
     log_info("wrote " + path);
     return true;
@@ -243,35 +185,35 @@ private:
     Layout session_layout() const;
     void refresh_output_size();
 
-    void handle_actions(const std::vector<UiAction>& actions);
-    void handle_browsing_action(UiAction action);
-    void handle_menu(const std::vector<UiAction>& actions);
-    // The session as the host currently has it, which is what the menu shows
-    // and what it cycles from.
-    SessionMenuState menu_state() const;
-
+    void handle_actions(const std::vector<UiAction>& actions,
+                        const std::vector<PointerEvent>& pointers);
+    void handle_menu(const std::vector<UiAction>& actions,
+                     const std::vector<PointerEvent>& pointers);
+    void open_menu();
+    void close_menu();
     void draw();
-    void draw_browser();
-    void draw_session();
-    void draw_menu();
-    void draw_banner(const std::string& title, const std::string& detail);
 
     Options options_;
-    SDL_Window* window_ = nullptr;
-    SDL_Renderer* renderer_ = nullptr;
+    GlWindow gl_;
     int output_width_ = 1280;
     int output_height_ = 720;
 
     LayoutRegistry registry_;
     net::CompanionSession session_;
-    HostList list_;
     InputManager input_;
     AudioOutput audio_;
     uint32_t audio_rate_ = 0;
-    TextPainter text_;
-    ScreenTexture top_;
-    ScreenTexture bottom_;
-    SessionMenu menu_{registry_};
+
+    // The app's own renderer, not a second one: the same compositor draws the
+    // screens here as on the device running the game, and the same picker
+    // draws the menu, with the same previews and the same footer.
+    QuadRenderer quads_;
+    TextRenderer text_;
+    Compositor compositor_;
+    LocalOutputRouter router_;
+    BezelArt bezel_art_;
+    LayoutPicker picker_{registry_};
+    HostPickerScreen host_picker_;
 
     State state_ = State::Browsing;
     std::string start_error_;
@@ -281,56 +223,47 @@ private:
 };
 
 bool Client::start() {
-    // Audio is asked for separately, and its failure is not this program's
-    // failure: a second screen with no sound is still a second screen, and
-    // taking the whole app down over the sound device is the wrong trade.
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         start_error_ = std::string("SDL would not start: ") + SDL_GetError();
         log_error(start_error_);
         return false;
     }
     log_info("SDL is up");
+    // Audio is asked for separately, and its failure is not this program's
+    // failure: a second screen with no sound is still a second screen.
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         log_warn(std::string("no sound on this device: ") + SDL_GetError());
     }
-    // The same convention the desktop app uses: face buttons are read by where
-    // they are, not by the letter printed on them, so a Switch pad's east
-    // button is DS A exactly as an Xbox pad's is.
+    // The same convention the app uses: face buttons are read by where they
+    // are, not by the letter printed on them.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
 
-    const uint32_t flags = options_.windowed ? SDL_WINDOW_RESIZABLE : SDL_WINDOW_FULLSCREEN_DESKTOP;
-    window_ = SDL_CreateWindow("dualscreen companion", SDL_WINDOWPOS_CENTERED,
-                               SDL_WINDOWPOS_CENTERED, 1280, 720, flags);
-    if (window_ == nullptr) {
-        start_error_ = std::string("no window: ") + SDL_GetError();
+    GlWindowRequest request;
+    request.title = "dualscreen companion";
+    request.width = 1280;
+    request.height = 720;
+    request.windowed = options_.windowed;
+    // No core runs here, so any context the driver offers will do.
+    request.need = GlContextNeed::Any;
+    if (!create_gl_window(request, gl_, &start_error_)) {
         log_error(start_error_);
         return false;
     }
-    log_info("window created");
-    renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (renderer_ == nullptr) {
-        // Software is slow but readable, which beats a black screen on a
-        // device whose only diagnostic is what it draws.
-        log_warn(std::string("no accelerated renderer (") + SDL_GetError() + "), falling back");
-        renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_SOFTWARE);
-    }
-    if (renderer_ == nullptr) {
-        start_error_ = std::string("no renderer: ") + SDL_GetError();
+
+    std::string error;
+    if (!quads_.initialize(&error) || !text_.initialize(&error)) {
+        start_error_ = "the renderer would not start: " + error;
         log_error(start_error_);
         return false;
     }
-    SDL_RendererInfo renderer_info;
-    if (SDL_GetRendererInfo(renderer_, &renderer_info) == 0 && renderer_info.name != nullptr) {
-        log_info(std::string("renderer: ") + renderer_info.name);
-    }
-    if (!text_.create(renderer_)) {
-        start_error_ = std::string("could not build the font atlas: ") + SDL_GetError();
-        log_error(start_error_);
-        return false;
+    // Not fatal: the Standard layout still puts the screens where the console
+    // puts them, it just has nothing drawn behind them.
+    if (bezel_art_.load(&error)) {
+        log_info("console artwork loaded");
+    } else {
+        log_warn("cannot draw the console artwork: " + error);
     }
     refresh_output_size();
-    log_info("output is " + std::to_string(output_width_) + "x" +
-             std::to_string(output_height_));
 
     input_.initialize(Settings());
     input_.set_game_input_enabled(false);
@@ -343,9 +276,9 @@ bool Client::start() {
                 return;
             }
             if (!audio_.is_open() || audio_rate_ != rate) {
-                std::string error;
-                if (!audio_.open(static_cast<double>(rate), &error)) {
-                    log_warn("cannot play the streamed sound: " + error);
+                std::string audio_error;
+                if (!audio_.open(static_cast<double>(rate), &audio_error)) {
+                    log_warn("cannot play the streamed sound: " + audio_error);
                     audio_rate_ = rate;  // do not try again for every packet
                     return;
                 }
@@ -355,7 +288,7 @@ bool Client::start() {
             audio_.push(samples, frames);
         });
 
-    list_.set_wanted_screen(options_.wanted_screen);
+    host_picker_.open(options_.wanted_screen);
     begin_search();
     return true;
 }
@@ -363,30 +296,24 @@ bool Client::start() {
 void Client::stop() {
     session_.disconnect();
     audio_.close();
-    top_.destroy();
-    bottom_.destroy();
-    text_.destroy();
+    // Before the context that owns them.
+    bezel_art_.destroy();
+    compositor_.set_bezel_art(nullptr);
+    picker_.set_bezel_art(nullptr);
+    text_.shutdown();
+    quads_.shutdown();
     input_.shutdown();
-    if (renderer_ != nullptr) {
-        SDL_DestroyRenderer(renderer_);
-        renderer_ = nullptr;
-    }
-    if (window_ != nullptr) {
-        SDL_DestroyWindow(window_);
-        window_ = nullptr;
-    }
+    gl_.destroy();
     SDL_Quit();
 }
 
 void Client::begin_search() {
     state_ = State::Browsing;
-    menu_open_ = false;
-    input_.set_game_input_enabled(false);
-    top_.destroy();
-    bottom_.destroy();
+    close_menu();
+    host_picker_.open(host_picker_.wanted_screen());
 
     std::string error;
-    if (!session_.begin_search(options_.device_name, list_.wanted_screen(), &error)) {
+    if (!session_.begin_search(options_.device_name, host_picker_.wanted_screen(), &error)) {
         state_ = State::Failed;
         failure_ = error;
         log_error("cannot look for hosts: " + error);
@@ -395,7 +322,7 @@ void Client::begin_search() {
 
 void Client::join(const net::DiscoveredHost& host) {
     log_info("joining " + host.device_name + " (" + host.address + ") as the " +
-             to_string(list_.wanted_screen()) + " screen");
+             to_string(host_picker_.wanted_screen()) + " screen");
     session_.connect_to(host);
     state_ = State::Connecting;
 }
@@ -411,9 +338,9 @@ void Client::leave(const std::string& reason) {
 }
 
 Layout Client::session_layout() const {
-    // The companion's half of the desktop app's device_layout(): the host's
-    // layout with the host's handedness and gap choice, then resolved for the
-    // screen this device was granted. None of it is decided here.
+    // The companion's half of the app's device_layout(): the host's layout
+    // with the host's handedness and gap choice, then resolved for the screen
+    // this device was granted. None of it is decided here.
     const Layout chosen = resolve_for_handedness(
         resolve_gap_choice(registry_.resolve(session_.host_layout_id()), session_.host_screen_gap()),
         session_.host_handedness());
@@ -426,131 +353,148 @@ Layout Client::session_layout() const {
 void Client::refresh_output_size() {
     int width = 0;
     int height = 0;
-    SDL_GetRendererOutputSize(renderer_, &width, &height);
-    if (width <= 0 || height <= 0) {
-        return;
-    }
-    if (width == output_width_ && height == output_height_) {
+    SDL_GL_GetDrawableSize(gl_.window, &width, &height);
+    if (width <= 0 || height <= 0 || (width == output_width_ && height == output_height_)) {
         return;
     }
     output_width_ = width;
     output_height_ = height;
     // The host sends each screen at the size it will actually be drawn at, so
-    // it has to be told when that changes -- docking a Switch is exactly such
-    // a change.
+    // it has to be told when that changes -- docking a Switch is such a change.
     if (state_ == State::Playing) {
         session_.request_display_size(output_width_, output_height_);
     }
 }
 
-void Client::handle_browsing_action(UiAction action) {
-    switch (action) {
-        case UiAction::Up:
-            list_.move_focus(-1);
-            break;
-        case UiAction::Down:
-            list_.move_focus(1);
-            break;
-        case UiAction::Left:
-        case UiAction::Right:
-            // Which screen to be. The search itself carries it, so it is
-            // restarted rather than only remembered here.
-            list_.set_wanted_screen(list_.wanted_screen() == ScreenId::Top ? ScreenId::Bottom
-                                                                          : ScreenId::Top);
-            begin_search();
-            break;
-        case UiAction::Confirm:
-            if (list_.focused_is_joinable()) {
-                join(*list_.focused());
-            }
-            break;
-        case UiAction::Cancel:
-        case UiAction::Quit:
-            running_ = false;
-            break;
-        default:
-            break;
-    }
-}
-
-SessionMenuState Client::menu_state() const {
-    SessionMenuState state;
+void Client::open_menu() {
+    // Exactly what the app puts in it, read off the session the host owns.
+    LayoutPickerState state;
     state.layout_id = session_.host_layout_id();
-    state.filtering = session_.host_filtering();
-    state.screen_gap = session_.host_screen_gap();
-    state.screen_gap_toggleable =
-        registry_.resolve(session_.host_layout_id()).composition.gap_toggleable;
+    state.session_active = true;  // there is always a host at the other end here
+    state.bilinear_filtering = session_.host_filtering();
+    state.audio_target = session_.host_audio_target();
+    state.handedness = session_.host_handedness();
     state.render_scale = session_.host_render_scale();
+    state.screen_gap = session_.host_screen_gap();
+    state.right_stick_mode = session_.host_right_stick_mode();
+    // A console has no pointer to show or hide, so that entry is not offered
+    // here. It is also the one entry on this menu that belongs to the device
+    // rather than to the host, which is exactly why it has nothing to say on
+    // a device with no mouse.
+    state.cursor_choosable = false;
+
     const SystemProfile& profile = system_profile(session_.system());
     state.max_render_scale = profile.max_render_scale;
-    state.right_stick_mode = session_.host_right_stick_mode();
     state.right_stick_choosable = profile.has_analog_stick;
-    state.handedness = session_.host_handedness();
-    state.audio_target = session_.host_audio_target();
-    return state;
+
+    picker_.set_screens(session_.screens_geometry());
+    picker_.set_bezel_art(bezel_art_.texture(session_.system()));
+    picker_.set_smoothing(session_.host_filtering());
+    picker_.open(state);
+
+    menu_open_ = true;
+    session_.set_menu_open(true);
+    input_.set_game_input_enabled(false);
 }
 
-void Client::handle_menu(const std::vector<UiAction>& actions) {
-    // Rebuilt from the host's current state every frame the menu is up, so a
-    // change made on the other device -- or the one this device just asked
-    // for and has now been granted -- shows here without being applied twice.
-    menu_.set_state(menu_state());
+void Client::close_menu() {
+    if (picker_.is_open()) {
+        picker_.close();
+    }
+    if (!menu_open_) {
+        return;
+    }
+    menu_open_ = false;
+    session_.set_menu_open(false);
+    input_.set_game_input_enabled(state_ == State::Playing);
+}
 
-    const SessionMenuResult result = menu_.update(actions);
+void Client::handle_menu(const std::vector<UiAction>& actions,
+                         const std::vector<PointerEvent>& pointers) {
+    // The host can change any of this from its own end while this is open, so
+    // the picker is told before it is asked.
+    picker_.set_filtering(session_.host_filtering());
+    picker_.set_audio_target(session_.host_audio_target());
+    picker_.set_handedness(session_.host_handedness());
+    picker_.set_render_scale(session_.host_render_scale());
+    picker_.set_screen_gap(session_.host_screen_gap());
+    picker_.set_right_stick_mode(session_.host_right_stick_mode());
+    picker_.set_selected_layout(session_.host_layout_id());
+    picker_.set_smoothing(session_.host_filtering());
 
-    // Every one of these is a request. Nothing is applied locally: the host
-    // owns the session and broadcasts what it decided, which is the whole
-    // reason the two devices cannot end up disagreeing.
-    if (result.wants_layout) session_.request_layout(result.layout_id);
-    if (result.wants_filtering) session_.request_filtering(result.filtering);
-    if (result.wants_screen_gap) session_.request_screen_gap(result.screen_gap);
-    if (result.wants_render_scale) session_.request_render_scale(result.render_scale);
-    if (result.wants_right_stick_mode) session_.request_right_stick_mode(result.right_stick_mode);
-    if (result.wants_handedness) session_.request_handedness(result.handedness);
-    if (result.wants_audio_target) session_.request_audio_target(result.audio_target);
-    if (result.reset) session_.request_reset();
+    const LayoutPickerResult result =
+        picker_.update(actions, pointers, static_cast<float>(output_width_),
+                       static_cast<float>(output_height_));
 
-    if (result.disconnect) {
+    // Every one of these is a request. Nothing is applied here: the host owns
+    // the session and broadcasts what it decided, which is the whole reason
+    // the two devices cannot end up disagreeing.
+    if (result.selection_changed) {
+        session_.request_layout(picker_.selected_layout_id());
+    }
+    if (result.filtering_toggled) {
+        session_.request_filtering(!session_.host_filtering());
+    }
+    if (result.render_scale_changed) {
+        const int maximum = std::max(1, system_profile(session_.system()).max_render_scale);
+        const int scale = session_.host_render_scale();
+        session_.request_render_scale(scale >= maximum ? 1 : scale + 1);
+    }
+    if (result.audio_target_changed) {
+        session_.request_audio_target(next_audio_target(session_.host_audio_target()));
+    }
+    if (result.handedness_changed) {
+        session_.request_handedness(other_hand(session_.host_handedness()));
+    }
+    if (result.screen_gap_toggled) {
+        session_.request_screen_gap(!session_.host_screen_gap());
+    }
+    if (result.right_stick_mode_changed) {
+        session_.request_right_stick_mode(next_right_stick_mode(session_.host_right_stick_mode()));
+    }
+    if (result.reset_requested) {
+        session_.request_reset();
+    }
+
+    if (result.disconnect_requested) {
         leave("you ended the session");
         return;
     }
-    if (result.quit) {
+    if (result.quit_requested) {
         // Quit means the whole session ends, not just this device's part of
-        // it -- the same as choosing it on the other device. Ask the host to
-        // shut down, then leave.
+        // it -- the same as choosing it on the other device.
         session_.request_quit();
         session_.disconnect();
         running_ = false;
         return;
     }
-    // Reset leaves nothing to look at, the same as Resume does.
-    if (result.resume || result.reset) {
-        menu_open_ = false;
-        menu_.close();
-        session_.set_menu_open(false);
-        input_.set_game_input_enabled(true);
+    if (result.close_requested || result.reset_requested) {
+        close_menu();
     }
 }
 
-void Client::handle_actions(const std::vector<UiAction>& actions) {
-    // The menu takes the whole frame's worth at once rather than one at a
-    // time: it rebuilds its rows from the host's state first, and doing that
-    // per action would rebuild them under a press that had already been acted
-    // on.
+void Client::handle_actions(const std::vector<UiAction>& actions,
+                            const std::vector<PointerEvent>& pointers) {
     if (state_ == State::Playing && menu_open_) {
-        handle_menu(actions);
+        handle_menu(actions, pointers);
+        return;
+    }
+
+    if (state_ == State::Browsing) {
+        const HostPickerResult result =
+            host_picker_.update(session_.hosts(), actions, pointers,
+                                static_cast<float>(output_width_),
+                                static_cast<float>(output_height_));
+        if (result.chosen) {
+            join(result.host);
+        } else if (result.cancelled) {
+            running_ = false;
+        }
         return;
     }
 
     for (const UiAction action : actions) {
-        if (action == UiAction::Quit && state_ != State::Playing) {
-            running_ = false;
-            continue;
-        }
         switch (state_) {
-            case State::Browsing:
-                handle_browsing_action(action);
-                break;
             case State::Connecting:
                 if (action == UiAction::Cancel) {
                     leave("you stopped connecting");
@@ -564,15 +508,11 @@ void Client::handle_actions(const std::vector<UiAction>& actions) {
             case State::Playing:
                 switch (action) {
                     case UiAction::ToggleMenu:
-                        menu_open_ = true;
-                        menu_.open(menu_state());
-                        session_.set_menu_open(true);
-                        input_.set_game_input_enabled(false);
+                        open_menu();
                         break;
                     case UiAction::ToggleFilter:
                         // R3, which means the same thing here as it does on the
-                        // device running the game. The host owns it and tells
-                        // both devices what it landed on.
+                        // device running the game.
                         session_.request_filtering(!session_.host_filtering());
                         break;
                     case UiAction::SwapLayout:
@@ -580,9 +520,13 @@ void Client::handle_actions(const std::vector<UiAction>& actions) {
                         session_.request_layout(
                             registry_.resolve(session_.host_layout_id()).swap_layout_id);
                         break;
+                    case UiAction::Quit:
+                        break;  // Quit lives in the menu here, not on a button
                     default:
                         break;
                 }
+                break;
+            case State::Browsing:
                 break;
         }
     }
@@ -612,21 +556,27 @@ void Client::run() {
         session_.poll(now);
         switch (state_) {
             case State::Browsing:
-                list_.update(session_.hosts());
-                if (options_.auto_connect && list_.first_joinable() != nullptr) {
-                    join(*list_.first_joinable());
+                if (options_.auto_connect) {
+                    for (const net::DiscoveredHost& host : session_.hosts()) {
+                        if (host.offers(host_picker_.wanted_screen())) {
+                            join(host);
+                            break;
+                        }
+                    }
                 }
                 break;
             case State::Connecting:
                 if (session_.status() == net::CompanionSession::Status::Connected) {
                     state_ = State::Playing;
-                    menu_open_ = false;
+                    close_menu();
                     input_.set_game_input_enabled(true);
                     session_.request_display_size(output_width_, output_height_);
                     // A console with a stick of its own reads the stick as that
                     // stick; one without lets it stand in for the d-pad.
-                    input_.set_stick_is_dpad(!system_profile(session_.system()).has_analog_stick);
+                    const SystemProfile& profile = system_profile(session_.system());
+                    input_.set_stick_is_dpad(!profile.has_analog_stick);
                     input_.set_right_stick_mode(session_.host_right_stick_mode());
+                    compositor_.set_bezel_art(bezel_art_.texture(session_.system()));
                     log_info("connected to " + session_.game_title() + " as the " +
                              to_string(session_.granted_screen()) + " screen");
                 } else if (session_.status() == net::CompanionSession::Status::Failed) {
@@ -636,18 +586,15 @@ void Client::run() {
                 }
                 break;
             case State::Playing:
-                // The host owns what the right stick is read as, and can change
-                // it from its own menu mid-session; this device's pad drives
-                // the same game, so it follows.
+                // The host owns all of this and can change any of it from its
+                // own end; this device's pad drives the same game, so it
+                // follows rather than deciding.
                 if (input_.right_stick_mode() != session_.host_right_stick_mode()) {
                     input_.set_right_stick_mode(session_.host_right_stick_mode());
                     log_info(std::string("following the host: right stick ") +
                              to_string(session_.host_right_stick_mode()));
                 }
                 if (session_.status() != net::CompanionSession::Status::Connected) {
-                    // The host went away, or ended the session from its end.
-                    // Either way this device goes back to looking, which is
-                    // where it can join again without being restarted.
                     const std::string detail = session_.status_detail();
                     audio_.close();
                     audio_rate_ = 0;
@@ -666,184 +613,51 @@ void Client::run() {
         if (input_.quit_requested()) {
             running_ = false;
         }
-        handle_actions(input_.ui_actions());
+        handle_actions(input_.ui_actions(), input_.pointer_events());
 
         if (state_ == State::Playing && !menu_open_) {
             session_.send_input(input_.ds_state());
         }
 
         draw();
-        SDL_RenderPresent(renderer_);
 
         const double alive = static_cast<double>(now - started_ms) / 1000.0;
         if (options_.screenshot_at_seconds > 0.0 && !screenshot_taken &&
             !options_.screenshot_path.empty() && alive >= options_.screenshot_at_seconds) {
             screenshot_taken =
-                write_screenshot(renderer_, output_width_, output_height_, options_.screenshot_path);
+                write_screenshot(output_width_, output_height_, options_.screenshot_path);
         }
+        SDL_GL_SwapWindow(gl_.window);
         if (options_.exit_after_seconds > 0.0 && alive >= options_.exit_after_seconds) {
             running_ = false;
         }
     }
 }
 
-void Client::draw_banner(const std::string& title, const std::string& detail) {
-    const int scale = std::max(2, output_height_ / 240);
-    const float title_width = TextPainter::width_of(title, scale);
-    float y = static_cast<float>(output_height_) * 0.4f;
-    text_.draw(renderer_, title, (static_cast<float>(output_width_) - title_width) * 0.5f, y, scale,
-               kTextColour);
-    if (detail.empty()) {
-        return;
-    }
-    const int small = std::max(1, scale - 1);
-    y += TextPainter::height_of(scale) * 2.0f;
-    text_.draw(renderer_, detail,
-               (static_cast<float>(output_width_) - TextPainter::width_of(detail, small)) * 0.5f, y,
-               small, kDimColour);
-}
-
-void Client::draw_browser() {
-    const int scale = std::max(2, output_height_ / 240);
-    const int small = std::max(1, scale - 1);
-    const float margin = static_cast<float>(output_width_) * 0.08f;
-    const float line = TextPainter::height_of(scale) * 1.8f;
-    float y = static_cast<float>(output_height_) * 0.12f;
-
-    text_.draw(renderer_, "dualscreen companion", margin, y, scale, kTextColour);
-    y += line;
-    const std::string screen_line =
-        std::string("Joining as the ") + to_string(list_.wanted_screen()) +
-        " screen   (Left/Right to change)";
-    text_.draw(renderer_, screen_line, margin, y, small, kDimColour);
-    y += line;
-
-    if (list_.empty()) {
-        text_.draw(renderer_, "Looking for a game on this network...", margin, y, small,
-                   kDimColour);
-        y += line;
-        text_.draw(renderer_,
-                   "Start a game on the other device and leave both on the same Wi-Fi.", margin, y,
-                   small, kDimColour);
-    }
-
-    for (std::size_t index = 0; index < list_.hosts().size(); ++index) {
-        const net::DiscoveredHost& host = list_.hosts()[index];
-        const bool focused = static_cast<int>(index) == list_.focus();
-        const bool joinable = host.offers(list_.wanted_screen());
-        const SDL_Color colour = !joinable ? kDimColour : (focused ? kFocusColour : kTextColour);
-
-        const std::string row = std::string(focused ? "> " : "  ") + host.device_name + " - " +
-                                host.game_title + (joinable ? "" : "   (that screen is taken)");
-        text_.draw(renderer_, row, margin, y, small, colour);
-        y += TextPainter::height_of(small) * 1.6f;
-    }
-
-    // Drawn whether or not anything has been found: on a device with no
-    // keyboard and no window to close, how to get out is worth saying even
-    // when there is nothing yet to get into.
-    text_.draw(renderer_, list_.empty() ? "B: quit" : "A: join    B: quit", margin,
-               static_cast<float>(output_height_) - line * 1.5f, small, kDimColour);
-}
-
-void Client::draw_session() {
-    top_.update(renderer_, session_.screen_rgb565(ScreenId::Top));
-    bottom_.update(renderer_, session_.screen_rgb565(ScreenId::Bottom));
-
-    const Layout layout = session_layout();
-    const SystemScreens screens = session_.screens_geometry();
-    bool drew_anything = false;
-    for (const PlacedScreen& placed :
-         place_screens(layout, static_cast<float>(output_width_),
-                       static_cast<float>(output_height_), screens)) {
-        ScreenTexture& source = (placed.screen == ScreenId::Top) ? top_ : bottom_;
-        if (!source.ready() || placed.rect.w <= 0.0f || placed.rect.h <= 0.0f) {
-            continue;
-        }
-        // A screen landing at exactly its own size has nothing to resample, so
-        // it is never smoothed however the host has the setting -- the same
-        // rule the desktop compositor draws by.
-        source.set_smoothing(session_.host_filtering() && !placed.native);
-
-        const ScreenQuad quad = screen_quad_for(placed);
-        const SDL_Rect destination{static_cast<int>(std::lround(quad.x)),
-                                   static_cast<int>(std::lround(quad.y)),
-                                   static_cast<int>(std::lround(quad.w)),
-                                   static_cast<int>(std::lround(quad.h))};
-        SDL_RenderCopyEx(renderer_, source.texture(), nullptr, &destination, quad.angle_degrees,
-                         nullptr, SDL_FLIP_NONE);
-        drew_anything = true;
-    }
-
-    if (!drew_anything) {
-        draw_banner("Waiting for the first frame", session_.game_title());
-    }
-}
-
-void Client::draw_menu() {
-    // A wash over the game rather than a panel: the frame behind it is what
-    // most of these choices are judged against, so it stays visible.
-    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer_, 0x08, 0x0c, 0x12, 0xd8);
-    SDL_RenderFillRect(renderer_, nullptr);
-
-    const std::vector<std::string>& rows = menu_.rows();
-    if (rows.empty()) {
-        return;
-    }
-    const int scale = std::max(1, output_height_ / 300);
-    const float line = TextPainter::height_of(scale) * 2.0f;
-    const float block = line * static_cast<float>(rows.size());
-    float y = (static_cast<float>(output_height_) - block) * 0.5f;
-
-    // Left-aligned on a common edge: the labels carry values that change
-    // length as they cycle, and centring each one would make the whole list
-    // shuffle sideways every press.
-    float widest = 0.0f;
-    for (const std::string& row : rows) {
-        widest = std::max(widest, TextPainter::width_of(row, scale));
-    }
-    const float x = (static_cast<float>(output_width_) - widest) * 0.5f;
-
-    for (std::size_t index = 0; index < rows.size(); ++index) {
-        const bool focused = static_cast<int>(index) == menu_.focus();
-        if (focused) {
-            text_.draw(renderer_, ">", x - TextPainter::width_of("  ", scale), y, scale,
-                       kFocusColour);
-        }
-        text_.draw(renderer_, rows[index], x, y, scale, focused ? kFocusColour : kTextColour);
-        y += line;
-    }
-
-    const int small = std::max(1, scale - 1);
-    const std::string hint = "A: change    Left/Right: cycle    B: resume";
-    text_.draw(renderer_, hint,
-               (static_cast<float>(output_width_) - TextPainter::width_of(hint, small)) * 0.5f,
-               static_cast<float>(output_height_) - TextPainter::height_of(small) * 3.0f, small,
-               kDimColour);
-}
-
 void Client::draw() {
-    SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 0xff);
-    SDL_RenderClear(renderer_);
+    const float width = static_cast<float>(output_width_);
+    const float height = static_cast<float>(output_height_);
+    gl::log_error_once("something in the last frame was rejected by OpenGL");
 
-    switch (state_) {
-        case State::Browsing:
-            draw_browser();
-            break;
-        case State::Connecting:
-            draw_banner("Connecting...", session_.status_detail());
-            break;
-        case State::Failed:
-            draw_banner("Could not join", failure_.empty() ? "A: try again" : failure_);
-            break;
-        case State::Playing:
-            draw_session();
-            if (menu_open_) {
-                draw_menu();
-            }
-            break;
+    if (state_ != State::Playing) {
+        // The app's own host picker, so finding a game looks the same here as
+        // it does there. A failure is shown in the same place, as its status.
+        host_picker_.render(quads_, text_, width, height, session_.hosts(), input_.menu_labels(),
+                            state_ == State::Failed ? failure_ : session_.status_detail());
+        return;
+    }
+
+    compositor_.set_smoothing(session_.host_filtering());
+    const ScreenTextures& textures = session_.screens();
+    compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
+                       height, router_);
+
+    if (menu_open_) {
+        // The previews are drawn from the frame the game is paused on, so each
+        // tile shows what picking it will actually look like -- the same as on
+        // the other device, because it is the same picker.
+        picker_.render(quads_, text_, width, height, session_.game_title(), input_.menu_labels(),
+                       &textures);
     }
 }
 

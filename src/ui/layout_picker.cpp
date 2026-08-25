@@ -57,7 +57,9 @@ void LayoutPicker::rebuild_footer() {
     // aim. Everything else in Settings is a file path or a default for starting
     // a game, which is not a mid-game question, so Settings itself lives on the
     // launcher and not here.
-    footer_.push_back(Footer::Cursor);
+    if (state_.cursor_choosable) {
+        footer_.push_back(Footer::Cursor);
+    }
     // What the right stick does, where the console has one of its own to have
     // an opinion about -- a 3DS. Which answer a game wants is a fact about
     // that game, so it belongs next to the game rather than in Settings.

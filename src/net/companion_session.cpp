@@ -425,8 +425,10 @@ bool CompanionSession::advance_frame(std::string* error) {
 const ScreenTextures& CompanionSession::screens() {
     for (ScreenBuffer* buffer : {&top_, &bottom_}) {
         if (buffer->serial != buffer->uploaded_serial && !buffer->rgb565.empty()) {
-            buffer->texture.upload_xrgb8888(buffer->expanded().data(), buffer->width,
-                                            buffer->height, buffer->width);
+            // Uploaded in the form it arrived in. Expanding to 8 bits a
+            // channel first would be a whole pass over the frame and twice the
+            // bytes to the GPU, for a picture that is 5-6-5 either way.
+            buffer->texture.upload_rgb565(buffer->rgb565.data(), buffer->width, buffer->height);
             buffer->uploaded_serial = buffer->serial;
         }
     }

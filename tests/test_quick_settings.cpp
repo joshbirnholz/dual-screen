@@ -244,6 +244,41 @@ void test_toggling_the_gap_updates_what_the_previews_would_draw() {
     CHECK_NEAR(side_by_side_preview.composition.gap, side_by_side.composition.gap);
 }
 
+// A device with no pointer does not get the Pointer entry: it is the one thing
+// on this menu that belongs to the device rather than the host, and a console
+// has no arrow to show or hide. Everything else stays exactly where it was.
+void test_the_pointer_button_appears_only_where_there_is_a_pointer() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.session_active = true;
+
+    int with_pointer = 0;
+    int without_pointer = 0;
+    int resume_without_pointer = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker offered(registry);
+            offered.open(state);
+            if (offered.update({}, {tap(x, y)}, kWidth, kHeight).cursor_mode_changed) {
+                ++with_pointer;
+            }
+
+            LayoutPickerState console = state;
+            console.cursor_choosable = false;
+            LayoutPicker absent(registry);
+            absent.open(console);
+            const LayoutPickerResult result = absent.update({}, {tap(x, y)}, kWidth, kHeight);
+            if (result.cursor_mode_changed) ++without_pointer;
+            if (result.close_requested) ++resume_without_pointer;
+        }
+    }
+    CHECK(with_pointer > 0);
+    CHECK_EQ(without_pointer, 0);
+    // The rest of the footer is still reachable with one entry gone.
+    CHECK(resume_without_pointer > 0);
+}
+
 // The other footer buttons keep working with an eighth one among them: the row
 // wraps rather than dropping anything, and each button still reports its own
 // intent and no one else's.
@@ -325,6 +360,7 @@ void test_reset_closes_the_menu() {
 int main() {
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
+    test_the_pointer_button_appears_only_where_there_is_a_pointer();
     test_the_gap_button_appears_only_where_the_layout_offers_it();
     test_choosing_a_gap_layout_reveals_the_button();
     test_toggling_the_gap_updates_what_the_previews_would_draw();

@@ -36,29 +36,25 @@ the two from ever disagreeing.
 | Join, and confirm in menus | the east face button (A) |
 | Leave the list, or a menu | the south face button (B) |
 | Open this device's menu | **+ and -** together, or a **two-finger tap** |
-| Move around that menu | d-pad or left stick; **A** changes a row, **B** resumes |
+| Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
 | Smooth or sharpen the screens | **R3** — the host applies it on both devices |
 | Swap the two focus layouts | **L3** — likewise |
 | Touch the touchscreen | tap or drag, when this device is the bottom screen |
 
-The in-session menu carries the whole session, not a cut-down version of it: a
-player holding this device is holding the controller, and reaching for a second
-pad plugged into the machine across the room to change the layout is the thing
-it exists to avoid. **Layout**, **Smoothing**, **Render**, **Right Stick**,
-**Hands**, **Gap** and **Sound**, then **Reset Game**, **Resume**,
-**Disconnect** (leave, and go back to looking for a host) and **Quit** (end the
-session on both devices and close the app, the same as choosing Quit on the
-other one).
+The in-session menu **is** the app's own quick menu — the same tile grid of
+layouts with live previews drawn from the frame the game is paused on, the same
+footer, the same entries in the same places. Not a port of it: the same source
+file, compiled again. A player moving between the two devices should not have
+to learn a second menu.
 
-Up and Down move; Left and Right cycle a row's value and A does the same; B
-resumes. Rows that mean nothing right now are simply absent — no **Render** on
-a console whose core draws at one size, no **Gap** on a layout whose gap is not
-a choice — the same rule the host's own menu follows.
+The one entry missing here is **Pointer**, because it is the only one that
+belongs to the device rather than to the host, and a console has no arrow to
+show or hide. Everything else on that menu is a *request*: this device applies
+none of it, the host decides and broadcasts the result, which is what keeps the
+two ends from ever disagreeing. A change made on the host appears here too,
+under the open menu.
 
-Every one of them is a *request*. This device applies none of it: the host owns
-the session, decides, and broadcasts the result, which is what keeps the two
-ends from ever disagreeing. A change made on the host shows up here too, under
-the open menu.
+Finding a game uses the app's own host picker, for the same reason.
 
 ## Building
 
@@ -119,21 +115,26 @@ log says so and the app carries on without it.
 
 ## How it is put together, and how it is tested
 
-The parts that describe a session — the wire protocol, LAN discovery, the
-session itself, the layout arithmetic and the controller mapping — are the
-desktop app's own sources, compiled unchanged. There is one implementation of
-each rather than a second one to keep in step with it, which is also why this
-directory is so small: what is here is a window, a renderer, a host picker and
-a short menu.
+Nearly all of it is the desktop app's own sources, compiled again: the wire
+protocol, LAN discovery, the session, the layout arithmetic, the controller
+mapping, the compositor that draws the screens, the quick menu and the host
+picker. There is one implementation of each rather than a second to keep in
+step, which is why this directory holds a single file — the loop around them
+and the console's own start-up.
+
+That is deliberate down to the pixels. Every rule about how a screen is drawn
+— the margin that drops away on a display no bigger than a Deck's, which a
+Switch's 1280x720 is; the console artwork behind the Standard layout; when a
+screen is smoothed and when it is left alone — is the one rule rather than two
+that agree until one of them changes.
 
 The client is one program with a single guarded section, in `source/main.cpp`,
 for the console's own start-up and shutdown. Everything else builds and runs on
 a desktop, so the root `CMakeLists.txt` builds it as `dualscreen-companion`
 for this machine too, and `tests/run_switch_client_test.sh` runs it against a
 real dualscreen host under a headless X server and checks it ends up showing
-the screen it asked for. `tests/test_switch_client.cpp` covers the two pieces
-of logic worth testing on their own: the host list as hosts come and go, and
-where a quarter-turned screen actually has to be drawn.
+the screen it asked for. What it draws is covered by the tests the app's own
+menu and compositor already have, since it is the same code.
 
 The Switch build itself is not covered by that — it needs a toolchain no CI
 here has — so `switch/Makefile` and the `__SWITCH__` sections of `main.cpp`

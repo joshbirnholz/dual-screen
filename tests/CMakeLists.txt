@@ -61,12 +61,6 @@ dualscreen_add_test(test_controller_mapping)
 dualscreen_add_test(test_retro_keymap)
 dualscreen_add_test(test_controller_input)
 dualscreen_add_test(test_core_host NEEDS_GL)
-# The Switch client's own logic, which lives outside dualscreen_core because the
-# client is a separate program. Everything tested here is plain C++, so it runs
-# on this machine rather than needing the console.
-dualscreen_add_test(test_switch_client)
-target_sources(test_switch_client PRIVATE ${DUALSCREEN_COMPANION_SOURCES})
-target_include_directories(test_switch_client PRIVATE ${CMAKE_SOURCE_DIR}/switch/source)
 add_dependencies(test_core_host mock_core mock_core_3ds)
 
 # End-to-end smoke test: runs the real binary against the mock core under a

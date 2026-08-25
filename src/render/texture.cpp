@@ -102,8 +102,41 @@ void Texture::upload_xrgb8888(const uint32_t* source,
         gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, upload_from);
         width_ = width;
         height_ = height;
+        format_ = GL_RGBA;
     } else {
         gl::TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, upload_from);
+    }
+}
+
+void Texture::upload_rgb565(const uint8_t* source, int width, int height) {
+    if (source == nullptr || width <= 0 || height <= 0) {
+        return;
+    }
+    ensure_created();
+    // Already in the right channel order, so the shader must not swizzle it.
+    channel_order_ = ChannelOrder::Rgba;
+    gl::BindTexture(GL_TEXTURE_2D, id_);
+
+    if (filter_dirty_) {
+        const GLint filter = linear_ ? GL_LINEAR : GL_NEAREST;
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        filter_dirty_ = false;
+    }
+
+    // Two bytes a pixel, so rows are only 4-byte aligned at even widths.
+    gl::PixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    if (width != width_ || height != height_ || format_ != GL_RGB) {
+        gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
+                       GL_UNSIGNED_SHORT_5_6_5, source);
+        width_ = width;
+        height_ = height;
+        format_ = GL_RGB;
+    } else {
+        gl::TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
+                          source);
     }
 }
 
