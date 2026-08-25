@@ -46,7 +46,7 @@ SOURCE_DIRS := source \
                $(SHARED)/render \
                $(SHARED)/util
 
-CPPFILES    := main.cpp host_list.cpp screen_quad.cpp text_painter.cpp \
+CPPFILES    := main.cpp host_list.cpp screen_quad.cpp session_menu.cpp text_painter.cpp \
                audio_output.cpp \
                system.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp input_manager.cpp \

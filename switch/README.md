@@ -36,13 +36,29 @@ the two from ever disagreeing.
 | Join, and confirm in menus | the east face button (A) |
 | Leave the list, or a menu | the south face button (B) |
 | Open this device's menu | **+ and -** together, or a **two-finger tap** |
+| Move around that menu | d-pad or left stick; **A** changes a row, **B** resumes |
 | Smooth or sharpen the screens | **R3** — the host applies it on both devices |
 | Swap the two focus layouts | **L3** — likewise |
 | Touch the touchscreen | tap or drag, when this device is the bottom screen |
 
-The in-session menu is three entries: **Resume**, **Disconnect** (leave, and go
-back to looking for a host) and **Quit** (end the session on both devices and
-close the app, the same as choosing Quit on the other one).
+The in-session menu carries the whole session, not a cut-down version of it: a
+player holding this device is holding the controller, and reaching for a second
+pad plugged into the machine across the room to change the layout is the thing
+it exists to avoid. **Layout**, **Smoothing**, **Render**, **Right Stick**,
+**Hands**, **Gap** and **Sound**, then **Reset Game**, **Resume**,
+**Disconnect** (leave, and go back to looking for a host) and **Quit** (end the
+session on both devices and close the app, the same as choosing Quit on the
+other one).
+
+Up and Down move; Left and Right cycle a row's value and A does the same; B
+resumes. Rows that mean nothing right now are simply absent — no **Render** on
+a console whose core draws at one size, no **Gap** on a layout whose gap is not
+a choice — the same rule the host's own menu follows.
+
+Every one of them is a *request*. This device applies none of it: the host owns
+the session, decides, and broadcasts the result, which is what keeps the two
+ends from ever disagreeing. A change made on the host shows up here too, under
+the open menu.
 
 ## Building
 

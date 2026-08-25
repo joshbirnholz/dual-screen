@@ -156,6 +156,11 @@ layout arithmetic, the controller mapping — with this app rather than
 reimplementing them, so a host cannot tell the difference between it and
 another PC, and neither can the menu.
 
+Its own in-session menu carries the whole session — layout, smoothing, render
+scale, right stick, hands, gap, sound, reset — because the device showing a
+screen is usually the one being held, and the alternative is reaching for a pad
+plugged into the other machine.
+
 ## What streaming a screen costs
 
 A DS screen is 256x192. In RGB565, deflated, one frame of *moving* content

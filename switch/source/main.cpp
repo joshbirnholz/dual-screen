@@ -44,6 +44,7 @@
 
 #include "host_list.hpp"
 #include "screen_quad.hpp"
+#include "session_menu.hpp"
 #include "text_painter.hpp"
 
 namespace ds::sw {
@@ -244,7 +245,10 @@ private:
 
     void handle_actions(const std::vector<UiAction>& actions);
     void handle_browsing_action(UiAction action);
-    void handle_menu_action(UiAction action);
+    void handle_menu(const std::vector<UiAction>& actions);
+    // The session as the host currently has it, which is what the menu shows
+    // and what it cycles from.
+    SessionMenuState menu_state() const;
 
     void draw();
     void draw_browser();
@@ -267,20 +271,14 @@ private:
     TextPainter text_;
     ScreenTexture top_;
     ScreenTexture bottom_;
+    SessionMenu menu_{registry_};
 
     State state_ = State::Browsing;
     std::string start_error_;
     std::string failure_;
     bool menu_open_ = false;
-    int menu_focus_ = 0;
     bool running_ = true;
 };
-
-// The in-session menu. Deliberately short: everything else on the desktop's
-// version of this menu is a choice the host owns and can be made there, and a
-// screen you are holding in your hands is not where a settings list belongs.
-const char* const kMenuEntries[] = {"Resume", "Disconnect", "Quit"};
-constexpr int kMenuEntryCount = 3;
 
 bool Client::start() {
     // Audio is asked for separately, and its failure is not this program's
@@ -475,44 +473,75 @@ void Client::handle_browsing_action(UiAction action) {
     }
 }
 
-void Client::handle_menu_action(UiAction action) {
-    switch (action) {
-        case UiAction::Up:
-            menu_focus_ = (menu_focus_ + kMenuEntryCount - 1) % kMenuEntryCount;
-            return;
-        case UiAction::Down:
-            menu_focus_ = (menu_focus_ + 1) % kMenuEntryCount;
-            return;
-        case UiAction::Cancel:
-        case UiAction::ToggleMenu:
-            menu_open_ = false;
-            break;
-        case UiAction::Confirm:
-            switch (menu_focus_) {
-                case 0:
-                    menu_open_ = false;
-                    break;
-                case 1:
-                    leave("you ended the session");
-                    return;
-                default:
-                    // Quit means the whole session ends, not just this device's
-                    // part of it -- the same as choosing it on the other
-                    // device. Ask the host to shut down, then leave.
-                    session_.request_quit();
-                    session_.disconnect();
-                    running_ = false;
-                    return;
-            }
-            break;
-        default:
-            return;
+SessionMenuState Client::menu_state() const {
+    SessionMenuState state;
+    state.layout_id = session_.host_layout_id();
+    state.filtering = session_.host_filtering();
+    state.screen_gap = session_.host_screen_gap();
+    state.screen_gap_toggleable =
+        registry_.resolve(session_.host_layout_id()).composition.gap_toggleable;
+    state.render_scale = session_.host_render_scale();
+    const SystemProfile& profile = system_profile(session_.system());
+    state.max_render_scale = profile.max_render_scale;
+    state.right_stick_mode = session_.host_right_stick_mode();
+    state.right_stick_choosable = profile.has_analog_stick;
+    state.handedness = session_.host_handedness();
+    state.audio_target = session_.host_audio_target();
+    return state;
+}
+
+void Client::handle_menu(const std::vector<UiAction>& actions) {
+    // Rebuilt from the host's current state every frame the menu is up, so a
+    // change made on the other device -- or the one this device just asked
+    // for and has now been granted -- shows here without being applied twice.
+    menu_.set_state(menu_state());
+
+    const SessionMenuResult result = menu_.update(actions);
+
+    // Every one of these is a request. Nothing is applied locally: the host
+    // owns the session and broadcasts what it decided, which is the whole
+    // reason the two devices cannot end up disagreeing.
+    if (result.wants_layout) session_.request_layout(result.layout_id);
+    if (result.wants_filtering) session_.request_filtering(result.filtering);
+    if (result.wants_screen_gap) session_.request_screen_gap(result.screen_gap);
+    if (result.wants_render_scale) session_.request_render_scale(result.render_scale);
+    if (result.wants_right_stick_mode) session_.request_right_stick_mode(result.right_stick_mode);
+    if (result.wants_handedness) session_.request_handedness(result.handedness);
+    if (result.wants_audio_target) session_.request_audio_target(result.audio_target);
+    if (result.reset) session_.request_reset();
+
+    if (result.disconnect) {
+        leave("you ended the session");
+        return;
     }
-    session_.set_menu_open(menu_open_);
-    input_.set_game_input_enabled(!menu_open_);
+    if (result.quit) {
+        // Quit means the whole session ends, not just this device's part of
+        // it -- the same as choosing it on the other device. Ask the host to
+        // shut down, then leave.
+        session_.request_quit();
+        session_.disconnect();
+        running_ = false;
+        return;
+    }
+    // Reset leaves nothing to look at, the same as Resume does.
+    if (result.resume || result.reset) {
+        menu_open_ = false;
+        menu_.close();
+        session_.set_menu_open(false);
+        input_.set_game_input_enabled(true);
+    }
 }
 
 void Client::handle_actions(const std::vector<UiAction>& actions) {
+    // The menu takes the whole frame's worth at once rather than one at a
+    // time: it rebuilds its rows from the host's state first, and doing that
+    // per action would rebuild them under a press that had already been acted
+    // on.
+    if (state_ == State::Playing && menu_open_) {
+        handle_menu(actions);
+        return;
+    }
+
     for (const UiAction action : actions) {
         if (action == UiAction::Quit && state_ != State::Playing) {
             running_ = false;
@@ -533,14 +562,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions) {
                 }
                 break;
             case State::Playing:
-                if (menu_open_) {
-                    handle_menu_action(action);
-                    break;
-                }
                 switch (action) {
                     case UiAction::ToggleMenu:
                         menu_open_ = true;
-                        menu_focus_ = 0;
+                        menu_.open(menu_state());
                         session_.set_menu_open(true);
                         input_.set_game_input_enabled(false);
                         break;
@@ -756,23 +781,46 @@ void Client::draw_session() {
 }
 
 void Client::draw_menu() {
-    // A wash over the game rather than a panel: this menu is three words long
-    // and the frame behind it is the thing worth still being able to see.
+    // A wash over the game rather than a panel: the frame behind it is what
+    // most of these choices are judged against, so it stays visible.
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(renderer_, 0x08, 0x0c, 0x12, 0xc0);
+    SDL_SetRenderDrawColor(renderer_, 0x08, 0x0c, 0x12, 0xd8);
     SDL_RenderFillRect(renderer_, nullptr);
 
-    const int scale = std::max(2, output_height_ / 240);
+    const std::vector<std::string>& rows = menu_.rows();
+    if (rows.empty()) {
+        return;
+    }
+    const int scale = std::max(1, output_height_ / 300);
     const float line = TextPainter::height_of(scale) * 2.0f;
-    float y = static_cast<float>(output_height_) * 0.5f - line * 1.5f;
-    for (int index = 0; index < kMenuEntryCount; ++index) {
-        const std::string row =
-            std::string(index == menu_focus_ ? "> " : "  ") + kMenuEntries[index];
-        text_.draw(renderer_, row,
-                   (static_cast<float>(output_width_) - TextPainter::width_of(row, scale)) * 0.5f, y,
-                   scale, index == menu_focus_ ? kFocusColour : kTextColour);
+    const float block = line * static_cast<float>(rows.size());
+    float y = (static_cast<float>(output_height_) - block) * 0.5f;
+
+    // Left-aligned on a common edge: the labels carry values that change
+    // length as they cycle, and centring each one would make the whole list
+    // shuffle sideways every press.
+    float widest = 0.0f;
+    for (const std::string& row : rows) {
+        widest = std::max(widest, TextPainter::width_of(row, scale));
+    }
+    const float x = (static_cast<float>(output_width_) - widest) * 0.5f;
+
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        const bool focused = static_cast<int>(index) == menu_.focus();
+        if (focused) {
+            text_.draw(renderer_, ">", x - TextPainter::width_of("  ", scale), y, scale,
+                       kFocusColour);
+        }
+        text_.draw(renderer_, rows[index], x, y, scale, focused ? kFocusColour : kTextColour);
         y += line;
     }
+
+    const int small = std::max(1, scale - 1);
+    const std::string hint = "A: change    Left/Right: cycle    B: resume";
+    text_.draw(renderer_, hint,
+               (static_cast<float>(output_width_) - TextPainter::width_of(hint, small)) * 0.5f,
+               static_cast<float>(output_height_) - TextPainter::height_of(small) * 3.0f, small,
+               kDimColour);
 }
 
 void Client::draw() {

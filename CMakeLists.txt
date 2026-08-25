@@ -170,6 +170,7 @@ set(DUALSCREEN_COMPANION_SHARED_SOURCES
 set(DUALSCREEN_COMPANION_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/host_list.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/screen_quad.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/session_menu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/switch/source/text_painter.cpp
 )
 
