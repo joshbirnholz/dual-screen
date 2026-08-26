@@ -147,6 +147,10 @@ private:
     void emit_navigation_from_axes();
     void push_action(UiAction action);
 
+    // Drops everything a touchscreen was in the middle of. See the focus-lost
+    // case in handle_event().
+    void forget_touches();
+
     struct FingerState {
         float x = 0.0f;
         float y = 0.0f;

@@ -1663,6 +1663,11 @@ int App::run(const AppOptions& options) {
     {
         const char* driver = SDL_GetCurrentVideoDriver();
         log_info(std::string("SDL video driver: ") + (driver != nullptr ? driver : "none"));
+        // Said out loud because a touchscreen the system keeps for itself looks
+        // exactly like one the app is ignoring: the two-finger way into the menu
+        // needs to be told how many fingers are down, and a screen handed over
+        // as a mouse can only ever report one.
+        log_info("touch devices SDL can see: " + std::to_string(SDL_GetNumTouchDevices()));
     }
     // Touch on a desktop should not also arrive as synthetic mouse events, or
     // every tap would register twice.

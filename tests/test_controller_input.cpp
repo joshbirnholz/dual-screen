@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "config/paths.hpp"
 #include "config/settings.hpp"
@@ -602,6 +603,59 @@ void test_a_tap_reported_twice_still_knows_where_it_started() {
     input.shutdown();
 }
 
+// Two fingers at once is the only way into the menu on a device with no
+// buttons, so it has to keep working -- not once per session, and not until the
+// window loses focus mid-touch, which on a handheld is what opening the system
+// overlay does.
+void test_two_fingers_open_the_menu_more_than_once() {
+    InputManager input;
+    input.initialize(Settings());
+
+    const auto finger = [](uint32_t type, SDL_FingerID id, float x, float y) {
+        SDL_Event event {};
+        event.type = type;
+        event.tfinger.touchId = 1;
+        event.tfinger.fingerId = id;
+        event.tfinger.x = x;
+        event.tfinger.y = y;
+        return event;
+    };
+    const auto opened_the_menu = [&]() {
+        for (const UiAction action : input.ui_actions()) {
+            if (action == UiAction::ToggleMenu) return true;
+        }
+        return false;
+    };
+    const auto frame = [&](const std::vector<SDL_Event>& events) {
+        input.begin_frame();
+        for (const SDL_Event& event : events) input.handle_event(event);
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        return opened_the_menu();
+    };
+
+    CHECK_MSG(frame({finger(SDL_FINGERDOWN, 1, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 2, 0.6f, 0.5f)}),
+              "two fingers did not open the menu");
+
+    // The second lifts, the first stays put -- a thumb resting on the screen.
+    // The gesture has to be available again without lifting everything.
+    frame({finger(SDL_FINGERUP, 2, 0.6f, 0.5f)});
+    CHECK_MSG(frame({finger(SDL_FINGERDOWN, 3, 0.6f, 0.5f)}),
+              "two fingers opened the menu once and then never again while one stayed down");
+
+    // The window is taken away mid-touch and the releases go elsewhere. What was
+    // down is not down any more, whatever this side was last told.
+    SDL_Event lost {};
+    lost.type = SDL_WINDOWEVENT;
+    lost.window.event = SDL_WINDOWEVENT_FOCUS_LOST;
+    frame({lost});
+    CHECK_MSG(frame({finger(SDL_FINGERDOWN, 4, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 5, 0.6f, 0.5f)}),
+              "the fingers left behind by a lost window were still counted, so the gesture never "
+              "worked again");
+
+    input.shutdown();
+}
+
 int main() {
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -621,6 +675,7 @@ int main() {
     test_the_right_stick_maps_where_it_is_told();
     test_face_buttons_reach_the_core();
     test_a_tap_reported_twice_still_knows_where_it_started();
+    test_two_fingers_open_the_menu_more_than_once();
 
     SDL_Quit();
     return test::finish("controller-input");

@@ -119,6 +119,14 @@ void InputManager::begin_frame() {
     window_size_changed_ = false;
 }
 
+void InputManager::forget_touches() {
+    fingers_.clear();
+    has_primary_finger_ = false;
+    second_finger_menu_armed_ = false;
+    mouse_down_ = false;
+    pointer_active_ = false;
+}
+
 void InputManager::push_action(UiAction action) {
     // Deduplicated within the frame. Steam Input presents a virtual pad while
     // the physical device often stays visible too, so a single press arrives
@@ -143,6 +151,20 @@ void InputManager::handle_event(const SDL_Event& event) {
                 event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 window_size_changed_ = true;
             }
+            // Whatever was being touched when the window went away will never
+            // be lifted here: the release goes wherever the focus went. A
+            // finger left down forever is a finger the count never loses, and
+            // the gestures that ask how many are down stop working for the rest
+            // of the session.
+            if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                forget_touches();
+            }
+            break;
+
+        // The same on a phone, where the window is taken away rather than
+        // merely unfocused.
+        case SDL_APP_WILLENTERBACKGROUND:
+            forget_touches();
             break;
 
         // Controllers are opened and closed as they appear, so hot-plugging a
@@ -309,7 +331,11 @@ void InputManager::handle_event(const SDL_Event& event) {
                 pointer.released = true;
                 pointer_events_.push_back(pointer);
             }
-            if (fingers_.empty()) {
+            // As soon as there are not two down any more, rather than once
+            // every last one has lifted: a finger that stays put -- or one
+            // whose release was lost -- would otherwise mean the gesture only
+            // ever works once.
+            if (fingers_.size() < 2) {
                 second_finger_menu_armed_ = false;
             }
             break;
