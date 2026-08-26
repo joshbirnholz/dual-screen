@@ -110,8 +110,9 @@ void bound_send_queue(int descriptor) {
     ::setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &kSendQueueBytes, sizeof(kSendQueueBytes));
 }
 
+#if defined(DS_HAVE_GETIFADDRS)
 bool interface_is_wireless(const char* name) {
-#if defined(DS_HAVE_GETIFADDRS) && defined(__linux__)
+#if defined(__linux__)
     // The kernel gives every wireless interface this directory and gives no
     // other interface one, which beats guessing from the interface's name.
     struct stat entry {};
@@ -121,6 +122,7 @@ bool interface_is_wireless(const char* name) {
     return false;
 #endif
 }
+#endif
 
 // Sends one datagram out of a named interface with its source address set to
 // that interface's, so a machine on one network twice tells companions which
@@ -155,6 +157,7 @@ bool send_from(int descriptor, const LocalNetwork& network, const sockaddr_in& t
         return ::sendmsg(descriptor, &message, 0) == static_cast<ssize_t>(size);
     }
 #endif
+    (void)network;
     return ::sendto(descriptor, data, size, 0, reinterpret_cast<const sockaddr*>(&to), sizeof(to)) ==
            static_cast<ssize_t>(size);
 }

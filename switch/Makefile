@@ -39,9 +39,14 @@ ICON        := icon.jpg
 # most of them hold files this program has no business compiling -- an emulator
 # core loader, a game browser, a GL compositor.
 THIRD_PARTY := ../third_party
-# Where the console artwork lands once it has been turned into source. Defined
+# Where an embedded asset lands once it has been turned into source. Defined
 # before SOURCE_DIRS, which expands it immediately.
 GENERATED   := generated
+
+# The assets that travel inside the binary. One list, so what gets generated
+# and what gets compiled cannot drift apart -- a generated file that nothing
+# compiles is an undefined symbol at link time and nothing sooner.
+EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kRodinOtf.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -64,7 +69,7 @@ CPPFILES    := main.cpp \
                png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
                connecting_screen.cpp launcher_screen.cpp layout_picker.cpp \
                log.cpp \
-               kDsBezelPng.cpp kThreeDsBezelPng.cpp
+               $(EMBEDDED_SOURCES)
 
 INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY)
 
@@ -162,7 +167,7 @@ $(BUILD):
 	@mkdir -p $@
 
 .PHONY: assets
-assets: $(GENERATED)/kDsBezelPng.cpp $(GENERATED)/kThreeDsBezelPng.cpp $(GENERATED)/kRodinOtf.cpp
+assets: $(addprefix $(GENERATED)/,$(EMBEDDED_SOURCES))
 
 $(GENERATED)/kDsBezelPng.cpp: $(CURDIR)/../assets/ds_bezel.png $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)
