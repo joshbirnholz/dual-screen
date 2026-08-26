@@ -717,8 +717,7 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result) {
             if (result.disconnect_requested) {
                 if (host_session) {
                     host_session->disconnect_companion("you ended the session");
-                    state = State::Playing;
-                    input.set_game_input_enabled(true);
+                    set_menu_open(false);
                 } else if (companion_session) {
                     companion_session->disconnect();
                     open_launcher();
@@ -736,13 +735,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result) {
                     running = false;
                 }
             } else if (result.close_requested || result.reset_requested) {
-                if (is_companion()) {
-                    companion_session->set_menu_open(false);
-                    state = State::Companion;
-                } else {
-                    state = State::Playing;
-                }
-                input.set_game_input_enabled(true);
+                // Through the one place that opens and closes it, so that
+                // putting the menu away always sounds like it.
+                set_menu_open(false);
             }
 }
 
@@ -2339,12 +2334,14 @@ int App::run(const AppOptions& options) {
             // Paused: hold the sticks and buttons off the core entirely.
             impl.source->input_sink().submit(DsInputState());
         }
-        if (impl.source && game_running != impl.game_was_running) {
+        if (impl.source && !game_running && impl.game_was_running) {
             // The device is deliberately left running across a pause. Stopping
             // it drains nothing, so the menu's own sounds would queue up behind
             // whatever the game left and all arrive at once when it came back.
             // What does have to go is that tail: it is the moment before the
-            // pause, and it would play over the menu that caused it.
+            // pause, and it would play over the menu that caused it. Only on
+            // the way in -- flushing on the way out would cut off the sound of
+            // the menu closing.
             impl.audio.flush();
         }
         impl.game_was_running = game_running;
