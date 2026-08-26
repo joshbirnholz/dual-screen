@@ -17,6 +17,19 @@ bool HostAnnouncer::start(std::string* error) {
     }
     last_sent_ms_ = 0;
     dirty_ = true;
+
+    // What this machine will announce itself on. More than one entry for the
+    // same network means more than one way onto it -- an ethernet port and a
+    // wifi card both up on one subnet, say -- which is worth knowing about:
+    // companions then hear this host twice, over two paths of very different
+    // speed, and which one a session lands on is the routing table's choice
+    // rather than anyone's.
+    std::string where;
+    for (const std::string& address : broadcast_addresses()) {
+        if (!where.empty()) where += ", ";
+        where += address;
+    }
+    log_info("announcing this host on " + where);
     return true;
 }
 

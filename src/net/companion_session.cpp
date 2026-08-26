@@ -111,6 +111,12 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             status_detail_ = "showing the " + std::string(to_string(granted_screen_)) +
                              " screen of " + game_title_;
             log_info("connected: " + status_detail_);
+            // Which of this machine's own addresses is carrying it. A machine
+            // with two ways onto one network picks by routing table, not by
+            // which cable is plugged in, and the difference is not visible
+            // from anywhere else.
+            log_info("this session is going out from " + stream_.local_address() + " to " +
+                     stream_.peer_address());
             break;
         }
         case MessageType::Reject: {

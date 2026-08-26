@@ -356,7 +356,7 @@ void HostSession::poll(uint64_t now_ms) {
             // Whatever the last companion was sent means nothing to this one.
             previous_top_.clear();
             previous_bottom_.clear();
-            log_info("a device is connecting from " + companion_.peer_address());
+            log_info("a device is connecting from " + companion_.peer_address() + ", to this machine at " + companion_.local_address());
             refresh_beacon();
         }
     }

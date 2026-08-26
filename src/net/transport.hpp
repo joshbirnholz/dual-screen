@@ -46,6 +46,12 @@ public:
     bool pump(std::vector<uint8_t>& inbox, std::string* error);
 
     const std::string& peer_address() const { return peer_address_; }
+    // Which of this machine's addresses the routing table actually chose for
+    // this connection. On a machine with more than one way onto the same
+    // network -- a desktop with its ethernet and its wifi both up on one
+    // subnet -- that is not something anyone can tell by looking, and it
+    // decides whether the session is on the wire or on the air.
+    std::string local_address() const;
 
     // Takes ownership of an accepted descriptor.
     static TcpStream adopt(int descriptor, std::string peer_address);

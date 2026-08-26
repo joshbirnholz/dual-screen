@@ -193,6 +193,18 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
     return false;
 }
 
+std::string TcpStream::local_address() const {
+    if (descriptor_ < 0) {
+        return std::string();
+    }
+    sockaddr_in local {};
+    socklen_t length = sizeof(local);
+    if (::getsockname(descriptor_, reinterpret_cast<sockaddr*>(&local), &length) != 0) {
+        return std::string();
+    }
+    return describe(local);
+}
+
 void TcpStream::close() {
     if (descriptor_ >= 0) {
         ::close(descriptor_);
