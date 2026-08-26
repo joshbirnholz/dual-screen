@@ -150,6 +150,13 @@ private:
     struct FingerState {
         float x = 0.0f;
         float y = 0.0f;
+        // Where this finger came down, so a release can say what its own press
+        // was aimed at. Per finger rather than one slot for the whole app:
+        // Android reports a tap twice, once as a finger and once as a mouse
+        // synthesized from it, and a shared slot let the second overwrite the
+        // first -- in the other one's units.
+        float press_x = 0.0f;
+        float press_y = 0.0f;
     };
 
     Settings settings_;
@@ -187,11 +194,8 @@ private:
     bool mouse_down_ = false;
     float mouse_x_ = 0.0f;
     float mouse_y_ = 0.0f;
-    // Where the gesture in progress went down, in whatever units its events
-    // arrive in: touch is normalized until end_frame() and the mouse is not,
-    // and a press and its release always come from the same source.
-    float press_x_ = 0.0f;
-    float press_y_ = 0.0f;
+    float mouse_press_x_ = 0.0f;
+    float mouse_press_y_ = 0.0f;
     bool second_finger_menu_armed_ = false;
 
     // Where the active finger or mouse press currently is, in output pixels.

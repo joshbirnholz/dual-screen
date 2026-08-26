@@ -516,6 +516,92 @@ void test_face_buttons_reach_the_core() {
 
 }  // namespace
 
+// A phone reports one tap as a finger and again as a mouse synthesized from
+// that finger. The two arrive in different units -- touch normalized to the
+// window, the mouse in pixels -- and a widget only answers a tap that both
+// began and ended inside it, so a release carrying the wrong press position is
+// a menu whose buttons do nothing.
+void test_a_tap_reported_twice_still_knows_where_it_started() {
+    InputManager input;
+    input.initialize(Settings());
+
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    // Middle of the window, which is where a tile would be.
+    constexpr float kFingerX = 0.5f;
+    constexpr float kFingerY = 0.5f;
+
+    const auto finger = [](uint32_t type, float x, float y) {
+        SDL_Event event {};
+        event.type = type;
+        event.tfinger.touchId = 1;
+        event.tfinger.fingerId = 7;
+        event.tfinger.x = x;
+        event.tfinger.y = y;
+        return event;
+    };
+    const auto synthetic_mouse = [](uint32_t type, int x, int y) {
+        SDL_Event event {};
+        event.type = type;
+        event.button.which = SDL_TOUCH_MOUSEID;
+        event.button.button = SDL_BUTTON_LEFT;
+        event.button.x = x;
+        event.button.y = y;
+        return event;
+    };
+
+    input.begin_frame();
+    input.handle_event(finger(SDL_FINGERDOWN, kFingerX, kFingerY));
+    input.handle_event(synthetic_mouse(SDL_MOUSEBUTTONDOWN, static_cast<int>(kFingerX * kWidth),
+                                       static_cast<int>(kFingerY * kHeight)));
+    input.handle_event(synthetic_mouse(SDL_MOUSEBUTTONUP, static_cast<int>(kFingerX * kWidth),
+                                       static_cast<int>(kFingerY * kHeight)));
+    input.handle_event(finger(SDL_FINGERUP, kFingerX, kFingerY));
+    input.end_frame(LayoutRegistry().fallback(), kWidth, kHeight,
+                    system_profile(SystemId::Ds).screens);
+
+    // The tile the tap was aimed at: a generous box around where it landed.
+    const PixelRect tile{kFingerX * kWidth - 100.0f, kFingerY * kHeight - 60.0f, 200.0f, 120.0f};
+    int answered = 0;
+    int releases = 0;
+    for (const PointerEvent& pointer : input.pointer_events()) {
+        if (pointer.released) ++releases;
+        if (tapped(pointer, tile)) ++answered;
+    }
+    CHECK_MSG(releases == 1,
+              "one tap arrived as " + std::to_string(releases) +
+                  " releases, so every menu press counts more than once");
+    CHECK_MSG(answered == 1,
+              "a tap in the middle of a tile was not read as a tap on it, so the menu's buttons "
+              "do nothing");
+
+    // A real mouse alongside a real touchscreen, clicking somewhere else while
+    // the finger is still down. Each source has to remember its own press: one
+    // slot between them means the finger's release reports where the mouse went
+    // down, in the wrong units on top of that.
+    input.begin_frame();
+    input.handle_event(finger(SDL_FINGERDOWN, kFingerX, kFingerY));
+    SDL_Event click {};
+    click.type = SDL_MOUSEBUTTONDOWN;
+    click.button.which = 0;
+    click.button.button = SDL_BUTTON_LEFT;
+    click.button.x = 20;
+    click.button.y = 20;
+    input.handle_event(click);
+    input.handle_event(finger(SDL_FINGERUP, kFingerX, kFingerY));
+    input.end_frame(LayoutRegistry().fallback(), kWidth, kHeight,
+                    system_profile(SystemId::Ds).screens);
+
+    bool finger_answered = false;
+    for (const PointerEvent& pointer : input.pointer_events()) {
+        if (pointer.released && tapped(pointer, tile)) finger_answered = true;
+    }
+    CHECK_MSG(finger_answered,
+              "a finger's release carried somebody else's press position, so the tile it was "
+              "lifted from did not answer it");
+    input.shutdown();
+}
+
 int main() {
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -534,6 +620,7 @@ int main() {
     test_the_stick_buttons_open_the_menu_together();
     test_the_right_stick_maps_where_it_is_told();
     test_face_buttons_reach_the_core();
+    test_a_tap_reported_twice_still_knows_where_it_started();
 
     SDL_Quit();
     return test::finish("controller-input");

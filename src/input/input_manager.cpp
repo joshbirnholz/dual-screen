@@ -252,9 +252,15 @@ void InputManager::handle_event(const SDL_Event& event) {
         }
 
         case SDL_FINGERDOWN: {
+            // A desktop that turns the mouse into a finger for us: the real
+            // mouse events are handled below, and taking both would count every
+            // click twice.
+            if (event.tfinger.touchId == SDL_MOUSE_TOUCHID) break;
             FingerState state;
             state.x = event.tfinger.x;
             state.y = event.tfinger.y;
+            state.press_x = state.x;
+            state.press_y = state.y;
             fingers_[event.tfinger.fingerId] = state;
 
             if (!has_primary_finger_) {
@@ -263,11 +269,9 @@ void InputManager::handle_event(const SDL_Event& event) {
                 PointerEvent pointer;
                 pointer.x = state.x;
                 pointer.y = state.y;
-                pointer.press_x = state.x;
-                pointer.press_y = state.y;
+                pointer.press_x = state.press_x;
+                pointer.press_y = state.press_y;
                 pointer.pressed = true;
-                press_x_ = state.x;
-                press_y_ = state.y;
                 pointer_events_.push_back(pointer);
             } else if (fingers_.size() >= 2 && !second_finger_menu_armed_) {
                 // Two fingers at once is the touch-only escape hatch into the
@@ -279,6 +283,7 @@ void InputManager::handle_event(const SDL_Event& event) {
         }
 
         case SDL_FINGERMOTION: {
+            if (event.tfinger.touchId == SDL_MOUSE_TOUCHID) break;
             const auto it = fingers_.find(event.tfinger.fingerId);
             if (it != fingers_.end()) {
                 it->second.x = event.tfinger.x;
@@ -288,14 +293,19 @@ void InputManager::handle_event(const SDL_Event& event) {
         }
 
         case SDL_FINGERUP: {
-            fingers_.erase(event.tfinger.fingerId);
+            if (event.tfinger.touchId == SDL_MOUSE_TOUCHID) break;
+            const auto lifted = fingers_.find(event.tfinger.fingerId);
+            const bool known = lifted != fingers_.end();
+            const float press_x = known ? lifted->second.press_x : event.tfinger.x;
+            const float press_y = known ? lifted->second.press_y : event.tfinger.y;
+            if (known) fingers_.erase(lifted);
             if (has_primary_finger_ && event.tfinger.fingerId == primary_finger_) {
                 has_primary_finger_ = false;
                 PointerEvent pointer;
                 pointer.x = event.tfinger.x;
                 pointer.y = event.tfinger.y;
-                pointer.press_x = press_x_;
-                pointer.press_y = press_y_;
+                pointer.press_x = press_x;
+                pointer.press_y = press_y;
                 pointer.released = true;
                 pointer_events_.push_back(pointer);
             }
@@ -307,25 +317,31 @@ void InputManager::handle_event(const SDL_Event& event) {
 
         // Mouse events keep the app usable on a desktop, where they stand in
         // for the touchscreen.
+        // A phone reports one tap twice: as a finger, and again as a mouse
+        // synthesized from that finger. The finger is the real one -- it is the
+        // only one that says how many are down -- so the synthetic mouse is
+        // dropped rather than counted a second time in the other's units.
         case SDL_MOUSEBUTTONDOWN:
+            if (event.button.which == SDL_TOUCH_MOUSEID) break;
             if (event.button.button == SDL_BUTTON_LEFT) {
                 mouse_down_ = true;
                 mouse_x_ = static_cast<float>(event.button.x);
                 mouse_y_ = static_cast<float>(event.button.y);
+                mouse_press_x_ = mouse_x_;
+                mouse_press_y_ = mouse_y_;
                 PointerEvent pointer;
                 pointer.x = mouse_x_;
                 pointer.y = mouse_y_;
-                pointer.press_x = mouse_x_;
-                pointer.press_y = mouse_y_;
+                pointer.press_x = mouse_press_x_;
+                pointer.press_y = mouse_press_y_;
                 pointer.pressed = true;
                 pointer.normalized = false;
-                press_x_ = mouse_x_;
-                press_y_ = mouse_y_;
                 pointer_events_.push_back(pointer);
             }
             break;
 
         case SDL_MOUSEBUTTONUP:
+            if (event.button.which == SDL_TOUCH_MOUSEID) break;
             if (event.button.button == SDL_BUTTON_LEFT) {
                 mouse_down_ = false;
                 mouse_x_ = static_cast<float>(event.button.x);
@@ -333,12 +349,10 @@ void InputManager::handle_event(const SDL_Event& event) {
                 PointerEvent pointer;
                 pointer.x = mouse_x_;
                 pointer.y = mouse_y_;
-                pointer.press_x = press_x_;
-                pointer.press_y = press_y_;
+                pointer.press_x = mouse_press_x_;
+                pointer.press_y = mouse_press_y_;
                 pointer.released = true;
                 pointer.normalized = false;
-                press_x_ = mouse_x_;
-                press_y_ = mouse_y_;
                 pointer_events_.push_back(pointer);
             }
             break;
