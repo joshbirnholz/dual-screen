@@ -181,9 +181,13 @@ void test_right_stick_reaches_the_c_stick() {
     CHECK_EQ(state.circle_x, 0);
 }
 
-// Counts the UI actions of one kind that a single press produces. Once, not
-// twice: Steam Input presents the pad twice over, and a doubled toggle would
-// cancel itself out and look like the button doing nothing.
+// Counts the UI actions of one kind that one press and release produces. Once,
+// not twice: Steam Input presents the pad twice over, and a doubled toggle
+// would cancel itself out and look like the button doing nothing.
+//
+// The whole gesture rather than just the press, because the stick buttons only
+// become their own shortcut on release -- until then either may turn out to be
+// half of the menu chord.
 int ui_actions_from_press(SDL_GameControllerButton button, UiAction wanted) {
     VirtualPad pad;
     if (!pad.attach()) {
@@ -193,19 +197,24 @@ int ui_actions_from_press(SDL_GameControllerButton button, UiAction wanted) {
     InputManager input;
     input.initialize(Settings());
 
-    input.begin_frame();
-    pad.press(button, true);
-    SDL_Event event;
-    while (SDL_PollEvent(&event) != 0) {
-        input.handle_event(event);
-    }
-    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
-                    system_profile(SystemId::Ds).screens);
-
     int count = 0;
-    for (const UiAction action : input.ui_actions()) {
-        if (action == wanted) ++count;
-    }
+    const auto frame = [&]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        for (const UiAction action : input.ui_actions()) {
+            if (action == wanted) ++count;
+        }
+    };
+
+    pad.press(button, true);
+    frame();
+    pad.press(button, false);
+    frame();
 
     input.shutdown();
     pad.detach();
@@ -287,12 +296,19 @@ void test_the_right_stick_maps_where_it_is_told() {
     CHECK_EQ(off.buttons, 0u);
 }
 
-// Start and Select together open the menu. That chord is the only way in on a
-// device with no Steam Input in front of the pad -- a Switch running this as a
-// companion -- so it has to fire once for the pair however they are pressed,
-// and the game must not also see the two buttons: plenty of DS games read them
-// together as a soft reset.
-void test_start_and_select_open_the_menu() {
+// L3 and R3 together open the menu. That chord is the only way in on a device
+// with no Steam Input in front of the pad -- a Switch or an Android handheld
+// running this as a companion -- so it has to fire once for the pair however
+// they are pressed.
+//
+// Apart the two stick buttons keep their own meanings, so reaching for the
+// chord must not also swap the layout or toggle smoothing on the way in:
+// whichever is pressed first is only itself if it is released alone.
+//
+// Neither reaches a DS or 3DS button, which is why the pair costs a game
+// nothing -- Start and Select, which this replaced, are read together as a
+// soft reset by plenty of DS games.
+void test_the_stick_buttons_open_the_menu_together() {
     VirtualPad pad;
     if (!pad.attach()) {
         return;
@@ -310,26 +326,29 @@ void test_start_and_select_open_the_menu() {
         input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
                         system_profile(SystemId::Ds).screens);
     };
-    const auto menu_opens = [&input]() {
+    const auto count_of = [&input](UiAction wanted) {
         int count = 0;
         for (const UiAction action : input.ui_actions()) {
-            if (action == UiAction::ToggleMenu) ++count;
+            if (action == wanted) ++count;
         }
         return count;
     };
+    const auto menu_opens = [&]() { return count_of(UiAction::ToggleMenu); };
 
-    // Select on its own is just Select, and reaches the game as itself.
-    pad.press(SDL_CONTROLLER_BUTTON_BACK, true);
+    // Held on its own, a stick button is not yet anything: it may still be
+    // half of the chord.
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
     frame();
     CHECK_EQ(menu_opens(), 0);
-    CHECK_MSG(input.ds_state().pressed(DsButton::Select), "Select alone did not reach the game");
+    CHECK_EQ(count_of(UiAction::SwapLayout), 0);
 
-    // The pair opens the menu, and neither button goes through.
-    pad.press(SDL_CONTROLLER_BUTTON_START, true);
+    // The pair opens the menu, and neither one's own action fires.
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
     frame();
     CHECK_EQ(menu_opens(), 1);
-    CHECK_MSG(!input.ds_state().pressed(DsButton::Start), "Start leaked into the game");
-    CHECK_MSG(!input.ds_state().pressed(DsButton::Select), "Select leaked into the game");
+    CHECK_EQ(count_of(UiAction::SwapLayout), 0);
+    CHECK_EQ(count_of(UiAction::ToggleFilter), 0);
+    CHECK_MSG(input.ds_state().buttons == 0u, "a stick button reached the game");
 
     // Still held. Opening once a frame would toggle the menu sixty times a
     // second, which reads as the shortcut not working at all.
@@ -338,14 +357,47 @@ void test_start_and_select_open_the_menu() {
     frame();
     CHECK_EQ(menu_opens(), 0);
 
-    // Releasing either one arms it again, and the pair fires a second time --
-    // which is what makes the same chord close the menu it opened.
-    pad.press(SDL_CONTROLLER_BUTTON_START, false);
+    // Letting go of the pair must not leave either shortcut behind it.
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
     frame();
+    CHECK_EQ(count_of(UiAction::SwapLayout), 0);
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, false);
+    frame();
+    CHECK_EQ(count_of(UiAction::ToggleFilter), 0);
     CHECK_EQ(menu_opens(), 0);
-    pad.press(SDL_CONTROLLER_BUTTON_START, true);
+
+    // Alone again, each one is its own shortcut -- on release, which is when
+    // it is known that the other never joined it.
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
+    frame();
+    CHECK_EQ(count_of(UiAction::SwapLayout), 0);
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
+    frame();
+    CHECK_EQ(count_of(UiAction::SwapLayout), 1);
+    CHECK_EQ(menu_opens(), 0);
+
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
+    frame();
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, false);
+    frame();
+    CHECK_EQ(count_of(UiAction::ToggleFilter), 1);
+
+    // And the chord fires again, which is what closes the menu it opened.
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
     frame();
     CHECK_EQ(menu_opens(), 1);
+
+    // Start and Select are ordinary buttons again, and reach the game.
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, false);
+    frame();
+    pad.press(SDL_CONTROLLER_BUTTON_START, true);
+    pad.press(SDL_CONTROLLER_BUTTON_BACK, true);
+    frame();
+    CHECK_EQ(menu_opens(), 0);
+    CHECK_MSG(input.ds_state().pressed(DsButton::Start), "Start did not reach the game");
+    CHECK_MSG(input.ds_state().pressed(DsButton::Select), "Select did not reach the game");
 
     input.shutdown();
     pad.detach();
@@ -479,7 +531,7 @@ int main() {
     test_right_stick_reaches_the_c_stick();
     test_stick_click_toggles_filtering();
     test_left_stick_click_swaps_the_layout();
-    test_start_and_select_open_the_menu();
+    test_the_stick_buttons_open_the_menu_together();
     test_the_right_stick_maps_where_it_is_told();
     test_face_buttons_reach_the_core();
 

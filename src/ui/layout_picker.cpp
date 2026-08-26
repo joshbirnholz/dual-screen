@@ -367,7 +367,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
 }
 
 Layout LayoutPicker::resolved_layout_for_preview(const Layout& layout) const {
-    return resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap), state_.handedness);
+    Layout resolved =
+        resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap), state_.handedness);
+    resolved.fill_display = fill_display_;
+    return resolved;
 }
 
 void LayoutPicker::draw_preview(QuadRenderer& quads,

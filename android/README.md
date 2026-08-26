@@ -36,9 +36,9 @@ screen.
 | Move around the menus | d-pad or left stick |
 | Join, and confirm in menus | the east face button |
 | Go back, or leave a menu | the south face button |
-| Open this device's menu | **Start and Select** together, or a **two-finger tap** |
-| Smooth or sharpen the screens | **R3** — the host applies it on both devices |
-| Swap the two focus layouts | **L3** — likewise |
+| Open this device's menu | **L3 and R3** together, the pad's **home** button, or a **two-finger tap** |
+| Smooth or sharpen the screens | **R3** alone — the host applies it on both devices |
+| Swap the two focus layouts | **L3** alone — likewise |
 | Touch the touchscreen | tap or drag, when this device is the bottom screen |
 
 ## Building
@@ -126,13 +126,19 @@ both are — and fills the height with the console's own screens instead, with
 the artwork cropped around them.
 
 A G Cloud is a 7" screen, physically the same size as those, but it is
-1920x1080, so by that rule it counts as a large display and keeps the margin.
-The rule is counting pixels as a stand-in for how big the screen really is,
-and on this device those two part company.
+1920x1080, so by that rule alone it would count as a large display and keep
+the margin. Counting pixels is a stand-in for how big the screen really is,
+and on this device the two part company.
 
-Whether that is right is a matter of taste and worth seeing before changing:
-the margin is not wasted space on a display with pixels to spare. If it should
-crop here too, the threshold is `kSmallDisplayWidth`/`kSmallDisplayHeight` at the top of
+So there is a second rule that does not count pixels at all: **a device
+holding the touch screen fills its panel with it**, whatever its resolution.
+Being the screen that is touched is the thing that decides it — a companion
+showing the touch screen is a thing being held and prodded, and wants that
+screen as large as the panel allows. Joined as the top screen, or hosting,
+the pixel rule applies as before.
+
+If the margin should also go when this device is the *top* screen, the
+threshold is `kSmallDisplayWidth`/`kSmallDisplayHeight` at the top of
 `src/layout/layout.cpp`, and raising it changes every device at once.
 
 ## What is here

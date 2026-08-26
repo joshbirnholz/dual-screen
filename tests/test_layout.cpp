@@ -300,6 +300,56 @@ void test_touch_follows_the_layout_that_was_drawn() {
               "touch y came back as " + std::to_string(point.y));
 }
 
+// A device holding the touch screen fills its panel with it, however many
+// pixels that panel has.
+//
+// The margin is dropped on a display small enough to need the room, which is a
+// question about pixels. This is a different question about the same thing: a
+// companion showing only the screen that is touched is a thing being touched,
+// and wants it as large as the panel allows whether the panel is a Deck's or a
+// 1080p handheld's. The one flag answers it for drawing, for touch mapping and
+// for the menu's preview tiles at once, because all three read the layout.
+void test_a_layout_can_be_told_to_fill_the_display() {
+    const LayoutRegistry registry;
+    const SystemScreens& screens = ds_screens();
+    const Layout& standard = *registry.find("standard");
+    // Comfortably past the small-display threshold in both directions, so
+    // nothing here is the pixel rule firing by accident.
+    const PixelRect big{0.0f, 0.0f, 1920.0f, 1080.0f};
+
+    const PixelRect kept = layout_frame(standard, big, screens);
+    CHECK_MSG(kept.y > 1.0f, "a 1080p display kept no margin to begin with");
+
+    Layout filling = standard;
+    filling.fill_display = true;
+    const PixelRect dropped = layout_frame(filling, big, screens);
+    CHECK_MSG(dropped.y < kept.y,
+              "being told to fill left the margin at " + std::to_string(dropped.y));
+
+    // Filling means the screens span the display, with the artwork cropped
+    // round them -- the same answer a small display already gets.
+    const PixelRect bounds = placed_bounds(place_screens(filling, big, screens));
+    CHECK_MSG(std::abs(bounds.h - big.h) < 2.0f,
+              "the screens did not span the height: " + std::to_string(bounds.h));
+
+    // And touch has to follow it. Mapping through a layout that still had the
+    // margin would put every press somewhere the player did not touch.
+    PixelRect touch_rect{};
+    for (const PlacedScreen& placed : place_screens(filling, big, screens)) {
+        if (placed.screen == ScreenId::Bottom) {
+            touch_rect = placed.rect;
+        }
+    }
+    CHECK(touch_rect.w > 0.0f);
+    DsTouchPoint point;
+    CHECK(map_output_point_to_ds(filling, big.w, big.h, touch_rect.x + touch_rect.w * 0.5f,
+                                 touch_rect.y + touch_rect.h * 0.5f, point, screens));
+    CHECK_MSG(std::abs(point.x - kDsScreenWidth / 2) <= 1,
+              "touch x came back as " + std::to_string(point.x));
+    CHECK_MSG(std::abs(point.y - kDsScreenHeight / 2) <= 1,
+              "touch y came back as " + std::to_string(point.y));
+}
+
 // Standard is the console itself: its shape comes from whichever system is
 // running, and the screens sit exactly where that console's own screens are.
 void test_standard_is_the_console() {
@@ -852,6 +902,7 @@ int main() {
     test_small_displays_drop_the_margin();
     test_the_display_size_wins_over_the_window();
     test_touch_follows_the_layout_that_was_drawn();
+    test_a_layout_can_be_told_to_fill_the_display();
     test_standard_is_the_console();
     test_handedness_mirrors_the_layout();
     test_the_gap_choice_applies_to_every_layout_that_offers_it();

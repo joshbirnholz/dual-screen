@@ -143,7 +143,14 @@ private:
     // Whether the Start+Select menu chord has already been acted on. It is
     // held for as long as it takes to press two buttons, which is several
     // frames, and the menu should open once rather than flicker.
-    bool menu_chord_consumed_ = false;
+    // The stick buttons, tracked across frames because together they are the
+    // menu chord and apart they are two separate shortcuts. Whether either
+    // sends its own action is only known once it is released, since until then
+    // the other one may still join it.
+    bool left_stick_held_ = false;
+    bool right_stick_held_ = false;
+    bool stick_chord_used_ = false;
+    bool stick_buttons_held(SDL_GameControllerButton button) const;
 
     // Touch tracking. The first finger down drives the DS touchscreen; a second
     // simultaneous finger opens the menu, which is the only way in on a device

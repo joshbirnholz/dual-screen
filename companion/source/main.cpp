@@ -379,9 +379,12 @@ Layout Client::session_layout() const {
     // The companion's half of the app's device_layout(): the host's layout
     // with the host's handedness and gap choice, then resolved for the screen
     // this device was granted. None of it is decided here.
-    const Layout chosen = resolve_for_handedness(
+    Layout chosen = resolve_for_handedness(
         resolve_gap_choice(registry_.resolve(session_.host_layout_id()), session_.host_screen_gap()),
         session_.host_handedness());
+    // Holding the touch screen means being the thing that is touched, so the
+    // panel is filled with it whatever its size -- see Layout::fill_display.
+    chosen.fill_display = session_.granted_screen() == ScreenId::Bottom;
     if (!chosen.per_device) {
         return chosen;
     }
@@ -413,7 +416,8 @@ void Client::follow_panel_size() {
     // this rather than the window: chiefly whether to spend any of it on
     // margin, which on a handheld it should not.
     compositor_.set_display_size(static_cast<float>(width), static_cast<float>(height));
-    picker_.set_display_size(static_cast<float>(width), static_cast<float>(height));
+    picker_.set_display_size(static_cast<float>(width), static_cast<float>(height),
+                             session_.granted_screen() == ScreenId::Bottom);
 
     if (width == panel_width_ && height == panel_height_) {
         return;

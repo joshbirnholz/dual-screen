@@ -266,6 +266,7 @@ std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         float display_height) {
     const PixelRect frame = layout_frame(layout, window, screens, display_width, display_height);
     const bool no_margin =
+        layout.fill_display ||
         is_small_display(display_width > 0.0f ? display_width : window.w,
                          display_height > 0.0f ? display_height : window.h);
     std::vector<PlacedScreen> placed;
@@ -314,6 +315,7 @@ PixelRect layout_frame(const Layout& layout,
         return window;
     }
     const bool no_margin =
+        layout.fill_display ||
         is_small_display(display_width > 0.0f ? display_width : window.w,
                          display_height > 0.0f ? display_height : window.h);
     const float margin = no_margin ? 0.0f : console.margin;

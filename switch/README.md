@@ -35,10 +35,10 @@ the two from ever disagreeing.
 | Move around the menus | d-pad or left stick |
 | Join, and confirm in menus | the east face button (A) |
 | Go back, or leave a menu | the south face button (B) |
-| Open this device's menu | **+ and -** together, or a **two-finger tap** |
+| Open this device's menu | **L3 and R3** together, or a **two-finger tap** |
 | Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
-| Smooth or sharpen the screens | **R3** — the host applies it on both devices |
-| Swap the two focus layouts | **L3** — likewise |
+| Smooth or sharpen the screens | **R3** alone — the host applies it on both devices |
+| Swap the two focus layouts | **L3** alone — likewise |
 | Touch the touchscreen | tap or drag, when this device is the bottom screen |
 
 The in-session menu **is** the app's own quick menu — the same tile grid of

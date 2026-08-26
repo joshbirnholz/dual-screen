@@ -103,9 +103,13 @@ public:
     // The display the previews are judged against, when that is not the size
     // being drawn at -- see Compositor::set_display_size(). A tile has to show
     // the margin the real render would have, which is decided by the panel.
-    void set_display_size(float width, float height) {
+    // `fill` travels with the size because it answers the same question --
+    // how much of the display the screens should take -- and a tile that
+    // disagreed with the render behind it would be showing the wrong thing.
+    void set_display_size(float width, float height, bool fill = false) {
         display_width_ = width;
         display_height_ = height;
+        fill_display_ = fill;
     }
     // The console being played, which decides the screens' shapes and what the
     // Standard tile draws.
@@ -209,6 +213,7 @@ private:
     bool smoothing_ = true;
     float display_width_ = 0.0f;
     float display_height_ = 0.0f;
+    bool fill_display_ = false;
     SystemScreens screens_;
 };
 

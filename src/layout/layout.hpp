@@ -169,6 +169,13 @@ struct Layout {
     // its shape and its screen positions from whichever system is running. Only
     // Standard does; everything else composes its screens for itself and looks
     // the same on any console.
+    // Fill the display with the screens whatever its size, the way a display
+    // small enough already does. Not something the registry sets: it is
+    // resolved per device, like per_device below, by whichever end knows what
+    // this device is being. A companion holding only the touch screen is a
+    // thing being touched, and wants that screen as large as the panel allows
+    // however many pixels the panel happens to have.
+    bool fill_display = false;
     bool uses_console_frame = false;
 
     // The layout a swap press (L3) moves to from here, if there is one. The two

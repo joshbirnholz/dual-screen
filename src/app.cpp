@@ -510,8 +510,13 @@ Layout App::Impl::device_layout() const {
     // Handedness first: it mirrors the arrangement, and everything downstream --
     // what is drawn, and where a touch lands -- has to see the same one. The
     // gap choice does not interact with either, so its order does not matter.
-    const Layout chosen =
+    Layout chosen =
         resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap), handedness);
+    // A companion holding the touch screen is a thing being touched, so it
+    // fills its panel however many pixels the panel has -- the same as a
+    // display small enough to do that already. A host does not, whatever it is
+    // showing: it is the one on the desk or the television.
+    chosen.fill_display = is_companion() && local_screen == ScreenId::Bottom;
     if (!chosen.per_device) {
         return chosen;
     }
@@ -619,6 +624,9 @@ void App::Impl::open_picker() {
     picker_state.right_stick_choosable =
         (source || is_companion()) && system_profile(system).has_analog_stick;
     picker->set_screens(screens_geometry());
+    // The tiles are judged against the same display, and filled on the same
+    // terms, as the render behind them -- see device_layout().
+    picker->set_display_size(0.0f, 0.0f, is_companion() && local_screen == ScreenId::Bottom);
     picker->open(picker_state);
 }
 

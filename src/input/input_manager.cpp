@@ -181,13 +181,16 @@ void InputManager::handle_event(const SDL_Event& event) {
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: push_action(UiAction::PageUp); break;
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: push_action(UiAction::PageDown); break;
-                // R3 toggles filtering. It reaches no DS button, so it is free
-                // to mean this everywhere without stealing a press from a game.
-                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: push_action(UiAction::ToggleFilter); break;
-                // L3 is free for the same reason R3 is: no DS or 3DS button
-                // reaches it, so it can mean this without a game ever missing
-                // a press.
-                case SDL_CONTROLLER_BUTTON_LEFTSTICK: push_action(UiAction::SwapLayout); break;
+                // L3 and R3 are not acted on here. Alone they are still the
+                // layout swap and the smoothing toggle, but together they are
+                // the menu, and which of the three a press turns out to be is
+                // not known until it is released -- see end_frame().
+#ifdef __ANDROID__
+                // A pad's own home button, which on Android reaches the app.
+                // Elsewhere the system takes it first -- Steam on a Deck, the
+                // console itself on a Switch -- so there is nothing to bind.
+                case SDL_CONTROLLER_BUTTON_GUIDE: push_action(UiAction::ToggleMenu); break;
+#endif
                 default: break;
             }
             break;
@@ -362,6 +365,15 @@ MenuButtonLabels InputManager::menu_labels() const {
     return MenuButtonLabels();  // Xbox letters: the common case, and Steam Input's
 }
 
+bool InputManager::stick_buttons_held(SDL_GameControllerButton button) const {
+    for (const auto& entry : controllers_) {
+        if (entry.second != nullptr && SDL_GameControllerGetButton(entry.second, button) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 DsInputState InputManager::poll_held_state() const {
     // Polled unconditionally, even while a menu is open: the gate needs the
     // true physical state to know what to suppress when the game resumes.
@@ -505,20 +517,31 @@ void InputManager::end_frame(const Layout& layout,
 
     const DsInputState held = poll_held_state();
 
-    // Start and Select together open the menu, the chord every emulator
-    // frontend already has. R3 does it too, and on a Deck it is the better one
-    // -- but a Switch running this as a companion has no Steam Input in front
-    // of the pad to bind anything with, and its own menu has to be reachable
-    // from the buttons the console actually has. Fires once for the pair
-    // however they are pressed, rather than once a frame for as long as they
-    // are held.
-    const bool menu_chord = held.pressed(DsButton::Start) && held.pressed(DsButton::Select);
-    if (!menu_chord) {
-        menu_chord_consumed_ = false;
-    } else if (!menu_chord_consumed_) {
-        menu_chord_consumed_ = true;
+    // L3 and R3 together open the menu. Neither reaches a DS or 3DS button, so
+    // the pair costs a game nothing -- unlike Start and Select, which plenty
+    // of DS games read together as a soft reset, a poor thing to do to someone
+    // on their way into the menu.
+    //
+    // Apart they keep their own meanings, but a press only becomes one of
+    // those once it is released without the other having joined it. Otherwise
+    // reaching for the chord would swap the layout on the way in.
+    const bool left = stick_buttons_held(SDL_CONTROLLER_BUTTON_LEFTSTICK);
+    const bool right = stick_buttons_held(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+    if (left && right && !stick_chord_used_) {
+        stick_chord_used_ = true;
         push_action(UiAction::ToggleMenu);
     }
+    if (left_stick_held_ && !left && !stick_chord_used_) {
+        push_action(UiAction::SwapLayout);
+    }
+    if (right_stick_held_ && !right && !stick_chord_used_) {
+        push_action(UiAction::ToggleFilter);
+    }
+    if (!left && !right) {
+        stick_chord_used_ = false;
+    }
+    left_stick_held_ = left;
+    right_stick_held_ = right;
 
     const bool pointer_down = update_pointer(output_width, output_height);
     // Off centre by enough that the menu would have moved on it, which is the
@@ -533,13 +556,6 @@ void InputManager::end_frame(const Layout& layout,
     ds_state_.clear();
     if (game_input_enabled_) {
         ds_state_.buttons = held_input_gate_.buttons();
-        // Held together the two are a shortcut rather than two buttons. Plenty
-        // of DS games read the pair as a soft reset, which is a poor thing to
-        // do to someone on their way into the menu.
-        if (menu_chord) {
-            ds_state_.set(DsButton::Start, false);
-            ds_state_.set(DsButton::Select, false);
-        }
         // The sticks reach the game as themselves. Every layer below this one
         // -- the wire, the core's analog callback -- already carries them;
         // nothing filled them in, so a 3DS could be handed a stick that was
