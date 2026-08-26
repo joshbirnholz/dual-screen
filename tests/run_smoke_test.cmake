@@ -596,7 +596,7 @@ else()
                 # button pictures beside them are taller than the old line of
                 # text was.
                 text=0.02,0.03,0.35,0.09
-                text=0.10,0.89,0.70,0.95
+                text=0.45,0.89,0.94,0.95
         RESULT_VARIABLE MENU_CHECK_RESULT
         OUTPUT_VARIABLE MENU_CHECK_OUTPUT
         ERROR_VARIABLE MENU_CHECK_ERROR)

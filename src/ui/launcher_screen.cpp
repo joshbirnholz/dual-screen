@@ -168,10 +168,9 @@ void LauncherScreen::render(QuadRenderer& quads,
     text.draw(quads, found, margin, rows.back().y + rows.back().h + line * 1.2f, scale * 0.9f,
               hosts_found > 0 ? theme.success : theme.text_dim);
 
-    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "Select"}},
-                       output_width * 0.5f,
+    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "Select"}}, margin + rows[0].w,
                        output_height - line * 1.2f - control_guide_height(scale * 0.9f),
-                       scale * 0.9f, theme.text);
+                       scale * 0.9f, theme.text, TextAlign::Right);
 }
 
 // --- HostPickerScreen -------------------------------------------------------
@@ -314,9 +313,9 @@ void HostPickerScreen::render(QuadRenderer& quads,
 
     draw_control_guide(quads, text, glyphs,
                        {{ButtonGlyph::A, "Connect"}, {ButtonGlyph::B, "Back"}},
-                       output_width * 0.5f,
+                       rows.empty() ? output_width * 0.94f : rows[0].x + rows[0].w,
                        output_height - line * 1.2f - control_guide_height(scale * 0.9f),
-                       scale * 0.9f, theme.text);
+                       scale * 0.9f, theme.text, TextAlign::Right);
 }
 
 }  // namespace ds

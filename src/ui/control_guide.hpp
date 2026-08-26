@@ -18,15 +18,17 @@ struct GuidePrompt {
     std::string action;
 };
 
-// Draws the prompts as one centred row and returns how tall it was.
+// Draws the prompts as one row and returns how tall it was. `x` is the row's
+// centre when centred and its right edge when right-aligned.
 float draw_control_guide(QuadRenderer& quads,
                          TextRenderer& text,
                          const ButtonGlyphSheet& glyphs,
                          const std::vector<GuidePrompt>& prompts,
-                         float centre_x,
+                         float x,
                          float y,
                          float scale,
-                         const Color& color);
+                         const Color& color,
+                         TextAlign align = TextAlign::Center);
 
 // How tall that row will be, for a caller reserving space before drawing.
 float control_guide_height(float scale);

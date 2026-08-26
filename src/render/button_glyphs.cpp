@@ -38,19 +38,28 @@ float ButtonGlyphSheet::width_for(float height) const {
     return height * static_cast<float>(cell_width_) / static_cast<float>(cell_height_);
 }
 
+float ButtonGlyphSheet::button_centre() const {
+    if (cell_height_ <= 0) {
+        return 0.5f;
+    }
+    return (static_cast<float>(cell_height_) - static_cast<float>(cell_width_) * 0.5f) /
+           static_cast<float>(cell_height_);
+}
+
 void ButtonGlyphSheet::draw(QuadRenderer& quads,
                             ButtonGlyph glyph,
                             float x,
                             float y,
-                            float height) const {
+                            float height,
+                            const Color& color) const {
     if (!texture_.valid() || glyph == ButtonGlyph::Count) {
         return;
     }
     const float cells = static_cast<float>(static_cast<int>(ButtonGlyph::Count));
     const float u0 = static_cast<float>(static_cast<int>(glyph)) / cells;
     const float u1 = static_cast<float>(static_cast<int>(glyph) + 1) / cells;
-    quads.draw_alpha_mask(PixelRect{x, y, width_for(height), height}, texture_,
-                          Color{0.0f, 0.0f, 0.0f, 1.0f}, u0, 0.0f, u1, 1.0f);
+    quads.draw_alpha_mask(PixelRect{x, y, width_for(height), height}, texture_, color, u0, 0.0f,
+                          u1, 1.0f);
 }
 
 }  // namespace ds

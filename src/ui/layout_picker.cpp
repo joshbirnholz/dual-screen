@@ -549,10 +549,9 @@ void LayoutPicker::render(QuadRenderer& quads,
     if (state_.session_active) {
         guide.push_back({ButtonGlyph::Plus, "Disconnect"});
     }
-    draw_control_guide(quads, text, glyphs, guide,
-                       output_width * 0.5f,
+    draw_control_guide(quads, text, glyphs, guide, geometry.panel.x + geometry.panel.w,
                        geometry.panel.y + geometry.panel.h - control_guide_height(scale * 0.9f),
-                       scale * 0.9f, theme.text);
+                       scale * 0.9f, theme.text, TextAlign::Right);
 
     if (confirming()) {
         const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);

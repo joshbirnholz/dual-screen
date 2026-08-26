@@ -22,10 +22,11 @@ float draw_control_guide(QuadRenderer& quads,
                          TextRenderer& text,
                          const ButtonGlyphSheet& glyphs,
                          const std::vector<GuidePrompt>& prompts,
-                         float centre_x,
+                         float x,
                          float y,
                          float scale,
-                         const Color& color) {
+                         const Color& color,
+                         TextAlign align) {
     const float height = glyph_height(scale);
     const float glyph_width = glyphs.width_for(height);
     const float gap = TextRenderer::line_height(scale) * kGapScale;
@@ -37,15 +38,16 @@ float draw_control_guide(QuadRenderer& quads,
         total += glyph_width + gap + TextRenderer::measure_width(prompts[index].action, scale);
     }
 
-    float pen_x = std::round(centre_x - total * 0.5f);
+    float pen_x = std::round(align == TextAlign::Right ? x - total : x - total * 0.5f);
+    // Centred on the button itself rather than on the box it is drawn into,
+    // which includes headroom for whatever stands above a glyph.
+    const float label_y =
+        y + height * glyphs.button_centre() - TextRenderer::line_height(scale) * 0.5f;
     for (std::size_t index = 0; index < prompts.size(); ++index) {
         if (index > 0) pen_x += spacing;
-        glyphs.draw(quads, prompts[index].glyph, pen_x, y, height);
+        glyphs.draw(quads, prompts[index].glyph, pen_x, y, height, color);
         pen_x += glyph_width + gap;
-        // Centred against the glyph rather than sharing its top edge, which the
-        // artwork's own headroom would otherwise throw off.
-        text.draw(quads, prompts[index].action, pen_x,
-                  y + (height - TextRenderer::line_height(scale)) * 0.5f, scale, color);
+        text.draw(quads, prompts[index].action, pen_x, label_y, scale, color);
         pen_x += TextRenderer::measure_width(prompts[index].action, scale);
     }
     return height;
