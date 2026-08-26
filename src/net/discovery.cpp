@@ -19,9 +19,10 @@ bool HostAnnouncer::start(std::string* error) {
     dirty_ = true;
 
     std::string where;
-    for (const std::string& address : broadcast_addresses()) {
+    for (const LocalNetwork& network : announce_networks()) {
         if (!where.empty()) where += ", ";
-        where += address;
+        where += network.broadcast;
+        if (!network.interface.empty()) where += " from " + network.interface;
     }
     log_info("announcing this host on " + where);
 

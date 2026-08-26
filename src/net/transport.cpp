@@ -35,6 +35,15 @@
 #define DS_HAVE_GETIFADDRS 1
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <sys/stat.h>
+#endif
+
+// Saying which interface a beacon leaves by needs both the interface list and
+// per-datagram source control. Without either, the routing table chooses.
+#if DS_GETIFADDRS_AVAILABLE && defined(IP_PKTINFO)
+#define DS_HAVE_SOURCE_CHOICE 1
+#else
+#define DS_HAVE_SOURCE_CHOICE 0
 #endif
 
 #include <algorithm>
@@ -99,6 +108,65 @@ constexpr int kSendQueueBytes = 64 * 1024;
 
 void bound_send_queue(int descriptor) {
     ::setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &kSendQueueBytes, sizeof(kSendQueueBytes));
+}
+
+bool interface_is_wireless(const char* name) {
+#if defined(DS_HAVE_GETIFADDRS) && defined(__linux__)
+    // The kernel gives every wireless interface this directory and gives no
+    // other interface one, which beats guessing from the interface's name.
+    struct stat entry {};
+    return ::stat((std::string("/sys/class/net/") + name + "/wireless").c_str(), &entry) == 0;
+#else
+    (void)name;
+    return false;
+#endif
+}
+
+// Sends one datagram out of a named interface with its source address set to
+// that interface's, so a machine on one network twice tells companions which
+// of its two addresses to come back on. Falls back to letting the routing
+// table decide, which is all a platform without the controls can do.
+bool send_from(int descriptor, const LocalNetwork& network, const sockaddr_in& to,
+               const uint8_t* data, std::size_t size) {
+#if DS_HAVE_SOURCE_CHOICE
+    in_addr source {};
+    const unsigned int index =
+        network.interface.empty() ? 0u : ::if_nametoindex(network.interface.c_str());
+    if (index != 0 && ::inet_pton(AF_INET, network.address.c_str(), &source) == 1) {
+        iovec payload {const_cast<uint8_t*>(data), size};
+        alignas(cmsghdr) uint8_t control[CMSG_SPACE(sizeof(in_pktinfo))] = {0};
+        msghdr message {};
+        message.msg_name = const_cast<sockaddr_in*>(&to);
+        message.msg_namelen = sizeof(to);
+        message.msg_iov = &payload;
+        message.msg_iovlen = 1;
+        message.msg_control = control;
+        message.msg_controllen = sizeof(control);
+
+        cmsghdr* header = CMSG_FIRSTHDR(&message);
+        header->cmsg_level = IPPROTO_IP;
+        header->cmsg_type = IP_PKTINFO;
+        header->cmsg_len = CMSG_LEN(sizeof(in_pktinfo));
+        in_pktinfo info {};
+        info.ipi_ifindex = static_cast<int>(index);
+        info.ipi_spec_dst = source;
+        std::memcpy(CMSG_DATA(header), &info, sizeof(info));
+
+        return ::sendmsg(descriptor, &message, 0) == static_cast<ssize_t>(size);
+    }
+#endif
+    return ::sendto(descriptor, data, size, 0, reinterpret_cast<const sockaddr*>(&to), sizeof(to)) ==
+           static_cast<ssize_t>(size);
+}
+
+// A wire beats a radio: it is the faster and steadier of the two, and unlike
+// the radio it is not sharing its air with the companion at the other end.
+std::vector<LocalNetwork> wired_first(std::vector<LocalNetwork> networks) {
+    std::stable_sort(networks.begin(), networks.end(),
+                     [](const LocalNetwork& first, const LocalNetwork& second) {
+                         return !first.wireless && second.wireless;
+                     });
+    return networks;
 }
 
 std::string describe(const sockaddr_in& address) {
@@ -441,16 +509,14 @@ bool UdpSocket::broadcast(uint16_t port, const uint8_t* data, std::size_t size) 
         return false;
     }
     bool any = false;
-    for (const std::string& target : broadcast_addresses()) {
+    for (const LocalNetwork& network : announce_networks()) {
         sockaddr_in address {};
         address.sin_family = AF_INET;
         address.sin_port = htons(port);
-        if (::inet_pton(AF_INET, target.c_str(), &address.sin_addr) != 1) {
+        if (::inet_pton(AF_INET, network.broadcast.c_str(), &address.sin_addr) != 1) {
             continue;
         }
-        const ssize_t sent = ::sendto(descriptor_, data, size, 0,
-                                      reinterpret_cast<sockaddr*>(&address), sizeof(address));
-        any = any || (sent == static_cast<ssize_t>(size));
+        any = send_from(descriptor_, network, address, data, size) || any;
     }
     return any;
 }
@@ -488,6 +554,7 @@ std::vector<LocalNetwork> local_networks() {
             LocalNetwork network;
             network.interface = entry->ifa_name != nullptr ? entry->ifa_name : "";
             network.address = describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_addr));
+            network.wireless = interface_is_wireless(network.interface.c_str());
             // Loopback is included on purpose: it is how two instances on one
             // machine find each other, which is exactly what the tests do.
             if ((entry->ifa_flags & IFF_BROADCAST) != 0 && entry->ifa_broadaddr != nullptr) {
@@ -506,41 +573,50 @@ std::vector<LocalNetwork> local_networks() {
     return networks;
 }
 
-std::vector<std::string> broadcast_addresses() { return broadcast_addresses(local_networks()); }
+std::vector<LocalNetwork> announce_networks() { return announce_networks(local_networks()); }
 
-std::vector<std::string> broadcast_addresses(const std::vector<LocalNetwork>& networks) {
-    std::vector<std::string> addresses;
-    for (const LocalNetwork& network : networks) {
-        if (std::find(addresses.begin(), addresses.end(), network.broadcast) == addresses.end()) {
-            addresses.push_back(network.broadcast);
+std::vector<LocalNetwork> announce_networks(const std::vector<LocalNetwork>& networks) {
+    std::vector<LocalNetwork> announce;
+    for (const LocalNetwork& network : wired_first(networks)) {
+        const bool seen = std::any_of(announce.begin(), announce.end(),
+                                      [&network](const LocalNetwork& already) {
+                                          return already.broadcast == network.broadcast;
+                                      });
+        if (!seen) {
+            announce.push_back(network);
         }
     }
-    if (addresses.empty()) {
-        addresses.push_back("255.255.255.255");
+    if (announce.empty()) {
+        LocalNetwork everywhere;
+        everywhere.broadcast = "255.255.255.255";
+        announce.push_back(everywhere);
     }
-    return addresses;
+    return announce;
 }
 
-std::string shared_network_warning(const std::vector<LocalNetwork>& networks) {
+std::string shared_network_warning(const std::vector<LocalNetwork>& given) {
+    const std::vector<LocalNetwork> networks = wired_first(given);
     for (std::size_t first = 0; first < networks.size(); ++first) {
         std::vector<std::string> sharing;
-        for (std::size_t other = 0; other < networks.size(); ++other) {
-            if (networks[other].broadcast == networks[first].broadcast) {
-                sharing.push_back(networks[other].interface + " (" + networks[other].address + ")");
+        for (const LocalNetwork& network : networks) {
+            if (network.broadcast == networks[first].broadcast) {
+                sharing.push_back(network.interface + " (" + network.address + ")");
             }
         }
         if (sharing.size() < 2) {
             continue;
         }
-        // Only the first such network is reported: a machine wired onto one
-        // network twice is already the whole of what the reader needs to fix.
+        // Only the first such network is reported: a machine on one network
+        // twice is already the whole of what the reader has to go and fix.
         std::string named;
         for (std::size_t index = 0; index < sharing.size(); ++index) {
             if (index > 0) named += index + 1 == sharing.size() ? " and " : ", ";
             named += sharing[index];
         }
-        return named + " are on the same network; companions will reach this machine by " +
-               "whichever one answers first, and streaming will be uneven until one of them is off";
+        return named + " are on the same network; companions are pointed at " +
+               networks[first].interface +
+               ", but this machine still answers on the others and streaming can be uneven "
+               "until they are off";
     }
     return std::string();
 }

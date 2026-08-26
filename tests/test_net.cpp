@@ -403,35 +403,70 @@ void test_a_connect_in_progress_does_not_claim_to_be_connected() {
     }
 }
 
+std::vector<LocalNetwork> a_machine_on_one_network_twice() {
+    // As the interfaces arrive from the kernel: the wire is not first, so
+    // preferring it has to be a decision rather than an accident of order.
+    return {
+        {"lo", "127.0.0.1", "127.0.0.1", false},
+        {"wlan0", "192.168.0.98", "192.168.0.255", true},
+        {"enp42s0", "192.168.0.103", "192.168.0.255", false},
+    };
+}
+
 void test_one_network_reached_twice_is_called_out() {
     std::vector<LocalNetwork> alone {
-        {"lo", "127.0.0.1", "127.0.0.1"},
-        {"enp42s0", "192.168.0.103", "192.168.0.255"},
+        {"lo", "127.0.0.1", "127.0.0.1", false},
+        {"enp42s0", "192.168.0.103", "192.168.0.255", false},
     };
     CHECK_MSG(shared_network_warning(alone).empty(),
               "a machine with one way onto each network was warned about anyway");
 
-    std::vector<LocalNetwork> twice {
-        {"lo", "127.0.0.1", "127.0.0.1"},
-        {"enp42s0", "192.168.0.103", "192.168.0.255"},
-        {"wlan0", "192.168.0.98", "192.168.0.255"},
-    };
-    const std::string warning = shared_network_warning(twice);
+    const std::string warning = shared_network_warning(a_machine_on_one_network_twice());
     CHECK_MSG(warning.find("enp42s0 (192.168.0.103)") != std::string::npos &&
                   warning.find("wlan0 (192.168.0.98)") != std::string::npos,
               "a machine on one network through two interfaces did not name them both");
+    CHECK_MSG(warning.find("pointed at enp42s0") != std::string::npos,
+              "the warning did not say companions are pointed at the wired interface: " + warning);
 }
 
-void test_a_network_reached_twice_is_still_announced_once() {
-    std::vector<LocalNetwork> twice {
-        {"lo", "127.0.0.1", "127.0.0.1"},
-        {"enp42s0", "192.168.0.103", "192.168.0.255"},
-        {"wlan0", "192.168.0.98", "192.168.0.255"},
-    };
-    const std::vector<std::string> addresses = broadcast_addresses(twice);
-    CHECK_MSG(addresses.size() == 2,
-              "one network reached twice was announced to " + std::to_string(addresses.size()) +
+void test_a_network_reached_twice_is_announced_once_over_the_wire() {
+    const std::vector<LocalNetwork> announce =
+        announce_networks(a_machine_on_one_network_twice());
+    CHECK_MSG(announce.size() == 2,
+              "one network reached twice was announced to " + std::to_string(announce.size()) +
                   " addresses rather than 2");
+    for (const LocalNetwork& network : announce) {
+        if (network.broadcast != "192.168.0.255") continue;
+        CHECK_MSG(network.interface == "enp42s0",
+                  "a network reachable by wire and by wifi was announced from " +
+                      network.interface + " rather than the wire");
+    }
+}
+
+void test_a_beacon_pinned_to_an_interface_still_arrives() {
+    // Which interface gets chosen cannot be checked on a machine that is not
+    // on one network twice. What can be checked is that asking for a specific
+    // one still delivers a datagram carrying an address to dial back.
+    UdpSocket listener;
+    std::string error;
+    CHECK(listener.start(kDiscoveryPort, false, &error));
+
+    UdpSocket sender;
+    CHECK(sender.start(0, true, &error));
+    const std::vector<uint8_t> payload {1, 2, 3, 4};
+    CHECK(sender.broadcast(kDiscoveryPort, payload.data(), payload.size()));
+
+    std::vector<uint8_t> received;
+    std::string from;
+    const uint64_t deadline = monotonic_millis() + 1000;
+    while (received.empty() && monotonic_millis() < deadline) {
+        if (!listener.receive(received, from)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    CHECK_MSG(!received.empty(), "a beacon sent out of a named interface never arrived");
+    CHECK_MSG(!from.empty() && from != "0.0.0.0",
+              "a beacon arrived without a source address for a companion to dial back");
 }
 
 }  // namespace
@@ -445,6 +480,7 @@ int main() {
     test_connect_to_nothing_fails();
     test_a_connect_in_progress_does_not_claim_to_be_connected();
     test_one_network_reached_twice_is_called_out();
-    test_a_network_reached_twice_is_still_announced_once();
+    test_a_network_reached_twice_is_announced_once_over_the_wire();
+    test_a_beacon_pinned_to_an_interface_still_arrives();
     return test::finish("net");
 }

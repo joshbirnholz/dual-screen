@@ -109,21 +109,24 @@ struct LocalNetwork {
     std::string interface;
     std::string address;
     std::string broadcast;
+    bool wireless = false;
 };
 
-// Best-effort list of the networks this machine is on.
+// Best-effort list of the networks this machine is on, as the kernel
+// reports them.
 std::vector<LocalNetwork> local_networks();
 
-// Best-effort list of this machine's broadcast addresses, so a beacon reaches
-// every subnet the device is on rather than only the default route. One entry
-// per network: a machine that is on one network twice still announces once.
-std::vector<std::string> broadcast_addresses(const std::vector<LocalNetwork>& networks);
-std::vector<std::string> broadcast_addresses();
+// The networks to announce on: one entry per network, so a machine that is on
+// one network twice announces once, and the wired way onto it is the one it
+// gives out. Never empty -- with nothing to go on it falls back to the
+// all-subnets address and lets the routing table choose.
+std::vector<LocalNetwork> announce_networks(const std::vector<LocalNetwork>& networks);
+std::vector<LocalNetwork> announce_networks();
 
 // Names the interfaces whenever this machine is on one network through more
-// than one of them, and is empty otherwise. Worth saying out loud: a companion
-// reaches such a machine by whichever interface answered first, the replies can
-// leave by the other one, and neither choice is anyone's.
+// than one of them, and is empty otherwise. Worth saying out loud: companions
+// are pointed at the wired one, but the machine still answers on both and the
+// replies leave by whichever the routing table picks.
 std::string shared_network_warning(const std::vector<LocalNetwork>& networks);
 
 // Monotonic milliseconds, for timeouts that must not jump when the clock does.
