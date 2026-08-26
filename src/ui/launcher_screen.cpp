@@ -121,6 +121,10 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     return result;
 }
 
+std::string host_row_detail(const ds::net::DiscoveredHost& host, bool available) {
+    return host.device_name + (available ? "" : "   this screen is already taken");
+}
+
 std::vector<GuidePrompt> LauncherScreen::guide_prompts() const {
     std::vector<GuidePrompt> guide;
     // Leftmost, the way Disconnect leads the quick menu's row: the one that
@@ -321,10 +325,7 @@ void HostPickerScreen::render(QuadRenderer& quads,
         text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad,
                   row.y + pad * 0.7f, scale * 1.1f,
                   available ? menu_row_text(focused) : theme.text_dim);
-        const std::string detail =
-            host.device_name + "   " + host.address +
-            (available ? "" : "   this screen is already taken");
-        text.draw(quads, detail, row.x + pad, row.y + pad * 0.7f + line * 1.4f, scale * 0.85f,
+        text.draw(quads, host_row_detail(host, available), row.x + pad, row.y + pad * 0.7f + line * 1.4f, scale * 0.85f,
                   focused ? theme.panel : (available ? theme.text_dim : theme.warning));
     }
 

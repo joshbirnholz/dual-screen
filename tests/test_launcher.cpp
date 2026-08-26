@@ -62,11 +62,32 @@ void test_quit_leads_the_control_guide() {
               "Select stopped being offered once Quit moved in front of it");
 }
 
+// The connection list names devices, not addresses. An address means nothing to
+// the player choosing between two consoles in the same room, and it is a detail
+// of their network sitting on a screen.
+void test_the_connection_list_does_not_show_addresses() {
+    ds::net::DiscoveredHost host;
+    host.device_name = "Josh's Steam Deck";
+    host.address = "192.168.1.57";
+    host.game_title = "Some Game";
+
+    for (const bool available : {true, false}) {
+        const std::string detail = host_row_detail(host, available);
+        CHECK_MSG(detail.find(host.address) == std::string::npos,
+                  "the connection list showed " + host.address);
+        CHECK_MSG(detail.find(host.device_name) != std::string::npos,
+                  "the connection list stopped naming the device: '" + detail + "'");
+    }
+    CHECK_MSG(host_row_detail(host, false).find("already taken") != std::string::npos,
+              "a screen someone else already holds no longer says so");
+}
+
 }  // namespace
 
 int main() {
     test_plus_only_quits_where_the_platform_says_so();
     test_the_other_face_buttons_do_nothing_here();
     test_quit_leads_the_control_guide();
+    test_the_connection_list_does_not_show_addresses();
     return test::finish("launcher");
 }

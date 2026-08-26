@@ -92,6 +92,11 @@ struct HostPickerResult {
     ds::net::DiscoveredHost host;
 };
 
+// The line under a host's game title in the connection list. Its address is
+// deliberately not in it: the player picks a device by its name, and an address
+// is both meaningless to them and a detail of their network to leave on screen.
+std::string host_row_detail(const ds::net::DiscoveredHost& host, bool available);
+
 class HostPickerScreen {
 public:
     void open(ScreenId wanted_screen);
