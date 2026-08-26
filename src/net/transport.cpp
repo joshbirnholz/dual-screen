@@ -12,12 +12,26 @@
 #include <time.h>
 #include <unistd.h>
 
-// The Switch's BSD sockets are a subset of the usual ones: libnx has no
-// getifaddrs(). Only a host enumerating its own interfaces to broadcast on
-// needs it, and the Switch build is a companion -- it connects out and listens
-// for broadcasts -- so the one function that wants it falls back to the
-// all-subnets address there rather than this file being forked in two.
-#if !defined(__SWITCH__)
+// Not every platform has getifaddrs(). The Switch's BSD sockets are a subset
+// of the usual ones and libnx has none; Android's Bionic gained it only in API
+// 24, and the companion there is built to run further back than that.
+//
+// Only a host enumerating its own interfaces to broadcast on needs it, and
+// both of those builds are companions -- they connect out and listen for
+// broadcasts -- so the one function that wants it falls back to the
+// all-subnets address rather than this file being forked in two.
+//
+// Written as what the platform can do rather than which platform it is, so
+// raising Android's floor to 24 picks the real thing up on its own.
+#if defined(__SWITCH__)
+#define DS_GETIFADDRS_AVAILABLE 0
+#elif defined(__ANDROID__) && defined(__ANDROID_API__) && __ANDROID_API__ < 24
+#define DS_GETIFADDRS_AVAILABLE 0
+#else
+#define DS_GETIFADDRS_AVAILABLE 1
+#endif
+
+#if DS_GETIFADDRS_AVAILABLE
 #define DS_HAVE_GETIFADDRS 1
 #include <ifaddrs.h>
 #include <net/if.h>

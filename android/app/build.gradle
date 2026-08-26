@@ -17,6 +17,11 @@ android {
         applicationId 'com.dualscreen.companion'
         // SDL2 needs 16+; 21 is the floor for the 64-bit ABIs and for the
         // toolchain to stop warning about it.
+        //
+        // Bionic gained getifaddrs() at 24, which src/net/transport.cpp checks
+        // for: below that it broadcasts to all subnets instead of enumerating
+        // interfaces. A companion never announces itself, so it does not need
+        // the difference -- but raising this floor does change that code.
         minSdk 21
         targetSdk 33
         versionCode 1
