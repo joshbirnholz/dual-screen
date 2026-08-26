@@ -403,6 +403,37 @@ void test_a_connect_in_progress_does_not_claim_to_be_connected() {
     }
 }
 
+void test_one_network_reached_twice_is_called_out() {
+    std::vector<LocalNetwork> alone {
+        {"lo", "127.0.0.1", "127.0.0.1"},
+        {"enp42s0", "192.168.0.103", "192.168.0.255"},
+    };
+    CHECK_MSG(shared_network_warning(alone).empty(),
+              "a machine with one way onto each network was warned about anyway");
+
+    std::vector<LocalNetwork> twice {
+        {"lo", "127.0.0.1", "127.0.0.1"},
+        {"enp42s0", "192.168.0.103", "192.168.0.255"},
+        {"wlan0", "192.168.0.98", "192.168.0.255"},
+    };
+    const std::string warning = shared_network_warning(twice);
+    CHECK_MSG(warning.find("enp42s0 (192.168.0.103)") != std::string::npos &&
+                  warning.find("wlan0 (192.168.0.98)") != std::string::npos,
+              "a machine on one network through two interfaces did not name them both");
+}
+
+void test_a_network_reached_twice_is_still_announced_once() {
+    std::vector<LocalNetwork> twice {
+        {"lo", "127.0.0.1", "127.0.0.1"},
+        {"enp42s0", "192.168.0.103", "192.168.0.255"},
+        {"wlan0", "192.168.0.98", "192.168.0.255"},
+    };
+    const std::vector<std::string> addresses = broadcast_addresses(twice);
+    CHECK_MSG(addresses.size() == 2,
+              "one network reached twice was announced to " + std::to_string(addresses.size()) +
+                  " addresses rather than 2");
+}
+
 }  // namespace
 
 int main() {
@@ -413,5 +444,7 @@ int main() {
     test_the_kernel_send_queue_is_small_enough_to_notice();
     test_connect_to_nothing_fails();
     test_a_connect_in_progress_does_not_claim_to_be_connected();
+    test_one_network_reached_twice_is_called_out();
+    test_a_network_reached_twice_is_still_announced_once();
     return test::finish("net");
 }

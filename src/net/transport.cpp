@@ -37,6 +37,7 @@
 #include <net/if.h>
 #endif
 
+#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -471,8 +472,8 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address) {
     return true;
 }
 
-std::vector<std::string> broadcast_addresses() {
-    std::vector<std::string> addresses;
+std::vector<LocalNetwork> local_networks() {
+    std::vector<LocalNetwork> networks;
 
 #if defined(DS_HAVE_GETIFADDRS)
     ifaddrs* list = nullptr;
@@ -484,23 +485,64 @@ std::vector<std::string> broadcast_addresses() {
             if ((entry->ifa_flags & IFF_UP) == 0) {
                 continue;
             }
+            LocalNetwork network;
+            network.interface = entry->ifa_name != nullptr ? entry->ifa_name : "";
+            network.address = describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_addr));
             // Loopback is included on purpose: it is how two instances on one
             // machine find each other, which is exactly what the tests do.
             if ((entry->ifa_flags & IFF_BROADCAST) != 0 && entry->ifa_broadaddr != nullptr) {
-                addresses.push_back(
-                    describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_broadaddr)));
+                network.broadcast = describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_broadaddr));
             } else if ((entry->ifa_flags & IFF_LOOPBACK) != 0) {
-                addresses.push_back(describe(*reinterpret_cast<sockaddr_in*>(entry->ifa_addr)));
+                network.broadcast = network.address;
+            } else {
+                continue;
             }
+            networks.push_back(network);
         }
         ::freeifaddrs(list);
     }
 #endif
 
+    return networks;
+}
+
+std::vector<std::string> broadcast_addresses() { return broadcast_addresses(local_networks()); }
+
+std::vector<std::string> broadcast_addresses(const std::vector<LocalNetwork>& networks) {
+    std::vector<std::string> addresses;
+    for (const LocalNetwork& network : networks) {
+        if (std::find(addresses.begin(), addresses.end(), network.broadcast) == addresses.end()) {
+            addresses.push_back(network.broadcast);
+        }
+    }
     if (addresses.empty()) {
         addresses.push_back("255.255.255.255");
     }
     return addresses;
+}
+
+std::string shared_network_warning(const std::vector<LocalNetwork>& networks) {
+    for (std::size_t first = 0; first < networks.size(); ++first) {
+        std::vector<std::string> sharing;
+        for (std::size_t other = 0; other < networks.size(); ++other) {
+            if (networks[other].broadcast == networks[first].broadcast) {
+                sharing.push_back(networks[other].interface + " (" + networks[other].address + ")");
+            }
+        }
+        if (sharing.size() < 2) {
+            continue;
+        }
+        // Only the first such network is reported: a machine wired onto one
+        // network twice is already the whole of what the reader needs to fix.
+        std::string named;
+        for (std::size_t index = 0; index < sharing.size(); ++index) {
+            if (index > 0) named += index + 1 == sharing.size() ? " and " : ", ";
+            named += sharing[index];
+        }
+        return named + " are on the same network; companions will reach this machine by " +
+               "whichever one answers first, and streaming will be uneven until one of them is off";
+    }
+    return std::string();
 }
 
 }  // namespace ds::net
