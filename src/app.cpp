@@ -8,7 +8,6 @@
 #include <fstream>
 
 #include "audio/audio_output.hpp"
-#include "audio/ui_sounds.hpp"
 #include "config/game_config.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
@@ -226,7 +225,6 @@ struct App::Impl {
     // rather than acted on every frame it lasts.
     bool game_was_running = false;
     ButtonGlyphSheet button_glyphs;
-    UiSounds ui_sounds;
     LocalOutputRouter router;
     // Lives as long as the GL context does, and no longer: created just after
     // the window, destroyed just before it.
@@ -351,9 +349,6 @@ struct App::Impl {
     // Opens or closes the one menu on this device, which for a host is also
     // what the companion is told to draw.
     void set_menu_open(bool open);
-    // Where the cursor is on whatever screen is up, as one number: what it
-    // means does not matter, only that it changes when the cursor moves.
-    int menu_cursor() const;
     // The menu as the host has it, for a device that is only showing it.
     LayoutPickerState menu_state_from_host() const;
     // The two settings both devices share. On a companion these ask the host
@@ -390,10 +385,7 @@ struct App::Impl {
                        const std::string& title,
                        const std::string& body,
                        const std::vector<std::string>& details,
-                       bool fatal,
-                       // A device that never answered gets its own sound; every
-                       // other error shares one.
-                       UiSound sound = UiSound::Error);
+                       bool fatal);
     void persist_game_config();
     void handle_ui(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
     // How long the last frame took, so screens that need a clock have one.
@@ -645,22 +637,9 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     return state;
 }
 
-int App::Impl::menu_cursor() const {
-    switch (state) {
-        case State::Menu: return picker ? picker->focus() : 0;
-        case State::Launcher: return launcher ? launcher->focus() : 0;
-        case State::HostPicker: return host_picker ? host_picker->focus() : 0;
-        case State::Browser: return browser ? browser->focus() : 0;
-        case State::Settings: return settings_screen ? settings_screen->focus() : 0;
-        default: break;
-    }
-    return 0;
-}
-
 void App::Impl::set_menu_open(bool open) {
     if (open) {
         if (state == State::Menu) return;
-        ui_sounds.play(UiSound::OpenQuickMenu);
         open_picker();
         state = State::Menu;
         input.set_game_input_enabled(false);
@@ -668,7 +647,6 @@ void App::Impl::set_menu_open(bool open) {
         return;
     }
     if (state != State::Menu) return;
-    ui_sounds.play(UiSound::CloseQuickMenu);
     picker->close();
     if (is_companion()) {
         companion_session->set_menu_open(false);
@@ -1065,12 +1043,8 @@ void App::Impl::enter_message(MessageKind kind,
                               const std::string& title,
                               const std::string& body,
                               const std::vector<std::string>& details,
-                              bool fatal,
-                              UiSound sound) {
+                              bool fatal) {
     message.show(kind, title, body, details);
-    if (kind == MessageKind::Error) {
-        ui_sounds.play(sound);
-    }
     message_is_fatal = fatal;
     state = State::Message;
     input.set_game_input_enabled(false);
@@ -1260,12 +1234,6 @@ void App::Impl::persist_game_config() {
 
 void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers) {
-    // Noted before anything acts on the press, and compared after: a cursor
-    // that did not move -- held against the end of a list, say -- makes no
-    // sound, which is the difference between feedback and a rattle.
-    const State state_before = state;
-    const int cursor_before = menu_cursor();
-    const bool in_a_menu = state != State::Playing && state != State::Companion;
     // Filtering is deliberately handled before anything else looks at the
     // actions: R3 means the same thing in a game and in every menu, so it does
     // not belong to any one screen.
@@ -1390,8 +1358,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (companion_session->status() == net::CompanionSession::Status::Failed) {
                 enter_message(MessageKind::Error, "Lost the connection",
-                              companion_session->status_detail(), {}, false,
-                              UiSound::ConnectionTimeout);
+                              companion_session->status_detail(), {}, false);
             }
             break;
         }
@@ -1509,24 +1476,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
     }
 
-    // What that press sounded like, decided from what it actually did.
-    if (!in_a_menu) {
-        return;
-    }
-    const bool left_the_menu = state_before == State::Menu && state != State::Menu;
-    for (const UiAction action : actions) {
-        if (action == UiAction::Confirm) {
-            ui_sounds.play(UiSound::Confirm);
-        } else if (action == UiAction::Cancel && !left_the_menu) {
-            // Backing out of the quick menu has its own sound, played where the
-            // menu is actually put away.
-            ui_sounds.play(UiSound::Cancel);
-        }
-    }
-    if (state == state_before && menu_cursor() != cursor_before) {
-        ui_sounds.play(UiSound::MoveCursor);
-    }
-
 }
 
 void App::Impl::render() {
@@ -1536,27 +1485,6 @@ void App::Impl::render() {
     // and nothing says why. Reported once, since a failing draw fails every
     // frame and one line is the useful amount.
     gl::log_error_once("something in the last frame was rejected by OpenGL");
-
-    // The shell's effects come out of whichever device the game's sound does.
-    // Outside a game there is no target to follow and nothing to talk over, so
-    // they play wherever they were asked for.
-    // Only the quick menu follows the game's sound target -- it is the one
-    // that opens over a game, on two devices at once. Every other screen is
-    // this device's alone, so it is audible here whatever the target says.
-    ui_sounds.set_muted(state == State::Menu && !sound_plays_here());
-    // Keeps them audible over a game that has gone quiet behind the very menu
-    // making them; does nothing while the game is filling its own queue.
-    audio.pump_effects();
-
-    // The sound under the wait, running for exactly as long as the wait does.
-    // Decided here, before any of the branches below return, so it cannot be
-    // left playing by a path that forgot about it.
-    if (companion_session &&
-        companion_session->status() == net::CompanionSession::Status::Connecting) {
-        ui_sounds.start_loop(UiSound::ConnectingLoop);
-    } else {
-        ui_sounds.stop_loop();
-    }
 
     if (state == State::Browser) {
         browser->render(quads, text, button_glyphs, width, height);
@@ -1787,15 +1715,6 @@ int App::run(const AppOptions& options) {
         close_log_file();
         return 1;
     }
-    // Not fatal if it fails: a machine with no sound card still plays games,
-    // and UiSounds says so in the log on its way past.
-    std::string sound_error;
-    if (impl.ui_sounds.initialize(&sound_error)) {
-        log_info("interface sounds are ready");
-    }
-    // Where a platform has one audio device, the game's output owns it and
-    // these are mixed in. See AudioOutput::set_effects().
-    impl.audio.set_effects(&impl.ui_sounds);
     if (!impl.quads.initialize(&error) || !impl.text.initialize(&error) ||
         !impl.button_glyphs.initialize(&error)) {
         log_error("cannot set up the renderer: " + error);
@@ -2335,13 +2254,9 @@ int App::run(const AppOptions& options) {
             impl.source->input_sink().submit(DsInputState());
         }
         if (impl.source && !game_running && impl.game_was_running) {
-            // The device is deliberately left running across a pause. Stopping
-            // it drains nothing, so the menu's own sounds would queue up behind
-            // whatever the game left and all arrive at once when it came back.
-            // What does have to go is that tail: it is the moment before the
-            // pause, and it would play over the menu that caused it. Only on
-            // the way in -- flushing on the way out would cut off the sound of
-            // the menu closing.
+            // The tail of a game that has just stopped, which would otherwise
+            // keep playing over a menu the player has already opened. Dropped
+            // on the way in only: there is nothing stale to drop on the way out.
             impl.audio.flush();
         }
         impl.game_was_running = game_running;

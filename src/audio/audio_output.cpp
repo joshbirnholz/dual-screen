@@ -1,9 +1,7 @@
 #include "audio/audio_output.hpp"
 
-#include <algorithm>
 #include <vector>
 
-#include "audio/ui_sounds.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -14,8 +12,6 @@ constexpr int kBytesPerFrame = 4;  // 2 channels x int16
 }  // namespace
 
 AudioOutput::~AudioOutput() { close(); }
-
-void AudioOutput::set_effects(UiSounds* effects) { effects_ = effects; }
 
 bool AudioOutput::open(double sample_rate, std::string* error) {
     close();
@@ -33,12 +29,6 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     // underrun when a frame takes longer than usual.
     desired.samples = 512;
     desired.callback = nullptr;  // queue-driven
-
-    // Asked for before opening: on a platform with one device the effects are
-    // holding it, and the game's sound has the better claim.
-    if (effects_ != nullptr) {
-        effects_->release_device();
-    }
 
     device_ = SDL_OpenAudioDevice(nullptr, 0, &desired, &spec_, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
     if (device_ == 0) {
@@ -79,10 +69,6 @@ void AudioOutput::close() {
     if (device_ != 0) {
         SDL_CloseAudioDevice(device_);
         device_ = 0;
-        // Handed back, so a launcher with no game running still makes sounds.
-        if (effects_ != nullptr) {
-            effects_->take_device();
-        }
     }
     paused_ = true;
 }
@@ -120,21 +106,6 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
         return;
     }
 
-    // The effects ride the game's stream rather than a second device, and are
-    // mixed in at this rate: whatever resampling this stream needs, they need
-    // the same.
-    const int16_t* source = interleaved_stereo;
-    static thread_local std::vector<int16_t> mixed;
-    if (effects_ != nullptr && effects_->sounding()) {
-        mixed.assign(interleaved_stereo, interleaved_stereo + frames * 2);
-        effects_->render_into(mixed.data(), frames, static_cast<int>(sample_rate_ + 0.5), 2);
-        source = mixed.data();
-    }
-
-    queue(source, frames);
-}
-
-void AudioOutput::queue(const int16_t* interleaved_stereo, std::size_t frames) {
     const int byte_count = static_cast<int>(frames * kBytesPerFrame);
     if (stream_ != nullptr) {
         if (SDL_AudioStreamPut(stream_, interleaved_stereo, byte_count) != 0) {
@@ -153,25 +124,6 @@ void AudioOutput::queue(const int16_t* interleaved_stereo, std::size_t frames) {
         return;
     }
     SDL_QueueAudio(device_, interleaved_stereo, static_cast<Uint32>(byte_count));
-}
-
-void AudioOutput::pump_effects() {
-    if (device_ == 0 || paused_ || effects_ == nullptr || !effects_->sounding()) {
-        return;
-    }
-    // Only while the game is not filling the queue itself. A game that is
-    // running keeps it well above this, so this does nothing until one pauses.
-    const std::size_t rate = static_cast<std::size_t>(sample_rate_ + 0.5);
-    const std::size_t chunk = std::max<std::size_t>(1, rate / 30);
-    if (queued_frames() > chunk) {
-        return;
-    }
-    static thread_local std::vector<int16_t> silence;
-    silence.assign(chunk * 2, 0);
-    effects_->render_into(silence.data(), chunk, static_cast<int>(rate), 2);
-    // Queued rather than pushed: it has been mixed already, and push() would
-    // mix the same effects into it a second time.
-    queue(silence.data(), chunk);
 }
 
 }  // namespace ds

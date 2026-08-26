@@ -62,13 +62,11 @@ dualscreen_embed_asset(ds_bezel.png kDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(rodin.otf kRodinOtf BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
-dualscreen_embed_asset(ui_sounds.bin kUiSoundsBin BEZEL_SOURCES)
 
 add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
     src/app.cpp
     src/audio/audio_output.cpp
-    src/audio/ui_sounds.cpp
     src/config/game_config.cpp
     src/config/paths.cpp
     src/config/settings.cpp

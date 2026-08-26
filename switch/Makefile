@@ -46,8 +46,7 @@ GENERATED   := generated
 # The assets that travel inside the binary. One list, so what gets generated
 # and what gets compiled cannot drift apart -- a generated file that nothing
 # compiles is an undefined symbol at link time and nothing sooner.
-EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kRodinOtf.cpp kButtonIconsPng.cpp \
-                    kUiSoundsBin.cpp
+EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kRodinOtf.cpp kButtonIconsPng.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -61,7 +60,7 @@ SOURCE_DIRS := $(CLIENT) \
                $(SHARED)/util
 
 CPPFILES    := main.cpp \
-               audio_output.cpp ui_sounds.cpp \
+               audio_output.cpp \
                system.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp input_manager.cpp \
                layout.cpp layout_registry.cpp \
@@ -174,11 +173,6 @@ $(GENERATED)/kDsBezelPng.cpp: $(CURDIR)/../assets/ds_bezel.png $(CURDIR)/../tool
 	@mkdir -p $(GENERATED)
 	@echo embedding ds_bezel.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kDsBezelPng -P $(CURDIR)/../tools/embed_asset.cmake
-
-$(GENERATED)/kUiSoundsBin.cpp: $(CURDIR)/../assets/ui_sounds.bin $(CURDIR)/../tools/embed_asset.cmake
-	@mkdir -p $(GENERATED)
-	@echo embedding ui_sounds.bin
-	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kUiSoundsBin -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kButtonIconsPng.cpp: $(CURDIR)/../assets/button_icons.png $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

@@ -45,7 +45,6 @@
 #include <vector>
 
 #include "audio/audio_output.hpp"
-#include "audio/ui_sounds.hpp"
 #include "config/settings.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
@@ -237,7 +236,6 @@ private:
     QuadRenderer quads_;
     TextRenderer text_;
     ButtonGlyphSheet button_glyphs_;
-    UiSounds ui_sounds_;
     MenuBackdrop menu_backdrop_;
     Compositor compositor_;
     LocalOutputRouter router_;
@@ -277,17 +275,6 @@ bool Client::start() {
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         log_warn(std::string("no sound on this device: ") + SDL_GetError());
     }
-    // Opened once, here rather than beside the GL resources: a device is not
-    // one of those, and rebuilding them on every context loss would leave a
-    // trail of open devices behind. Not fatal if it fails -- a second screen
-    // with no sound is still a second screen.
-    std::string sound_reason;
-    if (ui_sounds_.initialize(&sound_reason)) {
-        log_info("interface sounds are ready");
-    }
-    // Where a platform has one audio device -- the Switch does -- the streamed
-    // game sound owns it and these are mixed in.
-    audio_.set_effects(&ui_sounds_);
     // The same convention the app uses: face buttons are read by where they
     // are, not by the letter printed on them.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
@@ -510,11 +497,8 @@ void Client::open_menu() {
     session_.set_menu_open(true);
     // The game has stopped behind this menu and stopped sending, so what is
     // still queued is its tail: a quarter second of a game that is no longer
-    // running, which would play over the menu that silenced it and hold the
-    // sound of the menu opening behind it. Dropped on the way in only -- on the
-    // way out it would cut off the sound of the menu closing.
+    // running, which would keep playing over the menu that silenced it.
     audio_.flush();
-    ui_sounds_.play(UiSound::OpenQuickMenu);
     input_.set_game_input_enabled(false);
 }
 
@@ -527,7 +511,6 @@ void Client::close_menu() {
     }
     menu_open_ = false;
     session_.set_menu_open(false);
-    ui_sounds_.play(UiSound::CloseQuickMenu);
     input_.set_game_input_enabled(state_ == State::Playing);
 }
 
@@ -541,16 +524,6 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
         net::MenuAction wire = net::MenuAction::Confirm;
         if (!menu_action_for(action, wire)) continue;
         session_.request_menu_action(wire);
-        // Answered here rather than waiting for the press to come back: a
-        // button that only clicks once the far end has replied feels broken.
-        // Backing out of the menu is the exception -- close_menu() has its own
-        // sound, and it plays when the host actually says the menu is down.
-        if (action == UiAction::Confirm) {
-            ui_sounds_.play(UiSound::Confirm);
-        } else if (action == UiAction::Up || action == UiAction::Down ||
-                   action == UiAction::Left || action == UiAction::Right) {
-            ui_sounds_.play(UiSound::MoveCursor);
-        }
     }
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
@@ -600,110 +573,81 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         return;
     }
 
-    // This device's own screens -- the launcher and the host list -- answer
-    // their own presses, so the sound is decided from what the cursor did.
-    const int cursor_before = state_ == State::Launcher ? launcher_.focus() : host_picker_.focus();
-    const State state_before = state_;
-    const bool in_a_menu = state_ == State::Launcher || state_ == State::Browsing;
-    for (const UiAction action : actions) {
-        if (!in_a_menu) break;  // in a game these are the game's buttons
-        if (action == UiAction::Confirm) {
-            ui_sounds_.play(UiSound::Confirm);
-        } else if (action == UiAction::Cancel) {
-            ui_sounds_.play(UiSound::Cancel);
+    if (state_ == State::Launcher) {
+        const LauncherResult result =
+            launcher_.update(actions, pointers, static_cast<float>(output_width_),
+                             static_cast<float>(output_height_));
+        switch (result.choice) {
+            case LauncherChoice::ConnectAsTopScreen:
+                begin_search(ScreenId::Top);
+                break;
+            case LauncherChoice::ConnectAsBottomScreen:
+                begin_search(ScreenId::Bottom);
+                break;
+            case LauncherChoice::Quit:
+                running_ = false;
+                break;
+            default:
+                break;
         }
+        return;
     }
 
-    // Answered inside a call of its own so that a screen which is done with a
-    // press cannot return past what comes after: the sound of the cursor moving
-    // is decided from where the cursor ended up, and both of this device's own
-    // screens used to hand their presses back and leave before it was.
-    const auto answer = [&]() {
-        if (state_ == State::Launcher) {
-            const LauncherResult result =
-                launcher_.update(actions, pointers, static_cast<float>(output_width_),
-                                 static_cast<float>(output_height_));
-            switch (result.choice) {
-                case LauncherChoice::ConnectAsTopScreen:
-                    begin_search(ScreenId::Top);
-                    break;
-                case LauncherChoice::ConnectAsBottomScreen:
-                    begin_search(ScreenId::Bottom);
-                    break;
-                case LauncherChoice::Quit:
-                    running_ = false;
-                    break;
-                default:
-                    break;
-            }
-            return;
+    if (state_ == State::Browsing) {
+        const HostPickerResult result =
+            host_picker_.update(session_.hosts(), actions, pointers,
+                                static_cast<float>(output_width_),
+                                static_cast<float>(output_height_));
+        if (result.chosen) {
+            join(result.host);
+        } else if (result.cancelled) {
+            // Back to choosing which screen to be, rather than out of the app:
+            // that is what the button that got here undoes.
+            open_launcher();
         }
+        return;
+    }
 
-        if (state_ == State::Browsing) {
-            const HostPickerResult result =
-                host_picker_.update(session_.hosts(), actions, pointers,
-                                    static_cast<float>(output_width_),
-                                    static_cast<float>(output_height_));
-            if (result.chosen) {
-                join(result.host);
-            } else if (result.cancelled) {
-                // Back to choosing which screen to be, rather than out of the app:
-                // that is what the button that got here undoes.
-                open_launcher();
-            }
-            return;
-        }
-
-        for (const UiAction action : actions) {
-            switch (state_) {
-                case State::Connecting:
-                    if (action == UiAction::Cancel) {
-                        leave("you stopped connecting");
-                    }
-                    break;
-                case State::Failed:
-                    if (action == UiAction::Confirm || action == UiAction::Cancel) {
-                        open_launcher();
-                    }
-                    break;
-                case State::Launcher:
-                    break;
-                case State::Playing:
-                    switch (action) {
-                        case UiAction::ToggleMenu:
-                            // Asked for rather than opened here. The host holds the
-                            // one menu; this device puts it up when told to, which
-                            // is what keeps the two screens showing the same thing.
-                            session_.set_menu_open(true);
-                            break;
-                        case UiAction::ToggleFilter:
-                            // R3, which means the same thing here as it does on the
-                            // device running the game.
-                            session_.request_filtering(!session_.host_filtering());
-                            break;
-                        case UiAction::SwapLayout:
-                            // L3, likewise: the two focus layouts swap.
-                            session_.request_layout(
-                                registry_.resolve(session_.host_layout_id()).swap_layout_id);
-                            break;
-                        case UiAction::Quit:
-                            break;  // Quit lives in the menu here, not on a button
-                        default:
-                            break;
-                    }
-                    break;
-                case State::Browsing:
-                    break;
-            }
-        }
-    };
-    answer();
-
-    if (in_a_menu && state_ == state_before) {
-        const int cursor_now =
-            state_ == State::Launcher ? launcher_.focus() : host_picker_.focus();
-        if (cursor_now != cursor_before) {
-            ui_sounds_.play(UiSound::MoveCursor);
+    for (const UiAction action : actions) {
+        switch (state_) {
+            case State::Connecting:
+                if (action == UiAction::Cancel) {
+                    leave("you stopped connecting");
+                }
+                break;
+            case State::Failed:
+                if (action == UiAction::Confirm || action == UiAction::Cancel) {
+                    open_launcher();
+                }
+                break;
+            case State::Launcher:
+                break;
+            case State::Playing:
+                switch (action) {
+                    case UiAction::ToggleMenu:
+                        // Asked for rather than opened here. The host holds the
+                        // one menu; this device puts it up when told to, which
+                        // is what keeps the two screens showing the same thing.
+                        session_.set_menu_open(true);
+                        break;
+                    case UiAction::ToggleFilter:
+                        // R3, which means the same thing here as it does on the
+                        // device running the game.
+                        session_.request_filtering(!session_.host_filtering());
+                        break;
+                    case UiAction::SwapLayout:
+                        // L3, likewise: the two focus layouts swap.
+                        session_.request_layout(
+                            registry_.resolve(session_.host_layout_id()).swap_layout_id);
+                        break;
+                    case UiAction::Quit:
+                        break;  // Quit lives in the menu here, not on a button
+                    default:
+                        break;
+                }
+                break;
+            case State::Browsing:
+                break;
         }
     }
 }
@@ -773,21 +717,6 @@ void Client::run() {
         follow_panel_size();
 
         session_.poll(now);
-        // Keeps the effects audible over a game that has gone quiet behind the
-        // very menu making them; does nothing while the game is filling its
-        // own queue.
-        audio_.pump_effects();
-
-        // Whether this device is one the sound comes out of, decided once a
-        // frame. In a game that is the host's choice, the same one that says
-        // where the game's own sound goes; anywhere else there is no game to
-        // talk over and the shell is audible wherever it was asked for.
-        // Only the quick menu follows the game's sound target -- it is the one
-        // that is open on two devices at once. Every other screen here is this
-        // device's alone and is audible whatever the target says.
-        ui_sounds_.set_muted(
-            menu_open_ &&
-            !audio_reaches(session_.host_audio_target(), session_.granted_screen()));
 
         switch (state_) {
             case State::Launcher:
@@ -803,8 +732,6 @@ void Client::run() {
                 }
                 break;
             case State::Connecting:
-                // The sound under the wait, for exactly as long as the wait.
-                ui_sounds_.start_loop(UiSound::ConnectingLoop);
                 if (session_.status() == net::CompanionSession::Status::Connected) {
                     state_ = State::Playing;
                     close_menu();
@@ -821,11 +748,7 @@ void Client::run() {
                 } else if (session_.status() == net::CompanionSession::Status::Failed) {
                     state_ = State::Failed;
                     failure_ = session_.status_detail();
-                    ui_sounds_.play(UiSound::ConnectionTimeout);
                     log_warn("could not join: " + failure_);
-                }
-                if (state_ != State::Connecting) {
-                    ui_sounds_.stop_loop();
                 }
                 break;
             case State::Playing:
