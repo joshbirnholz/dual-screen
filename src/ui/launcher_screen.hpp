@@ -8,6 +8,7 @@
 #include "net/discovery.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/control_guide.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -44,6 +45,11 @@ public:
     // try it before looking for a row to select.
     void set_plus_quits(bool quits) { plus_quits_ = quits; }
     bool plus_quits() const { return plus_quits_; }
+
+    // What the control guide at the foot of the screen says, in the order it
+    // says it. Exposed rather than built where it is drawn so the order is
+    // something that can be checked.
+    std::vector<GuidePrompt> guide_prompts() const;
 
     LauncherResult update(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers,

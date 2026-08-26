@@ -121,6 +121,17 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     return result;
 }
 
+std::vector<GuidePrompt> LauncherScreen::guide_prompts() const {
+    std::vector<GuidePrompt> guide;
+    // Leftmost, the way Disconnect leads the quick menu's row: the one that
+    // ends something goes first, and everything else keeps its place beside it.
+    if (plus_quits_) {
+        guide.push_back({ButtonGlyph::Plus, "Quit"});
+    }
+    guide.push_back({ButtonGlyph::A, "Select"});
+    return guide;
+}
+
 void LauncherScreen::render(QuadRenderer& quads,
                             TextRenderer& text,
                             const ButtonGlyphSheet& glyphs,
@@ -174,11 +185,7 @@ void LauncherScreen::render(QuadRenderer& quads,
     text.draw(quads, found, margin, rows.back().y + rows.back().h + line * 1.2f, scale * 0.9f,
               hosts_found > 0 ? theme.success : theme.text_dim);
 
-    std::vector<GuidePrompt> guide{{ButtonGlyph::A, "Select"}};
-    if (plus_quits_) {
-        guide.push_back({ButtonGlyph::Plus, "Quit"});
-    }
-    draw_control_guide(quads, text, glyphs, guide, margin + rows[0].w,
+    draw_control_guide(quads, text, glyphs, guide_prompts(), margin + rows[0].w,
                        output_height - line * 1.2f - control_guide_height(scale * 0.9f),
                        scale * 0.9f, theme.text, TextAlign::Right);
 }

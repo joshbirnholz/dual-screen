@@ -41,10 +41,32 @@ void test_the_other_face_buttons_do_nothing_here() {
     }
 }
 
+// The prompt that ends something leads the row, the same as Disconnect does in
+// the quick menu.
+void test_quit_leads_the_control_guide() {
+    LauncherScreen launcher;
+    launcher.open();
+    for (const GuidePrompt& prompt : launcher.guide_prompts()) {
+        CHECK_MSG(prompt.glyph != ButtonGlyph::Plus,
+                  "plus was offered as a way out on a platform that does not leave that way");
+    }
+
+    launcher.set_plus_quits(true);
+    const std::vector<GuidePrompt> guide = launcher.guide_prompts();
+    CHECK_MSG(!guide.empty(), "the control guide said nothing at all");
+    CHECK_MSG(guide.front().glyph == ButtonGlyph::Plus,
+              "something other than Quit came first in the control guide");
+    CHECK_MSG(guide.front().action == std::string("Quit"),
+              "plus led the row saying '" + std::string(guide.front().action) + "'");
+    CHECK_MSG(guide.size() > 1 && guide[1].glyph == ButtonGlyph::A,
+              "Select stopped being offered once Quit moved in front of it");
+}
+
 }  // namespace
 
 int main() {
     test_plus_only_quits_where_the_platform_says_so();
     test_the_other_face_buttons_do_nothing_here();
+    test_quit_leads_the_control_guide();
     return test::finish("launcher");
 }
