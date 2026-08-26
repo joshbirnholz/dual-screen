@@ -1491,6 +1491,12 @@ void App::Impl::render() {
     // frame and one line is the useful amount.
     gl::log_error_once("something in the last frame was rejected by OpenGL");
 
+    // The shell's effects come out of whichever device the game's sound does.
+    // Outside a game there is no target to follow and nothing to talk over, so
+    // they play wherever they were asked for.
+    const bool a_game_is_running = source != nullptr || is_companion();
+    ui_sounds.set_muted(a_game_is_running && !sound_plays_here());
+
     // The sound under the wait, running for exactly as long as the wait does.
     // Decided here, before any of the branches below return, so it cannot be
     // left playing by a path that forgot about it.
@@ -1953,7 +1959,7 @@ int App::run(const AppOptions& options) {
             net::HostSession::SharedState shared;
             shared.layout_id = impl.active_layout_id;
             shared.per_device_layout = impl.active_layout().per_device;
-            shared.paused = paused_here || impl.host_session->companion_menu_open();
+            shared.paused = paused_here;
             shared.bilinear_filtering = impl.bilinear_filtering;
             shared.audio_target = impl.audio_target;
             shared.handedness = impl.handedness;
@@ -2015,9 +2021,7 @@ int App::run(const AppOptions& options) {
                 // The companion asking for the menu, and then working it. Both
                 // land on the one picker this device holds, so a press over
                 // there and a press here are the same press.
-                if (request.menu_open != (impl.state == Impl::State::Menu)) {
-                    impl.set_menu_open(request.menu_open);
-                }
+
 
             }
             // Checked separately from the request above, rather than as
@@ -2026,6 +2030,11 @@ int App::run(const AppOptions& options) {
             // same poll() -- which would clear the pending request before
             // this code next ran, if quit rode along with it instead of its
             // own latch that survives that disconnect.
+            // Asked for on the press that asked, not on every request that
+            // still happens to carry the flag.
+            if (impl.host_session->take_menu_open_request()) {
+                impl.set_menu_open(true);
+            }
             // Every press the companion made in the menu, in the order it made
             // them: two of them are two moves, not one.
             net::HostSession::MenuPress press;
@@ -2147,9 +2156,9 @@ int App::run(const AppOptions& options) {
         // the layout menu pauses it, which is what makes comparing layouts easy.
         // A menu on the *other* device counts just as much: otherwise one player
         // reads a menu while the game carries on without them.
-        const bool game_running =
-            impl.state == Impl::State::Playing &&
-            !(impl.host_session && impl.host_session->companion_menu_open());
+        // Opening the menu pauses the game, wherever it was opened from: the
+        // host holds the one menu, so its own state already says so.
+        const bool game_running = impl.state == Impl::State::Playing;
         if (impl.source && game_running) {
             // The companion's buttons and touches are merged with this device's,
             // so either player can press anything. This is the InputSink seam

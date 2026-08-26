@@ -475,6 +475,9 @@ void Client::open_menu() {
     picker_.open(state);
 
     menu_open_ = true;
+    // Kept in step with the host even when the host is the one that opened it,
+    // so that closing always has something to clear.
+    session_.set_menu_open(true);
     ui_sounds_.play(UiSound::OpenQuickMenu);
     input_.set_game_input_enabled(false);
 }
@@ -487,6 +490,7 @@ void Client::close_menu() {
         return;
     }
     menu_open_ = false;
+    session_.set_menu_open(false);
     ui_sounds_.play(UiSound::CloseQuickMenu);
     input_.set_game_input_enabled(state_ == State::Playing);
 }
@@ -593,6 +597,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 }
                 break;
             case State::Launcher:
+                ui_sounds_.set_muted(false);  // no game to talk over
                 break;
             case State::Playing:
                 switch (action) {
@@ -703,6 +708,7 @@ void Client::run() {
         session_.poll(now);
         switch (state_) {
             case State::Launcher:
+                ui_sounds_.set_muted(false);  // no game to talk over
                 break;
             case State::Browsing:
                 if (options_.auto_connect) {
@@ -741,6 +747,11 @@ void Client::run() {
                 }
                 break;
             case State::Playing:
+                // The shell's own effects come out of whichever device the
+                // game's sound does, which is the host's choice like every
+                // other shared one.
+                ui_sounds_.set_muted(
+                    !audio_reaches(session_.host_audio_target(), session_.granted_screen()));
                 // The menu is the host's too. It says whether one is up and
                 // where its cursor is; this device draws that and nothing of
                 // its own, so both screens show the same menu however it was

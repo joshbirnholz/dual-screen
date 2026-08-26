@@ -37,6 +37,14 @@ public:
     void shutdown();
     bool ready() const { return device_ != 0; }
 
+    // Silences everything while another device is the one making the game's
+    // sound. The shell's own effects belong wherever the game's do: two
+    // devices side by side, both clicking, is one click too many.
+    void set_muted(bool muted);
+    bool muted() const { return muted_; }
+    // Whether anything is sounding right now.
+    bool sounding() const;
+
     // Starts one, over the top of whatever else is still sounding. Playing the
     // same effect twice in quick succession restarts it rather than stacking,
     // which is what a cursor held against the end of a list would otherwise do.
@@ -61,6 +69,7 @@ private:
     void mix(int16_t* out, std::size_t frames);
 
     SDL_AudioDeviceID device_ = 0;
+    bool muted_ = false;
     std::vector<Clip> clips_;
     std::vector<Voice> voices_;
 };

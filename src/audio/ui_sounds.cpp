@@ -98,9 +98,34 @@ void UiSounds::shutdown() {
     clips_.clear();
 }
 
+bool UiSounds::sounding() const {
+    if (device_ == 0) {
+        return false;
+    }
+    SDL_LockAudioDevice(device_);
+    const bool any = !voices_.empty();
+    SDL_UnlockAudioDevice(device_);
+    return any;
+}
+
+void UiSounds::set_muted(bool muted) {
+    if (muted == muted_) {
+        return;
+    }
+    muted_ = muted;
+    if (!muted_ || device_ == 0) {
+        return;
+    }
+    // Whatever is already sounding stops with it, rather than finishing over
+    // the top of a game whose sound is coming out of the other device.
+    SDL_LockAudioDevice(device_);
+    voices_.clear();
+    SDL_UnlockAudioDevice(device_);
+}
+
 void UiSounds::play(UiSound sound) {
     const int id = static_cast<int>(sound);
-    if (device_ == 0 || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
+    if (muted_ || device_ == 0 || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
         return;
     }
     SDL_LockAudioDevice(device_);
@@ -119,7 +144,7 @@ void UiSounds::play(UiSound sound) {
 
 void UiSounds::start_loop(UiSound sound) {
     const int id = static_cast<int>(sound);
-    if (device_ == 0 || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
+    if (muted_ || device_ == 0 || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
         return;
     }
     SDL_LockAudioDevice(device_);

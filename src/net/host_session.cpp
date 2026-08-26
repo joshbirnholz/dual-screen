@@ -89,8 +89,10 @@ void HostSession::set_host_screen(ScreenId screen) {
 }
 
 void HostSession::set_session_state(const SharedState& state) {
-    if (state.per_device_layout != shared_.per_device_layout) {
-        // The set of screens the companion needs depends on this.
+    if (state.per_device_layout != shared_.per_device_layout ||
+        state.menu_open != shared_.menu_open) {
+        // The set of screens the companion needs depends on both: a menu draws
+        // every layout as a preview, whichever device it was opened from.
         resend_screens_ = true;
     }
     if (state.layout_id != shared_.layout_id ||
@@ -138,6 +140,7 @@ void HostSession::drop_companion(const std::string& reason) {
     have_request_ = false;
     request_ = RequestMessage();
     menu_presses_.clear();
+    companion_asked_for_menu_ = false;
     // Nobody is holding a menu open on a device that has gone.
     companion_menu_open_ = false;
     // Whoever connects next says its own size; a stale one from this
@@ -314,6 +317,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 // otherwise clear request_ before the app next reads it.
                 companion_wants_quit_ = true;
             }
+            if (request.menu_open && !companion_menu_open_) {
+                companion_asked_for_menu_ = true;
+            }
             if (request.menu_open != companion_menu_open_) {
                 companion_menu_open_ = request.menu_open;
                 // What it needs has just changed, and a paused game will not
@@ -462,6 +468,12 @@ bool HostSession::take_request(RequestMessage& out_request) {
     request_ = RequestMessage();
     have_request_ = false;
     return true;
+}
+
+bool HostSession::take_menu_open_request() {
+    const bool asked = companion_asked_for_menu_;
+    companion_asked_for_menu_ = false;
+    return asked;
 }
 
 bool HostSession::take_menu_press(MenuPress& out) {

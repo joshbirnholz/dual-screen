@@ -123,10 +123,11 @@ public:
     };
     bool take_menu_press(MenuPress& out);
 
-    // The companion has its own menu open, so the game is paused there. The
-    // host pauses too: a session where one device is playing on while the other
-    // reads a menu is two people looking at different games.
-    bool companion_menu_open() const { return companion_menu_open_; }
+    // The companion has asked for the menu. Latched on the edge rather than
+    // read as a level, because the host holds the one menu now: a request still
+    // in flight when the menu closed would otherwise reopen it, and a level
+    // that nobody ever cleared would keep the game paused forever.
+    bool take_menu_open_request();
 
     // The companion's own window, in device pixels, if it has said. Not part
     // of the shared session state -- it is never broadcast anywhere, just kept
@@ -210,6 +211,7 @@ private:
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
     bool companion_menu_open_ = false;
+    bool companion_asked_for_menu_ = false;
     int companion_display_width_ = 0;
     int companion_display_height_ = 0;
     // The size of the last screen payload actually sent, both screens

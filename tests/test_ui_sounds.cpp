@@ -1,3 +1,5 @@
+#include <SDL.h>
+
 #include <vector>
 
 #include "audio/ui_sounds.hpp"
@@ -49,10 +51,43 @@ void test_a_pack_that_is_not_one_is_refused() {
               "a pack cut short was read as if all of it had arrived");
 }
 
+// The shell's own effects come out of whichever device the game's sound does.
+// Playing them on both, side by side, is one click too many.
+void test_muting_silences_what_is_already_sounding() {
+    UiSounds sounds;
+    std::string error;
+    if (!sounds.initialize(&error)) {
+        return;  // no audio device here, which is not what is under test
+    }
+    CHECK_MSG(!sounds.muted(), "a fresh player started out silent");
+
+    sounds.play(UiSound::Confirm);
+    CHECK_MSG(sounds.sounding(), "asking for an effect did not start one");
+
+    sounds.set_muted(true);
+    CHECK_MSG(!sounds.sounding(),
+              "an effect kept sounding after this device stopped being the one making sound");
+    // And nothing new starts while it stays that way.
+    sounds.play(UiSound::MoveCursor);
+    sounds.start_loop(UiSound::ConnectingLoop);
+    CHECK_MSG(!sounds.sounding(), "a muted device still started an effect");
+
+    sounds.set_muted(false);
+    sounds.play(UiSound::Confirm);
+    CHECK_MSG(sounds.sounding(), "the device would not make a sound again");
+    sounds.shutdown();
+}
+
 }  // namespace
 
 int main() {
+    // A real device, so the muting test is testing something: the dummy driver
+    // is what the rest of the suite runs against too.
+    SDL_SetHint(SDL_HINT_AUDIODRIVER, "dummy");
+    SDL_Init(SDL_INIT_AUDIO);
     test_every_sound_the_shell_asks_for_is_in_the_pack();
     test_a_pack_that_is_not_one_is_refused();
+    test_muting_silences_what_is_already_sounding();
+    SDL_Quit();
     return test::finish("ui-sounds");
 }

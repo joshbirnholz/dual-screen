@@ -836,7 +836,9 @@ void test_companion_menu_pauses_the_host() {
         return;
     }
 
-    CHECK(!host.companion_menu_open());
+    HostSession::MenuPress unused;
+    CHECK(!host.take_menu_open_request());
+    CHECK(!host.take_menu_press(unused));
 
     // Something held down as the menu opens.
     DsInputState held;
@@ -849,24 +851,41 @@ void test_companion_menu_pauses_the_host() {
               "the companion's input never reached the host");
 
     companion.set_menu_open(true);
-    CHECK_MSG(spin(host, companion, [&] { return host.companion_menu_open(); }),
-              "the companion's menu never reached the host");
+    CHECK_MSG(spin(host, companion, [&] { return host.take_menu_open_request(); }),
+              "the companion's ask for the menu never reached the host");
     // Only changes go over the wire, so a button held as the menu opened would
     // stay held for as long as the menu was up if the host did not let go of it.
     CHECK_EQ(host.companion_input().buttons, 0u);
     CHECK_EQ(host.companion_input().touching, false);
 
-    companion.set_menu_open(false);
-    CHECK_MSG(spin(host, companion, [&] { return !host.companion_menu_open(); }),
-              "the companion's menu never closed on the host");
+    // Taken once. Every request the companion sends carries this flag, so a
+    // level read here would reopen a menu the host had just closed -- and the
+    // host is the one that holds it.
+    CHECK_MSG(!host.take_menu_open_request(), "one ask for the menu was read as two");
+    companion.request_filtering(true);
+    spin(host, companion, [&] {
+        RequestMessage seen;
+        return host.take_request(seen) && seen.wants_filtering;
+    });
+    CHECK_MSG(!host.take_menu_open_request(),
+              "a request about something else reopened the menu on its way past");
 
-    // And a device that leaves is not still holding a menu open.
+    // Closed and asked for again: a second ask is a second opening.
+    companion.set_menu_open(false);
+    spin(host, companion, [&] {
+        RequestMessage seen;
+        host.take_request(seen);
+        return false;
+    });
     companion.set_menu_open(true);
-    CHECK(spin(host, companion, [&] { return host.companion_menu_open(); }));
+    CHECK_MSG(spin(host, companion, [&] { return host.take_menu_open_request(); }),
+              "a companion that had closed the menu could not open it again");
+
     companion.disconnect();
     CHECK_MSG(spin(host, companion, [&] { return !host.has_companion(); }),
               "the host never noticed the companion leaving");
-    CHECK(!host.companion_menu_open());
+    CHECK_MSG(!host.take_menu_open_request(),
+              "a device that left was still asking for a menu");
 
     host.stop();
 }
@@ -907,7 +926,7 @@ void test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused() 
     // Leaves exactly the way the in-menu Disconnect button does: with the
     // menu open.
     companion.set_menu_open(true);
-    CHECK(spin(host, companion, [&] { return host.companion_menu_open(); }));
+    CHECK(spin(host, companion, [&] { return host.take_menu_open_request(); }));
     companion.disconnect();
     CHECK(spin(host, companion, [&] { return !host.has_companion(); }));
 
@@ -1014,7 +1033,7 @@ void test_menu_gets_the_companion_both_screens() {
     // Now its menu goes up. The game is paused from here on, so the serial never
     // moves again -- and the top screen still has to arrive.
     companion.set_menu_open(true);
-    CHECK(spin(host, companion, [&] { return host.companion_menu_open(); }));
+    CHECK(spin(host, companion, [&] { return host.take_menu_open_request(); }));
     const bool arrived = spin(host, companion, [&] {
         publish(1);  // the same frame, over and over, exactly as a paused host does
         return companion.has_screen(ScreenId::Top);
