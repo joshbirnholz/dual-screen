@@ -202,8 +202,25 @@ private:
     // until the first poll() after connect_to(), so the whole timer runs on
     // the caller's clock rather than half on one and half on another.
     uint64_t connect_deadline_ms_ = 0;
-    // The newest frame serial already reported to the host.
+    // The newest frame serial already reported to the host, and the newest
+    // that has arrived. Reported on arrival rather than on being shown: the
+    // ack answers "did this get here", which is the host's flow control, and
+    // frames waiting their turn below have got here. Answering it with what
+    // has been shown instead made the host read this device's own smoothing
+    // as a device falling behind, and throttle against it.
     uint64_t acked_serial_ = 0;
+    uint64_t received_serial_ = 0;
+
+    // When the next frame is due on screen, and how far apart frames are
+    // arriving. Paced by a clock rather than by one per pass, because a pass
+    // is not a frame: a 90Hz panel showing 60fps content passes half again as
+    // often as there is anything new to show, and pinning the two together
+    // leaves nothing buffered and each frame held for whichever number of
+    // refreshes its arrival happened to land on.
+    uint64_t next_due_ms_ = 0;
+    uint64_t last_arrival_ms_ = 0;
+    double frame_period_ms_ = 16.7;
+    uint64_t frame_period() const;
 
     // The other half of the host's once-a-second summary: what actually
     // arrived here. The two together say whether frames are being lost on the

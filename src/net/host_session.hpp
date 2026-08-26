@@ -154,6 +154,12 @@ public:
     // whether a frame was queued at all, which is the thing the backlog limit
     // decides.
     uint64_t queued_bytes_for_test() const { return companion_.queued_total(); }
+    // How far behind the companion says it is, which is what the frame limit
+    // throttles on. A companion's own smoothing must not show up here.
+    uint64_t companion_frames_behind_for_test() const {
+        return (acked_serial_ != 0 && sent_serial_ > acked_serial_) ? sent_serial_ - acked_serial_
+                                                                    : 0;
+    }
 
 private:
     // How many whole frames have been queued but have not yet left the

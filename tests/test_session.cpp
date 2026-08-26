@@ -1041,14 +1041,24 @@ void test_a_real_host_is_not_timed_out() {
 // device whose link cannot carry the stream looks like from the host: frames
 // keep being handed to the socket, and nothing comes back to say any of them
 // arrived.
-// Frames that arrive together are shown one at a time.
+// Frames that arrive together are shown one at a time, on a clock -- and the
+// waiting ones are still reported to the host as arrived.
 //
 // The host produces on its own clock and a companion shows on its own, so a
 // frame or two lands inside one display interval and none inside the next.
 // Showing everything that has arrived turns that into a frame skipped and then
 // a frame repeated, which is what a stream running at a healthy sixty frames a
 // second still looks choppy at.
-void test_frames_that_arrive_together_are_shown_one_at_a_time() {
+//
+// The pace is a clock rather than one per pass because a pass is not a frame:
+// a 90Hz panel showing 60fps content passes half again as often as there is
+// anything new to show.
+//
+// And what is waiting has still *arrived*. The ack is the host's flow control
+// -- it answers "did this get there" -- so counting only what has been shown
+// made the host read this device's own smoothing as a device falling behind,
+// and drop frames against it.
+void test_frames_that_arrive_together_are_shown_on_a_clock() {
     HostSession host;
     HostSession::Config config;
     config.device_name = "Test PC";
@@ -1085,7 +1095,6 @@ void test_frames_that_arrive_together_are_shown_one_at_a_time() {
         host.poll(monotonic_millis());
     };
 
-    // Settle, so the first frame is not still in flight when the burst lands.
     publish(1);
     if (!spin(host, companion, [&] { return companion.newest_frame_serial_for_test() == 1; })) {
         CHECK_MSG(false, "the first frame never arrived");
@@ -1096,28 +1105,48 @@ void test_frames_that_arrive_together_are_shown_one_at_a_time() {
     publish(2);
     publish(3);
     publish(4);
-    // Long enough that all three are certainly readable in one pass.
-    for (int wait = 0; wait < 50 && companion.buffered_frames() < 3; ++wait) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    // Give the socket a moment, without letting the companion read them yet.
+    // Long enough that the pacing clock is unambiguously stale and restarts
+    // from the first pass below, so what follows does not depend on how long
+    // the lines above happened to take.
+    for (int wait = 0; wait < 60; ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3));
         host.poll(monotonic_millis());
-        companion.poll(monotonic_millis());
-        if (companion.newest_frame_serial_for_test() > 1) {
-            break;  // a pass has already shown one, which is the point
-        }
     }
 
+    // A synthetic clock from here, so what is being tested is the pacing and
+    // not how long these lines took to run.
+    const uint64_t start_ms = monotonic_millis();
+    companion.poll(start_ms);
     CHECK_MSG(companion.newest_frame_serial_for_test() == 2,
-              "a pass showed serial " +
+              "the first pass showed serial " +
                   std::to_string(companion.newest_frame_serial_for_test()) +
                   " rather than advancing one frame from 1");
     // The rest are held, not thrown away: each is a difference from the last.
     CHECK_MSG(companion.buffered_frames() == 2,
               std::to_string(companion.buffered_frames()) + " frames were held rather than 2");
 
-    companion.poll(monotonic_millis());
-    CHECK_MSG(companion.newest_frame_serial_for_test() == 3, "the next pass did not show serial 3");
-    companion.poll(monotonic_millis());
-    CHECK_MSG(companion.newest_frame_serial_for_test() == 4, "the pass after did not show serial 4");
+    // A pass before the next frame is due changes nothing on screen.
+    companion.poll(start_ms + 4);
+    CHECK_MSG(companion.newest_frame_serial_for_test() == 2,
+              "a pass before the frame was due showed it early");
+
+    // One frame period later it is due, and exactly one more is shown.
+    companion.poll(start_ms + 40);
+    CHECK_MSG(companion.newest_frame_serial_for_test() == 3,
+              "the pass after a frame period showed serial " +
+                  std::to_string(companion.newest_frame_serial_for_test()) + " rather than 3");
+    companion.poll(start_ms + 80);
+    CHECK_MSG(companion.newest_frame_serial_for_test() == 4,
+              "the pass after that did not reach serial 4");
+
+    // Throughout, the host must have been told all four arrived -- the two
+    // that were waiting had got there, whatever was on screen.
+    if (!spin(host, companion, [&] { return host.companion_frames_behind_for_test() == 0; })) {
+        CHECK_MSG(false, "the host still counts the companion " +
+                             std::to_string(host.companion_frames_behind_for_test()) +
+                             " frames behind, which is its own buffer being read as a backlog");
+    }
 }
 
 void test_a_companion_that_falls_behind_stops_being_sent_frames() {
@@ -1234,7 +1263,7 @@ int main() {
     test_menu_gets_the_companion_both_screens();
     test_joining_gives_up_on_a_host_that_never_answers();
     test_a_real_host_is_not_timed_out();
-    test_frames_that_arrive_together_are_shown_one_at_a_time();
+    test_frames_that_arrive_together_are_shown_on_a_clock();
     test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_host_can_disconnect_the_companion();
     return test::finish("session");

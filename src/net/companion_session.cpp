@@ -54,6 +54,9 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     status_ = Status::Connecting;
     connect_deadline_ms_ = 0;  // set on the first poll, off the caller's clock
     acked_serial_ = 0;
+    received_serial_ = 0;
+    next_due_ms_ = 0;
+    last_arrival_ms_ = 0;
     status_detail_ = "connecting to " + host.device_name;
     game_title_ = host.game_title;
     log_info("connecting to " + host.device_name + " at " + host.address);
@@ -73,6 +76,9 @@ void CompanionSession::disconnect() {
     said_hello_ = false;
     menu_open_ = false;
     pending_frames_.clear();
+    received_serial_ = 0;
+    next_due_ms_ = 0;
+    last_arrival_ms_ = 0;
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
         status_detail_.clear();
@@ -153,8 +159,22 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 fail("the host sent a frame with impossible dimensions");
                 return;
             }
-            // Held rather than applied here: poll() shows one frame per pass
-            // so the cadence on screen is even, whatever the arrivals did.
+            // Held rather than applied here: poll() shows frames on a clock,
+            // so the cadence on screen is even whatever the arrivals did.
+            if (frame.serial != received_serial_) {
+                const uint64_t now = monotonic_millis();
+                if (last_arrival_ms_ != 0 && now > last_arrival_ms_) {
+                    // Smoothed, because any one gap is mostly jitter. This is
+                    // how fast the host is really producing, which is what the
+                    // picture should advance at.
+                    const double gap = static_cast<double>(now - last_arrival_ms_);
+                    if (gap >= 4.0 && gap <= 100.0) {
+                        frame_period_ms_ = frame_period_ms_ * 0.95 + gap * 0.05;
+                    }
+                }
+                last_arrival_ms_ = now;
+                received_serial_ = frame.serial;
+            }
             pending_frames_.push_back(std::move(frame));
             break;
         }
@@ -249,19 +269,33 @@ void CompanionSession::poll(uint64_t now_ms) {
         }
     }
 
-    // Show one frame per pass, whatever arrived during it. Anything that came
-    // early waits its turn, which is what makes a frame that came late free of
-    // charge: the picture advances once per pass either way.
+    // Advance the picture on the host's cadence rather than this device's.
     //
-    // Beyond a few frames the wait is no longer jitter but a backlog, and
-    // holding it would only show old pictures late, so it is caught up on.
+    // A frame that arrived early waits until it is due, which is what pays for
+    // the one that arrives late; the two are the same jitter either side of
+    // the same clock. Beyond a few frames waiting is a backlog rather than
+    // jitter, and holding that would only show old pictures late, so it is
+    // caught up on instead.
     constexpr std::size_t kJitterFrames = 3;
-    std::size_t budget = 1;
-    const std::size_t waiting = buffered_frames();
-    if (waiting > kJitterFrames) {
-        budget = waiting - kJitterFrames + 1;
-    }
-    for (std::size_t shown = 0; shown < budget && decode_next_frame(); ++shown) {
+    if (!pending_frames_.empty()) {
+        const uint64_t period = frame_period();
+        const std::size_t waiting = buffered_frames();
+        std::size_t budget = waiting > kJitterFrames ? waiting - kJitterFrames : 0;
+        if (next_due_ms_ == 0 || now_ms >= next_due_ms_) {
+            budget = std::max<std::size_t>(budget, 1);
+        }
+        std::size_t shown = 0;
+        for (; shown < budget && decode_next_frame(); ++shown) {
+        }
+        if (shown > 0) {
+            // Advanced from when it was due, not from now, so the pace does
+            // not drift slower by however late each pass happened to run. A
+            // clock that has fallen far behind is started again instead.
+            const uint64_t step = period * shown;
+            next_due_ms_ = (next_due_ms_ == 0 || now_ms > next_due_ms_ + period * 4)
+                               ? now_ms + period
+                               : next_due_ms_ + step;
+        }
     }
 
     // Tell the host which frame has actually been decoded here. This is the
@@ -273,8 +307,8 @@ void CompanionSession::poll(uint64_t now_ms) {
     // left for the next poll: an ack that describes the state of things two
     // polls ago reads to the host as a device two frames further behind than
     // it is, and the host throttles on exactly that number.
-    const uint64_t newest = std::max(top_.serial, bottom_.serial);
-    if (status_ == Status::Connected && stream_.open() && newest != acked_serial_) {
+    if (status_ == Status::Connected && stream_.open() && received_serial_ != acked_serial_) {
+        const uint64_t newest = received_serial_;
         acked_serial_ = newest;
         std::vector<uint8_t> ack;
         encode_frame_ack(newest, ack);
@@ -503,6 +537,14 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
+}
+
+// How long each frame should be on screen: what the host is producing at,
+// clamped so that a stall or a burst cannot leave the picture crawling or
+// racing.
+uint64_t CompanionSession::frame_period() const {
+    const double clamped = std::min(40.0, std::max(8.0, frame_period_ms_));
+    return static_cast<uint64_t>(clamped + 0.5);
 }
 
 void CompanionSession::apply_frame(const FrameMessage& frame) {
