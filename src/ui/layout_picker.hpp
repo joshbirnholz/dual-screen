@@ -81,8 +81,19 @@ struct LayoutPickerState {
     bool right_stick_choosable = false;
 };
 
+// What a face button asked for and has not yet been allowed to do. Both of
+// these throw away something the player cannot get back -- unsaved progress, or
+// the session -- so both are asked about first. Travels over the wire, so the
+// numbers are part of the protocol.
+enum class MenuConfirm : uint8_t { None = 0, Reset = 1, Quit = 2 };
+
 // The layout menu: a grid of visual previews rather than a cycle-through
 // button, so a player picks the arrangement they want directly.
+//
+// There is one of these per session, not one per device. Whichever machine
+// runs the game holds it; the other draws the same menu from what it is told
+// and sends its presses back, so the player can work the menu from either pad
+// while looking at either screen.
 class LayoutPicker {
 public:
     explicit LayoutPicker(const LayoutRegistry& registry) : registry_(&registry) {}
@@ -90,7 +101,19 @@ public:
     void open(const LayoutPickerState& state);
     // Whether a confirmation is up, which the app needs to know: while one is,
     // the menu is not what the player is answering.
-    bool awaiting_confirmation() const { return confirm_ != Confirm::None; }
+    bool awaiting_confirmation() const { return confirm_ != MenuConfirm::None; }
+
+    // The whole of what the other device has to be told to draw the same menu,
+    // and what it hands back when it is the one being told.
+    int focus() const { return focus_; }
+    MenuConfirm confirmation() const { return confirm_; }
+    void mirror(int focus, MenuConfirm confirm);
+    // Which entry a tap landed on, or -1 for none. Resolved on the device the
+    // finger touched, since only that one knows how its own menu is laid out.
+    int entry_at(float x, float y, float output_width, float output_height) const;
+    // Puts the cursor somewhere without acting on it, which is what arrives
+    // from the other device's finger.
+    void set_focus(int focus);
     // Kept in step while the menu is open: R3 can change filtering from under
     // us, and on a companion both of these are owned by the host and arrive
     // whenever it says so.
@@ -179,10 +202,7 @@ private:
         ScreenGap,
     };
 
-    // What a face button asked for and has not yet been allowed to do. Both of
-    // these throw away something the player cannot get back -- unsaved progress,
-    // or the session -- so both are asked about first.
-    enum class Confirm { None, Reset, Quit };
+
 
     struct Geometry {
         std::vector<PixelRect> tiles;
@@ -204,7 +224,7 @@ private:
         PixelRect dismiss;
     };
     ConfirmGeometry compute_confirm_geometry(float output_width, float output_height) const;
-    bool confirming() const { return confirm_ != Confirm::None; }
+    bool confirming() const { return confirm_ != MenuConfirm::None; }
     int tile_count() const { return static_cast<int>(registry_->size()); }
     int footer_count() const { return static_cast<int>(footer_.size()); }
     int focus_count() const { return tile_count() + footer_count(); }
@@ -224,7 +244,7 @@ private:
     LayoutPickerState state_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;
-    Confirm confirm_ = Confirm::None;
+    MenuConfirm confirm_ = MenuConfirm::None;
     float display_width_ = 0.0f;
     float display_height_ = 0.0f;
     bool fill_display_ = false;

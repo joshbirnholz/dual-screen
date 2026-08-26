@@ -15,7 +15,7 @@ namespace {
 
 void LayoutPicker::open(const LayoutPickerState& state) {
     open_ = true;
-    confirm_ = Confirm::None;
+    confirm_ = MenuConfirm::None;
     state_ = state;
     selected_layout_id_ = state.layout_id;
 
@@ -177,6 +177,30 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
     return geometry;
 }
 
+void LayoutPicker::mirror(int focus, MenuConfirm confirm) {
+    set_focus(focus);
+    confirm_ = confirm;
+}
+
+void LayoutPicker::set_focus(int focus) {
+    if (focus >= 0 && focus < focus_count()) {
+        focus_ = focus;
+    }
+}
+
+int LayoutPicker::entry_at(float x, float y, float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    for (std::size_t index = 0; index < geometry.tiles.size(); ++index) {
+        if (geometry.tiles[index].contains(x, y)) return static_cast<int>(index);
+    }
+    for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
+        if (geometry.footer[index].contains(x, y)) {
+            return tile_count() + static_cast<int>(index);
+        }
+    }
+    return -1;
+}
+
 LayoutPicker::ConfirmGeometry LayoutPicker::compute_confirm_geometry(float output_width,
                                                                     float output_height) const {
     const float scale = UiTheme::base_scale(output_height);
@@ -325,15 +349,15 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             else if (confirm.dismiss.contains(pointer.x, pointer.y)) dismissed = true;
         }
         if (accepted) {
-            if (confirm_ == Confirm::Reset) {
+            if (confirm_ == MenuConfirm::Reset) {
                 result.reset_requested = true;
             } else {
                 result.quit_requested = true;
             }
-            confirm_ = Confirm::None;
+            confirm_ = MenuConfirm::None;
             open_ = false;
         } else if (dismissed) {
-            confirm_ = Confirm::None;
+            confirm_ = MenuConfirm::None;
         }
         return result;
     }
@@ -350,8 +374,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             // The app's own quit key, which is not a face button and is not
             // asked about twice.
             case UiAction::Quit: result.quit_requested = true; break;
-            case UiAction::MenuQuit: confirm_ = Confirm::Quit; break;
-            case UiAction::MenuReset: confirm_ = Confirm::Reset; break;
+            case UiAction::MenuQuit: confirm_ = MenuConfirm::Quit; break;
+            case UiAction::MenuReset: confirm_ = MenuConfirm::Reset; break;
             // Not asked about: unlike resetting or quitting, reconnecting is a
             // menu away and costs nothing but the walk back.
             case UiAction::MenuDisconnect:
@@ -561,7 +585,7 @@ void LayoutPicker::render(QuadRenderer& quads,
                          Color{0.0f, 0.0f, 0.0f, 0.5f});
         quads.draw_solid(confirm.dialog, theme.text);
 
-        const char* question = confirm_ == Confirm::Reset
+        const char* question = confirm_ == MenuConfirm::Reset
                                    ? "Are you sure you want to reset?\nUnsaved progress will be lost."
                                    : "Are you sure you want to quit?\nUnsaved progress will be lost.";
         text.draw_wrapped(quads, question, confirm.dialog.x + confirm.dialog.w * 0.5f,

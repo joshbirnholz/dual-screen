@@ -167,6 +167,8 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_quit, false);
     CHECK_EQ(received_quiet.wants_screen_gap, false);
     CHECK_EQ(received_quiet.wants_right_stick_mode, false);
+    CHECK_EQ(received_quiet.wants_menu_action, false);
+    CHECK_EQ(received_quiet.wants_menu_focus, false);
 
     // Every field this message carries as a small integer is a value outside
     // the set it means, if the sender says so, and each one has to be refused
@@ -185,13 +187,13 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 17, 1u,
+        {"audio target", 21, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 15, 1u,
+        {"handedness", 19, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 1, 2u,
+        {"right stick mode", 5, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
@@ -213,6 +215,30 @@ void test_request_round_trip() {
         CHECK_MSG(!decode_request(corrupt.data(), corrupt.size(), rejected),
                   std::string("an impossible ") + field.name + " was accepted");
     }
+
+    // The press a companion sends into the host's menu is the same kind of
+    // small integer, but it is only read when the sender says it means one:
+    // a quiet request carries a byte there that no action stands for.
+    RequestMessage pressed;
+    pressed.wants_menu_action = true;
+    pressed.menu_action = MenuAction::Reset;
+    pressed.wants_menu_focus = true;
+    pressed.menu_focus = 7;
+    buffer.clear();
+    encode_request(pressed, buffer);
+    CHECK(one_message(buffer, type, payload));
+    RequestMessage received_press;
+    CHECK(decode_request(payload.data(), payload.size(), received_press));
+    CHECK_EQ(received_press.wants_menu_action, true);
+    CHECK(received_press.menu_action == MenuAction::Reset);
+    CHECK_EQ(received_press.wants_menu_focus, true);
+    CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
+
+    std::vector<uint8_t> impossible(payload);
+    impossible[impossible.size() - 3] = 200;
+    RequestMessage refused;
+    CHECK_MSG(!decode_request(impossible.data(), impossible.size(), refused),
+              "a press no button could have made was accepted");
 }
 
 void test_input_round_trip() {

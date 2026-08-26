@@ -99,7 +99,11 @@ void HostSession::set_session_state(const SharedState& state) {
         state.audio_target != shared_.audio_target || state.handedness != shared_.handedness ||
         state.right_stick_mode != shared_.right_stick_mode ||
         state.render_scale != shared_.render_scale ||
-        state.screen_gap != shared_.screen_gap) {
+        state.screen_gap != shared_.screen_gap || state.menu_open != shared_.menu_open ||
+        state.menu_focus != shared_.menu_focus || state.menu_confirm != shared_.menu_confirm ||
+        state.max_render_scale != shared_.max_render_scale ||
+        state.cursor_choosable != shared_.cursor_choosable ||
+        state.right_stick_choosable != shared_.right_stick_choosable) {
         shared_ = state;
         session_state_dirty_ = true;
     }
@@ -133,6 +137,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_input_fresh_ = false;
     have_request_ = false;
     request_ = RequestMessage();
+    menu_presses_.clear();
     // Nobody is holding a menu open on a device that has gone.
     companion_menu_open_ = false;
     // Whoever connects next says its own size; a stale one from this
@@ -285,6 +290,21 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_screen_gap = true;
                 request.screen_gap = request_.screen_gap;
             }
+            // Pulled out before the rest is merged: presses are events, and
+            // sticky-merging one would make it happen again next time the
+            // companion asked for anything at all.
+            if (request.wants_menu_focus || request.wants_menu_action) {
+                MenuPress press;
+                press.has_focus = request.wants_menu_focus;
+                press.focus = request.menu_focus;
+                press.has_action = request.wants_menu_action;
+                press.action = request.menu_action;
+                if (menu_presses_.size() < kMaxQueuedMenuPresses) {
+                    menu_presses_.push_back(press);
+                }
+                request.wants_menu_focus = false;
+                request.wants_menu_action = false;
+            }
             request_ = request;
             have_request_ = true;
             if (request.wants_quit) {
@@ -376,6 +396,12 @@ void HostSession::poll(uint64_t now_ms) {
         state.right_stick_mode = shared_.right_stick_mode;
         state.render_scale = static_cast<uint8_t>(shared_.render_scale);
         state.screen_gap = shared_.screen_gap;
+        state.menu_open = shared_.menu_open;
+        state.menu_focus = static_cast<uint8_t>(std::max(0, shared_.menu_focus));
+        state.menu_confirm = shared_.menu_confirm;
+        state.max_render_scale = static_cast<uint8_t>(std::max(1, shared_.max_render_scale));
+        state.cursor_choosable = shared_.cursor_choosable;
+        state.right_stick_choosable = shared_.right_stick_choosable;
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);
@@ -435,6 +461,15 @@ bool HostSession::take_request(RequestMessage& out_request) {
     out_request = request_;
     request_ = RequestMessage();
     have_request_ = false;
+    return true;
+}
+
+bool HostSession::take_menu_press(MenuPress& out) {
+    if (menu_presses_.empty()) {
+        return false;
+    }
+    out = menu_presses_.front();
+    menu_presses_.pop_front();
     return true;
 }
 

@@ -57,6 +57,7 @@
 #include "render/gl_loader.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/menu_backdrop.hpp"
+#include "ui/menu_actions.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -450,7 +451,9 @@ void Client::refresh_output_size() {
 }
 
 void Client::open_menu() {
-    // Exactly what the app puts in it, read off the session the host owns.
+    // Exactly what the host has in it, read off the session it owns -- down to
+    // which entries the row has, so the same cursor position means the same
+    // thing on both screens.
     LayoutPickerState state;
     state.layout_id = session_.host_layout_id();
     state.session_active = true;  // there is always a host at the other end here
@@ -460,15 +463,9 @@ void Client::open_menu() {
     state.render_scale = session_.host_render_scale();
     state.screen_gap = session_.host_screen_gap();
     state.right_stick_mode = session_.host_right_stick_mode();
-    // A console has no pointer to show or hide, so that entry is not offered
-    // here. It is also the one entry on this menu that belongs to the device
-    // rather than to the host, which is exactly why it has nothing to say on
-    // a device with no mouse.
-    state.cursor_choosable = false;
-
-    const SystemProfile& profile = system_profile(session_.system());
-    state.max_render_scale = profile.max_render_scale;
-    state.right_stick_choosable = profile.has_analog_stick;
+    state.cursor_choosable = session_.host_cursor_choosable();
+    state.max_render_scale = session_.host_max_render_scale();
+    state.right_stick_choosable = session_.host_right_stick_choosable();
 
     picker_.set_screens(session_.screens_geometry());
     picker_.set_bezel_art(bezel_art_.texture(session_.system()));
@@ -476,7 +473,6 @@ void Client::open_menu() {
     picker_.open(state);
 
     menu_open_ = true;
-    session_.set_menu_open(true);
     input_.set_game_input_enabled(false);
 }
 
@@ -488,71 +484,32 @@ void Client::close_menu() {
         return;
     }
     menu_open_ = false;
-    session_.set_menu_open(false);
     input_.set_game_input_enabled(state_ == State::Playing);
 }
 
 void Client::handle_menu(const std::vector<UiAction>& actions,
                          const std::vector<PointerEvent>& pointers) {
-    // The host can change any of this from its own end while this is open, so
-    // the picker is told before it is asked.
-    picker_.set_filtering(session_.host_filtering());
-    picker_.set_audio_target(session_.host_audio_target());
-    picker_.set_handedness(session_.host_handedness());
-    picker_.set_render_scale(session_.host_render_scale());
-    picker_.set_screen_gap(session_.host_screen_gap());
-    picker_.set_right_stick_mode(session_.host_right_stick_mode());
-    picker_.set_selected_layout(session_.host_layout_id());
-    picker_.set_smoothing(session_.host_filtering());
-
-    const LayoutPickerResult result =
-        picker_.update(actions, pointers, static_cast<float>(output_width_),
-                       static_cast<float>(output_height_));
-
-    // Every one of these is a request. Nothing is applied here: the host owns
-    // the session and broadcasts what it decided, which is the whole reason
-    // the two devices cannot end up disagreeing.
-    if (result.selection_changed) {
-        session_.request_layout(picker_.selected_layout_id());
+    // Nothing is decided here. There is one menu and the host holds it, so a
+    // press made on this device is sent over and this device redraws whatever
+    // the host says the menu now looks like -- which is how the same menu can
+    // be worked from either pad while the player watches either screen.
+    for (const UiAction action : actions) {
+        net::MenuAction wire = net::MenuAction::Confirm;
+        if (menu_action_for(action, wire)) {
+            session_.request_menu_action(wire);
+        }
     }
-    if (result.filtering_toggled) {
-        session_.request_filtering(!session_.host_filtering());
-    }
-    if (result.render_scale_changed) {
-        const int maximum = std::max(1, system_profile(session_.system()).max_render_scale);
-        const int scale = session_.host_render_scale();
-        session_.request_render_scale(scale >= maximum ? 1 : scale + 1);
-    }
-    if (result.audio_target_changed) {
-        session_.request_audio_target(next_audio_target(session_.host_audio_target()));
-    }
-    if (result.handedness_changed) {
-        session_.request_handedness(other_hand(session_.host_handedness()));
-    }
-    if (result.screen_gap_toggled) {
-        session_.request_screen_gap(!session_.host_screen_gap());
-    }
-    if (result.right_stick_mode_changed) {
-        session_.request_right_stick_mode(next_right_stick_mode(session_.host_right_stick_mode()));
-    }
-    if (result.reset_requested) {
-        session_.request_reset();
-    }
-
-    if (result.disconnect_requested) {
-        leave("you ended the session");
-        return;
-    }
-    if (result.quit_requested) {
-        // Quit means the whole session ends, not just this device's part of
-        // it -- the same as choosing it on the other device.
-        session_.request_quit();
-        session_.disconnect();
-        running_ = false;
-        return;
-    }
-    if (result.close_requested || result.reset_requested) {
-        close_menu();
+    for (const PointerEvent& pointer : pointers) {
+        if (!pointer.released) continue;
+        // Resolved here rather than there: the two devices lay the menu out for
+        // different-sized screens, so only this one knows what its own tap was
+        // on.
+        const int entry = picker_.entry_at(pointer.x, pointer.y,
+                                           static_cast<float>(output_width_),
+                                           static_cast<float>(output_height_));
+        if (entry >= 0) {
+            session_.request_menu_press(entry, net::MenuAction::Confirm);
+        }
     }
 }
 
@@ -615,7 +572,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             case State::Playing:
                 switch (action) {
                     case UiAction::ToggleMenu:
-                        open_menu();
+                        // Asked for rather than opened here. The host holds the
+                        // one menu; this device puts it up when told to, which
+                        // is what keeps the two screens showing the same thing.
+                        session_.set_menu_open(true);
                         break;
                     case UiAction::ToggleFilter:
                         // R3, which means the same thing here as it does on the
@@ -738,6 +698,19 @@ void Client::run() {
                 }
                 break;
             case State::Playing:
+                // The menu is the host's too. It says whether one is up and
+                // where its cursor is; this device draws that and nothing of
+                // its own, so both screens show the same menu however it was
+                // opened and whichever pad is working it.
+                if (session_.host_menu_open() && !menu_open_) {
+                    open_menu();
+                } else if (!session_.host_menu_open() && menu_open_) {
+                    close_menu();
+                }
+                if (menu_open_) {
+                    picker_.mirror(session_.host_menu_focus(),
+                                   static_cast<MenuConfirm>(session_.host_menu_confirm()));
+                }
                 // The host owns all of this and can change any of it from its
                 // own end; this device's pad drives the same game, so it
                 // follows rather than deciding.

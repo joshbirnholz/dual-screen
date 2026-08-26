@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 14;
+constexpr uint16_t kProtocolVersion = 15;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -48,6 +48,21 @@ enum class MessageType : uint16_t {
     Audio = 14,
     // either way
     Ping = 20,
+};
+
+// A press a companion sends into the host's menu. Numbered here rather than
+// reusing UiAction's values, so reordering that enum cannot silently change
+// what goes over the wire.
+enum class MenuAction : uint8_t {
+    Up = 1,
+    Down = 2,
+    Left = 3,
+    Right = 4,
+    Confirm = 5,
+    Cancel = 6,
+    Quit = 7,
+    Reset = 8,
+    Disconnect = 9,
 };
 
 // How a screen's pixels are encoded in a Frame message.
@@ -140,9 +155,20 @@ struct RequestMessage {
     bool wants_display_size = false;
     uint16_t display_width = 0;
     uint16_t display_height = 0;
-    // The companion has a menu up. The host pauses while either device does, so
-    // both are looking at the same still frame.
+    // The companion is asking for the menu to be open or closed. It does not
+    // open one of its own: there is one menu, the host holds it, and both
+    // devices draw what the host says it looks like.
     bool menu_open = false;
+    // A press the player made on this device while that menu was up. The host
+    // applies it to the one menu and broadcasts what happened, so the two
+    // screens cannot show different things.
+    bool wants_menu_action = false;
+    MenuAction menu_action = MenuAction::Confirm;
+    // Where a finger landed, resolved to an entry here rather than there: the
+    // two devices' menus are laid out for different-sized screens, so only
+    // this one knows what its own tap was on.
+    bool wants_menu_focus = false;
+    uint8_t menu_focus = 0;
     // Restart the running game. One-shot rather than a value to agree on: it is
     // not echoed back in SessionState, since there is nothing to stay in sync
     // about once the moment has passed.
@@ -179,6 +205,20 @@ struct SessionStateMessage {
     uint8_t render_scale = 1;
     bool screen_gap = true;
     RightStickMode right_stick_mode = RightStickMode::CStick;
+
+    // The one menu, as the host currently has it. A companion draws from these
+    // rather than running a menu of its own, which is what lets the player
+    // watch either screen while working the same menu from either pad.
+    bool menu_open = false;
+    uint8_t menu_focus = 0;
+    // 0 none, 1 reset, 2 quit -- see LayoutPicker::MenuConfirm.
+    uint8_t menu_confirm = 0;
+    // What decides which buttons the menu has. Sent so the companion builds
+    // the identical row: a menu that agreed about everything except how many
+    // entries it had would put the two devices' cursors in different places.
+    uint8_t max_render_scale = 1;
+    bool cursor_choosable = false;
+    bool right_stick_choosable = false;
 };
 
 struct FrameMessage {

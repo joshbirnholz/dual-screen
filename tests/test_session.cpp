@@ -565,6 +565,100 @@ void test_companion_can_request_a_layout() {
     host.stop();
 }
 
+// There is one menu per session, not one per device: the host holds it and the
+// companion draws what it is told, so the two screens cannot show a menu in two
+// different states while the player works it from either pad.
+void test_the_menu_is_one_menu_across_both_devices() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Menu Host";
+    config.game_title = "One Menu";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "vertical");
+
+    CompanionSession companion;
+    if (!companion.begin_search("Watcher", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    CHECK_MSG(!companion.host_menu_open(), "a companion thought a menu was up before one was");
+
+    // What the host has, the companion draws -- down to which entry the cursor
+    // is on and whether a confirmation is up over it.
+    HostSession::SharedState shared;
+    shared.layout_id = "vertical";
+    shared.menu_open = true;
+    shared.menu_focus = 4;
+    shared.menu_confirm = 2;  // MenuConfirm::Quit
+    shared.max_render_scale = 3;
+    shared.cursor_choosable = true;
+    shared.right_stick_choosable = true;
+    host.set_session_state(shared);
+    const bool drawn = spin(host, companion, [&] {
+        return companion.host_menu_open() && companion.host_menu_focus() == 4;
+    });
+    CHECK_MSG(drawn, "the host's open menu never reached the companion");
+    CHECK_EQ(static_cast<int>(companion.host_menu_confirm()), 2);
+    CHECK_MSG(companion.host_max_render_scale() == 3 && companion.host_cursor_choosable() &&
+                  companion.host_right_stick_choosable(),
+              "the companion was not told which entries that menu has, so its row could differ");
+
+    // And a press made over there is answered here, not there.
+    RequestMessage pending;
+    CHECK(!host.take_request(pending));
+    companion.request_menu_press(2, MenuAction::Confirm);
+
+    bool saw_focus = false;
+    bool saw_action = false;
+    spin(host, companion, [&] {
+        HostSession::MenuPress got;
+        while (host.take_menu_press(got)) {
+            if (got.has_focus && got.focus == 2) saw_focus = true;
+            if (got.has_action && got.action == MenuAction::Confirm) saw_action = true;
+        }
+        return saw_focus && saw_action;
+    });
+    CHECK_MSG(saw_focus, "the companion's tap never reached the menu it was aimed at");
+    CHECK_MSG(saw_action, "the companion's press never reached the menu it was aimed at");
+
+    // Two presses made in quick succession are two moves. Sent back to back so
+    // they land in one poll, which is exactly when a single held slot would
+    // keep the last and quietly lose the first.
+    companion.request_menu_action(MenuAction::Down);
+    companion.request_menu_action(MenuAction::Down);
+    int downs = 0;
+    spin(host, companion, [&] {
+        HostSession::MenuPress got;
+        while (host.take_menu_press(got)) {
+            if (got.has_action && got.action == MenuAction::Down) ++downs;
+        }
+        return downs >= 2;
+    });
+    CHECK_MSG(downs == 2, "two presses arrived as " + std::to_string(downs) +
+                              ": a cursor moved once where the player moved it twice");
+
+    // Closing is the host's to announce too, so the menu comes down on both.
+    shared.menu_open = false;
+    host.set_session_state(shared);
+    CHECK_MSG(spin(host, companion, [&] { return !companion.host_menu_open(); }),
+              "the companion kept a menu up after the host put it away");
+
+    companion.disconnect();
+    host.stop();
+}
+
 // The settings both devices share are the host's to hold. A companion asks and
 // then adopts what comes back, which is what makes "always in sync" true rather
 // than merely likely: there is no second copy to disagree with.
@@ -1256,6 +1350,7 @@ int main() {
     test_companion_gets_the_screen_it_asked_for();
     test_audio_reaches_the_companion();
     test_companion_can_request_a_layout();
+    test_the_menu_is_one_menu_across_both_devices();
     test_shared_settings_stay_in_sync();
     test_companion_menu_pauses_the_host();
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();

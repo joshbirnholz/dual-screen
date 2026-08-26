@@ -57,6 +57,16 @@ public:
     int host_render_scale() const { return host_render_scale_; }
     bool host_screen_gap() const { return host_screen_gap_; }
 
+    // The one menu, as the host has it. This device draws from these rather
+    // than running a menu of its own, so both screens show the same thing
+    // whichever pad is working it.
+    bool host_menu_open() const { return host_menu_open_; }
+    int host_menu_focus() const { return host_menu_focus_; }
+    uint8_t host_menu_confirm() const { return host_menu_confirm_; }
+    int host_max_render_scale() const { return host_max_render_scale_; }
+    bool host_cursor_choosable() const { return host_cursor_choosable_; }
+    bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
+
     // Sends this device's input to the host. Only what changed goes out.
     void send_input(const DsInputState& state);
 
@@ -70,6 +80,15 @@ public:
     void request_right_stick_mode(RightStickMode mode);
     void request_render_scale(int scale);
     void request_screen_gap(bool include_gap);
+    // A press made on this device, for the host's menu to answer.
+    void request_menu_action(MenuAction action);
+    // Where a finger landed here, already resolved to an entry: the two
+    // devices' menus are laid out for different screens, so the host cannot
+    // work out what a tap over there was on.
+    void request_menu_focus(int focus);
+    // A tap: one press, at the entry the finger landed on. Sent together so
+    // the two cannot be separated on the way over.
+    void request_menu_press(int focus, MenuAction action);
     // One-shot: asks the host to restart the game. There is nothing to adopt
     // back, since there is no value beyond the moment it happens.
     void request_reset();
@@ -196,6 +215,12 @@ private:
     RightStickMode host_right_stick_mode_ = RightStickMode::CStick;
     int host_render_scale_ = 1;
     bool host_screen_gap_ = true;
+    bool host_menu_open_ = false;
+    int host_menu_focus_ = 0;
+    uint8_t host_menu_confirm_ = 0;
+    int host_max_render_scale_ = 1;
+    bool host_cursor_choosable_ = false;
+    bool host_right_stick_choosable_ = false;
     bool menu_open_ = false;
     bool said_hello_ = false;
     // When to give up on a connection that has not finished arriving. Zero

@@ -24,6 +24,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
 #include "render/menu_backdrop.hpp"
+#include "ui/menu_actions.hpp"
 #include "render/gl_loader.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -338,6 +339,13 @@ struct App::Impl {
     bool paired() const;
     // Opens the layout menu with the state it should be showing.
     void open_picker();
+    // What to do about whatever the menu just decided. Called for a press made
+    // here and for one forwarded from the other device alike: there is one
+    // menu, so there is one place that answers it.
+    void apply_menu_result(const LayoutPickerResult& result);
+    // Opens or closes the one menu on this device, which for a host is also
+    // what the companion is told to draw.
+    void set_menu_open(bool open);
     // The two settings both devices share. On a companion these ask the host
     // and change nothing locally; the host owns them and broadcasts the result,
     // which is what keeps the two devices from ever disagreeing.
@@ -606,6 +614,93 @@ bool App::Impl::paired() const {
     return (host_session && host_session->has_companion()) || is_companion();
 }
 
+void App::Impl::set_menu_open(bool open) {
+    if (open) {
+        if (state == State::Menu) return;
+        open_picker();
+        state = State::Menu;
+        input.set_game_input_enabled(false);
+        if (is_companion()) companion_session->set_menu_open(true);
+        return;
+    }
+    if (state != State::Menu) return;
+    picker->close();
+    if (is_companion()) {
+        companion_session->set_menu_open(false);
+        state = State::Companion;
+    } else {
+        state = State::Playing;
+    }
+    input.set_game_input_enabled(true);
+}
+
+void App::Impl::apply_menu_result(const LayoutPickerResult& result) {
+            if (result.selection_changed) {
+                // A companion does not own the choice: request_layout() asks,
+                // and this device adopts whatever the host broadcasts back.
+                request_layout(picker->selected_layout_id());
+            }
+            if (result.filtering_toggled) {
+                request_filtering(!bilinear_filtering);
+            }
+            if (result.render_scale_changed) {
+                request_render_scale(next_render_scale());
+            }
+            if (result.audio_target_changed) {
+                request_audio_target(next_audio_target(audio_target));
+            }
+            if (result.handedness_changed) {
+                request_handedness(other_hand(handedness));
+            }
+            if (result.screen_gap_toggled) {
+                request_screen_gap(!screen_gap);
+            }
+            if (result.right_stick_mode_changed) {
+                request_right_stick_mode(next_right_stick_mode(right_stick_mode));
+            }
+            if (result.cursor_mode_changed) {
+                // This device's own pointer, so it is decided here and not
+                // asked of the host -- the other device has its own.
+                settings.cursor_mode = next_cursor_mode(settings.cursor_mode);
+                picker->set_cursor_mode(settings.cursor_mode);
+                settings.save(paths);
+                log_info(std::string("pointer: ") + to_string(settings.cursor_mode));
+            }
+            if (result.reset_requested) {
+                request_reset();
+            }
+            if (result.disconnect_requested) {
+                if (host_session) {
+                    host_session->disconnect_companion("you ended the session");
+                    state = State::Playing;
+                    input.set_game_input_enabled(true);
+                } else if (companion_session) {
+                    companion_session->disconnect();
+                    open_launcher();
+                }
+            } else if (result.quit_requested) {
+                if (is_companion()) {
+                    // Quit here means the whole session ends, not just this
+                    // device's part of it: ask the host to shut down too, the
+                    // same as if Quit had been pressed there, then leave the
+                    // way Disconnect would.
+                    companion_session->request_quit();
+                    companion_session->disconnect();
+                    open_launcher();
+                } else {
+                    running = false;
+                }
+            } else if (result.close_requested || result.reset_requested) {
+                if (is_companion()) {
+                    companion_session->set_menu_open(false);
+                    state = State::Companion;
+                } else {
+                    state = State::Playing;
+                }
+                input.set_game_input_enabled(true);
+            }
+}
+
 void App::Impl::open_picker() {
     LayoutPickerState picker_state;
     picker_state.layout_id = active_layout_id;
@@ -619,14 +714,20 @@ void App::Impl::open_picker() {
     // same menu as the host, and `system` follows the host while it is
     // connected. Outside a game there is nothing to scale.
     picker_state.max_render_scale =
-        (source || is_companion()) ? system_profile(system).max_render_scale : 1;
+        is_companion() ? companion_session->host_max_render_scale()
+                       : (source ? system_profile(system).max_render_scale : 1);
     picker_state.screen_gap = screen_gap;
     picker_state.right_stick_mode = right_stick_mode;
     // Only a console with a stick of its own has more than one answer worth
     // offering: on a DS the left stick is already standing in for the d-pad
     // and the right one has nothing to be.
     picker_state.right_stick_choosable =
-        (source || is_companion()) && system_profile(system).has_analog_stick;
+        is_companion() ? companion_session->host_right_stick_choosable()
+                       : (source && system_profile(system).has_analog_stick);
+    // Which entries the menu has has to match on both devices, or the same
+    // cursor position would mean different things on the two screens.
+    picker_state.cursor_choosable =
+        is_companion() ? companion_session->host_cursor_choosable() : true;
     picker->set_screens(screens_geometry());
     // The tiles are judged against the same display, and filled on the same
     // terms, as the render behind them -- see device_layout().
@@ -1230,13 +1331,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             input.set_game_input_enabled(true);
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    // The same layout menu as on the host, showing the same
-                    // state. Everything on it is a request: the host applies it
-                    // and broadcasts the result, so both devices agree.
-                    open_picker();
+                    // Asked for rather than opened. The host holds the one
+                    // menu; this device puts it up when told, which is what
+                    // keeps the two screens showing the same thing.
                     companion_session->set_menu_open(true);
-                    state = State::Menu;
-                    input.set_game_input_enabled(false);
                     break;
                 }
             }
@@ -1270,73 +1368,32 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
 
         case State::Menu: {
+            // One menu, held by whichever device runs the game. A companion
+            // does not answer its own presses: it forwards them and redraws
+            // whatever the host says the menu now looks like, so both screens
+            // show the same thing and either pad can work it.
+            if (is_companion()) {
+                for (const UiAction action : actions) {
+                    net::MenuAction wire = net::MenuAction::Confirm;
+                    if (menu_action_for(action, wire)) {
+                        companion_session->request_menu_action(wire);
+                    }
+                }
+                for (const PointerEvent& pointer : pointers) {
+                    if (!pointer.released) continue;
+                    const int entry =
+                        picker->entry_at(pointer.x, pointer.y, static_cast<float>(output_width),
+                                         static_cast<float>(output_height));
+                    if (entry >= 0) {
+                        companion_session->request_menu_press(entry, net::MenuAction::Confirm);
+                    }
+                }
+                break;
+            }
             const LayoutPickerResult result =
                 picker->update(actions, pointers, static_cast<float>(output_width),
                                static_cast<float>(output_height));
-            if (result.selection_changed) {
-                // A companion does not own the choice: request_layout() asks,
-                // and this device adopts whatever the host broadcasts back.
-                request_layout(picker->selected_layout_id());
-            }
-            if (result.filtering_toggled) {
-                request_filtering(!bilinear_filtering);
-            }
-            if (result.render_scale_changed) {
-                request_render_scale(next_render_scale());
-            }
-            if (result.audio_target_changed) {
-                request_audio_target(next_audio_target(audio_target));
-            }
-            if (result.handedness_changed) {
-                request_handedness(other_hand(handedness));
-            }
-            if (result.screen_gap_toggled) {
-                request_screen_gap(!screen_gap);
-            }
-            if (result.right_stick_mode_changed) {
-                request_right_stick_mode(next_right_stick_mode(right_stick_mode));
-            }
-            if (result.cursor_mode_changed) {
-                // This device's own pointer, so it is decided here and not
-                // asked of the host -- the other device has its own.
-                settings.cursor_mode = next_cursor_mode(settings.cursor_mode);
-                picker->set_cursor_mode(settings.cursor_mode);
-                settings.save(paths);
-                log_info(std::string("pointer: ") + to_string(settings.cursor_mode));
-            }
-            if (result.reset_requested) {
-                request_reset();
-            }
-            if (result.disconnect_requested) {
-                if (host_session) {
-                    host_session->disconnect_companion("you ended the session");
-                    state = State::Playing;
-                    input.set_game_input_enabled(true);
-                } else if (companion_session) {
-                    companion_session->disconnect();
-                    open_launcher();
-                }
-            } else if (result.quit_requested) {
-                if (is_companion()) {
-                    // Quit here means the whole session ends, not just this
-                    // device's part of it: ask the host to shut down too, the
-                    // same as if Quit had been pressed there, then leave the
-                    // way Disconnect would.
-                    companion_session->request_quit();
-                    companion_session->disconnect();
-                    open_launcher();
-                } else {
-                    running = false;
-                }
-            } else if (result.close_requested || result.reset_requested) {
-                if (is_companion()) {
-                    companion_session->set_menu_open(false);
-                    state = State::Companion;
-                } else {
-                    state = State::Playing;
-                }
-                input.set_game_input_enabled(true);
-            }
+            apply_menu_result(result);
             break;
         }
 
@@ -1362,9 +1419,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         case State::Playing: {
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu) {
-                    open_picker();
-                    state = State::Menu;
-                    input.set_game_input_enabled(false);
+                    set_menu_open(true);
                     if (source) {
                         source->flush_save_ram(false);
                     }
@@ -1839,6 +1894,18 @@ int App::run(const AppOptions& options) {
             shared.render_scale = impl.render_scale;
             shared.screen_gap = impl.screen_gap;
             shared.right_stick_mode = impl.right_stick_mode;
+            // The menu itself, so the companion draws this one rather than
+            // keeping its own. Sent even while closed: that is how the other
+            // device learns to put it away again.
+            shared.menu_open = impl.state == Impl::State::Menu;
+            shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
+            shared.menu_confirm =
+                impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
+            shared.max_render_scale =
+                impl.source ? system_profile(impl.system).max_render_scale : 1;
+            shared.cursor_choosable = true;  // this end is a machine with a pointer
+            shared.right_stick_choosable =
+                impl.source && system_profile(impl.system).has_analog_stick;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
@@ -1879,6 +1946,13 @@ int App::run(const AppOptions& options) {
                 if (request.wants_reset && impl.source) {
                     impl.source->reset();
                 }
+                // The companion asking for the menu, and then working it. Both
+                // land on the one picker this device holds, so a press over
+                // there and a press here are the same press.
+                if (request.menu_open != (impl.state == Impl::State::Menu)) {
+                    impl.set_menu_open(request.menu_open);
+                }
+
             }
             // Checked separately from the request above, rather than as
             // request.wants_quit there: the companion sends its Bye right
@@ -1886,6 +1960,21 @@ int App::run(const AppOptions& options) {
             // same poll() -- which would clear the pending request before
             // this code next ran, if quit rode along with it instead of its
             // own latch that survives that disconnect.
+            // Every press the companion made in the menu, in the order it made
+            // them: two of them are two moves, not one.
+            net::HostSession::MenuPress press;
+            while (impl.host_session->take_menu_press(press)) {
+                if (impl.state != Impl::State::Menu || !impl.picker) continue;
+                if (press.has_focus) {
+                    impl.picker->set_focus(press.focus);
+                }
+                if (press.has_action) {
+                    const LayoutPickerResult result = impl.picker->update(
+                        {ui_action_for(press.action)}, {}, static_cast<float>(impl.output_width),
+                        static_cast<float>(impl.output_height));
+                    impl.apply_menu_result(result);
+                }
+            }
             if (impl.host_session->take_companion_quit_request()) {
                 // The same as choosing Quit here: the whole app shuts down.
                 // The companion that asked is leaving on its own right after,
@@ -1927,6 +2016,19 @@ int App::run(const AppOptions& options) {
                     if (impl.picker && impl.picker->is_open()) {
                         impl.picker->set_selected_layout(impl.active_layout_id);
                     }
+                }
+                // The menu is one of those shared things now: the host holds
+                // it, so this device opens and closes when told and redraws
+                // whatever the host says it currently looks like.
+                const bool host_menu = impl.companion_session->host_menu_open();
+                if (host_menu != (impl.state == Impl::State::Menu) &&
+                    (impl.state == Impl::State::Menu || impl.state == Impl::State::Companion)) {
+                    impl.set_menu_open(host_menu);
+                }
+                if (impl.state == Impl::State::Menu && impl.picker) {
+                    impl.picker->mirror(
+                        impl.companion_session->host_menu_focus(),
+                        static_cast<MenuConfirm>(impl.companion_session->host_menu_confirm()));
                 }
                 if (impl.companion_session->host_filtering() != impl.bilinear_filtering) {
                     impl.bilinear_filtering = impl.companion_session->host_filtering();
@@ -1970,9 +2072,7 @@ int App::run(const AppOptions& options) {
         if (open_layout_menu_when_playing && impl.state == Impl::State::Playing &&
             impl.source && impl.source->core_frame_for_test().valid()) {
             open_layout_menu_when_playing = false;
-            impl.open_picker();
-            impl.state = Impl::State::Menu;
-            impl.input.set_game_input_enabled(false);
+            impl.set_menu_open(true);
         }
 
         impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());

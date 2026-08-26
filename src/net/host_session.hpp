@@ -70,6 +70,18 @@ public:
         // Whether a layout shows the gap between its screens, for whichever
         // layouts offer the choice -- see LayoutComposition::gap_toggleable.
         bool screen_gap = true;
+
+        // The one menu, as this device has it. The companion draws from these
+        // rather than keeping a menu of its own, which is what lets the player
+        // work it from either pad while watching either screen.
+        bool menu_open = false;
+        int menu_focus = 0;
+        uint8_t menu_confirm = 0;
+        // What decides which entries that menu has, so the companion builds
+        // the identical row and the two cursors mean the same thing.
+        int max_render_scale = 1;
+        bool cursor_choosable = false;
+        bool right_stick_choosable = false;
     };
 
     // Cheap to call every frame; nothing is sent unless something changed.
@@ -97,6 +109,19 @@ public:
     // same poll() and would otherwise wipe an unconsumed request_ (via
     // drop_companion()) before the app next got to read it.
     bool take_companion_quit_request();
+
+    // A press the companion made in the menu, and where its finger was if that
+    // is what made it. Queued rather than merged into the pending request like
+    // the settings above: a setting is a value, where whatever was said last
+    // wins, but a press is something that happened and two of them are two
+    // moves. False when there are none left.
+    struct MenuPress {
+        bool has_focus = false;
+        uint8_t focus = 0;
+        bool has_action = false;
+        MenuAction action = MenuAction::Confirm;
+    };
+    bool take_menu_press(MenuPress& out);
 
     // The companion has its own menu open, so the game is paused there. The
     // host pauses too: a session where one device is playing on while the other
@@ -227,6 +252,10 @@ private:
     bool resend_screens_ = true;
     bool have_request_ = false;
     RequestMessage request_;
+    // Bounded: a companion that somehow floods presses backs up the menu it is
+    // working rather than this machine's memory.
+    static constexpr std::size_t kMaxQueuedMenuPresses = 32;
+    std::deque<MenuPress> menu_presses_;
     bool companion_wants_quit_ = false;
 };
 

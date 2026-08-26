@@ -141,6 +141,12 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_right_stick_mode_ = state.right_stick_mode;
             host_render_scale_ = state.render_scale;
             host_screen_gap_ = state.screen_gap;
+            host_menu_open_ = state.menu_open;
+            host_menu_focus_ = state.menu_focus;
+            host_menu_confirm_ = state.menu_confirm;
+            host_max_render_scale_ = state.max_render_scale;
+            host_cursor_choosable_ = state.cursor_choosable;
+            host_right_stick_choosable_ = state.right_stick_choosable;
             granted_screen_ = state.companion_screen;
             break;
         }
@@ -467,6 +473,36 @@ void CompanionSession::request_screen_gap(bool include_gap) {
     RequestMessage request;
     request.wants_screen_gap = true;
     request.screen_gap = include_gap;
+    send_request(request);
+}
+
+void CompanionSession::request_menu_action(MenuAction action) {
+    RequestMessage request;
+    request.wants_menu_action = true;
+    request.menu_action = action;
+    send_request(request);
+}
+
+void CompanionSession::request_menu_focus(int focus) {
+    if (focus < 0) {
+        return;
+    }
+    RequestMessage request;
+    request.wants_menu_focus = true;
+    request.menu_focus = static_cast<uint8_t>(focus);
+    send_request(request);
+}
+
+void CompanionSession::request_menu_press(int focus, MenuAction action) {
+    if (focus < 0) {
+        request_menu_action(action);
+        return;
+    }
+    RequestMessage request;
+    request.wants_menu_focus = true;
+    request.menu_focus = static_cast<uint8_t>(focus);
+    request.wants_menu_action = true;
+    request.menu_action = action;
     send_request(request);
 }
 

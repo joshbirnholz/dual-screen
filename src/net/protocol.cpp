@@ -220,6 +220,12 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.render_scale);
     put_u8(out, message.screen_gap ? 1u : 0u);
     put_u8(out, right_stick_mode_to_wire(message.right_stick_mode));
+    put_u8(out, message.menu_open ? 1u : 0u);
+    put_u8(out, message.menu_focus);
+    put_u8(out, message.menu_confirm);
+    put_u8(out, message.max_render_scale);
+    put_u8(out, message.cursor_choosable ? 1u : 0u);
+    put_u8(out, message.right_stick_choosable ? 1u : 0u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -319,6 +325,26 @@ bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
     return true;
 }
 
+namespace {
+
+bool menu_action_from_wire(uint8_t value, MenuAction& out) {
+    switch (value) {
+        case 1: out = MenuAction::Up; return true;
+        case 2: out = MenuAction::Down; return true;
+        case 3: out = MenuAction::Left; return true;
+        case 4: out = MenuAction::Right; return true;
+        case 5: out = MenuAction::Confirm; return true;
+        case 6: out = MenuAction::Cancel; return true;
+        case 7: out = MenuAction::Quit; return true;
+        case 8: out = MenuAction::Reset; return true;
+        case 9: out = MenuAction::Disconnect; return true;
+        default: break;
+    }
+    return false;
+}
+
+}  // namespace
+
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_string(out, message.layout_id);
@@ -340,6 +366,10 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.screen_gap ? 1u : 0u);
     put_u8(out, message.wants_right_stick_mode ? 1u : 0u);
     put_u8(out, right_stick_mode_to_wire(message.right_stick_mode));
+    put_u8(out, message.wants_menu_action ? 1u : 0u);
+    put_u8(out, static_cast<uint8_t>(message.menu_action));
+    put_u8(out, message.wants_menu_focus ? 1u : 0u);
+    put_u8(out, message.menu_focus);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -379,7 +409,17 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     uint8_t right_stick = 0;
     reader.u8(wants_right_stick);
     reader.u8(right_stick);
+    uint8_t wants_menu_action = 0;
+    uint8_t menu_action = 0;
+    uint8_t wants_menu_focus = 0;
+    reader.u8(wants_menu_action);
+    reader.u8(menu_action);
+    reader.u8(wants_menu_focus);
+    reader.u8(out.menu_focus);
     if (!reader.ok()) return false;
+    out.wants_menu_action = (wants_menu_action != 0);
+    out.wants_menu_focus = (wants_menu_focus != 0);
+    if (out.wants_menu_action && !menu_action_from_wire(menu_action, out.menu_action)) return false;
     out.wants_filtering = (wants_filtering != 0);
     out.bilinear_filtering = (filtering != 0);
     out.wants_audio_target = (wants_audio != 0);
@@ -472,10 +512,22 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     reader.u8(screen_gap);
     uint8_t right_stick = 0;
     reader.u8(right_stick);
+    uint8_t menu_open = 0;
+    uint8_t cursor_choosable = 0;
+    uint8_t right_stick_choosable = 0;
+    reader.u8(menu_open);
+    reader.u8(out.menu_focus);
+    reader.u8(out.menu_confirm);
+    reader.u8(out.max_render_scale);
+    reader.u8(cursor_choosable);
+    reader.u8(right_stick_choosable);
     if (!reader.ok()) return false;
     out.paused = (paused != 0);
     out.bilinear_filtering = (filtering != 0);
     out.screen_gap = (screen_gap != 0);
+    out.menu_open = (menu_open != 0);
+    out.cursor_choosable = (cursor_choosable != 0);
+    out.right_stick_choosable = (right_stick_choosable != 0);
     if (!right_stick_mode_from_wire(right_stick, out.right_stick_mode)) return false;
     if (!audio_target_from_wire(audio, out.audio_target)) return false;
     if (!handedness_from_wire(hands, out.handedness)) return false;
