@@ -74,6 +74,21 @@ bool decode_ui_sound_pack(const uint8_t* data,
     return true;
 }
 
+const char* to_string(UiSound sound) {
+    switch (sound) {
+        case UiSound::Confirm: return "confirm";
+        case UiSound::Cancel: return "cancel";
+        case UiSound::MoveCursor: return "move cursor";
+        case UiSound::Error: return "error";
+        case UiSound::ConnectionTimeout: return "connection timeout";
+        case UiSound::OpenQuickMenu: return "open quick menu";
+        case UiSound::CloseQuickMenu: return "close quick menu";
+        case UiSound::ConnectingLoop: return "connecting";
+        case UiSound::Count: break;
+    }
+    return "unknown";
+}
+
 UiSounds::~UiSounds() { shutdown(); }
 
 bool UiSounds::initialize(std::string* error) {
@@ -151,6 +166,11 @@ void UiSounds::shutdown() {
 
 void UiSounds::play(UiSound sound) {
     const int id = static_cast<int>(sound);
+    // Said out loud because silence has two causes that look identical from the
+    // outside: an effect nobody asked for, and one that was asked for and never
+    // reached the hardware. A log that names the ones asked for tells them
+    // apart without the device being in the room.
+    log_debug(std::string("effect: ") + to_string(sound));
     if (muted_ || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
         return;
     }

@@ -614,92 +614,98 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         }
     }
 
-    if (state_ == State::Launcher) {
-        const LauncherResult result =
-            launcher_.update(actions, pointers, static_cast<float>(output_width_),
-                             static_cast<float>(output_height_));
-        switch (result.choice) {
-            case LauncherChoice::ConnectAsTopScreen:
-                begin_search(ScreenId::Top);
-                break;
-            case LauncherChoice::ConnectAsBottomScreen:
-                begin_search(ScreenId::Bottom);
-                break;
-            case LauncherChoice::Quit:
-                running_ = false;
-                break;
-            default:
-                break;
+    // Answered inside a call of its own so that a screen which is done with a
+    // press cannot return past what comes after: the sound of the cursor moving
+    // is decided from where the cursor ended up, and both of this device's own
+    // screens used to hand their presses back and leave before it was.
+    const auto answer = [&]() {
+        if (state_ == State::Launcher) {
+            const LauncherResult result =
+                launcher_.update(actions, pointers, static_cast<float>(output_width_),
+                                 static_cast<float>(output_height_));
+            switch (result.choice) {
+                case LauncherChoice::ConnectAsTopScreen:
+                    begin_search(ScreenId::Top);
+                    break;
+                case LauncherChoice::ConnectAsBottomScreen:
+                    begin_search(ScreenId::Bottom);
+                    break;
+                case LauncherChoice::Quit:
+                    running_ = false;
+                    break;
+                default:
+                    break;
+            }
+            return;
         }
-        return;
-    }
 
-    if (state_ == State::Browsing) {
-        const HostPickerResult result =
-            host_picker_.update(session_.hosts(), actions, pointers,
-                                static_cast<float>(output_width_),
-                                static_cast<float>(output_height_));
-        if (result.chosen) {
-            join(result.host);
-        } else if (result.cancelled) {
-            // Back to choosing which screen to be, rather than out of the app:
-            // that is what the button that got here undoes.
-            open_launcher();
+        if (state_ == State::Browsing) {
+            const HostPickerResult result =
+                host_picker_.update(session_.hosts(), actions, pointers,
+                                    static_cast<float>(output_width_),
+                                    static_cast<float>(output_height_));
+            if (result.chosen) {
+                join(result.host);
+            } else if (result.cancelled) {
+                // Back to choosing which screen to be, rather than out of the app:
+                // that is what the button that got here undoes.
+                open_launcher();
+            }
+            return;
         }
-        return;
-    }
 
-    for (const UiAction action : actions) {
-        switch (state_) {
-            case State::Connecting:
-                if (action == UiAction::Cancel) {
-                    leave("you stopped connecting");
-                }
-                break;
-            case State::Failed:
-                if (action == UiAction::Confirm || action == UiAction::Cancel) {
-                    open_launcher();
-                }
-                break;
-            case State::Launcher:
-                break;
-            case State::Playing:
-                switch (action) {
-                    case UiAction::ToggleMenu:
-                        // Asked for rather than opened here. The host holds the
-                        // one menu; this device puts it up when told to, which
-                        // is what keeps the two screens showing the same thing.
-                        session_.set_menu_open(true);
-                        break;
-                    case UiAction::ToggleFilter:
-                        // R3, which means the same thing here as it does on the
-                        // device running the game.
-                        session_.request_filtering(!session_.host_filtering());
-                        break;
-                    case UiAction::SwapLayout:
-                        // L3, likewise: the two focus layouts swap.
-                        session_.request_layout(
-                            registry_.resolve(session_.host_layout_id()).swap_layout_id);
-                        break;
-                    case UiAction::Quit:
-                        break;  // Quit lives in the menu here, not on a button
-                    default:
-                        break;
-                }
-                break;
-            case State::Browsing:
-                break;
+        for (const UiAction action : actions) {
+            switch (state_) {
+                case State::Connecting:
+                    if (action == UiAction::Cancel) {
+                        leave("you stopped connecting");
+                    }
+                    break;
+                case State::Failed:
+                    if (action == UiAction::Confirm || action == UiAction::Cancel) {
+                        open_launcher();
+                    }
+                    break;
+                case State::Launcher:
+                    break;
+                case State::Playing:
+                    switch (action) {
+                        case UiAction::ToggleMenu:
+                            // Asked for rather than opened here. The host holds the
+                            // one menu; this device puts it up when told to, which
+                            // is what keeps the two screens showing the same thing.
+                            session_.set_menu_open(true);
+                            break;
+                        case UiAction::ToggleFilter:
+                            // R3, which means the same thing here as it does on the
+                            // device running the game.
+                            session_.request_filtering(!session_.host_filtering());
+                            break;
+                        case UiAction::SwapLayout:
+                            // L3, likewise: the two focus layouts swap.
+                            session_.request_layout(
+                                registry_.resolve(session_.host_layout_id()).swap_layout_id);
+                            break;
+                        case UiAction::Quit:
+                            break;  // Quit lives in the menu here, not on a button
+                        default:
+                            break;
+                    }
+                    break;
+                case State::Browsing:
+                    break;
+            }
         }
-    }
+    };
+    answer();
 
-    if (state_ == state_before) {
+    if (in_a_menu && state_ == state_before) {
         const int cursor_now =
             state_ == State::Launcher ? launcher_.focus() : host_picker_.focus();
         if (cursor_now != cursor_before) {
             ui_sounds_.play(UiSound::MoveCursor);
         }
     }
-
 }
 
 bool Client::load_gl_resources(std::string* error) {

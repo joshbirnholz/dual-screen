@@ -80,6 +80,14 @@ if(XVFB_RUN_EXECUTABLE)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_smoke_test.cmake)
     set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300)
 
+    # The companion's own screens make their own sounds, and only the real
+    # input loop can show that a press reaches the place that decides them.
+    add_test(NAME companion_menu_sound
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_menu_sound_test.sh
+            $<TARGET_FILE:dualscreen-companion>
+            ${CMAKE_BINARY_DIR}/menu-sound)
+    set_tests_properties(companion_menu_sound PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
+
     # Driven by a shell script rather than a CMake one: the host has to run in
     # the background while the companion connects, and execute_process cannot.
     add_test(NAME two_device_headless

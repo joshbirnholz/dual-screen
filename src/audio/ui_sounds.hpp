@@ -22,6 +22,10 @@ enum class UiSound {
     Count,
 };
 
+// What to call one in a log, so a report of silence says whether the effect was
+// ever asked for or only failed to come out of the device.
+const char* to_string(UiSound sound);
+
 // Plays them, mixed into whatever is already making sound.
 //
 // A device of its own would be simpler, but the Switch has exactly one and the
