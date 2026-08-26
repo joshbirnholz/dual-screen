@@ -407,7 +407,7 @@ bool App::Impl::create_window(GlContextNeed need, std::string* error) {
     gl_context_need = need;
 
     GlWindowRequest request;
-    request.title = "dualscreen";
+    request.title = "Dualscreen";
     request.width = 1280;
     request.height = 800;
     request.windowed = options.windowed;

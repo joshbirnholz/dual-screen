@@ -1,4 +1,4 @@
-# dualscreen
+# Dualscreen
 
 A shell for playing dual-screen games on Linux/SteamOS that treats each screen
 as its own addressable source, so you pick a screen layout from a visual menu

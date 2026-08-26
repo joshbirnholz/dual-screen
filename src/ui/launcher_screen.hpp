@@ -39,6 +39,12 @@ public:
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
+    // Whether plus leaves the app, which the guide then says. Set on the
+    // Switch, where every piece of homebrew exits that way and a player will
+    // try it before looking for a row to select.
+    void set_plus_quits(bool quits) { plus_quits_ = quits; }
+    bool plus_quits() const { return plus_quits_; }
+
     LauncherResult update(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers,
                           float output_width,
@@ -70,6 +76,7 @@ private:
     // Which entries this device is offering, built when the screen opens.
     std::vector<LauncherChoice> rows_;
     bool runs_games_ = true;
+    bool plus_quits_ = false;
 };
 
 // Picks which host to join, from whatever discovery has found.

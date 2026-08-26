@@ -89,8 +89,14 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
             // A menu's face buttons. Nothing here answers them, and a bare
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
-            case UiAction::MenuReset:
-            case UiAction::MenuDisconnect: break;
+            case UiAction::MenuReset: break;
+            case UiAction::MenuDisconnect:
+                // Plus. Only where the platform's own convention says so; see
+                // set_plus_quits().
+                if (plus_quits_) {
+                    result.choice = LauncherChoice::Quit;
+                }
+                break;
             case UiAction::Quit:
                 result.choice = LauncherChoice::Quit;
                 break;
@@ -135,7 +141,7 @@ void LauncherScreen::render(QuadRenderer& quads,
     quads.clear(theme.background);
 
     const float margin = rows.empty() ? 0.0f : rows.front().x;
-    text.draw(quads, "dualscreen", margin, std::round(output_height * 0.14f), scale * 2.0f,
+    text.draw(quads, "Dualscreen", margin, std::round(output_height * 0.14f), scale * 2.0f,
               theme.text);
     text.draw(quads,
               runs_games_
@@ -168,7 +174,11 @@ void LauncherScreen::render(QuadRenderer& quads,
     text.draw(quads, found, margin, rows.back().y + rows.back().h + line * 1.2f, scale * 0.9f,
               hosts_found > 0 ? theme.success : theme.text_dim);
 
-    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "Select"}}, margin + rows[0].w,
+    std::vector<GuidePrompt> guide{{ButtonGlyph::A, "Select"}};
+    if (plus_quits_) {
+        guide.push_back({ButtonGlyph::Plus, "Quit"});
+    }
+    draw_control_guide(quads, text, glyphs, guide, margin + rows[0].w,
                        output_height - line * 1.2f - control_guide_height(scale * 0.9f),
                        scale * 0.9f, theme.text, TextAlign::Right);
 }

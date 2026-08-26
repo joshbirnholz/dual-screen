@@ -497,7 +497,6 @@ void LayoutPicker::render(QuadRenderer& quads,
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
-    const float border = std::max(2.0f, std::round(scale * 0.6f));
 
     // The game the menu was opened over, where the heading used to say what
     // the screen already looks like.
@@ -511,11 +510,9 @@ void LayoutPicker::render(QuadRenderer& quads,
         const bool focused = (static_cast<int>(index) == focus_);
         const bool selected = (layout.id == selected_layout_id_);
 
-        // Focused tiles are solid and everything else is a hairline, so the
-        // blurred game stays visible through the menu that sits over it.
-        if (focused) {
-            quads.draw_solid(tile, theme.text);
-        }
+        // Outlines everywhere except under the cursor and on the layout in
+        // use, so the blurred game stays visible through the menu over it.
+        draw_menu_tile(quads, tile, focused, selected, scale);
 
         const float padding = std::round(tile.h * 0.10f);
         const float label_height = line * 1.4f;
@@ -532,23 +529,13 @@ void LayoutPicker::render(QuadRenderer& quads,
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,
-                  focused ? theme.background : theme.text, TextAlign::Center);
-
-        // The layout actually in use keeps its outline even when the cursor has
-        // moved off it, so the menu still says which one the game is drawn in.
-        if (!focused) {
-            quads.draw_outline(tile, selected ? theme.accent : theme.text, border);
-        }
+                  menu_row_text(focused || selected), TextAlign::Center);
     }
 
     for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
         const PixelRect& button = geometry.footer[index];
         const bool focused = (tile_count() + static_cast<int>(index) == focus_);
-        if (focused) {
-            quads.draw_solid(button, theme.text);
-        } else {
-            quads.draw_outline(button, theme.text, border);
-        }
+        draw_menu_tile(quads, button, focused, false, scale);
 
         const std::string label = footer_label(footer_[index]);
         // A label is shrunk rather than allowed to run past the edge of its

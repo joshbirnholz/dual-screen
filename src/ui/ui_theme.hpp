@@ -33,22 +33,52 @@ struct UiTheme {
     }
 };
 
+// How solid the layout in use is drawn when the cursor is somewhere else. Light
+// enough for the black text it carries to stay readable over a blurred game,
+// which is what rules out going much below this.
+constexpr float kSelectedTileOpacity = 0.75f;
+
 inline const UiTheme& ui_theme() {
     static const UiTheme theme;
     return theme;
 }
 
-// One selectable row, tile or button, in the language every menu shares: an
-// outline that whatever is behind the menu shows through, filled solid only
-// where the cursor is sitting. Two pixels at the size the design was drawn at,
-// scaled with everything else so a 4K panel does not get a hairline.
+// How thick a menu's outlines are: two pixels at the size the design was drawn
+// at, scaled with everything else so a 4K panel does not get a hairline.
+inline float menu_border(float scale) { return std::max(2.0f, std::round(scale * 0.6f)); }
+
+// A line in a list -- the launcher, the settings, the file browser. Only the
+// one under the cursor is drawn at all: a box around every line turns a short
+// list into a grid and makes the cursor harder to find, not easier.
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale) {
+    (void)scale;
+    if (focused) {
+        quads.draw_solid(rect, ui_theme().text);
+    }
+}
+
+// A tile in the quick menu's grid, which is a different job: the tiles are the
+// choice itself rather than lines of a list, so each one is outlined and the
+// cursor fills its own. The layout actually in use is filled too, but faintly,
+// so the menu still says which one the game is drawn in without competing with
+// the cursor.
+inline void draw_menu_tile(QuadRenderer& quads,
+                           const PixelRect& rect,
+                           bool focused,
+                           bool selected,
+                           float scale) {
     const UiTheme& theme = ui_theme();
     if (focused) {
         quads.draw_solid(rect, theme.text);
-    } else {
-        quads.draw_outline(rect, theme.text, std::max(2.0f, std::round(scale * 0.6f)));
+        return;
     }
+    if (selected) {
+        Color faint = theme.text;
+        faint.a = kSelectedTileOpacity;
+        quads.draw_solid(rect, faint);
+        return;
+    }
+    quads.draw_outline(rect, theme.text, menu_border(scale));
 }
 
 // What text on such a row has to be, which flips with the fill under it.

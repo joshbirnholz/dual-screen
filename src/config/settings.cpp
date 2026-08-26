@@ -37,7 +37,7 @@ std::string default_device_name() {
     if (::gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
         return std::string(hostname);
     }
-    return std::string("dualscreen");
+    return std::string("Dualscreen");
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-# dualscreen companion for the Nintendo Switch
+# Dualscreen for the Nintendo Switch
 
 A Switch homebrew app that joins a game already running on another device and
 becomes one of its two screens.
@@ -76,7 +76,7 @@ export DEVKITPRO=/opt/devkitpro
 cd switch && make
 ```
 
-That produces `dualscreen-companion.nro`. Copy it to `/switch/` on the console's
+That produces `Dualscreen.nro`. Copy it to `/switch/` on the console's
 SD card and start it from the homebrew menu.
 
 A finished `.nro` carries an asset section on the end — `icon.jpg` and the name
@@ -89,7 +89,7 @@ says it **cannot parse the nro**, that section is what it is missing.
 The app writes everything it does to the SD card, at
 
 ```
-/switch/dualscreen-companion.log
+/switch/Dualscreen.log
 ```
 
 A fresh one per run, flushed a line at a time, so it survives the app being

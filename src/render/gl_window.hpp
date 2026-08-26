@@ -25,7 +25,7 @@ struct GlWindow {
 };
 
 struct GlWindowRequest {
-    const char* title = "dualscreen";
+    const char* title = "Dualscreen";
     int width = 1280;
     int height = 800;
     bool windowed = false;

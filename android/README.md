@@ -1,4 +1,4 @@
-# dualscreen companion for Android
+# Dualscreen for Android
 
 An Android app that joins a game already running on another device and becomes
 one of its two screens.

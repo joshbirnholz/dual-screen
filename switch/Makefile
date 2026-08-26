@@ -1,11 +1,11 @@
 #---------------------------------------------------------------------------------
-# dualscreen companion for the Nintendo Switch.
+# Dualscreen for the Nintendo Switch.
 #
 # Built with devkitPro's devkitA64 toolchain and libnx. It needs switch-sdl2 and
 # switch-zlib from the portlibs:
 #
 #   sudo dkp-pacman -S switch-dev switch-sdl2 switch-zlib
-#   make            # -> dualscreen-companion.nro
+#   make            # -> Dualscreen.nro
 #
 # The sources under ../src are the desktop app's own, compiled unchanged: the
 # wire protocol, discovery, the session, the layout arithmetic and the
@@ -23,13 +23,13 @@ TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/libnx/switch_rules
 
 #---------------------------------------------------------------------------------
-TARGET      := dualscreen-companion
+TARGET      := Dualscreen
 BUILD       := build
 SHARED      := ../src
 CLIENT      := ../companion/source
 
-APP_TITLE   := dualscreen companion
-APP_AUTHOR  := dualscreen
+APP_TITLE   := Dualscreen
+APP_AUTHOR  := Dualscreen
 APP_VERSION := 0.1.0
 # 256x256 JPEG -- a Switch icon is not a PNG, whatever the 3DS and Wii U
 # templates do.

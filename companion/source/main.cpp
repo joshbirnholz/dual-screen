@@ -1,4 +1,4 @@
-// The dualscreen companion.
+// Dualscreen, as it runs on a device that is being a screen for another.
 //
 // It runs no core and holds no ROM. It finds a device on the LAN that is
 // already playing something, joins as that game's top or bottom screen, draws
@@ -278,7 +278,7 @@ bool Client::start() {
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
 
     GlWindowRequest request;
-    request.title = "dualscreen companion";
+    request.title = "Dualscreen";
     request.width = 1280;
     request.height = 720;
     request.windowed = options_.windowed;
@@ -349,6 +349,11 @@ void Client::open_launcher() {
     // The app's own opening screen, minus the two entries that mean nothing
     // here: this device has no ROMs to load and nothing in Settings that would
     // apply to it. What is left is which screen to be, and leaving.
+#ifdef __SWITCH__
+    // Every piece of Switch homebrew exits on plus, and a player will try it
+    // before looking for a row to select.
+    launcher_.set_plus_quits(true);
+#endif
     launcher_.open(/*runs_games=*/false);
 }
 
@@ -875,7 +880,7 @@ void Client::draw() {
 // shell to have started it from, so the only way to read what it said after
 // the fact is to leave it on the SD card -- and the only way to read it as it
 // happens is nxlink, which needs a computer already listening.
-constexpr const char* kSwitchLogPath = "sdmc:/switch/dualscreen-companion.log";
+constexpr const char* kSwitchLogPath = "sdmc:/switch/Dualscreen.log";
 
 // Start-up failing has to be visible. Without this the app returns to the
 // homebrew menu the instant something goes wrong, which looks exactly like it
@@ -888,10 +893,10 @@ void show_failure(const std::string& message) {
     padInitializeDefault(&pad);
 
     std::printf("\x1b[2J");
-    std::printf("dualscreen companion could not start.\n\n");
+    std::printf("Dualscreen could not start.\n\n");
     std::printf("  %s\n\n", message.c_str());
     std::printf("The whole log is on the SD card at\n");
-    std::printf("  /switch/dualscreen-companion.log\n\n");
+    std::printf("  /switch/Dualscreen.log\n\n");
     std::printf("If it mentions memory or a renderer, start the homebrew menu\n");
     std::printf("in full-memory mode: hold R while launching a game.\n\n");
     std::printf("Press + to close.\n");
@@ -923,7 +928,7 @@ int main(int argc, char** argv) {
     // the log survives whatever happens next -- including the app being killed
     // outright rather than exiting.
     set_log_file(kSwitchLogPath);
-    log_info("dualscreen companion starting");
+    log_info("Dualscreen starting");
 
     // Sockets are not on by default, and without them there is nothing this
     // app can do at all. nxlink, if a computer is listening for it, gets the
@@ -947,9 +952,9 @@ int main(int argc, char** argv) {
     // it is uninstalled. Everything here also goes to logcat -- see log.cpp --
     // which is the equivalent of the Switch build's nxlink.
     if (const char* storage = SDL_AndroidGetExternalStoragePath()) {
-        set_log_file(std::string(storage) + "/dualscreen-companion.log");
+        set_log_file(std::string(storage) + "/Dualscreen.log");
     }
-    log_info("dualscreen companion starting");
+    log_info("Dualscreen starting");
 #endif
 
     int status = 0;
@@ -970,7 +975,7 @@ int main(int argc, char** argv) {
         client.stop();
     }
 
-    log_info("dualscreen companion exiting");
+    log_info("Dualscreen exiting");
 #ifdef __SWITCH__
     socketExit();
 #endif
