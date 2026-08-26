@@ -56,6 +56,7 @@
 #include "render/bezel_art.hpp"
 #include "render/gl_loader.hpp"
 #include "render/button_glyphs.hpp"
+#include "render/menu_backdrop.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -230,6 +231,7 @@ private:
     QuadRenderer quads_;
     TextRenderer text_;
     ButtonGlyphSheet button_glyphs_;
+    MenuBackdrop menu_backdrop_;
     Compositor compositor_;
     LocalOutputRouter router_;
     BezelArt bezel_art_;
@@ -824,11 +826,19 @@ void Client::draw() {
                        height, router_);
 
     if (menu_open_) {
+        // Taken between the game and the menu, the same as on the other device:
+        // one menu, drawn over the same blurred frame wherever it is opened.
+        if (!menu_backdrop_.valid()) {
+            menu_backdrop_.capture(static_cast<int>(width), static_cast<int>(height));
+        }
+        menu_backdrop_.draw(quads_, width, height);
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like -- the same as on
         // the other device, because it is the same picker.
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
+    } else {
+        menu_backdrop_.forget();
     }
 }
 
