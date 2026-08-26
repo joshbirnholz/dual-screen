@@ -896,6 +896,40 @@ void test_the_focus_layouts_swap_with_each_other() {
     }
 }
 
+// The menu's blurred backdrop is a copy of what was underneath it, so it has to
+// know when what is underneath stops being what it copied. Picking a layout
+// applies it while the menu is still up, which is exactly that.
+void test_the_compositor_says_when_the_picture_changed() {
+    const LayoutRegistry registry;
+    // Nothing is initialized: every draw call bails without a GL program, which
+    // leaves the placement arithmetic -- the part this is about -- intact.
+    QuadRenderer quads;
+    LocalOutputRouter router;
+    const ScreenTextures nothing;
+    Compositor compositor;
+
+    const auto key_for = [&](const Layout& layout) {
+        compositor.render(quads, layout, nothing, ds_screens(), 1280.0f, 800.0f, router);
+        return compositor.composition_key();
+    };
+
+    const std::size_t vertical = key_for(*registry.find("vertical"));
+    CHECK_MSG(vertical == key_for(*registry.find("vertical")),
+              "the same layout drawn twice reported two different pictures, so the backdrop "
+              "would be recaptured every frame");
+
+    CHECK_MSG(key_for(*registry.find("standard")) != vertical,
+              "two different layouts reported the same picture, so the menu would stay blurred "
+              "over the arrangement it opened on");
+
+    // The gap moves the screens without changing which layout is in use, which
+    // is the case an id alone would miss.
+    const Layout& gapped = *registry.find("vertical");
+    CHECK_MSG(key_for(resolve_gap_choice(gapped, true)) !=
+                  key_for(resolve_gap_choice(gapped, false)),
+              "closing the gap moved the screens and the picture was reported unchanged");
+}
+
 int main() {
     test_registry_contents();
     test_layouts_match_the_wii_u();
@@ -918,5 +952,6 @@ int main() {
     test_3ds_framebuffer_split();
     test_layouts_handle_mismatched_screens();
     test_smoothing_follows_the_texture_not_just_the_setting();
+    test_the_compositor_says_when_the_picture_changed();
     return test::finish("layout");
 }

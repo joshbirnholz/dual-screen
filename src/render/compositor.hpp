@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -102,12 +103,20 @@ public:
                 float output_height,
                 OutputRouter& router);
 
+    // What the last render put on the screen, as one number: where every screen
+    // landed and whether a console was drawn around them. Anything that moves a
+    // screen changes it, without this having to be told what the settings are.
+    // The menu's blurred backdrop uses it to notice that the picture it copied
+    // is no longer the picture underneath it.
+    std::size_t composition_key() const { return composition_key_; }
+
 private:
     CompositorStyle style_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = false;
     float display_width_ = 0.0f;
     float display_height_ = 0.0f;
+    std::size_t composition_key_ = 0;
 };
 
 }  // namespace ds

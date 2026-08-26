@@ -1,6 +1,7 @@
 #include "render/compositor.hpp"
 
 #include <cmath>
+#include <functional>
 
 #include "util/log.hpp"
 
@@ -11,6 +12,31 @@ void OutputRouter::hand_off(ScreenId, const Texture&, const PixelRect&) {
 }
 
 OutputRoute LocalOutputRouter::route_for(ScreenId) const { return OutputRoute::Local; }
+
+namespace {
+
+void mix(std::size_t& key, std::size_t value) {
+    key ^= value + 0x9e3779b97f4a7c15ULL + (key << 6) + (key >> 2);
+}
+
+void mix(std::size_t& key, float value) {
+    mix(key, std::hash<float>{}(value));
+}
+
+std::size_t key_for_composition(const std::vector<PlacedScreen>& placed, bool draws_console) {
+    std::size_t key = draws_console ? 1u : 2u;
+    for (const PlacedScreen& screen : placed) {
+        mix(key, static_cast<std::size_t>(screen.screen));
+        mix(key, static_cast<std::size_t>(screen.rotation));
+        mix(key, screen.rect.x);
+        mix(key, screen.rect.y);
+        mix(key, screen.rect.w);
+        mix(key, screen.rect.h);
+    }
+    return key;
+}
+
+}  // namespace
 
 bool screen_needs_smoothing(const PlacedScreen& placed,
                             int texture_width,
@@ -82,9 +108,12 @@ void Compositor::render(QuadRenderer& quads,
                       screens.console.has_art ? bezel_art_ : nullptr);
     }
 
-    for (const PlacedScreen& placed :
-         place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
-                       display_width_, display_height_)) {
+    const std::vector<PlacedScreen> placements =
+        place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
+                      display_width_, display_height_);
+    composition_key_ = key_for_composition(placements, draws_console);
+
+    for (const PlacedScreen& placed : placements) {
         const PixelRect& rect = placed.rect;
         const Texture* texture = (placed.screen == ScreenId::Top) ? textures.top : textures.bottom;
 

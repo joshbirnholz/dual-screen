@@ -857,9 +857,11 @@ void Client::draw() {
 
     if (menu_open_) {
         // Taken between the game and the menu, the same as on the other device:
-        // one menu, drawn over the same blurred frame wherever it is opened.
-        if (!menu_backdrop_.valid()) {
-            menu_backdrop_.capture(static_cast<int>(width), static_cast<int>(height));
+        // one menu, drawn over the same blurred frame wherever it is opened,
+        // and taken again when the host moves the screens underneath it.
+        if (!menu_backdrop_.matches(compositor_.composition_key())) {
+            menu_backdrop_.capture(static_cast<int>(width), static_cast<int>(height),
+                                   compositor_.composition_key());
         }
         menu_backdrop_.draw(quads_, width, height);
         // The previews are drawn from the frame the game is paused on, so each

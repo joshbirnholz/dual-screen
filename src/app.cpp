@@ -1529,9 +1529,11 @@ void App::Impl::render() {
 
     if (state == State::Menu) {
         // Taken here, between the game and the menu, so what gets blurred is
-        // exactly the frame the player opened the menu over.
-        if (!menu_backdrop.valid()) {
-            menu_backdrop.capture(output_width, output_height);
+        // exactly the frame underneath it -- and taken again when that frame
+        // stops being the one that was copied, which is what picking a layout
+        // does while the menu is still up.
+        if (!menu_backdrop.matches(compositor.composition_key())) {
+            menu_backdrop.capture(output_width, output_height, compositor.composition_key());
         }
         menu_backdrop.draw(quads, width, height);
         // The previews are drawn from the frame the game is paused on, so each

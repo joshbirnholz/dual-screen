@@ -188,6 +188,9 @@ void QuadRenderer::shutdown() {
 void QuadRenderer::begin_frame(int output_width, int output_height) {
     output_width_ = output_width;
     output_height_ = output_height;
+    if (gl::Viewport == nullptr) {
+        return;
+    }
     gl::Viewport(0, 0, output_width, output_height);
 
     // Every frame, not once at startup: a GPU-rendering core shares this

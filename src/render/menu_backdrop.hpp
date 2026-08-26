@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -11,23 +12,28 @@ namespace ds {
 // The frame a menu opened over, blurred and darkened so the menu on top of it
 // stays readable while the game stays recognisable underneath.
 //
-// Captured once when the menu opens rather than rebuilt every frame: the game
-// is paused behind it, so there is nothing new to blur, and a blur wide enough
-// to read as one is not worth paying for sixty times a second.
+// Captured when the picture behind it changes rather than rebuilt every frame:
+// the game is paused, so most frames have nothing new to blur, and a blur wide
+// enough to read as one is not worth paying for sixty times a second. What does
+// change while the menu is up is the arrangement of the screens, since picking a
+// layout applies it underneath -- so the copy is keyed to what was drawn.
 class MenuBackdrop {
 public:
     // Reads whatever is in the framebuffer right now. Call after the game has
-    // been composited and before the menu is drawn over it.
-    void capture(int output_width, int output_height);
+    // been composited and before the menu is drawn over it. `key` says what was
+    // composited -- see Compositor::composition_key().
+    void capture(int output_width, int output_height, std::size_t key);
     // Dropped when the menu closes, so the next one opens onto the frame it
     // actually opened over.
     void forget();
-    bool valid() const { return texture_.valid(); }
+    // Whether what was copied is still what is underneath.
+    bool matches(std::size_t key) const { return texture_.valid() && key_ == key; }
 
     void draw(QuadRenderer& quads, float output_width, float output_height) const;
 
 private:
     Texture texture_;
+    std::size_t key_ = 0;
     std::vector<uint32_t> pixels_;
     std::vector<uint32_t> scratch_;
     int width_ = 0;

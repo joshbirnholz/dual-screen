@@ -125,8 +125,9 @@ void blur_and_darken(std::vector<uint32_t>& pixels,
     }
 }
 
-void MenuBackdrop::capture(int output_width, int output_height) {
+void MenuBackdrop::capture(int output_width, int output_height, std::size_t key) {
     forget();
+    key_ = key;
     if (gl::ReadPixels == nullptr || output_width <= 0 || output_height <= 0) {
         return;
     }
@@ -175,6 +176,7 @@ void MenuBackdrop::capture(int output_width, int output_height) {
 
 void MenuBackdrop::forget() {
     texture_.destroy();
+    key_ = 0;
     pixels_.clear();
     scratch_.clear();
     width_ = 0;
