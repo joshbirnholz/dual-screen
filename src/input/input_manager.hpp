@@ -34,7 +34,20 @@ enum class UiAction {
     // Layout::swap_layout_id. Only means anything with a game on screen; in a
     // menu every layout is already a tile away.
     SwapLayout,
+    // Quit the app outright, from a key that means nothing else. Distinct from
+    // MenuQuit below, which a face button raises and only a menu acts on.
     Quit,
+    // What a menu's north and west face buttons ask for. Kept apart from Quit
+    // because a face button is pressed constantly while playing, and an action
+    // that ends the app has no business arriving from one: these mean something
+    // only to a screen that is listening for them, and both go through a
+    // confirmation before anything happens.
+    MenuQuit,
+    MenuReset,
+    // Ends the two-device session, from the button a Nintendo pad prints + on.
+    // Menu-only for the same reason as the two above: + is pressed constantly
+    // while playing.
+    MenuDisconnect,
 };
 
 // A touch/click that landed somewhere in the window, in output pixels. The UI

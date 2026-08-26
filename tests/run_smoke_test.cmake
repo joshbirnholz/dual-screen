@@ -591,9 +591,12 @@ if(NOT MENU_RESULT EQUAL 0 OR NOT EXISTS "${MENU_SHOT}")
 else()
     execute_process(
         COMMAND "${CHECKER}" "${MENU_SHOT}"
-                # The title, and the footer prompts along the bottom.
+                # The game's title, and the row of control prompts. The prompts
+                # sit inside the panel now rather than under it, because the
+                # button pictures beside them are taller than the old line of
+                # text was.
                 text=0.02,0.03,0.35,0.09
-                text=0.10,0.94,0.70,0.98
+                text=0.10,0.89,0.70,0.95
         RESULT_VARIABLE MENU_CHECK_RESULT
         OUTPUT_VARIABLE MENU_CHECK_OUTPUT
         ERROR_VARIABLE MENU_CHECK_ERROR)

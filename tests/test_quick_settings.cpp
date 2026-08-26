@@ -275,13 +275,12 @@ void test_the_pointer_button_appears_only_where_there_is_a_pointer() {
     }
     CHECK(with_pointer > 0);
     CHECK_EQ(without_pointer, 0);
-    // The rest of the footer is still reachable with one entry gone.
-    CHECK(resume_without_pointer > 0);
+    CHECK_EQ(resume_without_pointer, 0);  // nothing in the footer closes the menu any more
 }
 
-// The other footer buttons keep working with an eighth one among them: the row
-// wraps rather than dropping anything, and each button still reports its own
-// intent and no one else's.
+// Every remaining footer button reports its own intent and no one else's. The
+// row is now only the settings that have a value to cycle -- Smoothing, Reset,
+// Resume, Quit and Disconnect are face buttons named in the guide instead.
 void test_the_other_buttons_still_work() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -290,69 +289,126 @@ void test_the_other_buttons_still_work() {
     state.max_render_scale = 3;
     state.right_stick_choosable = true;
 
-    int filtering = 0;
     int sound = 0;
     int hands = 0;
     int cursor = 0;
     int gap = 0;
     int right_stick = 0;
-    int reset = 0;
-    int resume = 0;
-    int disconnect = 0;
-    int quit = 0;
+    int render_scale = 0;
+    int gone = 0;
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             picker.open(state);
             const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
-            if (result.filtering_toggled) ++filtering;
             if (result.audio_target_changed) ++sound;
             if (result.handedness_changed) ++hands;
             if (result.cursor_mode_changed) ++cursor;
             if (result.screen_gap_toggled) ++gap;
             if (result.right_stick_mode_changed) ++right_stick;
-            if (result.reset_requested) ++reset;
-            if (result.close_requested) ++resume;
-            if (result.disconnect_requested) ++disconnect;
-            if (result.quit_requested) ++quit;
+            if (result.render_scale_changed) ++render_scale;
+            if (result.filtering_toggled || result.reset_requested || result.quit_requested ||
+                result.disconnect_requested || result.close_requested) {
+                ++gone;
+            }
         }
     }
-    CHECK(filtering > 0);
     CHECK(sound > 0);
     CHECK(hands > 0);
     CHECK(cursor > 0);
     CHECK(gap > 0);
     CHECK(right_stick > 0);
-    CHECK(reset > 0);
-    CHECK(resume > 0);
-    CHECK(disconnect > 0);
-    CHECK(quit > 0);
+    CHECK(render_scale > 0);
+    CHECK_MSG(gone == 0,
+              "a tap somewhere in the menu still triggered one of the actions that moved to a "
+              "face button");
 }
 
-// Reset closes the menu the same way Resume does -- there is nothing left to
-// look at once the game has restarted -- but is its own distinct result so the
-// caller knows to actually restart the game rather than just dismiss the menu.
-void test_reset_closes_the_menu() {
+// Reset and Quit throw away something the player cannot get back, so neither
+// happens on the press that asked for it.
+void test_reset_and_quit_are_asked_about_first() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+
+    for (const UiAction asked : {UiAction::MenuReset, UiAction::MenuQuit}) {
+        LayoutPicker picker(registry);
+        picker.open(state);
+
+        const LayoutPickerResult raised = picker.update({asked}, {}, kWidth, kHeight);
+        CHECK_MSG(!raised.reset_requested && !raised.quit_requested,
+                  "a single press did the thing it was only supposed to ask about");
+        CHECK_MSG(picker.awaiting_confirmation(), "nothing was asked before acting");
+        CHECK_MSG(picker.is_open(), "the menu closed while it was still asking a question");
+
+        const LayoutPickerResult answered =
+            picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        const bool acted = asked == UiAction::MenuReset ? answered.reset_requested
+                                                        : answered.quit_requested;
+        CHECK_MSG(acted, "confirming did not carry out what was confirmed");
+        CHECK_MSG(!picker.awaiting_confirmation(), "the question stayed up after being answered");
+    }
+}
+
+void test_a_confirmation_can_be_backed_out_of() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
 
     LayoutPicker picker(registry);
     picker.open(state);
-    CHECK(picker.is_open());
+    picker.update({UiAction::MenuQuit}, {}, kWidth, kHeight);
+    CHECK(picker.awaiting_confirmation());
 
-    bool found = false;
-    for (float y = 4.0f; y < kHeight && !found; y += 8.0f) {
-        for (float x = 4.0f; x < kWidth && !found; x += 8.0f) {
-            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
-            if (result.reset_requested) {
-                found = true;
-                CHECK(!result.close_requested);
-                CHECK_MSG(!picker.is_open(), "the menu stayed open after Reset Game");
-            }
+    const LayoutPickerResult backed = picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK_MSG(!backed.quit_requested, "backing out of the question quit anyway");
+    CHECK_MSG(!backed.close_requested, "backing out of the question also closed the menu");
+    CHECK_MSG(!picker.awaiting_confirmation(), "the question stayed up after being dismissed");
+    CHECK_MSG(picker.is_open(), "the menu did not survive a dismissed question");
+}
+
+// While a question is up it is the only thing on screen, so nothing behind it
+// moves, cycles or opens -- including a finger landing on a button.
+void test_nothing_else_answers_while_a_confirmation_is_up() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.session_active = true;
+    state.max_render_scale = 3;
+
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker picker(registry);
+            picker.open(state);
+            picker.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+            const LayoutPickerResult result =
+                picker.update({UiAction::Right, UiAction::Down, UiAction::MenuDisconnect},
+                              {tap(x, y)}, kWidth, kHeight);
+            CHECK_MSG(!result.selection_changed && !result.audio_target_changed &&
+                          !result.handedness_changed && !result.cursor_mode_changed &&
+                          !result.screen_gap_toggled && !result.disconnect_requested &&
+                          !result.render_scale_changed,
+                      "the menu under a confirmation still answered a press");
         }
     }
-    CHECK_MSG(found, "never found the Reset Game button");
+}
+
+void test_disconnect_is_the_plus_button_and_only_in_a_session() {
+    LayoutRegistry registry;
+    LayoutPickerState alone;
+    alone.layout_id = registry.at(0).id;
+
+    LayoutPicker solo(registry);
+    solo.open(alone);
+    CHECK_MSG(!solo.update({UiAction::MenuDisconnect}, {}, kWidth, kHeight).disconnect_requested,
+              "a device with nothing connected to it offered to disconnect");
+
+    LayoutPickerState paired = alone;
+    paired.session_active = true;
+    LayoutPicker picker(registry);
+    picker.open(paired);
+    CHECK_MSG(picker.update({UiAction::MenuDisconnect}, {}, kWidth, kHeight).disconnect_requested,
+              "plus did not end the session");
 }
 
 }  // namespace
@@ -365,6 +421,9 @@ int main() {
     test_choosing_a_gap_layout_reveals_the_button();
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
-    test_reset_closes_the_menu();
+    test_reset_and_quit_are_asked_about_first();
+    test_a_confirmation_can_be_backed_out_of();
+    test_nothing_else_answers_while_a_confirmation_is_up();
+    test_disconnect_is_the_plus_button_and_only_in_a_session();
     return test::finish("quick-settings");
 }

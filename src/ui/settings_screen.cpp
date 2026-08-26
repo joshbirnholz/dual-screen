@@ -145,6 +145,11 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::Confirm: adjust(1, result); break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
+            // A menu's face buttons. Nothing here answers them, and a bare
+            // fallthrough into Quit would make pressing X leave the screen.
+            case UiAction::MenuQuit:
+            case UiAction::MenuReset:
+            case UiAction::MenuDisconnect: break;
             case UiAction::Quit: break;
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
             case UiAction::SwapLayout:    // nothing here is a layout

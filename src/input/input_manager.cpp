@@ -172,6 +172,12 @@ void InputManager::handle_event(const SDL_Event& event) {
                 push_action(UiAction::Confirm);
             } else if (button == kMenuCancelButton) {
                 push_action(UiAction::Cancel);
+            } else if (button == kMenuQuitButton) {
+                push_action(UiAction::MenuQuit);
+            } else if (button == kMenuResetButton) {
+                push_action(UiAction::MenuReset);
+            } else if (button == kMenuDisconnectButton) {
+                push_action(UiAction::MenuDisconnect);
             }
 
             switch (button) {
@@ -216,6 +222,13 @@ void InputManager::handle_event(const SDL_Event& event) {
                 // keystrokes rather than pad buttons can reach it too.
                 case SDLK_F2: push_action(UiAction::ToggleFilter); break;
                 case SDLK_F3: push_action(UiAction::SwapLayout); break;
+                // Keyboard equivalents of the menu's north and west face
+                // buttons, in the same undiscoverable-but-there spirit as the
+                // function keys above: without them a machine with no pad
+                // could not reset or quit a game from the menu at all.
+                case SDLK_F5: push_action(UiAction::MenuReset); break;
+                case SDLK_F6: push_action(UiAction::MenuQuit); break;
+                case SDLK_F7: push_action(UiAction::MenuDisconnect); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
                 // Return doubles as DS Start in game, but game input is off
                 // while a menu is open, so there is no conflict.

@@ -21,7 +21,9 @@
 #include "input/retro_keymap.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/bezel_art.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
+#include "render/menu_backdrop.hpp"
 #include "render/gl_loader.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -217,6 +219,8 @@ struct App::Impl {
     QuadRenderer quads;
     TextRenderer text;
     Compositor compositor;
+    MenuBackdrop menu_backdrop;
+    ButtonGlyphSheet button_glyphs;
     LocalOutputRouter router;
     // Lives as long as the GL context does, and no longer: created just after
     // the window, destroyed just before it.
@@ -468,7 +472,7 @@ bool App::Impl::ensure_gl_context(GlContextNeed need, std::string* error) {
 }
 
 bool App::Impl::rebuild_renderer(std::string* error) {
-    if (!quads.initialize(error) || !text.initialize(error)) {
+    if (!quads.initialize(error) || !text.initialize(error) || !button_glyphs.initialize(error)) {
         return false;
     }
     log_info("renderer rebuilt against the new context: font atlas " +
@@ -1422,10 +1426,19 @@ void App::Impl::render() {
     }
 
     if (state == State::Menu) {
+        // Taken here, between the game and the menu, so what gets blurred is
+        // exactly the frame the player opened the menu over.
+        if (!menu_backdrop.valid()) {
+            menu_backdrop.capture(output_width, output_height);
+        }
+        menu_backdrop.draw(quads, width, height);
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
-        picker->render(quads, text, width, height, game_title, input.menu_labels(), frames);
-    } else if (state == State::Settings) {
+        picker->render(quads, text, button_glyphs, width, height, game_title, frames);
+    } else {
+        menu_backdrop.forget();
+    }
+    if (state == State::Settings) {
         settings_screen->render(quads, text, width, height);
     } else if (state == State::Message) {
         message.render(quads, text, width, height);
@@ -1600,7 +1613,8 @@ int App::run(const AppOptions& options) {
         close_log_file();
         return 1;
     }
-    if (!impl.quads.initialize(&error) || !impl.text.initialize(&error)) {
+    if (!impl.quads.initialize(&error) || !impl.text.initialize(&error) ||
+        !impl.button_glyphs.initialize(&error)) {
         log_error("cannot set up the renderer: " + error);
         std::fprintf(stderr, "dualscreen: %s\n", error.c_str());
         impl.destroy_window();

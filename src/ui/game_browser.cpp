@@ -247,6 +247,11 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             case UiAction::ToggleFilter:
             case UiAction::SwapLayout:
                 break;  // nothing is being drawn from a game here
+            // A menu's face buttons. Nothing here answers them, and a bare
+            // fallthrough into Quit would make pressing X leave the screen.
+            case UiAction::MenuQuit:
+            case UiAction::MenuReset:
+            case UiAction::MenuDisconnect: break;
             case UiAction::Quit:
                 result.quit_requested = true;
                 break;

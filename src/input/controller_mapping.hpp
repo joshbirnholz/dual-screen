@@ -29,6 +29,12 @@ constexpr const char* kFaceButtonsByPosition = "0";
 // Menus: east confirms, south goes back.
 constexpr SDL_GameControllerButton kMenuConfirmButton = SDL_CONTROLLER_BUTTON_B;  // east
 constexpr SDL_GameControllerButton kMenuCancelButton = SDL_CONTROLLER_BUTTON_A;   // south
+// The other two face buttons, named by where they sit rather than by what SDL
+// calls them: a menu's Quit is the north button and its Reset the west one, the
+// positions a Nintendo pad prints X and Y on.
+constexpr SDL_GameControllerButton kMenuQuitButton = SDL_CONTROLLER_BUTTON_Y;    // north
+constexpr SDL_GameControllerButton kMenuResetButton = SDL_CONTROLLER_BUTTON_X;   // west
+constexpr SDL_GameControllerButton kMenuDisconnectButton = SDL_CONTROLLER_BUTTON_START;  // plus
 
 // Maps a controller button to a DS button. Returns false for buttons the DS has
 // no equivalent for.

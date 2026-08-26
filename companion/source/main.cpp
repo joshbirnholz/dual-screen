@@ -55,6 +55,7 @@
 #include "net/transport.hpp"
 #include "render/bezel_art.hpp"
 #include "render/gl_loader.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -228,6 +229,7 @@ private:
     // draws the menu, with the same previews and the same footer.
     QuadRenderer quads_;
     TextRenderer text_;
+    ButtonGlyphSheet button_glyphs_;
     Compositor compositor_;
     LocalOutputRouter router_;
     BezelArt bezel_art_;
@@ -641,7 +643,8 @@ bool Client::load_gl_resources(std::string* error) {
     bezel_art_.destroy();
 
     std::string reason;
-    if (!quads_.initialize(&reason) || !text_.initialize(&reason)) {
+    if (!quads_.initialize(&reason) || !text_.initialize(&reason) ||
+        !button_glyphs_.initialize(&reason)) {
         if (error != nullptr) *error = "the renderer would not start: " + reason;
         return false;
     }
@@ -824,7 +827,7 @@ void Client::draw() {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like -- the same as on
         // the other device, because it is the same picker.
-        picker_.render(quads_, text_, width, height, session_.game_title(), input_.menu_labels(),
+        picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
     }
 }

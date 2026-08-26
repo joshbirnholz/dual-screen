@@ -7,6 +7,7 @@
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
@@ -87,6 +88,9 @@ public:
     explicit LayoutPicker(const LayoutRegistry& registry) : registry_(&registry) {}
 
     void open(const LayoutPickerState& state);
+    // Whether a confirmation is up, which the app needs to know: while one is,
+    // the menu is not what the player is answering.
+    bool awaiting_confirmation() const { return confirm_ != Confirm::None; }
     // Kept in step while the menu is open: R3 can change filtering from under
     // us, and on a companion both of these are owned by the host and arrive
     // whenever it says so.
@@ -132,10 +136,10 @@ public:
     // coloured blocks.
     void render(QuadRenderer& quads,
                 TextRenderer& text,
+                const ButtonGlyphSheet& glyphs,
                 float output_width,
                 float output_height,
                 const std::string& game_title,
-                const MenuButtonLabels& labels,
                 const ScreenTextures* textures = nullptr);
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
@@ -167,18 +171,18 @@ private:
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
     enum class Footer {
-        Filtering,
         RenderScale,
         Hands,
         Sound,
         Cursor,
         RightStick,
         ScreenGap,
-        Reset,
-        Resume,
-        Disconnect,
-        Quit
     };
+
+    // What a face button asked for and has not yet been allowed to do. Both of
+    // these throw away something the player cannot get back -- unsaved progress,
+    // or the session -- so both are asked about first.
+    enum class Confirm { None, Reset, Quit };
 
     struct Geometry {
         std::vector<PixelRect> tiles;
@@ -192,6 +196,15 @@ private:
     };
 
     Geometry compute_geometry(float output_width, float output_height) const;
+    // Where the confirmation sits, and the two prompts inside it a finger can
+    // land on. Only meaningful while one is up.
+    struct ConfirmGeometry {
+        PixelRect dialog;
+        PixelRect accept;
+        PixelRect dismiss;
+    };
+    ConfirmGeometry compute_confirm_geometry(float output_width, float output_height) const;
+    bool confirming() const { return confirm_ != Confirm::None; }
     int tile_count() const { return static_cast<int>(registry_->size()); }
     int footer_count() const { return static_cast<int>(footer_.size()); }
     int focus_count() const { return tile_count() + footer_count(); }
@@ -211,6 +224,7 @@ private:
     LayoutPickerState state_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;
+    Confirm confirm_ = Confirm::None;
     float display_width_ = 0.0f;
     float display_height_ = 0.0f;
     bool fill_display_ = false;

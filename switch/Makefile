@@ -46,7 +46,7 @@ GENERATED   := generated
 # The assets that travel inside the binary. One list, so what gets generated
 # and what gets compiled cannot drift apart -- a generated file that nothing
 # compiles is an undefined symbol at link time and nothing sooner.
-EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kRodinOtf.cpp
+EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kRodinOtf.cpp kButtonIconsPng.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -65,9 +65,9 @@ CPPFILES    := main.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp input_manager.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
-               bezel_art.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
-               png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
-               connecting_screen.cpp launcher_screen.cpp layout_picker.cpp \
+               bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
+               menu_backdrop.cpp png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
+               connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp \
                log.cpp \
                $(EMBEDDED_SOURCES)
 
@@ -173,6 +173,11 @@ $(GENERATED)/kDsBezelPng.cpp: $(CURDIR)/../assets/ds_bezel.png $(CURDIR)/../tool
 	@mkdir -p $(GENERATED)
 	@echo embedding ds_bezel.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kDsBezelPng -P $(CURDIR)/../tools/embed_asset.cmake
+
+$(GENERATED)/kButtonIconsPng.cpp: $(CURDIR)/../assets/button_icons.png $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo embedding button_icons.png
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kButtonIconsPng -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kRodinOtf.cpp: $(CURDIR)/../assets/rodin.otf $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

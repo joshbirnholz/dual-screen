@@ -1,6 +1,6 @@
 #include "ui/layout_picker.hpp"
 
-#include "ui/prompt.hpp"
+#include "ui/control_guide.hpp"
 
 #include <algorithm>
 #include <string>
@@ -15,6 +15,7 @@ namespace {
 
 void LayoutPicker::open(const LayoutPickerState& state) {
     open_ = true;
+    confirm_ = Confirm::None;
     state_ = state;
     selected_layout_id_ = state.layout_id;
 
@@ -34,13 +35,15 @@ void LayoutPicker::set_selected_layout(const std::string& layout_id) {
 
 void LayoutPicker::rebuild_footer() {
     footer_.clear();
-    footer_.push_back(Footer::Filtering);
-    // Next to smoothing, because the two are the same kind of question -- how
-    // the picture is made -- and both are judged against the frame behind the
-    // menu. It is absent only where there is nothing to choose: a system whose
-    // core draws at one fixed resolution, or no game at all. A companion gets
-    // it like every other entry here -- one menu, reachable from either device
-    // -- and asks the host to make the change.
+    // Smoothing, Reset and Quit are not here any more: each is a face button
+    // named in the guide along the bottom. What is left is the row of settings
+    // that have a value to cycle, which is what a button with a label on it is
+    // actually good for.
+    //
+    // Absent only where there is nothing to choose: a system whose core draws
+    // at one fixed resolution, or no game at all. A companion gets it like
+    // every other entry here -- one menu, reachable from either device -- and
+    // asks the host to make the change.
     if (state_.max_render_scale > 1) {
         footer_.push_back(Footer::RenderScale);
     }
@@ -75,18 +78,6 @@ void LayoutPicker::rebuild_footer() {
     if (registry_->resolve(selected_layout_id_).composition.gap_toggleable) {
         footer_.push_back(Footer::ScreenGap);
     }
-    // Restarting the game, wherever the menu was opened from -- a companion
-    // asks the host the same way it asks for anything else, since only the
-    // host actually runs a core to reset.
-    footer_.push_back(Footer::Reset);
-    footer_.push_back(Footer::Resume);
-    if (state_.session_active) {
-        footer_.push_back(Footer::Disconnect);
-    }
-    // Offered on both devices, like Disconnect: whichever one runs the game,
-    // Quit ends it for both -- a companion's press asks the host to shut down
-    // too before it leaves.
-    footer_.push_back(Footer::Quit);
     // Focus can be sitting on a footer button that just went away.
     if (focus_ >= focus_count()) {
         focus_ = std::max(0, focus_count() - 1);
@@ -95,8 +86,6 @@ void LayoutPicker::rebuild_footer() {
 
 std::string LayoutPicker::footer_label(Footer kind) const {
     switch (kind) {
-        case Footer::Filtering:
-            return state_.bilinear_filtering ? "Smoothing: On" : "Smoothing: Off";
         case Footer::RenderScale:
             return "Render: " + std::to_string(state_.render_scale) + "x";
         case Footer::Sound:
@@ -112,14 +101,9 @@ std::string LayoutPicker::footer_label(Footer kind) const {
             return state_.handedness == Handedness::Left ? "Left-Handed" : "Right-Handed";
         case Footer::RightStick:
             return std::string("Right Stick: ") + to_string(state_.right_stick_mode);
-        case Footer::ScreenGap:
-            return state_.screen_gap ? "Gap: On" : "Gap: Off";
-        case Footer::Reset: return "Reset Game";
-        case Footer::Resume: return "Resume";
-        case Footer::Disconnect: return "Disconnect";
-        case Footer::Quit: break;
+        case Footer::ScreenGap: break;
     }
-    return "Quit";
+    return state_.screen_gap ? "Screen Gap: On" : "Screen Gap: Off";
 }
 
 LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float output_height) const {
@@ -141,8 +125,13 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
     const float header_height = line * 3.5f;
     const float button_height = line * 2.1f;
     const float button_gap = std::round(line * 0.35f);
+    // The guide sits below the buttons, along the bottom of the panel, and is
+    // a row of pictures rather than a line of text -- so the space it needs is
+    // asked for rather than assumed.
+    const float guide_height = control_guide_height(geometry.scale * 0.9f);
     const float footer_height = button_height * static_cast<float>(footer_rows) +
-                                button_gap * static_cast<float>(footer_rows - 1) + line * 0.9f;
+                                button_gap * static_cast<float>(footer_rows - 1) + guide_height +
+                                line * 1.4f;
     const float grid_top = geometry.panel.y + header_height;
     const float grid_height = geometry.panel.h - header_height - footer_height;
 
@@ -172,7 +161,7 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
     const int footer_columns = std::max(1, geometry.footer_columns);
     const float footer_width =
         (geometry.panel.w - gutter * (footer_columns - 1)) / footer_columns;
-    const float footer_top = geometry.panel.y + geometry.panel.h -
+    const float footer_top = geometry.panel.y + geometry.panel.h - guide_height - line * 0.5f -
                              (button_height * static_cast<float>(footer_rows) +
                               button_gap * static_cast<float>(footer_rows - 1));
     for (int index = 0; index < buttons; ++index) {
@@ -185,6 +174,27 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
             button_height,
         });
     }
+    return geometry;
+}
+
+LayoutPicker::ConfirmGeometry LayoutPicker::compute_confirm_geometry(float output_width,
+                                                                    float output_height) const {
+    const float scale = UiTheme::base_scale(output_height);
+    const float line = TextRenderer::line_height(scale);
+    const float dialog_width = std::round(output_width * 0.58f);
+    const float dialog_height = std::round(line * 8.0f);
+
+    ConfirmGeometry geometry;
+    geometry.dialog = PixelRect{std::round((output_width - dialog_width) * 0.5f),
+                                std::round((output_height - dialog_height) * 0.5f), dialog_width,
+                                dialog_height};
+    // Two halves of the prompt row, so a finger has somewhere to land on a
+    // device with no buttons to press instead.
+    const float row_height = line * 2.4f;
+    const float row_y = geometry.dialog.y + geometry.dialog.h - row_height - line * 0.4f;
+    geometry.accept = PixelRect{geometry.dialog.x, row_y, geometry.dialog.w * 0.5f, row_height};
+    geometry.dismiss = PixelRect{geometry.dialog.x + geometry.dialog.w * 0.5f, row_y,
+                                 geometry.dialog.w * 0.5f, row_height};
     return geometry;
 }
 
@@ -262,12 +272,6 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         return false;
     }
     switch (footer_[static_cast<std::size_t>(footer_index)]) {
-        case Footer::Filtering:
-            // Stays open, so the change can be judged against the frame behind
-            // it. The caller decides what the new value actually is -- on a
-            // companion the host does -- and tells us with set_filtering().
-            result.filtering_toggled = true;
-            return true;
         case Footer::RenderScale:
             // Same again: the caller cycles it and tells us what it landed on,
             // so the menu never shows a scale the core was not actually given.
@@ -290,18 +294,6 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         case Footer::ScreenGap:
             result.screen_gap_toggled = true;
             return true;
-        case Footer::Reset:
-            result.reset_requested = true;
-            return true;
-        case Footer::Resume:
-            result.close_requested = true;
-            return true;
-        case Footer::Disconnect:
-            result.disconnect_requested = true;
-            return true;
-        case Footer::Quit:
-            result.quit_requested = true;
-            return true;
     }
     return false;
 }
@@ -317,6 +309,35 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
 
     const Geometry geometry = compute_geometry(output_width, output_height);
 
+    // A confirmation takes the whole menu: while one is up it is the only
+    // question on screen, so nothing behind it moves, cycles or opens.
+    if (confirming()) {
+        const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);
+        bool accepted = false;
+        bool dismissed = false;
+        for (const UiAction action : actions) {
+            if (action == UiAction::Confirm) accepted = true;
+            if (action == UiAction::Cancel) dismissed = true;
+        }
+        for (const PointerEvent& pointer : pointers) {
+            if (!pointer.released) continue;
+            if (confirm.accept.contains(pointer.x, pointer.y)) accepted = true;
+            else if (confirm.dismiss.contains(pointer.x, pointer.y)) dismissed = true;
+        }
+        if (accepted) {
+            if (confirm_ == Confirm::Reset) {
+                result.reset_requested = true;
+            } else {
+                result.quit_requested = true;
+            }
+            confirm_ = Confirm::None;
+            open_ = false;
+        } else if (dismissed) {
+            confirm_ = Confirm::None;
+        }
+        return result;
+    }
+
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up: move_focus(0, -1, geometry); break;
@@ -326,7 +347,16 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             case UiAction::Confirm: activate_focus(result); break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
+            // The app's own quit key, which is not a face button and is not
+            // asked about twice.
             case UiAction::Quit: result.quit_requested = true; break;
+            case UiAction::MenuQuit: confirm_ = Confirm::Quit; break;
+            case UiAction::MenuReset: confirm_ = Confirm::Reset; break;
+            // Not asked about: unlike resetting or quitting, reconnecting is a
+            // menu away and costs nothing but the walk back.
+            case UiAction::MenuDisconnect:
+                if (state_.session_active) result.disconnect_requested = true;
+                break;
             // R3 is handled by the app, so that it means the same thing here
             // as it does in a game; the app pushes the result back in with
             // set_filtering(). Toggling it again here would undo that.
@@ -357,6 +387,12 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 activate_focus(result);
             }
         }
+    }
+
+    if (confirming()) {
+        // Raised by a press this frame. Anything else that press implied is
+        // dropped: the menu is now waiting on an answer.
+        return LayoutPickerResult();
     }
 
     if (result.close_requested || result.quit_requested || result.disconnect_requested ||
@@ -424,10 +460,10 @@ void LayoutPicker::draw_preview(QuadRenderer& quads,
 
 void LayoutPicker::render(QuadRenderer& quads,
                           TextRenderer& text,
+                          const ButtonGlyphSheet& glyphs,
                           float output_width,
                           float output_height,
                           const std::string& game_title,
-                          const MenuButtonLabels& labels,
                           const ScreenTextures* textures) {
     if (!open_) {
         return;
@@ -437,26 +473,12 @@ void LayoutPicker::render(QuadRenderer& quads,
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
+    const float border = std::max(2.0f, std::round(scale * 0.6f));
 
-    // Dim the game behind the menu rather than hiding it, so the layout change
-    // can be judged against what is actually on screen.
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
-
-    text.draw(quads, "Screen layout", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
+    // The game the menu was opened over, where the heading used to say what
+    // the screen already looks like.
     if (!game_title.empty()) {
-        text.draw(quads, game_title, geometry.panel.x + geometry.panel.w, geometry.panel.y,
-                  scale, theme.text_dim, TextAlign::Right);
-    }
-    // The colour key only earns its space when the previews are colours. With
-    // the game's own screens in the tiles there is nothing to decode.
-    const bool previews_are_coloured =
-        textures == nullptr || textures->top == nullptr || !textures->top->valid();
-    if (previews_are_coloured) {
-        text.draw(quads, "Top screen", geometry.panel.x, geometry.panel.y + line * 2.0f, scale,
-                  theme.top_screen);
-        text.draw(quads, "Bottom screen",
-                  geometry.panel.x + TextRenderer::measure_width("Top screen  ", scale),
-                  geometry.panel.y + line * 2.0f, scale, theme.bottom_screen);
+        text.draw(quads, game_title, geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
     }
 
     for (std::size_t index = 0; index < geometry.tiles.size(); ++index) {
@@ -465,7 +487,11 @@ void LayoutPicker::render(QuadRenderer& quads,
         const bool focused = (static_cast<int>(index) == focus_);
         const bool selected = (layout.id == selected_layout_id_);
 
-        quads.draw_solid(tile, focused ? theme.panel_focused : theme.panel);
+        // Focused tiles are solid and everything else is a hairline, so the
+        // blurred game stays visible through the menu that sits over it.
+        if (focused) {
+            quads.draw_solid(tile, theme.text);
+        }
 
         const float padding = std::round(tile.h * 0.10f);
         const float label_height = line * 1.4f;
@@ -482,34 +508,27 @@ void LayoutPicker::render(QuadRenderer& quads,
 
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - line, scale,
-                  selected ? theme.accent : theme.text, TextAlign::Center);
+                  focused ? theme.background : theme.text, TextAlign::Center);
 
-        if (selected) {
-            quads.draw_outline(tile, theme.accent, std::max(2.0f, scale));
-        }
-        if (focused) {
-            quads.draw_outline(tile, theme.text, std::max(1.0f, scale * 0.5f));
+        // The layout actually in use keeps its outline even when the cursor has
+        // moved off it, so the menu still says which one the game is drawn in.
+        if (!focused) {
+            quads.draw_outline(tile, selected ? theme.accent : theme.text, border);
         }
     }
 
     for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
         const PixelRect& button = geometry.footer[index];
         const bool focused = (tile_count() + static_cast<int>(index) == focus_);
-        quads.draw_solid(button, focused ? theme.panel_focused : theme.panel);
         if (focused) {
-            quads.draw_outline(button, theme.text, std::max(1.0f, scale * 0.5f));
+            quads.draw_solid(button, theme.text);
+        } else {
+            quads.draw_outline(button, theme.text, border);
         }
-        const Footer kind = footer_[index];
-        const std::string label = footer_label(kind);
-        Color color = theme.text;
-        if (kind == Footer::Reset || kind == Footer::Disconnect) {
-            color = theme.warning;
-        } else if (kind == Footer::Quit) {
-            color = theme.danger;
-        }
-        // "Smoothing: Off" is much longer than the labels beside it, and a
-        // session adds a fifth button, so a label is shrunk rather than allowed
-        // to run past the edge of its button.
+
+        const std::string label = footer_label(footer_[index]);
+        // A label is shrunk rather than allowed to run past the edge of its
+        // button: the longest of them is much longer than the rest.
         float label_scale = scale;
         const float room = button.w - scale * 6.0f;
         const float natural = TextRenderer::measure_width(label, scale);
@@ -518,19 +537,43 @@ void LayoutPicker::render(QuadRenderer& quads,
         }
         const float label_line = TextRenderer::line_height(label_scale);
         text.draw(quads, label, button.x + button.w * 0.5f,
-                  button.y + (button.h - label_line) * 0.5f, label_scale, color,
-                  TextAlign::Center);
+                  button.y + (button.h - label_line) * 0.5f, label_scale,
+                  focused ? theme.background : theme.text, TextAlign::Center);
     }
 
-    const std::string prompts = format_prompts({{labels.confirm, "Select"},
-                                                {labels.cancel, "Resume"},
-                                                {"R3", "Smoothing"},
-                                                // Named rather than F1, which
-                                                // is not a key a console has.
-                                                {"Start+Select", "Toggle menu"}});
-    text.draw(quads, prompts, geometry.panel.x + geometry.panel.w * 0.5f,
-              geometry.panel.y + geometry.panel.h + line * 0.2f, scale * 0.9f, theme.text_dim,
-              TextAlign::Center);
+    std::vector<GuidePrompt> guide{{ButtonGlyph::RightStick, "Screen Smoothing"},
+                                   {ButtonGlyph::A, "OK"},
+                                   {ButtonGlyph::B, "Resume"},
+                                   {ButtonGlyph::X, "Quit"},
+                                   {ButtonGlyph::Y, "Reset"}};
+    if (state_.session_active) {
+        guide.push_back({ButtonGlyph::Plus, "Disconnect"});
+    }
+    draw_control_guide(quads, text, glyphs, guide,
+                       output_width * 0.5f,
+                       geometry.panel.y + geometry.panel.h - control_guide_height(scale * 0.9f),
+                       scale * 0.9f, theme.text);
+
+    if (confirming()) {
+        const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);
+        // Everything the confirmation is asking about goes back another step,
+        // so there is one thing on screen to answer.
+        quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
+                         Color{0.0f, 0.0f, 0.0f, 0.5f});
+        quads.draw_solid(confirm.dialog, theme.text);
+
+        const char* question = confirm_ == Confirm::Reset
+                                   ? "Are you sure you want to reset?\nUnsaved progress will be lost."
+                                   : "Are you sure you want to quit?\nUnsaved progress will be lost.";
+        text.draw_wrapped(quads, question, confirm.dialog.x + confirm.dialog.w * 0.5f,
+                          confirm.dialog.y + line * 1.2f, confirm.dialog.w - line * 2.0f,
+                          scale * 1.15f, theme.background, TextAlign::Center);
+
+        draw_control_guide(quads, text, glyphs,
+                           {{ButtonGlyph::A, "OK"}, {ButtonGlyph::B, "Back"}},
+                           confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
+                           scale * 1.05f, theme.background);
+    }
 }
 
 }  // namespace ds

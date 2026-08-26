@@ -16,4 +16,9 @@ extern const unsigned long kThreeDsBezelPng_size;
 extern const unsigned char kRodinOtf[];
 extern const unsigned long kRodinOtf_size;
 
+// The controller buttons a control prompt names, as one horizontal strip of
+// equal cells in ButtonGlyph order.
+extern const unsigned char kButtonIconsPng[];
+extern const unsigned long kButtonIconsPng_size;
+
 }  // namespace ds::assets

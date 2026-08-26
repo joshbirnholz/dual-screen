@@ -1,0 +1,46 @@
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+#include "render/quad_renderer.hpp"
+#include "render/texture.hpp"
+
+namespace ds {
+
+// The frame a menu opened over, blurred and darkened so the menu on top of it
+// stays readable while the game stays recognisable underneath.
+//
+// Captured once when the menu opens rather than rebuilt every frame: the game
+// is paused behind it, so there is nothing new to blur, and a blur wide enough
+// to read as one is not worth paying for sixty times a second.
+class MenuBackdrop {
+public:
+    // Reads whatever is in the framebuffer right now. Call after the game has
+    // been composited and before the menu is drawn over it.
+    void capture(int output_width, int output_height);
+    // Dropped when the menu closes, so the next one opens onto the frame it
+    // actually opened over.
+    void forget();
+    bool valid() const { return texture_.valid(); }
+
+    void draw(QuadRenderer& quads, float output_width, float output_height) const;
+
+private:
+    Texture texture_;
+    std::vector<uint32_t> pixels_;
+    std::vector<uint32_t> scratch_;
+    int width_ = 0;
+    int height_ = 0;
+};
+
+// Blurs and adjusts an XRGB8888 image in place, exposed for its own sake so the
+// arithmetic can be checked without a GPU. `blur_radius` is the standard
+// deviation of the gaussian being approximated, in pixels of this image.
+void blur_and_darken(std::vector<uint32_t>& pixels,
+                     std::vector<uint32_t>& scratch,
+                     int width,
+                     int height,
+                     float blur_radius);
+
+}  // namespace ds

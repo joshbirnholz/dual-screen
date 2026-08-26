@@ -86,6 +86,11 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
             case UiAction::Confirm:
                 result.choice = rows_[static_cast<std::size_t>(focus_)];
                 break;
+            // A menu's face buttons. Nothing here answers them, and a bare
+            // fallthrough into Quit would make pressing X leave the screen.
+            case UiAction::MenuQuit:
+            case UiAction::MenuReset:
+            case UiAction::MenuDisconnect: break;
             case UiAction::Quit:
                 result.choice = LauncherChoice::Quit;
                 break;

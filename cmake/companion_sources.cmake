@@ -26,15 +26,18 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/net/protocol.cpp
     src/net/transport.cpp
     src/render/bezel_art.cpp
+    src/render/button_glyphs.cpp
     src/render/compositor.cpp
     src/render/font.cpp
     src/render/gl_loader.cpp
     src/render/gl_window.cpp
+    src/render/menu_backdrop.cpp
     src/render/png_image.cpp
     src/render/quad_renderer.cpp
     src/render/text_renderer.cpp
     src/render/texture.cpp
     src/ui/connecting_screen.cpp
+    src/ui/control_guide.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
     src/util/log.cpp

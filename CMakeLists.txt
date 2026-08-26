@@ -61,6 +61,7 @@ endfunction()
 dualscreen_embed_asset(ds_bezel.png kDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(rodin.otf kRodinOtf BEZEL_SOURCES)
+dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 
 add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
@@ -89,15 +90,18 @@ add_library(dualscreen_core STATIC
     src/net/transport.cpp
     src/layout/layout_registry.cpp
     src/render/bezel_art.cpp
+    src/render/button_glyphs.cpp
     src/render/compositor.cpp
     src/render/font.cpp
     src/render/gl_loader.cpp
     src/render/gl_window.cpp
+    src/render/menu_backdrop.cpp
     src/render/png_image.cpp
     src/render/quad_renderer.cpp
     src/render/text_renderer.cpp
     src/render/texture.cpp
     src/ui/connecting_screen.cpp
+    src/ui/control_guide.cpp
     src/ui/game_browser.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
