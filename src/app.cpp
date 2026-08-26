@@ -351,6 +351,8 @@ struct App::Impl {
     // Where the cursor is on whatever screen is up, as one number: what it
     // means does not matter, only that it changes when the cursor moves.
     int menu_cursor() const;
+    // The menu as the host has it, for a device that is only showing it.
+    LayoutPickerState menu_state_from_host() const;
     // The two settings both devices share. On a companion these ask the host
     // and change nothing locally; the host owns them and broadcasts the result,
     // which is what keeps the two devices from ever disagreeing.
@@ -620,6 +622,24 @@ bool App::Impl::is_companion() const {
 
 bool App::Impl::paired() const {
     return (host_session && host_session->has_companion()) || is_companion();
+}
+
+LayoutPickerState App::Impl::menu_state_from_host() const {
+    LayoutPickerState state;
+    state.session_active = true;  // there is a host at the other end of this
+    state.layout_id = companion_session->host_layout_id();
+    state.bilinear_filtering = companion_session->host_filtering();
+    state.audio_target = companion_session->host_audio_target();
+    state.handedness = companion_session->host_handedness();
+    state.render_scale = companion_session->host_render_scale();
+    state.screen_gap = companion_session->host_screen_gap();
+    state.right_stick_mode = companion_session->host_right_stick_mode();
+    state.max_render_scale = companion_session->host_max_render_scale();
+    state.cursor_choosable = companion_session->host_cursor_choosable();
+    state.right_stick_choosable = companion_session->host_right_stick_choosable();
+    state.cursor_mode = companion_session->host_cursor_shown() ? CursorMode::Shown
+                                                              : CursorMode::Hidden;
+    return state;
 }
 
 int App::Impl::menu_cursor() const {
@@ -1976,6 +1996,7 @@ int App::run(const AppOptions& options) {
             shared.max_render_scale =
                 impl.source ? system_profile(impl.system).max_render_scale : 1;
             shared.cursor_choosable = true;  // this end is a machine with a pointer
+            shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
                 impl.source && system_profile(impl.system).has_analog_stick;
             impl.host_session->set_session_state(shared);
@@ -2101,8 +2122,8 @@ int App::run(const AppOptions& options) {
                     impl.set_menu_open(host_menu);
                 }
                 if (impl.state == Impl::State::Menu && impl.picker) {
-                    impl.picker->mirror(
-                        impl.companion_session->host_menu_focus(),
+                    impl.picker->show(
+                        impl.menu_state_from_host(), impl.companion_session->host_menu_focus(),
                         static_cast<MenuConfirm>(impl.companion_session->host_menu_confirm()));
                 }
                 if (impl.companion_session->host_filtering() != impl.bilinear_filtering) {

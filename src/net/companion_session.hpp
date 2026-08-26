@@ -66,6 +66,7 @@ public:
     int host_max_render_scale() const { return host_max_render_scale_; }
     bool host_cursor_choosable() const { return host_cursor_choosable_; }
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
+    bool host_cursor_shown() const { return host_cursor_shown_; }
 
     // Sends this device's input to the host. Only what changed goes out.
     void send_input(const DsInputState& state);
@@ -221,6 +222,7 @@ private:
     int host_max_render_scale_ = 1;
     bool host_cursor_choosable_ = false;
     bool host_right_stick_choosable_ = false;
+    bool host_cursor_shown_ = true;
     bool menu_open_ = false;
     bool said_hello_ = false;
     // When to give up on a connection that has not finished arriving. Zero

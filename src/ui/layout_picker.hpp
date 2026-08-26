@@ -107,7 +107,12 @@ public:
     // and what it hands back when it is the one being told.
     int focus() const { return focus_; }
     MenuConfirm confirmation() const { return confirm_; }
-    void mirror(int focus, MenuConfirm confirm);
+
+    // Everything the menu shows, applied in one go, for the device that is not
+    // holding it. Called every frame from what the host broadcast: one copy of
+    // the state rather than a copy on each device kept in step by a scattering
+    // of setters, which is the only way the two can be relied on to agree.
+    void show(const LayoutPickerState& state, int focus, MenuConfirm confirm);
     // Which entry a tap landed on, or -1 for none. Resolved on the device the
     // finger touched, since only that one knows how its own menu is laid out.
     int entry_at(float x, float y, float output_width, float output_height) const;

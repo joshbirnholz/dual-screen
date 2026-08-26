@@ -147,6 +147,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_max_render_scale_ = state.max_render_scale;
             host_cursor_choosable_ = state.cursor_choosable;
             host_right_stick_choosable_ = state.right_stick_choosable;
+            host_cursor_shown_ = state.cursor_shown;
             granted_screen_ = state.companion_screen;
             break;
         }

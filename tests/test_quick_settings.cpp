@@ -411,6 +411,68 @@ void test_disconnect_is_the_plus_button_and_only_in_a_session() {
               "plus did not end the session");
 }
 
+// The menu belongs to whichever device runs the game. The other one holds no
+// copy of it: it is handed the whole thing every frame and shows that, which is
+// the only arrangement where the two cannot end up disagreeing.
+void test_a_shown_menu_takes_everything_it_is_given() {
+    LayoutRegistry registry;
+    LayoutPicker picker(registry);
+
+    LayoutPickerState opened;
+    opened.layout_id = registry.at(0).id;
+    opened.session_active = true;
+    picker.open(opened);
+
+    LayoutPickerState from_host = opened;
+    from_host.layout_id = "vertical";
+    from_host.audio_target = AudioTarget::BottomScreen;
+    from_host.handedness = Handedness::Left;
+    from_host.bilinear_filtering = true;
+    picker.show(from_host, 1, MenuConfirm::None);
+
+    CHECK_STR_EQ(picker.selected_layout_id(), "vertical");
+    CHECK(picker.audio_target() == AudioTarget::BottomScreen);
+    CHECK(picker.handedness() == Handedness::Left);
+    CHECK_EQ(picker.filtering(), true);
+    CHECK_EQ(picker.focus(), 1);
+
+    // Including a question the other device put up, and taking it away again.
+    picker.show(from_host, 1, MenuConfirm::Quit);
+    CHECK(picker.awaiting_confirmation());
+    picker.show(from_host, 1, MenuConfirm::None);
+    CHECK(!picker.awaiting_confirmation());
+}
+
+// The row of buttons has to be rebuilt before the cursor is placed: a focus
+// index counts entries, so a cursor sent for the larger row would be refused
+// if the row it landed against were still the old one.
+void test_entries_are_rebuilt_before_the_cursor_lands() {
+    LayoutRegistry registry;
+    LayoutPicker picker(registry);
+
+    LayoutPickerState few;
+    few.layout_id = registry.at(0).id;
+    few.session_active = true;
+    picker.open(few);
+
+    // The first index this menu has no entry for, found by asking for each in
+    // turn: an index it does not have is ignored, so the cursor stops moving.
+    int beyond = 0;
+    while (beyond < 64) {
+        picker.show(few, beyond, MenuConfirm::None);
+        if (picker.focus() != beyond) break;
+        ++beyond;
+    }
+    CHECK_MSG(beyond > 0 && beyond < 64, "could not find the end of the menu's entries");
+
+    LayoutPickerState more = few;
+    more.max_render_scale = 3;          // adds the render scale button
+    more.right_stick_choosable = true;  // and the right stick one
+    picker.show(more, beyond, MenuConfirm::None);
+    CHECK_MSG(picker.focus() == beyond,
+              "a cursor sent for a menu with more entries landed against the old row");
+}
+
 }  // namespace
 
 int main() {
@@ -425,5 +487,7 @@ int main() {
     test_a_confirmation_can_be_backed_out_of();
     test_nothing_else_answers_while_a_confirmation_is_up();
     test_disconnect_is_the_plus_button_and_only_in_a_session();
+    test_a_shown_menu_takes_everything_it_is_given();
+    test_entries_are_rebuilt_before_the_cursor_lands();
     return test::finish("quick-settings");
 }

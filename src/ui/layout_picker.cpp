@@ -177,7 +177,21 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
     return geometry;
 }
 
-void LayoutPicker::mirror(int focus, MenuConfirm confirm) {
+void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm confirm) {
+    // The row of buttons depends on what is being offered, and the layout in
+    // use decides whether one of them is there at all, so it is rebuilt before
+    // the cursor is placed -- a focus index means nothing until the entries it
+    // counts are the right ones.
+    const bool entries_changed = state.layout_id != selected_layout_id_ ||
+                                 state.session_active != state_.session_active ||
+                                 state.max_render_scale != state_.max_render_scale ||
+                                 state.cursor_choosable != state_.cursor_choosable ||
+                                 state.right_stick_choosable != state_.right_stick_choosable;
+    state_ = state;
+    selected_layout_id_ = state.layout_id;
+    if (entries_changed) {
+        rebuild_footer();
+    }
     set_focus(focus);
     confirm_ = confirm;
 }

@@ -70,6 +70,16 @@ bool UiSounds::initialize(std::string* error) {
         clips_.push_back(Clip{samples[index], frames[index]});
     }
 
+    // Brought up here rather than assumed. The app asks SDL for video and
+    // events at startup and leaves audio to whoever needs it, and the game's
+    // own output does the same on its way to opening a device -- so a player
+    // who had not started a game yet got no sounds at all.
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+        if (error != nullptr) *error = SDL_GetError();
+        log_warn(std::string("no audio for the interface sounds: ") + SDL_GetError());
+        return false;
+    }
+
     SDL_AudioSpec want {};
     want.freq = kSampleRate;
     want.format = AUDIO_S16SYS;

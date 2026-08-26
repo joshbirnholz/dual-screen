@@ -210,6 +210,7 @@ private:
     void handle_menu(const std::vector<UiAction>& actions,
                      const std::vector<PointerEvent>& pointers);
     void open_menu();
+    LayoutPickerState menu_state_from_host() const;
     void close_menu();
     void draw();
     // Builds every GL object this program owns. Called at start-up, and again
@@ -457,7 +458,7 @@ void Client::refresh_output_size() {
              std::to_string(output_height_));
 }
 
-void Client::open_menu() {
+LayoutPickerState Client::menu_state_from_host() const {
     // Exactly what the host has in it, read off the session it owns -- down to
     // which entries the row has, so the same cursor position means the same
     // thing on both screens.
@@ -473,11 +474,15 @@ void Client::open_menu() {
     state.cursor_choosable = session_.host_cursor_choosable();
     state.max_render_scale = session_.host_max_render_scale();
     state.right_stick_choosable = session_.host_right_stick_choosable();
+    state.cursor_mode =
+        session_.host_cursor_shown() ? CursorMode::Shown : CursorMode::Hidden;
+    return state;
+}
 
+void Client::open_menu() {
     picker_.set_screens(session_.screens_geometry());
     picker_.set_bezel_art(bezel_art_.texture(session_.system()));
-    picker_.set_smoothing(session_.host_filtering());
-    picker_.open(state);
+    picker_.open(menu_state_from_host());
 
     menu_open_ = true;
     // Kept in step with the host even when the host is the one that opened it,
@@ -767,8 +772,11 @@ void Client::run() {
                     close_menu();
                 }
                 if (menu_open_) {
-                    picker_.mirror(session_.host_menu_focus(),
-                                   static_cast<MenuConfirm>(session_.host_menu_confirm()));
+                    // Every frame, all of it: this device shows the host's
+                    // menu and holds no copy of its own to drift.
+                    picker_.set_smoothing(session_.host_filtering());
+                    picker_.show(menu_state_from_host(), session_.host_menu_focus(),
+                                 static_cast<MenuConfirm>(session_.host_menu_confirm()));
                 }
                 // The host owns all of this and can change any of it from its
                 // own end; this device's pad drives the same game, so it

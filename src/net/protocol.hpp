@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 15;
+constexpr uint16_t kProtocolVersion = 16;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -219,6 +219,10 @@ struct SessionStateMessage {
     uint8_t max_render_scale = 1;
     bool cursor_choosable = false;
     bool right_stick_choosable = false;
+    // Whether this device's pointer is shown. Per-device in what it does, but
+    // the menu that offers it is one menu, so the label it carries has to come
+    // from the same place as everything else on it.
+    bool cursor_shown = true;
 };
 
 struct FrameMessage {

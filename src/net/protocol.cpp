@@ -226,6 +226,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.max_render_scale);
     put_u8(out, message.cursor_choosable ? 1u : 0u);
     put_u8(out, message.right_stick_choosable ? 1u : 0u);
+    put_u8(out, message.cursor_shown ? 1u : 0u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -521,7 +522,10 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     reader.u8(out.max_render_scale);
     reader.u8(cursor_choosable);
     reader.u8(right_stick_choosable);
+    uint8_t cursor_shown = 0;
+    reader.u8(cursor_shown);
     if (!reader.ok()) return false;
+    out.cursor_shown = (cursor_shown != 0);
     out.paused = (paused != 0);
     out.bilinear_filtering = (filtering != 0);
     out.screen_gap = (screen_gap != 0);
