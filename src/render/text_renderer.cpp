@@ -1,33 +1,87 @@
 #include "render/text_renderer.hpp"
 
+#include <cmath>
 #include <sstream>
 #include <vector>
 
 #include "render/font.hpp"
 
 namespace ds {
+namespace {
+
+// How much em the font is given per scale step. A line box is kTextLineUnit
+// tall, and setting the em to exactly that would leave the letters visibly
+// smaller than the bitmap font they replace, whose glyphs filled almost the
+// whole cell. This is the em that matches the old text's weight; the extra
+// sits in the descender, which the space between rows absorbs.
+constexpr float kEmPerLineUnit = 1.125f;
+
+float em_pixels_for(float scale) { return kTextLineUnit * kEmPerLineUnit * scale; }
+
+// The top of the em box inside a line box, so text sits centred in the space
+// every screen already reserved for it.
+float em_offset_for(float scale) {
+    return (TextRenderer::line_height(scale) - em_pixels_for(scale)) * 0.5f;
+}
+
+float advance_of(const FontFace& face, const std::vector<uint32_t>& codepoints) {
+    float width = 0.0f;
+    for (std::size_t index = 0; index < codepoints.size(); ++index) {
+        const Glyph* glyph = face.glyph(codepoints[index]);
+        if (glyph == nullptr) continue;
+        width += glyph->advance;
+        if (index + 1 < codepoints.size()) {
+            width += face.kerning(codepoints[index], codepoints[index + 1]);
+        }
+    }
+    return width;
+}
+
+}  // namespace
 
 bool TextRenderer::initialize(std::string* error) {
-    const FontAtlas& atlas = builtin_font_atlas();
-    if (atlas.pixels.empty()) {
-        if (error != nullptr) *error = "the built-in font atlas is empty";
+    const FontFace& face = font_face(em_pixels_for(1.0f));
+    if (!face.valid()) {
+        if (error != nullptr) *error = "the embedded font could not be rasterised";
         return false;
     }
-    atlas_.upload_alpha8(atlas.pixels.data(), atlas.width, atlas.height);
-    if (!atlas_.valid()) {
-        if (error != nullptr) *error = "could not upload the font atlas";
-        return false;
-    }
+    default_atlas_width_ = face.atlas_width();
+    default_atlas_height_ = face.atlas_height();
     return true;
 }
 
-void TextRenderer::shutdown() { atlas_.destroy(); }
-
-float TextRenderer::measure_width(const std::string& text, float scale) {
-    return static_cast<float>(text.size()) * kFontCellWidth * scale;
+void TextRenderer::shutdown() {
+    for (auto& entry : atlases_) {
+        entry.second.destroy();
+    }
+    atlases_.clear();
 }
 
-float TextRenderer::line_height(float scale) { return kFontCellHeight * scale; }
+const Texture* TextRenderer::atlas_for(float scale) {
+    const int key = static_cast<int>(std::lround(em_pixels_for(scale)));
+    const auto found = atlases_.find(key);
+    if (found != atlases_.end()) {
+        return found->second.valid() ? &found->second : nullptr;
+    }
+
+    const FontFace& face = font_face(em_pixels_for(scale));
+    Texture& texture = atlases_[key];
+    if (face.valid()) {
+        texture.upload_alpha8(face.pixels().data(), face.atlas_width(), face.atlas_height());
+    }
+    return texture.valid() ? &texture : nullptr;
+}
+
+float TextRenderer::measure_width(const std::string& text, float scale) {
+    if (text.empty() || scale <= 0.0f) {
+        return 0.0f;
+    }
+    return advance_of(font_face(em_pixels_for(scale)), decode_utf8(text));
+}
+
+float TextRenderer::line_height(float scale) { return kTextLineUnit * scale; }
+
+float TextRenderer::wrapped_line_step(float scale) { return line_height(scale) * 1.25f; }
 
 void TextRenderer::draw(QuadRenderer& quads,
                         const std::string& text,
@@ -36,64 +90,85 @@ void TextRenderer::draw(QuadRenderer& quads,
                         float scale,
                         const Color& color,
                         TextAlign align) {
-    if (text.empty() || !atlas_.valid() || scale <= 0.0f) {
+    if (text.empty() || scale <= 0.0f) {
         return;
     }
+    const Texture* atlas = atlas_for(scale);
+    if (atlas == nullptr) {
+        return;
+    }
+    const FontFace& face = font_face(em_pixels_for(scale));
+    const std::vector<uint32_t> codepoints = decode_utf8(text);
 
-    const float width = measure_width(text, scale);
     float pen_x = x;
     if (align == TextAlign::Center) {
-        pen_x = x - width * 0.5f;
+        pen_x = x - advance_of(face, codepoints) * 0.5f;
     } else if (align == TextAlign::Right) {
-        pen_x = x - width;
+        pen_x = x - advance_of(face, codepoints);
     }
+    const float baseline = y + em_offset_for(scale) + face.baseline();
 
-    const float atlas_width = static_cast<float>(atlas_.width());
-    const float atlas_height = static_cast<float>(atlas_.height());
-    const float advance = kFontCellWidth * scale;
+    const float atlas_width = static_cast<float>(atlas->width());
+    const float atlas_height = static_cast<float>(atlas->height());
 
-    for (const char character : text) {
-        if (character != ' ') {
-            int cell_x = 0;
-            int cell_y = 0;
-            font_cell_for(character, cell_x, cell_y);
-
-            const float u0 = static_cast<float>(cell_x) / atlas_width;
-            const float v0 = static_cast<float>(cell_y) / atlas_height;
-            const float u1 = static_cast<float>(cell_x + kFontGlyphWidth) / atlas_width;
-            const float v1 = static_cast<float>(cell_y + kFontGlyphHeight) / atlas_height;
-
-            const PixelRect rect{pen_x, y, kFontGlyphWidth * scale, kFontGlyphHeight * scale};
-            quads.draw_alpha_mask(rect, atlas_, color, u0, v0, u1, v1);
+    for (std::size_t index = 0; index < codepoints.size(); ++index) {
+        const Glyph* glyph = face.glyph(codepoints[index]);
+        if (glyph == nullptr) continue;
+        if (glyph->width > 0 && glyph->height > 0) {
+            // Snapped to whole pixels: a glyph rasterised for this size and
+            // then landed on a half pixel is blurred by the sampler for no
+            // gain, since the next frame draws it in the same place anyway.
+            const PixelRect rect{std::floor(pen_x + glyph->left + 0.5f),
+                                 std::floor(baseline + glyph->top + 0.5f),
+                                 static_cast<float>(glyph->width),
+                                 static_cast<float>(glyph->height)};
+            const float u0 = static_cast<float>(glyph->atlas_x) / atlas_width;
+            const float v0 = static_cast<float>(glyph->atlas_y) / atlas_height;
+            const float u1 = static_cast<float>(glyph->atlas_x + glyph->width) / atlas_width;
+            const float v1 = static_cast<float>(glyph->atlas_y + glyph->height) / atlas_height;
+            quads.draw_alpha_mask(rect, *atlas, color, u0, v0, u1, v1);
         }
-        pen_x += advance;
+        pen_x += glyph->advance;
+        if (index + 1 < codepoints.size()) {
+            pen_x += face.kerning(codepoints[index], codepoints[index + 1]);
+        }
     }
 }
 
 std::string TextRenderer::elide_left(const std::string& text, float max_width, float scale) {
-    const float advance = kFontCellWidth * scale;
-    if (advance <= 0.0f) {
+    if (measure_width(text, scale) <= max_width) {
         return text;
     }
-    const std::size_t max_characters = static_cast<std::size_t>(max_width / advance);
-    if (text.size() <= max_characters) {
-        return text;
+    const std::string marker = "...";
+    const float marker_width = measure_width(marker, scale);
+    if (marker_width > max_width) {
+        return std::string();
     }
-    if (max_characters <= 3) {
-        return std::string(max_characters, '.');
+    // Trimmed a character at a time from the left, keeping the tail: paths are
+    // the common case and their last components are the informative part.
+    std::size_t start = 0;
+    while (start < text.size()) {
+        // Never cut a UTF-8 sequence in half.
+        do {
+            ++start;
+        } while (start < text.size() && (static_cast<unsigned char>(text[start]) & 0xC0u) == 0x80u);
+        if (marker_width + measure_width(text.substr(start), scale) <= max_width) {
+            return marker + text.substr(start);
+        }
     }
-    return "..." + text.substr(text.size() - (max_characters - 3));
+    return marker;
 }
 
 std::vector<std::string> TextRenderer::wrap(const std::string& text, float max_width, float scale) {
     std::vector<std::string> lines;
-    const float advance = kFontCellWidth * scale;
-    const std::size_t max_characters =
-        advance > 0.0f ? static_cast<std::size_t>(max_width / advance) : 0;
-    if (max_characters == 0) {
+    if (max_width <= 0.0f || scale <= 0.0f) {
         lines.push_back(text);
         return lines;
     }
+
+    const auto fits = [&](const std::string& candidate) {
+        return measure_width(candidate, scale) <= max_width;
+    };
 
     std::istringstream paragraphs(text);
     std::string paragraph;
@@ -102,19 +177,25 @@ std::vector<std::string> TextRenderer::wrap(const std::string& text, float max_w
         std::string word;
         std::string current;
         while (words >> word) {
-            // A single word longer than the line gets hard-split rather than
-            // running off the edge — paths in error messages do this a lot.
-            while (word.size() > max_characters) {
+            // A single word wider than the line gets hard-split rather than
+            // running off the edge -- paths in error messages do this a lot.
+            while (!fits(word)) {
+                std::string head;
+                for (std::size_t index = 0; index < word.size(); ++index) {
+                    if (!fits(head + word[index]) && !head.empty()) break;
+                    head += word[index];
+                }
+                if (head.size() == word.size()) break;
                 if (!current.empty()) {
                     lines.push_back(current);
                     current.clear();
                 }
-                lines.push_back(word.substr(0, max_characters));
-                word = word.substr(max_characters);
+                lines.push_back(head);
+                word = word.substr(head.size());
             }
             if (current.empty()) {
                 current = word;
-            } else if (current.size() + 1 + word.size() <= max_characters) {
+            } else if (fits(current + " " + word)) {
                 current += " " + word;
             } else {
                 lines.push_back(current);
@@ -135,7 +216,7 @@ float TextRenderer::draw_wrapped(QuadRenderer& quads,
                                  const Color& color,
                                  TextAlign align) {
     const std::vector<std::string> lines = wrap(text, max_width, scale);
-    const float step = line_height(scale);
+    const float step = wrapped_line_step(scale);
     float pen_y = y;
     for (const std::string& line : lines) {
         draw(quads, line, x, pen_y, scale, color, align);

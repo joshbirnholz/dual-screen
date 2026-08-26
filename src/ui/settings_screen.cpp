@@ -269,7 +269,7 @@ void SettingsScreen::render(QuadRenderer& quads,
     const std::size_t footnote_lines =
         TextRenderer::wrap(footnote, footnote_width, footnote_scale).size();
     text.draw_wrapped(quads, footnote, output_width * 0.5f,
-                      output_height - TextRenderer::line_height(footnote_scale) *
+                      output_height - TextRenderer::wrapped_line_step(footnote_scale) *
                                           (footnote_lines + 1.0f),
                       footnote_width, footnote_scale, theme.text_dim, TextAlign::Center);
 }

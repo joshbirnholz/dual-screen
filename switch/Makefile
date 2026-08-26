@@ -162,12 +162,17 @@ $(BUILD):
 	@mkdir -p $@
 
 .PHONY: assets
-assets: $(GENERATED)/kDsBezelPng.cpp $(GENERATED)/kThreeDsBezelPng.cpp
+assets: $(GENERATED)/kDsBezelPng.cpp $(GENERATED)/kThreeDsBezelPng.cpp $(GENERATED)/kRodinOtf.cpp
 
 $(GENERATED)/kDsBezelPng.cpp: $(CURDIR)/../assets/ds_bezel.png $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)
 	@echo embedding ds_bezel.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kDsBezelPng -P $(CURDIR)/../tools/embed_asset.cmake
+
+$(GENERATED)/kRodinOtf.cpp: $(CURDIR)/../assets/rodin.otf $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo Embedding assets/rodin.otf
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kRodinOtf -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kThreeDsBezelPng.cpp: $(CURDIR)/../assets/three_ds_bezel.png $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

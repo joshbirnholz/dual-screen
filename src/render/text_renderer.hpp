@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -9,10 +10,14 @@
 
 namespace ds {
 
+// One scale step is a line of text this many pixels tall. It is the old bitmap
+// font's cell height, kept as the unit so every screen's existing spacing holds.
+constexpr float kTextLineUnit = 8.0f;
+
 enum class TextAlign { Left, Center, Right };
 
-// Draws strings from the built-in bitmap font. Scale is an integer multiplier
-// so glyphs stay pixel-crisp at any window size.
+// Draws strings in the embedded UI font, positioning every glyph by its own
+// width and its kerning against its neighbour rather than on a fixed grid.
 class TextRenderer {
 public:
     bool initialize(std::string* error);
@@ -21,6 +26,10 @@ public:
     // Width/height in pixels a string will occupy at the given scale.
     static float measure_width(const std::string& text, float scale);
     static float line_height(float scale);
+    // The step between lines of one wrapped block. Wider than a line box: a
+    // paragraph's descenders and the next line's capitals would otherwise sit
+    // a hair apart, which a single row of text in a menu never has to deal with.
+    static float wrapped_line_step(float scale);
 
     void draw(QuadRenderer& quads,
               const std::string& text,
@@ -47,13 +56,19 @@ public:
     static std::string elide_left(const std::string& text, float max_width, float scale);
 
 private:
-    Texture atlas_;
+    // One atlas per size actually drawn. A face rasterised for 24px cannot be
+    // stretched to 48px without the softness this whole change is meant to
+    // remove, so each size gets its own.
+    std::map<int, Texture> atlases_;
+    const Texture* atlas_for(float scale);
+    int default_atlas_width_ = 0;
+    int default_atlas_height_ = 0;
 
 public:
     // For the startup diagnostics: an atlas that did not upload is the
     // difference between text and blank rectangles.
-    int atlas_width() const { return atlas_.width(); }
-    int atlas_height() const { return atlas_.height(); }
+    int atlas_width() const { return default_atlas_width_; }
+    int atlas_height() const { return default_atlas_height_; }
 
 private:
 };

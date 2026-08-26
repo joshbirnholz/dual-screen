@@ -60,6 +60,7 @@ endfunction()
 
 dualscreen_embed_asset(ds_bezel.png kDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
+dualscreen_embed_asset(rodin.otf kRodinOtf BEZEL_SOURCES)
 
 add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
@@ -158,6 +159,7 @@ add_executable(dualscreen-companion
 target_include_directories(dualscreen-companion PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/companion/source
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 target_link_libraries(dualscreen-companion PRIVATE
     SDL2::SDL2

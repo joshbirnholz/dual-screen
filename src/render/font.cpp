@@ -1,815 +1,194 @@
 #include "render/font.hpp"
 
-#include <cstring>
+#include <algorithm>
+#include <cmath>
+#include <map>
+
+#include "render/embedded_assets.hpp"
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb/stb_truetype.h"
 
 namespace ds {
 namespace {
 
-// The font is stored as readable glyph art rather than packed hex so a typo is
-// visible on inspection and a new glyph can be drawn in place. Each entry is
-// kFontGlyphHeight rows of kFontGlyphWidth columns, for ASCII 32..126 in order.
-const char* const kGlyphArt[kFontCharCount * kFontGlyphHeight] = {
-    // 'space' (32)
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    // '!' (33)
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    ".....",
-    "..#..",
-    // '"' (34)
-    ".#.#.",
-    ".#.#.",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    // '#' (35)
-    ".#.#.",
-    ".#.#.",
-    "#####",
-    ".#.#.",
-    "#####",
-    ".#.#.",
-    ".#.#.",
-    // '$' (36)
-    "..#..",
-    ".####",
-    "#.#..",
-    ".###.",
-    "..#.#",
-    "####.",
-    "..#..",
-    // '%' (37)
-    "##..#",
-    "##.#.",
-    "...#.",
-    "..#..",
-    ".#...",
-    ".#.##",
-    "#..##",
-    // '&' (38)
-    ".##..",
-    "#..#.",
-    "#.#..",
-    ".#...",
-    "#.#.#",
-    "#..#.",
-    ".##.#",
-    // ''' (39)
-    "..#..",
-    "..#..",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    // '(' (40)
-    "...#.",
-    "..#..",
-    ".#...",
-    ".#...",
-    ".#...",
-    "..#..",
-    "...#.",
-    // ')' (41)
-    ".#...",
-    "..#..",
-    "...#.",
-    "...#.",
-    "...#.",
-    "..#..",
-    ".#...",
-    // '*' (42)
-    ".....",
-    "#.#.#",
-    ".###.",
-    "#####",
-    ".###.",
-    "#.#.#",
-    ".....",
-    // '+' (43)
-    ".....",
-    "..#..",
-    "..#..",
-    "#####",
-    "..#..",
-    "..#..",
-    ".....",
-    // ',' (44)
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".##..",
-    ".##..",
-    ".#...",
-    // '-' (45)
-    ".....",
-    ".....",
-    ".....",
-    "#####",
-    ".....",
-    ".....",
-    ".....",
-    // '.' (46)
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".##..",
-    ".##..",
-    // '/' (47)
-    "....#",
-    "...#.",
-    "...#.",
-    "..#..",
-    ".#...",
-    ".#...",
-    "#....",
-    // '0' (48)
-    ".###.",
-    "#...#",
-    "#..##",
-    "#.#.#",
-    "##..#",
-    "#...#",
-    ".###.",
-    // '1' (49)
-    "..#..",
-    ".##..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    ".###.",
-    // '2' (50)
-    ".###.",
-    "#...#",
-    "....#",
-    "...#.",
-    "..#..",
-    ".#...",
-    "#####",
-    // '3' (51)
-    "#####",
-    "...#.",
-    "..#..",
-    "...#.",
-    "....#",
-    "#...#",
-    ".###.",
-    // '4' (52)
-    "...#.",
-    "..##.",
-    ".#.#.",
-    "#..#.",
-    "#####",
-    "...#.",
-    "...#.",
-    // '5' (53)
-    "#####",
-    "#....",
-    "####.",
-    "....#",
-    "....#",
-    "#...#",
-    ".###.",
-    // '6' (54)
-    "..##.",
-    ".#...",
-    "#....",
-    "####.",
-    "#...#",
-    "#...#",
-    ".###.",
-    // '7' (55)
-    "#####",
-    "....#",
-    "...#.",
-    "..#..",
-    ".#...",
-    ".#...",
-    ".#...",
-    // '8' (56)
-    ".###.",
-    "#...#",
-    "#...#",
-    ".###.",
-    "#...#",
-    "#...#",
-    ".###.",
-    // '9' (57)
-    ".###.",
-    "#...#",
-    "#...#",
-    ".####",
-    "....#",
-    "...#.",
-    ".##..",
-    // ':' (58)
-    ".....",
-    ".##..",
-    ".##..",
-    ".....",
-    ".##..",
-    ".##..",
-    ".....",
-    // ';' (59)
-    ".....",
-    ".##..",
-    ".##..",
-    ".....",
-    ".##..",
-    "..#..",
-    ".#...",
-    // '<' (60)
-    "...#.",
-    "..#..",
-    ".#...",
-    "#....",
-    ".#...",
-    "..#..",
-    "...#.",
-    // '=' (61)
-    ".....",
-    ".....",
-    "#####",
-    ".....",
-    "#####",
-    ".....",
-    ".....",
-    // '>' (62)
-    ".#...",
-    "..#..",
-    "...#.",
-    "....#",
-    "...#.",
-    "..#..",
-    ".#...",
-    // '?' (63)
-    ".###.",
-    "#...#",
-    "....#",
-    "...#.",
-    "..#..",
-    ".....",
-    "..#..",
-    // '@' (64)
-    ".###.",
-    "#...#",
-    "#.###",
-    "#.#.#",
-    "#.###",
-    "#....",
-    ".###.",
-    // 'A' (65)
-    "..#..",
-    ".#.#.",
-    "#...#",
-    "#...#",
-    "#####",
-    "#...#",
-    "#...#",
-    // 'B' (66)
-    "####.",
-    "#...#",
-    "#...#",
-    "####.",
-    "#...#",
-    "#...#",
-    "####.",
-    // 'C' (67)
-    ".###.",
-    "#...#",
-    "#....",
-    "#....",
-    "#....",
-    "#...#",
-    ".###.",
-    // 'D' (68)
-    "###..",
-    "#..#.",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#..#.",
-    "###..",
-    // 'E' (69)
-    "#####",
-    "#....",
-    "#....",
-    "####.",
-    "#....",
-    "#....",
-    "#####",
-    // 'F' (70)
-    "#####",
-    "#....",
-    "#....",
-    "####.",
-    "#....",
-    "#....",
-    "#....",
-    // 'G' (71)
-    ".###.",
-    "#...#",
-    "#....",
-    "#.###",
-    "#...#",
-    "#...#",
-    ".####",
-    // 'H' (72)
-    "#...#",
-    "#...#",
-    "#...#",
-    "#####",
-    "#...#",
-    "#...#",
-    "#...#",
-    // 'I' (73)
-    ".###.",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    ".###.",
-    // 'J' (74)
-    "..###",
-    "...#.",
-    "...#.",
-    "...#.",
-    "...#.",
-    "#..#.",
-    ".##..",
-    // 'K' (75)
-    "#...#",
-    "#..#.",
-    "#.#..",
-    "##...",
-    "#.#..",
-    "#..#.",
-    "#...#",
-    // 'L' (76)
-    "#....",
-    "#....",
-    "#....",
-    "#....",
-    "#....",
-    "#....",
-    "#####",
-    // 'M' (77)
-    "#...#",
-    "##.##",
-    "#.#.#",
-    "#.#.#",
-    "#...#",
-    "#...#",
-    "#...#",
-    // 'N' (78)
-    "#...#",
-    "##..#",
-    "#.#.#",
-    "#.#.#",
-    "#..##",
-    "#...#",
-    "#...#",
-    // 'O' (79)
-    ".###.",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    ".###.",
-    // 'P' (80)
-    "####.",
-    "#...#",
-    "#...#",
-    "####.",
-    "#....",
-    "#....",
-    "#....",
-    // 'Q' (81)
-    ".###.",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#.#.#",
-    "#..#.",
-    ".##.#",
-    // 'R' (82)
-    "####.",
-    "#...#",
-    "#...#",
-    "####.",
-    "#.#..",
-    "#..#.",
-    "#...#",
-    // 'S' (83)
-    ".####",
-    "#....",
-    "#....",
-    ".###.",
-    "....#",
-    "....#",
-    "####.",
-    // 'T' (84)
-    "#####",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    // 'U' (85)
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    ".###.",
-    // 'V' (86)
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    ".#.#.",
-    "..#..",
-    // 'W' (87)
-    "#...#",
-    "#...#",
-    "#...#",
-    "#.#.#",
-    "#.#.#",
-    "##.##",
-    "#...#",
-    // 'X' (88)
-    "#...#",
-    "#...#",
-    ".#.#.",
-    "..#..",
-    ".#.#.",
-    "#...#",
-    "#...#",
-    // 'Y' (89)
-    "#...#",
-    "#...#",
-    ".#.#.",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    // 'Z' (90)
-    "#####",
-    "....#",
-    "...#.",
-    "..#..",
-    ".#...",
-    "#....",
-    "#####",
-    // '[' (91)
-    ".###.",
-    ".#...",
-    ".#...",
-    ".#...",
-    ".#...",
-    ".#...",
-    ".###.",
-    // 'backslash' (92)
-    "#....",
-    ".#...",
-    ".#...",
-    "..#..",
-    "...#.",
-    "...#.",
-    "....#",
-    // ']' (93)
-    ".###.",
-    "...#.",
-    "...#.",
-    "...#.",
-    "...#.",
-    "...#.",
-    ".###.",
-    // '^' (94)
-    "..#..",
-    ".#.#.",
-    "#...#",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    // '_' (95)
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    "#####",
-    // '`' (96)
-    ".#...",
-    "..#..",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    ".....",
-    // 'a' (97)
-    ".....",
-    ".....",
-    ".###.",
-    "....#",
-    ".####",
-    "#...#",
-    ".####",
-    // 'b' (98)
-    "#....",
-    "#....",
-    "####.",
-    "#...#",
-    "#...#",
-    "#...#",
-    "####.",
-    // 'c' (99)
-    ".....",
-    ".....",
-    ".###.",
-    "#....",
-    "#....",
-    "#...#",
-    ".###.",
-    // 'd' (100)
-    "....#",
-    "....#",
-    ".####",
-    "#...#",
-    "#...#",
-    "#...#",
-    ".####",
-    // 'e' (101)
-    ".....",
-    ".....",
-    ".###.",
-    "#...#",
-    "#####",
-    "#....",
-    ".###.",
-    // 'f' (102)
-    "..##.",
-    ".#..#",
-    ".#...",
-    "####.",
-    ".#...",
-    ".#...",
-    ".#...",
-    // 'g' (103)
-    ".....",
-    ".....",
-    ".####",
-    "#...#",
-    ".####",
-    "....#",
-    ".###.",
-    // 'h' (104)
-    "#....",
-    "#....",
-    "####.",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    // 'i' (105)
-    "..#..",
-    ".....",
-    ".##..",
-    "..#..",
-    "..#..",
-    "..#..",
-    ".###.",
-    // 'j' (106)
-    "...#.",
-    ".....",
-    "..##.",
-    "...#.",
-    "...#.",
-    "#..#.",
-    ".##..",
-    // 'k' (107)
-    "#....",
-    "#....",
-    "#..#.",
-    "#.#..",
-    "##...",
-    "#.#..",
-    "#..#.",
-    // 'l' (108)
-    ".##..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    ".###.",
-    // 'm' (109)
-    ".....",
-    ".....",
-    "##.#.",
-    "#.#.#",
-    "#.#.#",
-    "#.#.#",
-    "#...#",
-    // 'n' (110)
-    ".....",
-    ".....",
-    "####.",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#...#",
-    // 'o' (111)
-    ".....",
-    ".....",
-    ".###.",
-    "#...#",
-    "#...#",
-    "#...#",
-    ".###.",
-    // 'p' (112)
-    ".....",
-    ".....",
-    "####.",
-    "#...#",
-    "####.",
-    "#....",
-    "#....",
-    // 'q' (113)
-    ".....",
-    ".....",
-    ".####",
-    "#...#",
-    ".####",
-    "....#",
-    "....#",
-    // 'r' (114)
-    ".....",
-    ".....",
-    "#.##.",
-    "##...",
-    "#....",
-    "#....",
-    "#....",
-    // 's' (115)
-    ".....",
-    ".....",
-    ".####",
-    "#....",
-    ".###.",
-    "....#",
-    "####.",
-    // 't' (116)
-    ".#...",
-    ".#...",
-    "####.",
-    ".#...",
-    ".#...",
-    ".#..#",
-    "..##.",
-    // 'u' (117)
-    ".....",
-    ".....",
-    "#...#",
-    "#...#",
-    "#...#",
-    "#..##",
-    ".##.#",
-    // 'v' (118)
-    ".....",
-    ".....",
-    "#...#",
-    "#...#",
-    "#...#",
-    ".#.#.",
-    "..#..",
-    // 'w' (119)
-    ".....",
-    ".....",
-    "#...#",
-    "#.#.#",
-    "#.#.#",
-    "#.#.#",
-    ".#.#.",
-    // 'x' (120)
-    ".....",
-    ".....",
-    "#...#",
-    ".#.#.",
-    "..#..",
-    ".#.#.",
-    "#...#",
-    // 'y' (121)
-    ".....",
-    ".....",
-    "#...#",
-    "#...#",
-    ".####",
-    "....#",
-    ".###.",
-    // 'z' (122)
-    ".....",
-    ".....",
-    "#####",
-    "...#.",
-    "..#..",
-    ".#...",
-    "#####",
-    // '{' (123)
-    "..##.",
-    "..#..",
-    "..#..",
-    ".#...",
-    "..#..",
-    "..#..",
-    "..##.",
-    // '|' (124)
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    "..#..",
-    // '}' (125)
-    ".##..",
-    "..#..",
-    "..#..",
-    "...#.",
-    "..#..",
-    "..#..",
-    ".##..",
-    // '~' (126)
-    ".....",
-    ".....",
-    ".##.#",
-    "#..#.",
-    ".....",
-    ".....",
-    ".....",
-};
+// What the atlas covers: ASCII, then the Latin-1 letters, so an accented name
+// in a ROM filename draws as itself. The embedded font is subset to these plus
+// a few punctuation marks, which is why it is kilobytes rather than megabytes.
+constexpr uint32_t kAsciiFirst = 32;
+constexpr uint32_t kAsciiLast = 126;
+constexpr uint32_t kLatinFirst = 160;
+constexpr uint32_t kLatinLast = 255;
 
-FontAtlas build_atlas() {
-    FontAtlas atlas;
-    atlas.columns = kFontAtlasColumns;
-    atlas.rows = (kFontCharCount + kFontAtlasColumns - 1) / kFontAtlasColumns;
-    atlas.width = atlas.columns * kFontCellWidth;
-    atlas.height = atlas.rows * kFontCellHeight;
-    atlas.pixels.assign(static_cast<std::size_t>(atlas.width) * atlas.height, 0);
+const stbtt_fontinfo* embedded_font() {
+    static stbtt_fontinfo info;
+    static const bool loaded =
+        stbtt_InitFont(&info, assets::kRodinOtf, stbtt_GetFontOffsetForIndex(assets::kRodinOtf, 0));
+    return loaded ? &info : nullptr;
+}
 
-    for (int index = 0; index < kFontCharCount; ++index) {
-        const int cell_x = (index % kFontAtlasColumns) * kFontCellWidth;
-        const int cell_y = (index / kFontAtlasColumns) * kFontCellHeight;
-        for (int row = 0; row < kFontGlyphHeight; ++row) {
-            const char* art = kGlyphArt[index * kFontGlyphHeight + row];
-            for (int column = 0; column < kFontGlyphWidth; ++column) {
-                if (art[column] == '#') {
-                    const std::size_t offset =
-                        static_cast<std::size_t>(cell_y + row) * atlas.width + (cell_x + column);
-                    atlas.pixels[offset] = 255;
-                }
-            }
+// Packs glyphs left to right in rows, starting the next row at the tallest
+// glyph seen so far. Nothing cleverer is worth it for a couple of hundred
+// glyphs that only ever get packed once per size.
+bool pack_into(int atlas_size,
+               const stbtt_fontinfo& info,
+               float scale,
+               std::vector<uint8_t>& pixels,
+               std::unordered_map<uint32_t, Glyph>& glyphs) {
+    pixels.assign(static_cast<std::size_t>(atlas_size) * atlas_size, 0);
+    glyphs.clear();
+
+    int pen_x = 1;
+    int pen_y = 1;
+    int row_height = 0;
+
+    const auto place = [&](uint32_t codepoint) {
+        if (stbtt_FindGlyphIndex(&info, static_cast<int>(codepoint)) == 0) {
+            return true;
         }
+        int advance = 0;
+        int bearing = 0;
+        stbtt_GetCodepointHMetrics(&info, static_cast<int>(codepoint), &advance, &bearing);
+
+        int x0 = 0;
+        int y0 = 0;
+        int x1 = 0;
+        int y1 = 0;
+        stbtt_GetCodepointBitmapBox(&info, static_cast<int>(codepoint), scale, scale, &x0, &y0, &x1,
+                                    &y1);
+
+        Glyph glyph;
+        glyph.width = x1 - x0;
+        glyph.height = y1 - y0;
+        glyph.left = static_cast<float>(x0);
+        glyph.top = static_cast<float>(y0);
+        glyph.advance = advance * scale;
+
+        if (glyph.width > 0 && glyph.height > 0) {
+            if (pen_x + glyph.width + 1 > atlas_size) {
+                pen_x = 1;
+                pen_y += row_height + 1;
+                row_height = 0;
+            }
+            if (pen_y + glyph.height + 1 > atlas_size) {
+                return false;
+            }
+            stbtt_MakeCodepointBitmap(&info, pixels.data() + pen_y * atlas_size + pen_x, glyph.width,
+                                      glyph.height, atlas_size, scale, scale,
+                                      static_cast<int>(codepoint));
+            glyph.atlas_x = pen_x;
+            glyph.atlas_y = pen_y;
+            pen_x += glyph.width + 1;
+            row_height = std::max(row_height, glyph.height);
+        }
+        glyphs.emplace(codepoint, glyph);
+        return true;
+    };
+
+    for (uint32_t codepoint = kAsciiFirst; codepoint <= kAsciiLast; ++codepoint) {
+        if (!place(codepoint)) return false;
     }
-    return atlas;
+    for (uint32_t codepoint = kLatinFirst; codepoint <= kLatinLast; ++codepoint) {
+        if (!place(codepoint)) return false;
+    }
+    return true;
 }
 
 }  // namespace
 
-const FontAtlas& builtin_font_atlas() {
-    static const FontAtlas atlas = build_atlas();
-    return atlas;
+FontFace FontFace::bake(float em_pixels) {
+    FontFace face;
+    const stbtt_fontinfo* info = embedded_font();
+    if (info == nullptr || em_pixels <= 0.0f) {
+        return face;
+    }
+
+    // Sized by the em rather than by stbtt_ScaleForPixelHeight, which measures
+    // the tallest glyph and so would shrink the text whenever the font happens
+    // to carry a tall accented capital.
+    int ascent = 0;
+    int descent = 0;
+    int gap = 0;
+    stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
+    const float units_per_em = static_cast<float>(ascent - descent);
+    face.scale_ = em_pixels / units_per_em;
+    face.baseline_ = ascent * face.scale_;
+
+    for (int size = 128; size <= 4096; size *= 2) {
+        if (pack_into(size, *info, face.scale_, face.pixels_, face.glyphs_)) {
+            face.atlas_width_ = size;
+            face.atlas_height_ = size;
+            return face;
+        }
+    }
+    face.pixels_.clear();
+    return face;
 }
 
-void font_cell_for(char character, int& out_x, int& out_y) {
-    int index = static_cast<int>(static_cast<unsigned char>(character)) - kFontFirstChar;
-    if (index < 0 || index >= kFontCharCount) {
-        index = static_cast<int>('?') - kFontFirstChar;  // stand-in for anything unmapped
+const Glyph* FontFace::glyph(uint32_t codepoint) const {
+    const auto found = glyphs_.find(codepoint);
+    return found == glyphs_.end() ? nullptr : &found->second;
+}
+
+float FontFace::kerning(uint32_t left, uint32_t right) const {
+    const stbtt_fontinfo* info = embedded_font();
+    if (info == nullptr) {
+        return 0.0f;
     }
-    out_x = (index % kFontAtlasColumns) * kFontCellWidth;
-    out_y = (index / kFontAtlasColumns) * kFontCellHeight;
+    return stbtt_GetCodepointKernAdvance(info, static_cast<int>(left), static_cast<int>(right)) *
+           scale_;
+}
+
+const FontFace& font_face(float em_pixels) {
+    // Keyed by whole pixels: a face baked for 23.4px and one for 23.6px would
+    // be the same picture and two atlases.
+    const int key = std::max(6, static_cast<int>(std::lround(em_pixels)));
+    static std::map<int, FontFace> faces;
+    const auto found = faces.find(key);
+    if (found != faces.end()) {
+        return found->second;
+    }
+    return faces.emplace(key, FontFace::bake(static_cast<float>(key))).first->second;
+}
+
+std::vector<uint32_t> decode_utf8(const std::string& text) {
+    std::vector<uint32_t> codepoints;
+    codepoints.reserve(text.size());
+    for (std::size_t index = 0; index < text.size();) {
+        const unsigned char lead = static_cast<unsigned char>(text[index]);
+        int length = 1;
+        uint32_t codepoint = lead;
+        if (lead >= 0xF0) {
+            length = 4;
+            codepoint = lead & 0x07u;
+        } else if (lead >= 0xE0) {
+            length = 3;
+            codepoint = lead & 0x0Fu;
+        } else if (lead >= 0xC0) {
+            length = 2;
+            codepoint = lead & 0x1Fu;
+        } else if (lead >= 0x80) {
+            codepoints.push_back(0xFFFD);
+            ++index;
+            continue;
+        }
+        if (index + length > text.size()) {
+            codepoints.push_back(0xFFFD);
+            break;
+        }
+        for (int step = 1; step < length; ++step) {
+            const unsigned char continuation = static_cast<unsigned char>(text[index + step]);
+            if ((continuation & 0xC0u) != 0x80u) {
+                codepoint = 0xFFFD;
+                length = step;
+                break;
+            }
+            codepoint = (codepoint << 6) | (continuation & 0x3Fu);
+        }
+        codepoints.push_back(codepoint);
+        index += length;
+    }
+    return codepoints;
 }
 
 }  // namespace ds
