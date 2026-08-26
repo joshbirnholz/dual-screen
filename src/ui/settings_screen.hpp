@@ -64,6 +64,10 @@ public:
                 float output_width,
                 float output_height);
 
+public:
+    // Where the cursor is, so the shell can tell when it moved.
+    int focus() const { return focus_; }
+
 private:
     // The cores are not in here: they are read-only, one per console, and a
     // focusable row that does nothing when pressed is worse than a plain list.

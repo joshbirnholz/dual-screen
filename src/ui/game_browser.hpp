@@ -53,6 +53,10 @@ public:
                 float output_width,
                 float output_height);
 
+public:
+    // Where the cursor is, so the shell can tell when it moved.
+    int focus() const { return focus_; }
+
 private:
     struct Row {
         std::string label;

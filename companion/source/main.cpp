@@ -45,6 +45,7 @@
 #include <vector>
 
 #include "audio/audio_output.hpp"
+#include "audio/ui_sounds.hpp"
 #include "config/settings.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
@@ -232,6 +233,7 @@ private:
     QuadRenderer quads_;
     TextRenderer text_;
     ButtonGlyphSheet button_glyphs_;
+    UiSounds ui_sounds_;
     MenuBackdrop menu_backdrop_;
     Compositor compositor_;
     LocalOutputRouter router_;
@@ -473,6 +475,7 @@ void Client::open_menu() {
     picker_.open(state);
 
     menu_open_ = true;
+    ui_sounds_.play(UiSound::OpenQuickMenu);
     input_.set_game_input_enabled(false);
 }
 
@@ -484,6 +487,7 @@ void Client::close_menu() {
         return;
     }
     menu_open_ = false;
+    ui_sounds_.play(UiSound::CloseQuickMenu);
     input_.set_game_input_enabled(state_ == State::Playing);
 }
 
@@ -495,8 +499,17 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
     // be worked from either pad while the player watches either screen.
     for (const UiAction action : actions) {
         net::MenuAction wire = net::MenuAction::Confirm;
-        if (menu_action_for(action, wire)) {
-            session_.request_menu_action(wire);
+        if (!menu_action_for(action, wire)) continue;
+        session_.request_menu_action(wire);
+        // Answered here rather than waiting for the press to come back: a
+        // button that only clicks once the far end has replied feels broken.
+        // Backing out of the menu is the exception -- close_menu() has its own
+        // sound, and it plays when the host actually says the menu is down.
+        if (action == UiAction::Confirm) {
+            ui_sounds_.play(UiSound::Confirm);
+        } else if (action == UiAction::Up || action == UiAction::Down ||
+                   action == UiAction::Left || action == UiAction::Right) {
+            ui_sounds_.play(UiSound::MoveCursor);
         }
     }
     for (const PointerEvent& pointer : pointers) {
@@ -518,6 +531,18 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     if (state_ == State::Playing && menu_open_) {
         handle_menu(actions, pointers);
         return;
+    }
+
+    // This device's own screens -- the launcher and the host list -- answer
+    // their own presses, so the sound is decided from what the cursor did.
+    const int cursor_before = state_ == State::Launcher ? launcher_.focus() : host_picker_.focus();
+    const State state_before = state_;
+    for (const UiAction action : actions) {
+        if (action == UiAction::Confirm) {
+            ui_sounds_.play(UiSound::Confirm);
+        } else if (action == UiAction::Cancel) {
+            ui_sounds_.play(UiSound::Cancel);
+        }
     }
 
     if (state_ == State::Launcher) {
@@ -597,6 +622,15 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 break;
         }
     }
+
+    if (state_ == state_before) {
+        const int cursor_now =
+            state_ == State::Launcher ? launcher_.focus() : host_picker_.focus();
+        if (cursor_now != cursor_before) {
+            ui_sounds_.play(UiSound::MoveCursor);
+        }
+    }
+
 }
 
 bool Client::load_gl_resources(std::string* error) {
@@ -605,6 +639,9 @@ bool Client::load_gl_resources(std::string* error) {
     bezel_art_.destroy();
 
     std::string reason;
+    // Not fatal if it fails: a console with no sound still shows a screen.
+    std::string sound_reason;
+    ui_sounds_.initialize(&sound_reason);
     if (!quads_.initialize(&reason) || !text_.initialize(&reason) ||
         !button_glyphs_.initialize(&reason)) {
         if (error != nullptr) *error = "the renderer would not start: " + reason;
@@ -678,6 +715,8 @@ void Client::run() {
                 }
                 break;
             case State::Connecting:
+                // The sound under the wait, for exactly as long as the wait.
+                ui_sounds_.start_loop(UiSound::ConnectingLoop);
                 if (session_.status() == net::CompanionSession::Status::Connected) {
                     state_ = State::Playing;
                     close_menu();
@@ -694,7 +733,11 @@ void Client::run() {
                 } else if (session_.status() == net::CompanionSession::Status::Failed) {
                     state_ = State::Failed;
                     failure_ = session_.status_detail();
+                    ui_sounds_.play(UiSound::ConnectionTimeout);
                     log_warn("could not join: " + failure_);
+                }
+                if (state_ != State::Connecting) {
+                    ui_sounds_.stop_loop();
                 }
                 break;
             case State::Playing:

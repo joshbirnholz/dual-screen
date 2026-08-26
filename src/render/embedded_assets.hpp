@@ -21,4 +21,9 @@ extern const unsigned long kRodinOtf_size;
 extern const unsigned char kButtonIconsPng[];
 extern const unsigned long kButtonIconsPng_size;
 
+// The shell's own sounds, resampled to one rate and packed into one blob with
+// an index -- see decode_ui_sound_pack().
+extern const unsigned char kUiSoundsBin[];
+extern const unsigned long kUiSoundsBin_size;
+
 }  // namespace ds::assets

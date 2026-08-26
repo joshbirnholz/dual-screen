@@ -51,6 +51,10 @@ public:
                 float output_height,
                 int hosts_found);
 
+public:
+    // Where the cursor is, so the shell can tell when it moved.
+    int focus() const { return focus_; }
+
 private:
     struct Row {
         LauncherChoice choice;
@@ -95,6 +99,10 @@ public:
                 float output_height,
                 const std::vector<ds::net::DiscoveredHost>& hosts,
                 const std::string& status);
+
+public:
+    // Where the cursor is, so the shell can tell when it moved.
+    int focus() const { return focus_; }
 
 private:
     std::vector<PixelRect> compute_rows(std::size_t count,

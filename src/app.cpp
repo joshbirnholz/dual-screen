@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "audio/audio_output.hpp"
+#include "audio/ui_sounds.hpp"
 #include "config/game_config.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
@@ -222,6 +223,7 @@ struct App::Impl {
     Compositor compositor;
     MenuBackdrop menu_backdrop;
     ButtonGlyphSheet button_glyphs;
+    UiSounds ui_sounds;
     LocalOutputRouter router;
     // Lives as long as the GL context does, and no longer: created just after
     // the window, destroyed just before it.
@@ -346,6 +348,9 @@ struct App::Impl {
     // Opens or closes the one menu on this device, which for a host is also
     // what the companion is told to draw.
     void set_menu_open(bool open);
+    // Where the cursor is on whatever screen is up, as one number: what it
+    // means does not matter, only that it changes when the cursor moves.
+    int menu_cursor() const;
     // The two settings both devices share. On a companion these ask the host
     // and change nothing locally; the host owns them and broadcasts the result,
     // which is what keeps the two devices from ever disagreeing.
@@ -380,7 +385,10 @@ struct App::Impl {
                        const std::string& title,
                        const std::string& body,
                        const std::vector<std::string>& details,
-                       bool fatal);
+                       bool fatal,
+                       // A device that never answered gets its own sound; every
+                       // other error shares one.
+                       UiSound sound = UiSound::Error);
     void persist_game_config();
     void handle_ui(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
     // How long the last frame took, so screens that need a clock have one.
@@ -614,9 +622,22 @@ bool App::Impl::paired() const {
     return (host_session && host_session->has_companion()) || is_companion();
 }
 
+int App::Impl::menu_cursor() const {
+    switch (state) {
+        case State::Menu: return picker ? picker->focus() : 0;
+        case State::Launcher: return launcher ? launcher->focus() : 0;
+        case State::HostPicker: return host_picker ? host_picker->focus() : 0;
+        case State::Browser: return browser ? browser->focus() : 0;
+        case State::Settings: return settings_screen ? settings_screen->focus() : 0;
+        default: break;
+    }
+    return 0;
+}
+
 void App::Impl::set_menu_open(bool open) {
     if (open) {
         if (state == State::Menu) return;
+        ui_sounds.play(UiSound::OpenQuickMenu);
         open_picker();
         state = State::Menu;
         input.set_game_input_enabled(false);
@@ -624,6 +645,7 @@ void App::Impl::set_menu_open(bool open) {
         return;
     }
     if (state != State::Menu) return;
+    ui_sounds.play(UiSound::CloseQuickMenu);
     picker->close();
     if (is_companion()) {
         companion_session->set_menu_open(false);
@@ -1025,8 +1047,12 @@ void App::Impl::enter_message(MessageKind kind,
                               const std::string& title,
                               const std::string& body,
                               const std::vector<std::string>& details,
-                              bool fatal) {
+                              bool fatal,
+                              UiSound sound) {
     message.show(kind, title, body, details);
+    if (kind == MessageKind::Error) {
+        ui_sounds.play(sound);
+    }
     message_is_fatal = fatal;
     state = State::Message;
     input.set_game_input_enabled(false);
@@ -1216,6 +1242,12 @@ void App::Impl::persist_game_config() {
 
 void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers) {
+    // Noted before anything acts on the press, and compared after: a cursor
+    // that did not move -- held against the end of a list, say -- makes no
+    // sound, which is the difference between feedback and a rattle.
+    const State state_before = state;
+    const int cursor_before = menu_cursor();
+    const bool in_a_menu = state != State::Playing && state != State::Companion;
     // Filtering is deliberately handled before anything else looks at the
     // actions: R3 means the same thing in a game and in every menu, so it does
     // not belong to any one screen.
@@ -1340,7 +1372,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (companion_session->status() == net::CompanionSession::Status::Failed) {
                 enter_message(MessageKind::Error, "Lost the connection",
-                              companion_session->status_detail(), {}, false);
+                              companion_session->status_detail(), {}, false,
+                              UiSound::ConnectionTimeout);
             }
             break;
         }
@@ -1429,6 +1462,25 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
     }
+
+    // What that press sounded like, decided from what it actually did.
+    if (!in_a_menu) {
+        return;
+    }
+    const bool left_the_menu = state_before == State::Menu && state != State::Menu;
+    for (const UiAction action : actions) {
+        if (action == UiAction::Confirm) {
+            ui_sounds.play(UiSound::Confirm);
+        } else if (action == UiAction::Cancel && !left_the_menu) {
+            // Backing out of the quick menu has its own sound, played where the
+            // menu is actually put away.
+            ui_sounds.play(UiSound::Cancel);
+        }
+    }
+    if (state == state_before && menu_cursor() != cursor_before) {
+        ui_sounds.play(UiSound::MoveCursor);
+    }
+
 }
 
 void App::Impl::render() {
@@ -1438,6 +1490,16 @@ void App::Impl::render() {
     // and nothing says why. Reported once, since a failing draw fails every
     // frame and one line is the useful amount.
     gl::log_error_once("something in the last frame was rejected by OpenGL");
+
+    // The sound under the wait, running for exactly as long as the wait does.
+    // Decided here, before any of the branches below return, so it cannot be
+    // left playing by a path that forgot about it.
+    if (companion_session &&
+        companion_session->status() == net::CompanionSession::Status::Connecting) {
+        ui_sounds.start_loop(UiSound::ConnectingLoop);
+    } else {
+        ui_sounds.stop_loop();
+    }
 
     if (state == State::Browser) {
         browser->render(quads, text, button_glyphs, width, height);
@@ -1668,6 +1730,10 @@ int App::run(const AppOptions& options) {
         close_log_file();
         return 1;
     }
+    // Not fatal if it fails: a machine with no sound card still plays games,
+    // and UiSounds says so in the log on its way past.
+    std::string sound_error;
+    impl.ui_sounds.initialize(&sound_error);
     if (!impl.quads.initialize(&error) || !impl.text.initialize(&error) ||
         !impl.button_glyphs.initialize(&error)) {
         log_error("cannot set up the renderer: " + error);

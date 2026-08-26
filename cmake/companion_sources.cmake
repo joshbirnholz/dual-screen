@@ -14,6 +14,7 @@
 set(DUALSCREEN_COMPANION_SOURCES
     companion/source/main.cpp
     src/audio/audio_output.cpp
+    src/audio/ui_sounds.cpp
     src/core/system.cpp
     src/input/controller_mapping.cpp
     src/input/cursor_visibility.cpp
