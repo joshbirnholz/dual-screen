@@ -4,6 +4,7 @@
 
 #include "core/system.hpp"
 #include "layout/layout_registry.hpp"
+#include "render/button_glyphs.hpp"
 #include "ui/layout_picker.hpp"
 
 using namespace ds;
@@ -526,6 +527,91 @@ void test_a_button_only_answers_a_tap_aimed_at_it() {
               std::to_string(slid_off) + " taps that were slid away from still picked a layout");
 }
 
+// The control prompts along the bottom are buttons too: a finger on one means
+// the same as pressing what it shows.
+//
+// Where they are is decided while the row is drawn, from the glyph artwork's
+// own proportions, so the menu is drawn once first. Nothing here has a GL
+// context and nothing needs one: every draw is a no-op without a program, and
+// the row writes down where its prompts went either way.
+void test_tapping_a_control_prompt_presses_its_button() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.session_active = true;
+
+    LayoutPicker picker(registry);
+    picker.open(state);
+    CHECK_MSG(picker.guide_button_at(kWidth * 0.5f, kHeight * 0.5f) == ButtonGlyph::Count,
+              "a menu that has never been drawn claimed a prompt was under the finger");
+
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
+
+    // Find each prompt the way a finger does, and check it does what it says.
+    bool pressed_resume = false;
+    bool asked_to_disconnect = false;
+    bool asked_about_quitting = false;
+    for (float y = 2.0f; y < kHeight; y += 4.0f) {
+        for (float x = 2.0f; x < kWidth; x += 4.0f) {
+            const ButtonGlyph under = picker.guide_button_at(x, y);
+            if (under == ButtonGlyph::Count) continue;
+
+            LayoutPicker fresh(registry);
+            fresh.open(state);
+            fresh.render(quads, text, glyphs, kWidth, kHeight, "Game");
+            const LayoutPickerResult result = fresh.update({}, {tap(x, y)}, kWidth, kHeight);
+            if (under == ButtonGlyph::B && result.close_requested) pressed_resume = true;
+            if (under == ButtonGlyph::Plus && result.disconnect_requested) {
+                asked_to_disconnect = true;
+            }
+            if (under == ButtonGlyph::X && fresh.awaiting_confirmation()) {
+                asked_about_quitting = true;
+            }
+        }
+    }
+    CHECK_MSG(pressed_resume, "tapping Resume did not close the menu");
+    CHECK_MSG(asked_to_disconnect, "tapping Disconnect did not end the session");
+    CHECK_MSG(asked_about_quitting, "tapping Quit did not ask before quitting");
+}
+
+// A companion arriving changes what the menu offers, so the row is rebuilt
+// rather than left as it was when the menu opened -- two menus with different
+// entries put the same cursor on different things.
+void test_the_menu_follows_a_device_arriving_and_leaving() {
+    LayoutRegistry registry;
+    LayoutPickerState alone;
+    alone.layout_id = registry.at(0).id;
+    alone.session_active = false;
+
+    LayoutPicker picker(registry);
+    picker.open(alone);
+
+    // The last entry the cursor can reach counts the entries there are.
+    const auto last_entry = [&] {
+        int index = 0;
+        while (index < 64) {
+            picker.set_focus(index);
+            if (picker.focus() != index) break;
+            ++index;
+        }
+        return index;
+    };
+    const int alone_entries = last_entry();
+
+    picker.set_session_active(true);
+    CHECK_MSG(last_entry() > alone_entries,
+              "a companion arriving did not add the entries that come with it");
+    CHECK_MSG(picker.update({UiAction::MenuDisconnect}, {}, kWidth, kHeight).disconnect_requested,
+              "the menu would not disconnect from a device that had just arrived");
+
+    picker.set_session_active(false);
+    CHECK_MSG(last_entry() == alone_entries,
+              "a companion leaving did not take its entries away again");
+}
+
 }  // namespace
 
 int main() {
@@ -543,5 +629,7 @@ int main() {
     test_a_shown_menu_takes_everything_it_is_given();
     test_entries_are_rebuilt_before_the_cursor_lands();
     test_a_button_only_answers_a_tap_aimed_at_it();
+    test_tapping_a_control_prompt_presses_its_button();
+    test_the_menu_follows_a_device_arriving_and_leaving();
     return test::finish("quick-settings");
 }

@@ -222,6 +222,9 @@ struct App::Impl {
     TextRenderer text;
     Compositor compositor;
     MenuBackdrop menu_backdrop;
+    // Whether the game was running last frame, so a pause can be noticed once
+    // rather than acted on every frame it lasts.
+    bool game_was_running = false;
     ButtonGlyphSheet button_glyphs;
     UiSounds ui_sounds;
     LocalOutputRouter router;
@@ -1434,6 +1437,30 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 for (const PointerEvent& pointer : pointers) {
                     if (!pointer.released) continue;
+                    // A finger on one of the control prompts is that button
+                    // being pressed, forwarded like any other press.
+                    const ButtonGlyph on_guide = picker->guide_button_at(pointer.x, pointer.y);
+                    if (on_guide != ButtonGlyph::Count &&
+                        on_guide == picker->guide_button_at(pointer.press_x, pointer.press_y)) {
+                        net::MenuAction wire = net::MenuAction::Confirm;
+                        bool forward = true;
+                        switch (on_guide) {
+                            case ButtonGlyph::A: wire = net::MenuAction::Confirm; break;
+                            case ButtonGlyph::B: wire = net::MenuAction::Cancel; break;
+                            case ButtonGlyph::X: wire = net::MenuAction::Quit; break;
+                            case ButtonGlyph::Y: wire = net::MenuAction::Reset; break;
+                            case ButtonGlyph::Plus: wire = net::MenuAction::Disconnect; break;
+                            // Smoothing is a shared setting rather than a menu
+                            // press, asked for the way its button asks for it.
+                            case ButtonGlyph::RightStick:
+                                request_filtering(!bilinear_filtering);
+                                forward = false;
+                                break;
+                            default: forward = false; break;
+                        }
+                        if (forward) companion_session->request_menu_action(wire);
+                        continue;
+                    }
                     const auto entry_under = [&](float x, float y) {
                         return picker->entry_at(x, y, static_cast<float>(output_width),
                                                 static_cast<float>(output_height));
@@ -1518,8 +1545,10 @@ void App::Impl::render() {
     // The shell's effects come out of whichever device the game's sound does.
     // Outside a game there is no target to follow and nothing to talk over, so
     // they play wherever they were asked for.
-    const bool a_game_is_running = source != nullptr || is_companion();
-    ui_sounds.set_muted(a_game_is_running && !sound_plays_here());
+    // Only the quick menu follows the game's sound target -- it is the one
+    // that opens over a game, on two devices at once. Every other screen is
+    // this device's alone, so it is audible here whatever the target says.
+    ui_sounds.set_muted(state == State::Menu && !sound_plays_here());
     // Keeps them audible over a game that has gone quiet behind the very menu
     // making them; does nothing while the game is filling its own queue.
     audio.pump_effects();
@@ -2001,6 +2030,12 @@ int App::run(const AppOptions& options) {
             // The menu itself, so the companion draws this one rather than
             // keeping its own. Sent even while closed: that is how the other
             // device learns to put it away again.
+            // A companion arriving or leaving changes what the menu offers --
+            // Disconnect, and a sound target worth choosing -- so the row is
+            // rebuilt rather than left as it was when the menu opened.
+            if (impl.state == Impl::State::Menu && impl.picker) {
+                impl.picker->set_session_active(impl.paired());
+            }
             shared.menu_open = impl.state == Impl::State::Menu;
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
@@ -2303,11 +2338,16 @@ int App::run(const AppOptions& options) {
         if (impl.source && !game_running) {
             // Paused: hold the sticks and buttons off the core entirely.
             impl.source->input_sink().submit(DsInputState());
-            impl.audio.set_paused(true);
         }
-        if (impl.source && game_running) {
-            impl.audio.set_paused(false);
+        if (impl.source && game_running != impl.game_was_running) {
+            // The device is deliberately left running across a pause. Stopping
+            // it drains nothing, so the menu's own sounds would queue up behind
+            // whatever the game left and all arrive at once when it came back.
+            // What does have to go is that tail: it is the moment before the
+            // pause, and it would play over the menu that caused it.
+            impl.audio.flush();
         }
+        impl.game_was_running = game_running;
 
         impl.render();
 

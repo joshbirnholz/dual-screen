@@ -66,7 +66,9 @@ public:
     void destroy();
 
 private:
-    void ensure_created();
+    // False when there is no context to create one against, which every
+    // upload treats as "nothing to upload into".
+    bool ensure_created();
 
     GLuint id_ = 0;
     int width_ = 0;

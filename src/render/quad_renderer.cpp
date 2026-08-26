@@ -202,7 +202,7 @@ void QuadRenderer::begin_frame(int output_width, int output_height) {
 }
 
 void QuadRenderer::set_clip(const PixelRect& rect) {
-    if (output_height_ <= 0) {
+    if (output_height_ <= 0 || program_ == 0) {
         return;
     }
     // GL measures from the bottom-left; everything above measures from the
@@ -215,9 +215,17 @@ void QuadRenderer::set_clip(const PixelRect& rect) {
     gl::Scissor(x, output_height_ - top - height, std::max(0, width), std::max(0, height));
 }
 
-void QuadRenderer::clear_clip() { gl::Disable(GL_SCISSOR_TEST); }
+void QuadRenderer::clear_clip() {
+    if (program_ == 0) {
+        return;
+    }
+    gl::Disable(GL_SCISSOR_TEST);
+}
 
 void QuadRenderer::clear(const Color& color) {
+    if (program_ == 0) {
+        return;
+    }
     gl::ClearColor(color.r, color.g, color.b, color.a);
     gl::Clear(GL_COLOR_BUFFER_BIT);
 }

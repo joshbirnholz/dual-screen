@@ -196,10 +196,27 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
     confirm_ = confirm;
 }
 
+void LayoutPicker::set_session_active(bool active) {
+    if (active == state_.session_active) {
+        return;
+    }
+    state_.session_active = active;
+    rebuild_footer();
+}
+
 void LayoutPicker::set_focus(int focus) {
     if (focus >= 0 && focus < focus_count()) {
         focus_ = focus;
     }
+}
+
+ButtonGlyph LayoutPicker::guide_button_at(float x, float y) const {
+    for (const GuideHit& hit : guide_hits_) {
+        if (hit.rect.contains(x, y)) {
+            return hit.glyph;
+        }
+    }
+    return ButtonGlyph::Count;
 }
 
 int LayoutPicker::entry_at(float x, float y, float output_width, float output_height) const {
@@ -358,7 +375,6 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             if (action == UiAction::Cancel) dismissed = true;
         }
         for (const PointerEvent& pointer : pointers) {
-            if (!pointer.released) continue;
             if (tapped(pointer, confirm.accept)) accepted = true;
             else if (tapped(pointer, confirm.dismiss)) dismissed = true;
         }
@@ -376,7 +392,26 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         return result;
     }
 
-    for (const UiAction action : actions) {
+    // A finger on one of the control prompts is that button being pressed.
+    std::vector<UiAction> pressed(actions.begin(), actions.end());
+    for (const PointerEvent& pointer : pointers) {
+        for (const GuideHit& hit : guide_hits_) {
+            if (!tapped(pointer, hit.rect)) continue;
+            switch (hit.glyph) {
+                case ButtonGlyph::A: pressed.push_back(UiAction::Confirm); break;
+                case ButtonGlyph::B: pressed.push_back(UiAction::Cancel); break;
+                case ButtonGlyph::X: pressed.push_back(UiAction::MenuQuit); break;
+                case ButtonGlyph::Y: pressed.push_back(UiAction::MenuReset); break;
+                case ButtonGlyph::Plus: pressed.push_back(UiAction::MenuDisconnect); break;
+                // Smoothing is the app's to change, here as in a game, so it is
+                // asked for rather than pushed through the actions below.
+                case ButtonGlyph::RightStick: result.filtering_toggled = true; break;
+                default: break;
+            }
+        }
+    }
+
+    for (const UiAction action : pressed) {
         switch (action) {
             case UiAction::Up: move_focus(0, -1, geometry); break;
             case UiAction::Down: move_focus(0, 1, geometry); break;
@@ -566,17 +601,18 @@ void LayoutPicker::render(QuadRenderer& quads,
                   focused ? theme.background : theme.text, TextAlign::Center);
     }
 
-    std::vector<GuidePrompt> guide{{ButtonGlyph::RightStick, "Screen Smoothing"},
-                                   {ButtonGlyph::A, "OK"},
-                                   {ButtonGlyph::B, "Resume"},
-                                   {ButtonGlyph::X, "Quit"},
-                                   {ButtonGlyph::Y, "Reset"}};
+    std::vector<GuidePrompt> guide;
     if (state_.session_active) {
         guide.push_back({ButtonGlyph::Plus, "Disconnect"});
     }
+    guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
+    guide.push_back({ButtonGlyph::A, "OK"});
+    guide.push_back({ButtonGlyph::B, "Resume"});
+    guide.push_back({ButtonGlyph::X, "Quit"});
+    guide.push_back({ButtonGlyph::Y, "Reset"});
     draw_control_guide(quads, text, glyphs, guide, geometry.panel.x + geometry.panel.w,
                        geometry.panel.y + geometry.panel.h - control_guide_height(scale * 0.9f),
-                       scale * 0.9f, theme.text, TextAlign::Right);
+                       scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);
 
     if (confirming()) {
         const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);

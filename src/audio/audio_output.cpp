@@ -156,7 +156,7 @@ void AudioOutput::queue(const int16_t* interleaved_stereo, std::size_t frames) {
 }
 
 void AudioOutput::pump_effects() {
-    if (device_ == 0 || effects_ == nullptr || !effects_->sounding()) {
+    if (device_ == 0 || paused_ || effects_ == nullptr || !effects_->sounding()) {
         return;
     }
     // Only while the game is not filling the queue itself. A game that is

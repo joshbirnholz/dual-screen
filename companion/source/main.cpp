@@ -551,6 +551,30 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
         // Resolved here rather than there: the two devices lay the menu out for
         // different-sized screens, so only this one knows what its own tap was
         // on.
+        // A finger on one of the control prompts is that button being
+        // pressed, forwarded like any other press.
+        const ButtonGlyph on_guide = picker_.guide_button_at(pointer.x, pointer.y);
+        if (on_guide != ButtonGlyph::Count &&
+            on_guide == picker_.guide_button_at(pointer.press_x, pointer.press_y)) {
+            net::MenuAction wire = net::MenuAction::Confirm;
+            bool forward = true;
+            switch (on_guide) {
+                case ButtonGlyph::A: wire = net::MenuAction::Confirm; break;
+                case ButtonGlyph::B: wire = net::MenuAction::Cancel; break;
+                case ButtonGlyph::X: wire = net::MenuAction::Quit; break;
+                case ButtonGlyph::Y: wire = net::MenuAction::Reset; break;
+                case ButtonGlyph::Plus: wire = net::MenuAction::Disconnect; break;
+                // Smoothing is a shared setting rather than a menu press,
+                // asked for the way its button asks for it.
+                case ButtonGlyph::RightStick:
+                    session_.request_filtering(!session_.host_filtering());
+                    forward = false;
+                    break;
+                default: forward = false; break;
+            }
+            if (forward) session_.request_menu_action(wire);
+            continue;
+        }
         const auto entry_under = [&](float x, float y) {
             return picker_.entry_at(x, y, static_cast<float>(output_width_),
                                     static_cast<float>(output_height_));
@@ -746,8 +770,11 @@ void Client::run() {
         // frame. In a game that is the host's choice, the same one that says
         // where the game's own sound goes; anywhere else there is no game to
         // talk over and the shell is audible wherever it was asked for.
+        // Only the quick menu follows the game's sound target -- it is the one
+        // that is open on two devices at once. Every other screen here is this
+        // device's alone and is audible whatever the target says.
         ui_sounds_.set_muted(
-            state_ == State::Playing &&
+            menu_open_ &&
             !audio_reaches(session_.host_audio_target(), session_.granted_screen()));
 
         switch (state_) {

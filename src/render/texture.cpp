@@ -47,11 +47,19 @@ void Texture::destroy() {
     height_ = 0;
 }
 
-void Texture::ensure_created() {
+bool Texture::ensure_created() {
+    // Nothing to create against: the loader has not resolved its entry points,
+    // so there is no context yet. Every upload below checks valid() before
+    // doing anything with the result, so a texture that was never made simply
+    // never draws -- rather than calling through a null function pointer.
+    if (gl::GenTextures == nullptr) {
+        return false;
+    }
     if (id_ == 0) {
         gl::GenTextures(1, &id_);
         filter_dirty_ = true;
     }
+    return id_ != 0;
 }
 
 void Texture::set_linear_filtering(bool linear) {
@@ -68,7 +76,9 @@ void Texture::upload_xrgb8888(const uint32_t* source,
     if (source == nullptr || width <= 0 || height <= 0) {
         return;
     }
-    ensure_created();
+    if (!ensure_created()) {
+        return;
+    }
     channel_order_ = ChannelOrder::XrgbBytes;
     gl::BindTexture(GL_TEXTURE_2D, id_);
 
@@ -112,7 +122,9 @@ void Texture::upload_rgb565(const uint8_t* source, int width, int height) {
     if (source == nullptr || width <= 0 || height <= 0) {
         return;
     }
-    ensure_created();
+    if (!ensure_created()) {
+        return;
+    }
     // Already in the right channel order, so the shader must not swizzle it.
     channel_order_ = ChannelOrder::Rgba;
     gl::BindTexture(GL_TEXTURE_2D, id_);
@@ -142,7 +154,9 @@ void Texture::upload_rgb565(const uint8_t* source, int width, int height) {
 
 void Texture::allocate_rgba(int width, int height) {
     if (width <= 0 || height <= 0) return;
-    ensure_created();
+    if (!ensure_created()) {
+        return;
+    }
     channel_order_ = ChannelOrder::Rgba;
     gl::BindTexture(GL_TEXTURE_2D, id_);
     if (filter_dirty_) {

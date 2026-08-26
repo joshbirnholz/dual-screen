@@ -26,7 +26,8 @@ float draw_control_guide(QuadRenderer& quads,
                          float y,
                          float scale,
                          const Color& color,
-                         TextAlign align) {
+                         TextAlign align,
+                         std::vector<GuideHit>* out_hits) {
     const float height = glyph_height(scale);
     const float glyph_width = glyphs.width_for(height);
     const float gap = TextRenderer::line_height(scale) * kGapScale;
@@ -38,6 +39,7 @@ float draw_control_guide(QuadRenderer& quads,
         total += glyph_width + gap + TextRenderer::measure_width(prompts[index].action, scale);
     }
 
+    if (out_hits != nullptr) out_hits->clear();
     float pen_x = std::round(align == TextAlign::Right ? x - total : x - total * 0.5f);
     // Centred on the button itself rather than on the box it is drawn into,
     // which includes headroom for whatever stands above a glyph.
@@ -47,8 +49,17 @@ float draw_control_guide(QuadRenderer& quads,
         if (index > 0) pen_x += spacing;
         glyphs.draw(quads, prompts[index].glyph, pen_x, y, height, color);
         pen_x += glyph_width + gap;
+        const float label_width = TextRenderer::measure_width(prompts[index].action, scale);
         text.draw(quads, prompts[index].action, pen_x, label_y, scale, color);
-        pen_x += TextRenderer::measure_width(prompts[index].action, scale);
+        if (out_hits != nullptr) {
+            // The glyph and its words together: a finger aims at the prompt,
+            // not at the picture inside it.
+            const float left = pen_x - glyph_width - gap;
+            out_hits->push_back(
+                GuideHit{prompts[index].glyph,
+                         PixelRect{left, y, glyph_width + gap + label_width, height}});
+        }
+        pen_x += label_width;
     }
     return height;
 }

@@ -10,6 +10,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/control_guide.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -99,6 +100,11 @@ public:
     explicit LayoutPicker(const LayoutRegistry& registry) : registry_(&registry) {}
 
     void open(const LayoutPickerState& state);
+    // The row of buttons this device is offering. Rebuilt when a companion
+    // arrives or leaves, since Disconnect and the sound target come and go
+    // with it and a menu whose entries differed would put the two cursors on
+    // different things.
+    void set_session_active(bool active);
     // Whether a confirmation is up, which the app needs to know: while one is,
     // the menu is not what the player is answering.
     bool awaiting_confirmation() const { return confirm_ != MenuConfirm::None; }
@@ -116,6 +122,10 @@ public:
     // Which entry a tap landed on, or -1 for none. Resolved on the device the
     // finger touched, since only that one knows how its own menu is laid out.
     int entry_at(float x, float y, float output_width, float output_height) const;
+    // The button a tap on the row of control prompts stands for, or Count for
+    // a tap that missed them. Answered from where they were last drawn, since
+    // the row is laid out from the glyph artwork's own proportions.
+    ButtonGlyph guide_button_at(float x, float y) const;
     // Puts the cursor somewhere without acting on it, which is what arrives
     // from the other device's finger.
     void set_focus(int focus);
@@ -250,6 +260,9 @@ private:
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;
     MenuConfirm confirm_ = MenuConfirm::None;
+    // Where the control prompts landed when they were last drawn, so a tap can
+    // find them. Laid out from the glyph artwork, which only drawing knows.
+    std::vector<GuideHit> guide_hits_;
     float display_width_ = 0.0f;
     float display_height_ = 0.0f;
     bool fill_display_ = false;
