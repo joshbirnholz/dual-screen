@@ -61,6 +61,12 @@ public:
     // Whether anything is sounding right now.
     bool sounding() const;
 
+    // The shape of the device these hold, when they hold one at all: zero for
+    // both when the game's output has it. Reported so a platform that grants
+    // something other than what was asked for says so in the log.
+    int device_rate() const { return device_rate_; }
+    int device_channels() const { return device_channels_; }
+
     // Starts one, over the top of whatever else is still sounding. Playing the
     // same effect twice in quick succession restarts it rather than stacking,
     // which is what a cursor held against the end of a list would otherwise do.
@@ -87,6 +93,8 @@ private:
     bool open_device();
 
     SDL_AudioDeviceID device_ = 0;
+    int device_rate_ = 0;
+    int device_channels_ = 0;
     bool muted_ = false;
     std::vector<Clip> clips_;
     std::vector<Voice> voices_;

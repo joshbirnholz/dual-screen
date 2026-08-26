@@ -105,17 +105,28 @@ bool UiSounds::open_device() {
     SDL_AudioSpec want {};
     want.freq = kSampleRate;
     want.format = AUDIO_S16SYS;
-    want.channels = 1;
+    want.channels = 2;
     want.samples = 512;
     want.callback = &UiSounds::fill;
     want.userdata = this;
     SDL_AudioSpec have {};
-    device_ = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    // Whatever rate and channel count the device would rather have. These are
+    // resampled and spread on the way out regardless, so taking the device's
+    // own shape costs nothing and keeps SDL's conversion out of the path --
+    // which is where a console with one fixed output stops making any sound at
+    // all, while the game's stream through the same hardware stays audible.
+    device_ = SDL_OpenAudioDevice(nullptr, 0, &want, &have,
+                                  SDL_AUDIO_ALLOW_FREQUENCY_CHANGE |
+                                      SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
     if (device_ == 0) {
         log_info(std::string("the interface sounds will share the game's audio device: ") +
                  SDL_GetError());
         return false;
     }
+    device_rate_ = have.freq;
+    device_channels_ = have.channels;
+    log_info("the interface sounds have a device of their own: " + std::to_string(device_rate_) +
+             " Hz, " + std::to_string(device_channels_) + " channels");
     SDL_PauseAudioDevice(device_, 0);
     return true;
 }
@@ -126,6 +137,8 @@ void UiSounds::release_device() {
     }
     SDL_CloseAudioDevice(device_);
     device_ = 0;
+    device_rate_ = 0;
+    device_channels_ = 0;
 }
 
 void UiSounds::take_device() { open_device(); }
@@ -199,8 +212,13 @@ void UiSounds::set_muted(bool muted) {
 void SDLCALL UiSounds::fill(void* opaque, uint8_t* stream, int bytes) {
     auto* sounds = static_cast<UiSounds*>(opaque);
     std::memset(stream, 0, static_cast<std::size_t>(bytes));
-    sounds->render_into(reinterpret_cast<int16_t*>(stream), static_cast<std::size_t>(bytes) / 2,
-                        kSampleRate, 1);
+    if (sounds->device_channels_ < 1 || sounds->device_rate_ <= 0) {
+        return;
+    }
+    const std::size_t frame_bytes = sizeof(int16_t) * static_cast<std::size_t>(sounds->device_channels_);
+    sounds->render_into(reinterpret_cast<int16_t*>(stream),
+                        static_cast<std::size_t>(bytes) / frame_bytes, sounds->device_rate_,
+                        sounds->device_channels_);
 }
 
 void UiSounds::render_into(int16_t* interleaved,

@@ -508,6 +508,12 @@ void Client::open_menu() {
     // Kept in step with the host even when the host is the one that opened it,
     // so that closing always has something to clear.
     session_.set_menu_open(true);
+    // The game has stopped behind this menu and stopped sending, so what is
+    // still queued is its tail: a quarter second of a game that is no longer
+    // running, which would play over the menu that silenced it and hold the
+    // sound of the menu opening behind it. Dropped on the way in only -- on the
+    // way out it would cut off the sound of the menu closing.
+    audio_.flush();
     ui_sounds_.play(UiSound::OpenQuickMenu);
     input_.set_game_input_enabled(false);
 }
