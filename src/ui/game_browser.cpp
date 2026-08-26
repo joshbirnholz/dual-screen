@@ -269,15 +269,19 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             drag_start_y_ = pointer.y;
             drag_start_scroll_ = scroll_;
         } else if (pointer.released) {
-            if (geometry.quit_button.contains(pointer.x, pointer.y)) {
+            if (tapped(pointer, geometry.quit_button)) {
                 result.quit_requested = true;
-            } else if (geometry.back_button.contains(pointer.x, pointer.y)) {
+            } else if (tapped(pointer, geometry.back_button)) {
                 result.back_requested = true;
             } else if (!navigated && dragging_ && !drag_moved_ &&
                        geometry.list.contains(pointer.x, pointer.y)) {
-                const int row = scroll_ + static_cast<int>((pointer.y - geometry.list.y) /
-                                                           geometry.row_height);
-                if (row >= 0 && row < count) {
+                const auto row_under = [&](float y) {
+                    return scroll_ + static_cast<int>((y - geometry.list.y) / geometry.row_height);
+                };
+                const int row = row_under(pointer.y);
+                // The finger has to have come down on the same row it left on,
+                // not merely somewhere in the list.
+                if (row >= 0 && row < count && row == row_under(pointer.press_y)) {
                     focus_ = row;
                     activate(row, result);
                     navigated = true;

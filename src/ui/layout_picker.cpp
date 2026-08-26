@@ -359,8 +359,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         }
         for (const PointerEvent& pointer : pointers) {
             if (!pointer.released) continue;
-            if (confirm.accept.contains(pointer.x, pointer.y)) accepted = true;
-            else if (confirm.dismiss.contains(pointer.x, pointer.y)) dismissed = true;
+            if (tapped(pointer, confirm.accept)) accepted = true;
+            else if (tapped(pointer, confirm.dismiss)) dismissed = true;
         }
         if (accepted) {
             if (confirm_ == MenuConfirm::Reset) {
@@ -414,13 +414,13 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             continue;
         }
         for (std::size_t index = 0; index < geometry.tiles.size(); ++index) {
-            if (geometry.tiles[index].contains(pointer.x, pointer.y)) {
+            if (tapped(pointer, geometry.tiles[index])) {
                 focus_ = static_cast<int>(index);
                 activate_focus(result);
             }
         }
         for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
-            if (geometry.footer[index].contains(pointer.x, pointer.y)) {
+            if (tapped(pointer, geometry.footer[index])) {
                 focus_ = tile_count() + static_cast<int>(index);
                 activate_focus(result);
             }

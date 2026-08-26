@@ -368,6 +368,9 @@ std::vector<LauncherChoice> launcher_choices(bool runs_games) {
             PointerEvent tap;
             tap.x = x;
             tap.y = y;
+            // Down and up in the same place, which is what a tap is.
+            tap.press_x = x;
+            tap.press_y = y;
             tap.released = true;
             const LauncherChoice choice =
                 launcher.update({}, {tap}, kWidth, kHeight).choice;

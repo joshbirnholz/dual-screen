@@ -14,12 +14,23 @@ constexpr float kWidth = 1280.0f;
 constexpr float kHeight = 800.0f;
 
 // A tap, the way the menu receives one: it acts on the release.
+// A finger that came down and lifted in the same place, which is what a tap is.
 PointerEvent tap(float x, float y) {
     PointerEvent pointer;
     pointer.x = x;
     pointer.y = y;
+    pointer.press_x = x;
+    pointer.press_y = y;
     pointer.released = true;
     pointer.normalized = false;
+    return pointer;
+}
+
+// One that came down somewhere else and lifted here.
+PointerEvent slide_onto(float from_x, float from_y, float to_x, float to_y) {
+    PointerEvent pointer = tap(to_x, to_y);
+    pointer.press_x = from_x;
+    pointer.press_y = from_y;
     return pointer;
 }
 
@@ -473,6 +484,48 @@ void test_entries_are_rebuilt_before_the_cursor_lands() {
               "a cursor sent for a menu with more entries landed against the old row");
 }
 
+// A tap is a press and a release in the same place. A finger that landed
+// somewhere else and slid onto a button was not aiming at it, and one that
+// landed on a button and slid off was taking it back.
+void test_a_button_only_answers_a_tap_aimed_at_it() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.session_active = true;
+
+    int aimed = 0;
+    int slid_on = 0;
+    int slid_off = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker direct(registry);
+            direct.open(state);
+            if (direct.update({}, {tap(x, y)}, kWidth, kHeight).selection_changed) ++aimed;
+
+            // Down in the far corner, up here.
+            LayoutPicker onto(registry);
+            onto.open(state);
+            if (onto.update({}, {slide_onto(kWidth - 2.0f, kHeight - 2.0f, x, y)}, kWidth, kHeight)
+                    .selection_changed) {
+                ++slid_on;
+            }
+
+            // Down here, up in the far corner.
+            LayoutPicker away(registry);
+            away.open(state);
+            if (away.update({}, {slide_onto(x, y, kWidth - 2.0f, kHeight - 2.0f)}, kWidth, kHeight)
+                    .selection_changed) {
+                ++slid_off;
+            }
+        }
+    }
+    CHECK_MSG(aimed > 0, "no tap anywhere in the menu picked a layout");
+    CHECK_MSG(slid_on == 0,
+              std::to_string(slid_on) + " taps that began somewhere else still picked a layout");
+    CHECK_MSG(slid_off == 0,
+              std::to_string(slid_off) + " taps that were slid away from still picked a layout");
+}
+
 }  // namespace
 
 int main() {
@@ -489,5 +542,6 @@ int main() {
     test_disconnect_is_the_plus_button_and_only_in_a_session();
     test_a_shown_menu_takes_everything_it_is_given();
     test_entries_are_rebuilt_before_the_cursor_lands();
+    test_a_button_only_answers_a_tap_aimed_at_it();
     return test::finish("quick-settings");
 }

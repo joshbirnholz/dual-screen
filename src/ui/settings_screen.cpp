@@ -161,7 +161,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
-            if (geometry.rows[index].contains(pointer.x, pointer.y)) {
+            if (tapped(pointer, geometry.rows[index])) {
                 focus_ = static_cast<int>(index);
                 adjust(1, result);
             }

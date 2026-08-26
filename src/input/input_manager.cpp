@@ -263,7 +263,11 @@ void InputManager::handle_event(const SDL_Event& event) {
                 PointerEvent pointer;
                 pointer.x = state.x;
                 pointer.y = state.y;
+                pointer.press_x = state.x;
+                pointer.press_y = state.y;
                 pointer.pressed = true;
+                press_x_ = state.x;
+                press_y_ = state.y;
                 pointer_events_.push_back(pointer);
             } else if (fingers_.size() >= 2 && !second_finger_menu_armed_) {
                 // Two fingers at once is the touch-only escape hatch into the
@@ -290,6 +294,8 @@ void InputManager::handle_event(const SDL_Event& event) {
                 PointerEvent pointer;
                 pointer.x = event.tfinger.x;
                 pointer.y = event.tfinger.y;
+                pointer.press_x = press_x_;
+                pointer.press_y = press_y_;
                 pointer.released = true;
                 pointer_events_.push_back(pointer);
             }
@@ -309,8 +315,12 @@ void InputManager::handle_event(const SDL_Event& event) {
                 PointerEvent pointer;
                 pointer.x = mouse_x_;
                 pointer.y = mouse_y_;
+                pointer.press_x = mouse_x_;
+                pointer.press_y = mouse_y_;
                 pointer.pressed = true;
                 pointer.normalized = false;
+                press_x_ = mouse_x_;
+                press_y_ = mouse_y_;
                 pointer_events_.push_back(pointer);
             }
             break;
@@ -323,8 +333,12 @@ void InputManager::handle_event(const SDL_Event& event) {
                 PointerEvent pointer;
                 pointer.x = mouse_x_;
                 pointer.y = mouse_y_;
+                pointer.press_x = press_x_;
+                pointer.press_y = press_y_;
                 pointer.released = true;
                 pointer.normalized = false;
+                press_x_ = mouse_x_;
+                press_y_ = mouse_y_;
                 pointer_events_.push_back(pointer);
             }
             break;
@@ -522,6 +536,8 @@ void InputManager::end_frame(const Layout& layout,
         if (pointer.normalized) {
             pointer.x *= output_width;
             pointer.y *= output_height;
+            pointer.press_x *= output_width;
+            pointer.press_y *= output_height;
             pointer.normalized = false;
         }
     }

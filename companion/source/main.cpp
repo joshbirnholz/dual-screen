@@ -274,6 +274,14 @@ bool Client::start() {
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         log_warn(std::string("no sound on this device: ") + SDL_GetError());
     }
+    // Opened once, here rather than beside the GL resources: a device is not
+    // one of those, and rebuilding them on every context loss would leave a
+    // trail of open devices behind. Not fatal if it fails -- a second screen
+    // with no sound is still a second screen.
+    std::string sound_reason;
+    if (ui_sounds_.initialize(&sound_reason)) {
+        log_info("interface sounds are ready");
+    }
     // The same convention the app uses: face buttons are read by where they
     // are, not by the letter printed on them.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
@@ -531,10 +539,13 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
         // Resolved here rather than there: the two devices lay the menu out for
         // different-sized screens, so only this one knows what its own tap was
         // on.
-        const int entry = picker_.entry_at(pointer.x, pointer.y,
-                                           static_cast<float>(output_width_),
-                                           static_cast<float>(output_height_));
-        if (entry >= 0) {
+        const auto entry_under = [&](float x, float y) {
+            return picker_.entry_at(x, y, static_cast<float>(output_width_),
+                                    static_cast<float>(output_height_));
+        };
+        const int entry = entry_under(pointer.x, pointer.y);
+        // Only where the finger came down on the same entry it left on.
+        if (entry >= 0 && entry == entry_under(pointer.press_x, pointer.press_y)) {
             session_.request_menu_press(entry, net::MenuAction::Confirm);
         }
     }
@@ -551,7 +562,9 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     // their own presses, so the sound is decided from what the cursor did.
     const int cursor_before = state_ == State::Launcher ? launcher_.focus() : host_picker_.focus();
     const State state_before = state_;
+    const bool in_a_menu = state_ == State::Launcher || state_ == State::Browsing;
     for (const UiAction action : actions) {
+        if (!in_a_menu) break;  // in a game these are the game's buttons
         if (action == UiAction::Confirm) {
             ui_sounds_.play(UiSound::Confirm);
         } else if (action == UiAction::Cancel) {
@@ -607,7 +620,6 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 }
                 break;
             case State::Launcher:
-                ui_sounds_.set_muted(false);  // no game to talk over
                 break;
             case State::Playing:
                 switch (action) {
@@ -654,9 +666,6 @@ bool Client::load_gl_resources(std::string* error) {
     bezel_art_.destroy();
 
     std::string reason;
-    // Not fatal if it fails: a console with no sound still shows a screen.
-    std::string sound_reason;
-    ui_sounds_.initialize(&sound_reason);
     if (!quads_.initialize(&reason) || !text_.initialize(&reason) ||
         !button_glyphs_.initialize(&reason)) {
         if (error != nullptr) *error = "the renderer would not start: " + reason;
@@ -716,9 +725,16 @@ void Client::run() {
         follow_panel_size();
 
         session_.poll(now);
+        // Whether this device is one the sound comes out of, decided once a
+        // frame. In a game that is the host's choice, the same one that says
+        // where the game's own sound goes; anywhere else there is no game to
+        // talk over and the shell is audible wherever it was asked for.
+        ui_sounds_.set_muted(
+            state_ == State::Playing &&
+            !audio_reaches(session_.host_audio_target(), session_.granted_screen()));
+
         switch (state_) {
             case State::Launcher:
-                ui_sounds_.set_muted(false);  // no game to talk over
                 break;
             case State::Browsing:
                 if (options_.auto_connect) {
@@ -757,11 +773,6 @@ void Client::run() {
                 }
                 break;
             case State::Playing:
-                // The shell's own effects come out of whichever device the
-                // game's sound does, which is the host's choice like every
-                // other shared one.
-                ui_sounds_.set_muted(
-                    !audio_reaches(session_.host_audio_target(), session_.granted_screen()));
                 // The menu is the host's too. It says whether one is up and
                 // where its cursor is; this device draws that and nothing of
                 // its own, so both screens show the same menu however it was

@@ -57,10 +57,23 @@ struct PointerEvent {
     float y = 0.0f;
     bool pressed = false;   // went down this frame
     bool released = false;  // came up this frame
+    // Where the same finger or button went down, carried on the release so a
+    // widget can tell a tap aimed at it from one that landed elsewhere and slid
+    // across. Equal to x/y on a press.
+    float press_x = 0.0f;
+    float press_y = 0.0f;
     // SDL reports touch normalized to the window and the mouse in pixels; both
     // are converted to pixels in end_frame(), where the output size is known.
     bool normalized = true;
 };
+
+// True when a tap both began and ended inside `rect`. A finger that came down
+// somewhere else and lifted here was not aiming at this, and a finger that came
+// down here and slid away was taking it back -- neither is a press.
+inline bool tapped(const PointerEvent& pointer, const PixelRect& rect) {
+    return pointer.released && rect.contains(pointer.x, pointer.y) &&
+           rect.contains(pointer.press_x, pointer.press_y);
+}
 
 // Collects SDL input and turns it into DS input plus UI intents.
 class InputManager {
@@ -174,6 +187,11 @@ private:
     bool mouse_down_ = false;
     float mouse_x_ = 0.0f;
     float mouse_y_ = 0.0f;
+    // Where the gesture in progress went down, in whatever units its events
+    // arrive in: touch is normalized until end_frame() and the mouse is not,
+    // and a press and its release always come from the same source.
+    float press_x_ = 0.0f;
+    float press_y_ = 0.0f;
     bool second_finger_menu_armed_ = false;
 
     // Where the active finger or mouse press currently is, in output pixels.

@@ -108,7 +108,7 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         for (std::size_t index = 0; index < rows.size(); ++index) {
-            if (rows[index].contains(pointer.x, pointer.y)) {
+            if (tapped(pointer, rows[index])) {
                 focus_ = static_cast<int>(index);
                 result.choice = rows_[index];
             }
@@ -253,7 +253,7 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         for (std::size_t index = 0; index < rows.size(); ++index) {
-            if (rows[index].contains(pointer.x, pointer.y)) {
+            if (tapped(pointer, rows[index])) {
                 focus_ = static_cast<int>(index);
                 result.chosen = true;
                 result.host = hosts[index];

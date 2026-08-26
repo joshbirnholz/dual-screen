@@ -1434,10 +1434,14 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 for (const PointerEvent& pointer : pointers) {
                     if (!pointer.released) continue;
-                    const int entry =
-                        picker->entry_at(pointer.x, pointer.y, static_cast<float>(output_width),
-                                         static_cast<float>(output_height));
-                    if (entry >= 0) {
+                    const auto entry_under = [&](float x, float y) {
+                        return picker->entry_at(x, y, static_cast<float>(output_width),
+                                                static_cast<float>(output_height));
+                    };
+                    const int entry = entry_under(pointer.x, pointer.y);
+                    // Only where the finger came down on the same entry it
+                    // left on.
+                    if (entry >= 0 && entry == entry_under(pointer.press_x, pointer.press_y)) {
                         companion_session->request_menu_press(entry, net::MenuAction::Confirm);
                     }
                 }
@@ -1759,7 +1763,9 @@ int App::run(const AppOptions& options) {
     // Not fatal if it fails: a machine with no sound card still plays games,
     // and UiSounds says so in the log on its way past.
     std::string sound_error;
-    impl.ui_sounds.initialize(&sound_error);
+    if (impl.ui_sounds.initialize(&sound_error)) {
+        log_info("interface sounds are ready");
+    }
     if (!impl.quads.initialize(&error) || !impl.text.initialize(&error) ||
         !impl.button_glyphs.initialize(&error)) {
         log_error("cannot set up the renderer: " + error);
