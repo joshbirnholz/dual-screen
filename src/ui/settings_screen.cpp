@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ui/prompt.hpp"
+#include "ui/control_guide.hpp"
 
 namespace ds {
 
@@ -176,6 +176,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
 
 void SettingsScreen::render(QuadRenderer& quads,
                             TextRenderer& text,
+                            const ButtonGlyphSheet& glyphs,
                             float output_width,
                             float output_height) {
     if (!open_) {
@@ -189,9 +190,7 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
     text.draw(quads, "Settings", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
-    text.draw(quads,
-              format_prompts({{"Left/Right", "Change value"}, {"B", "Back"}}) +
-                  "     Paths are edited in settings.json",
+    text.draw(quads, "Left/Right changes a value.   Paths are edited in settings.json",
               geometry.panel.x, geometry.panel.y + line * 1.8f, scale * 0.9f, theme.text_dim);
 
     const std::string rows[kRowCount][2] = {
@@ -204,19 +203,16 @@ void SettingsScreen::render(QuadRenderer& quads,
     for (int index = 0; index < kRowCount; ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = (index == focus_);
-        quads.draw_solid(row, focused ? theme.panel_focused : theme.panel);
-        if (focused) {
-            quads.draw_outline(row, theme.accent, std::max(1.0f, scale * 0.5f));
-        }
+        draw_menu_row(quads, row, focused, scale);
 
         // Label on the left, value on the right, both on one baseline. The
         // value is elided rather than allowed to run past the row, which is
         // what a long BIOS path would otherwise do.
         const float pad = line * 0.5f;
         const float baseline = row.y + (row.h - line) * 0.5f;
-        text.draw(quads, rows[index][0], row.x + pad, baseline, scale, theme.text);
+        text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
         if (!rows[index][1].empty()) {
-            const Color value_color = theme.text_dim;
+            const Color value_color = focused ? theme.panel : theme.text_dim;
             const float label_width = TextRenderer::measure_width(rows[index][0], scale);
             const float available = row.w - label_width - pad * 4.0f;
             const std::string value =
@@ -273,10 +269,15 @@ void SettingsScreen::render(QuadRenderer& quads,
     const float footnote_width = geometry.panel.w;
     const std::size_t footnote_lines =
         TextRenderer::wrap(footnote, footnote_width, footnote_scale).size();
+    const float guide_height = control_guide_height(scale * 0.9f);
     text.draw_wrapped(quads, footnote, output_width * 0.5f,
-                      output_height - TextRenderer::wrapped_line_step(footnote_scale) *
-                                          (footnote_lines + 1.0f),
+                      output_height - guide_height -
+                          TextRenderer::wrapped_line_step(footnote_scale) *
+                              (footnote_lines + 1.0f),
                       footnote_width, footnote_scale, theme.text_dim, TextAlign::Center);
+
+    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Back"}}, output_width * 0.5f,
+                       output_height - line * 0.6f - guide_height, scale * 0.9f, theme.text);
 }
 
 }  // namespace ds

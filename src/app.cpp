@@ -1385,13 +1385,13 @@ void App::Impl::render() {
     gl::log_error_once("something in the last frame was rejected by OpenGL");
 
     if (state == State::Browser) {
-        browser->render(quads, text, width, height, input.menu_labels());
+        browser->render(quads, text, button_glyphs, width, height);
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
     }
     if (state == State::Launcher) {
-        launcher->render(quads, text, width, height, input.menu_labels(),
+        launcher->render(quads, text, button_glyphs, width, height,
                          companion_session ? static_cast<int>(companion_session->hosts().size())
                                            : 0);
         SDL_GL_SwapWindow(window);
@@ -1399,16 +1399,16 @@ void App::Impl::render() {
         return;
     }
     if (state == State::HostPicker) {
-        host_picker->render(quads, text, width, height, companion_session->hosts(),
-                            input.menu_labels(), companion_session->status_detail());
+        host_picker->render(quads, text, button_glyphs, width, height,
+                            companion_session->hosts(), companion_session->status_detail());
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
     }
     if (companion_session &&
         companion_session->status() == net::CompanionSession::Status::Connecting) {
-        render_connecting_screen(quads, text, width, height, joining_host.device_name,
-                                 joining_host.game_title, input.menu_labels());
+        render_connecting_screen(quads, text, button_glyphs, width, height,
+                                 joining_host.device_name, joining_host.game_title);
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
@@ -1439,9 +1439,9 @@ void App::Impl::render() {
         menu_backdrop.forget();
     }
     if (state == State::Settings) {
-        settings_screen->render(quads, text, width, height);
+        settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
-        message.render(quads, text, width, height);
+        message.render(quads, text, button_glyphs, width, height);
     }
 
     SDL_GL_SwapWindow(window);

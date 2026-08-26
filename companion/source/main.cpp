@@ -801,19 +801,19 @@ void Client::draw() {
     if (state_ == State::Launcher) {
         // The app's own opening screen, so choosing which screen to be looks
         // the same here as picking it there does.
-        launcher_.render(quads_, text_, width, height, input_.menu_labels(),
+        launcher_.render(quads_, text_, button_glyphs_, width, height,
                          static_cast<int>(session_.hosts().size()));
         return;
     }
     if (state_ == State::Connecting) {
-        render_connecting_screen(quads_, text_, width, height, joining_.device_name,
-                                 joining_.game_title, input_.menu_labels());
+        render_connecting_screen(quads_, text_, button_glyphs_, width, height,
+                                 joining_.device_name, joining_.game_title);
         return;
     }
     if (state_ != State::Playing) {
         // The app's own host picker, so finding a game looks the same here as
         // it does there. A failure is shown in the same place, as its status.
-        host_picker_.render(quads_, text_, width, height, session_.hosts(), input_.menu_labels(),
+        host_picker_.render(quads_, text_, button_glyphs_, width, height, session_.hosts(),
                             state_ == State::Failed ? failure_ : session_.status_detail());
         return;
     }

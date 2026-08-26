@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ui/prompt.hpp"
+#include "ui/control_guide.hpp"
 
 namespace ds {
 namespace {
@@ -117,9 +117,9 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
 
 void LauncherScreen::render(QuadRenderer& quads,
                             TextRenderer& text,
+                            const ButtonGlyphSheet& glyphs,
                             float output_width,
                             float output_height,
-                            const MenuButtonLabels& labels,
                             int hosts_found) {
     if (!open_) {
         return;
@@ -147,10 +147,7 @@ void LauncherScreen::render(QuadRenderer& quads,
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
         const bool focused = (static_cast<int>(index) == focus_);
-        quads.draw_solid(row, focused ? theme.panel_focused : theme.panel);
-        if (focused) {
-            quads.draw_outline(row, theme.accent, std::max(1.0f, scale * 0.5f));
-        }
+        draw_menu_row(quads, row, focused, scale);
 
         const float pad = line * 0.7f;
         const bool is_quit = (rows_[index] == LauncherChoice::Quit);
@@ -158,7 +155,7 @@ void LauncherScreen::render(QuadRenderer& quads,
         // names say what they do without a sentence explaining them.
         text.draw(quads, title_for(rows_[index]), row.x + pad,
                   row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
-                  is_quit ? theme.danger : theme.text);
+                  is_quit && !focused ? theme.danger : menu_row_text(focused));
     }
 
     // Live feedback that the search is working, so "connect" is not a leap of
@@ -171,9 +168,10 @@ void LauncherScreen::render(QuadRenderer& quads,
     text.draw(quads, found, margin, rows.back().y + rows.back().h + line * 1.2f, scale * 0.9f,
               hosts_found > 0 ? theme.success : theme.text_dim);
 
-    text.draw(quads, format_prompts({{labels.confirm, "Select"}, {"Up/Down", "Move"}}),
-              output_width * 0.5f, output_height - line * 2.5f, scale * 0.9f, theme.text_dim,
-              TextAlign::Center);
+    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "Select"}},
+                       output_width * 0.5f,
+                       output_height - line * 1.2f - control_guide_height(scale * 0.9f),
+                       scale * 0.9f, theme.text);
 }
 
 // --- HostPickerScreen -------------------------------------------------------
@@ -262,10 +260,10 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
 
 void HostPickerScreen::render(QuadRenderer& quads,
                               TextRenderer& text,
+                              const ButtonGlyphSheet& glyphs,
                               float output_width,
                               float output_height,
                               const std::vector<ds::net::DiscoveredHost>& hosts,
-                              const MenuButtonLabels& labels,
                               const std::string& status) {
     if (!open_) {
         return;
@@ -301,25 +299,24 @@ void HostPickerScreen::render(QuadRenderer& quads,
         const bool focused = (static_cast<int>(index) == focus_);
         const bool available = host.offers(wanted_screen_);
 
-        quads.draw_solid(row, focused ? theme.panel_focused : theme.panel);
-        if (focused) {
-            quads.draw_outline(row, theme.accent, std::max(1.0f, scale * 0.5f));
-        }
+        draw_menu_row(quads, row, focused, scale);
 
         const float pad = line * 0.6f;
         text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad,
-                  row.y + pad * 0.7f, scale * 1.1f, available ? theme.text : theme.text_dim);
+                  row.y + pad * 0.7f, scale * 1.1f,
+                  available ? menu_row_text(focused) : theme.text_dim);
         const std::string detail =
             host.device_name + "   " + host.address +
             (available ? "" : "   this screen is already taken");
         text.draw(quads, detail, row.x + pad, row.y + pad * 0.7f + line * 1.4f, scale * 0.85f,
-                  available ? theme.text_dim : theme.warning);
+                  focused ? theme.panel : (available ? theme.text_dim : theme.warning));
     }
 
-    text.draw(quads,
-              format_prompts({{labels.confirm, "Connect"}, {labels.cancel, "Back"}}),
-              output_width * 0.5f, output_height - line * 2.5f, scale * 0.9f, theme.text_dim,
-              TextAlign::Center);
+    draw_control_guide(quads, text, glyphs,
+                       {{ButtonGlyph::A, "Connect"}, {ButtonGlyph::B, "Back"}},
+                       output_width * 0.5f,
+                       output_height - line * 1.2f - control_guide_height(scale * 0.9f),
+                       scale * 0.9f, theme.text);
 }
 
 }  // namespace ds

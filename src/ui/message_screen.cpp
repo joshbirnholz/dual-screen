@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ui/prompt.hpp"
+#include "ui/control_guide.hpp"
 
 namespace ds {
 
@@ -51,6 +51,7 @@ bool MessageScreen::update(const std::vector<UiAction>& actions,
 
 void MessageScreen::render(QuadRenderer& quads,
                            TextRenderer& text,
+                           const ButtonGlyphSheet& glyphs,
                            float output_width,
                            float output_height) {
     if (!visible_) {
@@ -83,8 +84,9 @@ void MessageScreen::render(QuadRenderer& quads,
         pen_y += line * 0.4f;
     }
 
-    text.draw(quads, format_prompts({{"A", "Continue"}, {"Tap", "Continue"}}), output_width * 0.5f,
-              output_height - line * 3.0f, scale, theme.text_dim, TextAlign::Center);
+    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "Continue"}}, output_width * 0.5f,
+                       output_height - line * 1.5f - control_guide_height(scale), scale,
+                       theme.text);
 }
 
 }  // namespace ds

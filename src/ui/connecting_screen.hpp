@@ -3,6 +3,7 @@
 #include <string>
 
 #include "input/controller_mapping.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -18,10 +19,10 @@ namespace ds {
 // waiting.
 void render_connecting_screen(QuadRenderer& quads,
                               TextRenderer& text,
+                              const ButtonGlyphSheet& glyphs,
                               float output_width,
                               float output_height,
                               const std::string& device_name,
-                              const std::string& game_title,
-                              const MenuButtonLabels& labels);
+                              const std::string& game_title);
 
 }  // namespace ds

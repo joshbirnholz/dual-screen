@@ -6,6 +6,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
 #include "net/discovery.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -45,9 +46,9 @@ public:
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
+                const ButtonGlyphSheet& glyphs,
                 float output_width,
                 float output_height,
-                const MenuButtonLabels& labels,
                 int hosts_found);
 
 private:
@@ -89,10 +90,10 @@ public:
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
+                const ButtonGlyphSheet& glyphs,
                 float output_width,
                 float output_height,
                 const std::vector<ds::net::DiscoveredHost>& hosts,
-                const MenuButtonLabels& labels,
                 const std::string& status);
 
 private:

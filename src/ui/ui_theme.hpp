@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+
 #include "render/quad_renderer.hpp"
 
 namespace ds {
@@ -33,6 +36,25 @@ struct UiTheme {
 inline const UiTheme& ui_theme() {
     static const UiTheme theme;
     return theme;
+}
+
+// One selectable row, tile or button, in the language every menu shares: an
+// outline that whatever is behind the menu shows through, filled solid only
+// where the cursor is sitting. Two pixels at the size the design was drawn at,
+// scaled with everything else so a 4K panel does not get a hairline.
+inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale) {
+    const UiTheme& theme = ui_theme();
+    if (focused) {
+        quads.draw_solid(rect, theme.text);
+    } else {
+        quads.draw_outline(rect, theme.text, std::max(2.0f, std::round(scale * 0.6f)));
+    }
+}
+
+// What text on such a row has to be, which flips with the fill under it.
+inline const Color& menu_row_text(bool focused) {
+    const UiTheme& theme = ui_theme();
+    return focused ? theme.background : theme.text;
 }
 
 }  // namespace ds

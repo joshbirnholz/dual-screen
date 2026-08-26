@@ -7,6 +7,7 @@
 #include "config/settings.hpp"
 #include "input/input_manager.hpp"
 #include "layout/layout_registry.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -57,7 +58,11 @@ public:
                                 float output_width,
                                 float output_height);
 
-    void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
+    void render(QuadRenderer& quads,
+                TextRenderer& text,
+                const ButtonGlyphSheet& glyphs,
+                float output_width,
+                float output_height);
 
 private:
     // The cores are not in here: they are read-only, one per console, and a

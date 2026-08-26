@@ -2,17 +2,17 @@
 
 #include <cmath>
 
-#include "ui/prompt.hpp"
+#include "ui/control_guide.hpp"
 
 namespace ds {
 
 void render_connecting_screen(QuadRenderer& quads,
                               TextRenderer& text,
+                              const ButtonGlyphSheet& glyphs,
                               float output_width,
                               float output_height,
                               const std::string& device_name,
-                              const std::string& game_title,
-                              const MenuButtonLabels& labels) {
+                              const std::string& game_title) {
     const UiTheme& theme = ui_theme();
     const float scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(scale);
@@ -37,8 +37,9 @@ void render_connecting_screen(QuadRenderer& quads,
         text.draw(quads, game_title, centre, y, scale, theme.text_dim, TextAlign::Center);
     }
 
-    text.draw(quads, format_prompts({{labels.cancel, "Stop waiting"}}), centre,
-              output_height - line * 3.0f, scale * 0.95f, theme.text_dim, TextAlign::Center);
+    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Stop waiting"}}, centre,
+                       output_height - line * 1.5f - control_guide_height(scale * 0.95f),
+                       scale * 0.95f, theme.text);
 }
 
 }  // namespace ds

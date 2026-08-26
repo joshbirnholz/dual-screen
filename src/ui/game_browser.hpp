@@ -6,6 +6,7 @@
 #include "config/paths.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -46,12 +47,11 @@ public:
                              float output_width,
                              float output_height);
 
-    // `labels` only decides which letters the prompts print.
     void render(QuadRenderer& quads,
                 TextRenderer& text,
+                const ButtonGlyphSheet& glyphs,
                 float output_width,
-                float output_height,
-                const MenuButtonLabels& labels);
+                float output_height);
 
 private:
     struct Row {

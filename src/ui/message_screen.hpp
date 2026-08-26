@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "input/input_manager.hpp"
+#include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -37,7 +38,11 @@ public:
                 const std::vector<PointerEvent>& pointers,
                 double delta_seconds);
 
-    void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height);
+    void render(QuadRenderer& quads,
+                TextRenderer& text,
+                const ButtonGlyphSheet& glyphs,
+                float output_width,
+                float output_height);
 
 private:
     bool visible_ = false;

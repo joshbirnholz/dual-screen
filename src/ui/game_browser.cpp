@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "ui/prompt.hpp"
+#include "ui/control_guide.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -307,9 +307,9 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
 
 void GameBrowser::render(QuadRenderer& quads,
                          TextRenderer& text,
+                         const ButtonGlyphSheet& glyphs,
                          float output_width,
-                         float output_height,
-                         const MenuButtonLabels& labels) {
+                         float output_height) {
     if (!open_) {
         return;
     }
@@ -346,8 +346,7 @@ void GameBrowser::render(QuadRenderer& quads,
                              geometry.list.w, geometry.row_height};
         const bool focused = (index == focus_);
         if (focused) {
-            quads.draw_solid(rect, theme.panel_focused);
-            quads.draw_outline(rect, theme.accent, std::max(1.0f, scale * 0.5f));
+            draw_menu_row(quads, rect, true, scale);
         }
 
         const float pad = line * 0.5f;
@@ -356,8 +355,10 @@ void GameBrowser::render(QuadRenderer& quads,
         // of row are separable at a glance on a small screen.
         const std::string label =
             (row.is_directory && !row.is_parent) ? (row.label + "/") : row.label;
-        const Color color = row.is_parent ? theme.text_dim
-                                          : (row.is_directory ? theme.accent : theme.text);
+        const Color color = focused ? menu_row_text(true)
+                                    : (row.is_parent ? theme.text_dim
+                                                     : (row.is_directory ? theme.accent
+                                                                         : theme.text));
         text.draw(quads, TextRenderer::elide_left(label, geometry.list.w - pad * 3.0f, scale),
                   rect.x + pad, baseline, scale, color);
     }
@@ -376,28 +377,25 @@ void GameBrowser::render(QuadRenderer& quads,
                          theme.accent);
     }
 
-    quads.draw_solid(geometry.back_button, theme.panel);
+    draw_menu_row(quads, geometry.back_button, false, scale);
     text.draw(quads, "Main menu", geometry.back_button.x + geometry.back_button.w * 0.5f,
-              geometry.back_button.y + (geometry.back_button.h - line) * 0.5f, scale, theme.text,
-              TextAlign::Center);
+              geometry.back_button.y + (geometry.back_button.h - line) * 0.5f, scale,
+              theme.text, TextAlign::Center);
 
-    quads.draw_solid(geometry.quit_button, theme.panel);
+    draw_menu_row(quads, geometry.quit_button, false, scale);
     text.draw(quads, "Quit", geometry.quit_button.x + geometry.quit_button.w * 0.5f,
-              geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale, theme.danger,
-              TextAlign::Center);
+              geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale,
+              theme.danger, TextAlign::Center);
 
-    // Kept clear of the Quit button rather than running underneath it. The
-    // letters come from what this pad prints, so the hint names the button the
-    // player is actually looking at.
-    const float hint_width = geometry.back_button.x - geometry.panel.x - line;
-    // Short enough to fit beside two buttons. Cancel goes up a folder while
-    // there is one to go up to and out of the browser once there is not, which
-    // "Back" covers either way.
-    const std::string hint = format_prompts(
-        {{labels.confirm, "Open"}, {labels.cancel, "Back"}, {"L/R", "Page"}});
-    text.draw(quads, TextRenderer::elide_left(hint, hint_width, scale * 0.9f), geometry.panel.x,
-              geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale * 0.9f,
-              theme.text_dim);
+    // Kept clear of the two buttons rather than running underneath them.
+    // Cancel goes up a folder while there is one to go up to and out of the
+    // browser once there is not, which "Back" covers either way.
+    const float guide_height = control_guide_height(scale * 0.9f);
+    draw_control_guide(quads, text, glyphs,
+                       {{ButtonGlyph::A, "Open"}, {ButtonGlyph::B, "Back"}},
+                       (geometry.panel.x + geometry.back_button.x) * 0.5f,
+                       geometry.quit_button.y + (geometry.quit_button.h - guide_height) * 0.5f,
+                       scale * 0.9f, theme.text);
 }
 
 }  // namespace ds
