@@ -22,20 +22,36 @@ enum class UiSound {
     Count,
 };
 
-// Plays them, on a device of its own rather than mixed into the game's.
+// Plays them, mixed into whatever is already making sound.
 //
-// The game's output is opened at whatever rate its core asks for and is not
-// open at all outside a game, and these have to be audible in a launcher as
-// much as in a menu. A second device costs one more SDL handle and saves
-// resampling every effect to a rate that changes with the console being
-// played.
+// A device of its own would be simpler, but the Switch has exactly one and the
+// game's audio needs it: taking a second one there silences the game entirely.
+// So these hold a device only while nothing else does -- in a launcher, before
+// a game has started -- and hand it over when the game opens one, mixing into
+// that instead. See AudioOutput::set_effects().
 class UiSounds {
 public:
     ~UiSounds();
 
+    // Reads the packed effects. A device is opened too if one is free, but
+    // failing to get one is not a failure: the game's output will lend its own.
     bool initialize(std::string* error);
     void shutdown();
-    bool ready() const { return device_ != 0; }
+    bool ready() const { return !clips_.empty(); }
+
+    // Handed over when the game's output wants the only device there is, and
+    // handed back when it is done with it.
+    void release_device();
+    void take_device();
+
+    // Mixes whatever is sounding into a buffer somebody else is about to play,
+    // at that buffer's rate and channel count. The effects are packed at one
+    // rate, so this resamples them on the way in.
+    //
+    // Safe without a lock of its own: this is only reached from the game's
+    // audio path while these have no device -- and so no callback thread -- of
+    // their own, which is the only arrangement that exists.
+    void render_into(int16_t* interleaved, std::size_t frames, int sample_rate, int channels);
 
     // Silences everything while another device is the one making the game's
     // sound. The shell's own effects belong wherever the game's do: two
@@ -61,12 +77,14 @@ private:
     };
     struct Voice {
         int sound = -1;
-        std::size_t position = 0;
+        // Fractional, because the buffer being mixed into is at whatever rate
+        // the game asked for and the effects are packed at one of their own.
+        double position = 0.0;
         bool looping = false;
     };
 
     static void SDLCALL fill(void* opaque, uint8_t* stream, int bytes);
-    void mix(int16_t* out, std::size_t frames);
+    bool open_device();
 
     SDL_AudioDeviceID device_ = 0;
     bool muted_ = false;

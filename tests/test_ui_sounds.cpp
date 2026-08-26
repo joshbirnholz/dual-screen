@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "audio/audio_output.hpp"
 #include "audio/ui_sounds.hpp"
 #include "render/embedded_assets.hpp"
 #include "test_support.hpp"
@@ -81,6 +82,73 @@ void test_muting_silences_what_is_already_sounding() {
     sounds.shutdown();
 }
 
+// The effects are mixed into whatever buffer is about to be played, at that
+// buffer's rate, so they cost no device of their own.
+void test_effects_are_mixed_into_someone_elses_buffer() {
+    UiSounds sounds;
+    std::string error;
+    CHECK(sounds.initialize(&error));
+    sounds.play(UiSound::Confirm);
+    CHECK(sounds.sounding());
+
+    // The rate a DS core actually asks for, which is nothing like the one the
+    // effects are packed at: silence in, something audible out.
+    constexpr int kCoreRate = 32728;
+    constexpr std::size_t kFrames = 512;
+    std::vector<int16_t> buffer(kFrames * 2, 0);
+    sounds.render_into(buffer.data(), kFrames, kCoreRate, 2);
+
+    int loudest = 0;
+    for (const int16_t sample : buffer) {
+        const int level = sample < 0 ? -sample : sample;
+        if (level > loudest) loudest = level;
+    }
+    CHECK_MSG(loudest > 0, "nothing was mixed into the buffer the game was about to play");
+
+    // Both channels carry it, rather than one being left silent.
+    int left = 0;
+    int right = 0;
+    for (std::size_t frame = 0; frame < kFrames; ++frame) {
+        left += buffer[frame * 2] != 0 ? 1 : 0;
+        right += buffer[frame * 2 + 1] != 0 ? 1 : 0;
+    }
+    CHECK_MSG(left > 0 && left == right, "the effect came out of one channel only");
+
+    // And a muted device puts nothing into it at all.
+    sounds.set_muted(true);
+    sounds.play(UiSound::Confirm);
+    std::vector<int16_t> quiet(kFrames * 2, 0);
+    sounds.render_into(quiet.data(), kFrames, kCoreRate, 2);
+    for (const int16_t sample : quiet) {
+        CHECK_MSG(sample == 0, "a muted device mixed an effect into the game's buffer");
+    }
+    sounds.shutdown();
+}
+
+// The Switch has one audio device and the game's sound has the better claim on
+// it. Asking for one while the effects hold it has to succeed.
+void test_the_game_can_take_the_only_device() {
+    UiSounds sounds;
+    std::string error;
+    CHECK(sounds.initialize(&error));
+
+    AudioOutput game;
+    game.set_effects(&sounds);
+    CHECK_MSG(game.open(32728.0, &error),
+              "the game could not open a device the effects were holding: " + error);
+    CHECK(game.is_open());
+
+    // Still audible: they are mixed into the game's stream from here.
+    sounds.play(UiSound::Confirm);
+    CHECK_MSG(sounds.sounding(), "the effects went quiet once the game took the device");
+
+    game.close();
+    // And they are audible on their own again once the game is done.
+    sounds.play(UiSound::Cancel);
+    CHECK(sounds.sounding());
+    sounds.shutdown();
+}
+
 }  // namespace
 
 int main() {
@@ -90,6 +158,8 @@ int main() {
     test_every_sound_the_shell_asks_for_is_in_the_pack();
     test_a_pack_that_is_not_one_is_refused();
     test_muting_silences_what_is_already_sounding();
+    test_effects_are_mixed_into_someone_elses_buffer();
+    test_the_game_can_take_the_only_device();
     SDL_Quit();
     return test::finish("ui-sounds");
 }

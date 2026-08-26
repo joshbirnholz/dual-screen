@@ -227,6 +227,9 @@ private:
     InputManager input_;
     AudioOutput audio_;
     uint32_t audio_rate_ = 0;
+    // Whether opening it has already been reported, so a device that will not
+    // open is said once rather than on every packet that arrives.
+    bool audio_open_failed_ = false;
 
     // The app's own renderer, not a second one: the same compositor draws the
     // screens here as on the device running the game, and the same picker
@@ -282,6 +285,9 @@ bool Client::start() {
     if (ui_sounds_.initialize(&sound_reason)) {
         log_info("interface sounds are ready");
     }
+    // Where a platform has one audio device -- the Switch does -- the streamed
+    // game sound owns it and these are mixed in.
+    audio_.set_effects(&ui_sounds_);
     // The same convention the app uses: face buttons are read by where they
     // are, not by the letter printed on them.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
@@ -317,10 +323,16 @@ bool Client::start() {
             if (!audio_.is_open() || audio_rate_ != rate) {
                 std::string audio_error;
                 if (!audio_.open(static_cast<double>(rate), &audio_error)) {
-                    log_warn("cannot play the streamed sound: " + audio_error);
-                    audio_rate_ = rate;  // do not try again for every packet
+                    // Said once. Retrying on every packet turned one broken
+                    // device into sixty log lines a second.
+                    if (!audio_open_failed_) {
+                        log_warn("cannot play the streamed sound: " + audio_error);
+                        audio_open_failed_ = true;
+                    }
+                    audio_rate_ = rate;
                     return;
                 }
+                audio_open_failed_ = false;
                 audio_rate_ = rate;
                 audio_.set_paused(false);
             }
@@ -725,6 +737,11 @@ void Client::run() {
         follow_panel_size();
 
         session_.poll(now);
+        // Keeps the effects audible over a game that has gone quiet behind the
+        // very menu making them; does nothing while the game is filling its
+        // own queue.
+        audio_.pump_effects();
+
         // Whether this device is one the sound comes out of, decided once a
         // frame. In a game that is the host's choice, the same one that says
         // where the game's own sound goes; anywhere else there is no game to

@@ -17,6 +17,24 @@ constexpr int kSampleRate = 48000;
 // without bound.
 constexpr std::size_t kMaxVoices = 8;
 
+// Holds SDL's audio lock while a voice list is touched, and does nothing when
+// there is no device of our own to lock -- the game's output calls in from its
+// own thread, where its own lock is already held.
+class Lock {
+public:
+    explicit Lock(SDL_AudioDeviceID device) : device_(device) {
+        if (device_ != 0) SDL_LockAudioDevice(device_);
+    }
+    ~Lock() {
+        if (device_ != 0) SDL_UnlockAudioDevice(device_);
+    }
+    Lock(const Lock&) = delete;
+    Lock& operator=(const Lock&) = delete;
+
+private:
+    SDL_AudioDeviceID device_;
+};
+
 uint32_t read_u32(const uint8_t* data) {
     return static_cast<uint32_t>(data[0]) | (static_cast<uint32_t>(data[1]) << 8) |
            (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
@@ -69,17 +87,21 @@ bool UiSounds::initialize(std::string* error) {
     for (std::size_t index = 0; index < samples.size(); ++index) {
         clips_.push_back(Clip{samples[index], frames[index]});
     }
+    // A device of their own is a convenience, not a requirement: where one is
+    // busy -- or where there is only one and the game wants it -- these are
+    // mixed into that instead.
+    open_device();
+    return true;
+}
 
-    // Brought up here rather than assumed. The app asks SDL for video and
-    // events at startup and leaves audio to whoever needs it, and the game's
-    // own output does the same on its way to opening a device -- so a player
-    // who had not started a game yet got no sounds at all.
+bool UiSounds::open_device() {
+    if (device_ != 0) {
+        return true;
+    }
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-        if (error != nullptr) *error = SDL_GetError();
         log_warn(std::string("no audio for the interface sounds: ") + SDL_GetError());
         return false;
     }
-
     SDL_AudioSpec want {};
     want.freq = kSampleRate;
     want.format = AUDIO_S16SYS;
@@ -90,32 +112,74 @@ bool UiSounds::initialize(std::string* error) {
     SDL_AudioSpec have {};
     device_ = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
     if (device_ == 0) {
-        // Not fatal: a machine with no sound card still plays games.
-        if (error != nullptr) *error = SDL_GetError();
-        log_warn(std::string("no device for the interface sounds: ") + SDL_GetError());
+        log_info(std::string("the interface sounds will share the game's audio device: ") +
+                 SDL_GetError());
         return false;
     }
     SDL_PauseAudioDevice(device_, 0);
     return true;
 }
 
-void UiSounds::shutdown() {
-    if (device_ != 0) {
-        SDL_CloseAudioDevice(device_);
-        device_ = 0;
+void UiSounds::release_device() {
+    if (device_ == 0) {
+        return;
     }
+    SDL_CloseAudioDevice(device_);
+    device_ = 0;
+}
+
+void UiSounds::take_device() { open_device(); }
+
+void UiSounds::shutdown() {
+    release_device();
     voices_.clear();
     clips_.clear();
 }
 
-bool UiSounds::sounding() const {
-    if (device_ == 0) {
-        return false;
+void UiSounds::play(UiSound sound) {
+    const int id = static_cast<int>(sound);
+    if (muted_ || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
+        return;
     }
-    SDL_LockAudioDevice(device_);
-    const bool any = !voices_.empty();
-    SDL_UnlockAudioDevice(device_);
-    return any;
+    const Lock held(device_);
+    for (Voice& voice : voices_) {
+        if (voice.sound == id && !voice.looping) {
+            voice.position = 0.0;  // restarted rather than stacked
+            return;
+        }
+    }
+    if (voices_.size() < kMaxVoices) {
+        voices_.push_back(Voice{id, 0.0, false});
+    }
+}
+
+void UiSounds::start_loop(UiSound sound) {
+    const int id = static_cast<int>(sound);
+    if (muted_ || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
+        return;
+    }
+    const Lock held(device_);
+    for (const Voice& voice : voices_) {
+        if (voice.looping && voice.sound == id) {
+            return;  // already going; starting it again would restart it
+        }
+    }
+    voices_.erase(std::remove_if(voices_.begin(), voices_.end(),
+                                 [](const Voice& voice) { return voice.looping; }),
+                  voices_.end());
+    voices_.push_back(Voice{id, 0.0, true});
+}
+
+void UiSounds::stop_loop() {
+    const Lock held(device_);
+    voices_.erase(std::remove_if(voices_.begin(), voices_.end(),
+                                 [](const Voice& voice) { return voice.looping; }),
+                  voices_.end());
+}
+
+bool UiSounds::sounding() const {
+    const Lock held(device_);
+    return !voices_.empty();
 }
 
 void UiSounds::set_muted(bool muted) {
@@ -123,91 +187,56 @@ void UiSounds::set_muted(bool muted) {
         return;
     }
     muted_ = muted;
-    if (!muted_ || device_ == 0) {
+    if (!muted_) {
         return;
     }
     // Whatever is already sounding stops with it, rather than finishing over
     // the top of a game whose sound is coming out of the other device.
-    SDL_LockAudioDevice(device_);
+    const Lock held(device_);
     voices_.clear();
-    SDL_UnlockAudioDevice(device_);
-}
-
-void UiSounds::play(UiSound sound) {
-    const int id = static_cast<int>(sound);
-    if (muted_ || device_ == 0 || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
-        return;
-    }
-    SDL_LockAudioDevice(device_);
-    for (Voice& voice : voices_) {
-        if (voice.sound == id && !voice.looping) {
-            voice.position = 0;  // restarted rather than stacked
-            SDL_UnlockAudioDevice(device_);
-            return;
-        }
-    }
-    if (voices_.size() < kMaxVoices) {
-        voices_.push_back(Voice{id, 0, false});
-    }
-    SDL_UnlockAudioDevice(device_);
-}
-
-void UiSounds::start_loop(UiSound sound) {
-    const int id = static_cast<int>(sound);
-    if (muted_ || device_ == 0 || id < 0 || static_cast<std::size_t>(id) >= clips_.size()) {
-        return;
-    }
-    SDL_LockAudioDevice(device_);
-    for (const Voice& voice : voices_) {
-        if (voice.looping && voice.sound == id) {
-            SDL_UnlockAudioDevice(device_);
-            return;  // already going; starting it again would restart it
-        }
-    }
-    voices_.erase(std::remove_if(voices_.begin(), voices_.end(),
-                                 [](const Voice& voice) { return voice.looping; }),
-                  voices_.end());
-    voices_.push_back(Voice{id, 0, true});
-    SDL_UnlockAudioDevice(device_);
-}
-
-void UiSounds::stop_loop() {
-    if (device_ == 0) {
-        return;
-    }
-    SDL_LockAudioDevice(device_);
-    voices_.erase(std::remove_if(voices_.begin(), voices_.end(),
-                                 [](const Voice& voice) { return voice.looping; }),
-                  voices_.end());
-    SDL_UnlockAudioDevice(device_);
 }
 
 void SDLCALL UiSounds::fill(void* opaque, uint8_t* stream, int bytes) {
     auto* sounds = static_cast<UiSounds*>(opaque);
     std::memset(stream, 0, static_cast<std::size_t>(bytes));
-    sounds->mix(reinterpret_cast<int16_t*>(stream), static_cast<std::size_t>(bytes) / 2);
+    sounds->render_into(reinterpret_cast<int16_t*>(stream), static_cast<std::size_t>(bytes) / 2,
+                        kSampleRate, 1);
 }
 
-void UiSounds::mix(int16_t* out, std::size_t frames) {
+void UiSounds::render_into(int16_t* interleaved,
+                           std::size_t frames,
+                           int sample_rate,
+                           int channels) {
+    if (interleaved == nullptr || frames == 0 || channels < 1 || sample_rate <= 0 ||
+        voices_.empty()) {
+        return;
+    }
+    // How far through an effect one frame of the destination takes us. The
+    // effects are packed at one rate; the buffer they are going into is at
+    // whatever the game asked for.
+    const double step = static_cast<double>(kSampleRate) / static_cast<double>(sample_rate);
+
     for (std::size_t index = 0; index < voices_.size();) {
         Voice& voice = voices_[index];
         const Clip& clip = clips_[static_cast<std::size_t>(voice.sound)];
-        std::size_t written = 0;
-        while (written < frames) {
-            if (voice.position >= clip.frames) {
-                if (!voice.looping) break;
-                voice.position = 0;
+        bool finished = false;
+        for (std::size_t frame = 0; frame < frames; ++frame) {
+            if (voice.position >= static_cast<double>(clip.frames)) {
+                if (!voice.looping) {
+                    finished = true;
+                    break;
+                }
+                voice.position -= static_cast<double>(clip.frames);
             }
-            const std::size_t run =
-                std::min(frames - written, clip.frames - voice.position);
-            for (std::size_t step = 0; step < run; ++step) {
-                const int mixed = out[written + step] + clip.samples[voice.position + step];
-                out[written + step] = static_cast<int16_t>(std::max(-32768, std::min(32767, mixed)));
+            const int16_t sample = clip.samples[static_cast<std::size_t>(voice.position)];
+            for (int channel = 0; channel < channels; ++channel) {
+                int16_t& target = interleaved[frame * static_cast<std::size_t>(channels) + channel];
+                const int mixed = target + sample;
+                target = static_cast<int16_t>(std::max(-32768, std::min(32767, mixed)));
             }
-            written += run;
-            voice.position += run;
+            voice.position += step;
         }
-        if (!voice.looping && voice.position >= clip.frames) {
+        if (finished) {
             voices_.erase(voices_.begin() + static_cast<std::ptrdiff_t>(index));
         } else {
             ++index;

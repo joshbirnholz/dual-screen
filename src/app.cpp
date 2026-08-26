@@ -1520,6 +1520,9 @@ void App::Impl::render() {
     // they play wherever they were asked for.
     const bool a_game_is_running = source != nullptr || is_companion();
     ui_sounds.set_muted(a_game_is_running && !sound_plays_here());
+    // Keeps them audible over a game that has gone quiet behind the very menu
+    // making them; does nothing while the game is filling its own queue.
+    audio.pump_effects();
 
     // The sound under the wait, running for exactly as long as the wait does.
     // Decided here, before any of the branches below return, so it cannot be
@@ -1766,6 +1769,9 @@ int App::run(const AppOptions& options) {
     if (impl.ui_sounds.initialize(&sound_error)) {
         log_info("interface sounds are ready");
     }
+    // Where a platform has one audio device, the game's output owns it and
+    // these are mixed in. See AudioOutput::set_effects().
+    impl.audio.set_effects(&impl.ui_sounds);
     if (!impl.quads.initialize(&error) || !impl.text.initialize(&error) ||
         !impl.button_glyphs.initialize(&error)) {
         log_error("cannot set up the renderer: " + error);
