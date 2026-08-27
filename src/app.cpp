@@ -328,6 +328,11 @@ struct App::Impl {
     // told a previous one, so that edge has to force a resend even when the
     // window happens not to have changed since.
     bool companion_was_connected = false;
+    // The host's own view of the same edge, for a Wii U: a second screen
+    // connecting is what the console's own arrangement is, so it is switched
+    // to automatically rather than left on whatever a solo session was
+    // showing. See the host poll loop.
+    bool host_had_companion = false;
 
     State state = State::Playing;
     bool message_is_fatal = false;
@@ -2370,6 +2375,27 @@ int App::run(const AppOptions& options) {
                 impl.local_game() && system_profile(impl.system).offers_right_stick_mode;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
+
+            // A second screen connecting to a Wii U is the console's own
+            // arrangement -- one screen on each device -- so it is switched to
+            // automatically rather than left on whatever a solo session was
+            // showing. Only on the rising edge, so choosing something else
+            // after connecting is not undone every frame the companion stays.
+            const bool host_now_has_companion = impl.host_session->has_companion();
+            if (host_now_has_companion && !impl.host_had_companion &&
+                impl.system == SystemId::WiiU) {
+                const std::string& per_device_id = system_profile(impl.system).default_layout_id;
+                if (!per_device_id.empty() && impl.active_layout_id != per_device_id) {
+                    impl.active_layout_id = impl.registry.resolve(per_device_id).id;
+                    impl.persist_game_config();
+                    if (impl.picker && impl.picker->is_open()) {
+                        impl.picker->set_selected_layout(impl.active_layout_id);
+                    }
+                    log_info("a second screen connected; switching to the " +
+                             impl.registry.resolve(per_device_id).display_name + " layout");
+                }
+            }
+            impl.host_had_companion = host_now_has_companion;
 
             // The companion can ask for any of the shared settings; the host
             // owns them all, so a layout id it does not recognise is refused

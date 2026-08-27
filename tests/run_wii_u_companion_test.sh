@@ -7,7 +7,10 @@
 # Three processes, and every seam between them is the real one -- the frame
 # link, the wire protocol, the video encoder and the video decoder. What it
 # checks is that each device ended up showing its own screen, which needs all of
-# them to have worked.
+# them to have worked. The host starts explicitly on Upper Screen Focus rather
+# than the default, so that ending up split across two devices anyway also
+# checks a second screen connecting switches to that arrangement on its own,
+# not only that a fresh session starts there.
 #
 # It also checks the screens went as video rather than as changed tiles. That is
 # not a preference here, it is the measurement: a GamePad screen in motion costs
@@ -47,6 +50,7 @@ SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
     "$DUALSCREEN" \
         --game "$WORK_DIR/game.wud" \
         --external-socket "$SOCKET" \
+        --layout upper_focus \
         --windowed \
         --exit-after-seconds 18 \
         --screenshot-at-seconds 13 \
