@@ -93,6 +93,7 @@ add_library(dualscreen_core STATIC
     src/core/gl_call_trace.cpp
     src/core/hw_render_target.cpp
     src/core/external_frame_link.cpp
+    src/core/external_screen_source.cpp
     src/core/libretro_core.cpp
     src/core/libretro_screen_source.cpp
     src/core/core_input_sink.cpp
@@ -228,6 +229,13 @@ add_executable(frame_budget tools/frame_budget.cpp src/net/protocol.cpp src/util
 target_include_directories(frame_budget PRIVATE ${CMAKE_SOURCE_DIR}/src ${SDL2_INCLUDE_DIRS})
 target_link_libraries(frame_budget PRIVATE ZLIB::ZLIB ${SDL2_LIBRARIES})
 target_compile_options(frame_budget PRIVATE -Wall -Wextra)
+
+# Stands in for Cemu, so everything on this side of the frame link can be
+# finished and held to before the emulator on the other side of it exists.
+add_executable(fake_wii_u tools/fake_wii_u.cpp src/core/external_frame_link.cpp
+               src/core/system.cpp src/layout/layout.cpp src/util/log.cpp)
+target_include_directories(fake_wii_u PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(fake_wii_u PRIVATE -Wall -Wextra)
 
 add_executable(probe_core tools/probe_core.cpp)
 target_include_directories(probe_core PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
