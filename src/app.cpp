@@ -104,18 +104,23 @@ std::string resolve_core_path(const AppOptions& options,
     return std::string();
 }
 
-// One entry per console for the Settings screen, so a machine with a DS core
-// but no 3DS one (or the reverse) says so before a game is picked.
+// One entry per console for the Settings screen, so a machine set up for one
+// and not another says so before a game is picked rather than after.
 std::vector<SettingsScreen::CoreStatus> resolve_core_statuses(const AppOptions& options,
                                                               const Settings& settings) {
     std::vector<SettingsScreen::CoreStatus> statuses;
     for (const SystemProfile& profile : system_profiles()) {
-        // A console played by another program has no core to find, so listing
-        // it here could only ever report a core it does not want as missing.
-        if (profile.frame_origin != FrameOrigin::LibretroCore) {
-            continue;
+        // Where this console is played from, whichever kind of thing that is.
+        // What the player needs to know is the same either way: is it there.
+        switch (profile.frame_origin) {
+            case FrameOrigin::LibretroCore:
+                statuses.push_back(
+                    {profile.name, resolve_core_path(options, settings, profile.id)});
+                break;
+            case FrameOrigin::External:
+                statuses.push_back({profile.name, settings.external_program_for(profile.id)});
+                break;
         }
-        statuses.push_back({profile.name, resolve_core_path(options, settings, profile.id)});
     }
     return statuses;
 }

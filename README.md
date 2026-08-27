@@ -147,6 +147,9 @@ will call its own flags. `{socket}` becomes the path it should hand its screens
 over on and `{game}` the file you picked; everything else is passed through
 untouched, with no shell in between. Quitting the shell stops it again.
 
+The Settings screen lists it beside the DS and 3DS cores, so a machine that is
+not set up for a console says so before you pick a game rather than after.
+
 Leave `wii_u_program` empty to start it yourself — which works on a desktop, and
 does not work from a Steam shortcut. Either way, a device sitting there before
 the emulator exists says so rather than showing a blank window: the host names
@@ -468,7 +471,10 @@ own releases. dualscreen looks in the usual RetroArch core directories and
 console. Override with the `core_path` and `core_path_3ds` settings, or with
 `--core` for a single run.
 
-You only need the core for the console you actually play; a missing one is
+A Wii U needs no core at all — it is played by Cemu running beside this app, and
+`wii_u_program` says where. See **Wii U games** above.
+
+You only need the emulator for the console you actually play; a missing one is
 reported when you try to load a game for it, not before.
 
 3DS emulation needs **OpenGL 3.3**. Citra has no software renderer: it asks for

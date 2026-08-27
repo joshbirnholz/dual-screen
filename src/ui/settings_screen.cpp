@@ -222,10 +222,12 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
     }
 
-    // Emulator cores, one line per console, so a machine set up for one system
-    // and not the other says so before a game is picked rather than after.
+    // One line per console, saying where its emulator was found -- which for
+    // most of them is a core this app loads and for a Wii U is a program it
+    // starts. A machine set up for one and not another says so before a game is
+    // picked rather than after.
     float core_pen_y = geometry.core_panel.y;
-    text.draw(quads, "Emulator cores", geometry.core_panel.x, core_pen_y, scale, theme.text);
+    text.draw(quads, "Emulators", geometry.core_panel.x, core_pen_y, scale, theme.text);
     core_pen_y += line * 1.6f;
     for (const CoreStatus& core : cores_) {
         const bool found = !core.resolved_path.empty() && file_exists(core.resolved_path);
