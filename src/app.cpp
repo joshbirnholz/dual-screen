@@ -251,6 +251,10 @@ struct App::Impl {
     std::unique_ptr<net::HostSession> host_session;
     std::unique_ptr<net::CompanionSession> companion_session;
     ScreenId local_screen = ScreenId::Top;
+    // Which single screen this device shows when it is on its own and the
+    // console's two are separate pictures. The television to begin with, since
+    // that is the game; the other is a second view of it. See SoloScreens.
+    ScreenId solo_screen = ScreenId::Top;
     // The window size last told to the host, on a companion. Compared every
     // frame against the real one so a resize is reported without a dedicated
     // resize hook, and so the very first report (0 against whatever the
@@ -517,6 +521,7 @@ void App::Impl::apply_system() {
     // A console with its own stick reads the stick as that stick. One without
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
+    input.set_stick_clicks_reserved(profile.game_reads_stick_clicks);
 }
 
 void App::Impl::refresh_output_size() {
@@ -552,9 +557,15 @@ Layout App::Impl::device_layout() const {
                         (companion_session &&
                          companion_session->status() == net::CompanionSession::Status::Connected);
     if (!paired) {
-        Layout both = chosen;
-        both.per_device = false;
-        return both;
+        if (system_profile(system).solo_screens == SoloScreens::Both) {
+            Layout both = chosen;
+            both.per_device = false;
+            return both;
+        }
+        // One screen, whichever the player is watching. Resolved exactly as a
+        // paired device resolves its own, so what is drawn and where a touch
+        // lands come from the same place either way.
+        return resolve_for_device(chosen, solo_screen);
     }
     return resolve_for_device(chosen, local_screen);
 }
@@ -1270,7 +1281,20 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
     if (state == State::Playing || state == State::Companion) {
         for (const UiAction action : actions) {
             if (action == UiAction::SwapLayout) {
-                request_layout(active_layout().swap_layout_id);
+                // On a console whose devices each show a screen of their own,
+                // there is no pair of layouts to flip between -- what "the
+                // other one" means is the other screen. With a companion
+                // connected it means nothing at all: both screens are already
+                // being shown, one on each device.
+                if (system_profile(system).solo_screens == SoloScreens::One) {
+                    if (!paired()) {
+                        solo_screen =
+                            (solo_screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
+                        log_info(std::string("showing the ") + to_string(solo_screen) + " screen");
+                    }
+                } else {
+                    request_layout(active_layout().swap_layout_id);
+                }
                 break;
             }
         }

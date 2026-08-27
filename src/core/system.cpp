@@ -132,6 +132,10 @@ SystemProfile make_wii_u() {
     // including pressing them, which is why nothing in this shell may take L3
     // or R3 while a Wii U game is running.
     profile.has_analog_stick = true;
+    profile.game_reads_stick_clicks = true;
+    // The television is the game; the GamePad is a second view of it. So one
+    // device on its own shows one screen rather than both squeezed together.
+    profile.solo_screens = SoloScreens::One;
     // Cemu has its own resolution settings and they are not this app's to
     // second-guess, so there is nothing here to cycle through.
     profile.max_render_scale = 1;

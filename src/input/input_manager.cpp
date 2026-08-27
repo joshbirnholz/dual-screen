@@ -600,11 +600,16 @@ void InputManager::end_frame(const Layout& layout,
         stick_chord_used_ = true;
         push_action(UiAction::ToggleMenu);
     }
-    if (left_stick_held_ && !left && !stick_chord_used_) {
-        push_action(UiAction::SwapLayout);
-    }
-    if (right_stick_held_ && !right && !stick_chord_used_) {
-        push_action(UiAction::ToggleFilter);
+    // Only where the game does not want them. See set_stick_clicks_reserved():
+    // the chord above still opens the menu either way, since pressing both at
+    // once is not something a game asks for.
+    if (!stick_clicks_reserved_) {
+        if (left_stick_held_ && !left && !stick_chord_used_) {
+            push_action(UiAction::SwapLayout);
+        }
+        if (right_stick_held_ && !right && !stick_chord_used_) {
+            push_action(UiAction::ToggleFilter);
+        }
     }
     if (!left && !right) {
         stick_chord_used_ = false;

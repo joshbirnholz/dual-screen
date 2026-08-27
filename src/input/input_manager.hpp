@@ -115,6 +115,13 @@ public:
     // with no stick of its own, where reaching for the stick has to work;
     // false for one that has a stick, where doing both would hold a direction
     // down on the d-pad for as long as the stick is moved at all.
+    // Where the game reads the sticks being pressed, this shell stops taking
+    // them: L3 on its own no longer swaps anything and R3 on its own no longer
+    // toggles smoothing. The two together still open the menu, which is the
+    // only way in from a pad -- and a chord nobody presses by accident.
+    void set_stick_clicks_reserved(bool reserved) { stick_clicks_reserved_ = reserved; }
+    bool stick_clicks_reserved() const { return stick_clicks_reserved_; }
+
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
 
     // What the right stick is read as. Only a console with a stick of its own
@@ -165,6 +172,7 @@ private:
 
     Settings settings_;
     bool stick_is_dpad_ = true;
+    bool stick_clicks_reserved_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
 

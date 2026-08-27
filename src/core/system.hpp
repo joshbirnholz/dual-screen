@@ -27,6 +27,13 @@ enum class GlContextNeed {
 // runs: a Wii U is played in Cemu, which is a program of its own rather than a
 // core this app loads, and which hands its two screens over rather than being
 // asked for them.
+// What one device shows when there is nobody on the other end of a layout that
+// puts a screen on each. A DS's two screens are one picture between them, so
+// half of it is not a game and both are shown stacked. A Wii U's are separate
+// pictures -- the television alone is the whole game and the GamePad is a
+// second view of it -- so one is shown and the player says which.
+enum class SoloScreens { Both, One };
+
 enum class FrameOrigin {
     LibretroCore,
     External,
@@ -59,6 +66,12 @@ struct SystemProfile {
     // for one, loading it, telling the player where to put it -- only applies
     // where this is LibretroCore.
     FrameOrigin frame_origin = FrameOrigin::LibretroCore;
+    SoloScreens solo_screens = SoloScreens::Both;
+    // Whether the game itself reads the sticks being pressed. Where it does,
+    // this shell must not: a Wii U game has L3 and R3 of its own, and a layout
+    // quietly swapping underneath every press of one is the shell taking a
+    // button out of the player's hands.
+    bool game_reads_stick_clicks = false;
 };
 
 const SystemProfile& system_profile(SystemId id);

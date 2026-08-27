@@ -930,6 +930,54 @@ void test_the_compositor_says_when_the_picture_changed() {
               "closing the gap moved the screens and the picture was reported unchanged");
 }
 
+// A device on its own shows what the console makes sense of on its own. A DS's
+// two screens are one picture between them, so half is not a game and both are
+// shown; a Wii U's television is the whole game and its GamePad a second view,
+// so one is shown and the player says which.
+void test_a_lone_device_shows_what_the_console_makes_sense_of() {
+    const LayoutRegistry registry;
+    const Layout* split = registry.find("upper_on_tv");
+    CHECK_MSG(split != nullptr && split->per_device,
+              "the split-across-devices layout went missing");
+
+    CHECK_MSG(system_profile(SystemId::Ds).solo_screens == SoloScreens::Both,
+              "a DS on its own stopped showing both of its screens, which is half a game");
+    CHECK_MSG(system_profile(SystemId::ThreeDs).solo_screens == SoloScreens::Both,
+              "a 3DS on its own stopped showing both of its screens");
+    CHECK_MSG(system_profile(SystemId::WiiU).solo_screens == SoloScreens::One,
+              "a Wii U on its own showed both screens squeezed together rather than the one being "
+              "watched");
+
+    // Whichever single screen is chosen, it is resolved exactly the way a
+    // paired device resolves its own -- so what is drawn and where a touch
+    // lands come from the same place either way.
+    for (const ScreenId watching : {ScreenId::Top, ScreenId::Bottom}) {
+        const Layout alone = resolve_for_device(*split, watching);
+        const SystemScreens& screens = system_profile(SystemId::WiiU).screens;
+        const std::vector<PlacedScreen> placed = place_screens(alone, 1280.0f, 800.0f, screens);
+        CHECK_MSG(placed.size() == 1,
+                  "a lone device showing one screen placed " + std::to_string(placed.size()) +
+                      " of them");
+        CHECK_MSG(placed.front().screen == watching,
+                  "a lone device drew a screen other than the one being watched");
+        // Only the device holding the touch screen can be touched, and on a
+        // Wii U that is whichever one is showing the GamePad.
+        CHECK_MSG(alone.accepts_touch_on_bottom == (watching == ScreenId::Bottom),
+                  "touch did not follow the screen being watched");
+    }
+}
+
+// Nothing in the shell may take a button the game reads. Kept next to the
+// console rather than in the input code, since it is a fact about the Wii U.
+void test_the_wii_u_keeps_its_stick_clicks() {
+    CHECK_MSG(system_profile(SystemId::WiiU).game_reads_stick_clicks,
+              "a Wii U stopped claiming its stick clicks, so the shell will take them back");
+    for (const SystemId id : {SystemId::Ds, SystemId::ThreeDs}) {
+        CHECK_MSG(!system_profile(id).game_reads_stick_clicks,
+                  system_profile(id).name + " claimed stick clicks it has no buttons for");
+    }
+}
+
 int main() {
     test_registry_contents();
     test_layouts_match_the_wii_u();
@@ -953,5 +1001,7 @@ int main() {
     test_layouts_handle_mismatched_screens();
     test_smoothing_follows_the_texture_not_just_the_setting();
     test_the_compositor_says_when_the_picture_changed();
+    test_a_lone_device_shows_what_the_console_makes_sense_of();
+    test_the_wii_u_keeps_its_stick_clicks();
     return test::finish("layout");
 }

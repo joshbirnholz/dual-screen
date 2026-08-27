@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <algorithm>
+
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "core/libretro_screen_source.hpp"
@@ -656,6 +658,61 @@ void test_two_fingers_open_the_menu_more_than_once() {
     input.shutdown();
 }
 
+// A Wii U game reads both sticks being pressed, including pressed. A shell that
+// swaps a layout under every L3 has taken a button out of the player's hands --
+// so where the console says the game wants them, this stops answering the
+// singles. The two together still open the menu: that is the only way in from a
+// pad, and nothing presses both at once by accident.
+void test_the_shell_lets_go_of_the_sticks_where_the_game_wants_them() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        test::skip("no virtual controller available");
+        return;
+    }
+    InputManager input;
+    input.initialize(Settings());
+    SDL_Event event;
+    while (SDL_PollEvent(&event) != 0) input.handle_event(event);
+
+    const auto press_and_release = [&](const std::vector<SDL_GameControllerButton>& buttons) {
+        std::vector<UiAction> seen;
+        for (const bool down : {true, false}) {
+            for (const SDL_GameControllerButton button : buttons) pad.press(button, down);
+            input.begin_frame();
+            SDL_Event pending;
+            while (SDL_PollEvent(&pending) != 0) input.handle_event(pending);
+            input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                            system_profile(SystemId::Ds).screens);
+            for (const UiAction action : input.ui_actions()) seen.push_back(action);
+        }
+        return seen;
+    };
+    const auto contains = [](const std::vector<UiAction>& actions, UiAction wanted) {
+        return std::find(actions.begin(), actions.end(), wanted) != actions.end();
+    };
+
+    CHECK_MSG(contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK}), UiAction::SwapLayout),
+              "L3 stopped swapping on a console whose game does not read it");
+
+    input.set_stick_clicks_reserved(true);
+    CHECK_MSG(!contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK}), UiAction::SwapLayout),
+              "L3 still swapped the layout on a console whose game reads it, so every press of it "
+              "in a game moves the picture");
+    CHECK_MSG(
+        !contains(press_and_release({SDL_CONTROLLER_BUTTON_RIGHTSTICK}), UiAction::ToggleFilter),
+        "R3 still toggled smoothing on a console whose game reads it");
+
+    // The way in from a pad has to survive, or a Wii U game cannot be paused.
+    CHECK_MSG(contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK,
+                                          SDL_CONTROLLER_BUTTON_RIGHTSTICK}),
+                       UiAction::ToggleMenu),
+              "both sticks together stopped opening the menu, which is the only way into it from "
+              "a pad");
+
+    input.shutdown();
+    pad.detach();
+}
+
 int main() {
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -676,6 +733,7 @@ int main() {
     test_face_buttons_reach_the_core();
     test_a_tap_reported_twice_still_knows_where_it_started();
     test_two_fingers_open_the_menu_more_than_once();
+    test_the_shell_lets_go_of_the_sticks_where_the_game_wants_them();
 
     SDL_Quit();
     return test::finish("controller-input");

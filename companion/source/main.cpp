@@ -751,6 +751,7 @@ void Client::run() {
                     // stick; one without lets it stand in for the d-pad.
                     const SystemProfile& profile = system_profile(session_.system());
                     input_.set_stick_is_dpad(!profile.has_analog_stick);
+                    input_.set_stick_clicks_reserved(profile.game_reads_stick_clicks);
                     input_.set_right_stick_mode(session_.host_right_stick_mode());
                     compositor_.set_bezel_art(bezel_art_.texture(session_.system()));
                     log_info("connected to " + session_.game_title() + " as the " +
