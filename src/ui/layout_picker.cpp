@@ -17,12 +17,29 @@ LayoutPicker::LayoutPicker(const LayoutRegistry& registry) : registry_(&registry
     set_screens(screens_);
 }
 
-void LayoutPicker::set_screens(const SystemScreens& screens) {
+void LayoutPicker::set_screens(const SystemScreens& screens, SystemId system) {
     screens_ = screens;
+    system_ = system;
+    rebuild_tiles();
+}
+
+void LayoutPicker::rebuild_tiles() {
     tiles_.clear();
     for (std::size_t index = 0; index < registry_->size(); ++index) {
-        if (layout_fits_system(registry_->at(index), screens_)) {
+        if (layout_fits_system(registry_->at(index), system_, screens_)) {
             tiles_.push_back(index);
+        }
+    }
+    // The console's own default leads its own menu, if it has one and it is
+    // actually offered -- most do not say, and are left in the registry's own
+    // order. See SystemProfile::default_layout_id.
+    const std::string& default_id = system_profile(system_).default_layout_id;
+    if (!default_id.empty()) {
+        const auto leader = std::find_if(tiles_.begin(), tiles_.end(), [&](std::size_t index) {
+            return registry_->at(index).id == default_id;
+        });
+        if (leader != tiles_.end() && leader != tiles_.begin()) {
+            std::rotate(tiles_.begin(), leader, leader + 1);
         }
     }
 }
@@ -452,7 +469,9 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             // asked about twice.
             case UiAction::Quit: result.quit_requested = true; break;
             case UiAction::MenuQuit: confirm_ = MenuConfirm::Quit; break;
-            case UiAction::MenuReset: confirm_ = MenuConfirm::Reset; break;
+            case UiAction::MenuReset:
+                if (state_.reset_available) confirm_ = MenuConfirm::Reset;
+                break;
             // Not asked about: unlike resetting or quitting, reconnecting is a
             // menu away and costs nothing but the walk back.
             case UiAction::MenuDisconnect:
@@ -643,11 +662,15 @@ void LayoutPicker::render(QuadRenderer& quads,
     if (state_.session_active) {
         guide.push_back({ButtonGlyph::Plus, "Disconnect"});
     }
-    guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
+    if (state_.smoothing_available) {
+        guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
+    }
     guide.push_back({ButtonGlyph::A, "OK"});
     guide.push_back({ButtonGlyph::B, "Resume"});
     guide.push_back({ButtonGlyph::X, "Quit"});
-    guide.push_back({ButtonGlyph::Y, "Reset"});
+    if (state_.reset_available) {
+        guide.push_back({ButtonGlyph::Y, "Reset"});
+    }
     draw_control_guide(quads, text, glyphs, guide, geometry.panel.x + geometry.panel.w,
                        geometry.panel.y + geometry.panel.h - control_guide_height(scale * 0.9f),
                        scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);

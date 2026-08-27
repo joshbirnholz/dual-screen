@@ -42,17 +42,20 @@ PointerEvent slide_onto(float from_x, float from_y, float to_x, float to_y) {
 // rather than by being told where they are -- which is also how it notices a
 // tile that stopped being reachable.
 std::vector<std::string> layouts_offered_for(const LayoutRegistry& registry,
+                                             SystemId system,
                                              const SystemScreens& screens) {
     std::vector<std::string> found;
     // Twice, from two different starting layouts: a tap on the tile already in
     // use changes nothing, so one sweep can never see the layout it began on.
+    // Neither has to actually be offered on this console -- opening on one
+    // that is not just means focus lands on the first tile instead.
     for (const char* opened_on : {"standard", "vertical"}) {
         LayoutPickerState state;
         state.layout_id = opened_on;
         for (float y = 4.0f; y < kHeight; y += 8.0f) {
             for (float x = 4.0f; x < kWidth; x += 8.0f) {
                 LayoutPicker picker(registry);
-                picker.set_screens(screens);
+                picker.set_screens(screens, system);
                 picker.open(state);
                 const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
                 if (!result.selection_changed) continue;
@@ -152,6 +155,93 @@ void test_the_right_stick_button_appears_only_where_there_is_a_stick() {
     ds.right_stick_choosable = system_profile(SystemId::Ds).has_analog_stick;
     CHECK(!ds.right_stick_choosable);
     CHECK_EQ(taps_that_cycle_the_right_stick(registry, ds), 0);
+}
+
+// Taps every point on a coarse grid over the menu and reports how many of them
+// opened the reset confirmation. The control guide -- unlike the footer
+// buttons the other taps_that_ helpers exercise -- is only known once
+// rendered, so each picker is drawn once before being tapped, the same as
+// test_tapping_a_control_prompt_presses_its_button does.
+int taps_that_open_reset(const LayoutRegistry& registry, const LayoutPickerState& state) {
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    int hits = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker picker(registry);
+            picker.open(state);
+            picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
+            picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            // Not awaiting_confirmation(): Quit is a separate, still-offered
+            // prompt, and removing Reset shifts the row enough that some of
+            // these coordinates land on Quit instead once Reset is gone.
+            if (picker.confirmation() == MenuConfirm::Reset) ++hits;
+        }
+    }
+    return hits;
+}
+
+// Taps every point on a coarse grid over the menu and reports how many of them
+// toggled screen smoothing. See taps_that_open_reset for why each picker is
+// rendered before being tapped.
+int taps_that_toggle_smoothing(const LayoutRegistry& registry, const LayoutPickerState& state) {
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    int hits = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker picker(registry);
+            picker.open(state);
+            picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
+            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            if (result.filtering_toggled) ++hits;
+        }
+    }
+    return hits;
+}
+
+// Reset and Screen Smoothing are Cemu's to own for a Wii U -- see
+// SystemProfile::offers_reset and offers_smoothing -- so neither is offered
+// there, on a tap or on the button itself. Every other console keeps both,
+// unaffected.
+void test_reset_and_smoothing_are_hidden_where_the_console_owns_them() {
+    LayoutRegistry registry;
+
+    LayoutPickerState wii_u;
+    wii_u.layout_id = registry.at(0).id;
+    wii_u.reset_available = system_profile(SystemId::WiiU).offers_reset;
+    wii_u.smoothing_available = system_profile(SystemId::WiiU).offers_smoothing;
+    CHECK(!wii_u.reset_available);
+    CHECK(!wii_u.smoothing_available);
+    CHECK_EQ(taps_that_open_reset(registry, wii_u), 0);
+    CHECK_EQ(taps_that_toggle_smoothing(registry, wii_u), 0);
+
+    LayoutPicker pressing_y(registry);
+    pressing_y.open(wii_u);
+    const LayoutPickerResult pressed =
+        pressing_y.update({UiAction::MenuReset}, {}, kWidth, kHeight);
+    CHECK_MSG(!pressed.reset_requested && !pressing_y.awaiting_confirmation(),
+              "Y still opened the reset confirmation on a console that owns reset itself");
+
+    LayoutPickerState ds;
+    ds.layout_id = registry.at(0).id;
+    ds.reset_available = system_profile(SystemId::Ds).offers_reset;
+    ds.smoothing_available = system_profile(SystemId::Ds).offers_smoothing;
+    CHECK(ds.reset_available);
+    CHECK(ds.smoothing_available);
+    CHECK(taps_that_open_reset(registry, ds) > 0);
+    CHECK(taps_that_toggle_smoothing(registry, ds) > 0);
+
+    LayoutPickerState three_ds;
+    three_ds.layout_id = registry.at(0).id;
+    three_ds.reset_available = system_profile(SystemId::ThreeDs).offers_reset;
+    three_ds.smoothing_available = system_profile(SystemId::ThreeDs).offers_smoothing;
+    CHECK(three_ds.reset_available);
+    CHECK(three_ds.smoothing_available);
+    CHECK(taps_that_open_reset(registry, three_ds) > 0);
+    CHECK(taps_that_toggle_smoothing(registry, three_ds) > 0);
 }
 
 // Taps every point on a coarse grid over the menu and reports how many of them
@@ -662,9 +752,9 @@ void test_the_menu_follows_a_device_arriving_and_leaving() {
 void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
     LayoutRegistry registry;
     const std::vector<std::string> handheld =
-        layouts_offered_for(registry, system_profile(SystemId::Ds).screens);
+        layouts_offered_for(registry, SystemId::Ds, system_profile(SystemId::Ds).screens);
     const std::vector<std::string> wii_u =
-        layouts_offered_for(registry, system_profile(SystemId::WiiU).screens);
+        layouts_offered_for(registry, SystemId::WiiU, system_profile(SystemId::WiiU).screens);
 
     const auto offers = [](const std::vector<std::string>& ids, const std::string& id) {
         return std::find(ids.begin(), ids.end(), id) != ids.end();
@@ -674,21 +764,42 @@ void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
     CHECK_MSG(!offers(wii_u, "standard"),
               "a console with no picture of itself was still offered the layout that draws one");
 
-    // Nothing else went with it: the other layouts compose their screens for
-    // themselves and fit any console.
-    CHECK_MSG(handheld.size() == wii_u.size() + 1,
-              "filtering the menu for one console took layouts away from another");
+    // Vertical Screens and Side-by-Side stand in for a DS's hinge -- a Wii U
+    // has none, so neither is offered there. TV Only and GamePad Only are the
+    // opposite: only a Wii U has a screen that is ever the whole of the game
+    // rather than half of one, so only a Wii U offers them.
+    for (const char* hinge : {"vertical", "side_by_side"}) {
+        CHECK_MSG(offers(handheld, hinge),
+                  "a console with a hinge stopped being offered the layout standing in for it");
+        CHECK_MSG(!offers(wii_u, hinge),
+                  "a Wii U was offered a layout standing in for a hinge it does not have");
+    }
+    for (const char* solo : {"tv_only", "gamepad_only"}) {
+        CHECK_MSG(offers(wii_u, solo), "a Wii U was not offered its own single-screen layout");
+        CHECK_MSG(!offers(handheld, solo),
+                  "a console with no screen that stands alone was offered one anyway");
+    }
+
     for (const std::string& id : wii_u) {
-        CHECK_MSG(offers(handheld, id), "a layout appeared on one console and not the other");
-        CHECK_MSG(layout_fits_system(registry.resolve(id), system_profile(SystemId::WiiU).screens),
+        CHECK_MSG(layout_fits_system(registry.resolve(id), SystemId::WiiU,
+                                     system_profile(SystemId::WiiU).screens),
                   "the menu offered a layout with nowhere to put this console's screens");
     }
 
     // And the console starts on one it was actually offered, rather than on the
-    // one that was taken away.
+    // one that was taken away -- leading the menu, not just reachable somewhere
+    // inside it.
     const std::string starts_on = system_profile(SystemId::WiiU).default_layout_id;
     CHECK_MSG(!starts_on.empty() && offers(wii_u, starts_on),
               "a Wii U game starts on a layout its own menu does not offer");
+
+    LayoutPicker leading(registry);
+    leading.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    LayoutPickerState opens_on_default;
+    opens_on_default.layout_id = starts_on;
+    leading.open(opens_on_default);
+    CHECK_MSG(leading.focus() == 0,
+              "a Wii U's own default layout is not the first tile in its own menu");
 }
 
 // The settings belong to the machine running the game, and the menu is the one
@@ -751,6 +862,7 @@ int main() {
     test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
+    test_reset_and_smoothing_are_hidden_where_the_console_owns_them();
     test_the_pointer_button_appears_only_where_there_is_a_pointer();
     test_the_gap_button_appears_only_where_the_layout_offers_it();
     test_choosing_a_gap_layout_reveals_the_button();

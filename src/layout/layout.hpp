@@ -7,6 +7,11 @@
 
 namespace ds {
 
+// Forward-declared rather than included: system.hpp already includes this
+// header, and Layout only needs the type below to name which systems offer a
+// layout, nothing about what a system actually is.
+enum class SystemId;
+
 // Native dimensions of one DS screen, which is also the default when nothing
 // says otherwise.
 constexpr int kDsScreenWidth = 256;
@@ -184,6 +189,14 @@ struct Layout {
     // mid-game -- often enough to be worth a button rather than a trip through
     // the menu. Empty means the press does nothing while this layout is on.
     std::string swap_layout_id;
+
+    // Which systems offer this layout. Empty means every one of them, which is
+    // most layouts -- they compose their own screens and fit any console. A
+    // layout that only makes sense for one names it here instead of a
+    // downstream special case: TV Only and GamePad Only exist only for a Wii
+    // U, and Vertical Screens and Side-by-Side stand in for a DS's hinge,
+    // which a Wii U has no equivalent of.
+    std::vector<SystemId> systems;
 };
 
 // Which hand holds the stylus. Layouts that put one screen beside another are
@@ -315,11 +328,12 @@ bool map_output_point_to_ds(const Layout& layout,
 // True if this layout shows the bottom screen at all (and so can accept touch).
 bool layout_has_touchable_bottom(const Layout& layout);
 
-// Whether this layout has anywhere to put this system's screens. The Standard
-// layout is the console's own arrangement, so a console this app has no shape
-// for has no Standard to show -- and would draw nothing at all rather than
-// saying so. Every other layout composes its screens for itself and fits any
-// console.
-bool layout_fits_system(const Layout& layout, const SystemScreens& screens);
+// Whether this layout has anywhere to put this system's screens, and whether
+// it is offered for this system at all. The Standard layout is the console's
+// own arrangement, so a console this app has no shape for has no Standard to
+// show -- and would draw nothing at all rather than saying so. Every other
+// layout composes its screens for itself and fits any console's shape, but a
+// few are still not offered for every one -- see Layout::systems.
+bool layout_fits_system(const Layout& layout, SystemId system, const SystemScreens& screens);
 
 }  // namespace ds

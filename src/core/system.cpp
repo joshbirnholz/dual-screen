@@ -76,6 +76,9 @@ SystemProfile make_three_ds() {
     // the d-pad is the d-pad. Sending both from one stick is what made the
     // circle pad unreachable: every core that reads the d-pad saw it pressed.
     profile.has_analog_stick = true;
+    // Its one physical stick can mean the Circle Pad, the C-Stick, or a d-pad
+    // -- which is a real question this console has and a Wii U does not.
+    profile.offers_right_stick_mode = true;
     // Citra has no software renderer. It asks for a 3.3 core profile through
     // the hardware-render callback and refuses to load the game if it does not
     // get one, so the window has to be built for it before the core is loaded.
@@ -144,6 +147,10 @@ SystemProfile make_wii_u() {
     // Cemu has its own resolution settings and they are not this app's to
     // second-guess, so there is nothing here to cycle through.
     profile.max_render_scale = 1;
+    // Neither of these is this shell's to offer for a Wii U -- see the fields'
+    // own comments.
+    profile.offers_reset = false;
+    profile.offers_smoothing = false;
     return profile;
 }
 

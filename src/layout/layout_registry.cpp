@@ -3,6 +3,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/system.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -153,6 +154,10 @@ LayoutRegistry::LayoutRegistry() {
         // hinge, so removing it would misrepresent the console rather than
         // just tighten the picture.
         layout.composition.gap_toggleable = true;
+        // Stacking a DS's two screens without the hinge between them. A Wii U
+        // has no hinge to be without -- its two screens are not one picture --
+        // so this is not offered there. See Layout::systems.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 
@@ -172,6 +177,9 @@ LayoutRegistry::LayoutRegistry() {
                           ScreenRotation::CounterClockwise),
             },
             kSideBySideGap, kSideBySideMargin);
+        // The console held sideways, hinge and all -- the same reason Vertical
+        // Screens above is not offered for a Wii U applies here too.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 
@@ -186,6 +194,32 @@ LayoutRegistry::LayoutRegistry() {
             LayoutAxis::Vertical,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
             kVerticalGap, kVerticalMargin);
+        layouts_.push_back(layout);
+    }
+
+    // 6. The television alone, filling whatever is showing it -- one device or
+    // two. Only a Wii U has a screen that is ever the whole of the game rather
+    // than half of one, so only a Wii U offers this.
+    {
+        Layout layout;
+        layout.id = "tv_only";
+        layout.display_name = "TV Only";
+        layout.systems = {SystemId::WiiU};
+        layout.composition =
+            make_composition(LayoutAxis::Horizontal, {make_item(ScreenId::Top)}, 0.0f, kFocusMargin);
+        // Nothing is drawn below to touch.
+        layout.accepts_touch_on_bottom = false;
+        layouts_.push_back(layout);
+    }
+
+    // 7. The GamePad alone, the same way -- the other half of the same idea.
+    {
+        Layout layout;
+        layout.id = "gamepad_only";
+        layout.display_name = "GamePad Only";
+        layout.systems = {SystemId::WiiU};
+        layout.composition = make_composition(LayoutAxis::Horizontal, {make_item(ScreenId::Bottom)},
+                                              0.0f, kFocusMargin);
         layouts_.push_back(layout);
     }
 }

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/system.hpp"
+
 namespace ds {
 
 const char* to_string(ScreenId screen) {
@@ -259,7 +261,11 @@ void mark_native(PlacedScreen& placed, const SystemScreens& screens) {
 
 }  // namespace
 
-bool layout_fits_system(const Layout& layout, const SystemScreens& screens) {
+bool layout_fits_system(const Layout& layout, SystemId system, const SystemScreens& screens) {
+    if (!layout.systems.empty() &&
+        std::find(layout.systems.begin(), layout.systems.end(), system) == layout.systems.end()) {
+        return false;
+    }
     if (layout.composition.used || !layout.placements.empty()) {
         return true;
     }

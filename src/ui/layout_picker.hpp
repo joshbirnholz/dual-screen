@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
@@ -84,6 +85,16 @@ struct LayoutPickerState {
     // does not get the button. See RightStickMode.
     RightStickMode right_stick_mode = RightStickMode::CStick;
     bool right_stick_choosable = false;
+    // Whether Reset makes sense to offer. False for a Wii U session: Cemu owns
+    // restarting the game, and nothing here can do it for it. See
+    // SystemProfile::offers_reset.
+    bool reset_available = true;
+    // Whether Screen Smoothing makes sense to offer. False for a Wii U
+    // session: RightStick (R3) is already claimed by the game there --
+    // game_uses_every_control means input_manager never turns it into
+    // ToggleFilter in the first place -- so showing the prompt would advertise
+    // a control that silently does nothing. See SystemProfile::offers_smoothing.
+    bool smoothing_available = true;
 };
 
 // What a face button asked for and has not yet been allowed to do. Both of
@@ -158,8 +169,9 @@ public:
         fill_display_ = fill;
     }
     // The console being played, which decides the screens' shapes and what the
-    // Standard tile draws.
-    void set_screens(const SystemScreens& screens);
+    // Standard tile draws, which layouts fit at all, and which one leads the
+    // menu -- see rebuild_tiles().
+    void set_screens(const SystemScreens& screens, SystemId system = SystemId::Ds);
     Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
     void set_selected_layout(const std::string& layout_id);
@@ -259,6 +271,8 @@ private:
     // Which buttons the footer carries depends on the session, so it is built
     // per-open rather than fixed.
     void rebuild_footer();
+    // Which tiles this console offers, and in what order -- see set_screens().
+    void rebuild_tiles();
 
     const LayoutRegistry* registry_;
     // Which of the registry's layouts this console can actually show, as
@@ -281,6 +295,7 @@ private:
     float display_height_ = 0.0f;
     bool fill_display_ = false;
     SystemScreens screens_;
+    SystemId system_ = SystemId::Ds;
 };
 
 }  // namespace ds

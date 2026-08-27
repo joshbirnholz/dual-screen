@@ -34,21 +34,27 @@ bool placed_screen(const Layout& layout,
 
 void test_registry_contents() {
     const LayoutRegistry registry;
-    // The Wii U Virtual Console's own Screen Settings, in its order. The order
-    // is part of the point: it is the list this app is trying to be.
-    const char* const expected[] = {"standard",  "upper_focus",  "touch_focus",
-                                    "vertical",  "side_by_side", "upper_on_tv"};
+    // The Wii U Virtual Console's own Screen Settings, in its order, followed
+    // by TV Only and GamePad Only -- not part of that console's own menu, so
+    // appended rather than interleaved. The order is part of the point: it is
+    // the list this app is trying to be.
+    const char* const expected[] = {"standard",   "upper_focus", "touch_focus",
+                                    "vertical",   "side_by_side", "upper_on_tv",
+                                    "tv_only",    "gamepad_only"};
     CHECK_EQ(registry.size(), sizeof(expected) / sizeof(expected[0]));
     for (std::size_t index = 0; index < registry.size(); ++index) {
         CHECK_STR_EQ(registry.at(index).id, expected[index]);
     }
     // Ids are unique and non-empty; config files key off them. Every layout has
-    // to put its screens somewhere, however it describes them.
+    // to put every screen its own composition names, however it describes it
+    // -- most name both, but TV Only and GamePad Only deliberately name one.
     for (const Layout& layout : registry.layouts()) {
         CHECK(!layout.id.empty());
         CHECK(!layout.display_name.empty());
-        CHECK_MSG(place_screens(layout, 1280.0f, 800.0f, ds_screens()).size() == 2,
-                  layout.id + " does not place both screens");
+        const std::size_t screens_named =
+            layout.composition.used ? layout.composition.items.size() : 2;
+        CHECK_MSG(place_screens(layout, 1280.0f, 800.0f, ds_screens()).size() == screens_named,
+                  layout.id + " does not place the screens its own composition names");
         CHECK_EQ(registry.index_of(layout.id) >= 0, true);
     }
     // An unknown id resolves rather than throwing, so a stale config still boots.
@@ -794,7 +800,9 @@ void test_layouts_handle_mismatched_screens() {
             const Layout layout = resolve_for_handedness(base, hand);
             const std::vector<PlacedScreen> placed =
                 place_screens(layout, 1280.0f, 800.0f, screens);
-            CHECK_MSG(placed.size() == 2, layout.id + " lost a screen on a 3DS");
+            const std::size_t screens_named =
+                layout.composition.used ? layout.composition.items.size() : 2;
+            CHECK_MSG(placed.size() == screens_named, layout.id + " lost a screen on a 3DS");
             for (const PlacedScreen& entry : placed) {
                 const ScreenSize size = screens.size_of(entry.screen);
                 const float want = rotation_is_quarter_turn(entry.rotation)

@@ -58,6 +58,13 @@ struct SystemProfile {
     // left stick as that stick and nothing else; one that does not lets the
     // stick stand in for the d-pad, since players reach for it either way.
     bool has_analog_stick = false;
+    // Whether the quick menu offers a right-stick mapping cycle. True only for
+    // a 3DS: its single physical stick can mean the Circle Pad, the C-Stick,
+    // or a d-pad depending which the game wants, so which one is a real
+    // question. A Wii U's GamePad has two real sticks and neither is ever
+    // anything else, so there is nothing here to cycle -- has_analog_stick
+    // above still applies to it, this does not.
+    bool offers_right_stick_mode = false;
     // The largest internal resolution multiplier the quick settings offer for
     // this system. 1 means the core draws at the console's own resolution and
     // there is nothing to choose, so the button does not appear at all.
@@ -91,6 +98,15 @@ struct SystemProfile {
     // this are played between two desktops -- and it is the thing to solve
     // before one of them is a handheld.
     bool game_uses_every_control = false;
+    // Whether the quick menu offers Reset. False for a Wii U: Cemu owns
+    // restarting the game, and there is nothing here that can do it in its
+    // place.
+    bool offers_reset = true;
+    // Whether the quick menu offers Screen Smoothing. False for a Wii U:
+    // game_uses_every_control already keeps RightStick from ever becoming the
+    // toggle there, so the menu's own prompt for it would be advertising a
+    // control that silently does nothing.
+    bool offers_smoothing = true;
 };
 
 const SystemProfile& system_profile(SystemId id);

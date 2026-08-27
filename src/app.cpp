@@ -796,6 +796,11 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     state.right_stick_choosable = companion_session->host_right_stick_choosable();
     state.cursor_mode = companion_session->host_cursor_shown() ? CursorMode::Shown
                                                               : CursorMode::Hidden;
+    // A property of the console, not of the session -- companion_session
+    // already carries `system()`, so this needs nothing from the host beyond
+    // that.
+    state.reset_available = system_profile(companion_session->system()).offers_reset;
+    state.smoothing_available = system_profile(companion_session->system()).offers_smoothing;
     return state;
 }
 
@@ -914,17 +919,21 @@ void App::Impl::open_picker() {
                        : (local_game() ? system_profile(system).max_render_scale : 1);
     picker_state.screen_gap = screen_gap;
     picker_state.right_stick_mode = right_stick_mode;
-    // Only a console with a stick of its own has more than one answer worth
-    // offering: on a DS the left stick is already standing in for the d-pad
-    // and the right one has nothing to be.
+    // Only a console whose right stick can mean more than one thing has a
+    // question worth offering -- a 3DS. A DS has no right stick to speak of,
+    // and a Wii U's is always just itself.
     picker_state.right_stick_choosable =
         is_companion() ? companion_session->host_right_stick_choosable()
-                       : (local_game() && system_profile(system).has_analog_stick);
+                       : (local_game() && system_profile(system).offers_right_stick_mode);
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
     picker_state.cursor_choosable =
         is_companion() ? companion_session->host_cursor_choosable() : true;
-    picker->set_screens(screens_geometry());
+    // A property of the console, not of the session, so both devices reach the
+    // same answer from `system` without anything to ask the host for.
+    picker_state.reset_available = system_profile(system).offers_reset;
+    picker_state.smoothing_available = system_profile(system).offers_smoothing;
+    picker->set_screens(screens_geometry(), system);
     // The tiles are judged against the same display, and filled on the same
     // terms, as the render behind them -- see device_layout().
     picker->set_display_size(0.0f, 0.0f, is_companion() && local_screen == ScreenId::Bottom);
@@ -1353,7 +1362,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // different one, or the global default, may have nowhere to put these
     // screens -- and a layout that cannot place them draws nothing at all,
     // which looks exactly like a game that failed to start.
-    if (!layout_fits_system(registry.resolve(active_layout_id), profile.screens)) {
+    if (!layout_fits_system(registry.resolve(active_layout_id), system, profile.screens)) {
         const std::string instead = profile.default_layout_id.empty()
                                         ? LayoutRegistry::fallback_id()
                                         : profile.default_layout_id;
@@ -2358,7 +2367,7 @@ int App::run(const AppOptions& options) {
             shared.cursor_choosable = true;  // this end is a machine with a pointer
             shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
-                impl.local_game() && system_profile(impl.system).has_analog_stick;
+                impl.local_game() && system_profile(impl.system).offers_right_stick_mode;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
