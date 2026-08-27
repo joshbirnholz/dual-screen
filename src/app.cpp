@@ -38,6 +38,7 @@
 #include "ui/launcher_screen.hpp"
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
+#include "util/child_process.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -65,6 +66,23 @@ std::string next_argument(int argc, char** argv, int& index, const char* flag, s
 // $DUALSCREEN_CORE, then the usual install locations. The first two and the
 // environment name one core rather than one per system, so they only apply to
 // the system actually being asked for when they are set.
+// {socket} and {game} in an argument for the program that plays an external
+// console -- see Settings::wii_u_arguments. Anywhere in the argument rather than
+// only as the whole of it, since a fork may well want --socket=<path>.
+std::string fill_placeholders(const std::string& argument, const std::string& socket_path,
+                              const std::string& rom_path) {
+    std::string filled = argument;
+    for (const auto& pair : {std::pair<const char*, const std::string*>{"{socket}", &socket_path},
+                             std::pair<const char*, const std::string*>{"{game}", &rom_path}}) {
+        const std::string token = pair.first;
+        for (std::size_t at = filled.find(token); at != std::string::npos;
+             at = filled.find(token, at + pair.second->size())) {
+            filled.replace(at, token.size(), *pair.second);
+        }
+    }
+    return filled;
+}
+
 std::string resolve_core_path(const AppOptions& options,
                               const Settings& settings,
                               SystemId system) {
@@ -255,6 +273,10 @@ struct App::Impl {
     // than by a core inside it. Only one of the two is ever set -- which, the
     // system's FrameOrigin decides.
     std::unique_ptr<ExternalScreenSource> external_source;
+    // And the program that is playing it, when this app was the one to start
+    // it. Stopping it is as much the point as starting it: in Game Mode there
+    // is nothing left to close a window the shell walked away from.
+    ChildProcess external_program;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
     std::unique_ptr<GameBrowser> browser;
@@ -274,6 +296,10 @@ struct App::Impl {
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
     std::string external_socket_path;
+    // Whether this app started the program playing an external console, so
+    // that one which exits without ever connecting is noticed rather than
+    // waited for indefinitely. Cleared once that has been reported.
+    bool external_program_wanted = false;
     // Whether the program playing an external console has connected yet. Only
     // once it has does the link know what it is sending, which is when the
     // frame clock and the sound device can be set to match it.
@@ -1173,6 +1199,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         source->close();
         source.reset();
     }
+    external_program.stop();
     external_source.reset();
     have_game_config = false;
     game_config = GameConfig();
@@ -1339,6 +1366,24 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             render_scale = 1;  // whatever is playing the game owns its resolution
             external_game_arrived = false;
             log_info(profile.core_description + " can hand its screens over at " + socket_path);
+
+            // Started here rather than by the player: in Game Mode there is no
+            // desktop to start it from, which is the whole reason this app
+            // exists. Not fatal when it fails -- the socket is open either way
+            // and a player on a desktop can still start one by hand.
+            const std::string& program = settings.external_program_for(system);
+            if (!program.empty()) {
+                std::vector<std::string> arguments;
+                for (const std::string& argument : settings.external_arguments_for(system)) {
+                    arguments.push_back(fill_placeholders(argument, socket_path, rom_path));
+                }
+                std::string start_error;
+                if (external_program.start(program, arguments, &start_error)) {
+                    external_program_wanted = true;
+                } else {
+                    log_warn("could not start " + program + ": " + start_error);
+                }
+            }
             break;
         }
     }
@@ -1725,12 +1770,18 @@ void App::Impl::render() {
         // arrived. A black window here would be the same black window a broken
         // one gives, so it says what it is waiting for and where.
         const SystemProfile& profile = system_profile(system);
+        // Two quite different situations that look the same from here: one
+        // where this app started the program and is waiting for it to come up,
+        // and one where nobody has started it and the player has to.
+        const bool ours = external_program_wanted;
+        std::vector<std::string> lines{game_title};
+        if (!ours) {
+            lines.push_back("Start it and point it at " + external_socket_path);
+        }
+        lines.push_back("F1 or Tab for the menu");
         render_waiting_screen(quads, text, button_glyphs, width, height,
-                              "Waiting for " + profile.core_description,
-                              {game_title,
-                               "Start it and point it at " + external_socket_path,
-                               "F1 or Tab for the menu"},
-                              {});
+                              (ours ? "Starting " : "Waiting for ") + profile.core_description,
+                              lines, {});
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
@@ -2380,6 +2431,22 @@ int App::run(const AppOptions& options) {
             impl.external_game_arrived = true;
             impl.adopt_external_timing();
         }
+        // A program this app started that stopped without ever connecting.
+        // Otherwise the shell waits for ever on something that is not coming,
+        // and the reason -- a bad path, a flag the fork does not know -- is in
+        // a terminal nobody in Game Mode can see.
+        if (impl.external_program_wanted && !impl.external_game_arrived &&
+            !impl.external_program.running()) {
+            impl.external_program_wanted = false;
+            const SystemProfile& profile = system_profile(impl.system);
+            impl.enter_message(MessageKind::Error, profile.core_description + " did not start",
+                               "It stopped without handing over a game.",
+                               {"Command: " + impl.settings.external_program_for(impl.system),
+                                "Socket: " + impl.external_socket_path,
+                                "Check \"wii_u_program\" and \"wii_u_arguments\" in " +
+                                    impl.paths.settings_file + "."},
+                               true);
+        }
         if (playing != nullptr && game_running) {
             // The companion's buttons and touches are merged with this device's,
             // so either player can press anything. This is the InputSink seam
@@ -2572,6 +2639,10 @@ int App::run(const AppOptions& options) {
         impl.source->close();
         impl.source.reset();
     }
+    // Before the window goes away rather than with everything else at the end:
+    // the emulator has a window of its own, and the tidy order to close two is
+    // the one the player would have chosen.
+    impl.external_program.stop();
     impl.external_source.reset();
     impl.input.shutdown();
     impl.destroy_window();

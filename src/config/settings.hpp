@@ -48,6 +48,39 @@ struct Settings {
         return none;
     }
 
+    // The program that plays a console this app does not run itself, and the
+    // arguments to start it with. Nothing here knows what that program's own
+    // flags are called, so they are written out in full and two placeholders
+    // are filled in: {socket} becomes the path it should hand its screens over
+    // on, {game} the file the player picked.
+    //
+    // Empty means the player starts it themselves, which works on a desktop
+    // and does not work in Game Mode -- where there is nothing to start it
+    // from. See docs/cemu-integration.md.
+    std::string wii_u_program;
+    std::vector<std::string> wii_u_arguments;
+
+    const std::string& external_program_for(SystemId system) const {
+        switch (system) {
+            case SystemId::WiiU: return wii_u_program;
+            // Played by a core this app loads, so there is nothing to start.
+            case SystemId::Ds:
+            case SystemId::ThreeDs: break;
+        }
+        static const std::string none;
+        return none;
+    }
+
+    const std::vector<std::string>& external_arguments_for(SystemId system) const {
+        switch (system) {
+            case SystemId::WiiU: return wii_u_arguments;
+            case SystemId::Ds:
+            case SystemId::ThreeDs: break;
+        }
+        static const std::vector<std::string> none;
+        return none;
+    }
+
     // Starting point for new games; each game remembers its own afterwards.
     bool default_bilinear_filtering = false;
 

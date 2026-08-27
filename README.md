@@ -131,10 +131,27 @@ a second device. What is missing is a Cemu that speaks it —
 Until then `tools/fake_wii_u` stands in for it, which is what
 `tests/run_wii_u_test.sh` and `tests/run_wii_u_companion_test.sh` drive.
 
-Because the emulator is started separately, either device may be sitting there
-before it exists. Both say so rather than showing a blank window — the host
-names the socket to point Cemu at, and the second device says which machine it
-is waiting on.
+The shell starts the emulator itself, from a command you configure. That is not
+a convenience: in Game Mode there is no desktop to start one from, which is the
+whole reason this app exists. In `settings.json`:
+
+```json
+{
+  "wii_u_program": "/path/to/cemu",
+  "wii_u_arguments": ["--dualscreen-socket", "{socket}", "--game", "{game}"]
+}
+```
+
+The arguments are written out in full because nothing here knows what a fork
+will call its own flags. `{socket}` becomes the path it should hand its screens
+over on and `{game}` the file you picked; everything else is passed through
+untouched, with no shell in between. Quitting the shell stops it again.
+
+Leave `wii_u_program` empty to start it yourself — which works on a desktop, and
+does not work from a Steam shortcut. Either way, a device sitting there before
+the emulator exists says so rather than showing a blank window: the host names
+the socket to point at, and the second device says which machine it is waiting
+on.
 
 Three things are different about a Wii U session:
 

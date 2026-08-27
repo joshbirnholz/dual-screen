@@ -128,6 +128,7 @@ add_library(dualscreen_core STATIC
     src/ui/layout_picker.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
+    src/util/child_process.cpp
     src/util/log.cpp
 )
 

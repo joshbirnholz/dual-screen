@@ -131,9 +131,28 @@ Which is also why every button on the pad is free to cross the link.
 `ds::ExternalFrameLink::default_socket_path()` is
 `$XDG_RUNTIME_DIR/dualscreen-external.sock`, falling back to
 `/tmp/dualscreen-external-<uid>.sock`. The shell's `--external-socket` moves it,
-which is how two sessions on one machine stay apart. The fork should take the
-path as a command-line argument or an environment variable rather than hardcoding
-it.
+which is how two sessions on one machine stay apart.
+
+**Take the path as an argument.** The shell starts the emulator itself, because
+in Game Mode there is nowhere to start one from by hand, and it fills `{socket}`
+and `{game}` into a command the player configured:
+
+```json
+{
+  "wii_u_program": "/path/to/cemu",
+  "wii_u_arguments": ["--dualscreen-socket", "{socket}", "--game", "{game}"]
+}
+```
+
+Whatever the fork's flags are actually called, they go there — nothing on this
+side assumes anything about them beyond those two substitutions, and no shell
+sits between the command and `execvp`, so there is no quoting to get wrong. A
+fork that only reads a hardcoded path cannot be run twice on one machine and
+cannot be tested against a second session.
+
+The shell also stops it: SIGTERM to the process group when the session ends,
+SIGKILL if it is still there three seconds later. A fork should treat SIGTERM as
+"the player quit" and save what it would save.
 
 The shell creates the shared memory and passes the file descriptor over the
 socket on accept, so there is no name to agree on, nothing left in `/dev/shm`

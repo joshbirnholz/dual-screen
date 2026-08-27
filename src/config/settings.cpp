@@ -67,6 +67,16 @@ Settings Settings::load(const AppPaths& paths) {
     settings.core_path = expand_user_path(get_or<std::string>(document, "core_path", settings.core_path));
     settings.core_path_3ds =
         expand_user_path(get_or<std::string>(document, "core_path_3ds", settings.core_path_3ds));
+    settings.wii_u_program =
+        expand_user_path(get_or<std::string>(document, "wii_u_program", settings.wii_u_program));
+    if (document.contains("wii_u_arguments") && document["wii_u_arguments"].is_array()) {
+        settings.wii_u_arguments.clear();
+        for (const auto& argument : document["wii_u_arguments"]) {
+            if (argument.is_string()) {
+                settings.wii_u_arguments.push_back(argument.get<std::string>());
+            }
+        }
+    }
     settings.default_bilinear_filtering =
         get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
     settings.default_render_scale =
@@ -104,6 +114,8 @@ bool Settings::save(const AppPaths& paths) const {
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;
     document["core_path_3ds"] = core_path_3ds;
+    document["wii_u_program"] = wii_u_program;
+    document["wii_u_arguments"] = wii_u_arguments;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;

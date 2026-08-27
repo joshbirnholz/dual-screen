@@ -176,6 +176,99 @@ fi
     fi
 }
 
+# And the whole session from one command. In Game Mode there is no desktop to go
+# and start an emulator from, which is the entire reason this app exists -- so
+# the shell starts it, from a command the player configured. This is the
+# arrangement a Steam shortcut actually gets.
+{
+    shot="$WORK_DIR/launched.ppm"
+    log="$WORK_DIR/launched.log"
+    socket="$WORK_DIR/launched.sock"
+    mkdir -p "$WORK_DIR/launched/config/dualscreen"
+    # Nothing here knows what a fork of Cemu will call its own flags, so the
+    # command is written out in full and the shell fills in the two things only
+    # it knows.
+    cat > "$WORK_DIR/launched/config/dualscreen/settings.json" <<JSON
+{"wii_u_program": "$FAKE_WII_U",
+ "wii_u_arguments": ["--socket", "{socket}", "--seconds", "300"]}
+JSON
+
+    XDG_CONFIG_HOME="$WORK_DIR/launched/config" \
+    XDG_DATA_HOME="$WORK_DIR/launched/data" \
+    SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
+    "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
+        "$DUALSCREEN" \
+            --game "$WORK_DIR/game.wud" \
+            --external-socket "$socket" \
+            --windowed \
+            --exit-after-seconds 8 \
+            --screenshot-at-seconds 5 \
+            --screenshot "$shot" \
+        > "$log" 2>&1
+    result=$?
+
+    echo "--- launched: the shell ---"
+    cat "$log" 2>/dev/null
+
+    if [ "$result" -ne 0 ]; then
+        echo "launched: the shell exited with $result" >&2
+        FAILED=1
+    fi
+    if ! grep -q "a game connected" "$log" 2>/dev/null; then
+        echo "launched: the shell started no emulator, or the one it started never connected" >&2
+        FAILED=1
+    fi
+    if [ ! -f "$shot" ]; then
+        echo "launched: no screenshot" >&2
+        FAILED=1
+    elif ! "$CHECKER" "$shot" center=blue; then
+        echo "launched: the television never appeared, so starting the emulator is not enough on "\
+"its own" >&2
+        FAILED=1
+    fi
+
+}
+
+# Stopping it again is as much the point as starting it: the shell quitting has
+# to take the emulator with it, or a player in Game Mode is left looking at a
+# window with nothing left running that could close it.
+#
+# Checked with a program that has no opinion rather than with fake_wii_u, which
+# notices the link go and exits on its own -- so it would look stopped whether
+# or not anything stopped it.
+{
+    log="$WORK_DIR/stopped.log"
+    mkdir -p "$WORK_DIR/stopped/config/dualscreen"
+    cat > "$WORK_DIR/stopped/config/dualscreen/settings.json" <<'JSON'
+{"wii_u_program": "/bin/sleep", "wii_u_arguments": ["1471"]}
+JSON
+
+    XDG_CONFIG_HOME="$WORK_DIR/stopped/config" \
+    XDG_DATA_HOME="$WORK_DIR/stopped/data" \
+    SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
+    "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
+        "$DUALSCREEN" \
+            --game "$WORK_DIR/game.wud" \
+            --external-socket "$WORK_DIR/stopped.sock" \
+            --windowed \
+            --exit-after-seconds 4 \
+        > "$log" 2>&1
+
+    if ! grep -q "started /bin/sleep" "$log" 2>/dev/null; then
+        echo "stopped: the shell never started the configured program, so this run says nothing" >&2
+        FAILED=1
+    fi
+    # Matched on the program and its argument rather than by pattern, because
+    # a pattern that says "sleep 1471" also matches any shell whose command
+    # line happens to mention it -- including the one running this script.
+    stray=$(ps -eo pid=,args= | awk '$2 == "/bin/sleep" && $3 == "1471" { print $1 }')
+    if [ -n "$stray" ]; then
+        echo "stopped: the program the shell started outlived the shell" >&2
+        kill $stray 2>/dev/null
+        FAILED=1
+    fi
+}
+
 if [ "$FAILED" -eq 0 ]; then
     echo "ok - a console played by another program showed both of its screens"
 fi
