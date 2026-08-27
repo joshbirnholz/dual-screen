@@ -14,6 +14,12 @@ This document is what that fork has to do.
 
 ## What this app gives you
 
+Cemu is MPL-2.0 (its `LICENSE.txt`; the README excepts `dependencies/` and some
+individual `src/` files, which carry their own). That is file-level copyleft:
+modifying it privately costs nothing, and distributing a binary means publishing
+the modified files under the same licence. The files below are this project's
+and carry this project's licence, whatever that turns out to be.
+
 Three files, and nothing else from this repository:
 
     src/layout/screen_id.hpp          the two-line enum the API takes
@@ -79,10 +85,12 @@ number that increases will do; the frame counter is the obvious one. Publish
 both screens under the same value before moving on.
 
 **Publishing must not block on the GPU.** The pixels have to be on the CPU by
-the time `publish` is called, and a synchronous `glReadPixels` on the render
-thread will cost more than the encode it feeds. Use whatever Cemu already has
-for screenshots or for its own capture path, one frame behind if that is what it
-takes: a frame of latency is invisible next to a stall.
+the time `publish` is called, and a synchronous readback on the render thread
+will cost more than the encode it feeds. One frame behind is fine -- a frame of
+latency is invisible next to a stall, and next to the network hop after it.
+
+Cemu's own screenshot path will not do for this. See **Where this attaches**
+below: it exists, it is in exactly the right place, and it stalls by design.
 
 **A screen that does not change need not be published.** The shell keeps the
 last frame for each screen. A title whose GamePad is a static map can publish it
@@ -102,6 +110,54 @@ controls, and only the shell knows where its window puts that screen.
 
 Until `have_input()` is true, nothing has been sent and Cemu's own input should
 carry on unchanged -- a shell that never sends a pad is a shell that has none.
+
+## Where this attaches
+
+Read off Cemu at 5ead580, so line numbers will drift; the names should not.
+
+**The frame hook already exists and is the right one.**
+`Renderer::HandleScreenshotRequest(LatteTextureView* texView, bool padView)` is
+a virtual on the renderer base, called from one place --
+`LatteRenderTarget.cpp`, in `LatteRenderTarget_copyToBackbuffer`, right after
+`DrawBackbufferQuad` -- once per screen per frame, with `padView` already
+telling the two apart. It runs *before* `ImguiBegin`, `swkbd_render` and
+`LatteOverlay_render`, so what it sees is the game's own render target with none
+of Cemu's interface drawn on it. That is exactly the picture this link wants.
+
+**Its readback is not reusable.** Both backends stall, deliberately, because a
+screenshot happens when somebody presses F12:
+
+- `OpenGLRenderer::HandleScreenshotRequest` does a synchronous `glGetTexImage`
+  straight into a `std::vector<uint8>`.
+- `VulkanRenderer::HandleScreenshotRequest` does `vkCmdCopyImageToBuffer`, then
+  `SubmitCommandBuffer()` and `WaitCommandBufferFinished(...)` -- a full flush
+  and a CPU wait.
+
+Both hand back **RGB24**, not the XRGB8888 this link carries, and both walk
+every pixel on the CPU when the source and destination disagree about sRGB.
+
+So the fork attaches at that call site and brings its own readback: a ring of
+pixel-buffer objects on OpenGL, a ring of staging buffers and fences on Vulkan,
+reading the frame from one or two back. That is the bulk of the work in this,
+and it is a well-trodden pattern rather than anything exotic. Metal exists too
+and can be left alone.
+
+**Input is one call site.** `VPADController::VPADRead(VPADStatus_t& status,
+const BtnRepeat&)` fills the whole emulated GamePad for the game. Filling it
+from `link.input()` instead of from `controllers_update_states()` is the change,
+and `have_input()` is what decides which.
+
+**Touch lands one divide away.** Cemu maps a normalised position onto the
+panel's raw range as `x * 3883 + 92` and `4095 - y * 3694 - 254` (see
+`VPADController::update_touch`). This link sends the touch in the GamePad
+screen's own pixels, so dividing by 854 and 480 gets you to what that formula
+wants.
+
+**One size limit to agree on.** The shared memory holds 1920x1080 per screen and
+refuses anything larger. `HandleScreenshotRequest` hands over the game's render
+target at Cemu's *internal* resolution, so a fork publishing above 1x would be
+refused. Either publish at 1x, or say so and the cap moves -- it is a constant
+in ExternalSharedHeader and the memory is allocated from it.
 
 ## What the shell does with it
 
