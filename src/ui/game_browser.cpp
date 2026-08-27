@@ -251,7 +251,10 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
             case UiAction::MenuReset:
-            case UiAction::MenuDisconnect: break;
+            case UiAction::MenuDisconnect:
+            // Settings is reached from the main menu and from a game's own
+            // menu; a file browser is neither.
+            case UiAction::MenuSettings: break;
             case UiAction::Quit:
                 result.quit_requested = true;
                 break;

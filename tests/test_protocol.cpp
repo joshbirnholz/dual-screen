@@ -76,6 +76,7 @@ void test_welcome_and_session_round_trip() {
     state.render_scale = 3;
     state.screen_gap = false;
     state.right_stick_mode = RightStickMode::CirclePad;
+    state.settings_open = true;
 
     buffer.clear();
     encode_session_state(state, buffer);
@@ -93,6 +94,9 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.right_stick_mode == RightStickMode::CirclePad);
     CHECK_EQ(static_cast<int>(received_state.render_scale), 3);
     CHECK_EQ(received_state.screen_gap, false);
+    // The host's own settings screen: not mirrored, but the companion has to
+    // know it is up to say where to look and to keep sending presses.
+    CHECK_EQ(received_state.settings_open, true);
 }
 
 // Everything a companion can ask the host for travels in one message, each
@@ -222,7 +226,7 @@ void test_request_round_trip() {
     // a quiet request carries a byte there that no action stands for.
     RequestMessage pressed;
     pressed.wants_menu_action = true;
-    pressed.menu_action = MenuAction::Reset;
+    pressed.menu_action = MenuAction::Settings;
     pressed.wants_menu_focus = true;
     pressed.menu_focus = 7;
     buffer.clear();
@@ -231,7 +235,7 @@ void test_request_round_trip() {
     RequestMessage received_press;
     CHECK(decode_request(payload.data(), payload.size(), received_press));
     CHECK_EQ(received_press.wants_menu_action, true);
-    CHECK(received_press.menu_action == MenuAction::Reset);
+    CHECK(received_press.menu_action == MenuAction::Settings);
     CHECK_EQ(received_press.wants_menu_focus, true);
     CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
 

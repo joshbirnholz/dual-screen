@@ -250,6 +250,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.cursor_choosable ? 1u : 0u);
     put_u8(out, message.right_stick_choosable ? 1u : 0u);
     put_u8(out, message.cursor_shown ? 1u : 0u);
+    put_u8(out, message.settings_open ? 1u : 0u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -362,6 +363,7 @@ bool menu_action_from_wire(uint8_t value, MenuAction& out) {
         case 7: out = MenuAction::Quit; return true;
         case 8: out = MenuAction::Reset; return true;
         case 9: out = MenuAction::Disconnect; return true;
+        case 10: out = MenuAction::Settings; return true;
         default: break;
     }
     return false;
@@ -548,9 +550,12 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     reader.u8(cursor_choosable);
     reader.u8(right_stick_choosable);
     uint8_t cursor_shown = 0;
+    uint8_t settings_open = 0;
     reader.u8(cursor_shown);
+    reader.u8(settings_open);
     if (!reader.ok()) return false;
     out.cursor_shown = (cursor_shown != 0);
+    out.settings_open = (settings_open != 0);
     out.paused = (paused != 0);
     out.bilinear_filtering = (filtering != 0);
     out.screen_gap = (screen_gap != 0);

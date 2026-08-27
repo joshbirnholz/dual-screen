@@ -48,6 +48,10 @@ enum class UiAction {
     // Menu-only for the same reason as the two above: + is pressed constantly
     // while playing.
     MenuDisconnect,
+    // Opens the settings screen, from the button a Nintendo pad prints - on.
+    // Menu-only for the same reason again -- and it is the settings of the
+    // device running the game, wherever the press came from.
+    MenuSettings,
 };
 
 // A touch/click that landed somewhere in the window, in output pixels. The UI

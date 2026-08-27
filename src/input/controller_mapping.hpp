@@ -35,6 +35,7 @@ constexpr SDL_GameControllerButton kMenuCancelButton = SDL_CONTROLLER_BUTTON_A; 
 constexpr SDL_GameControllerButton kMenuQuitButton = SDL_CONTROLLER_BUTTON_Y;    // north
 constexpr SDL_GameControllerButton kMenuResetButton = SDL_CONTROLLER_BUTTON_X;   // west
 constexpr SDL_GameControllerButton kMenuDisconnectButton = SDL_CONTROLLER_BUTTON_START;  // plus
+constexpr SDL_GameControllerButton kMenuSettingsButton = SDL_CONTROLLER_BUTTON_BACK;     // minus
 
 // Maps a controller button to a DS button. Returns false for buttons the DS has
 // no equivalent for.

@@ -43,6 +43,10 @@ struct LayoutPickerResult {
     bool screen_gap_toggled = false;
     // The right stick's mapping was cycled; same deal again.
     bool right_stick_mode_changed = false;
+    // The settings screen was asked for. Not a value to adopt: the caller puts
+    // that screen up, and it belongs to the device running the game however
+    // this was pressed.
+    bool settings_requested = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A

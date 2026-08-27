@@ -430,6 +430,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 case ButtonGlyph::X: pressed.push_back(UiAction::MenuQuit); break;
                 case ButtonGlyph::Y: pressed.push_back(UiAction::MenuReset); break;
                 case ButtonGlyph::Plus: pressed.push_back(UiAction::MenuDisconnect); break;
+                case ButtonGlyph::Minus: pressed.push_back(UiAction::MenuSettings); break;
                 // Smoothing is the app's to change, here as in a game, so it is
                 // asked for rather than pushed through the actions below.
                 case ButtonGlyph::RightStick: result.filtering_toggled = true; break;
@@ -457,6 +458,9 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             case UiAction::MenuDisconnect:
                 if (state_.session_active) result.disconnect_requested = true;
                 break;
+            // Not asked about either, and not a value this menu holds: the
+            // caller puts the screen up and this one gets out of the way.
+            case UiAction::MenuSettings: result.settings_requested = true; break;
             // R3 is handled by the app, so that it means the same thing here
             // as it does in a game; the app pushes the result back in with
             // set_filtering(). Toggling it again here would undo that.
@@ -633,6 +637,9 @@ void LayoutPicker::render(QuadRenderer& quads,
     }
 
     std::vector<GuidePrompt> guide;
+    // Leftmost, and always: it is the one prompt here that is about the machine
+    // rather than about the game, so it sits apart from the rest.
+    guide.push_back({ButtonGlyph::Minus, "Settings"});
     if (state_.session_active) {
         guide.push_back({ButtonGlyph::Plus, "Disconnect"});
     }

@@ -142,6 +142,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_render_scale_ = state.render_scale;
             host_screen_gap_ = state.screen_gap;
             host_menu_open_ = state.menu_open;
+            host_settings_open_ = state.settings_open;
             host_menu_focus_ = state.menu_focus;
             host_menu_confirm_ = state.menu_confirm;
             host_max_render_scale_ = state.max_render_scale;

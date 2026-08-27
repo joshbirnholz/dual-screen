@@ -87,6 +87,10 @@ public:
         bool menu_open = false;
         int menu_focus = 0;
         uint8_t menu_confirm = 0;
+        // The settings screen, which is this device's own rather than shared:
+        // the companion is told only that it is up. See
+        // SessionStateMessage::settings_open.
+        bool settings_open = false;
         // What decides which entries that menu has, so the companion builds
         // the identical row and the two cursors mean the same thing.
         int max_render_scale = 1;

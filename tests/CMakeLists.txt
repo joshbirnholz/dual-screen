@@ -127,6 +127,17 @@ if(XVFB_RUN_EXECUTABLE)
             ${CMAKE_BINARY_DIR}/companion-disconnect)
     set_tests_properties(companion_disconnect_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 
+    # The settings screen: opened from the menu with -, drawn only by the host,
+    # and still answering the other device's presses.
+    add_test(NAME host_settings_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_host_settings_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/host-settings
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(host_settings_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+
     # The mirror of the run above: the host stops while the companion is in the
     # menu, which is the one direction that was never handled.
     add_test(NAME host_quit_headless

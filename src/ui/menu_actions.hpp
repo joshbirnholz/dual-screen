@@ -24,6 +24,7 @@ inline bool menu_action_for(UiAction action, net::MenuAction& out) {
         case UiAction::MenuQuit: out = net::MenuAction::Quit; return true;
         case UiAction::MenuReset: out = net::MenuAction::Reset; return true;
         case UiAction::MenuDisconnect: out = net::MenuAction::Disconnect; return true;
+        case UiAction::MenuSettings: out = net::MenuAction::Settings; return true;
         default: break;
     }
     return false;
@@ -39,6 +40,7 @@ inline UiAction ui_action_for(net::MenuAction action) {
         case net::MenuAction::Quit: return UiAction::MenuQuit;
         case net::MenuAction::Reset: return UiAction::MenuReset;
         case net::MenuAction::Disconnect: return UiAction::MenuDisconnect;
+        case net::MenuAction::Settings: return UiAction::MenuSettings;
         case net::MenuAction::Confirm: break;
     }
     return UiAction::Confirm;

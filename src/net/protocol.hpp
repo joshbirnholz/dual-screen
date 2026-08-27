@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 17;
+constexpr uint16_t kProtocolVersion = 18;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -63,6 +63,10 @@ enum class MenuAction : uint8_t {
     Quit = 7,
     Reset = 8,
     Disconnect = 9,
+    // Open the host's settings. It is the host's own screen rather than a
+    // shared one -- see SessionStateMessage::settings_open -- but either pad
+    // can ask for it and either pad can work it once it is up.
+    Settings = 10,
 };
 
 // How a screen's pixels are encoded in a Frame message.
@@ -223,6 +227,12 @@ struct SessionStateMessage {
     uint8_t menu_focus = 0;
     // 0 none, 1 reset, 2 quit -- see LayoutPicker::MenuConfirm.
     uint8_t menu_confirm = 0;
+    // The host's settings screen, which unlike the menu is not mirrored: it is
+    // about the machine running the game, and half of what it shows -- where
+    // that machine's BIOS files and emulators are -- is not the companion's
+    // business at all. The companion is told only that it is up, so it can say
+    // where to look and keep sending presses.
+    bool settings_open = false;
     // What decides which buttons the menu has. Sent so the companion builds
     // the identical row: a menu that agreed about everything except how many
     // entries it had would put the two devices' cursors in different places.

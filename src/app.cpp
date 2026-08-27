@@ -305,6 +305,10 @@ struct App::Impl {
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
     std::string external_socket_path;
+    // Where the settings screen was opened from, so closing it goes back
+    // there. It used to be reachable only before a game was running, when the
+    // answer could not be anything but the main menu.
+    State settings_came_from = State::Launcher;
     // Whether this app started the program playing an external console, so
     // that one which exits without ever connecting is noticed rather than
     // waited for indefinitely. Cleared once that has been reported.
@@ -414,6 +418,13 @@ struct App::Impl {
     // the only one: a host that quits while this device is in the menu leaves
     // it holding a menu about a session that no longer exists.
     void end_companion_session();
+    // Puts up this device's settings, remembering what to go back to. Reached
+    // from the main menu and, now, from a game's own menu -- and on a host,
+    // possibly because the other device asked.
+    void open_settings();
+    // What to do about whatever that screen just decided -- called for a press
+    // made here and for one the companion sent, the same way the menu is.
+    void apply_settings_result(const SettingsScreenResult& result);
     // Plays what arrives from the host, opening this device's audio output the
     // first time something does -- the rate is not known until then.
     void attach_companion_audio();
@@ -873,6 +884,12 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 } else {
                     running = false;
                 }
+            } else if (result.settings_requested) {
+                // The settings belong to the device running the game, whichever
+                // pad asked: half of what they show is where this machine's
+                // BIOS files and emulators are, which is nothing the other
+                // device could act on. It is told to look over here instead.
+                open_settings();
             } else if (result.close_requested || result.reset_requested) {
                 // Through the one place that opens and closes it, so that
                 // putting the menu away always sounds like it.
@@ -1160,6 +1177,40 @@ void App::Impl::attach_companion_audio() {
             }
             audio.push(samples, frames);
         });
+}
+
+void App::Impl::open_settings() {
+    settings_came_from = state;
+    if (picker) {
+        // The menu it was opened from goes away rather than sitting underneath:
+        // two menus at once would leave the player's presses going somewhere
+        // they cannot see.
+        picker->close();
+    }
+    settings_screen->open(settings, resolve_core_statuses(options, settings));
+    state = State::Settings;
+    input.set_game_input_enabled(false);
+    log_info("the settings screen is up");
+}
+
+void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
+    if (result.settings_changed) {
+        settings = settings_screen->settings();
+        if (!settings.save(paths)) {
+            log_warn("could not save settings.json");
+        }
+        SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+    }
+    if (result.close_requested) {
+        if (settings_came_from == State::Menu && local_game()) {
+            // Back to the menu it was opened from, rebuilt from what the
+            // session looks like now rather than from what it looked like then
+            // -- a companion may have arrived or left while this screen was up.
+            set_menu_open(true);
+        } else {
+            open_launcher();
+        }
+    }
 }
 
 void App::Impl::end_companion_session() {
@@ -1619,6 +1670,19 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
+            // The host's settings are up. This device is not drawing them --
+            // see MenuAction::Settings -- but the player is still holding a pad
+            // and it is still their session, so the presses go over.
+            if (companion_session->host_settings_open()) {
+                input.set_game_input_enabled(false);
+                for (const UiAction action : actions) {
+                    net::MenuAction wire = net::MenuAction::Confirm;
+                    if (menu_action_for(action, wire)) {
+                        companion_session->request_menu_action(wire);
+                    }
+                }
+                break;
+            }
             // Connected: the companion's own touchscreen and buttons drive the
             // host's game from here on.
             input.set_game_input_enabled(true);
@@ -1715,21 +1779,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
 
         case State::Settings: {
-            const SettingsScreenResult result =
+            apply_settings_result(
                 settings_screen->update(actions, pointers, static_cast<float>(output_width),
-                                        static_cast<float>(output_height));
-            if (result.settings_changed) {
-                settings = settings_screen->settings();
-                if (!settings.save(paths)) {
-                    log_warn("could not save settings.json");
-                }
-                SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
-            }
-            if (result.close_requested) {
-                // Settings is only reachable before a game is running, so there
-                // is only one place to go back to.
-                open_launcher();
-            }
+                                        static_cast<float>(output_height)));
             break;
         }
 
@@ -1792,6 +1844,19 @@ void App::Impl::render() {
     // device would draw the same blank window the host used to. It works this
     // out rather than being told -- it knows which console it joined, and that
     // nothing has arrived -- which keeps the wire out of it.
+    // The host has its settings up. They are about that machine -- where its
+    // BIOS files and its emulators are -- so there is nothing useful to mirror
+    // here, and a frozen game would look like a session that had stopped.
+    if (state == State::Companion && companion_session &&
+        companion_session->host_settings_open()) {
+        render_waiting_screen(quads, text, button_glyphs, width, height, "Settings",
+                              {"Look at the other screen."}, {});
+        SDL_GL_SwapWindow(window);
+        ++frames_rendered;
+        companion_session->note_frame_drawn();
+        return;
+    }
+
     if (state == State::Companion && companion_session &&
         system_profile(system).frame_origin == FrameOrigin::External) {
         const ScreenTextures& arrived = companion_session->screens();
@@ -2166,8 +2231,15 @@ int App::run(const AppOptions& options) {
 
         // Test hook: a single tap of one key, so the path from a physical
         // keypress to a core's own keyboard callback can be exercised
-        // headless. Sent once the core has had a frame to register one.
-        if (!options.simulate_key.empty() && !simulate_key_sent && impl.frames_rendered >= 2) {
+        // headless. Sent once the core has had a frame to register one, and
+        // once whatever this run was asked to reach is actually reached: a key
+        // meant for a menu that has not opened yet, or for a session that has
+        // not been joined yet, lands somewhere else entirely.
+        const bool still_arriving =
+            open_layout_menu_when_playing ||
+            (!options.auto_connect_screen.empty() && !impl.is_companion());
+        if (!options.simulate_key.empty() && !simulate_key_sent && impl.frames_rendered >= 2 &&
+            !still_arriving) {
             const SDL_Keycode key = SDL_GetKeyFromName(options.simulate_key.c_str());
             if (key != SDLK_UNKNOWN) {
                 SDL_Event down {};
@@ -2277,6 +2349,7 @@ int App::run(const AppOptions& options) {
                 impl.picker->set_session_active(impl.paired());
             }
             shared.menu_open = impl.state == Impl::State::Menu;
+            shared.settings_open = impl.state == Impl::State::Settings;
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
@@ -2347,16 +2420,31 @@ int App::run(const AppOptions& options) {
             // them: two of them are two moves, not one.
             net::HostSession::MenuPress press;
             while (impl.host_session->take_menu_press(press)) {
-                if (impl.state != Impl::State::Menu || !impl.picker) continue;
-                if (press.has_focus) {
+                // A press from the other pad answers whichever of the two
+                // screens this device is actually showing, and is dropped when
+                // it is showing neither: a press aimed at a menu that has since
+                // closed is not a press at the game.
+                const bool for_menu = impl.state == Impl::State::Menu && impl.picker;
+                const bool for_settings = impl.state == Impl::State::Settings;
+                if (!for_menu && !for_settings) continue;
+                if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
                 }
-                if (press.has_action) {
-                    const LayoutPickerResult result = impl.picker->update(
-                        {ui_action_for(press.action)}, {}, static_cast<float>(impl.output_width),
-                        static_cast<float>(impl.output_height));
-                    impl.apply_menu_result(result, /*pressed_here=*/false);
+                if (!press.has_action) continue;
+                const UiAction action = ui_action_for(press.action);
+                if (for_settings) {
+                    // Not a screen the other device draws, but still one it can
+                    // work -- see MenuAction::Settings. The presses come over
+                    // and get the same answers a press made here would.
+                    impl.apply_settings_result(impl.settings_screen->update(
+                        {action}, {}, static_cast<float>(impl.output_width),
+                        static_cast<float>(impl.output_height)));
+                    continue;
                 }
+                const LayoutPickerResult result =
+                    impl.picker->update({action}, {}, static_cast<float>(impl.output_width),
+                                        static_cast<float>(impl.output_height));
+                impl.apply_menu_result(result, /*pressed_here=*/false);
             }
             if (impl.host_session->take_companion_quit_request()) {
                 // The same as choosing Quit here: the whole app shuts down.

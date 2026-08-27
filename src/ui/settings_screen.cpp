@@ -156,7 +156,9 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
             case UiAction::MenuReset:
-            case UiAction::MenuDisconnect: break;
+            case UiAction::MenuDisconnect:
+            // Already here, which is the whole of what it asks for.
+            case UiAction::MenuSettings: break;
             case UiAction::Quit: break;
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
             case UiAction::SwapLayout:    // nothing here is a layout

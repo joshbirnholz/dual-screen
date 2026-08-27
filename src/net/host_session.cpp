@@ -120,7 +120,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.max_render_scale != shared_.max_render_scale ||
         state.cursor_choosable != shared_.cursor_choosable ||
         state.right_stick_choosable != shared_.right_stick_choosable ||
-        state.cursor_shown != shared_.cursor_shown) {
+        state.cursor_shown != shared_.cursor_shown ||
+        state.settings_open != shared_.settings_open) {
         shared_ = state;
         session_state_dirty_ = true;
     }
@@ -434,6 +435,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.cursor_choosable = shared_.cursor_choosable;
         state.right_stick_choosable = shared_.right_stick_choosable;
         state.cursor_shown = shared_.cursor_shown;
+        state.settings_open = shared_.settings_open;
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);

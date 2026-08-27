@@ -200,6 +200,8 @@ void InputManager::handle_event(const SDL_Event& event) {
                 push_action(UiAction::MenuReset);
             } else if (button == kMenuDisconnectButton) {
                 push_action(UiAction::MenuDisconnect);
+            } else if (button == kMenuSettingsButton) {
+                push_action(UiAction::MenuSettings);
             }
 
             switch (button) {
@@ -250,6 +252,7 @@ void InputManager::handle_event(const SDL_Event& event) {
                 // could not reset or quit a game from the menu at all.
                 case SDLK_F5: push_action(UiAction::MenuReset); break;
                 case SDLK_F6: push_action(UiAction::MenuQuit); break;
+                case SDLK_F4: push_action(UiAction::MenuSettings); break;
                 case SDLK_F7: push_action(UiAction::MenuDisconnect); break;
                 case SDLK_F10: push_action(UiAction::Quit); break;
                 // Return doubles as DS Start in game, but game input is off

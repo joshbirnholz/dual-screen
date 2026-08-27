@@ -691,10 +691,64 @@ void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
               "a Wii U game starts on a layout its own menu does not offer");
 }
 
+// The settings belong to the machine running the game, and the menu is the one
+// place both players can reach from. So the prompt is always there, it is
+// leftmost -- it is the only one on that row about the machine rather than
+// about the game -- and pressing it asks rather than doing anything itself.
+void test_the_settings_prompt_is_there_and_is_leftmost() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = LayoutRegistry::fallback_id();
+    // With a second device connected, so the row is as long as it ever gets and
+    // "leftmost" is a claim about something rather than about a row of one.
+    state.session_active = true;
+
+    // Where each prompt ended up, found by touching the row rather than by
+    // being told: the row is laid out from the glyph artwork's own proportions,
+    // which only the drawing side knows.
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    LayoutPicker picker(registry);
+    picker.open(state);
+    picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
+
+    float leftmost_settings = kWidth;
+    float leftmost_other = kWidth;
+    bool found_settings = false;
+    for (float y = 4.0f; y < kHeight; y += 4.0f) {
+        for (float x = 4.0f; x < kWidth; x += 4.0f) {
+            const ButtonGlyph glyph = picker.guide_button_at(x, y);
+            if (glyph == ButtonGlyph::Count) continue;
+            if (glyph == ButtonGlyph::Minus) {
+                found_settings = true;
+                leftmost_settings = std::min(leftmost_settings, x);
+            } else {
+                leftmost_other = std::min(leftmost_other, x);
+            }
+        }
+    }
+    CHECK_MSG(found_settings, "the menu offers no way to reach the settings");
+    CHECK_MSG(leftmost_settings < leftmost_other,
+              "the settings prompt is not the leftmost one on the row");
+
+    // And it asks rather than answering: the caller puts the screen up, because
+    // on a host it is the caller that knows whose settings these are.
+    LayoutPicker pressing(registry);
+    pressing.open(state);
+    const LayoutPickerResult result =
+        pressing.update({UiAction::MenuSettings}, {}, kWidth, kHeight);
+    CHECK_MSG(result.settings_requested, "pressing - in the menu asked for nothing");
+    CHECK_MSG(!result.close_requested,
+              "asking for the settings also closed the menu, so there would be nothing to come "
+              "back to");
+}
+
 }  // namespace
 
 int main() {
     test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape();
+    test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
     test_the_pointer_button_appears_only_where_there_is_a_pointer();

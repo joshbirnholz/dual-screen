@@ -62,6 +62,9 @@ public:
     // than running a menu of its own, so both screens show the same thing
     // whichever pad is working it.
     bool host_menu_open() const { return host_menu_open_; }
+    // The host's own settings screen. Not mirrored -- this device is told only
+    // that it is up, so it can say where to look and keep sending presses.
+    bool host_settings_open() const { return host_settings_open_; }
     int host_menu_focus() const { return host_menu_focus_; }
     uint8_t host_menu_confirm() const { return host_menu_confirm_; }
     int host_max_render_scale() const { return host_max_render_scale_; }
@@ -223,6 +226,7 @@ private:
     int host_render_scale_ = 1;
     bool host_screen_gap_ = true;
     bool host_menu_open_ = false;
+    bool host_settings_open_ = false;
     int host_menu_focus_ = 0;
     uint8_t host_menu_confirm_ = 0;
     int host_max_render_scale_ = 1;
