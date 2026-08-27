@@ -86,6 +86,10 @@ struct Options {
     // Test hooks, the same ones the desktop app carries.
     double exit_after_seconds = 0.0;
     double screenshot_at_seconds = 0.0;
+    // Opens the quick menu and leaves the session from it, as a player would.
+    // Two devices and a wire between them are the whole of what this behaviour
+    // is about, so there is nowhere smaller it can be driven from.
+    double disconnect_at_seconds = 0.0;
     std::string screenshot_path;
     std::string parse_error;
 };
@@ -123,6 +127,11 @@ Options parse_options(int argc, char** argv) {
         } else if (argument == "--exit-after-seconds") {
             options.exit_after_seconds = std::strtod(
                 next_argument(argc, argv, index, "--exit-after-seconds", options.parse_error).c_str(),
+                nullptr);
+        } else if (argument == "--disconnect-at-seconds") {
+            options.disconnect_at_seconds = std::strtod(
+                next_argument(argc, argv, index, "--disconnect-at-seconds", options.parse_error)
+                    .c_str(),
                 nullptr);
         } else if (argument == "--screenshot-at-seconds") {
             options.screenshot_at_seconds =
@@ -226,6 +235,7 @@ private:
     InputManager input_;
     AudioOutput audio_;
     uint32_t audio_rate_ = 0;
+    bool disconnect_asked_ = false;
     // Whether opening it has already been reported, so a device that will not
     // open is said once rather than on every packet that arrives.
     bool audio_open_failed_ = false;
@@ -803,6 +813,18 @@ void Client::run() {
         }
 
         const double alive = static_cast<double>(now - started_ms) / 1000.0;
+        // Two steps: the menu has to be up before the press that leaves from it
+        // means anything, and the host is the one that puts it up.
+        if (options_.disconnect_at_seconds > 0.0 && !disconnect_asked_ &&
+            state_ == State::Playing && alive >= options_.disconnect_at_seconds) {
+            if (!menu_open_) {
+                session_.set_menu_open(true);
+            } else {
+                session_.request_menu_action(net::MenuAction::Disconnect);
+                disconnect_asked_ = true;
+                log_info("asked to leave the session from the quick menu");
+            }
+        }
         // Off screen there is no surface to draw on, and swapping against one
         // that has gone away is at best wasted work. The session is still
         // polled, so a glance at something else and back does not cost the

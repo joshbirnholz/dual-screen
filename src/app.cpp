@@ -345,7 +345,10 @@ struct App::Impl {
     // What to do about whatever the menu just decided. Called for a press made
     // here and for one forwarded from the other device alike: there is one
     // menu, so there is one place that answers it.
-    void apply_menu_result(const LayoutPickerResult& result);
+    // `pressed_here` is false for a press the companion made and sent over.
+    // The one menu is worked from either device, so almost nothing cares which
+    // pad it came from -- leaving the session is the exception.
+    void apply_menu_result(const LayoutPickerResult& result, bool pressed_here = true);
     // Opens or closes the one menu on this device, which for a host is also
     // what the companion is told to draw.
     void set_menu_open(bool open);
@@ -642,11 +645,13 @@ void App::Impl::set_menu_open(bool open) {
         if (state == State::Menu) return;
         open_picker();
         state = State::Menu;
+        log_info("the quick menu is up");
         input.set_game_input_enabled(false);
         if (is_companion()) companion_session->set_menu_open(true);
         return;
     }
     if (state != State::Menu) return;
+    log_info("the quick menu is down");
     picker->close();
     if (is_companion()) {
         companion_session->set_menu_open(false);
@@ -657,7 +662,7 @@ void App::Impl::set_menu_open(bool open) {
     input.set_game_input_enabled(true);
 }
 
-void App::Impl::apply_menu_result(const LayoutPickerResult& result) {
+void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed_here) {
             if (result.selection_changed) {
                 // A companion does not own the choice: request_layout() asks,
                 // and this device adopts whatever the host broadcasts back.
@@ -694,8 +699,16 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result) {
             }
             if (result.disconnect_requested) {
                 if (host_session) {
-                    host_session->disconnect_companion("you ended the session");
-                    set_menu_open(false);
+                    host_session->disconnect_companion(pressed_here ? "you ended the session"
+                                                                    : "you left the session");
+                    // Only when somebody here asked for it. A companion leaving
+                    // is not this player asking for their game back: they are
+                    // still sitting in the menu, and it has just changed under
+                    // them -- one screen where there were two, and the entries
+                    // that only meant something with a second device gone.
+                    if (pressed_here) {
+                        set_menu_open(false);
+                    }
                 } else if (companion_session) {
                     companion_session->disconnect();
                     open_launcher();
@@ -2036,7 +2049,7 @@ int App::run(const AppOptions& options) {
                     const LayoutPickerResult result = impl.picker->update(
                         {ui_action_for(press.action)}, {}, static_cast<float>(impl.output_width),
                         static_cast<float>(impl.output_height));
-                    impl.apply_menu_result(result);
+                    impl.apply_menu_result(result, /*pressed_here=*/false);
                 }
             }
             if (impl.host_session->take_companion_quit_request()) {
