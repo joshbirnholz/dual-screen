@@ -88,6 +88,7 @@ public:
                      int target_width = 0,
                      int target_height = 0) override;
     SystemScreens screens_geometry() const override;
+    uint64_t frame_serial() const override;
     bool wants_shutdown() const override;
     void send_key_event(bool down, unsigned retro_keycode, uint32_t character,
                         uint16_t modifiers) override;

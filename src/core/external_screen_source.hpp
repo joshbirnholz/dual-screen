@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -40,6 +41,9 @@ public:
     SystemScreens screens_geometry() const override;
     bool read_screen(ScreenId screen, ScreenReadback& out, int target_width = 0,
                      int target_height = 0) override;
+    // The two screens arrive under one serial each frame but are published
+    // separately, so either may be the one that has just landed.
+    uint64_t frame_serial() const override { return std::max(top_.serial, bottom_.serial); }
     bool wants_shutdown() const override { return ended_; }
 
     void set_audio_callback(AudioCallback callback) { audio_callback_ = std::move(callback); }

@@ -28,6 +28,10 @@ struct AppOptions {
     // feel the other path on real hardware, not a setting -- the tile codec is
     // cheaper for every console this runs today.
     bool video_codec = false;
+    // Where a console played by another program hands its screens over. Empty
+    // means the usual place; a second copy of this app, or a test, needs its
+    // own. See ExternalFrameLink.
+    std::string external_socket;
     // Exits after this long. More robust than a frame count for tests that
     // need two processes to overlap, since frame rate is not bounded when the
     // display has no vsync.

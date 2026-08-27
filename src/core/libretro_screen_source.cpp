@@ -765,6 +765,10 @@ SystemScreens LibretroCoreScreenSource::screens_geometry() const {
     return system_profile(system_).screens;
 }
 
+uint64_t LibretroCoreScreenSource::frame_serial() const {
+    return core_ ? core_->video_frame().serial : 0;
+}
+
 bool LibretroCoreScreenSource::wants_shutdown() const {
     return core_ && core_->wants_shutdown();
 }

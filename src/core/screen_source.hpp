@@ -84,6 +84,11 @@ public:
         return false;
     }
 
+    // Which frame is currently on offer. It only moves when the picture
+    // actually changed, so whatever is sending screens to another device can
+    // tell an unchanged frame from a new one without comparing pixels.
+    virtual uint64_t frame_serial() const { return 0; }
+
     // True once the source has decided it is finished (e.g. the core asked the
     // frontend to shut down).
     virtual bool wants_shutdown() const { return false; }

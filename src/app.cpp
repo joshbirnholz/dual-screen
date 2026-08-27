@@ -12,6 +12,7 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
+#include "core/external_screen_source.hpp"
 #include "core/gl_call_trace.hpp"
 #include "core/libretro_screen_source.hpp"
 #include "core/system.hpp"
@@ -91,6 +92,11 @@ std::vector<SettingsScreen::CoreStatus> resolve_core_statuses(const AppOptions& 
                                                               const Settings& settings) {
     std::vector<SettingsScreen::CoreStatus> statuses;
     for (const SystemProfile& profile : system_profiles()) {
+        // A console played by another program has no core to find, so listing
+        // it here could only ever report a core it does not want as missing.
+        if (profile.frame_origin != FrameOrigin::LibretroCore) {
+            continue;
+        }
         statuses.push_back({profile.name, resolve_core_path(options, settings, profile.id)});
     }
     return statuses;
@@ -114,6 +120,9 @@ std::string usage_text() {
         "  --windowed           Run in a window instead of fullscreen\n"
         "  --connect <screen>   Join the first game found on the network as its\n"
         "                       top or bottom screen, skipping the menu\n"
+        "  --external-socket <path>\n"
+        "                       Where a console played by another program hands\n"
+        "                       its screens over, instead of the usual place\n"
         "  --list-layouts       Print the available layout ids and exit\n"
         "  --verbose            Log core and frontend debug output\n"
         "  --trace-core-gl      Log every OpenGL call a GPU-rendering core makes,\n"
@@ -161,6 +170,9 @@ AppOptions parse_command_line(int argc, char** argv) {
             // before a console that needs it exists. See docs/research-notes.md.
             options.video_codec =
                 next_argument(argc, argv, index, "--video-codec", options.parse_error) == "h264";
+        } else if (argument == "--external-socket") {
+            options.external_socket =
+                next_argument(argc, argv, index, "--external-socket", options.parse_error);
         } else if (argument == "--connect") {
             options.auto_connect_screen =
                 next_argument(argc, argv, index, "--connect", options.parse_error);
@@ -239,6 +251,10 @@ struct App::Impl {
     AudioOutput audio;
 
     std::unique_ptr<LibretroCoreScreenSource> source;
+    // The other kind of console: one played by a program beside this app rather
+    // than by a core inside it. Only one of the two is ever set -- which, the
+    // system's FrameOrigin decides.
+    std::unique_ptr<ExternalScreenSource> external_source;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
     std::unique_ptr<GameBrowser> browser;
@@ -255,6 +271,10 @@ struct App::Impl {
     // console's two are separate pictures. The television to begin with, since
     // that is the game; the other is a second view of it. See SoloScreens.
     ScreenId solo_screen = ScreenId::Top;
+    // Whether the program playing an external console has connected yet. Only
+    // once it has does the link know what it is sending, which is when the
+    // frame clock and the sound device can be set to match it.
+    bool external_game_arrived = false;
     // The window size last told to the host, on a companion. Compared every
     // frame against the real one so a resize is reported without a dedicated
     // resize hook, and so the very first report (0 against whatever the
@@ -333,6 +353,18 @@ struct App::Impl {
     // The screen source currently feeding the compositor, whichever role we are
     // in. Null before anything is running.
     ScreenSource* active_source();
+    // Whatever is producing this device's own game, whichever kind it is. Null
+    // on a companion, which is showing somebody else's. Everything that only
+    // wants to know "is a game running here" asks this rather than naming one
+    // of the two kinds and quietly meaning both.
+    ScreenSource* local_game();
+    const ScreenSource* local_game() const;
+    // What the game here runs at, whichever kind it is. An external one does
+    // not know until the program playing it says so, which is what
+    // adopt_external_timing() is for.
+    double local_frames_per_second() const;
+    double local_audio_sample_rate() const;
+    void adopt_external_timing();
     void start_companion(ScreenId wanted_screen);
     void open_launcher();
     // Plays what arrives from the host, opening this device's audio output the
@@ -614,15 +646,54 @@ void App::Impl::companion_target_size(ScreenId screen, int& out_width, int& out_
     }
 }
 
-ScreenSource* App::Impl::active_source() {
+ScreenSource* App::Impl::local_game() {
     if (source) return source.get();
+    if (external_source) return external_source.get();
+    return nullptr;
+}
+
+const ScreenSource* App::Impl::local_game() const {
+    if (source) return source.get();
+    if (external_source) return external_source.get();
+    return nullptr;
+}
+
+double App::Impl::local_frames_per_second() const {
+    if (source) return source->frames_per_second();
+    if (external_source) return external_source->frames_per_second();
+    return 60.0;
+}
+
+double App::Impl::local_audio_sample_rate() const {
+    if (source) return source->audio_sample_rate();
+    if (external_source) return external_source->audio_sample_rate();
+    return 48000.0;
+}
+
+void App::Impl::adopt_external_timing() {
+    frame_period = 1.0 / std::max(1.0, local_frames_per_second());
+    frame_accumulator = 0.0;
+    // Reopened rather than left as it was: the rate the link reported before
+    // anything connected was a default, and playing 48kHz audio through a
+    // device opened for some other rate is heard rather than merely wrong.
+    audio.close();
+    std::string audio_error;
+    if (!audio.open(local_audio_sample_rate(), &audio_error)) {
+        log_warn(audio_error + "; continuing without sound");
+    }
+    log_info("the game runs at " + std::to_string(static_cast<int>(local_frames_per_second() + 0.5)) +
+             " fps, " + std::to_string(static_cast<int>(local_audio_sample_rate())) + " Hz");
+}
+
+ScreenSource* App::Impl::active_source() {
+    if (ScreenSource* here = local_game()) return here;
     if (companion_session) return companion_session.get();
     return nullptr;
 }
 
 SystemScreens App::Impl::screens_geometry() const {
-    if (source) {
-        return source->screens_geometry();
+    if (const ScreenSource* here = local_game()) {
+        return here->screens_geometry();
     }
     if (companion_session) {
         return companion_session->screens_geometry();
@@ -763,7 +834,7 @@ void App::Impl::open_picker() {
     // connected. Outside a game there is nothing to scale.
     picker_state.max_render_scale =
         is_companion() ? companion_session->host_max_render_scale()
-                       : (source ? system_profile(system).max_render_scale : 1);
+                       : (local_game() ? system_profile(system).max_render_scale : 1);
     picker_state.screen_gap = screen_gap;
     picker_state.right_stick_mode = right_stick_mode;
     // Only a console with a stick of its own has more than one answer worth
@@ -771,7 +842,7 @@ void App::Impl::open_picker() {
     // and the right one has nothing to be.
     picker_state.right_stick_choosable =
         is_companion() ? companion_session->host_right_stick_choosable()
-                       : (source && system_profile(system).has_analog_stick);
+                       : (local_game() && system_profile(system).has_analog_stick);
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
     picker_state.cursor_choosable =
@@ -909,6 +980,8 @@ void App::Impl::request_reset() {
     }
     if (source) {
         source->reset();
+    } else if (external_source) {
+        external_source->reset();
     }
 }
 
@@ -1097,6 +1170,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         source->close();
         source.reset();
     }
+    external_source.reset();
     have_game_config = false;
     game_config = GameConfig();
 
@@ -1162,57 +1236,101 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         return false;
     }
 
-    LibretroSourceConfig source_config;
-    source_config.system = system;
-    source_config.core_path = resolved_core_path;
-    source_config.rom_path = rom_path;
-    source_config.system_directory = settings.system_dir;
-    source_config.save_directory = paths.saves_dir;
-    // Named after the ROM rather than its hash, so saves are interchangeable
-    // with RetroArch's and recognisable in a file listing.
-    source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
-    source_config.render_scale = render_scale;
+    switch (profile.frame_origin) {
+        case FrameOrigin::LibretroCore: {
+            LibretroSourceConfig source_config;
+            source_config.system = system;
+            source_config.core_path = resolved_core_path;
+            source_config.rom_path = rom_path;
+            source_config.system_directory = settings.system_dir;
+            source_config.save_directory = paths.saves_dir;
+            // Named after the ROM rather than its hash, so saves are
+            // interchangeable with RetroArch's and recognisable in a file
+            // listing.
+            source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
+            source_config.render_scale = render_scale;
 
-    source.reset(new LibretroCoreScreenSource());
-    source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
-        if (sound_plays_here()) {
-            audio.push(samples, frames);
-        }
-        // Mirrored to the companion as it is produced, so both devices hear the
-        // same thing at the same time.
-        if (host_session) {
-            host_session->publish_audio(samples, frames,
-                                        static_cast<uint32_t>(source->audio_sample_rate()));
-        }
-    });
+            source.reset(new LibretroCoreScreenSource());
+            source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
+                if (sound_plays_here()) {
+                    audio.push(samples, frames);
+                }
+                // Mirrored to the companion as it is produced, so both devices
+                // hear the same thing at the same time.
+                if (host_session) {
+                    host_session->publish_audio(
+                        samples, frames, static_cast<uint32_t>(source->audio_sample_rate()));
+                }
+            });
 
-    std::string source_error;
-    if (!source->open(source_config, &source_error)) {
-        std::vector<std::string> details;
-        if (resolved_core_path.empty()) {
-            details.push_back("Looked for " + profile.core_filenames.front() +
-                              " in the RetroArch core folders and /usr/lib/libretro.");
-            details.push_back(
-                "Point at it directly with --core, or set \"" +
-                std::string(core_path_settings_key(system)) +
-                "\" in " + paths.settings_file + ".");
-        } else {
-            details.push_back("Core: " + resolved_core_path);
+            std::string source_error;
+            if (!source->open(source_config, &source_error)) {
+                std::vector<std::string> details;
+                if (resolved_core_path.empty()) {
+                    details.push_back("Looked for " + profile.core_filenames.front() +
+                                      " in the RetroArch core folders and /usr/lib/libretro.");
+                    details.push_back(
+                        "Point at it directly with --core, or set \"" +
+                        std::string(core_path_settings_key(system)) +
+                        "\" in " + paths.settings_file + ".");
+                } else {
+                    details.push_back("Core: " + resolved_core_path);
+                }
+                details.push_back("BIOS folder: " + settings.system_dir);
+                source.reset();
+                enter_message(MessageKind::Error, "Could not start the game", source_error, details,
+                              fatal_on_failure);
+                return false;
+            }
+
+            // A scale from an older config, or one this system does not offer,
+            // is clamped by the source; the menu should show what the core was
+            // given.
+            render_scale = source->render_scale();
+            break;
         }
-        details.push_back("BIOS folder: " + settings.system_dir);
-        source.reset();
-        enter_message(MessageKind::Error, "Could not start the game", source_error, details,
-                      fatal_on_failure);
-        return false;
+        case FrameOrigin::External: {
+            // Nothing is loaded here. The game is played by another program,
+            // which is started separately and connects to this socket when it
+            // is ready -- so opening a game means opening the way in and then
+            // waiting, and the black screen until it arrives is correct.
+            external_source.reset(new ExternalScreenSource(system));
+            external_source->set_audio_callback(
+                [this](const int16_t* samples, std::size_t frames) {
+                    if (sound_plays_here()) {
+                        audio.push(samples, frames);
+                    }
+                    if (host_session) {
+                        host_session->publish_audio(
+                            samples, frames,
+                            static_cast<uint32_t>(external_source->audio_sample_rate()));
+                    }
+                });
+
+            const std::string socket_path = options.external_socket.empty()
+                                                ? ExternalFrameLink::default_socket_path()
+                                                : options.external_socket;
+            std::string link_error;
+            if (!external_source->open(socket_path, &link_error)) {
+                external_source.reset();
+                enter_message(MessageKind::Error,
+                              "Could not open the way in for " + profile.core_description,
+                              link_error, {"Socket: " + socket_path}, fatal_on_failure);
+                return false;
+            }
+            render_scale = 1;  // whatever is playing the game owns its resolution
+            external_game_arrived = false;
+            log_info(profile.core_description + " can hand its screens over at " + socket_path);
+            break;
+        }
     }
 
-    // A scale from an older config, or one this system does not offer, is
-    // clamped by the source; the menu should show what the core was given.
-    render_scale = source->render_scale();
-
-    frame_period = 1.0 / std::max(1.0, source->frames_per_second());
+    // Until an external game has connected these are the link's own defaults
+    // rather than what it is really sending; adopt_external_timing() replaces
+    // them the moment it says.
+    frame_period = 1.0 / std::max(1.0, local_frames_per_second());
     std::string audio_error;
-    if (!audio.open(source->audio_sample_rate(), &audio_error)) {
+    if (!audio.open(local_audio_sample_rate(), &audio_error)) {
         log_warn(audio_error + "; continuing without sound");
     }
 
@@ -1231,14 +1349,14 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     host_config.rom_sha1 = game_config.rom_sha1;
     host_config.host_screen = local_screen;
     host_config.system = system;
-    host_config.audio_sample_rate = static_cast<uint32_t>(source->audio_sample_rate());
+    host_config.audio_sample_rate = static_cast<uint32_t>(local_audio_sample_rate());
     std::string host_error;
     if (!host_session->start(host_config, &host_error)) {
         log_warn("not hosting for other devices: " + host_error);
         host_session.reset();
     }
 
-    if (!source->warnings().empty()) {
+    if (source && !source->warnings().empty()) {
         enter_message(MessageKind::Info, "The core did not accept every setting",
                       "The game will still run, but the screen split may not look right until this "
                       "is resolved.",
@@ -1307,7 +1425,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 if (!message_is_fatal && is_companion()) {
                     state = State::Companion;
                     input.set_game_input_enabled(true);
-                } else if (!message_is_fatal && source) {
+                } else if (!message_is_fatal && local_game()) {
                     state = State::Playing;
                     input.set_game_input_enabled(true);
                 } else if (!message_is_fatal || launcher) {
@@ -2006,11 +2124,11 @@ int App::run(const AppOptions& options) {
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
             shared.max_render_scale =
-                impl.source ? system_profile(impl.system).max_render_scale : 1;
+                impl.local_game() ? system_profile(impl.system).max_render_scale : 1;
             shared.cursor_choosable = true;  // this end is a machine with a pointer
             shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
-                impl.source && system_profile(impl.system).has_analog_stick;
+                impl.local_game() && system_profile(impl.system).has_analog_stick;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
@@ -2048,8 +2166,8 @@ int App::run(const AppOptions& options) {
                 if (request.wants_right_stick_mode) {
                     impl.adopt_right_stick_mode(request.right_stick_mode);
                 }
-                if (request.wants_reset && impl.source) {
-                    impl.source->reset();
+                if (request.wants_reset) {
+                    impl.request_reset();
                 }
                 // The companion asking for the menu, and then working it. Both
                 // land on the one picker this device holds, so a press over
@@ -2192,7 +2310,17 @@ int App::run(const AppOptions& options) {
         // Opening the menu pauses the game, wherever it was opened from: the
         // host holds the one menu, so its own state already says so.
         const bool game_running = impl.state == Impl::State::Playing;
-        if (impl.source && game_running) {
+        // Whichever kind of game this device is playing, if it is playing one.
+        // Everything below that only needs a frame out of it asks through here;
+        // what is still spelled `impl.source` is genuinely a core's own -- save
+        // RAM, an input sink -- and a console played elsewhere has none of it.
+        ScreenSource* const playing = impl.local_game();
+        if (impl.external_source && impl.external_source->running() &&
+            !impl.external_game_arrived) {
+            impl.external_game_arrived = true;
+            impl.adopt_external_timing();
+        }
+        if (playing != nullptr && game_running) {
             // The companion's buttons and touches are merged with this device's,
             // so either player can press anything. This is the InputSink seam
             // doing exactly what it was left in place for.
@@ -2220,7 +2348,9 @@ int App::run(const AppOptions& options) {
                     combined.touch_y = remote.touch_y;
                 }
             }
-            impl.source->input_sink().submit(combined);
+            if (impl.source) {
+                impl.source->input_sink().submit(combined);
+            }
 
             impl.frame_accumulator += elapsed;
             // Cap catch-up so a hitch cannot spiral into a long fast-forward.
@@ -2228,9 +2358,15 @@ int App::run(const AppOptions& options) {
             int advanced = 0;
             while (impl.frame_accumulator >= impl.frame_period && advanced < max_frames_per_iteration) {
                 std::string frame_error;
-                if (!impl.source->advance_frame(&frame_error)) {
-                    impl.enter_message(MessageKind::Error, "The core stopped running", frame_error, {},
-                                       true);
+                if (!playing->advance_frame(&frame_error)) {
+                    // A game that has finished is not a game that failed: a
+                    // console played by another program ends its session by
+                    // that program closing, which is an ordinary way to stop
+                    // and is handled by wants_shutdown below.
+                    if (!playing->wants_shutdown()) {
+                        impl.enter_message(MessageKind::Error, "The core stopped running",
+                                           frame_error, {}, true);
+                    }
                     break;
                 }
                 impl.frame_accumulator -= impl.frame_period;
@@ -2239,13 +2375,15 @@ int App::run(const AppOptions& options) {
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
                 impl.frame_accumulator = 0.0;
             }
-            impl.save_flush_accumulator += elapsed;
-            if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
-                impl.save_flush_accumulator = 0.0;
-                impl.source->flush_save_ram(false);
+            if (impl.source) {
+                impl.save_flush_accumulator += elapsed;
+                if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
+                    impl.save_flush_accumulator = 0.0;
+                    impl.source->flush_save_ram(false);
+                }
             }
 
-            if (impl.source->wants_shutdown()) {
+            if (playing->wants_shutdown()) {
                 impl.running = false;
             }
         } else if (impl.companion_session && impl.state == Impl::State::Companion) {
@@ -2257,14 +2395,14 @@ int App::run(const AppOptions& options) {
         // nothing on the wire -- which is why this can sit outside the emulation
         // step. It has to: a paused game still owes the other device a picture
         // when what it needs changes, and while paused no new frame is coming.
-        if (impl.source && impl.host_session && impl.host_session->has_companion()) {
+        if (playing != nullptr && impl.host_session && impl.host_session->has_companion()) {
             // Asked for per screen rather than taken from the frame directly:
             // a core that renders on the GPU has no CPU copy of its picture,
             // and reaching into one is how a 3DS session used to send an empty
             // top screen and then read off the end of nothing for the bottom.
             // Only the screens the companion actually needs are asked for,
             // because on that path each one is a copy back off the card.
-            const uint64_t serial = impl.source->core_frame_for_test().serial;
+            const uint64_t serial = playing->frame_serial();
             ScreenReadback top;
             ScreenReadback bottom;
             // Sent at the console's own resolution regardless of the render
@@ -2274,10 +2412,10 @@ int App::run(const AppOptions& options) {
             // smooth one at a softer one. Revisit once a real hardware video
             // pipeline exists to carry the extra detail instead.
             if (impl.host_session->companion_wants(ScreenId::Top)) {
-                impl.source->read_screen(ScreenId::Top, top);
+                playing->read_screen(ScreenId::Top, top);
             }
             if (impl.host_session->companion_wants(ScreenId::Bottom)) {
-                impl.source->read_screen(ScreenId::Bottom, bottom);
+                playing->read_screen(ScreenId::Bottom, bottom);
             }
             if (top.valid() || bottom.valid()) {
                 const auto wire_order = [](ChannelOrder order) {
@@ -2304,7 +2442,7 @@ int App::run(const AppOptions& options) {
             // Paused: hold the sticks and buttons off the core entirely.
             impl.source->input_sink().submit(DsInputState());
         }
-        if (impl.source && !game_running && impl.game_was_running) {
+        if (playing != nullptr && !game_running && impl.game_was_running) {
             // The tail of a game that has just stopped, which would otherwise
             // keep playing over a menu the player has already opened. Dropped
             // on the way in only: there is nothing stale to drop on the way out.
@@ -2366,6 +2504,7 @@ int App::run(const AppOptions& options) {
         impl.source->close();
         impl.source.reset();
     }
+    impl.external_source.reset();
     impl.input.shutdown();
     impl.destroy_window();
     SDL_Quit();
