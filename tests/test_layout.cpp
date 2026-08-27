@@ -967,14 +967,17 @@ void test_a_lone_device_shows_what_the_console_makes_sense_of() {
     }
 }
 
-// Nothing in the shell may take a button the game reads. Kept next to the
-// console rather than in the input code, since it is a fact about the Wii U.
-void test_the_wii_u_keeps_its_stick_clicks() {
-    CHECK_MSG(system_profile(SystemId::WiiU).game_reads_stick_clicks,
-              "a Wii U stopped claiming its stick clicks, so the shell will take them back");
+// Nothing in the shell may take a control the game speaks for. Kept next to the
+// console rather than in the input code, since it is a fact about the Wii U:
+// both sticks are pressed by its games and the touch screen is played through.
+void test_the_wii_u_keeps_its_own_controls() {
+    CHECK_MSG(system_profile(SystemId::WiiU).game_uses_every_control,
+              "a Wii U stopped claiming its controls, so the shell will take them back");
     for (const SystemId id : {SystemId::Ds, SystemId::ThreeDs}) {
-        CHECK_MSG(!system_profile(id).game_reads_stick_clicks,
-                  system_profile(id).name + " claimed stick clicks it has no buttons for");
+        CHECK_MSG(!system_profile(id).game_uses_every_control,
+                  system_profile(id).name +
+                      " claimed every control, which would leave it no way into the menu but a "
+                      "keyboard it may not have");
     }
 }
 
@@ -1002,6 +1005,6 @@ int main() {
     test_smoothing_follows_the_texture_not_just_the_setting();
     test_the_compositor_says_when_the_picture_changed();
     test_a_lone_device_shows_what_the_console_makes_sense_of();
-    test_the_wii_u_keeps_its_stick_clicks();
+    test_the_wii_u_keeps_its_own_controls();
     return test::finish("layout");
 }

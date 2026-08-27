@@ -67,11 +67,18 @@ struct SystemProfile {
     // where this is LibretroCore.
     FrameOrigin frame_origin = FrameOrigin::LibretroCore;
     SoloScreens solo_screens = SoloScreens::Both;
-    // Whether the game itself reads the sticks being pressed. Where it does,
-    // this shell must not: a Wii U game has L3 and R3 of its own, and a layout
-    // quietly swapping underneath every press of one is the shell taking a
-    // button out of the player's hands.
-    bool game_reads_stick_clicks = false;
+    // Whether the game speaks for every control the console itself has. A Wii U
+    // game reads both sticks pressed and uses its touch screen throughout, so
+    // nothing this shell wants may be taken from the pad or the glass: not a
+    // screen swap on L3, not smoothing on R3, not the menu on both together or
+    // on a second finger. Those move to the keyboard, which the console never
+    // had and which Steam Input can be pointed at.
+    //
+    // The cost is that a device with neither keyboard nor spare buttons has no
+    // way into the menu at all. That is nobody yet -- the consoles that need
+    // this are played between two desktops -- and it is the thing to solve
+    // before one of them is a handheld.
+    bool game_uses_every_control = false;
 };
 
 const SystemProfile& system_profile(SystemId id);

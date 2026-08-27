@@ -132,7 +132,7 @@ SystemProfile make_wii_u() {
     // including pressing them, which is why nothing in this shell may take L3
     // or R3 while a Wii U game is running.
     profile.has_analog_stick = true;
-    profile.game_reads_stick_clicks = true;
+    profile.game_uses_every_control = true;
     // The television is the game; the GamePad is a second view of it. So one
     // device on its own shows one screen rather than both squeezed together.
     profile.solo_screens = SoloScreens::One;

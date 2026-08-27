@@ -521,7 +521,7 @@ void App::Impl::apply_system() {
     // A console with its own stick reads the stick as that stick. One without
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
-    input.set_stick_clicks_reserved(profile.game_reads_stick_clicks);
+    input.set_game_owns_controls(profile.game_uses_every_control);
 }
 
 void App::Impl::refresh_output_size() {

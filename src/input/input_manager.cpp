@@ -295,9 +295,13 @@ void InputManager::handle_event(const SDL_Event& event) {
                 pointer.press_y = state.press_y;
                 pointer.pressed = true;
                 pointer_events_.push_back(pointer);
-            } else if (fingers_.size() >= 2 && !second_finger_menu_armed_) {
+            } else if (fingers_.size() >= 2 && !second_finger_menu_armed_ &&
+                       !game_owns_controls_) {
                 // Two fingers at once is the touch-only escape hatch into the
-                // menu — a device with no buttons still needs a way in.
+                // menu — a device with no buttons still needs a way in. Not on
+                // a console that plays through its touch screen, though: there
+                // a second finger belongs to the game, and the menu would open
+                // in the middle of playing.
                 second_finger_menu_armed_ = true;
                 push_action(UiAction::ToggleMenu);
             }
@@ -597,13 +601,15 @@ void InputManager::end_frame(const Layout& layout,
     const bool left = stick_buttons_held(SDL_CONTROLLER_BUTTON_LEFTSTICK);
     const bool right = stick_buttons_held(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
     if (left && right && !stick_chord_used_) {
+        // Still marked used either way, so that letting go of the pair does not
+        // then fire the two singles below on a console that allows them.
         stick_chord_used_ = true;
-        push_action(UiAction::ToggleMenu);
+        if (!game_owns_controls_) {
+            push_action(UiAction::ToggleMenu);
+        }
     }
-    // Only where the game does not want them. See set_stick_clicks_reserved():
-    // the chord above still opens the menu either way, since pressing both at
-    // once is not something a game asks for.
-    if (!stick_clicks_reserved_) {
+    // Only where the game does not want them. See set_game_owns_controls().
+    if (!game_owns_controls_) {
         if (left_stick_held_ && !left && !stick_chord_used_) {
             push_action(UiAction::SwapLayout);
         }

@@ -655,15 +655,24 @@ void test_two_fingers_open_the_menu_more_than_once() {
               "the fingers left behind by a lost window were still counted, so the gesture never "
               "worked again");
 
+    // And not at all on a console played through its touch screen: there a
+    // second finger belongs to the game, and this would put a menu over it
+    // mid-play. The keyboard is the way in there.
+    frame({finger(SDL_FINGERUP, 4, 0.3f, 0.5f), finger(SDL_FINGERUP, 5, 0.6f, 0.5f)});
+    input.set_game_owns_controls(true);
+    CHECK_MSG(!frame({finger(SDL_FINGERDOWN, 6, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 7, 0.6f, 0.5f)}),
+              "a second finger opened the menu on a console whose game plays through the touch "
+              "screen, so the menu lands on top of whatever was being played");
+
     input.shutdown();
 }
 
-// A Wii U game reads both sticks being pressed, including pressed. A shell that
-// swaps a layout under every L3 has taken a button out of the player's hands --
-// so where the console says the game wants them, this stops answering the
-// singles. The two together still open the menu: that is the only way in from a
-// pad, and nothing presses both at once by accident.
-void test_the_shell_lets_go_of_the_sticks_where_the_game_wants_them() {
+// A Wii U game reads both sticks being pressed and plays through its touch
+// screen. A shell that swaps a layout under every L3, or opens a menu on a
+// second finger, has taken the console out of the player's hands -- so where
+// the game speaks for every control, this stops answering all of them and the
+// menu moves to the keyboard.
+void test_the_shell_lets_go_of_the_controls_where_the_game_wants_them() {
     VirtualPad pad;
     if (!pad.attach()) {
         test::skip("no virtual controller available");
@@ -694,7 +703,7 @@ void test_the_shell_lets_go_of_the_sticks_where_the_game_wants_them() {
     CHECK_MSG(contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK}), UiAction::SwapLayout),
               "L3 stopped swapping on a console whose game does not read it");
 
-    input.set_stick_clicks_reserved(true);
+    input.set_game_owns_controls(true);
     CHECK_MSG(!contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK}), UiAction::SwapLayout),
               "L3 still swapped the layout on a console whose game reads it, so every press of it "
               "in a game moves the picture");
@@ -702,12 +711,18 @@ void test_the_shell_lets_go_of_the_sticks_where_the_game_wants_them() {
         !contains(press_and_release({SDL_CONTROLLER_BUTTON_RIGHTSTICK}), UiAction::ToggleFilter),
         "R3 still toggled smoothing on a console whose game reads it");
 
-    // The way in from a pad has to survive, or a Wii U game cannot be paused.
-    CHECK_MSG(contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK,
-                                          SDL_CONTROLLER_BUTTON_RIGHTSTICK}),
-                       UiAction::ToggleMenu),
-              "both sticks together stopped opening the menu, which is the only way into it from "
-              "a pad");
+    // Nor the pair. The menu is reached from the keyboard here, which a player
+    // points Steam Input at -- and which is the only control a console with two
+    // spoken-for sticks and a played-through touch screen has left.
+    CHECK_MSG(!contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK,
+                                           SDL_CONTROLLER_BUTTON_RIGHTSTICK}),
+                        UiAction::ToggleMenu),
+              "both sticks together still opened the menu on a console whose game reads them");
+    // Letting go of the pair must not then fire the two singles it was made of.
+    CHECK_MSG(input.ui_actions().empty() ||
+                  (!contains(input.ui_actions(), UiAction::SwapLayout) &&
+                   !contains(input.ui_actions(), UiAction::ToggleFilter)),
+              "releasing both sticks fired the singles the chord was made of");
 
     input.shutdown();
     pad.detach();
@@ -733,7 +748,7 @@ int main() {
     test_face_buttons_reach_the_core();
     test_a_tap_reported_twice_still_knows_where_it_started();
     test_two_fingers_open_the_menu_more_than_once();
-    test_the_shell_lets_go_of_the_sticks_where_the_game_wants_them();
+    test_the_shell_lets_go_of_the_controls_where_the_game_wants_them();
 
     SDL_Quit();
     return test::finish("controller-input");
