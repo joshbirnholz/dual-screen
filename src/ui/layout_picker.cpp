@@ -468,8 +468,12 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         return LayoutPickerResult();
     }
 
-    if (result.close_requested || result.quit_requested || result.disconnect_requested ||
-        result.reset_requested) {
+    // Leaving the session is deliberately not one of these. Whether the menu
+    // goes away with it is the app's to decide -- it stays up when the press
+    // came from the other device -- and a menu that had closed itself here
+    // would leave that decision with nothing behind it: a blurred game, no
+    // menu on top, and no press this can still answer.
+    if (result.close_requested || result.quit_requested || result.reset_requested) {
         open_ = false;
     }
     return result;

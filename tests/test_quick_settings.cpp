@@ -421,6 +421,17 @@ void test_disconnect_is_the_plus_button_and_only_in_a_session() {
     picker.open(paired);
     CHECK_MSG(picker.update({UiAction::MenuDisconnect}, {}, kWidth, kHeight).disconnect_requested,
               "plus did not end the session");
+
+    // And the menu is still standing afterwards. Whether it goes away is the
+    // app's call -- it stays up when the other device was the one that left --
+    // so a menu that put itself away here would leave that decision with
+    // nothing behind it: a blurred game, no menu on top of it, and no press
+    // left that anything would answer.
+    CHECK_MSG(picker.is_open(),
+              "the menu closed itself on the way out of a session, leaving nothing to draw and "
+              "nothing to press");
+    CHECK_MSG(picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested,
+              "the menu had stopped answering presses after the session ended");
 }
 
 // The menu belongs to whichever device runs the game. The other one holds no
