@@ -8,6 +8,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "layout/layout.hpp"
+#include "video/video_codec.hpp"
 
 namespace ds {
 
@@ -80,6 +81,12 @@ struct Settings {
         static const std::vector<std::string> none;
         return none;
     }
+
+    // How screens are sent to a second device. Automatic follows the console
+    // being played -- tiles for a DS or a 3DS, video for a Wii U, which is what
+    // the measurements in docs/research-notes.md say. The other two are for
+    // seeing what the answer it did not pick looks like on your own machines.
+    video::ScreenCodec screen_codec = video::ScreenCodec::Auto;
 
     // Starting point for new games; each game remembers its own afterwards.
     bool default_bilinear_filtering = false;

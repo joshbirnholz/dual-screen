@@ -23,6 +23,61 @@
 // can drag a GPL dependency in.
 namespace ds::video {
 
+// How this device sends screens to another one.
+//
+// A preference rather than a capability: what the build can do is available()
+// below, and what the console being played wants is SystemProfile::prefers_video.
+// This is the player overruling both, which is the whole of what it is for --
+// the only reason to reach for it is to see what the other answer looks like on
+// a particular pair of machines and a particular network.
+//
+// Overruling it towards video is still a request rather than a guarantee. The
+// far end has to be able to decode, and a screen with an odd number of pixels
+// cannot go through 4:2:0 at all; either way the session falls back to tiles
+// and says so in the log.
+enum class ScreenCodec {
+    Auto,   // whatever the console being played asks for
+    Tiles,  // changed tiles, whatever it asks for
+    H264,   // video, wherever the far end can take it
+};
+
+// The order the settings screen cycles through, which is also the order above.
+inline ScreenCodec next_screen_codec(ScreenCodec codec) {
+    switch (codec) {
+        case ScreenCodec::Auto: return ScreenCodec::Tiles;
+        case ScreenCodec::Tiles: return ScreenCodec::H264;
+        case ScreenCodec::H264: return ScreenCodec::Auto;
+    }
+    return ScreenCodec::Auto;
+}
+
+// What settings.json holds, and what --video-codec accepts.
+inline const char* screen_codec_key(ScreenCodec codec) {
+    switch (codec) {
+        case ScreenCodec::Auto: return "auto";
+        case ScreenCodec::Tiles: return "tiles";
+        case ScreenCodec::H264: return "h264";
+    }
+    return "auto";
+}
+
+// Anything unrecognised is Auto rather than an error: a typo in a config file
+// should leave the app working the way it would have anyway.
+inline ScreenCodec screen_codec_from_key(const std::string& key) {
+    if (key == screen_codec_key(ScreenCodec::Tiles)) return ScreenCodec::Tiles;
+    if (key == screen_codec_key(ScreenCodec::H264)) return ScreenCodec::H264;
+    return ScreenCodec::Auto;
+}
+
+inline const char* to_string(ScreenCodec codec) {
+    switch (codec) {
+        case ScreenCodec::Auto: return "Automatic";
+        case ScreenCodec::Tiles: return "Changed tiles";
+        case ScreenCodec::H264: return "H.264 video";
+    }
+    return "Automatic";
+}
+
 // Whether this build has a video codec at all. The Switch and Android
 // toolchains do not have FFmpeg wired up yet, and everything DS and 3DS do
 // works without it, so it stays optional until those are ready.

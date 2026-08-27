@@ -113,6 +113,13 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
+        case Row::ScreenCodec:
+            // One way round only. Three entries is short enough that cycling
+            // forwards reaches any of them faster than deciding which
+            // direction to press.
+            settings_.screen_codec = video::next_screen_codec(settings_.screen_codec);
+            result.settings_changed = true;
+            break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -196,6 +203,7 @@ void SettingsScreen::render(QuadRenderer& quads,
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
         {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
+        {"Screens sent to a second device", video::to_string(settings_.screen_codec)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"Back", ""},
     };

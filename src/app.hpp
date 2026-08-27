@@ -24,10 +24,11 @@ struct AppOptions {
     // Runs for this many frames and then exits. Used by the headless smoke
     // test; 0 means run until the player quits.
     int exit_after_frames = 0;
-    // Send screens as H.264 rather than as tiles. A measurement and a way to
-    // feel the other path on real hardware, not a setting -- the tile codec is
-    // cheaper for every console this runs today.
-    bool video_codec = false;
+    // Overrides the "screen_codec" setting for one run: "auto", "tiles" or
+    // "h264". Empty leaves the setting alone, which is the usual case -- this
+    // is here so a test, or somebody comparing two runs, does not have to edit
+    // a config file between them.
+    std::string video_codec_override;
     // Where a console played by another program hands its screens over. Empty
     // means the usual place; a second copy of this app, or a test, needs its
     // own. See ExternalFrameLink.

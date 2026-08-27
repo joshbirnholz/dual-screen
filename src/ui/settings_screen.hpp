@@ -71,7 +71,7 @@ public:
 private:
     // The cores are not in here: they are read-only, one per console, and a
     // focusable row that does nothing when pressed is worse than a plain list.
-    enum class Row { SystemDir, DefaultLayout, Vsync, Back, Count };
+    enum class Row { SystemDir, DefaultLayout, ScreenCodec, Vsync, Back, Count };
     static constexpr int kRowCount = static_cast<int>(Row::Count);
 
     struct Geometry {

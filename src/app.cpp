@@ -146,6 +146,9 @@ std::string usage_text() {
         "  --external-socket <path>\n"
         "                       Where a console played by another program hands\n"
         "                       its screens over, instead of the usual place\n"
+        "  --video-codec <how>  How to send screens to a second device for this\n"
+        "                       run: auto, tiles or h264. Overrides the\n"
+        "                       \"screen_codec\" setting\n"
         "  --list-layouts       Print the available layout ids and exit\n"
         "  --verbose            Log core and frontend debug output\n"
         "  --trace-core-gl      Log every OpenGL call a GPU-rendering core makes,\n"
@@ -187,12 +190,13 @@ AppOptions parse_command_line(int argc, char** argv) {
                 next_argument(argc, argv, index, "--exit-after-frames", options.parse_error);
             options.exit_after_frames = std::atoi(value.c_str());
         } else if (argument == "--video-codec") {
-            // Sends screens as H.264 rather than as tiles. Not a setting: the
-            // tile codec is better for every console this runs today, and this
-            // is here to measure and to feel the other path on real hardware
-            // before a console that needs it exists. See docs/research-notes.md.
-            options.video_codec =
-                next_argument(argc, argv, index, "--video-codec", options.parse_error) == "h264";
+            options.video_codec_override =
+                next_argument(argc, argv, index, "--video-codec", options.parse_error);
+            if (options.video_codec_override != "auto" &&
+                options.video_codec_override != "tiles" &&
+                options.video_codec_override != "h264") {
+                options.parse_error = "--video-codec wants 'auto', 'tiles' or 'h264'";
+            }
         } else if (argument == "--external-socket") {
             options.external_socket =
                 next_argument(argc, argv, index, "--external-socket", options.parse_error);
@@ -396,6 +400,10 @@ struct App::Impl {
     // What the game here runs at, whichever kind it is. An external one does
     // not know until the program playing it says so, which is what
     // adopt_external_timing() is for.
+    // Whether this session should ask for video rather than changed tiles.
+    // Three answers folded into one: what this run was told, what the player
+    // settled on, and failing both, what the console being played wants.
+    bool wants_video() const;
     double local_frames_per_second() const;
     double local_audio_sample_rate() const;
     void adopt_external_timing();
@@ -695,6 +703,19 @@ const ScreenSource* App::Impl::local_game() const {
     if (source) return source.get();
     if (external_source) return external_source.get();
     return nullptr;
+}
+
+bool App::Impl::wants_video() const {
+    const video::ScreenCodec chosen =
+        options.video_codec_override.empty()
+            ? settings.screen_codec
+            : video::screen_codec_from_key(options.video_codec_override);
+    switch (chosen) {
+        case video::ScreenCodec::Tiles: return false;
+        case video::ScreenCodec::H264: return true;
+        case video::ScreenCodec::Auto: break;
+    }
+    return system_profile(system).prefers_video;
 }
 
 double App::Impl::local_frames_per_second() const {
@@ -2230,8 +2251,7 @@ int App::run(const AppOptions& options) {
         if (impl.host_session) {
             // Sound only goes over the wire when the other device is one of the
             // ones meant to be making it.
-            impl.host_session->set_video_wanted(impl.options.video_codec ||
-                                                system_profile(impl.system).prefers_video);
+            impl.host_session->set_video_wanted(impl.wants_video());
             impl.host_session->set_audio_enabled(
                 audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always

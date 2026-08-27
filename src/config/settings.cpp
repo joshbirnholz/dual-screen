@@ -77,6 +77,8 @@ Settings Settings::load(const AppPaths& paths) {
             }
         }
     }
+    settings.screen_codec = video::screen_codec_from_key(get_or<std::string>(
+        document, "screen_codec", video::screen_codec_key(settings.screen_codec)));
     settings.default_bilinear_filtering =
         get_or<bool>(document, "default_bilinear_filtering", settings.default_bilinear_filtering);
     settings.default_render_scale =
@@ -116,6 +118,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["core_path_3ds"] = core_path_3ds;
     document["wii_u_program"] = wii_u_program;
     document["wii_u_arguments"] = wii_u_arguments;
+    document["screen_codec"] = video::screen_codec_key(screen_codec);
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;

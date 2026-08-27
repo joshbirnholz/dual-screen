@@ -264,6 +264,18 @@ Three things keep it as low as it can go:
   renderer can upload that, which is a whole pass over every frame and half the
   bytes to the GPU that never happen.
 
+**Which of the two a session uses** is decided by the console being played: a DS
+and a 3DS send changed tiles, a Wii U sends H.264. The **Screens sent to a
+second device** row on the Settings screen overrules that either way, which is
+how you see what the answer it did not pick looks like on your own machines and
+your own network. `--video-codec auto|tiles|h264` does the same for one run
+without editing anything.
+
+Asking for video is a request rather than a guarantee: the far end has to be
+able to decode it, and a build without FFmpeg cannot. When it cannot the session
+sends tiles and says so in the log — worth checking, because a screenshot looks
+identical either way.
+
 If a companion still cannot keep up, in order of how much they buy:
 
 1. **Use the Upper Screen on TV layout.** One screen per device rather than

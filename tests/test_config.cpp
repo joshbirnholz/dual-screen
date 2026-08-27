@@ -257,6 +257,7 @@ void test_settings_round_trip() {
     defaults.default_right_stick_mode = RightStickMode::DPad;
     defaults.audio_target = AudioTarget::BottomScreen;
     defaults.cursor_mode = CursorMode::Hidden;
+    defaults.screen_codec = video::ScreenCodec::H264;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -270,6 +271,7 @@ void test_settings_round_trip() {
     CHECK_EQ(reloaded.default_screen_gap, false);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
+    CHECK(reloaded.screen_codec == video::ScreenCodec::H264);
 
     // Malformed settings fall back to defaults rather than refusing to start.
     {
@@ -283,6 +285,7 @@ void test_settings_round_trip() {
     CHECK_EQ(recovered.default_screen_gap, true);
     CHECK(recovered.audio_target == AudioTarget::Both);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
+    CHECK(recovered.screen_codec == video::ScreenCodec::Auto);
 
     // Text nobody recognises falls back rather than becoming a fourth state.
     CHECK(audio_target_from_key("sideways") == AudioTarget::Both);
@@ -291,6 +294,15 @@ void test_settings_round_trip() {
     CHECK(cursor_mode_from_key("auto") == CursorMode::Shown);
     CHECK(next_cursor_mode(CursorMode::Shown) == CursorMode::Hidden);
     CHECK(next_cursor_mode(CursorMode::Hidden) == CursorMode::Shown);
+
+    // A codec nobody recognises is the automatic one rather than an error: a
+    // typo in a config file should leave the app working as it would have.
+    CHECK(video::screen_codec_from_key("mpeg2") == video::ScreenCodec::Auto);
+    CHECK(video::screen_codec_from_key("") == video::ScreenCodec::Auto);
+    CHECK(video::screen_codec_from_key("tiles") == video::ScreenCodec::Tiles);
+    CHECK(video::next_screen_codec(video::ScreenCodec::Auto) == video::ScreenCodec::Tiles);
+    CHECK(video::next_screen_codec(video::ScreenCodec::Tiles) == video::ScreenCodec::H264);
+    CHECK(video::next_screen_codec(video::ScreenCodec::H264) == video::ScreenCodec::Auto);
 
     // Cycling visits all three and comes back round.
     CHECK(next_audio_target(AudioTarget::Both) == AudioTarget::TopScreen);
@@ -329,6 +341,15 @@ void test_command_line() {
 
     const char* help[] = {"dualscreen", "--help"};
     CHECK(parse_command_line(2, const_cast<char**>(help)).show_help);
+
+    // The codec override names one of the three the setting can hold, and
+    // anything else is refused rather than quietly meaning one of them.
+    const char* codec[] = {"dualscreen", "--video-codec", "tiles"};
+    const AppOptions chosen = parse_command_line(3, const_cast<char**>(codec));
+    CHECK(chosen.parse_error.empty());
+    CHECK_STR_EQ(chosen.video_codec_override, "tiles");
+    const char* nonsense[] = {"dualscreen", "--video-codec", "mpeg2"};
+    CHECK(!parse_command_line(3, const_cast<char**>(nonsense)).parse_error.empty());
 }
 
 }  // namespace

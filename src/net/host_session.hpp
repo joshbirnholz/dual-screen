@@ -52,7 +52,7 @@ public:
     // default: every system this runs today has flat-shaded screens that the
     // tile codec carries in a fraction of the bytes. See
     // docs/research-notes.md.
-    void set_video_wanted(bool wanted) { video_wanted_ = wanted; }
+    void set_video_wanted(bool wanted);
     // Whatever the companion did not take.
     ScreenId host_screen() const { return config_.host_screen; }
     // Empty unless the last companion left or was refused, for the host to show.

@@ -78,6 +78,20 @@ void HostSession::stop() {
     companion_wants_quit_ = false;
 }
 
+void HostSession::set_video_wanted(bool wanted) {
+    if (wanted == video_wanted_) {
+        return;
+    }
+    video_wanted_ = wanted;
+    if (!wanted) {
+        // Closed rather than left idle, so that turning it back on opens a
+        // fresh encoder and says so -- which is most of what makes this worth
+        // being able to change without restarting.
+        video_top_.close();
+        video_bottom_.close();
+    }
+}
+
 void HostSession::set_host_screen(ScreenId screen) {
     const ScreenId companion = (screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
     if (companion != companion_screen_) {
