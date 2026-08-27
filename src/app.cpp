@@ -340,7 +340,13 @@ struct App::Impl {
     std::string active_layout_id;
     bool bilinear_filtering = false;
     // Which device makes the sound. Only meaningful once two are connected.
+    // DS/3DS only -- a Wii U uses the pair below instead, one per stream.
     AudioTarget audio_target = AudioTarget::Both;
+    // A Wii U's two independent streams, meaningful even alone: muting the
+    // GamePad's stream, say, is a real choice with or without a second
+    // device. See clamp_wii_u_audio_target().
+    AudioTarget tv_audio_target = AudioTarget::TopScreen;
+    AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
     // Which hand holds the stylus. Shared with the other device, since it
     // changes what both of them are drawing.
     Handedness handedness = Handedness::Right;
@@ -465,6 +471,9 @@ struct App::Impl {
     void request_layout(const std::string& layout_id);
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
+    // A Wii U's two independent streams, asked for the same way.
+    void request_tv_audio_target(AudioTarget target);
+    void request_gamepad_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
     void request_render_scale(int scale);
     void request_screen_gap(bool include_gap);
@@ -479,6 +488,14 @@ struct App::Impl {
     // The next scale in the cycle, wrapping at the system's maximum.
     int next_render_scale() const;
     void adopt_audio_target(AudioTarget target);
+    void adopt_tv_audio_target(AudioTarget target);
+    void adopt_gamepad_audio_target(AudioTarget target);
+    // Switching a Wii U to its per-device layout is switching to the
+    // console's own arrangement, so the audio follows it back to the
+    // console's own defaults too -- TV on the television, GamePad on the
+    // GamePad -- the same as a fresh session starts with. Called from every
+    // place `active_layout_id` becomes that layout; a no-op anywhere else.
+    void reset_wii_u_audio_defaults_if_per_device(const std::string& layout_id);
     void adopt_handedness(Handedness hand);
     void adopt_screen_gap(bool include_gap);
     void adopt_right_stick_mode(RightStickMode mode);
@@ -792,6 +809,8 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     state.layout_id = companion_session->host_layout_id();
     state.bilinear_filtering = companion_session->host_filtering();
     state.audio_target = companion_session->host_audio_target();
+    state.tv_audio_target = companion_session->host_tv_audio_target();
+    state.gamepad_audio_target = companion_session->host_gamepad_audio_target();
     state.handedness = companion_session->host_handedness();
     state.render_scale = companion_session->host_render_scale();
     state.screen_gap = companion_session->host_screen_gap();
@@ -845,6 +864,12 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
             if (result.audio_target_changed) {
                 request_audio_target(next_audio_target(audio_target));
+            }
+            if (result.tv_audio_target_changed) {
+                request_tv_audio_target(next_wii_u_audio_target(tv_audio_target, paired()));
+            }
+            if (result.gamepad_audio_target_changed) {
+                request_gamepad_audio_target(next_wii_u_audio_target(gamepad_audio_target, paired()));
             }
             if (result.handedness_changed) {
                 request_handedness(other_hand(handedness));
@@ -913,6 +938,8 @@ void App::Impl::open_picker() {
     picker_state.session_active = paired();
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
+    picker_state.tv_audio_target = tv_audio_target;
+    picker_state.gamepad_audio_target = gamepad_audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
     picker_state.handedness = handedness;
     picker_state.render_scale = render_scale;
@@ -1000,6 +1027,7 @@ void App::Impl::request_layout(const std::string& layout_id) {
         picker->set_selected_layout(active_layout_id);
     }
     log_info("layout: " + active_layout().display_name);
+    reset_wii_u_audio_defaults_if_per_device(active_layout_id);
 }
 
 void App::Impl::request_right_stick_mode(RightStickMode mode) {
@@ -1117,6 +1145,22 @@ void App::Impl::request_audio_target(AudioTarget target) {
     adopt_audio_target(target);
 }
 
+void App::Impl::request_tv_audio_target(AudioTarget target) {
+    if (is_companion()) {
+        companion_session->request_tv_audio_target(target);
+        return;
+    }
+    adopt_tv_audio_target(target);
+}
+
+void App::Impl::request_gamepad_audio_target(AudioTarget target) {
+    if (is_companion()) {
+        companion_session->request_gamepad_audio_target(target);
+        return;
+    }
+    adopt_gamepad_audio_target(target);
+}
+
 void App::Impl::adopt_filtering(bool bilinear) {
     if (bilinear == bilinear_filtering) {
         return;
@@ -1150,7 +1194,54 @@ void App::Impl::adopt_audio_target(AudioTarget target) {
              to_string(audio_target));
 }
 
+void App::Impl::adopt_tv_audio_target(AudioTarget target) {
+    if (target == tv_audio_target) {
+        return;
+    }
+    tv_audio_target = target;
+    if (picker) {
+        picker->set_tv_audio_target(tv_audio_target);
+    }
+    if (!is_companion()) {
+        settings.wii_u_tv_audio_target = tv_audio_target;
+        settings.save(paths);
+    }
+    log_info(std::string(is_companion() ? "following the host: TV audio " : "TV audio: ") +
+             to_string(tv_audio_target));
+}
+
+void App::Impl::adopt_gamepad_audio_target(AudioTarget target) {
+    if (target == gamepad_audio_target) {
+        return;
+    }
+    gamepad_audio_target = target;
+    if (picker) {
+        picker->set_gamepad_audio_target(gamepad_audio_target);
+    }
+    if (!is_companion()) {
+        settings.wii_u_gamepad_audio_target = gamepad_audio_target;
+        settings.save(paths);
+    }
+    log_info(std::string(is_companion() ? "following the host: GamePad audio " : "GamePad audio: ") +
+             to_string(gamepad_audio_target));
+}
+
+void App::Impl::reset_wii_u_audio_defaults_if_per_device(const std::string& layout_id) {
+    if (system != SystemId::WiiU || layout_id != system_profile(system).default_layout_id) {
+        return;
+    }
+    adopt_tv_audio_target(AudioTarget::TopScreen);
+    adopt_gamepad_audio_target(AudioTarget::BottomScreen);
+}
+
 bool App::Impl::sound_plays_here() const {
+    // A Wii U's TV audio -- the only stream that actually reaches this app;
+    // see the "Not done yet" note in cemu-dualscreen's README about the
+    // GamePad's own stream. Off is a real choice here even alone, unlike a
+    // DS or 3DS below, so pairing does not short-circuit it.
+    if (system == SystemId::WiiU) {
+        return audio_reaches(tv_audio_target, local_screen);
+    }
     if (!paired()) {
         return true;  // nobody else to hand it to
     }
@@ -1274,6 +1365,8 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     bilinear_filtering = settings.default_bilinear_filtering;
     render_scale = settings.default_render_scale;
     audio_target = settings.audio_target;
+    tv_audio_target = settings.wii_u_tv_audio_target;
+    gamepad_audio_target = settings.wii_u_gamepad_audio_target;
     handedness = settings.handedness;
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
@@ -1330,6 +1423,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     active_layout_id = settings.default_layout_id;
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
+    tv_audio_target = settings.wii_u_tv_audio_target;
+    gamepad_audio_target = settings.wii_u_gamepad_audio_target;
     handedness = settings.handedness;
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
@@ -2156,6 +2251,8 @@ int App::run(const AppOptions& options) {
             impl.local_screen = wanted;
             impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
             impl.audio_target = impl.settings.audio_target;
+            impl.tv_audio_target = impl.settings.wii_u_tv_audio_target;
+            impl.gamepad_audio_target = impl.settings.wii_u_gamepad_audio_target;
             impl.handedness = impl.settings.handedness;
             impl.screen_gap = impl.settings.default_screen_gap;
             impl.apply_filtering();
@@ -2339,7 +2436,9 @@ int App::run(const AppOptions& options) {
             // ones meant to be making it.
             impl.host_session->set_video_wanted(impl.wants_video());
             impl.host_session->set_audio_enabled(
-                audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
+                impl.system == SystemId::WiiU
+                    ? audio_reaches(impl.tv_audio_target, impl.host_session->companion_screen())
+                    : audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always
             // looking at the same frame.
             const bool paused_here = impl.state != Impl::State::Playing;
@@ -2349,6 +2448,8 @@ int App::run(const AppOptions& options) {
             shared.paused = paused_here;
             shared.bilinear_filtering = impl.bilinear_filtering;
             shared.audio_target = impl.audio_target;
+            shared.tv_audio_target = impl.tv_audio_target;
+            shared.gamepad_audio_target = impl.gamepad_audio_target;
             shared.handedness = impl.handedness;
             shared.render_scale = impl.render_scale;
             shared.screen_gap = impl.screen_gap;
@@ -2393,7 +2494,17 @@ int App::run(const AppOptions& options) {
                     }
                     log_info("a second screen connected; switching to the " +
                              impl.registry.resolve(per_device_id).display_name + " layout");
+                    impl.reset_wii_u_audio_defaults_if_per_device(impl.active_layout_id);
                 }
+            }
+            // The other direction: a target still pointing at a device that
+            // just left names nothing any more, so it is corrected to Off
+            // rather than left silently unreachable. See
+            // clamp_wii_u_audio_target().
+            if (!host_now_has_companion && impl.host_had_companion && impl.system == SystemId::WiiU) {
+                impl.adopt_tv_audio_target(clamp_wii_u_audio_target(impl.tv_audio_target, false));
+                impl.adopt_gamepad_audio_target(
+                    clamp_wii_u_audio_target(impl.gamepad_audio_target, false));
             }
             impl.host_had_companion = host_now_has_companion;
 
@@ -2411,6 +2522,7 @@ int App::run(const AppOptions& options) {
                             impl.picker->set_selected_layout(impl.active_layout_id);
                         }
                         log_info("companion asked for the " + resolved.display_name + " layout");
+                        impl.reset_wii_u_audio_defaults_if_per_device(impl.active_layout_id);
                     }
                 }
                 if (request.wants_filtering) {
@@ -2418,6 +2530,12 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_audio_target) {
                     impl.adopt_audio_target(request.audio_target);
+                }
+                if (request.wants_tv_audio_target) {
+                    impl.adopt_tv_audio_target(request.tv_audio_target);
+                }
+                if (request.wants_gamepad_audio_target) {
+                    impl.adopt_gamepad_audio_target(request.gamepad_audio_target);
                 }
                 if (request.wants_handedness) {
                     impl.adopt_handedness(request.handedness);
@@ -2551,6 +2669,8 @@ int App::run(const AppOptions& options) {
                              (impl.bilinear_filtering ? "on" : "off"));
                 }
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
+                impl.adopt_tv_audio_target(impl.companion_session->host_tv_audio_target());
+                impl.adopt_gamepad_audio_target(impl.companion_session->host_gamepad_audio_target());
                 impl.adopt_handedness(impl.companion_session->host_handedness());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());

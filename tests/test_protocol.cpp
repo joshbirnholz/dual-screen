@@ -72,6 +72,8 @@ void test_welcome_and_session_round_trip() {
     // otherwise decode to the value that was sent and look like it worked.
     state.bilinear_filtering = true;
     state.audio_target = AudioTarget::TopScreen;
+    state.tv_audio_target = AudioTarget::Off;
+    state.gamepad_audio_target = AudioTarget::Both;
     state.handedness = Handedness::Left;
     state.render_scale = 3;
     state.screen_gap = false;
@@ -90,6 +92,8 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(received_state.paused, true);
     CHECK_EQ(received_state.bilinear_filtering, true);
     CHECK(received_state.audio_target == AudioTarget::TopScreen);
+    CHECK(received_state.tv_audio_target == AudioTarget::Off);
+    CHECK(received_state.gamepad_audio_target == AudioTarget::Both);
     CHECK(received_state.handedness == Handedness::Left);
     CHECK(received_state.right_stick_mode == RightStickMode::CirclePad);
     CHECK_EQ(static_cast<int>(received_state.render_scale), 3);
@@ -109,6 +113,10 @@ void test_request_round_trip() {
     sent.bilinear_filtering = true;
     sent.wants_audio_target = true;
     sent.audio_target = AudioTarget::BottomScreen;
+    sent.wants_tv_audio_target = true;
+    sent.tv_audio_target = AudioTarget::Off;
+    sent.wants_gamepad_audio_target = true;
+    sent.gamepad_audio_target = AudioTarget::Both;
     sent.wants_handedness = true;
     sent.handedness = Handedness::Left;
     sent.wants_render_scale = true;
@@ -138,6 +146,10 @@ void test_request_round_trip() {
     CHECK_EQ(received.bilinear_filtering, true);
     CHECK_EQ(received.wants_audio_target, true);
     CHECK(received.audio_target == AudioTarget::BottomScreen);
+    CHECK_EQ(received.wants_tv_audio_target, true);
+    CHECK(received.tv_audio_target == AudioTarget::Off);
+    CHECK_EQ(received.wants_gamepad_audio_target, true);
+    CHECK(received.gamepad_audio_target == AudioTarget::Both);
     CHECK_EQ(received.wants_handedness, true);
     CHECK(received.handedness == Handedness::Left);
     CHECK_EQ(received.wants_render_scale, true);
@@ -164,6 +176,8 @@ void test_request_round_trip() {
     CHECK(received_quiet.layout_id.empty());
     CHECK_EQ(received_quiet.wants_filtering, false);
     CHECK_EQ(received_quiet.wants_audio_target, false);
+    CHECK_EQ(received_quiet.wants_tv_audio_target, false);
+    CHECK_EQ(received_quiet.wants_gamepad_audio_target, false);
     CHECK_EQ(received_quiet.wants_handedness, false);
     CHECK_EQ(received_quiet.wants_render_scale, false);
     CHECK_EQ(received_quiet.wants_display_size, false);
@@ -192,9 +206,15 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 21, 1u,
+        {"audio target", 25, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
+         }},
+        {"tv audio target", 23, 3u,
+         [](const RequestMessage& message) { return message.tv_audio_target == AudioTarget::Off; }},
+        {"gamepad audio target", 21, 2u,
+         [](const RequestMessage& message) {
+             return message.gamepad_audio_target == AudioTarget::Both;
          }},
         {"handedness", 19, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},

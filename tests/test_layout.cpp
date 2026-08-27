@@ -989,6 +989,36 @@ void test_the_wii_u_keeps_its_own_controls() {
     }
 }
 
+void test_wii_u_audio_targets_skip_the_absent_device() {
+    // Paired: the full four-way cycle, Off included.
+    CHECK(next_wii_u_audio_target(AudioTarget::TopScreen, true) == AudioTarget::BottomScreen);
+    CHECK(next_wii_u_audio_target(AudioTarget::BottomScreen, true) == AudioTarget::Both);
+    CHECK(next_wii_u_audio_target(AudioTarget::Both, true) == AudioTarget::Off);
+    CHECK(next_wii_u_audio_target(AudioTarget::Off, true) == AudioTarget::TopScreen);
+
+    // Alone: nothing is named "Bottom", so Bottom and Both are never landed
+    // on, only Top and Off.
+    CHECK(next_wii_u_audio_target(AudioTarget::TopScreen, false) == AudioTarget::Off);
+    CHECK(next_wii_u_audio_target(AudioTarget::Off, false) == AudioTarget::TopScreen);
+    CHECK(next_wii_u_audio_target(AudioTarget::BottomScreen, false) == AudioTarget::Off);
+    CHECK(next_wii_u_audio_target(AudioTarget::Both, false) == AudioTarget::Off);
+
+    // Corrected rather than cycled, for a target a companion leaving left
+    // pointing at nobody.
+    CHECK(clamp_wii_u_audio_target(AudioTarget::TopScreen, false) == AudioTarget::TopScreen);
+    CHECK(clamp_wii_u_audio_target(AudioTarget::Off, false) == AudioTarget::Off);
+    CHECK(clamp_wii_u_audio_target(AudioTarget::BottomScreen, false) == AudioTarget::Off);
+    CHECK(clamp_wii_u_audio_target(AudioTarget::Both, false) == AudioTarget::Off);
+    // A no-op while paired -- nothing to correct.
+    for (const AudioTarget target :
+        {AudioTarget::TopScreen, AudioTarget::BottomScreen, AudioTarget::Both, AudioTarget::Off}) {
+        CHECK(clamp_wii_u_audio_target(target, true) == target);
+    }
+
+    CHECK(audio_reaches(AudioTarget::Off, ScreenId::Top) == false);
+    CHECK(audio_reaches(AudioTarget::Off, ScreenId::Bottom) == false);
+}
+
 int main() {
     test_registry_contents();
     test_layouts_match_the_wii_u();
@@ -1014,5 +1044,6 @@ int main() {
     test_the_compositor_says_when_the_picture_changed();
     test_a_lone_device_shows_what_the_console_makes_sense_of();
     test_the_wii_u_keeps_its_own_controls();
+    test_wii_u_audio_targets_skip_the_absent_device();
     return test::finish("layout");
 }

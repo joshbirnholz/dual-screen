@@ -72,6 +72,11 @@ public:
         bool paused = false;
         bool bilinear_filtering = false;
         AudioTarget audio_target = AudioTarget::Both;
+        // A Wii U's two independent streams, carried the same way even for a
+        // DS or 3DS session where they mean nothing -- see
+        // SessionStateMessage's fields of the same names.
+        AudioTarget tv_audio_target = AudioTarget::TopScreen;
+        AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
         Handedness handedness = Handedness::Right;
         RightStickMode right_stick_mode = RightStickMode::CStick;
         // The host is the only device running a core, but the setting is shown

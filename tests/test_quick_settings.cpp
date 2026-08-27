@@ -457,6 +457,58 @@ void test_the_other_buttons_still_work() {
               "face button");
 }
 
+// A Wii U gets its own two audio buttons in place of the shared Sound one --
+// and, unlike Sound, they are offered even alone: Off is a real choice on
+// either stream with or without a second device, where Sound has nothing to
+// say until there is somewhere else to send the one stream it means.
+void test_wii_u_gets_two_audio_buttons_instead_of_one() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+
+    for (const bool session_active : {false, true}) {
+        state.session_active = session_active;
+
+        int tv_audio = 0;
+        int gamepad_audio = 0;
+        int sound = 0;
+        for (float y = 4.0f; y < kHeight; y += 8.0f) {
+            for (float x = 4.0f; x < kWidth; x += 8.0f) {
+                LayoutPicker picker(registry);
+                picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+                picker.open(state);
+                const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                if (result.tv_audio_target_changed) ++tv_audio;
+                if (result.gamepad_audio_target_changed) ++gamepad_audio;
+                if (result.audio_target_changed) ++sound;
+            }
+        }
+        CHECK_MSG(tv_audio > 0, "no tap reached TV Audio on a Wii U's menu");
+        CHECK_MSG(gamepad_audio > 0, "no tap reached GamePad Audio on a Wii U's menu");
+        CHECK_MSG(sound == 0, "a Wii U's menu still offered the shared Sound button");
+    }
+
+    // And the reverse: a DS keeps the single shared button and never grows
+    // the Wii U's pair, session active or not.
+    state.session_active = true;
+    int sound = 0;
+    int wii_u_buttons = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker picker(registry);
+            picker.set_screens(system_profile(SystemId::Ds).screens, SystemId::Ds);
+            picker.open(state);
+            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            if (result.audio_target_changed) ++sound;
+            if (result.tv_audio_target_changed || result.gamepad_audio_target_changed) {
+                ++wii_u_buttons;
+            }
+        }
+    }
+    CHECK(sound > 0);
+    CHECK_EQ(wii_u_buttons, 0);
+}
+
 // Reset and Quit throw away something the player cannot get back, so neither
 // happens on the press that asked for it.
 void test_reset_and_quit_are_asked_about_first() {
@@ -868,6 +920,7 @@ int main() {
     test_choosing_a_gap_layout_reveals_the_button();
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
+    test_wii_u_gets_two_audio_buttons_instead_of_one();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();
     test_nothing_else_answers_while_a_confirmation_is_up();

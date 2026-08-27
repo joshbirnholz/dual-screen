@@ -90,6 +90,12 @@ Settings Settings::load(const AppPaths& paths) {
         right_stick_mode_key(settings.default_right_stick_mode)));
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
+    settings.wii_u_tv_audio_target = audio_target_from_key(
+        get_or<std::string>(document, "wii_u_tv_audio_target",
+                            audio_target_key(settings.wii_u_tv_audio_target)));
+    settings.wii_u_gamepad_audio_target = audio_target_from_key(
+        get_or<std::string>(document, "wii_u_gamepad_audio_target",
+                            audio_target_key(settings.wii_u_gamepad_audio_target)));
     settings.handedness = handedness_from_key(
         get_or<std::string>(document, "handedness", handedness_key(settings.handedness)));
     settings.cursor_mode = cursor_mode_from_key(
@@ -124,6 +130,8 @@ bool Settings::save(const AppPaths& paths) const {
     document["default_screen_gap"] = default_screen_gap;
     document["default_right_stick_mode"] = right_stick_mode_key(default_right_stick_mode);
     document["audio_target"] = audio_target_key(audio_target);
+    document["wii_u_tv_audio_target"] = audio_target_key(wii_u_tv_audio_target);
+    document["wii_u_gamepad_audio_target"] = audio_target_key(wii_u_gamepad_audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
     document["handedness"] = handedness_key(handedness);
     document["stick_deadzone"] = stick_deadzone;

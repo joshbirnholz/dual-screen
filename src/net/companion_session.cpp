@@ -137,6 +137,8 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_paused_ = state.paused;
             host_filtering_ = state.bilinear_filtering;
             host_audio_target_ = state.audio_target;
+            host_tv_audio_target_ = state.tv_audio_target;
+            host_gamepad_audio_target_ = state.gamepad_audio_target;
             host_handedness_ = state.handedness;
             host_right_stick_mode_ = state.right_stick_mode;
             host_render_scale_ = state.render_scale;
@@ -455,6 +457,20 @@ void CompanionSession::request_audio_target(AudioTarget target) {
     RequestMessage request;
     request.wants_audio_target = true;
     request.audio_target = target;
+    send_request(request);
+}
+
+void CompanionSession::request_tv_audio_target(AudioTarget target) {
+    RequestMessage request;
+    request.wants_tv_audio_target = true;
+    request.tv_audio_target = target;
+    send_request(request);
+}
+
+void CompanionSession::request_gamepad_audio_target(AudioTarget target) {
+    RequestMessage request;
+    request.wants_gamepad_audio_target = true;
+    request.gamepad_audio_target = target;
     send_request(request);
 }
 

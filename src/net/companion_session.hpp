@@ -53,6 +53,8 @@ public:
     bool host_paused() const { return host_paused_; }
     bool host_filtering() const { return host_filtering_; }
     AudioTarget host_audio_target() const { return host_audio_target_; }
+    AudioTarget host_tv_audio_target() const { return host_tv_audio_target_; }
+    AudioTarget host_gamepad_audio_target() const { return host_gamepad_audio_target_; }
     Handedness host_handedness() const { return host_handedness_; }
     RightStickMode host_right_stick_mode() const { return host_right_stick_mode_; }
     int host_render_scale() const { return host_render_scale_; }
@@ -81,6 +83,8 @@ public:
     void request_layout(const std::string& layout_id);
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
+    void request_tv_audio_target(AudioTarget target);
+    void request_gamepad_audio_target(AudioTarget target);
     void request_handedness(Handedness handedness);
     void request_right_stick_mode(RightStickMode mode);
     void request_render_scale(int scale);
@@ -228,6 +232,8 @@ private:
     bool host_paused_ = false;
     bool host_filtering_ = false;
     AudioTarget host_audio_target_ = AudioTarget::Both;
+    AudioTarget host_tv_audio_target_ = AudioTarget::TopScreen;
+    AudioTarget host_gamepad_audio_target_ = AudioTarget::BottomScreen;
     Handedness host_handedness_ = Handedness::Right;
     RightStickMode host_right_stick_mode_ = RightStickMode::CStick;
     int host_render_scale_ = 1;

@@ -113,6 +113,13 @@ struct Settings {
     // with the room rather than once at setup.
     AudioTarget audio_target = AudioTarget::Both;
 
+    // A Wii U's two independent streams -- see LayoutPickerState's fields of
+    // the same names. TV defaults to the device holding the television,
+    // GamePad to the one holding the GamePad, which is what switching to
+    // Upper Screen on TV also sets them back to.
+    AudioTarget wii_u_tv_audio_target = AudioTarget::TopScreen;
+    AudioTarget wii_u_gamepad_audio_target = AudioTarget::BottomScreen;
+
     // Whether this device has a mouse pointer at all.
     CursorMode cursor_mode = CursorMode::Shown;
 

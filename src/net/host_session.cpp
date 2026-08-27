@@ -117,7 +117,10 @@ void HostSession::set_session_state(const SharedState& state) {
     if (state.layout_id != shared_.layout_id ||
         state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
         state.bilinear_filtering != shared_.bilinear_filtering ||
-        state.audio_target != shared_.audio_target || state.handedness != shared_.handedness ||
+        state.audio_target != shared_.audio_target ||
+        state.tv_audio_target != shared_.tv_audio_target ||
+        state.gamepad_audio_target != shared_.gamepad_audio_target ||
+        state.handedness != shared_.handedness ||
         state.right_stick_mode != shared_.right_stick_mode ||
         state.render_scale != shared_.render_scale ||
         state.screen_gap != shared_.screen_gap || state.menu_open != shared_.menu_open ||
@@ -307,6 +310,16 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_audio_target = true;
                 request.audio_target = request_.audio_target;
             }
+            if (have_request_ && !request.wants_tv_audio_target &&
+                request_.wants_tv_audio_target) {
+                request.wants_tv_audio_target = true;
+                request.tv_audio_target = request_.tv_audio_target;
+            }
+            if (have_request_ && !request.wants_gamepad_audio_target &&
+                request_.wants_gamepad_audio_target) {
+                request.wants_gamepad_audio_target = true;
+                request.gamepad_audio_target = request_.gamepad_audio_target;
+            }
             if (have_request_ && !request.wants_right_stick_mode &&
                 request_.wants_right_stick_mode) {
                 request.wants_right_stick_mode = true;
@@ -432,6 +445,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.paused = shared_.paused;
         state.bilinear_filtering = shared_.bilinear_filtering;
         state.audio_target = shared_.audio_target;
+        state.tv_audio_target = shared_.tv_audio_target;
+        state.gamepad_audio_target = shared_.gamepad_audio_target;
         state.handedness = shared_.handedness;
         state.right_stick_mode = shared_.right_stick_mode;
         state.render_scale = static_cast<uint8_t>(shared_.render_scale);

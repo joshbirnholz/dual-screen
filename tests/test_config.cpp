@@ -266,6 +266,8 @@ void test_settings_round_trip() {
     defaults.default_screen_gap = false;
     defaults.default_right_stick_mode = RightStickMode::DPad;
     defaults.audio_target = AudioTarget::BottomScreen;
+    defaults.wii_u_tv_audio_target = AudioTarget::Off;
+    defaults.wii_u_gamepad_audio_target = AudioTarget::Both;
     defaults.cursor_mode = CursorMode::Hidden;
     defaults.screen_codec = video::ScreenCodec::H264;
     CHECK(defaults.save(paths));
@@ -280,6 +282,8 @@ void test_settings_round_trip() {
     CHECK(reloaded.default_right_stick_mode == RightStickMode::DPad);
     CHECK_EQ(reloaded.default_screen_gap, false);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
+    CHECK(reloaded.wii_u_tv_audio_target == AudioTarget::Off);
+    CHECK(reloaded.wii_u_gamepad_audio_target == AudioTarget::Both);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
     CHECK(reloaded.screen_codec == video::ScreenCodec::H264);
 
@@ -304,11 +308,15 @@ void test_settings_round_trip() {
     CHECK_EQ(recovered.default_render_scale, 1);
     CHECK_EQ(recovered.default_screen_gap, true);
     CHECK(recovered.audio_target == AudioTarget::Both);
+    CHECK(recovered.wii_u_tv_audio_target == AudioTarget::TopScreen);
+    CHECK(recovered.wii_u_gamepad_audio_target == AudioTarget::BottomScreen);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
     CHECK(recovered.screen_codec == video::ScreenCodec::Auto);
 
     // Text nobody recognises falls back rather than becoming a fourth state.
     CHECK(audio_target_from_key("sideways") == AudioTarget::Both);
+    CHECK(audio_target_from_key("off") == AudioTarget::Off);
+    CHECK_STR_EQ(audio_target_key(AudioTarget::Off), "off");
     CHECK(cursor_mode_from_key("") == CursorMode::Shown);
     // "auto" is what the old three-way version called the one that survived.
     CHECK(cursor_mode_from_key("auto") == CursorMode::Shown);

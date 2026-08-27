@@ -16,6 +16,7 @@ const char* to_string(AudioTarget target) {
         case AudioTarget::TopScreen: return "top screen only";
         case AudioTarget::BottomScreen: return "bottom screen only";
         case AudioTarget::Both: break;
+        case AudioTarget::Off: return "off";
     }
     return "both screens";
 }
@@ -25,6 +26,7 @@ bool audio_reaches(AudioTarget target, ScreenId screen) {
         case AudioTarget::TopScreen: return screen == ScreenId::Top;
         case AudioTarget::BottomScreen: return screen == ScreenId::Bottom;
         case AudioTarget::Both: break;
+        case AudioTarget::Off: return false;
     }
     return true;
 }
@@ -34,6 +36,7 @@ AudioTarget next_audio_target(AudioTarget target) {
         case AudioTarget::Both: return AudioTarget::TopScreen;
         case AudioTarget::TopScreen: return AudioTarget::BottomScreen;
         case AudioTarget::BottomScreen: break;
+        case AudioTarget::Off: break;  // DS/3DS never store this
     }
     return AudioTarget::Both;
 }
@@ -43,6 +46,7 @@ const char* audio_target_key(AudioTarget target) {
         case AudioTarget::TopScreen: return "top";
         case AudioTarget::BottomScreen: return "bottom";
         case AudioTarget::Both: break;
+        case AudioTarget::Off: return "off";
     }
     return "both";
 }
@@ -50,7 +54,33 @@ const char* audio_target_key(AudioTarget target) {
 AudioTarget audio_target_from_key(const std::string& key) {
     if (key == "top") return AudioTarget::TopScreen;
     if (key == "bottom") return AudioTarget::BottomScreen;
+    if (key == "off") return AudioTarget::Off;
     return AudioTarget::Both;
+}
+
+AudioTarget clamp_wii_u_audio_target(AudioTarget target, bool other_connected) {
+    if (other_connected) {
+        return target;
+    }
+    if (target == AudioTarget::BottomScreen || target == AudioTarget::Both) {
+        return AudioTarget::Off;
+    }
+    return target;
+}
+
+AudioTarget next_wii_u_audio_target(AudioTarget target, bool other_connected) {
+    if (!other_connected) {
+        // Nothing named "Bottom" is here to receive it, so the cycle is just
+        // this device or nothing.
+        return target == AudioTarget::Off ? AudioTarget::TopScreen : AudioTarget::Off;
+    }
+    switch (target) {
+        case AudioTarget::TopScreen: return AudioTarget::BottomScreen;
+        case AudioTarget::BottomScreen: return AudioTarget::Both;
+        case AudioTarget::Both: return AudioTarget::Off;
+        case AudioTarget::Off: break;
+    }
+    return AudioTarget::TopScreen;
 }
 
 ScreenRotation mirror_rotation(ScreenRotation rotation) {

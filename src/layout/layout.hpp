@@ -35,7 +35,10 @@ const char* to_string(ScreenId screen);
 // holding. With one device there is nothing to choose, so this only means
 // anything while two are connected. DS and 3DS have a single soundtrack, so
 // "Both" is two devices playing the same thing rather than two soundtracks.
-enum class AudioTarget { TopScreen, BottomScreen, Both };
+// A Wii U has two independent ones -- TV and GamePad -- each with its own
+// target, which is what makes muting one of them (Off) a real choice there
+// rather than just silence with nowhere to send it.
+enum class AudioTarget { TopScreen, BottomScreen, Both, Off };
 
 const char* to_string(AudioTarget target);
 // Whether the device holding `screen` should be making sound.
@@ -44,6 +47,17 @@ AudioTarget next_audio_target(AudioTarget target);
 // Round-trips through settings files; unknown text falls back to Both.
 const char* audio_target_key(AudioTarget target);
 AudioTarget audio_target_from_key(const std::string& key);
+
+// The next value for one of a Wii U's two audio targets, cycling Top ->
+// Bottom -> Both -> Off and back. `other_connected` is whether a second
+// device is actually in the session: without one, Bottom and Both both name
+// a device that is not there, so neither is offered and the cycle is just
+// Top and Off.
+AudioTarget next_wii_u_audio_target(AudioTarget target, bool other_connected);
+// Corrects a stored target when connectivity changes rather than when the
+// player cycles it -- a companion leaving while a target pointed at it, for
+// instance. Leaves Top and Off alone; Bottom and Both fall back to Off.
+AudioTarget clamp_wii_u_audio_target(AudioTarget target, bool other_connected);
 
 // How a screen fills the normalized rect it is placed in.
 enum class ScreenFit {

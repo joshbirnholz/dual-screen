@@ -9,7 +9,17 @@
 namespace ds {
 namespace {
 
-
+// Short enough for a footer button, unlike to_string(AudioTarget)'s
+// sentence-length forms.
+const char* wii_u_audio_target_label(AudioTarget target) {
+    switch (target) {
+        case AudioTarget::TopScreen: return "Top";
+        case AudioTarget::BottomScreen: return "Bottom";
+        case AudioTarget::Both: return "Both";
+        case AudioTarget::Off: break;
+    }
+    return "Off";
+}
 
 }  // namespace
 
@@ -96,7 +106,15 @@ void LayoutPicker::rebuild_footer() {
     footer_.push_back(Footer::Hands);
     // Which device makes the sound is only a question when there are two of
     // them, so the entry appears with the session and not before.
-    if (state_.session_active) {
+    //
+    // A Wii U instead gets its own two buttons, one per stream, and always --
+    // even alone, Off is a real choice for either one, unlike a DS or 3DS's
+    // single stream which has nowhere else to go while alone. See
+    // clamp_wii_u_audio_target().
+    if (system_ == SystemId::WiiU) {
+        footer_.push_back(Footer::TvAudio);
+        footer_.push_back(Footer::GamePadAudio);
+    } else if (state_.session_active) {
         footer_.push_back(Footer::Sound);
     }
     // The pointer is this device's own, and it is the one thing worth reaching
@@ -137,8 +155,14 @@ std::string LayoutPicker::footer_label(Footer kind) const {
                 case AudioTarget::TopScreen: return "Sound: Top";
                 case AudioTarget::BottomScreen: return "Sound: Bottom";
                 case AudioTarget::Both: break;
+                case AudioTarget::Off: return "Sound: Off";  // DS/3DS never set this
             }
             return "Sound: Both";
+        case Footer::TvAudio:
+            return std::string("TV Audio: ") + wii_u_audio_target_label(state_.tv_audio_target);
+        case Footer::GamePadAudio:
+            return std::string("GamePad Audio: ") +
+                   wii_u_audio_target_label(state_.gamepad_audio_target);
         case Footer::Cursor:
             return std::string("Pointer: ") + to_string(state_.cursor_mode);
         case Footer::Hands:
@@ -378,6 +402,12 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::Sound:
             result.audio_target_changed = true;
+            return true;
+        case Footer::TvAudio:
+            result.tv_audio_target_changed = true;
+            return true;
+        case Footer::GamePadAudio:
+            result.gamepad_audio_target_changed = true;
             return true;
         case Footer::Cursor:
             result.cursor_mode_changed = true;

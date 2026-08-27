@@ -26,8 +26,13 @@ struct LayoutPickerResult {
     bool disconnect_requested = false;
     // The filtering toggle was used; the caller applies and persists it.
     bool filtering_toggled = false;
-    // The sound target was cycled; same deal.
+    // The sound target was cycled; same deal. DS/3DS only -- see
+    // LayoutPickerState::audio_target.
     bool audio_target_changed = false;
+    // A Wii U's TV or GamePad audio target was cycled instead -- see
+    // LayoutPickerState::tv_audio_target and ::gamepad_audio_target.
+    bool tv_audio_target_changed = false;
+    bool gamepad_audio_target_changed = false;
     // The pointer mode was cycled. Unlike the two above it belongs to this
     // device alone -- the other one has its own pointer, or none.
     bool cursor_mode_changed = false;
@@ -59,7 +64,14 @@ struct LayoutPickerState {
     // choosing.
     bool session_active = false;
     bool bilinear_filtering = false;
+    // A DS or a 3DS's single audio stream. Unused for a Wii U, which has two
+    // -- see tv_audio_target and gamepad_audio_target below.
     AudioTarget audio_target = AudioTarget::Both;
+    // A Wii U's two independent streams. Offered whenever the console being
+    // played is a Wii U (see rebuild_footer()), whether or not a second
+    // device is connected -- Off is a real choice on either one even alone.
+    AudioTarget tv_audio_target = AudioTarget::TopScreen;
+    AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
     CursorMode cursor_mode = CursorMode::Shown;
     // Whether this device has a pointer to show or hide at all.
     //
@@ -149,6 +161,8 @@ public:
     // whenever it says so.
     void set_filtering(bool bilinear) { state_.bilinear_filtering = bilinear; }
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
+    void set_tv_audio_target(AudioTarget target) { state_.tv_audio_target = target; }
+    void set_gamepad_audio_target(AudioTarget target) { state_.gamepad_audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     void set_handedness(Handedness handedness) { state_.handedness = handedness; }
     void set_render_scale(int scale) { state_.render_scale = scale; }
@@ -177,6 +191,8 @@ public:
     void set_selected_layout(const std::string& layout_id);
     bool filtering() const { return state_.bilinear_filtering; }
     AudioTarget audio_target() const { return state_.audio_target; }
+    AudioTarget tv_audio_target() const { return state_.tv_audio_target; }
+    AudioTarget gamepad_audio_target() const { return state_.gamepad_audio_target; }
     bool is_open() const { return open_; }
     void close() { open_ = false; }
 
@@ -228,6 +244,8 @@ private:
         RenderScale,
         Hands,
         Sound,
+        TvAudio,
+        GamePadAudio,
         Cursor,
         RightStick,
         ScreenGap,
