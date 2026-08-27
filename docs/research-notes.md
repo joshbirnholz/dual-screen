@@ -1288,3 +1288,48 @@ VAAPI on the host, and a decoder on each companion -- MediaCodec on Android, and
 on a Switch the thing to establish before anything else, since that is the
 platform with neither an obvious decode path nor Wi-Fi to spare. The tile codec
 stays where it wins, which is DS and 3DS.
+
+## Where the video encoder comes from
+
+The measurement above says a GamePad needs a real video codec. The obvious place
+to get one is Sunshine and Moonlight, which already do this well on exactly the
+three platforms this project runs on. Worth being precise about what is worth
+taking from them, because the answer is not "the stack".
+
+**The hardest unknown is already solved, and not by Moonlight.** Hardware decode
+on a Switch was the item with no obvious path: homebrew had no access to the
+video decoder for years. Averne's NVDEC work is now in FFmpeg as an ordinary
+hwaccel -- `AV_HWDEVICE_TYPE_NVTEGRA`, `AV_PIX_FMT_NVTEGRA` -- and Moonlight-
+Switch's Switch-specific decoder helper is thirty lines on top of the normal
+FFmpeg API. Its Android helper is 270 lines of MediaCodec and its Linux one 263
+of VAAPI. That is the shape of the work for us too, and none of it needs
+Moonlight itself.
+
+**Licence decides the rest.** moonlight-common-c and Sunshine are both GPLv3.
+FFmpeg is LGPL 2.1+ unless it is built with GPL components -- libx264 is the one
+that matters, and hardware encoders are not it. So encoding through VAAPI and
+decoding through FFmpeg keeps this project's own licence its own choice; linking
+moonlight-common-c makes that choice GPLv3 permanently. This repository has no
+LICENSE file at all yet, which makes that a decision to take deliberately rather
+than by linking.
+
+**What moonlight-common-c would actually buy is transport, and we have most of
+it.** Its FEC, RTP pacing and reference-frame invalidation are built for 20-150
+Mbit/s over an internet path. A GamePad screen measures at 2.5 Mbit/s over a
+LAN, where TCP's head-of-line blocking costs little and the session, discovery,
+pairing, input and jitter buffer already exist here. Taking GPLv3 for a transport
+we have, in order to reach a decoder we can reach without it, is the wrong trade.
+
+**Sunshine's own shape is the deeper mismatch.** GameStream streams a desktop or
+an app to a client that is the whole screen. This streams one screen of a
+two-screen console to a device that is half of a pair, with a menu open on both
+at once and settings shared between them. It also needs a second display to
+capture, which is the thing Game Mode will not give -- while a patched Cemu hands
+over the DRC framebuffer directly and needs no display at all. The constraint
+dissolves rather than being worked around.
+
+So: FFmpeg for the codec on all three platforms, our own protocol around it, and
+Moonlight as the proof that each decode path exists and the reference for how it
+is opened. Sunshine and Moonlight unmodified are still worth an evening first --
+streaming Cemu's separate GamePad window from Desktop Mode to a Switch would show
+the whole idea works end to end, at real latency, before any of this is written.
