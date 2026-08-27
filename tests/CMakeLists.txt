@@ -50,6 +50,7 @@ add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
 dualscreen_add_test(test_layout)
+dualscreen_add_test(test_video_codec)
 dualscreen_add_test(test_text)
 dualscreen_add_test(test_launcher)
 dualscreen_add_test(test_image)

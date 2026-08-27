@@ -35,6 +35,13 @@ inline void skip(const std::string& reason) {
     std::fprintf(stderr, "SKIP: %s\n", reason.c_str());
 }
 
+// A measurement rather than an assertion. Some of what these runs establish is
+// a number nobody wants to pin a threshold to -- what a codec costs, say -- and
+// which is still the reason the test exists.
+inline void note(const std::string& text) {
+    std::fprintf(stderr, "NOTE: %s\n", text.c_str());
+}
+
 inline int finish(const char* suite) {
     if (failure_count() == 0) {
         std::printf("ok - %s\n", suite);

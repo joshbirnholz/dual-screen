@@ -22,6 +22,23 @@ find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# The compressed video path, for a screen the tile codec cannot carry -- see
+# docs/research-notes.md. Optional on purpose: everything DS and 3DS do works
+# without it, and the Switch and Android toolchains do not have FFmpeg wired up
+# yet, so requiring it here would break those builds before they can use it.
+#
+# A shipping build should have h264_vaapi and no libx264: FFmpeg is LGPL until
+# it is built with GPL pieces, and that is the piece that would do it.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(FFMPEG IMPORTED_TARGET libavcodec libavutil libswscale)
+endif()
+if(FFMPEG_FOUND)
+    message(STATUS "video codec: libavcodec ${FFMPEG_libavcodec_VERSION}")
+else()
+    message(STATUS "video codec: not available, building without one")
+endif()
+
 # nlohmann::json — prefer a system/CMake package, fall back to the plain header,
 # and only then reach for the network.
 find_package(nlohmann_json 3.9 QUIET)
@@ -67,6 +84,8 @@ add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
     src/app.cpp
     src/audio/audio_output.cpp
+    src/video/video_decoder.cpp
+    src/video/video_encoder.cpp
     src/config/game_config.cpp
     src/config/paths.cpp
     src/config/settings.cpp
@@ -125,6 +144,16 @@ target_link_libraries(dualscreen_core
         Threads::Threads
         ${CMAKE_DL_LIBS}
 )
+
+# PUBLIC so that anything linking the core -- the companion client included --
+# compiles the same headers against the same answer about whether there is a
+# codec at all.
+if(FFMPEG_FOUND)
+    target_link_libraries(dualscreen_core PUBLIC PkgConfig::FFMPEG)
+    target_compile_definitions(dualscreen_core PUBLIC DS_HAVE_VIDEO_CODEC=1)
+else()
+    target_compile_definitions(dualscreen_core PUBLIC DS_HAVE_VIDEO_CODEC=0)
+endif()
 
 if(DUALSCREEN_WERROR)
     target_compile_options(dualscreen_core PRIVATE -Wall -Wextra -Werror)
