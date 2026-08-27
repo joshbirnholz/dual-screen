@@ -1229,3 +1229,62 @@ is below any such threshold, so the picker drew a full-size console across the
 rest of the menu. The lesson was not "remember to clear that field": it was that
 "drawn to the display" and "drawn into a box" are different enough to name, so
 `as_preview()` strips the display-only parts and a test holds it to that.
+
+## What a Wii U GamePad would cost on the wire
+
+Wii U support has one question in front of every other one, and it is not about
+Cemu. The tile codec was chosen for a console whose screens are flat-shaded, and
+`FrameEncoding`'s own comment says as much: "a few kilobytes, which is what makes
+60fps over wifi realistic without pulling in a video encoder". A GamePad is
+854x480 of moving 3D -- 8.3x the pixels with none of the flatness -- so that
+assumption has to be measured before anything is built on it.
+
+`tools/frame_budget` measures it, through the real `encode_screen_tiles()` rather
+than a model of it. Synthesized frames bracket the answer; `--raw` feeds it real
+ones, which is the only thing that settles a particular game. The scenes are
+deliberately not noise: white noise is incompressible in a way no renderer's
+output is and would flatter nothing.
+
+    scene    screen     bytes/frame (mean)   bitrate
+    sprites  256x192                   603   0.3 Mbit/s @60
+    pan      256x192                22,396   10.7 Mbit/s @60
+    pan      854x480               178,426   42.8 Mbit/s @30
+    pan      854x480               178,426   85.6 Mbit/s @60
+
+The first row is the codec doing what it was built for, and is why the numbers
+below can be believed: flat content with a few things moving on it costs well
+under a kilobyte. The second is the same codec on content it was not built for,
+at a DS's own size -- which is where the ceiling this project has run into all
+along actually lives. It is the content, not the resolution.
+
+Two findings came out of it that were not the question asked.
+
+**The tiles are worse than no tiles once everything moves.** At 854x480 the
+deltaed frame is 178 KB against 169 KB for the same frame sent whole. The comment
+on `Rgb565DeflateTiles` claims the opposite -- "the bytes are the same bytes in a
+different order -- so this is never worse" -- and the reordering is exactly the
+problem: deflate's window sees less coherence across tile boundaries than it does
+along scanlines. It is never worse only while most tiles are clean.
+
+**The encoder alone does not fit in the frame.** 20.7 ms per frame at 854x480 on
+a desktop CPU is 123% of a 60fps budget and 62% of a 30fps one, before Cemu has
+had any of it.
+
+For scale, the same 200 frames through x264 on the same machine:
+
+    x264 veryfast, zerolatency     10,202 bytes/frame   2.45 Mbit/s @30   6.8 ms
+    x264 medium                     3,050 bytes/frame   0.73 Mbit/s @30  12.5 ms
+
+17x fewer bytes and 3x faster to encode, in software, before any GPU encoder is
+involved. Smooth panning is the friendliest case a motion-compensated codec ever
+gets and the least friendly a delta codec ever gets, so the ratio on real footage
+will be smaller -- but not by an order of magnitude, because the difference is
+structural. H.264 spends bits on how a block moved; the tile codec can only ask
+whether a block changed, which is a question with no useful answer when they all
+did.
+
+So a GamePad needs a video encoder, and the shape of the work follows from that:
+VAAPI on the host, and a decoder on each companion -- MediaCodec on Android, and
+on a Switch the thing to establish before anything else, since that is the
+platform with neither an obvious decode path nor Wi-Fi to spare. The tile codec
+stays where it wins, which is DS and 3DS.

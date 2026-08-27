@@ -183,6 +183,13 @@ endif()
 
 # A diagnostic tool, not part of the app: loads a real libretro core and reports
 # what it asks the frontend for, without needing a ROM for it.
+# What a screen costs on the wire, driven through the real encoder. Not a test:
+# it answers a question about a console this app does not run yet.
+add_executable(frame_budget tools/frame_budget.cpp src/net/protocol.cpp src/util/log.cpp)
+target_include_directories(frame_budget PRIVATE ${CMAKE_SOURCE_DIR}/src ${SDL2_INCLUDE_DIRS})
+target_link_libraries(frame_budget PRIVATE ZLIB::ZLIB ${SDL2_LIBRARIES})
+target_compile_options(frame_budget PRIVATE -Wall -Wextra)
+
 add_executable(probe_core tools/probe_core.cpp)
 target_include_directories(probe_core PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
 target_link_libraries(probe_core PRIVATE ${SDL2_LIBRARIES} ${CMAKE_DL_LIBS})
