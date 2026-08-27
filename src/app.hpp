@@ -24,6 +24,10 @@ struct AppOptions {
     // Runs for this many frames and then exits. Used by the headless smoke
     // test; 0 means run until the player quits.
     int exit_after_frames = 0;
+    // Send screens as H.264 rather than as tiles. A measurement and a way to
+    // feel the other path on real hardware, not a setting -- the tile codec is
+    // cheaper for every console this runs today.
+    bool video_codec = false;
     // Exits after this long. More robust than a frame count for tests that
     // need two processes to overlap, since frame rate is not bounded when the
     // display has no vsync.

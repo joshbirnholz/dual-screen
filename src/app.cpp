@@ -155,6 +155,13 @@ AppOptions parse_command_line(int argc, char** argv) {
             const std::string value =
                 next_argument(argc, argv, index, "--exit-after-frames", options.parse_error);
             options.exit_after_frames = std::atoi(value.c_str());
+        } else if (argument == "--video-codec") {
+            // Sends screens as H.264 rather than as tiles. Not a setting: the
+            // tile codec is better for every console this runs today, and this
+            // is here to measure and to feel the other path on real hardware
+            // before a console that needs it exists. See docs/research-notes.md.
+            options.video_codec =
+                next_argument(argc, argv, index, "--video-codec", options.parse_error) == "h264";
         } else if (argument == "--connect") {
             options.auto_connect_screen =
                 next_argument(argc, argv, index, "--connect", options.parse_error);
@@ -1946,6 +1953,7 @@ int App::run(const AppOptions& options) {
         if (impl.host_session) {
             // Sound only goes over the wire when the other device is one of the
             // ones meant to be making it.
+            impl.host_session->set_video_wanted(impl.options.video_codec);
             impl.host_session->set_audio_enabled(
                 audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always

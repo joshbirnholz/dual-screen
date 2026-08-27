@@ -10,6 +10,7 @@
 #include "net/discovery.hpp"
 #include "net/protocol.hpp"
 #include "net/transport.hpp"
+#include "video/video_encoder.hpp"
 
 namespace ds::net {
 
@@ -43,6 +44,15 @@ public:
     bool has_companion() const { return companion_.connected() && handshake_done_; }
     const std::string& companion_name() const { return companion_name_; }
     ScreenId companion_screen() const { return companion_screen_; }
+    // What the companion said it could decode. Tiles are always possible; video
+    // needs a decoder at the far end and an encoder at this one.
+    bool companion_accepts_video() const { return companion_accepts_video_; }
+
+    // Ask for a compressed video stream where both ends can manage one. Off by
+    // default: every system this runs today has flat-shaded screens that the
+    // tile codec carries in a fraction of the bytes. See
+    // docs/research-notes.md.
+    void set_video_wanted(bool wanted) { video_wanted_ = wanted; }
     // Whatever the companion did not take.
     ScreenId host_screen() const { return config_.host_screen; }
     // Empty unless the last companion left or was refused, for the host to show.
@@ -201,6 +211,15 @@ private:
     std::vector<uint8_t> inbox_;
     bool handshake_done_ = false;
     std::string companion_name_;
+    // Whether this screen goes as video, and the encoding of one screen's
+    // frame. Split out because the answer involves three parties and a
+    // fallback, which is more than belongs inline in a send loop.
+    bool use_video_for(const ScreenPixels& source);
+    bool encode_one_screen(ScreenId screen,
+                           const ScreenPixels& source,
+                           std::vector<uint8_t>& previous,
+                           FrameMessage& frame);
+
     ScreenId companion_screen_ = ScreenId::Bottom;
     std::string last_notice_;
 
@@ -250,9 +269,15 @@ private:
     // goes, so the next one starts from a whole frame.
     std::vector<uint8_t> previous_top_;
     std::vector<uint8_t> previous_bottom_;
+    // One per screen: the two are separate streams at separate sizes, and a
+    // video encoder's whole value is what it remembers of the frame before.
+    video::VideoEncoder video_top_;
+    video::VideoEncoder video_bottom_;
+    bool companion_accepts_video_ = false;
     // Send the current screens once more even if nothing has changed, because
     // what the companion needs has.
     bool resend_screens_ = true;
+    bool video_wanted_ = false;
     bool have_request_ = false;
     RequestMessage request_;
     // Bounded: a companion that somehow floods presses backs up the menu it is

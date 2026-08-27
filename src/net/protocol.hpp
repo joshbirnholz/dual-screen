@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 16;
+constexpr uint16_t kProtocolVersion = 17;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -77,6 +77,11 @@ enum class FrameEncoding : uint8_t {
     // different order -- so this is never worse, and a screen where only a
     // health bar or a blinking marker moved costs a fraction of one.
     Rgb565DeflateTiles = 2,
+    // H.264, one packet per frame, no B-frames. For a screen the two above
+    // cannot carry: a Wii U GamePad measures at 43 Mbit/s through the tiles and
+    // 2.5 through this. Only sent to a companion that said it can decode it --
+    // see HelloMessage::accepts_video -- since a build without FFmpeg cannot.
+    H264 = 3,
 };
 
 // The tile edge used by Rgb565DeflateTiles, as a power of two. Sixteen keeps a
@@ -89,6 +94,11 @@ struct HelloMessage {
     std::string device_name;
     // Which screen this device wants to show when the split layout is active.
     ScreenId wanted_screen = ScreenId::Bottom;
+    // Whether this device can decode FrameEncoding::H264. A build without a
+    // video decoder says no and is sent tiles, which is what every DS and 3DS
+    // session uses anyway. Asked rather than assumed from the version: the same
+    // protocol version is spoken by builds with and without one.
+    bool accepts_video = false;
 };
 
 struct WelcomeMessage {

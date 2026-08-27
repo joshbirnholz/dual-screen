@@ -189,6 +189,7 @@ void encode_hello(const HelloMessage& message, std::vector<uint8_t>& out) {
     put_u16(out, message.protocol_version);
     put_string(out, message.device_name);
     put_u8(out, screen_to_wire(message.wanted_screen));
+    put_u8(out, message.accepts_video ? 1u : 0u);
     finish_message(out, start, MessageType::Hello);
 }
 
@@ -468,9 +469,12 @@ bool decode_hello(const uint8_t* data, std::size_t size, HelloMessage& out) {
     reader.u16(out.protocol_version);
     reader.string(out.device_name);
     reader.u8(screen);
+    uint8_t accepts_video = 0;
+    reader.u8(accepts_video);
     if (!reader.ok() || magic != kProtocolMagic) {
         return false;
     }
+    out.accepts_video = accepts_video != 0;
     return screen_from_wire(screen, out.wanted_screen);
 }
 
@@ -558,6 +562,7 @@ bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out) {
     switch (static_cast<FrameEncoding>(encoding)) {
         case FrameEncoding::Rgb565Deflate:
         case FrameEncoding::Rgb565DeflateTiles:
+        case FrameEncoding::H264:
             out.encoding = static_cast<FrameEncoding>(encoding);
             break;
         default:

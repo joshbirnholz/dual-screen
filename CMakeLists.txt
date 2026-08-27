@@ -200,6 +200,15 @@ target_link_libraries(dualscreen-companion PRIVATE
     ZLIB::ZLIB
     Threads::Threads
 )
+# The same answer the core got, so both ends of a session agree about whether
+# there is a codec before they try to negotiate one.
+if(FFMPEG_FOUND)
+    target_link_libraries(dualscreen-companion PRIVATE PkgConfig::FFMPEG)
+    target_compile_definitions(dualscreen-companion PRIVATE DS_HAVE_VIDEO_CODEC=1)
+else()
+    target_compile_definitions(dualscreen-companion PRIVATE DS_HAVE_VIDEO_CODEC=0)
+endif()
+
 target_compile_options(dualscreen-companion PRIVATE -Wall -Wextra)
 if(DUALSCREEN_PORTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_link_options(dualscreen-companion PRIVATE -static-libstdc++ -static-libgcc)

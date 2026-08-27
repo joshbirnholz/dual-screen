@@ -80,6 +80,18 @@ if(XVFB_RUN_EXECUTABLE)
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_smoke_test.cmake)
     set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300)
 
+    # The compressed screen path, end to end. No console needs it yet, so the
+    # host is told to use it -- which is how it can be finished and held to
+    # before the console that needs it exists.
+    add_test(NAME video_stream_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_video_stream_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/video-stream
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(video_stream_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+
     # A companion leaving from the quick menu, which only two processes and the
     # wire between them can show.
     add_test(NAME companion_disconnect_headless

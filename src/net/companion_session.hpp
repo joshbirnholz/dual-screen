@@ -10,6 +10,7 @@
 #include "net/discovery.hpp"
 #include "net/protocol.hpp"
 #include "net/transport.hpp"
+#include "video/video_decoder.hpp"
 
 namespace ds::net {
 
@@ -194,7 +195,12 @@ private:
     // from the one before it: they have to be applied in order, and none can
     // be thrown away without corrupting the picture.
     std::deque<FrameMessage> pending_frames_;
+    // Defined further down, with the rest of what a screen holds.
+    struct ScreenBuffer;
     void apply_frame(const FrameMessage& frame);
+    // False when nothing came out: a failure, already reported, or a stream
+    // still waiting for its first keyframe.
+    bool apply_video_frame(const FrameMessage& frame, ScreenBuffer& target);
     bool decode_next_frame();
 
     HostBrowser browser_;
@@ -269,6 +275,10 @@ private:
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.
     struct ScreenBuffer {
+        // Which of the two below is the frame and which is derived from it. A
+        // tiled payload patches rgb565 and is expanded on demand; a video frame
+        // decodes straight to pixels and never has a 5-6-5 form at all.
+        bool video = false;
         // The frame as it travels and as tiles are patched onto it. Canonical:
         // a tiled payload is a difference from this, so it has to survive from
         // one frame to the next.
@@ -287,9 +297,16 @@ private:
         Texture texture;
 
         const std::vector<uint32_t>& expanded() const;
+        // Whether anything has arrived for this screen at all, whichever form
+        // it arrived in.
+        bool has_frame() const { return video ? !pixels.empty() : !rgb565.empty(); }
     };
     ScreenBuffer top_;
     ScreenBuffer bottom_;
+    // One per screen, matching the encoders at the other end: two streams, two
+    // sizes, and each frame only means anything after the ones before it.
+    video::VideoDecoder video_top_;
+    video::VideoDecoder video_bottom_;
     ScreenTextures textures_;
 
     DsInputState last_sent_input_;

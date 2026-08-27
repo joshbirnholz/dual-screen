@@ -260,6 +260,9 @@ void CompanionSession::poll(uint64_t now_ms) {
         HelloMessage hello;
         hello.device_name = device_name_;
         hello.wanted_screen = wanted_screen_;
+        // Said rather than assumed: a build without FFmpeg cannot decode video,
+        // and the host has to know before it picks how to send a screen.
+        hello.accepts_video = video::available();
         std::vector<uint8_t> out;
         encode_hello(hello, out);
         stream_.send(out);
@@ -367,6 +370,11 @@ void CompanionSession::send_input(const DsInputState& state) {
 }
 
 const std::vector<uint32_t>& CompanionSession::ScreenBuffer::expanded() const {
+    // A video frame is already in this form. There is nothing to expand and
+    // nothing to cache.
+    if (video) {
+        return pixels;
+    }
     if (!ever_expanded || expanded_serial != serial) {
         expand_rgb565(rgb565, pixels);
         expanded_serial = serial;
@@ -378,7 +386,7 @@ const std::vector<uint32_t>& CompanionSession::ScreenBuffer::expanded() const {
 CompanionSession::ScreenPixels CompanionSession::screen_pixels(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
     ScreenPixels out;
-    if (buffer.rgb565.empty() || buffer.width <= 0 || buffer.height <= 0) {
+    if (!buffer.has_frame() || buffer.width <= 0 || buffer.height <= 0) {
         return out;
     }
     out.pixels = buffer.expanded().data();
@@ -552,11 +560,18 @@ const ScreenTextures& CompanionSession::screens() {
     for (ScreenBuffer* buffer : {&top_, &bottom_}) {
         const bool stale =
             !buffer->texture.valid() || buffer->serial != buffer->uploaded_serial;
-        if (stale && !buffer->rgb565.empty()) {
-            // Uploaded in the form it arrived in. Expanding to 8 bits a
+        if (stale && buffer->has_frame()) {
+            // Uploaded in the form it arrived in. Expanding 5-6-5 to 8 bits a
             // channel first would be a whole pass over the frame and twice the
-            // bytes to the GPU, for a picture that is 5-6-5 either way.
-            buffer->texture.upload_rgb565(buffer->rgb565.data(), buffer->width, buffer->height);
+            // bytes to the GPU, for a picture that is 5-6-5 either way; a video
+            // frame is already eight, and going back would only lose.
+            if (buffer->video) {
+                buffer->texture.upload_xrgb8888(buffer->pixels.data(), buffer->width,
+                                                buffer->height, buffer->width);
+            } else {
+                buffer->texture.upload_rgb565(buffer->rgb565.data(), buffer->width,
+                                              buffer->height);
+            }
             buffer->uploaded_serial = buffer->serial;
         }
     }
@@ -592,20 +607,61 @@ uint64_t CompanionSession::frame_period() const {
 
 void CompanionSession::apply_frame(const FrameMessage& frame) {
     ScreenBuffer& target = (frame.screen == ScreenId::Top) ? top_ : bottom_;
-    // A tiled frame is a difference from the last one, so it is applied onto
-    // what is already here; a whole one replaces it.
-    const bool decoded =
-        frame.encoding == FrameEncoding::Rgb565DeflateTiles
-            ? decode_screen_tiles(frame.payload, frame.width, frame.height, target.rgb565)
-            : decode_screen_rgb565(frame.payload, frame.width, frame.height, target.rgb565);
-    if (!decoded) {
-        fail("a frame from the host could not be decompressed");
-        return;
+    if (frame.encoding == FrameEncoding::H264) {
+        if (!apply_video_frame(frame, target)) {
+            return;
+        }
+    } else {
+        // A tiled frame is a difference from the last one, so it is applied
+        // onto what is already here; a whole one replaces it.
+        const bool decoded =
+            frame.encoding == FrameEncoding::Rgb565DeflateTiles
+                ? decode_screen_tiles(frame.payload, frame.width, frame.height, target.rgb565)
+                : decode_screen_rgb565(frame.payload, frame.width, frame.height, target.rgb565);
+        if (!decoded) {
+            fail("a frame from the host could not be decompressed");
+            return;
+        }
+        target.video = false;
+        target.width = frame.width;
+        target.height = frame.height;
     }
-    target.width = frame.width;
-    target.height = frame.height;
     target.serial = frame.serial;
     ++stats_decoded_;
+}
+
+bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer& target) {
+    video::VideoDecoder& decoder = (frame.screen == ScreenId::Top) ? video_top_ : video_bottom_;
+    if (!decoder.is_open()) {
+        // The host only sends these to a device that said it could decode them,
+        // so failing here means the two ends disagree about what was agreed --
+        // a broken session rather than one bad frame.
+        video::DecoderConfig config;
+        std::string error;
+        if (!decoder.open(config, &error)) {
+            fail("the host sent video this device cannot decode: " + error);
+            return false;
+        }
+    }
+    video::DecodedFrame decoded;
+    std::string error;
+    if (!decoder.decode(frame.payload.data(), frame.payload.size(), decoded, &error)) {
+        fail("a frame from the host could not be decoded: " + error);
+        return false;
+    }
+    if (!decoded.valid()) {
+        // Nothing out yet. A stream that has not reached its first keyframe has
+        // nothing to show, which is a wait rather than a failure.
+        return false;
+    }
+    target.video = true;
+    target.pixels = std::move(decoded.pixels);
+    target.width = decoded.width;
+    target.height = decoded.height;
+    // Whatever the tile codec left here is not this picture, and keeping it
+    // would let a later tiled frame patch onto a frame from another codec.
+    target.rgb565.clear();
+    return true;
 }
 
 // One whole frame: every screen the host sent under the same serial, so the

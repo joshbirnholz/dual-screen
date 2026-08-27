@@ -156,6 +156,13 @@ void HostSession::drop_companion(const std::string& reason) {
     acked_serial_ = 0;
     previous_top_.clear();
     previous_bottom_.clear();
+    // The same reasoning as the two lines above, in video form: a stream's
+    // frames only mean anything after the keyframe they descend from, so
+    // whoever connects next needs a stream of their own rather than the middle
+    // of somebody else's. Their answer about decoding video is theirs too.
+    video_top_.close();
+    video_bottom_.close();
+    companion_accepts_video_ = false;
     refresh_beacon();
 }
 
@@ -206,6 +213,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             config_.host_screen =
                 (companion_screen_ == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
             companion_name_ = hello.device_name.empty() ? "companion" : hello.device_name;
+            companion_accepts_video_ = hello.accepts_video;
             handshake_done_ = true;
 
             WelcomeMessage welcome;
@@ -219,6 +227,8 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             companion_.send(out);
             session_state_dirty_ = true;
             last_notice_ = companion_name_ + " connected";
+            log_info(std::string("that device ") +
+                     (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
             log_info(companion_name_ + " connected as the " +
                      std::string(to_string(companion_screen_)) + " screen");
             refresh_beacon();
@@ -566,6 +576,74 @@ void HostSession::publish_audio(const int16_t* interleaved_stereo,
     companion_.send(out);
 }
 
+bool HostSession::use_video_for(const ScreenPixels& source) {
+    // Every one of these has to be true, and each is a different party's
+    // answer: what this session was asked for, what the far end can decode,
+    // and whether this build has an encoder at all.
+    if (!video_wanted_ || !companion_accepts_video_ || !video::available()) {
+        return false;
+    }
+    // 4:2:0 cannot represent an odd number of pixels. A screen that is one is
+    // not a failure -- it goes down the path that never cared.
+    return (source.width % 2) == 0 && (source.height % 2) == 0;
+}
+
+bool HostSession::encode_one_screen(ScreenId screen,
+                                    const ScreenPixels& source,
+                                    std::vector<uint8_t>& previous,
+                                    FrameMessage& frame) {
+    if (!use_video_for(source)) {
+        frame.encoding = FrameEncoding::Rgb565DeflateTiles;
+        return encode_screen_tiles(source.pixels, source.width, source.height,
+                                   source.stride_pixels, previous, frame.payload,
+                                   source.channel_order);
+    }
+
+    video::VideoEncoder& encoder = (screen == ScreenId::Top) ? video_top_ : video_bottom_;
+    if (!encoder.is_open()) {
+        video::EncoderConfig config;
+        config.width = source.width;
+        config.height = source.height;
+        config.fps = 60;
+        config.bitrate_kbps = 8000;
+        std::string error;
+        if (!encoder.open(config, &error)) {
+            // Not fatal, and not worth saying twice: the tile codec carries
+            // every screen this app has ever sent, just less cheaply.
+            log_warn("no video encoder for the " + std::string(to_string(screen)) +
+                     " screen, falling back to tiles: " + error);
+            video_wanted_ = false;
+            frame.encoding = FrameEncoding::Rgb565DeflateTiles;
+            return encode_screen_tiles(source.pixels, source.width, source.height,
+                                       source.stride_pixels, previous, frame.payload,
+                                       source.channel_order);
+        }
+    }
+    // A video frame means nothing without the frames before it, so a companion
+    // that has just started needing this screen gets one that stands alone.
+    if (resend_screens_) {
+        encoder.request_keyframe();
+    }
+
+    video::EncodedFrame encoded;
+    std::string error;
+    if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &error)) {
+        log_warn("the video encoder failed, falling back to tiles: " + error);
+        encoder.close();
+        video_wanted_ = false;
+        frame.encoding = FrameEncoding::Rgb565DeflateTiles;
+        return encode_screen_tiles(source.pixels, source.width, source.height,
+                                   source.stride_pixels, previous, frame.payload,
+                                   source.channel_order);
+    }
+    if (encoded.empty()) {
+        return false;  // nothing to send this frame, which is not a failure
+    }
+    frame.encoding = FrameEncoding::H264;
+    frame.payload = std::move(encoded.bytes);
+    return true;
+}
+
 void HostSession::publish_screens(const ScreenPixels& top,
                                   const ScreenPixels& bottom,
                                   uint64_t serial) {
@@ -615,9 +693,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
         frame.serial = serial;
         frame.width = static_cast<uint16_t>(source.width);
         frame.height = static_cast<uint16_t>(source.height);
-        frame.encoding = FrameEncoding::Rgb565DeflateTiles;
-        if (!encode_screen_tiles(source.pixels, source.width, source.height, source.stride_pixels,
-                                 entry.previous, frame.payload, source.channel_order)) {
+        if (!encode_one_screen(entry.screen, source, entry.previous, frame)) {
             continue;
         }
         encode_frame(frame, out);
