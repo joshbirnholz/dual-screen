@@ -311,6 +311,12 @@ void ExternalFrameLink::close() {
     audio_.clear();
     pending_[0] = Pending();
     pending_[1] = Pending();
+    // A pad is only sent when it differs from the last one sent, so what was
+    // sent to a game that has gone has to be forgotten with it -- otherwise the
+    // next game's first pad is silently withheld for matching a session it was
+    // never part of.
+    sent_input_ = ExternalInput();
+    have_sent_input_ = false;
 }
 
 bool ExternalFrameLink::accept_peer(std::string* error) {
@@ -602,6 +608,11 @@ void ExternalFrameProducer::close() {
     next_slot_[0] = 0;
     next_slot_[1] = 0;
     inbox_.clear();
+    // Same reason as the other end: whether a pad has ever arrived is a fact
+    // about one session, and a fork reads it to decide whether to keep using
+    // its own controllers.
+    input_ = ExternalInput();
+    have_input_ = false;
 }
 
 bool ExternalFrameProducer::publish(ScreenId screen, uint64_t serial, const uint32_t* pixels,

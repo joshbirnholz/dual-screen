@@ -326,6 +326,39 @@ void test_the_pad_crosses_and_arrives_whole() {
               "back on its own controllers mid-game");
 }
 
+// The pad is only sent when it differs from the last one sent, which makes what
+// was sent a fact about one session. A second game that opened on the same pad
+// as the first would otherwise never be told about it.
+void test_a_second_game_is_told_the_pad_from_the_beginning() {
+    ExternalFrameLink link;
+    std::string error;
+    bool reset = false;
+
+    ExternalInput pressed;
+    pressed.set(ExternalButton::Zr, true);
+
+    for (const char* attempt : {"first", "second"}) {
+        ExternalFrameProducer producer;
+        if (!bring_up(link, producer)) return;
+
+        link.send_input(pressed);
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!producer.have_input() && std::chrono::steady_clock::now() < give_up_at) {
+            CHECK(producer.poll(reset, &error));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK_MSG(producer.have_input() && producer.input() == pressed,
+                  std::string("the ") + attempt + " game was never handed the pad that was "
+                  "already being held when it started");
+        producer.close();
+        // And this end notices, which is what clears what it thinks it has sent.
+        for (int poll = 0; poll < 200 && link.connected(); ++poll) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (!link.poll(&error)) break;
+        }
+    }
+}
+
 // The ordinary end of a session is the game being closed, and it has to look
 // like that rather than like a stall.
 void test_the_game_closing_ends_the_session() {
@@ -397,6 +430,7 @@ int main() {
     test_falling_behind_skips_to_the_newest();
     test_audio_and_resets_go_the_way_they_are_meant_to();
     test_the_pad_crosses_and_arrives_whole();
+    test_a_second_game_is_told_the_pad_from_the_beginning();
     test_the_game_closing_ends_the_session();
     test_a_screen_too_big_to_carry_is_refused();
     return test::finish("external-link");
