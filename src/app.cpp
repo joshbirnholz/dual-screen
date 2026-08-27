@@ -2108,7 +2108,8 @@ int App::run(const AppOptions& options) {
         if (impl.host_session) {
             // Sound only goes over the wire when the other device is one of the
             // ones meant to be making it.
-            impl.host_session->set_video_wanted(impl.options.video_codec);
+            impl.host_session->set_video_wanted(impl.options.video_codec ||
+                                                system_profile(impl.system).prefers_video);
             impl.host_session->set_audio_enabled(
                 audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always

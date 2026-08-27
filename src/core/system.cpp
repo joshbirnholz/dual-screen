@@ -135,6 +135,7 @@ SystemProfile make_wii_u() {
     profile.game_uses_every_control = true;
     // The television is the game; the GamePad is a second view of it. So one
     // device on its own shows one screen rather than both squeezed together.
+    profile.prefers_video = true;
     profile.solo_screens = SoloScreens::One;
     // One screen on each device is the Wii U's own arrangement, so it is where
     // a game starts rather than something to go and find. Alone, that shows

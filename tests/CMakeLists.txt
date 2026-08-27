@@ -196,6 +196,17 @@ if(XVFB_RUN_EXECUTABLE)
             ${CMAKE_BINARY_DIR}/wii-u
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(wii_u_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+    # And the same console across two devices. Three processes: the emulator
+    # stand-in, the host it hands its screens to, and the companion the host
+    # hands one of them on to -- which is the arrangement the whole app is for.
+    add_test(NAME wii_u_companion_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_wii_u_companion_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:fake_wii_u>
+            ${CMAKE_BINARY_DIR}/wii-u-companion
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(wii_u_companion_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()

@@ -66,6 +66,13 @@ struct SystemProfile {
     // for one, loading it, telling the player where to put it -- only applies
     // where this is LibretroCore.
     FrameOrigin frame_origin = FrameOrigin::LibretroCore;
+    // Whether this console's screens are large enough that sending them as
+    // video beats sending the tiles that changed. A GamePad screen in motion
+    // measures at 42.8 Mbit/s as tiles and 2.45 as H.264 -- see
+    // docs/research-notes.md -- while a DS screen is small enough that tiles
+    // win outright. The other device still has to be able to decode it; when
+    // it cannot, the session falls back to tiles on its own.
+    bool prefers_video = false;
     SoloScreens solo_screens = SoloScreens::Both;
     // Which layout a game for this console starts on when nothing else has
     // been remembered, and what an unavailable one falls back to. Empty means
