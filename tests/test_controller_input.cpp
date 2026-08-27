@@ -304,14 +304,11 @@ void test_the_right_stick_maps_where_it_is_told() {
 // running this as a companion -- so it has to fire once for the pair however
 // they are pressed.
 //
-// Apart the two stick buttons keep their own meanings, so reaching for the
-// chord must not also swap the layout or toggle smoothing on the way in:
-// whichever is pressed first is only itself if it is released alone.
-//
-// Neither reaches a DS or 3DS button, which is why the pair costs a game
-// nothing -- Start and Select, which this replaced, are read together as a
-// soft reset by plenty of DS games.
-void test_the_stick_buttons_open_the_menu_together() {
+// Games use both stick buttons together, so this shell does not: the pair opens
+// nothing. What it still has to do is cost the player nothing -- pressing both
+// must not fire either single, on the way in or on the way back out -- and each
+// on its own must still mean what it meant.
+void test_the_stick_buttons_together_are_the_games() {
     VirtualPad pad;
     if (!pad.attach()) {
         return;
@@ -345,16 +342,15 @@ void test_the_stick_buttons_open_the_menu_together() {
     CHECK_EQ(menu_opens(), 0);
     CHECK_EQ(count_of(UiAction::SwapLayout), 0);
 
-    // The pair opens the menu, and neither one's own action fires.
+    // The pair does nothing, and neither one's own action fires either.
     pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
     frame();
-    CHECK_EQ(menu_opens(), 1);
+    CHECK_MSG(menu_opens() == 0,
+              "both stick buttons together opened the menu, which is a pair games use");
     CHECK_EQ(count_of(UiAction::SwapLayout), 0);
     CHECK_EQ(count_of(UiAction::ToggleFilter), 0);
     CHECK_MSG(input.ds_state().buttons == 0u, "a stick button reached the game");
 
-    // Still held. Opening once a frame would toggle the menu sixty times a
-    // second, which reads as the shortcut not working at all.
     frame();
     CHECK_EQ(menu_opens(), 0);
     frame();
@@ -385,11 +381,14 @@ void test_the_stick_buttons_open_the_menu_together() {
     frame();
     CHECK_EQ(count_of(UiAction::ToggleFilter), 1);
 
-    // And the chord fires again, which is what closes the menu it opened.
+    // And the pair is still nothing the second time round, having eaten both
+    // singles on the way.
     pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
     pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
     frame();
-    CHECK_EQ(menu_opens(), 1);
+    CHECK_EQ(menu_opens(), 0);
+    CHECK_EQ(count_of(UiAction::SwapLayout), 0);
+    CHECK_EQ(count_of(UiAction::ToggleFilter), 0);
 
     // Start and Select are ordinary buttons again, and reach the game.
     pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
@@ -711,18 +710,9 @@ void test_the_shell_lets_go_of_the_controls_where_the_game_wants_them() {
         !contains(press_and_release({SDL_CONTROLLER_BUTTON_RIGHTSTICK}), UiAction::ToggleFilter),
         "R3 still toggled smoothing on a console whose game reads it");
 
-    // Nor the pair. The menu is reached from the keyboard here, which a player
-    // points Steam Input at -- and which is the only control a console with two
-    // spoken-for sticks and a played-through touch screen has left.
-    CHECK_MSG(!contains(press_and_release({SDL_CONTROLLER_BUTTON_LEFTSTICK,
-                                           SDL_CONTROLLER_BUTTON_RIGHTSTICK}),
-                        UiAction::ToggleMenu),
-              "both sticks together still opened the menu on a console whose game reads them");
-    // Letting go of the pair must not then fire the two singles it was made of.
-    CHECK_MSG(input.ui_actions().empty() ||
-                  (!contains(input.ui_actions(), UiAction::SwapLayout) &&
-                   !contains(input.ui_actions(), UiAction::ToggleFilter)),
-              "releasing both sticks fired the singles the chord was made of");
+    // The pair opens nothing on any console -- see the test above -- so there
+    // is nothing left for a pad to reach the menu with here. That is the point:
+    // it is reached from the keyboard, which a player points Steam Input at.
 
     input.shutdown();
     pad.detach();
@@ -743,7 +733,7 @@ int main() {
     test_right_stick_reaches_the_c_stick();
     test_stick_click_toggles_filtering();
     test_left_stick_click_swaps_the_layout();
-    test_the_stick_buttons_open_the_menu_together();
+    test_the_stick_buttons_together_are_the_games();
     test_the_right_stick_maps_where_it_is_told();
     test_face_buttons_reach_the_core();
     test_a_tap_reported_twice_still_knows_where_it_started();
