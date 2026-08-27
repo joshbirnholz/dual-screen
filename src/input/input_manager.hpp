@@ -115,13 +115,10 @@ public:
     // with no stick of its own, where reaching for the stick has to work;
     // false for one that has a stick, where doing both would hold a direction
     // down on the d-pad for as long as the stick is moved at all.
-    // Hands every control the console has back to the game: the stick clicks,
-    // and the second finger that would otherwise open the menu. What is left is
-    // the keyboard, which no console has and which a player can point Steam
-    // Input at. See SystemProfile::game_uses_every_control.
-    //
-    // Nothing here concerns the two stick clicks together: games use that pair,
-    // so no console lets this shell have it.
+    // Hands every control the console has back to the game: the stick clicks
+    // singly and together, and the second finger that would otherwise open the
+    // menu. What is left is the keyboard, which no console has and which a
+    // player can point Steam Input at. See SystemProfile::game_uses_every_control.
     void set_game_owns_controls(bool owns) { game_owns_controls_ = owns; }
     bool game_owns_controls() const { return game_owns_controls_; }
 

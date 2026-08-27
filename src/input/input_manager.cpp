@@ -209,10 +209,10 @@ void InputManager::handle_event(const SDL_Event& event) {
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: push_action(UiAction::Right); break;
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: push_action(UiAction::PageUp); break;
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: push_action(UiAction::PageDown); break;
-                // L3 and R3 are not acted on here. Alone they are the layout
-                // swap and the smoothing toggle, and whether a press is going
-                // to be one of those or half of a pair the game wanted is not
-                // known until it is released -- see end_frame().
+                // L3 and R3 are not acted on here. Alone they are still the
+                // layout swap and the smoothing toggle, but together they are
+                // the menu, and which of the three a press turns out to be is
+                // not known until it is released -- see end_frame().
 #ifdef __ANDROID__
                 // A pad's own home button, which on Android reaches the app.
                 // Elsewhere the system takes it first -- Steam on a Deck, the
@@ -600,12 +600,13 @@ void InputManager::end_frame(const Layout& layout,
     // reaching for the chord would swap the layout on the way in.
     const bool left = stick_buttons_held(SDL_CONTROLLER_BUTTON_LEFTSTICK);
     const bool right = stick_buttons_held(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
-    // Pressing both does nothing at all, and is remembered only so that letting
-    // go of the pair does not then fire the two singles it was made of. Games
-    // use this pair, so the shell does not: the menu is reached from the
-    // keyboard, which a player can point Steam Input at.
-    if (left && right) {
+    if (left && right && !stick_chord_used_) {
+        // Still marked used either way, so that letting go of the pair does not
+        // then fire the two singles below on a console that allows them.
         stick_chord_used_ = true;
+        if (!game_owns_controls_) {
+            push_action(UiAction::ToggleMenu);
+        }
     }
     // Only where the game does not want them. See set_game_owns_controls().
     if (!game_owns_controls_) {

@@ -459,10 +459,10 @@ Full options:
 
 | | |
 | --- | --- |
-| Open/close the layout menu | **F1** or **Tab**, or a **two-finger tap** |
+| Open/close the layout menu | **L3 + R3**, **F1**, or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** alone (or **F2**), in a game or in any menu |
 | Swap the two focus layouts | **L3** alone (or **F3**), while a game is on screen |
-| | *L3 and R3 together do nothing: games use that pair. On a Wii U they do nothing apart either, along with the two-finger tap, since a Wii U game reads both sticks pressed and plays through its touch screen — there the menu is the keyboard's alone, which Steam Input can be pointed at.* |
+| | *DS and 3DS only. A Wii U game reads both sticks pressed and plays through its touch screen, so none of the three shortcuts above are taken from it — not L3, not R3, not the pair, and not the two-finger tap. There the menu is **F1** or **Tab** alone, which Steam Input can be pointed at, and **F3** swaps which screen a lone device is showing.* |
 | Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |
 | Move with the C-Stick | the right stick, in the handful of 3DS games built for a Circle Pad Pro or New 3DS |
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
