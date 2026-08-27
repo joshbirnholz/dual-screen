@@ -113,6 +113,16 @@ if(XVFB_RUN_EXECUTABLE)
             ${CMAKE_BINARY_DIR}/companion-disconnect)
     set_tests_properties(companion_disconnect_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 
+    # The mirror of the run above: the host stops while the companion is in the
+    # menu, which is the one direction that was never handled.
+    add_test(NAME host_quit_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_host_quit_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/host-quit)
+    set_tests_properties(host_quit_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+
     # Driven by a shell script rather than a CMake one: the host has to run in
     # the background while the companion connects, and execute_process cannot.
     add_test(NAME two_device_headless

@@ -401,6 +401,11 @@ struct App::Impl {
     void adopt_external_timing();
     void start_companion(ScreenId wanted_screen);
     void open_launcher();
+    // The session this device joined has ended, however it ended. Called from
+    // one place for every screen it might have been on, because the game is not
+    // the only one: a host that quits while this device is in the menu leaves
+    // it holding a menu about a session that no longer exists.
+    void end_companion_session();
     // Plays what arrives from the host, opening this device's audio output the
     // first time something does -- the rate is not known until then.
     void attach_companion_audio();
@@ -1136,6 +1141,26 @@ void App::Impl::attach_companion_audio() {
         });
 }
 
+void App::Impl::end_companion_session() {
+    log_info("the session this device joined has ended; leaving what it was showing");
+    // Whatever was on screen was about the session, so none of it survives it.
+    // The menu especially: left open it would start answering its own presses,
+    // since there is no longer a host to forward them to -- which is how
+    // choosing Quit from here used to leave a confirmation up that then quit
+    // this device instead of the game.
+    if (picker) {
+        picker->close();
+    }
+    if (companion_session->status() == net::CompanionSession::Status::Failed) {
+        enter_message(MessageKind::Error, "Lost the connection",
+                      companion_session->status_detail(), {}, false);
+        return;
+    }
+    // An ordinary end -- the other device stopped, or this one asked to leave.
+    // Nothing went wrong, so there is nothing to read.
+    open_launcher();
+}
+
 void App::Impl::open_launcher() {
     if (!launcher) {
         launcher.reset(new LauncherScreen());
@@ -1584,10 +1609,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     companion_session->set_menu_open(true);
                     break;
                 }
-            }
-            if (companion_session->status() == net::CompanionSession::Status::Failed) {
-                enter_message(MessageKind::Error, "Lost the connection",
-                              companion_session->status_detail(), {}, false);
             }
             break;
         }
@@ -2339,6 +2360,14 @@ int App::run(const AppOptions& options) {
                 // be the same number.
                 impl.companion_reported_width = 0;
                 impl.companion_reported_height = 0;
+            }
+            // Leaving is not something that only happens while the game is on
+            // screen. Checked here rather than in any one screen's own handling
+            // so that every screen the session could have left behind is
+            // covered by the same line.
+            if (!companion_now_connected && impl.companion_was_connected &&
+                (impl.state == Impl::State::Companion || impl.state == Impl::State::Menu)) {
+                impl.end_companion_session();
             }
             impl.companion_was_connected = companion_now_connected;
             if (companion_now_connected && (impl.output_width != impl.companion_reported_width ||
