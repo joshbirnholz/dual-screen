@@ -196,15 +196,39 @@ Point by point against the list above:
   `controllers_update_states()` and the whole mapping loop are skipped and the
   buttons, both sticks and the touch all come from the link. A GamePad is
   created at launch if that Cemu has never had its input configured, since a
-  shell needs one to be holding.
+  shell needs one to be holding. The stick is deadzoned here too (a scaled
+  radial deadzone at 0.15, matching Cemu's own controller default) -- the
+  shell sends it raw on purpose, expecting a libretro core to deadzone its own,
+  and Cemu was never in that loop.
+- **The GamePad screen reaches the link without Cemu's own "Separate GamePad
+  view" window.** That Cemu setting gates its own on-screen pad window, not
+  whether the game bothered rendering a DRC picture at all -- it always does.
+  Reaching it without that window still means the texture needs freshening
+  first (`LatteTexture_UpdateDataToLatest`), the same call
+  `LatteRenderTarget_copyToBackbuffer` always opens with and that a direct tap
+  has no other reason to make.
 - **The socket** is `--dualscreen-socket <path>`, which is what the default
   `wii_u_arguments` below passes.
 - **Size.** Nothing was changed about the 1920x1080 cap, so a Cemu above 1x
   internal resolution will have its frames refused, once, in the log.
+- **Audio.** The TV stream reaches the link from `ax_out.cpp`'s `AIInitDMA`,
+  the same 48kHz int16 block Cemu hands its own output device, sent right
+  alongside it. Only when it is genuinely stereo, which is Cemu's own default;
+  a title switched to mono or surround TV audio gets a log line instead.
 
-Not done there yet: **audio** (`DualscreenSession::SendAudio` exists and this
-side is listening, but nothing in Cemu calls it) and the **reset request**,
-which arrives and is logged.
+Verified end to end against a real session (Wind Waker HD, Steam Deck): video,
+pad, touch and audio all confirmed correct on real hardware, after two bugs the
+build couldn't have caught here -- a 10-bit scan buffer format, and a missing
+sRGB encode step traced to Cemu's own output shader, both written up in the
+git history on `claude/dualscreen-frame-link`.
+
+Not done there yet: **DRC (GamePad) audio**, a second AX stream this does not
+touch -- the link only carries one -- and the **reset request**, which arrives
+and is logged. Reset stays that way on purpose: the only stop-a-running-title
+path Cemu has, `MainWindow::EndEmulation()`, is marked by its own author as
+unfinished, with memory leaks and crashes after about three uses, and wiring a
+shell's Reset button through that would make repeated presses worse than doing
+nothing.
 
 ## What the shell does with it
 

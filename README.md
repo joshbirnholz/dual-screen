@@ -130,10 +130,10 @@ a second device.
 The Cemu that speaks it is a fork — `joshbirnholz/cemu-dualscreen`, branch
 `claude/dualscreen-frame-link`. It taps the frames where Cemu's own screenshot
 path is tapped, reads them back without ever waiting for the GPU, and takes the
-whole GamePad from the link while the shell is connected. Vulkan only, and not
-yet built or run on real hardware. `docs/cemu-integration.md` is the full
-account of what it does and what it does not do yet — audio and the Reset button
-are the two gaps.
+whole GamePad from the link while the shell is connected. Vulkan only.
+Confirmed against a real session on a Steam Deck: video, pad, touch and TV
+audio all working. `docs/cemu-integration.md` is the full account, including
+the two remaining gaps — GamePad audio and Reset — and why each is where it is.
 
 `tools/fake_wii_u` stands in for it in the tests, which is what
 `tests/run_wii_u_test.sh` and `tests/run_wii_u_companion_test.sh` drive.
@@ -822,10 +822,9 @@ The mock core means all of this runs with no melonDS core and no commercial ROM.
 
 ## Not built yet
 
-Wii U games actually playing — this side of the handover is finished and tested
-against `tools/fake_wii_u`, and the Cemu fork that speaks it is written but has
-never been built or run; see `docs/cemu-integration.md`. Sound from a Wii U, and
-the Reset button reaching one. Save states, cheats, rewind, shaders. More than
+A Wii U's GamePad audio and its Reset button reaching Cemu; see
+`docs/cemu-integration.md`, which has confirmed-working video, pad and TV audio
+against a real session. Save states, cheats, rewind, shaders. More than
 one companion per host. The companion in `companion/` is built and tested here as a
 desktop program; the Switch build needs a devkitPro toolchain and the Android
 build needs the Android SDK and NDK, so both have to be checked by hand on the
