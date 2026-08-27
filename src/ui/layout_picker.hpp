@@ -97,7 +97,7 @@ enum class MenuConfirm : uint8_t { None = 0, Reset = 1, Quit = 2 };
 // while looking at either screen.
 class LayoutPicker {
 public:
-    explicit LayoutPicker(const LayoutRegistry& registry) : registry_(&registry) {}
+    explicit LayoutPicker(const LayoutRegistry& registry);
 
     void open(const LayoutPickerState& state);
     // The row of buttons this device is offering. Rebuilt when a companion
@@ -155,7 +155,7 @@ public:
     }
     // The console being played, which decides the screens' shapes and what the
     // Standard tile draws.
-    void set_screens(const SystemScreens& screens) { screens_ = screens; }
+    void set_screens(const SystemScreens& screens);
     Handedness handedness() const { return state_.handedness; }
     // The host can change the layout under a companion's open menu.
     void set_selected_layout(const std::string& layout_id);
@@ -240,7 +240,12 @@ private:
     };
     ConfirmGeometry compute_confirm_geometry(float output_width, float output_height) const;
     bool confirming() const { return confirm_ != MenuConfirm::None; }
-    int tile_count() const { return static_cast<int>(registry_->size()); }
+    int tile_count() const { return static_cast<int>(tiles_.size()); }
+    // The layout behind a tile, and where a layout's tile is. Everything that
+    // counts or numbers tiles goes through these rather than through the
+    // registry, because not every layout is offered on every console.
+    const Layout& tile_layout(int index) const;
+    int tile_index_of(const std::string& layout_id) const;
     int footer_count() const { return static_cast<int>(footer_.size()); }
     int focus_count() const { return tile_count() + footer_count(); }
     void move_focus(int delta_x, int delta_y, const Geometry& geometry);
@@ -252,6 +257,11 @@ private:
     void rebuild_footer();
 
     const LayoutRegistry* registry_;
+    // Which of the registry's layouts this console can actually show, as
+    // indices into it. Decided from the system alone, so a host and a companion
+    // arrive at the same list and tile number three means the same layout on
+    // both. See layout_fits_system().
+    std::vector<std::size_t> tiles_;
     bool open_ = false;
     int focus_ = 0;
     std::string selected_layout_id_;

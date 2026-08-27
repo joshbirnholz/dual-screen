@@ -1,5 +1,7 @@
 #include "test_support.hpp"
 
+#include <algorithm>
+#include <string>
 #include <vector>
 
 #include "core/system.hpp"
@@ -33,6 +35,35 @@ PointerEvent slide_onto(float from_x, float from_y, float to_x, float to_y) {
     pointer.press_x = from_x;
     pointer.press_y = from_y;
     return pointer;
+}
+
+// Every layout a tap can actually reach on this console's menu. The tiles are
+// the picker's own business, so this finds them by touching the whole menu
+// rather than by being told where they are -- which is also how it notices a
+// tile that stopped being reachable.
+std::vector<std::string> layouts_offered_for(const LayoutRegistry& registry,
+                                             const SystemScreens& screens) {
+    std::vector<std::string> found;
+    // Twice, from two different starting layouts: a tap on the tile already in
+    // use changes nothing, so one sweep can never see the layout it began on.
+    for (const char* opened_on : {"standard", "vertical"}) {
+        LayoutPickerState state;
+        state.layout_id = opened_on;
+        for (float y = 4.0f; y < kHeight; y += 8.0f) {
+            for (float x = 4.0f; x < kWidth; x += 8.0f) {
+                LayoutPicker picker(registry);
+                picker.set_screens(screens);
+                picker.open(state);
+                const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                if (!result.selection_changed) continue;
+                const std::string& id = picker.selected_layout_id();
+                if (std::find(found.begin(), found.end(), id) == found.end()) {
+                    found.push_back(id);
+                }
+            }
+        }
+    }
+    return found;
 }
 
 // Taps every point on a coarse grid over the menu and reports how many of them
@@ -623,9 +654,47 @@ void test_the_menu_follows_a_device_arriving_and_leaving() {
               "a companion leaving did not take its entries away again");
 }
 
+// The Standard layout is the console's own arrangement, drawn from the shape of
+// the console itself. A Wii U is a box under a television and a pad in your
+// hands, which is not a shape two screens sit inside -- so there is no Standard
+// to offer, and offering it anyway meant a tile that drew nothing and a game
+// that started onto a black window.
+void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
+    LayoutRegistry registry;
+    const std::vector<std::string> handheld =
+        layouts_offered_for(registry, system_profile(SystemId::Ds).screens);
+    const std::vector<std::string> wii_u =
+        layouts_offered_for(registry, system_profile(SystemId::WiiU).screens);
+
+    const auto offers = [](const std::vector<std::string>& ids, const std::string& id) {
+        return std::find(ids.begin(), ids.end(), id) != ids.end();
+    };
+    CHECK_MSG(offers(handheld, "standard"),
+              "a console this app has a picture of stopped offering its own arrangement");
+    CHECK_MSG(!offers(wii_u, "standard"),
+              "a console with no picture of itself was still offered the layout that draws one");
+
+    // Nothing else went with it: the other layouts compose their screens for
+    // themselves and fit any console.
+    CHECK_MSG(handheld.size() == wii_u.size() + 1,
+              "filtering the menu for one console took layouts away from another");
+    for (const std::string& id : wii_u) {
+        CHECK_MSG(offers(handheld, id), "a layout appeared on one console and not the other");
+        CHECK_MSG(layout_fits_system(registry.resolve(id), system_profile(SystemId::WiiU).screens),
+                  "the menu offered a layout with nowhere to put this console's screens");
+    }
+
+    // And the console starts on one it was actually offered, rather than on the
+    // one that was taken away.
+    const std::string starts_on = system_profile(SystemId::WiiU).default_layout_id;
+    CHECK_MSG(!starts_on.empty() && offers(wii_u, starts_on),
+              "a Wii U game starts on a layout its own menu does not offer");
+}
+
 }  // namespace
 
 int main() {
+    test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
     test_the_pointer_button_appears_only_where_there_is_a_pointer();

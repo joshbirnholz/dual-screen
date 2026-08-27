@@ -1217,6 +1217,20 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     resolved_core_path = resolve_core_path(options, settings, system);
     apply_system();
 
+    // Resolved once more now the console is known. A layout remembered from a
+    // different one, or the global default, may have nowhere to put these
+    // screens -- and a layout that cannot place them draws nothing at all,
+    // which looks exactly like a game that failed to start.
+    if (!layout_fits_system(registry.resolve(active_layout_id), profile.screens)) {
+        const std::string instead = profile.default_layout_id.empty()
+                                        ? LayoutRegistry::fallback_id()
+                                        : profile.default_layout_id;
+        log_info("the " + registry.resolve(active_layout_id).display_name +
+                 " layout has no shape for a " + profile.name + "; using " +
+                 registry.resolve(instead).display_name + " instead");
+        active_layout_id = registry.resolve(instead).id;
+    }
+
     // Before the core is loaded, for the same reason the context is: the core
     // resolves its GL functions once, while the game is being opened, and keeps
     // whatever it was handed.

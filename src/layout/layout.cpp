@@ -259,6 +259,13 @@ void mark_native(PlacedScreen& placed, const SystemScreens& screens) {
 
 }  // namespace
 
+bool layout_fits_system(const Layout& layout, const SystemScreens& screens) {
+    if (layout.composition.used || !layout.placements.empty()) {
+        return true;
+    }
+    return !layout.uses_console_frame || screens.console.exists();
+}
+
 std::vector<PlacedScreen> place_screens(const Layout& layout,
                                         const PixelRect& window,
                                         const SystemScreens& screens,

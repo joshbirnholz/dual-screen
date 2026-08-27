@@ -185,6 +185,17 @@ if(XVFB_RUN_EXECUTABLE)
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(switch_client_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
         ENVIRONMENT "COMPANION_SCREEN=top")
+    # A console this app does not play itself. Two processes and the shared
+    # memory between them, with fake_wii_u standing in for Cemu -- the only
+    # piece of the Wii U path that does not exist yet.
+    add_test(NAME wii_u_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_wii_u_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:fake_wii_u>
+            ${CMAKE_BINARY_DIR}/wii-u
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(wii_u_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()

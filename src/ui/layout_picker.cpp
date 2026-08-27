@@ -13,6 +13,33 @@ namespace {
 
 }  // namespace
 
+LayoutPicker::LayoutPicker(const LayoutRegistry& registry) : registry_(&registry) {
+    set_screens(screens_);
+}
+
+void LayoutPicker::set_screens(const SystemScreens& screens) {
+    screens_ = screens;
+    tiles_.clear();
+    for (std::size_t index = 0; index < registry_->size(); ++index) {
+        if (layout_fits_system(registry_->at(index), screens_)) {
+            tiles_.push_back(index);
+        }
+    }
+}
+
+const Layout& LayoutPicker::tile_layout(int index) const {
+    return registry_->at(tiles_[static_cast<std::size_t>(index)]);
+}
+
+int LayoutPicker::tile_index_of(const std::string& layout_id) const {
+    for (std::size_t index = 0; index < tiles_.size(); ++index) {
+        if (registry_->at(tiles_[index]).id == layout_id) {
+            return static_cast<int>(index);
+        }
+    }
+    return -1;
+}
+
 void LayoutPicker::open(const LayoutPickerState& state) {
     open_ = true;
     confirm_ = MenuConfirm::None;
@@ -20,7 +47,7 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     selected_layout_id_ = state.layout_id;
 
     rebuild_footer();
-    const int index = registry_->index_of(state.layout_id);
+    const int index = tile_index_of(state.layout_id);
     focus_ = index >= 0 ? index : 0;
 }
 
@@ -314,7 +341,7 @@ void LayoutPicker::move_focus(int delta_x, int delta_y, const Geometry& geometry
 bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
     const int tiles = tile_count();
     if (focus_ < tiles) {
-        const std::string id = registry_->at(static_cast<std::size_t>(focus_)).id;
+        const std::string id = tile_layout(focus_).id;
         if (id != selected_layout_id_) {
             set_selected_layout(id);
             result.selection_changed = true;
@@ -559,7 +586,7 @@ void LayoutPicker::render(QuadRenderer& quads,
 
     for (std::size_t index = 0; index < geometry.tiles.size(); ++index) {
         const PixelRect& tile = geometry.tiles[index];
-        const Layout& layout = registry_->at(index);
+        const Layout& layout = tile_layout(static_cast<int>(index));
         const bool focused = (static_cast<int>(index) == focus_);
         const bool selected = (layout.id == selected_layout_id_);
 

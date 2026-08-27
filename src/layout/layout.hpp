@@ -315,4 +315,11 @@ bool map_output_point_to_ds(const Layout& layout,
 // True if this layout shows the bottom screen at all (and so can accept touch).
 bool layout_has_touchable_bottom(const Layout& layout);
 
+// Whether this layout has anywhere to put this system's screens. The Standard
+// layout is the console's own arrangement, so a console this app has no shape
+// for has no Standard to show -- and would draw nothing at all rather than
+// saying so. Every other layout composes its screens for itself and fits any
+// console.
+bool layout_fits_system(const Layout& layout, const SystemScreens& screens);
+
 }  // namespace ds

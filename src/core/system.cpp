@@ -136,6 +136,10 @@ SystemProfile make_wii_u() {
     // The television is the game; the GamePad is a second view of it. So one
     // device on its own shows one screen rather than both squeezed together.
     profile.solo_screens = SoloScreens::One;
+    // One screen on each device is the Wii U's own arrangement, so it is where
+    // a game starts rather than something to go and find. Alone, that shows
+    // the television and the swap key reaches the GamePad -- see SoloScreens.
+    profile.default_layout_id = "upper_on_tv";
     // Cemu has its own resolution settings and they are not this app's to
     // second-guess, so there is nothing here to cycle through.
     profile.max_render_scale = 1;

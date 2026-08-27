@@ -67,6 +67,11 @@ struct SystemProfile {
     // where this is LibretroCore.
     FrameOrigin frame_origin = FrameOrigin::LibretroCore;
     SoloScreens solo_screens = SoloScreens::Both;
+    // Which layout a game for this console starts on when nothing else has
+    // been remembered, and what an unavailable one falls back to. Empty means
+    // the registry's own fallback -- the console's own shape, which is the
+    // right answer for any console this app has a picture of.
+    std::string default_layout_id;
     // Whether the game speaks for every control the console itself has. A Wii U
     // game reads both sticks pressed and uses its touch screen throughout, so
     // nothing this shell wants may be taken from the pad or the glass: not a
