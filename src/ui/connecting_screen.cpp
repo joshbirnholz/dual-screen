@@ -6,13 +6,14 @@
 
 namespace ds {
 
-void render_connecting_screen(QuadRenderer& quads,
-                              TextRenderer& text,
-                              const ButtonGlyphSheet& glyphs,
-                              float output_width,
-                              float output_height,
-                              const std::string& device_name,
-                              const std::string& game_title) {
+void render_waiting_screen(QuadRenderer& quads,
+                           TextRenderer& text,
+                           const ButtonGlyphSheet& glyphs,
+                           float output_width,
+                           float output_height,
+                           const std::string& heading,
+                           const std::vector<std::string>& lines,
+                           const std::vector<GuidePrompt>& prompts) {
     const UiTheme& theme = ui_theme();
     const float scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(scale);
@@ -23,23 +24,49 @@ void render_connecting_screen(QuadRenderer& quads,
     const float centre = output_width * 0.5f;
     float y = std::round(output_height * 0.40f);
 
-    text.draw(quads, "Connecting", centre, y, scale * 2.0f, theme.text, TextAlign::Center);
+    text.draw(quads, heading, centre, y, scale * 2.0f, theme.text, TextAlign::Center);
     y += line * 3.0f;
 
-    // Named, because the point of this screen is knowing which of the devices
-    // on the list is being waited for.
-    if (!device_name.empty()) {
-        text.draw(quads, "to " + device_name, centre, y, scale * 1.2f, theme.text,
-                  TextAlign::Center);
-        y += line * 2.0f;
-    }
-    if (!game_title.empty()) {
-        text.draw(quads, game_title, centre, y, scale, theme.text_dim, TextAlign::Center);
+    // The first line is what is being waited for and the rest is detail, so
+    // they are drawn at different weights.
+    const float room = output_width * 0.9f;
+    bool first = true;
+    for (const std::string& entry : lines) {
+        if (entry.empty()) {
+            continue;
+        }
+        float entry_scale = first ? scale * 1.2f : scale;
+        // Shrunk rather than allowed to run off the edges. One of these lines
+        // is a filesystem path, whose length is not this screen's to choose.
+        const float natural = TextRenderer::measure_width(entry, entry_scale);
+        if (natural > room && natural > 0.0f) {
+            entry_scale *= room / natural;
+        }
+        text.draw(quads, entry, centre, y, entry_scale,
+                  first ? theme.text : theme.text_dim, TextAlign::Center);
+        y += first ? line * 2.0f : line * 1.4f;
+        first = false;
     }
 
-    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Stop waiting"}}, centre,
-                       output_height - line * 1.5f - control_guide_height(scale * 0.95f),
-                       scale * 0.95f, theme.text);
+    if (!prompts.empty()) {
+        draw_control_guide(quads, text, glyphs, prompts, centre,
+                           output_height - line * 1.5f - control_guide_height(scale * 0.95f),
+                           scale * 0.95f, theme.text);
+    }
+}
+
+void render_connecting_screen(QuadRenderer& quads,
+                              TextRenderer& text,
+                              const ButtonGlyphSheet& glyphs,
+                              float output_width,
+                              float output_height,
+                              const std::string& device_name,
+                              const std::string& game_title) {
+    // Named, because the point of this screen is knowing which of the devices
+    // on the list is being waited for.
+    render_waiting_screen(quads, text, glyphs, output_width, output_height, "Connecting",
+                          {device_name.empty() ? std::string() : "to " + device_name, game_title},
+                          {{ButtonGlyph::B, "Stop waiting"}});
 }
 
 }  // namespace ds

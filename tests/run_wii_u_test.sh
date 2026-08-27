@@ -123,6 +123,47 @@ run_session television blue
 # SystemProfile::game_uses_every_control.
 run_session gamepad green --simulate-key F3
 
+# And with nothing on the other end at all. The emulator is a separate program
+# and may simply not have been started, and a blank window is indistinguishable
+# from a broken one -- so the shell has to say what it is waiting for.
+{
+    shot="$WORK_DIR/waiting.ppm"
+    log="$WORK_DIR/waiting.log"
+    XDG_CONFIG_HOME="$WORK_DIR/waiting/config" \
+    XDG_DATA_HOME="$WORK_DIR/waiting/data" \
+    SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
+    "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
+        "$DUALSCREEN" \
+            --game "$WORK_DIR/game.wud" \
+            --external-socket "$WORK_DIR/nobody.sock" \
+            --windowed \
+            --exit-after-seconds 5 \
+            --screenshot-at-seconds 3 \
+            --screenshot "$shot" \
+        > "$log" 2>&1
+    result=$?
+
+    echo "--- waiting: the shell ---"
+    cat "$log" 2>/dev/null
+
+    if [ "$result" -ne 0 ]; then
+        echo "waiting: the shell exited with $result rather than sitting there" >&2
+        FAILED=1
+    fi
+    if grep -q "a game connected" "$log" 2>/dev/null; then
+        echo "waiting: something connected, so this run is not the case being tested" >&2
+        FAILED=1
+    fi
+    if [ ! -f "$shot" ]; then
+        echo "waiting: no screenshot" >&2
+        FAILED=1
+    elif ! "$CHECKER" "$shot" "text=0.1,0.35,0.9,0.60"; then
+        echo "waiting: the shell showed a blank window rather than saying what it was waiting "\
+"for" >&2
+        FAILED=1
+    fi
+}
+
 if [ "$FAILED" -eq 0 ]; then
     echo "ok - a console played by another program showed both of its screens"
 fi

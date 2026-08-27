@@ -271,6 +271,9 @@ struct App::Impl {
     // console's two are separate pictures. The television to begin with, since
     // that is the game; the other is a second view of it. See SoloScreens.
     ScreenId solo_screen = ScreenId::Top;
+    // Where such a console hands its screens over, for the waiting screen to
+    // name while nothing has.
+    std::string external_socket_path;
     // Whether the program playing an external console has connected yet. Only
     // once it has does the link know what it is sending, which is when the
     // frame clock and the sound device can be set to match it.
@@ -1324,6 +1327,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             const std::string socket_path = options.external_socket.empty()
                                                 ? ExternalFrameLink::default_socket_path()
                                                 : options.external_socket;
+            external_socket_path = socket_path;
             std::string link_error;
             if (!external_source->open(socket_path, &link_error)) {
                 external_source.reset();
@@ -1686,6 +1690,22 @@ void App::Impl::render() {
         companion_session->status() == net::CompanionSession::Status::Connecting) {
         render_connecting_screen(quads, text, button_glyphs, width, height,
                                  joining_host.device_name, joining_host.game_title);
+        SDL_GL_SwapWindow(window);
+        ++frames_rendered;
+        return;
+    }
+
+    if (state == State::Playing && external_source && !external_source->running()) {
+        // The game is played by a program started separately, and it has not
+        // arrived. A black window here would be the same black window a broken
+        // one gives, so it says what it is waiting for and where.
+        const SystemProfile& profile = system_profile(system);
+        render_waiting_screen(quads, text, button_glyphs, width, height,
+                              "Waiting for " + profile.core_description,
+                              {game_title,
+                               "Start it and point it at " + external_socket_path,
+                               "F1 or Tab for the menu"},
+                              {});
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;
