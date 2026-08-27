@@ -682,10 +682,26 @@ void test_every_system_round_trips() {
                   profile.name + " arrived at the other end as a different console, which is the "
                                  "wrong screen sizes for everything after it");
 
-        CHECK_MSG(std::string(core_path_settings_key(profile.id)) !=
-                          std::string(core_path_environment_variable(profile.id)),
-                  profile.name + " names its core path the same way in both places, which means "
-                                 "one of them was left at another console's answer");
+        // A console this app runs itself needs two distinct names for where its
+        // core is; one it does not run needs neither. Both halves matter: the
+        // first catches a console left at another's answer, the second catches
+        // a core path invented for something that has no core.
+        const bool runs_here = profile.frame_origin == FrameOrigin::LibretroCore;
+        const std::string settings_key = core_path_settings_key(profile.id);
+        const std::string environment = core_path_environment_variable(profile.id);
+        if (runs_here) {
+            CHECK_MSG(!settings_key.empty() && !environment.empty(),
+                      profile.name + " runs in a core here but has nowhere to say where it is");
+            CHECK_MSG(settings_key != environment,
+                      profile.name + " names its core path the same way in both places, which "
+                                     "means one of them was left at another console's answer");
+        } else {
+            CHECK_MSG(settings_key.empty() && environment.empty(),
+                      profile.name + " is not run by this app, so it should have no core path to "
+                                     "name -- and a player told to set one would be misled");
+            CHECK_MSG(profile.core_filenames.empty(),
+                      profile.name + " is not run by this app but names cores to look for");
+        }
     }
 }
 

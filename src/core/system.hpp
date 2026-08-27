@@ -10,7 +10,7 @@ namespace ds {
 // Which console a game belongs to. Everything that differs between them -- the
 // size and shape of each screen, the console the Standard layout draws, which
 // core plays it, what its ROMs are called -- hangs off this and nowhere else.
-enum class SystemId { Ds, ThreeDs };
+enum class SystemId { Ds, ThreeDs, WiiU };
 
 // What kind of OpenGL context a system's cores need. A core that renders on the
 // CPU is happy with anything; one that renders on the GPU is not, and asks for
@@ -21,6 +21,15 @@ enum class GlContextNeed {
     Any,
     // A desktop OpenGL 3.3 core profile, which is what Citra asks for.
     OpenGl33Core,
+};
+
+// Where a system's frames come from. Not every console this app shows is one it
+// runs: a Wii U is played in Cemu, which is a program of its own rather than a
+// core this app loads, and which hands its two screens over rather than being
+// asked for them.
+enum class FrameOrigin {
+    LibretroCore,
+    External,
 };
 
 struct SystemProfile {
@@ -46,6 +55,10 @@ struct SystemProfile {
     // this system. 1 means the core draws at the console's own resolution and
     // there is nothing to choose, so the button does not appear at all.
     int max_render_scale = 1;
+    // Whether this app runs the game itself. Everything about cores -- looking
+    // for one, loading it, telling the player where to put it -- only applies
+    // where this is LibretroCore.
+    FrameOrigin frame_origin = FrameOrigin::LibretroCore;
 };
 
 const SystemProfile& system_profile(SystemId id);

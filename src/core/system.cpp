@@ -108,8 +108,38 @@ std::string lowercase_extension(const std::string& path) {
 
 }  // namespace
 
+SystemProfile make_wii_u() {
+    SystemProfile profile;
+    profile.id = SystemId::WiiU;
+    profile.name = "Wii U";
+    // The television and the GamePad. "Top" and "Bottom" are this app's names
+    // for the two screens of a console rather than a claim about where they sit
+    // -- on a Wii U one of them is across the room.
+    profile.screens.top = ScreenSize{1280, 720};
+    profile.screens.bottom = ScreenSize{854, 480};
+    // No console is drawn behind these. A Wii U is a box under a television and
+    // a pad in your hands, which is not a picture the Standard layout can put
+    // two screens inside -- so there is no console frame and the space around
+    // the screens is simply blank.
+
+    profile.rom_extensions = {"wud", "wux", "rpx", "wua"};
+    // Nothing to look for: Cemu is a program rather than a core, and it is
+    // asked for its screens rather than loaded. See FrameOrigin.
+    profile.core_filenames = {};
+    profile.core_description = "Cemu";
+    profile.frame_origin = FrameOrigin::External;
+    // A GamePad has two sticks of its own, and the game reads both of them --
+    // including pressing them, which is why nothing in this shell may take L3
+    // or R3 while a Wii U game is running.
+    profile.has_analog_stick = true;
+    // Cemu has its own resolution settings and they are not this app's to
+    // second-guess, so there is nothing here to cycle through.
+    profile.max_render_scale = 1;
+    return profile;
+}
+
 const std::vector<SystemProfile>& system_profiles() {
-    static const std::vector<SystemProfile> profiles = {make_ds(), make_three_ds()};
+    static const std::vector<SystemProfile> profiles = {make_ds(), make_three_ds(), make_wii_u()};
     return profiles;
 }
 
@@ -151,6 +181,7 @@ const char* system_key(SystemId id) {
     switch (id) {
         case SystemId::Ds: return "ds";
         case SystemId::ThreeDs: return "3ds";
+        case SystemId::WiiU: return "wiiu";
     }
     return "ds";
 }
@@ -159,6 +190,8 @@ const char* core_path_settings_key(SystemId id) {
     switch (id) {
         case SystemId::Ds: return "core_path";
         case SystemId::ThreeDs: return "core_path_3ds";
+        // A console this app does not run has no core path to name.
+        case SystemId::WiiU: return "";
     }
     return "core_path";
 }
@@ -167,6 +200,7 @@ const char* core_path_environment_variable(SystemId id) {
     switch (id) {
         case SystemId::Ds: return "DUALSCREEN_CORE";
         case SystemId::ThreeDs: return "DUALSCREEN_CORE_3DS";
+        case SystemId::WiiU: return "";
     }
     return "DUALSCREEN_CORE";
 }
@@ -178,6 +212,10 @@ bool system_from_key(const std::string& key, SystemId& out_system) {
     }
     if (key == "3ds") {
         out_system = SystemId::ThreeDs;
+        return true;
+    }
+    if (key == "wiiu") {
+        out_system = SystemId::WiiU;
         return true;
     }
     return false;

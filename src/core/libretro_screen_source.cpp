@@ -158,6 +158,11 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     // says so through warnings() rather than quietly changing the picture --
     // which is why both systems' options can simply be set here.
     switch (system_) {
+        // Nothing to force on a console this class never runs: its frames come
+        // from a program of its own. Reaching here at all would be a mistake
+        // made much earlier, and there is no option that would fix it.
+        case SystemId::WiiU:
+            break;
         case SystemId::Ds:
             core_->force_option(kOptNumberOfLayouts, "1");   // no layout cycling
             core_->force_option(kOptScreenLayout1, "top-bottom");
@@ -400,6 +405,9 @@ void LibretroCoreScreenSource::apply_render_scale() {
         return;
     }
     switch (system_) {
+        // See above: not this class's console.
+        case SystemId::WiiU:
+            break;
         case SystemId::Ds:
             // melonDS is pinned to its software renderer, which draws one pixel
             // per DS pixel and has nothing to multiply.

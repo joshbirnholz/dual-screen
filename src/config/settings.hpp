@@ -38,6 +38,8 @@ struct Settings {
         switch (system) {
             case SystemId::Ds: return core_path;
             case SystemId::ThreeDs: return core_path_3ds;
+            // Played in a program of its own rather than a core this app loads.
+            case SystemId::WiiU: break;
         }
         // A console whose frames do not come from a core this app loads has no
         // path to hold. Reached only if one is added without answering here,

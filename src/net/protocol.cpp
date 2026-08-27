@@ -124,6 +124,7 @@ uint8_t system_to_wire(SystemId system) {
     switch (system) {
         case SystemId::Ds: return 0;
         case SystemId::ThreeDs: return 1;
+        case SystemId::WiiU: return 2;
     }
     return 0;
 }
@@ -132,6 +133,7 @@ bool system_from_wire(uint8_t value, SystemId& out) {
     switch (value) {
         case 0: out = SystemId::Ds; return true;
         case 1: out = SystemId::ThreeDs; return true;
+        case 2: out = SystemId::WiiU; return true;
         default: break;
     }
     return false;

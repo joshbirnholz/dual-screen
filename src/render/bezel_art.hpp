@@ -31,6 +31,9 @@ public:
         switch (system) {
             case SystemId::Ds: art = &ds_; break;
             case SystemId::ThreeDs: art = &three_ds_; break;
+            // A box under a television and a pad in your hands is not a picture
+            // two screens can be drawn inside.
+            case SystemId::WiiU: break;
         }
         // A console with no picture drawn for it yet is blank around its
         // screens, which is what the layout already handles.
