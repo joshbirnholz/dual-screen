@@ -271,6 +271,11 @@ how you see what the answer it did not pick looks like on your own machines and
 your own network. `--video-codec auto|tiles|h264` does the same for one run
 without editing anything.
 
+Changing it takes effect on the session you are in, not the next one — that is
+the point, since comparing the two is what it is for. A session that has given
+up on video (no encoder here, or nothing at the far end that can decode) stays
+on tiles until you ask for it again.
+
 Asking for video is a request rather than a guarantee: the far end has to be
 able to decode it, and a build without FFmpeg cannot. When it cannot the session
 sends tiles and says so in the log — worth checking, because a screenshot looks

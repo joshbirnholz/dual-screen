@@ -83,13 +83,18 @@ void HostSession::set_video_wanted(bool wanted) {
         return;
     }
     video_wanted_ = wanted;
-    if (!wanted) {
-        // Closed rather than left idle, so that turning it back on opens a
-        // fresh encoder and says so -- which is most of what makes this worth
-        // being able to change without restarting.
-        video_top_.close();
-        video_bottom_.close();
+    if (wanted) {
+        // Asked for again. This is called every frame with the same answer, so
+        // reaching here at all means somebody changed their mind -- which is
+        // reason enough to try an encoder that failed before.
+        video_failed_ = false;
+        return;
     }
+    // Closed rather than left idle, so that turning it back on opens a fresh
+    // encoder and says so -- which is most of what makes this worth being able
+    // to change without restarting.
+    video_top_.close();
+    video_bottom_.close();
 }
 
 void HostSession::set_host_screen(ScreenId screen) {
@@ -178,6 +183,9 @@ void HostSession::drop_companion(const std::string& reason) {
     video_top_.close();
     video_bottom_.close();
     companion_accepts_video_ = false;
+    // A different device may be a different size, and the encoder is opened
+    // for the size it is given, so the next one gets its own attempt.
+    video_failed_ = false;
     refresh_beacon();
 }
 
@@ -596,7 +604,7 @@ bool HostSession::use_video_for(const ScreenPixels& source) {
     // Every one of these has to be true, and each is a different party's
     // answer: what this session was asked for, what the far end can decode,
     // and whether this build has an encoder at all.
-    if (!video_wanted_ || !companion_accepts_video_ || !video::available()) {
+    if (!video_wanted_ || video_failed_ || !companion_accepts_video_ || !video::available()) {
         return false;
     }
     // 4:2:0 cannot represent an odd number of pixels. A screen that is one is
@@ -628,7 +636,11 @@ bool HostSession::encode_one_screen(ScreenId screen,
             // every screen this app has ever sent, just less cheaply.
             log_warn("no video encoder for the " + std::string(to_string(screen)) +
                      " screen, falling back to tiles: " + error);
-            video_wanted_ = false;
+            // Remembered rather than clearing the request: the frame loop sets
+            // that from the player's setting every frame and would put it
+            // straight back, so this would otherwise be a failed open and a
+            // warning every frame for the rest of the session.
+            video_failed_ = true;
             frame.encoding = FrameEncoding::Rgb565DeflateTiles;
             return encode_screen_tiles(source.pixels, source.width, source.height,
                                        source.stride_pixels, previous, frame.payload,
@@ -646,7 +658,7 @@ bool HostSession::encode_one_screen(ScreenId screen,
     if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &error)) {
         log_warn("the video encoder failed, falling back to tiles: " + error);
         encoder.close();
-        video_wanted_ = false;
+        video_failed_ = true;
         frame.encoding = FrameEncoding::Rgb565DeflateTiles;
         return encode_screen_tiles(source.pixels, source.width, source.height,
                                    source.stride_pixels, previous, frame.payload,

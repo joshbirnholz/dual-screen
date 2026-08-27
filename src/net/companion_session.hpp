@@ -177,6 +177,13 @@ public:
     uint64_t newest_frame_serial_for_test() const {
         return std::max(top_.serial, bottom_.serial);
     }
+    // Which way the newest frame for this screen arrived. The two are meant to
+    // be interchangeable, which is exactly why a test has to be able to tell
+    // them apart: a run that quietly fell back to tiles looks identical in the
+    // pixels.
+    bool screen_is_video_for_test(ScreenId screen) const {
+        return (screen == ScreenId::Top ? top_ : bottom_).video;
+    }
     SystemScreens screens_geometry() const override;
     bool wants_shutdown() const override { return false; }
 

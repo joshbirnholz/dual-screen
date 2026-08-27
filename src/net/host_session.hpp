@@ -234,6 +234,7 @@ private:
     bool companion_input_fresh_ = false;
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
+    bool video_failed_ = false;
     bool companion_menu_open_ = false;
     bool companion_asked_for_menu_ = false;
     int companion_display_width_ = 0;

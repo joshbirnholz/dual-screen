@@ -13,6 +13,7 @@
 
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
+#include "video/video_codec.hpp"
 
 using namespace ds;
 using namespace ds::net;
@@ -1359,6 +1360,107 @@ void test_host_can_disconnect_the_companion() {
     host.stop();
 }
 
+// Changing the codec while a session is live has to take effect on that
+// session, not on the next one. The whole reason the setting exists is to see
+// what the other answer looks like on your own machines, and a setting you have
+// to reconnect to feel is a setting you cannot compare with.
+//
+// The hard direction is video back to tiles: a tiled frame is a difference from
+// the last tiled frame, and the frames in between went a different way
+// entirely. Both ends have to still be describing the same picture afterwards.
+void test_the_codec_can_change_without_reconnecting() {
+    if (!video::available()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    CHECK_MSG(host.companion_accepts_video(),
+              "the far end cannot decode video, so this run says nothing about switching to it");
+
+    // Each frame is a different flat colour, so what arrived is checkable
+    // without caring how it got here -- and so that switching codecs cannot be
+    // hidden by the picture happening not to change.
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    uint64_t serial = 1;
+    const auto send_and_wait = [&](uint32_t colour) {
+        const std::vector<uint32_t> bottom = flat_screen(colour);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        const bool arrived = spin(host, companion, [&] {
+            return companion.screen_pixels(ScreenId::Bottom).serial == serial;
+        });
+        ++serial;
+        return arrived;
+    };
+    // How far off the arrived colour is. Both codecs are lossy, so this asks
+    // for close rather than equal -- but a frame that never updated is not
+    // close, which is the failure being looked for.
+    const auto difference_from = [&](uint32_t colour) {
+        const CompanionSession::ScreenPixels frame = companion.screen_pixels(ScreenId::Bottom);
+        if (!frame.valid()) return 255;
+        int worst = 0;
+        for (int index = 0; index < frame.width * frame.height; ++index) {
+            for (int shift : {16, 8, 0}) {
+                const int got = static_cast<int>((frame.pixels[index] >> shift) & 0xffu);
+                const int want = static_cast<int>((colour >> shift) & 0xffu);
+                worst = std::max(worst, std::abs(got - want));
+            }
+        }
+        return worst;
+    };
+
+    // Tiles first, which is where a DS session starts.
+    CHECK_MSG(send_and_wait(0x00801020u), "the first frame never arrived");
+    CHECK_MSG(!companion.screen_is_video_for_test(ScreenId::Bottom),
+              "the session started on video, so switching to it proves nothing");
+    CHECK_MSG(difference_from(0x00801020u) <= 12, "the first frame arrived wrong");
+
+    // Turned on mid-session.
+    host.set_video_wanted(true);
+    CHECK_MSG(send_and_wait(0x0020c040u), "no frame arrived after asking for video");
+    CHECK_MSG(companion.screen_is_video_for_test(ScreenId::Bottom),
+              "asking for video mid-session did nothing, so it only takes effect on reconnecting");
+    CHECK_MSG(difference_from(0x0020c040u) <= 12, "the first video frame arrived wrong");
+
+    // And off again. This is the one that can go quietly wrong: the tile codec
+    // sends only what changed since the last tiled frame, and several video
+    // frames have been shown since that one.
+    host.set_video_wanted(false);
+    CHECK_MSG(send_and_wait(0x00f0a010u), "no frame arrived after turning video off");
+    CHECK_MSG(!companion.screen_is_video_for_test(ScreenId::Bottom),
+              "turning video off mid-session did nothing");
+    CHECK_MSG(difference_from(0x00f0a010u) <= 12,
+              "the picture did not survive going back to tiles: what arrived was a difference "
+              "from a frame the far end is no longer showing");
+
+    companion.disconnect();
+    host.stop();
+}
+
 }  // namespace
 
 int main() {
@@ -1380,5 +1482,6 @@ int main() {
     test_frames_that_arrive_together_are_shown_on_a_clock();
     test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_host_can_disconnect_the_companion();
+    test_the_codec_can_change_without_reconnecting();
     return test::finish("session");
 }
