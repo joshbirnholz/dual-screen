@@ -16,6 +16,10 @@ const char* to_string(DsButton button) {
         case DsButton::Down: return "Down";
         case DsButton::Left: return "Left";
         case DsButton::Right: return "Right";
+        case DsButton::Zl: return "ZL";
+        case DsButton::Zr: return "ZR";
+        case DsButton::LeftStick: return "L3";
+        case DsButton::RightStick: return "R3";
         case DsButton::Count: break;
     }
     return "?";

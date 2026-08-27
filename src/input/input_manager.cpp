@@ -513,16 +513,31 @@ DsInputState InputManager::poll_held_state() const {
                 break;
         }
 
-        // The triggers double as L and R. The DS's shoulder buttons are
-        // digital, but plenty of people reach for the triggers first, and a
-        // pad that has both should honour either.
         const float trigger_deadzone = settings_.trigger_deadzone;
         const float left_trigger =
             SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
         const float right_trigger =
             SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
-        if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
-        if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
+        if (game_owns_controls_) {
+            // A console with four shoulder buttons and two sticks that press
+            // has somewhere for all of them to go, and the game reads them all.
+            // See set_game_owns_controls().
+            if (left_trigger > trigger_deadzone) held.set(DsButton::Zl, true);
+            if (right_trigger > trigger_deadzone) held.set(DsButton::Zr, true);
+            if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
+                held.set(DsButton::LeftStick, true);
+            }
+            if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0) {
+                held.set(DsButton::RightStick, true);
+            }
+        } else {
+            // The triggers double as L and R. The DS's shoulder buttons are
+            // digital, but plenty of people reach for the triggers first, and a
+            // pad that has both should honour either. The stick presses are
+            // this app's own shortcuts here, so they are not the game's.
+            if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
+            if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
+        }
     }
 
     const Uint8* keys = SDL_GetKeyboardState(nullptr);

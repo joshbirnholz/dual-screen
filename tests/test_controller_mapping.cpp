@@ -83,8 +83,11 @@ void test_every_ds_button_is_reachable_exactly_once() {
             CHECK(reached.insert(static_cast<int>(ds_button)).second);
         }
     }
-    // All twelve DS buttons have to be playable.
-    CHECK_EQ(reached.size(), static_cast<std::size_t>(DsButton::Count));
+    // All twelve of a handheld's buttons have to be playable. The four after
+    // them -- ZL, ZR and the two stick presses -- are deliberately not on this
+    // map: which physical control produces them depends on the console being
+    // played, so input_manager reads those directly. See DsButton.
+    CHECK_EQ(reached.size(), static_cast<std::size_t>(DsButton::Zl));
 }
 
 void test_unmapped_buttons_are_rejected() {

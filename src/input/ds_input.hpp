@@ -4,12 +4,22 @@
 
 namespace ds {
 
-// The DS button set, independent of any particular controller or transport.
+// Every button any console this app plays has, independent of any particular
+// controller or transport. A DS has the first twelve and no more; the four
+// after them are a Wii U GamePad's, which has two more shoulder buttons and
+// two sticks that press.
+//
+// Which physical control produces which of these is not fixed here -- see
+// SystemProfile::game_uses_every_control. On a console that leaves its stick
+// presses alone they are this app's shortcuts and the triggers stand in for
+// the shoulder buttons; on one that uses everything they are the game's.
 enum class DsButton {
     A, B, X, Y,
     L, R,
     Start, Select,
     Up, Down, Left, Right,
+    Zl, Zr,
+    LeftStick, RightStick,
     Count,
 };
 

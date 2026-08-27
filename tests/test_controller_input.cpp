@@ -728,6 +728,66 @@ void test_the_shell_lets_go_of_the_controls_where_the_game_wants_them() {
     pad.detach();
 }
 
+// A pad has four shoulder buttons and two sticks that press; a DS has two
+// shoulder buttons and no sticks at all. So on a handheld the triggers stand in
+// for the shoulder buttons a player is likely to reach past, and the stick
+// presses are this app's own shortcuts. On a console that reads all of them the
+// same physical controls have somewhere of their own to go, and taking any of
+// them for this app would be taking them from the game.
+void test_the_extra_shoulders_and_stick_presses_go_where_the_console_has_room() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        test::skip("no virtual controller available");
+        return;
+    }
+    InputManager input;
+    input.initialize(Settings());
+
+    const auto read = [&]() {
+        SDL_GameControllerUpdate();
+        input.begin_frame();
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        return input.ds_state();
+    };
+    const auto hold_triggers = [&](bool down) {
+        const int16_t value = down ? 32000 : 0;
+        SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT, value);
+        SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, value);
+    };
+
+    hold_triggers(true);
+    DsInputState state = read();
+    CHECK_MSG(state.pressed(DsButton::L) && state.pressed(DsButton::R),
+              "the triggers stopped standing in for the shoulder buttons on a handheld");
+    CHECK_MSG(!state.pressed(DsButton::Zl) && !state.pressed(DsButton::Zr),
+              "a handheld was given buttons it does not have");
+
+    input.set_game_owns_controls(true);
+    state = read();
+    CHECK_MSG(state.pressed(DsButton::Zl) && state.pressed(DsButton::Zr),
+              "the triggers did not reach a console that has ZL and ZR of its own");
+    CHECK_MSG(!state.pressed(DsButton::L) && !state.pressed(DsButton::R),
+              "the triggers doubled as the shoulder buttons on a console where the shoulder "
+              "buttons are their own controls, so one pull pressed two things");
+
+    hold_triggers(false);
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
+    state = read();
+    CHECK_MSG(state.pressed(DsButton::LeftStick) && state.pressed(DsButton::RightStick),
+              "the stick presses did not reach a game that reads them");
+
+    input.set_game_owns_controls(false);
+    state = read();
+    CHECK_MSG(!state.pressed(DsButton::LeftStick) && !state.pressed(DsButton::RightStick),
+              "the stick presses reached a game on a console where they are this app's own "
+              "shortcuts, so every shortcut is also a press in the game");
+
+    input.shutdown();
+    pad.detach();
+}
+
 int main() {
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
@@ -749,6 +809,7 @@ int main() {
     test_a_tap_reported_twice_still_knows_where_it_started();
     test_two_fingers_open_the_menu_more_than_once();
     test_the_shell_lets_go_of_the_controls_where_the_game_wants_them();
+    test_the_extra_shoulders_and_stick_presses_go_where_the_console_has_room();
 
     SDL_Quit();
     return test::finish("controller-input");

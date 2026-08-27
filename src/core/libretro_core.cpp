@@ -121,6 +121,13 @@ unsigned retro_id_for(DsButton button) {
         case DsButton::Down:   return RETRO_DEVICE_ID_JOYPAD_DOWN;
         case DsButton::Left:   return RETRO_DEVICE_ID_JOYPAD_LEFT;
         case DsButton::Right:  return RETRO_DEVICE_ID_JOYPAD_RIGHT;
+        // No console played by a core has these; a Wii U does, and it is not
+        // played by one. Mapped anyway rather than left to fall through to B,
+        // which is what an unhandled case here would silently become.
+        case DsButton::Zl:     return RETRO_DEVICE_ID_JOYPAD_L2;
+        case DsButton::Zr:     return RETRO_DEVICE_ID_JOYPAD_R2;
+        case DsButton::LeftStick:  return RETRO_DEVICE_ID_JOYPAD_L3;
+        case DsButton::RightStick: return RETRO_DEVICE_ID_JOYPAD_R3;
         case DsButton::Count:  break;
     }
     return RETRO_DEVICE_ID_JOYPAD_B;
