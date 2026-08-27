@@ -125,10 +125,17 @@ running beside this app**, handing its two pictures over.
 Everything on this side of that handover is finished: the shell opens a socket,
 takes a television screen and a GamePad screen from whatever connects, arranges
 them under the same layouts as any other console, and can send one of them on to
-a second device. What is missing is a Cemu that speaks it —
-`docs/cemu-integration.md` is the three files and four calls that would take.
+a second device.
 
-Until then `tools/fake_wii_u` stands in for it, which is what
+The Cemu that speaks it is a fork — `joshbirnholz/cemu-dualscreen`, branch
+`claude/dualscreen-frame-link`. It taps the frames where Cemu's own screenshot
+path is tapped, reads them back without ever waiting for the GPU, and takes the
+whole GamePad from the link while the shell is connected. Vulkan only, and not
+yet built or run on real hardware. `docs/cemu-integration.md` is the full
+account of what it does and what it does not do yet — audio and the Reset button
+are the two gaps.
+
+`tools/fake_wii_u` stands in for it in the tests, which is what
 `tests/run_wii_u_test.sh` and `tests/run_wii_u_companion_test.sh` drive.
 
 The shell starts the emulator itself, from a command you configure. That is not
@@ -142,9 +149,10 @@ whole reason this app exists. In `settings.json`:
 }
 ```
 
-The arguments are written out in full because nothing here knows what a fork
-will call its own flags. `{socket}` becomes the path it should hand its screens
-over on and `{game}` the file you picked; everything else is passed through
+Those arguments are the default, because they are the fork's; only the program
+has to be set. They are written out in full because nothing here knows what a
+different fork would call its own flags. `{socket}` becomes the path it should
+hand its screens over on and `{game}` the file you picked; everything else is passed through
 untouched, with no shell in between. Quitting the shell stops it again.
 
 The Settings screen lists it beside the DS and 3DS cores, so a machine that is
@@ -814,9 +822,10 @@ The mock core means all of this runs with no melonDS core and no commercial ROM.
 
 ## Not built yet
 
-Wii U games actually playing — everything on this side of the handover is
-finished and tested against `tools/fake_wii_u`, but no emulator speaks it yet;
-see `docs/cemu-integration.md`. Save states, cheats, rewind, shaders. More than
+Wii U games actually playing — this side of the handover is finished and tested
+against `tools/fake_wii_u`, and the Cemu fork that speaks it is written but has
+never been built or run; see `docs/cemu-integration.md`. Sound from a Wii U, and
+the Reset button reaching one. Save states, cheats, rewind, shaders. More than
 one companion per host. The companion in `companion/` is built and tested here as a
 desktop program; the Switch build needs a devkitPro toolchain and the Android
 build needs the Android SDK and NDK, so both have to be checked by hand on the

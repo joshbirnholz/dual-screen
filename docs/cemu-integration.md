@@ -8,9 +8,15 @@ stopped before the thing that matters here.
 
 So a Wii U is played by Cemu, beside this app rather than inside it, and Cemu
 hands its two pictures over. Everything on this side of that handover is
-finished and tested. What is missing is a Cemu that speaks it.
+finished and tested.
 
-This document is what that fork has to do.
+The fork that speaks it now exists: **`joshbirnholz/cemu-dualscreen`, branch
+`claude/dualscreen-frame-link`**, forked from Cemu at `5ead580`. It has not been
+built or run -- there is no GPU where it was written -- so expect a round of
+compile fixes. `src/dualscreen/README.md` in that tree is its own account of
+itself; **What the fork actually does** below is the summary from this side.
+
+This document is what such a fork has to do, and what this one did.
 
 ## What this app gives you
 
@@ -159,6 +165,41 @@ target at Cemu's *internal* resolution, so a fork publishing above 1x would be
 refused. Either publish at 1x, or say so and the cap moves -- it is a constant
 in ExternalSharedHeader and the memory is allocated from it.
 
+## What the fork actually does
+
+Point by point against the list above:
+
+- **The frame tap** is a new `Renderer::HandleDualscreenFrame(LatteTextureView*,
+  bool padView)` called from the same line of `LatteRenderTarget_copyToBackbuffer`
+  as `HandleScreenshotRequest`, right after it.
+- **The readback** is `VulkanRendererDualscreen.cpp`: three staging buffers per
+  screen, the copy recorded into whichever command buffer is already being
+  filled, the bytes read on a later frame once `HasCommandBufferFinished` says
+  that buffer is done. No fence of its own and nothing that waits. A slot still
+  in flight when its turn comes round means that frame is dropped.
+- **Serial** is `LatteGPUState.frameCounter`, so both screens of one emulated
+  frame share it.
+- **Vulkan only.** OpenGL inherits the empty base implementation and hands
+  nothing over; the shell sits on its waiting screen saying so. Both backends
+  were the plan until it was clear how much of Cemu's Linux use is Vulkan.
+- **sRGB** is decided the same way the screenshot decides it, against
+  `LatteGPUState.tvBufferUsesSRGB` / `drcBufferUsesSRGB`, so what crosses the
+  link matches what is on Cemu's own window rather than being a second opinion.
+  Formats other than `R8G8B8A8_UNORM`/`_SRGB` are warned about once and skipped.
+- **The pad** is taken in `VPADController::VPADRead`: with a shell connected,
+  `controllers_update_states()` and the whole mapping loop are skipped and the
+  buttons, both sticks and the touch all come from the link. A GamePad is
+  created at launch if that Cemu has never had its input configured, since a
+  shell needs one to be holding.
+- **The socket** is `--dualscreen-socket <path>`, which is what the default
+  `wii_u_arguments` below passes.
+- **Size.** Nothing was changed about the 1920x1080 cap, so a Cemu above 1x
+  internal resolution will have its frames refused, once, in the log.
+
+Not done there yet: **audio** (`DualscreenSession::SendAudio` exists and this
+side is listening, but nothing in Cemu calls it) and the **reset request**,
+which arrives and is logged.
+
 ## What the shell does with it
 
 It listens on the socket before Cemu starts, so the order the two are launched
@@ -200,8 +241,9 @@ and `{game}` into a command the player configured:
 }
 ```
 
-Whatever the fork's flags are actually called, they go there — nothing on this
-side assumes anything about them beyond those two substitutions, and no shell
+Those arguments are the default, because they are the fork's; only the program
+has to be set. Whatever a different fork's flags are called, they go there --
+nothing on this side assumes anything about them beyond those two substitutions, and no shell
 sits between the command and `execvp`, so there is no quoting to get wrong. A
 fork that only reads a hardcoded path cannot be run twice on one machine and
 cannot be tested against a second session.

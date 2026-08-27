@@ -247,6 +247,16 @@ void test_settings_round_trip() {
     CHECK_STR_EQ(defaults.default_layout_id, "standard");
     CHECK_STR_EQ(defaults.system_dir, paths.default_system_dir);
 
+    // A Wii U needs a program to start; the arguments it is started with are
+    // the fork's own, so setting the program is enough on its own. Consoles
+    // this app plays itself start nothing.
+    CHECK(defaults.external_program_for(SystemId::WiiU).empty());
+    const std::vector<std::string> expected_arguments = {"--dualscreen-socket", "{socket}",
+                                                         "--game", "{game}"};
+    CHECK(defaults.external_arguments_for(SystemId::WiiU) == expected_arguments);
+    CHECK(defaults.external_arguments_for(SystemId::Ds).empty());
+    CHECK(defaults.external_arguments_for(SystemId::ThreeDs).empty());
+
     defaults.default_layout_id = "side_by_side";
     defaults.last_browse_dir = "/tmp/roms";
     defaults.vsync = false;
@@ -272,6 +282,16 @@ void test_settings_round_trip() {
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
     CHECK(reloaded.screen_codec == video::ScreenCodec::H264);
+
+    // A config file that names arguments replaces them rather than adding to
+    // them: a fork with different flags must not inherit these.
+    {
+        std::ofstream file(paths.settings_file);
+        file << "{\"wii_u_arguments\": [\"--only\"]}";
+    }
+    const Settings overridden = Settings::load(paths);
+    CHECK_EQ(overridden.external_arguments_for(SystemId::WiiU).size(), std::size_t{1});
+    CHECK_STR_EQ(overridden.external_arguments_for(SystemId::WiiU).front(), "--only");
 
     // Malformed settings fall back to defaults rather than refusing to start.
     {

@@ -59,7 +59,9 @@ struct Settings {
     // and does not work in Game Mode -- where there is nothing to start it
     // from. See docs/cemu-integration.md.
     std::string wii_u_program;
-    std::vector<std::string> wii_u_arguments;
+    // The fork's own flags, so that setting the program is enough on its own.
+    // See docs/cemu-integration.md.
+    std::vector<std::string> wii_u_arguments{"--dualscreen-socket", "{socket}", "--game", "{game}"};
 
     const std::string& external_program_for(SystemId system) const {
         switch (system) {
