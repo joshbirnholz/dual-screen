@@ -185,7 +185,13 @@ Point by point against the list above:
 - **sRGB** is decided the same way the screenshot decides it, against
   `LatteGPUState.tvBufferUsesSRGB` / `drcBufferUsesSRGB`, so what crosses the
   link matches what is on Cemu's own window rather than being a second opinion.
-  Formats other than `R8G8B8A8_UNORM`/`_SRGB` are warned about once and skipped.
+  `R8G8B8A8_UNORM`/`_SRGB` and `A2B10G10R10_UNORM_PACK32` are handled -- the
+  latter turned out to be real rather than hypothetical: Wind Waker HD renders
+  through it. Its ten bits are read down to eight per channel with no gamma
+  step, since the format has no sRGB-tagged twin to compare against
+  `dstUsesSRGB` the way RGBA8 does, and the buffer's own flag is the only
+  account of its encoding there is. Anything else is warned about once and
+  skipped.
 - **The pad** is taken in `VPADController::VPADRead`: with a shell connected,
   `controllers_update_states()` and the whole mapping loop are skipped and the
   buttons, both sticks and the touch all come from the link. A GamePad is
