@@ -121,7 +121,19 @@ run_session television blue
 # F3 is the swap key. A Wii U game reads both stick presses itself, so this is
 # the one console where the shortcut cannot live on the pad -- see
 # SystemProfile::game_uses_every_control.
-run_session gamepad green --simulate-key F3
+#
+# With a finger held on it, because a GamePad is a touch screen and the whole
+# point of showing it here is being able to use it.
+run_session gamepad green --simulate-key F3 --simulate-touch 0.5,0.5
+
+# And the touch reached the program playing the game, in that screen's own
+# pixels rather than in this window's -- the middle of 854x480. Which is the
+# whole input path: a finger on the glass here, through the shell's own touch
+# mapping, across the link, to the emulator.
+if ! grep -q "touch(427,240)" "$WORK_DIR/gamepad-game.log" 2>/dev/null; then
+    echo "the touch did not reach the game at the middle of its own 854x480 screen" >&2
+    FAILED=1
+fi
 
 # And with nothing on the other end at all. The emulator is a separate program
 # and may simply not have been started, and a blank window is indistinguishable

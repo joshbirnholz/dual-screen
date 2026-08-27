@@ -269,6 +269,63 @@ void test_audio_and_resets_go_the_way_they_are_meant_to() {
     CHECK_MSG(!reset, "one reset request was delivered twice");
 }
 
+// The pad goes the other way from everything else on this link, and it goes as
+// latest-state rather than as events: a missed edge would be a button that
+// sticks down for the rest of the session.
+void test_the_pad_crosses_and_arrives_whole() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    std::string error;
+    bool reset = false;
+    CHECK(producer.poll(reset, &error));
+    CHECK_MSG(!producer.have_input(),
+              "the game was handed a pad before anything sent one, so a fork would stop reading "
+              "its own controllers for no reason");
+
+    ExternalInput sent;
+    sent.set(ExternalButton::Zl, true);
+    sent.set(ExternalButton::RightStick, true);
+    sent.left_x = -30000;
+    sent.right_y = 12345;
+    sent.touching = true;
+    sent.touch_x = 427;
+    sent.touch_y = 240;
+    link.send_input(sent);
+
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!producer.have_input() && std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.have_input(), "the pad never arrived");
+    CHECK_MSG(producer.input() == sent,
+              "the pad that arrived is not the pad that was sent: buttons " +
+                  std::to_string(producer.input().buttons) + " against " +
+                  std::to_string(sent.buttons) + ", touch " +
+                  std::to_string(producer.input().touch_x) + "," +
+                  std::to_string(producer.input().touch_y));
+    // Negative deflection has to survive the trip as a signed number rather
+    // than as 35536.
+    CHECK_EQ(producer.input().left_x, static_cast<int16_t>(-30000));
+
+    // Letting go arrives too, and is a different state rather than silence.
+    ExternalInput released;
+    link.send_input(released);
+    const auto released_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (producer.input() != released && std::chrono::steady_clock::now() < released_by) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.input() == released,
+              "letting everything go never reached the game, so a button held as a session ended "
+              "would stay held");
+    CHECK_MSG(producer.have_input(),
+              "an empty pad was reported as never having been sent one, which would put a fork "
+              "back on its own controllers mid-game");
+}
+
 // The ordinary end of a session is the game being closed, and it has to look
 // like that rather than like a stall.
 void test_the_game_closing_ends_the_session() {
@@ -339,6 +396,7 @@ int main() {
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
     test_falling_behind_skips_to_the_newest();
     test_audio_and_resets_go_the_way_they_are_meant_to();
+    test_the_pad_crosses_and_arrives_whole();
     test_the_game_closing_ends_the_session();
     test_a_screen_too_big_to_carry_is_refused();
     return test::finish("external-link");

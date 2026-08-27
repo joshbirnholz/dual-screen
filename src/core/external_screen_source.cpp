@@ -114,6 +114,51 @@ bool ExternalScreenSource::read_screen(ScreenId screen, ScreenReadback& out, int
     return true;
 }
 
+void ExternalScreenSource::submit_input(const DsInputState& state) {
+    // A pair per row: this app's name for a control, and the GamePad's. Written
+    // as data so that adding a button is adding a line, and so that nothing is
+    // silently left out -- the static_assert below is what says so.
+    static const struct {
+        DsButton from;
+        ExternalButton to;
+    } kButtons[] = {
+        {DsButton::A, ExternalButton::A},
+        {DsButton::B, ExternalButton::B},
+        {DsButton::X, ExternalButton::X},
+        {DsButton::Y, ExternalButton::Y},
+        {DsButton::L, ExternalButton::L},
+        {DsButton::R, ExternalButton::R},
+        {DsButton::Zl, ExternalButton::Zl},
+        {DsButton::Zr, ExternalButton::Zr},
+        {DsButton::Start, ExternalButton::Plus},
+        {DsButton::Select, ExternalButton::Minus},
+        {DsButton::Up, ExternalButton::Up},
+        {DsButton::Down, ExternalButton::Down},
+        {DsButton::Left, ExternalButton::Left},
+        {DsButton::Right, ExternalButton::Right},
+        {DsButton::LeftStick, ExternalButton::LeftStick},
+        {DsButton::RightStick, ExternalButton::RightStick},
+    };
+    static_assert(sizeof(kButtons) / sizeof(kButtons[0]) ==
+                      static_cast<std::size_t>(DsButton::Count),
+                  "a button was added without saying what it is on a GamePad");
+
+    ExternalInput input;
+    for (const auto& pair : kButtons) {
+        input.set(pair.to, state.pressed(pair.from));
+    }
+    input.left_x = state.circle_x;
+    input.left_y = state.circle_y;
+    input.right_x = state.c_stick_x;
+    input.right_y = state.c_stick_y;
+    input.touching = state.touching;
+    // Already in the touch screen's own pixels -- see DsInputState -- which for
+    // this console is the GamePad's.
+    input.touch_x = static_cast<uint16_t>(state.touch_x < 0 ? 0 : state.touch_x);
+    input.touch_y = static_cast<uint16_t>(state.touch_y < 0 ? 0 : state.touch_y);
+    link_.send_input(input);
+}
+
 double ExternalScreenSource::audio_sample_rate() const {
     const int rate = link_.info().audio_sample_rate;
     return rate > 0 ? static_cast<double>(rate) : 48000.0;

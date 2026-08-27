@@ -75,6 +75,56 @@ void draw(std::vector<uint32_t>& out, int width, int height, int frame, bool tel
     }
 }
 
+const char* button_name(ds::ExternalButton button) {
+    switch (button) {
+        case ds::ExternalButton::A: return "A";
+        case ds::ExternalButton::B: return "B";
+        case ds::ExternalButton::X: return "X";
+        case ds::ExternalButton::Y: return "Y";
+        case ds::ExternalButton::L: return "L";
+        case ds::ExternalButton::R: return "R";
+        case ds::ExternalButton::Zl: return "ZL";
+        case ds::ExternalButton::Zr: return "ZR";
+        case ds::ExternalButton::Plus: return "+";
+        case ds::ExternalButton::Minus: return "-";
+        case ds::ExternalButton::Up: return "Up";
+        case ds::ExternalButton::Down: return "Down";
+        case ds::ExternalButton::Left: return "Left";
+        case ds::ExternalButton::Right: return "Right";
+        case ds::ExternalButton::LeftStick: return "L3";
+        case ds::ExternalButton::RightStick: return "R3";
+    }
+    return "?";
+}
+
+// What arrived, in words. A real emulator would apply this to the game; there
+// is no game here, so saying it is the whole of what this can do with it -- and
+// it is what lets a test assert that a press on one machine reached another.
+std::string describe(const ds::ExternalInput& input) {
+    std::string text;
+    for (int index = 0; index <= static_cast<int>(ds::ExternalButton::RightStick); ++index) {
+        const auto button = static_cast<ds::ExternalButton>(index);
+        if (input.pressed(button)) {
+            text += std::string(text.empty() ? "" : " ") + button_name(button);
+        }
+    }
+    if (text.empty()) {
+        text = "nothing";
+    }
+    if (input.left_x != 0 || input.left_y != 0) {
+        text += " left(" + std::to_string(input.left_x) + "," + std::to_string(input.left_y) + ")";
+    }
+    if (input.right_x != 0 || input.right_y != 0) {
+        text += " right(" + std::to_string(input.right_x) + "," +
+                std::to_string(input.right_y) + ")";
+    }
+    if (input.touching) {
+        text += " touch(" + std::to_string(input.touch_x) + "," +
+                std::to_string(input.touch_y) + ")";
+    }
+    return text;
+}
+
 void usage() {
     std::fprintf(stderr,
                  "fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only]\n");
@@ -139,6 +189,9 @@ int main(int argc, char** argv) {
     // Where the scene is drawn from. A reset moves it back to the beginning,
     // which is the whole of what this stands in for.
     int scene_origin = 0;
+    // Only reported when it changes: a pad is sent every frame it differs and
+    // a line a frame would be a log rather than a record.
+    ds::ExternalInput last_input;
     while (true) {
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration<double>(now - started).count() >= seconds) {
@@ -153,6 +206,10 @@ int main(int argc, char** argv) {
         if (reset) {
             ds::log_info("restarting, because the player asked");
             scene_origin = frame;
+        }
+        if (producer.have_input() && producer.input() != last_input) {
+            last_input = producer.input();
+            ds::log_info("pad: " + describe(last_input));
         }
 
         const int scene_frame = frame - scene_origin;

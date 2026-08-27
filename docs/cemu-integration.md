@@ -30,7 +30,7 @@ protocol described in two places is a protocol with two subtly different
 implementations, and the one that would drift is the one living in somebody
 else's tree.
 
-## The four calls
+## The calls
 
     ds::ExternalFrameProducer link;
 
@@ -55,10 +55,18 @@ else's tree.
     if (!link.poll(reset, &error)) { /* the shell went away; carry on alone */ }
     if (reset) { /* restart the title */ }
 
+    // The pad, once the shell has sent one. Latest-state, not events.
+    if (link.have_input()) {
+        const ds::ExternalInput& pad = link.input();
+        // pad.buttons is one bit per ds::ExternalButton, in that order.
+        // pad.left_x/left_y and right_x/right_y are [-32767, 32767], y down.
+        // pad.touching, pad.touch_x, pad.touch_y are the GamePad's own pixels.
+    }
+
 `tools/fake_wii_u.cpp` is a complete working producer in 200 lines. It is what
 the tests drive, so it is known to work rather than believed to.
 
-## Five things the fork has to get right
+## Six things the fork has to get right
 
 **Pixels are XRGB8888, top row first.** One `uint32_t` per pixel, `0x00RRGGBB`,
 host byte order. `stride_pixels` is the row pitch in pixels, so a padded buffer
@@ -85,6 +93,16 @@ screen arriving and the other never doing so is a supported state, not a bug.
 settings. Cemu is configured in its own right and this app never second-guesses
 it -- which is also why the shell offers no render scale for a Wii U.
 
+**Once `have_input()` is true, the pad is the shell's.** The fork should stop
+reading its own controllers for the GamePad and take this instead, or every
+press lands twice. The shell has already merged both players' pads and mapped
+the touch into the GamePad's own pixels, which is the thing it is actually
+better placed to do: a second device across the room is holding half the
+controls, and only the shell knows where its window puts that screen.
+
+Until `have_input()` is true, nothing has been sent and Cemu's own input should
+carry on unchanged -- a shell that never sends a pad is a shell that has none.
+
 ## What the shell does with it
 
 It listens on the socket before Cemu starts, so the order the two are launched
@@ -99,13 +117,14 @@ device over the network as H.264. That path is finished and tested end to end
 (`tests/run_wii_u_companion_test.sh`); it has simply never had a real Wii U
 frame in it.
 
-## Controls stay with Cemu
+## The shell's own controls
 
-The shell forwards no input for a Wii U. Cemu reads its own pads, and the
-shell's own shortcuts move off the controller entirely, because a Wii U game
-uses every control the console has -- including both stick presses. The menu is
+None of them are on the pad. A Wii U game uses every control the console has,
+including both stick presses, so the shell takes nothing from it: the menu is
 **F1** or **Tab**, smoothing is **F2**, and **F3** swaps which screen a lone
 device is showing. Steam Input can be pointed at any of them.
+
+Which is also why every button on the pad is free to cross the link.
 
 ## The socket
 
@@ -128,5 +147,8 @@ different sound to the GamePad than to the television, and a handful of titles
 use it. Adding a second stream is a message kind and a channel index; nothing
 about the shape of this changes.
 
-**Anything back towards Cemu except a reset.** The shell has no way to ask it to
-pause, to save, or to load. That has not been needed yet.
+**Anything back towards Cemu except a reset and the pad.** The shell has no way
+to ask it to pause, to save, or to load. That has not been needed yet.
+
+**Motion controls and the GamePad's camera and microphone.** No title this is
+aimed at needs them, and no device this runs on has anywhere to get them from.

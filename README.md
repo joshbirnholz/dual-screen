@@ -140,7 +140,10 @@ Three things are different about a Wii U session:
 - **None of the controller shortcuts exist.** A Wii U game reads every control
   the console has, including both stick presses, so nothing is taken from the
   pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1** or **Tab**,
-  smoothing is **F2**, and Steam Input can be pointed at any of them.
+  smoothing is **F2**, and Steam Input can be pointed at any of them. Which is
+  also why every button on the pad, and both triggers as ZL and ZR, go straight
+  through to the game — including from the second device, whose touches arrive
+  as touches on the GamePad's own screen.
 - **Screens go out as H.264 rather than as changed tiles.** A GamePad screen in
   motion measures at 42.8 Mbit/s as tiles and 2.45 as video, so this is not a
   preference — see **What streaming a screen costs** below. If the other device

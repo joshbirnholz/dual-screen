@@ -73,6 +73,52 @@ enum class ExternalControl : uint8_t {
     Audio = 3,     // producer -> consumer, interleaved stereo int16
     Reset = 4,     // consumer -> producer, the player chose Reset Game
     Shutdown = 5,  // either way, "this session is over"
+    Input = 6,     // consumer -> producer, an ExternalInput
+};
+
+// A GamePad, in its own terms rather than this app's. What crosses this link is
+// a Wii U's controls; an emulator on the far end has no interest in how this
+// app happens to represent a DS internally, and translating once here is better
+// than exporting that shape to somebody else's tree.
+//
+// The order is the wire format, so entries are only ever added at the end.
+enum class ExternalButton : uint8_t {
+    A, B, X, Y,
+    L, R, Zl, Zr,
+    Plus, Minus,
+    Up, Down, Left, Right,
+    LeftStick, RightStick,
+};
+
+// One moment's worth of it. Sent every frame rather than as changes, because a
+// pad's state is small and a missed edge is a button that sticks down.
+struct ExternalInput {
+    uint32_t buttons = 0;  // one bit per ExternalButton
+    // Both sticks, in libretro's range: [-32767, 32767], y positive downwards.
+    int16_t left_x = 0;
+    int16_t left_y = 0;
+    int16_t right_x = 0;
+    int16_t right_y = 0;
+    // The GamePad's own touch screen, in its own pixels rather than in
+    // whatever window the player is actually touching.
+    bool touching = false;
+    uint16_t touch_x = 0;
+    uint16_t touch_y = 0;
+
+    bool pressed(ExternalButton button) const {
+        return (buttons & (1u << static_cast<unsigned>(button))) != 0u;
+    }
+    void set(ExternalButton button, bool down) {
+        const uint32_t mask = 1u << static_cast<unsigned>(button);
+        buttons = down ? (buttons | mask) : (buttons & ~mask);
+    }
+    bool operator==(const ExternalInput& other) const {
+        return buttons == other.buttons && left_x == other.left_x && left_y == other.left_y &&
+               right_x == other.right_x && right_y == other.right_y &&
+               touching == other.touching && touch_x == other.touch_x &&
+               touch_y == other.touch_y;
+    }
+    bool operator!=(const ExternalInput& other) const { return !(*this == other); }
 };
 
 // How the shared memory is arranged. Both sides compute this from the same
@@ -154,6 +200,10 @@ public:
     // Asks the producer to restart the game. Nothing happens here; only the
     // producer knows what restarting means.
     void request_reset();
+    // Hands the producer the pad, which on this side is both players' pads
+    // merged. Sent only when it differs from what was sent last, so a session
+    // where nothing is being pressed costs nothing.
+    void send_input(const ExternalInput& input);
 
     // Where a producer connects when nobody said otherwise. Under the user's
     // runtime directory rather than /tmp, so two people on one machine do not
@@ -184,6 +234,8 @@ private:
     std::vector<uint8_t> inbox_;
     std::vector<int16_t> audio_;
     Pending pending_[2];
+    ExternalInput sent_input_;
+    bool have_sent_input_ = false;
 };
 
 // The producer: whatever is actually playing the game. Here so that the fork of
@@ -211,6 +263,13 @@ public:
     // whether it has gone away.
     bool poll(bool& out_reset_requested, std::string* error);
 
+    // The pad as of the last thing the consumer sent. False until it has sent
+    // anything at all, which is how a fork knows to keep reading its own pads
+    // instead -- and stays true from then on, since a pad with nothing pressed
+    // is still a pad.
+    bool have_input() const { return have_input_; }
+    const ExternalInput& input() const { return input_; }
+
 private:
     ExternalSharedHeader* header() { return static_cast<ExternalSharedHeader*>(memory_); }
 
@@ -219,6 +278,8 @@ private:
     void* memory_ = nullptr;
     int next_slot_[2] = {0, 0};
     std::vector<uint8_t> inbox_;
+    ExternalInput input_;
+    bool have_input_ = false;
 };
 
 }  // namespace ds

@@ -32,6 +32,44 @@ uint32_t read_u32(const uint8_t* data) {
            (static_cast<uint32_t>(data[2]) << 16) | (static_cast<uint32_t>(data[3]) << 24);
 }
 
+void put_u16(std::vector<uint8_t>& out, uint16_t value) {
+    out.push_back(static_cast<uint8_t>(value & 0xFFu));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
+}
+
+uint16_t read_u16(const uint8_t* data) {
+    return static_cast<uint16_t>(static_cast<uint16_t>(data[0]) |
+                                 (static_cast<uint16_t>(data[1]) << 8));
+}
+
+// The pad, as 17 bytes. Written out here rather than memcpy'd from the struct
+// so that the two ends agree on the bytes rather than on a compiler's padding.
+constexpr std::size_t kInputBytes = 17;
+
+void put_input(std::vector<uint8_t>& out, const ExternalInput& input) {
+    put_u32(out, input.buttons);
+    put_u16(out, static_cast<uint16_t>(input.left_x));
+    put_u16(out, static_cast<uint16_t>(input.left_y));
+    put_u16(out, static_cast<uint16_t>(input.right_x));
+    put_u16(out, static_cast<uint16_t>(input.right_y));
+    out.push_back(input.touching ? 1u : 0u);
+    put_u16(out, input.touch_x);
+    put_u16(out, input.touch_y);
+}
+
+ExternalInput read_input(const uint8_t* data) {
+    ExternalInput input;
+    input.buttons = read_u32(data);
+    input.left_x = static_cast<int16_t>(read_u16(data + 4));
+    input.left_y = static_cast<int16_t>(read_u16(data + 6));
+    input.right_x = static_cast<int16_t>(read_u16(data + 8));
+    input.right_y = static_cast<int16_t>(read_u16(data + 10));
+    input.touching = data[12] != 0;
+    input.touch_x = read_u16(data + 13);
+    input.touch_y = read_u16(data + 15);
+    return input;
+}
+
 void frame_message(ExternalControl kind, const std::vector<uint8_t>& body,
                    std::vector<uint8_t>& out) {
     out.clear();
@@ -399,6 +437,7 @@ bool ExternalFrameLink::handle_message(ExternalControl kind, const std::vector<u
             if (error != nullptr) *error = "the game closed";
             return false;
         case ExternalControl::Reset:
+        case ExternalControl::Input:
             // Ours to send, not to receive.
             return true;
     }
@@ -462,6 +501,21 @@ bool ExternalFrameLink::send_control(ExternalControl kind, const std::vector<uin
 }
 
 void ExternalFrameLink::request_reset() { send_control(ExternalControl::Reset, {}); }
+
+void ExternalFrameLink::send_input(const ExternalInput& input) {
+    // Only when it changed. A pad that is not being touched is the common case
+    // and it would otherwise cost a message every frame for nothing.
+    if (have_sent_input_ && input == sent_input_) {
+        return;
+    }
+    std::vector<uint8_t> body;
+    body.reserve(kInputBytes);
+    put_input(body, input);
+    if (send_control(ExternalControl::Input, body)) {
+        sent_input_ = input;
+        have_sent_input_ = true;
+    }
+}
 
 // --- producer ---------------------------------------------------------------
 
@@ -637,6 +691,11 @@ bool ExternalFrameProducer::poll(bool& out_reset_requested, std::string* error) 
     while (take_message(inbox_, kind, body)) {
         if (kind == ExternalControl::Reset) {
             out_reset_requested = true;
+        } else if (kind == ExternalControl::Input) {
+            if (body.size() >= kInputBytes) {
+                input_ = read_input(body.data());
+                have_input_ = true;
+            }
         } else if (kind == ExternalControl::Shutdown) {
             if (error != nullptr) *error = "the far end ended the session";
             return false;
@@ -670,6 +729,7 @@ bool ExternalFrameLink::poll(std::string* error) {
 bool ExternalFrameLink::take_frame(ScreenId, ExternalFrame&) { return false; }
 void ExternalFrameLink::take_audio(std::vector<int16_t>& out) { out.clear(); }
 void ExternalFrameLink::request_reset() {}
+void ExternalFrameLink::send_input(const ExternalInput&) {}
 bool ExternalFrameLink::accept_peer(std::string*) { return false; }
 bool ExternalFrameLink::read_messages(std::string*) { return false; }
 bool ExternalFrameLink::handle_message(ExternalControl, const std::vector<uint8_t>&, std::string*) {

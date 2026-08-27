@@ -2385,6 +2385,8 @@ int App::run(const AppOptions& options) {
             }
             if (impl.source) {
                 impl.source->input_sink().submit(combined);
+            } else if (impl.external_source) {
+                impl.external_source->submit_input(combined);
             }
 
             impl.frame_accumulator += elapsed;
@@ -2473,9 +2475,15 @@ int App::run(const AppOptions& options) {
             }
         }
 
-        if (impl.source && !game_running) {
-            // Paused: hold the sticks and buttons off the core entirely.
-            impl.source->input_sink().submit(DsInputState());
+        if (playing != nullptr && !game_running) {
+            // Paused: hold the sticks and buttons off the game entirely. Not
+            // only so nothing moves while the menu is up -- a button held as
+            // the menu opened would otherwise stay held for as long as it is.
+            if (impl.source) {
+                impl.source->input_sink().submit(DsInputState());
+            } else if (impl.external_source) {
+                impl.external_source->submit_input(DsInputState());
+            }
         }
         if (playing != nullptr && !game_running && impl.game_was_running) {
             // The tail of a game that has just stopped, which would otherwise

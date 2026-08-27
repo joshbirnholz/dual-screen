@@ -8,6 +8,7 @@
 #include "core/external_frame_link.hpp"
 #include "core/screen_source.hpp"
 #include "core/system.hpp"
+#include "input/ds_input.hpp"
 
 namespace ds {
 
@@ -52,6 +53,11 @@ public:
 
     // Only the program playing the game knows what restarting one means.
     void reset() { link_.request_reset(); }
+
+    // Both players' pads, already merged, on their way to whatever is playing
+    // the game. Translated on the way out: what crosses the link is a
+    // GamePad's controls rather than this app's own shape. See ExternalInput.
+    void submit_input(const DsInputState& state);
 
 private:
     struct Screen {
