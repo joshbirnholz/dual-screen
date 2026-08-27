@@ -61,4 +61,10 @@ bool is_supported_rom_for_any_system(const std::string& filename);
 const char* system_key(SystemId id);
 bool system_from_key(const std::string& key, SystemId& out_system);
 
+// Where this system's core path is looked for, when it has one. Named here
+// rather than spelled out where they are read, so that a console added to
+// SystemId has one place to answer rather than several to be missed in.
+const char* core_path_settings_key(SystemId id);
+const char* core_path_environment_variable(SystemId id);
+
 }  // namespace ds

@@ -8,6 +8,7 @@
 #include <random>
 #include <vector>
 
+#include "core/system.hpp"
 #include "net/protocol.hpp"
 
 using namespace ds;
@@ -653,6 +654,41 @@ void test_corrupt_pixel_payload_is_rejected() {
 
 }  // namespace
 
+// Every console has to survive the wire and the config file, and adding one has
+// to be something the build notices. The round trips below are driven from the
+// list of systems rather than from a couple of names, so a console added without
+// an answer here fails as soon as it exists rather than the first time somebody
+// plays one across two devices.
+void test_every_system_round_trips() {
+    for (const SystemProfile& profile : system_profiles()) {
+        SystemId back = SystemId::Ds;
+        CHECK_MSG(system_from_key(system_key(profile.id), back),
+                  std::string("the key '") + system_key(profile.id) + "' was not recognised back");
+        CHECK_MSG(back == profile.id,
+                  profile.name + " came back from its own key as a different console");
+
+        WelcomeMessage welcome;
+        welcome.system = profile.id;
+        welcome.granted_screen = ScreenId::Bottom;
+        std::vector<uint8_t> bytes;
+        encode_welcome(welcome, bytes);
+        MessageType type = MessageType::Ping;
+        std::vector<uint8_t> payload;
+        CHECK(one_message(bytes, type, payload));
+        WelcomeMessage decoded;
+        CHECK_MSG(decode_welcome(payload.data(), payload.size(), decoded),
+                  profile.name + " could not be read back off the wire");
+        CHECK_MSG(decoded.system == profile.id,
+                  profile.name + " arrived at the other end as a different console, which is the "
+                                 "wrong screen sizes for everything after it");
+
+        CHECK_MSG(std::string(core_path_settings_key(profile.id)) !=
+                          std::string(core_path_environment_variable(profile.id)),
+                  profile.name + " names its core path the same way in both places, which means "
+                                 "one of them was left at another console's answer");
+    }
+}
+
 int main() {
     test_hello_round_trip();
     test_welcome_and_session_round_trip();
@@ -668,5 +704,6 @@ int main() {
     test_a_resized_screen_starts_over();
     test_corrupt_tiled_payload_is_rejected();
     test_corrupt_pixel_payload_is_rejected();
+    test_every_system_round_trips();
     return test::finish("protocol");
 }

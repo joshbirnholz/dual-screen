@@ -27,8 +27,14 @@ public:
 
     // The picture for one console, or null where there is none to draw.
     const Texture* texture(SystemId system) const {
-        const Texture& art = (system == SystemId::ThreeDs) ? three_ds_ : ds_;
-        return art.valid() ? &art : nullptr;
+        const Texture* art = nullptr;
+        switch (system) {
+            case SystemId::Ds: art = &ds_; break;
+            case SystemId::ThreeDs: art = &three_ds_; break;
+        }
+        // A console with no picture drawn for it yet is blank around its
+        // screens, which is what the layout already handles.
+        return (art != nullptr && art->valid()) ? art : nullptr;
     }
 
 private:

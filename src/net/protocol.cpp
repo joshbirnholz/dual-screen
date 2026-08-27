@@ -117,6 +117,26 @@ std::size_t begin_message(std::vector<uint8_t>& out) {
 
 uint8_t screen_to_wire(ScreenId screen) { return screen == ScreenId::Top ? 0u : 1u; }
 
+// The console, as a number that means the same thing at both ends. A switch
+// rather than a cast, so that adding one to SystemId stops the build here
+// rather than telling the other device it is playing a DS.
+uint8_t system_to_wire(SystemId system) {
+    switch (system) {
+        case SystemId::Ds: return 0;
+        case SystemId::ThreeDs: return 1;
+    }
+    return 0;
+}
+
+bool system_from_wire(uint8_t value, SystemId& out) {
+    switch (value) {
+        case 0: out = SystemId::Ds; return true;
+        case 1: out = SystemId::ThreeDs; return true;
+        default: break;
+    }
+    return false;
+}
+
 uint8_t audio_target_to_wire(AudioTarget target) {
     switch (target) {
         case AudioTarget::TopScreen: return 0u;
@@ -199,7 +219,7 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     put_string(out, message.game_title);
     put_string(out, message.rom_sha1);
     put_u8(out, screen_to_wire(message.granted_screen));
-    put_u8(out, message.system == SystemId::ThreeDs ? 1u : 0u);
+    put_u8(out, system_to_wire(message.system));
     put_u32(out, message.audio_sample_rate);
     finish_message(out, start, MessageType::Welcome);
 }
@@ -488,8 +508,7 @@ bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) 
     reader.u8(screen);
     reader.u8(system);
     reader.u32(out.audio_sample_rate);
-    if (!reader.ok() || system > 1u) return false;
-    out.system = (system == 1u) ? SystemId::ThreeDs : SystemId::Ds;
+    if (!reader.ok() || !system_from_wire(system, out.system)) return false;
     return screen_from_wire(screen, out.granted_screen);
 }
 

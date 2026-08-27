@@ -73,8 +73,7 @@ std::string resolve_core_path(const AppOptions& options,
     if (!settings.core_path_for(system).empty()) {
         return expand_user_path(settings.core_path_for(system));
     }
-    const char* from_environment =
-        std::getenv(system == SystemId::ThreeDs ? "DUALSCREEN_CORE_3DS" : "DUALSCREEN_CORE");
+    const char* from_environment = std::getenv(core_path_environment_variable(system));
     if (from_environment != nullptr && from_environment[0] != '\0') {
         return expand_user_path(from_environment);
     }
@@ -1184,7 +1183,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                               " in the RetroArch core folders and /usr/lib/libretro.");
             details.push_back(
                 "Point at it directly with --core, or set \"" +
-                std::string(system == SystemId::ThreeDs ? "core_path_3ds" : "core_path") +
+                std::string(core_path_settings_key(system)) +
                 "\" in " + paths.settings_file + ".");
         } else {
             details.push_back("Core: " + resolved_core_path);

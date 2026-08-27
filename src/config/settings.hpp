@@ -35,7 +35,15 @@ struct Settings {
 
     // The path this system's core should be loaded from, or empty to search.
     const std::string& core_path_for(SystemId system) const {
-        return system == SystemId::ThreeDs ? core_path_3ds : core_path;
+        switch (system) {
+            case SystemId::Ds: return core_path;
+            case SystemId::ThreeDs: return core_path_3ds;
+        }
+        // A console whose frames do not come from a core this app loads has no
+        // path to hold. Reached only if one is added without answering here,
+        // which the switch above will not let happen quietly.
+        static const std::string none;
+        return none;
     }
 
     // Starting point for new games; each game remembers its own afterwards.

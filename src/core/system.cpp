@@ -143,8 +143,32 @@ bool is_supported_rom_for_any_system(const std::string& filename) {
     return system_for_rom(filename, ignored);
 }
 
+// Every one of these is a switch with no default on purpose. A ternary would
+// hand a console nobody had thought about whatever the DS gets, silently and
+// everywhere; this way adding one to SystemId stops the build until each place
+// has been given an answer.
 const char* system_key(SystemId id) {
-    return id == SystemId::ThreeDs ? "3ds" : "ds";
+    switch (id) {
+        case SystemId::Ds: return "ds";
+        case SystemId::ThreeDs: return "3ds";
+    }
+    return "ds";
+}
+
+const char* core_path_settings_key(SystemId id) {
+    switch (id) {
+        case SystemId::Ds: return "core_path";
+        case SystemId::ThreeDs: return "core_path_3ds";
+    }
+    return "core_path";
+}
+
+const char* core_path_environment_variable(SystemId id) {
+    switch (id) {
+        case SystemId::Ds: return "DUALSCREEN_CORE";
+        case SystemId::ThreeDs: return "DUALSCREEN_CORE_3DS";
+    }
+    return "DUALSCREEN_CORE";
 }
 
 bool system_from_key(const std::string& key, SystemId& out_system) {
