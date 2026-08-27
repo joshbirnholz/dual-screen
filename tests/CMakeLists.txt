@@ -51,6 +51,7 @@ target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
 dualscreen_add_test(test_layout)
 dualscreen_add_test(test_video_codec)
+dualscreen_add_test(test_external_link)
 dualscreen_add_test(test_text)
 dualscreen_add_test(test_launcher)
 dualscreen_add_test(test_image)
