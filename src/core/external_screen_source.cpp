@@ -15,6 +15,9 @@ bool ExternalScreenSource::open(const std::string& socket_path, std::string* err
     }
     ended_ = false;
     ended_reason_.clear();
+    log_info("waiting for a game on " + socket_path + " (" +
+             std::to_string(ExternalSharedHeader::total_bytes() / (1024 * 1024)) +
+             " MB shared)");
     return true;
 }
 
@@ -34,6 +37,7 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
         return false;
     }
     std::string reason;
+    const bool was_connected = link_.connected();
     if (!link_.poll(&reason)) {
         // A game closing is how a session ends here, not a fault -- but there
         // is nothing more to draw either way, so it stops the source.
@@ -42,6 +46,15 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
         log_info("the game ended: " + reason);
         if (error != nullptr) *error = reason;
         return false;
+    }
+    if (!was_connected && link_.connected()) {
+        // Said here rather than inside the link, so that the half of the link a
+        // fork of Cemu compiles brings nothing of this app with it.
+        const ExternalStreamInfo& info = link_.info();
+        log_info("a game connected, sending " + std::to_string(info.top_width) + "x" +
+                 std::to_string(info.top_height) + " and " + std::to_string(info.bottom_width) +
+                 "x" + std::to_string(info.bottom_height) + " at " +
+                 std::to_string(info.audio_sample_rate) + " Hz");
     }
 
     for (const ScreenId id : {ScreenId::Top, ScreenId::Bottom}) {

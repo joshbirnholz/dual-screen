@@ -46,6 +46,15 @@ function(dualscreen_add_test name)
 endfunction()
 
 # A helper binary, not a test itself: the smoke test uses it to inspect output.
+# Half of the frame link ends up compiled into a fork of Cemu, and only three
+# files go with it. See docs/cemu-integration.md.
+add_test(NAME external_link_stands_alone
+    COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=${CMAKE_CXX_COMPILER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
+        -DWORK_DIR=${CMAKE_BINARY_DIR}/external-link-alone
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_standalone_link_test.cmake)
+
 add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 

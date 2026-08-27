@@ -96,7 +96,7 @@ run_session() {
         echo "$name: nothing ever connected over the frame link, so this run says nothing" >&2
         FAILED=1
     fi
-    if ! grep -q "the game is sending 1280x720 and 854x480" "$shell_log" 2>/dev/null; then
+    if ! grep -q "sending 1280x720 and 854x480" "$shell_log" 2>/dev/null; then
         echo "$name: the shell did not take the two screen sizes the game announced" >&2
         FAILED=1
     fi

@@ -3,14 +3,14 @@
 #include <string>
 #include <vector>
 
+#include "layout/screen_id.hpp"
+
 namespace ds {
 
 // Native dimensions of one DS screen, which is also the default when nothing
 // says otherwise.
 constexpr int kDsScreenWidth = 256;
 constexpr int kDsScreenHeight = 192;
-
-enum class ScreenId { Top, Bottom };
 
 // The size of one screen in its own pixels. Touch coordinates are expressed in
 // the touch screen's own space, whatever the core's framebuffer resolution is.

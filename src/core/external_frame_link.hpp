@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "layout/layout.hpp"
+#include "layout/screen_id.hpp"
 
 // The handover between this app and a program that plays a console this app
 // does not run -- Cemu, for a Wii U. See docs/research-notes.md for why a Wii U

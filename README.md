@@ -40,6 +40,9 @@ one running the game.
   buttons back.
 - Launched with no ROM, it opens a file browser so you can pick one, and starts
   in whichever folder you were last in.
+- Takes a **Wii U**'s two screens from an emulator running beside it rather than
+  from a core inside it, and treats them like any other console's from there.
+  Finished and tested on this side; no emulator speaks it yet.
 
 ## Layouts
 
@@ -112,6 +115,40 @@ it owns. Pick any other and both devices show the whole thing, which is what you
 want when someone is watching over your shoulder. With no second device
 connected it falls back to showing both screens, since half a game is not
 useful.
+
+## Wii U games
+
+A Wii U is not played the way a DS or a 3DS is. Those load a libretro core into
+this app; there is no usable Wii U core to load, so a Wii U is played by **Cemu,
+running beside this app**, handing its two pictures over.
+
+Everything on this side of that handover is finished: the shell opens a socket,
+takes a television screen and a GamePad screen from whatever connects, arranges
+them under the same layouts as any other console, and can send one of them on to
+a second device. What is missing is a Cemu that speaks it —
+`docs/cemu-integration.md` is the three files and four calls that would take.
+
+Until then `tools/fake_wii_u` stands in for it, which is what
+`tests/run_wii_u_test.sh` and `tests/run_wii_u_companion_test.sh` drive.
+
+Three things are different about a Wii U session:
+
+- **One device shows one screen.** The television is the game and the GamePad is
+  a second view of it, so squeezing both into one window is not the arrangement
+  the console has. Alone, the shell shows the television and **F3** swaps to the
+  GamePad; with a second device connected, each holds one.
+- **None of the controller shortcuts exist.** A Wii U game reads every control
+  the console has, including both stick presses, so nothing is taken from the
+  pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1** or **Tab**,
+  smoothing is **F2**, and Steam Input can be pointed at any of them.
+- **Screens go out as H.264 rather than as changed tiles.** A GamePad screen in
+  motion measures at 42.8 Mbit/s as tiles and 2.45 as video, so this is not a
+  preference — see **What streaming a screen costs** below. If the other device
+  cannot decode it, the session falls back to tiles on its own.
+
+Cemu owns everything about the emulation: the resolution it renders at, its own
+controller bindings, its own saves. The shell offers no render scale for a Wii U
+because that setting is not its to offer.
 
 ## Playing across two devices
 
@@ -631,9 +668,9 @@ LibretroCoreScreenSource ──► two textures (top, bottom) ──► Composit
 Three seams exist so the later phases are additive rather than a rewrite:
 
 - **`ScreenSource`** (`src/core/screen_source.hpp`) produces two textures per
-  frame plus their native resolution. V1's only implementation wraps the
-  libretro core; a 3DS source and a Wii U window-capture source drop in here
-  without the compositor or the layout system knowing.
+  frame plus their native resolution. Two implementations sit behind it now: one
+  wrapping a libretro core, and one taking frames from an emulator running as a
+  separate program. The compositor and the layout system never learn which.
 - **`InputSink`** (`src/input/ds_input.hpp`) accepts DS button state and a
   touch point already in DS coordinate space. V1 fills it from local SDL
   events; a network-delivered companion input stream submits through the same
@@ -728,8 +765,10 @@ The mock core means all of this runs with no melonDS core and no commercial ROM.
 
 ## Not built yet
 
-3DS and Wii U support, save states, cheats, rewind, shaders. More than one
-companion per host. The companion in `companion/` is built and tested here as a
+Wii U games actually playing — everything on this side of the handover is
+finished and tested against `tools/fake_wii_u`, but no emulator speaks it yet;
+see `docs/cemu-integration.md`. Save states, cheats, rewind, shaders. More than
+one companion per host. The companion in `companion/` is built and tested here as a
 desktop program; the Switch build needs a devkitPro toolchain and the Android
 build needs the Android SDK and NDK, so both have to be checked by hand on the
 device. See `docs/research-notes.md`

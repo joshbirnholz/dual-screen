@@ -2,8 +2,6 @@
 
 #include <cstring>
 
-#include "util/log.hpp"
-
 #if defined(__linux__)
 
 #include <errno.h>
@@ -245,8 +243,6 @@ bool ExternalFrameLink::listen(const std::string& socket_path, std::string* erro
         close();
         return false;
     }
-    log_info("waiting for a game on " + socket_path_ + " (" +
-             std::to_string(bytes / (1024 * 1024)) + " MB shared)");
     return true;
 }
 
@@ -298,7 +294,6 @@ bool ExternalFrameLink::accept_peer(std::string* error) {
         peer_fd_ = -1;
         return false;
     }
-    log_info("a game connected");
     return true;
 }
 
@@ -366,11 +361,6 @@ bool ExternalFrameLink::handle_message(ExternalControl kind, const std::vector<u
                 return false;
             }
             have_info_ = true;
-            log_info("the game is sending " + std::to_string(info_.top_width) + "x" +
-                     std::to_string(info_.top_height) + " and " +
-                     std::to_string(info_.bottom_width) + "x" +
-                     std::to_string(info_.bottom_height) + " at " +
-                     std::to_string(info_.audio_sample_rate) + " Hz");
             return true;
         }
         case ExternalControl::Frame: {

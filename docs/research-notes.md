@@ -1333,3 +1333,26 @@ Moonlight as the proof that each decode path exists and the reference for how it
 is opened. Sunshine and Moonlight unmodified are still worth an evening first --
 streaming Cemu's separate GamePad window from Desktop Mode to a Switch would show
 the whole idea works end to end, at real latency, before any of this is written.
+
+## What was built from all of this
+
+Both halves of the Wii U path exist now, on this side of the emulator.
+
+`ExternalFrameLink` (`src/core/external_frame_link.hpp`) is the handover: shared
+memory for pixels, a Unix socket for everything else, this app creating the
+memory and passing the descriptor over the socket so nothing outlives a crash.
+`ExternalScreenSource` puts it behind the same `ScreenSource` seam the cores use,
+so the compositor, the layouts and the network path never learn that this
+console is played by another program.
+
+The video codec is FFmpeg as argued above -- `h264_vaapi` where the machine has
+it, `libx264` behind it -- negotiated per session, with the tile codec still the
+default everywhere it wins. A Wii U asks for video because the measurement above
+says to; a DS and a 3DS do not.
+
+What has not happened is the part that is not in this repository: no emulator
+speaks the link. `tools/fake_wii_u` stands in for one and is what the tests
+drive, so the whole path is exercised except the emulator itself.
+`docs/cemu-integration.md` is what a fork of Cemu would have to do -- three files
+and four calls, with the three files checked by `external_link_stands_alone` to
+be droppable into a tree that has none of the rest of this app.
