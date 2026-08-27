@@ -1695,6 +1695,31 @@ void App::Impl::render() {
         return;
     }
 
+    // A companion showing a console played by a program beside the host: until
+    // that program starts there is nothing for the host to send, and this
+    // device would draw the same blank window the host used to. It works this
+    // out rather than being told -- it knows which console it joined, and that
+    // nothing has arrived -- which keeps the wire out of it.
+    if (state == State::Companion && companion_session &&
+        system_profile(system).frame_origin == FrameOrigin::External) {
+        const ScreenTextures& arrived = companion_session->screens();
+        if (arrived.top == nullptr && arrived.bottom == nullptr) {
+            const SystemProfile& profile = system_profile(system);
+            render_waiting_screen(quads, text, button_glyphs, width, height,
+                                  "Waiting for " + profile.core_description,
+                                  {joining_host.game_title,
+                                   joining_host.device_name.empty()
+                                       ? std::string()
+                                       : "to start on " + joining_host.device_name,
+                                   "F1 or Tab for the menu"},
+                                  {});
+            SDL_GL_SwapWindow(window);
+            ++frames_rendered;
+            companion_session->note_frame_drawn();
+            return;
+        }
+    }
+
     if (state == State::Playing && external_source && !external_source->running()) {
         // The game is played by a program started separately, and it has not
         // arrived. A black window here would be the same black window a broken

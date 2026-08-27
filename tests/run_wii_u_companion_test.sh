@@ -146,6 +146,64 @@ elif ! "$CHECKER" "$COMPANION_SHOT" center=green; then
     FAILED=1
 fi
 
+# And with the emulator not started at all. The second device is the one most
+# likely to be in somebody's hands, and it would otherwise sit on a blank window
+# with no way to tell a session that has not begun from one that is broken. It
+# works this out for itself: it knows which console it joined and that nothing
+# has arrived, so nothing has to cross the wire to say so.
+{
+    shot="$WORK_DIR/waiting.ppm"
+    XDG_CONFIG_HOME="$WORK_DIR/host/config" \
+    XDG_DATA_HOME="$WORK_DIR/host/data" \
+    SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
+    "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
+        "$DUALSCREEN" \
+            --game "$WORK_DIR/game.wud" \
+            --external-socket "$WORK_DIR/nobody.sock" \
+            --windowed \
+            --exit-after-seconds 9 \
+        > "$WORK_DIR/waiting-host.log" 2>&1 &
+    HOST_PID=$!
+
+    sleep 2
+
+    XDG_CONFIG_HOME="$WORK_DIR/companion/config" \
+    XDG_DATA_HOME="$WORK_DIR/companion/data" \
+    SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
+    "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
+        "$DUALSCREEN" \
+            --connect bottom \
+            --windowed \
+            --exit-after-seconds 6 \
+            --screenshot-at-seconds 4 \
+            --screenshot "$shot" \
+        > "$WORK_DIR/waiting-companion.log" 2>&1
+    waiting_result=$?
+
+    wait "$HOST_PID"
+    HOST_PID=""
+
+    echo "--- waiting: the companion ---"
+    cat "$WORK_DIR/waiting-companion.log" 2>/dev/null
+
+    if [ "$waiting_result" -ne 0 ]; then
+        echo "waiting: the companion exited with $waiting_result rather than sitting there" >&2
+        FAILED=1
+    fi
+    if ! grep -q "following the host: Wii U" "$WORK_DIR/waiting-companion.log" 2>/dev/null; then
+        echo "waiting: the companion never joined, so this run is not the case being tested" >&2
+        FAILED=1
+    fi
+    if [ ! -f "$shot" ]; then
+        echo "waiting: no screenshot from the companion" >&2
+        FAILED=1
+    elif ! "$CHECKER" "$shot" "text=0.1,0.35,0.9,0.60"; then
+        echo "waiting: the companion showed a blank window rather than saying what the session "\
+"was waiting for" >&2
+        FAILED=1
+    fi
+}
+
 if [ "$FAILED" -eq 0 ]; then
     echo "ok - a Wii U's two screens reached two devices, the far one as video"
 fi

@@ -131,6 +131,11 @@ a second device. What is missing is a Cemu that speaks it —
 Until then `tools/fake_wii_u` stands in for it, which is what
 `tests/run_wii_u_test.sh` and `tests/run_wii_u_companion_test.sh` drive.
 
+Because the emulator is started separately, either device may be sitting there
+before it exists. Both say so rather than showing a blank window — the host
+names the socket to point Cemu at, and the second device says which machine it
+is waiting on.
+
 Three things are different about a Wii U session:
 
 - **One device shows one screen.** The television is the game and the GamePad is
