@@ -1235,13 +1235,11 @@ void App::Impl::reset_wii_u_audio_defaults_if_per_device(const std::string& layo
 }
 
 bool App::Impl::sound_plays_here() const {
-    // A Wii U's TV audio -- the only stream that actually reaches this app;
-    // see the "Not done yet" note in cemu-dualscreen's README about the
-    // GamePad's own stream. Off is a real choice here even alone, unlike a
-    // DS or 3DS below, so pairing does not short-circuit it.
-    if (system == SystemId::WiiU) {
-        return audio_reaches(tv_audio_target, local_screen);
-    }
+    // A DS or 3DS has one soundtrack, so alone there is nobody else to hand
+    // it to and it always plays here. A Wii U's screens each have their own
+    // independent audio and are routed separately -- see the two
+    // wii_u_*_audio_target checks in the External source's audio callback --
+    // so this is never asked on that system's behalf.
     if (!paired()) {
         return true;  // nobody else to hand it to
     }
@@ -1514,7 +1512,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                 // hear the same thing at the same time.
                 if (host_session) {
                     host_session->publish_audio(
-                        samples, frames, static_cast<uint32_t>(source->audio_sample_rate()));
+                        net::AudioStreamId::Shared, samples, frames,
+                        static_cast<uint32_t>(source->audio_sample_rate()));
                 }
             });
 
@@ -1551,12 +1550,24 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             // waiting, and the black screen until it arrives is correct.
             external_source.reset(new ExternalScreenSource(system));
             external_source->set_audio_callback(
-                [this](const int16_t* samples, std::size_t frames) {
-                    if (sound_plays_here()) {
+                [this](ScreenId screen, const int16_t* samples, std::size_t frames) {
+                    // A Wii U's TV and GamePad audio are independent streams,
+                    // each routed by its own target rather than by the single
+                    // audio_target a DS or 3DS session uses. A player who
+                    // points both at the same place (e.g. both "Both") hears
+                    // them layered rather than mixed, since this pushes each
+                    // into the one local output in turn -- narrower than a
+                    // real mixer, but that combination is not how either
+                    // stream is meant to be set up.
+                    const AudioTarget target =
+                        (screen == ScreenId::Top) ? tv_audio_target : gamepad_audio_target;
+                    if (audio_reaches(target, local_screen)) {
                         audio.push(samples, frames);
                     }
                     if (host_session) {
                         host_session->publish_audio(
+                            screen == ScreenId::Top ? net::AudioStreamId::TopDevice
+                                                     : net::AudioStreamId::BottomDevice,
                             samples, frames,
                             static_cast<uint32_t>(external_source->audio_sample_rate()));
                     }
@@ -2433,12 +2444,13 @@ int App::run(const AppOptions& options) {
         const uint64_t network_now = net::monotonic_millis();
         if (impl.host_session) {
             // Sound only goes over the wire when the other device is one of the
-            // ones meant to be making it.
+            // ones meant to be making it. Only the Shared stream a DS or 3DS
+            // sends is gated here -- a Wii U's TV and GamePad streams check
+            // their own targets inside publish_audio itself, since the two
+            // can disagree about whether the companion should hear them.
             impl.host_session->set_video_wanted(impl.wants_video());
             impl.host_session->set_audio_enabled(
-                impl.system == SystemId::WiiU
-                    ? audio_reaches(impl.tv_audio_target, impl.host_session->companion_screen())
-                    : audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
+                audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always
             // looking at the same frame.
             const bool paused_here = impl.state != Impl::State::Playing;

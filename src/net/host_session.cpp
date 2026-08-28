@@ -593,10 +593,21 @@ std::size_t HostSession::frames_in_flight() {
     return frame_marks_.size();
 }
 
-void HostSession::publish_audio(const int16_t* interleaved_stereo,
-                                std::size_t frames,
-                                uint32_t sample_rate) {
-    if (!audio_enabled_ || !has_companion() || interleaved_stereo == nullptr || frames == 0) {
+void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved_stereo,
+                                std::size_t frames, uint32_t sample_rate) {
+    if (!has_companion() || interleaved_stereo == nullptr || frames == 0) {
+        return;
+    }
+    // Shared keeps using the coarse flag app.cpp derives from audio_target;
+    // TopDevice/BottomDevice check their own target directly against what
+    // screen the companion has, since a Wii U's two streams can want
+    // different answers and one flag cannot hold both at once.
+    const bool wanted = (stream == AudioStreamId::TopDevice)
+                            ? audio_reaches(shared_.tv_audio_target, companion_screen_)
+                        : (stream == AudioStreamId::BottomDevice)
+                            ? audio_reaches(shared_.gamepad_audio_target, companion_screen_)
+                            : audio_enabled_;
+    if (!wanted) {
         return;
     }
     // Audio is dropped rather than queued when the link is behind, for the same
@@ -606,7 +617,7 @@ void HostSession::publish_audio(const int16_t* interleaved_stereo,
     }
 
     AudioMessage message;
-    message.stream = AudioStreamId::Shared;  // DS and 3DS mirror; Wii U will not
+    message.stream = stream;
     message.sample_rate = sample_rate;
     message.samples.assign(interleaved_stereo, interleaved_stereo + frames * 2);
 

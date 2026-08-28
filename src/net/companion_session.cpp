@@ -199,10 +199,21 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             if (!decode_audio(payload.data(), payload.size(), audio)) {
                 return;  // a bad audio packet is not worth ending a session over
             }
-            // Only the shared stream means anything for DS and 3DS. Per-device
-            // streams arrive with Wii U and are ignored until then rather than
-            // played on the wrong device.
-            if (audio.stream != AudioStreamId::Shared || audio.samples.empty()) {
+            if (audio.samples.empty()) {
+                return;
+            }
+            // Shared is a DS or 3DS's one soundtrack and always plays. A Wii
+            // U's TopDevice/BottomDevice streams are each routed by their own
+            // target against the screen the host granted this device --
+            // the same check the host itself made before sending it, kept
+            // here too since the host may still be serving a stream from
+            // before this device's target last changed.
+            const bool wanted = (audio.stream == AudioStreamId::TopDevice)
+                                    ? audio_reaches(host_tv_audio_target_, granted_screen_)
+                                : (audio.stream == AudioStreamId::BottomDevice)
+                                    ? audio_reaches(host_gamepad_audio_target_, granted_screen_)
+                                    : true;
+            if (!wanted) {
                 return;
             }
             if (audio_callback_) {

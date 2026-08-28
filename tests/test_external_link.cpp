@@ -242,19 +242,29 @@ void test_audio_and_resets_go_the_way_they_are_meant_to() {
     if (!bring_up(link, producer)) return;
 
     std::string error;
-    const std::vector<int16_t> sent = {1, -1, 300, -300, 4000, -4000};
-    CHECK(producer.send_audio(sent.data(), sent.size() / 2, &error));
+    const std::vector<int16_t> sent_tv = {1, -1, 300, -300, 4000, -4000};
+    const std::vector<int16_t> sent_pad = {7, -7, 500, -500};
+    CHECK(producer.send_audio(ScreenId::Top, sent_tv.data(), sent_tv.size() / 2, &error));
+    CHECK(producer.send_audio(ScreenId::Bottom, sent_pad.data(), sent_pad.size() / 2, &error));
 
-    std::vector<int16_t> heard;
+    std::vector<int16_t> heard_tv;
+    std::vector<int16_t> heard_pad;
     const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (heard.empty() && std::chrono::steady_clock::now() < give_up_at) {
+    while ((heard_tv.empty() || heard_pad.empty()) &&
+          std::chrono::steady_clock::now() < give_up_at) {
         CHECK(link.poll(&error));
-        link.take_audio(heard);
+        if (heard_tv.empty()) link.take_audio(ScreenId::Top, heard_tv);
+        if (heard_pad.empty()) link.take_audio(ScreenId::Bottom, heard_pad);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    CHECK_MSG(heard == sent, "the audio that arrived is not the audio that was sent");
-    link.take_audio(heard);
-    CHECK_MSG(heard.empty(), "audio was handed out twice, so it would be played twice");
+    CHECK_MSG(heard_tv == sent_tv, "the TV audio that arrived is not the TV audio that was sent");
+    CHECK_MSG(heard_pad == sent_pad,
+              "the GamePad audio that arrived is not the GamePad audio that was sent, or leaked "
+              "in with the TV's");
+    link.take_audio(ScreenId::Top, heard_tv);
+    link.take_audio(ScreenId::Bottom, heard_pad);
+    CHECK_MSG(heard_tv.empty() && heard_pad.empty(),
+              "audio was handed out twice, so it would be played twice");
 
     // And the other way: only the producer knows what restarting a game means.
     link.request_reset();

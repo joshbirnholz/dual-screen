@@ -23,7 +23,11 @@ namespace ds {
 // the whole of what this seam was ever for.
 class ExternalScreenSource final : public ScreenSource {
 public:
-    using AudioCallback = std::function<void(const int16_t* interleaved_stereo, std::size_t frames)>;
+    // Tagged by screen: a Wii U's TV and GamePad audio are independent
+    // streams, each routed by whatever the player set that screen's audio
+    // target to.
+    using AudioCallback =
+        std::function<void(ScreenId screen, const int16_t* interleaved_stereo, std::size_t frames)>;
 
     explicit ExternalScreenSource(SystemId system);
     ~ExternalScreenSource() override;
@@ -80,7 +84,7 @@ private:
     Screen top_;
     Screen bottom_;
     AudioCallback audio_callback_;
-    std::vector<int16_t> audio_;
+    std::vector<int16_t> audio_[2];
     bool ended_ = false;
     std::string ended_reason_;
 };

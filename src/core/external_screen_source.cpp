@@ -26,7 +26,8 @@ void ExternalScreenSource::close() {
     top_ = Screen();
     bottom_ = Screen();
     textures_ = ScreenTextures();
-    audio_.clear();
+    audio_[0].clear();
+    audio_[1].clear();
 }
 
 bool ExternalScreenSource::advance_frame(std::string* error) {
@@ -69,9 +70,12 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
         screen.serial = frame.serial;
     }
 
-    link_.take_audio(audio_);
-    if (!audio_.empty() && audio_callback_) {
-        audio_callback_(audio_.data(), audio_.size() / 2);
+    for (const ScreenId id : {ScreenId::Top, ScreenId::Bottom}) {
+        std::vector<int16_t>& audio = audio_[ExternalSharedHeader::screen_index(id)];
+        link_.take_audio(id, audio);
+        if (!audio.empty() && audio_callback_) {
+            audio_callback_(id, audio.data(), audio.size() / 2);
+        }
     }
     return true;
 }

@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
             audio[i * 2] = sample;
             audio[i * 2 + 1] = sample;
         }
-        if (!producer.send_audio(audio.data(), frames_of_audio, &error)) {
+        if (!producer.send_audio(ds::ScreenId::Top, audio.data(), frames_of_audio, &error)) {
             ds::log_info("could not send audio: " + error);
             break;
         }

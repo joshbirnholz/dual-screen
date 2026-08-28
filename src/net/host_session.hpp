@@ -107,10 +107,14 @@ public:
     // Cheap to call every frame; nothing is sent unless something changed.
     void set_session_state(const SharedState& state);
 
-    // Sends the game's audio to the companion. DS and 3DS mirror it, so both
-    // devices play the same thing; the stream id leaves room for Wii U, where
-    // each device has its own.
-    void publish_audio(const int16_t* interleaved_stereo, std::size_t frames, uint32_t sample_rate);
+    // Sends one of the game's audio streams to the companion. DS and 3DS have
+    // one soundtrack and always pass Shared; a Wii U's TV and GamePad are
+    // independent and pass TopDevice/BottomDevice, each checked here against
+    // that stream's own target rather than the coarse enabled flag below,
+    // since the two can differ (TV muted, GamePad not, or the reverse).
+    void publish_audio(AudioStreamId stream, const int16_t* interleaved_stereo, std::size_t frames,
+                       uint32_t sample_rate);
+    // Governs only the Shared stream -- see publish_audio.
     void set_audio_enabled(bool enabled) { audio_enabled_ = enabled; }
     bool audio_enabled() const { return audio_enabled_; }
 

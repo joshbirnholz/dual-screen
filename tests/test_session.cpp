@@ -495,7 +495,7 @@ void test_audio_reaches_the_companion() {
     for (std::size_t index = 0; index < tone.size(); ++index) {
         tone[index] = static_cast<int16_t>((index % 64) * 300 - 9600);
     }
-    host.publish_audio(tone.data(), 512, 32823);
+    host.publish_audio(AudioStreamId::Shared, tone.data(), 512, 32823);
 
     const bool heard = spin(host, companion, [&] { return frames_heard > 0; });
     CHECK_MSG(heard, "no audio reached the companion");
@@ -508,7 +508,7 @@ void test_audio_reaches_the_companion() {
     // Turning it off stops it, without disturbing anything else.
     frames_heard = 0;
     host.set_audio_enabled(false);
-    host.publish_audio(tone.data(), 512, 32823);
+    host.publish_audio(AudioStreamId::Shared, tone.data(), 512, 32823);
     spin(host, companion, [] { return false; }, 200);
     CHECK_MSG(frames_heard == 0, "audio was still sent after being switched off");
 

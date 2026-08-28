@@ -211,10 +211,16 @@ Point by point against the list above:
   `wii_u_arguments` below passes.
 - **Size.** Nothing was changed about the 1920x1080 cap, so a Cemu above 1x
   internal resolution will have its frames refused, once, in the log.
-- **Audio.** The TV stream reaches the link from `ax_out.cpp`'s `AIInitDMA`,
-  the same 48kHz int16 block Cemu hands its own output device, sent right
-  alongside it. Only when it is genuinely stereo, which is Cemu's own default;
-  a title switched to mono or surround TV audio gets a log line instead.
+- **Audio.** Both streams reach the link from `ax_out.cpp`, tagged by screen
+  the same way frames are: TV from `AIInitDMA` as `ScreenId::Top`, DRC
+  (GamePad) from `AIInitDRCDMA` as `ScreenId::Bottom` -- the same 48kHz int16
+  blocks Cemu hands its own two output devices, sent right alongside them.
+  Only when a stream is genuinely stereo, which is Cemu's own default for
+  both; a title switched to mono or surround on either gets a log line
+  instead of a guess at downmixing. The shell routes each stream by its own
+  target (`wii_u_tv_audio_target` / `wii_u_gamepad_audio_target`), so a
+  player can send the TV's sound to one device and the GamePad's to another
+  independently.
 
 Verified end to end against a real session (Wind Waker HD, Steam Deck): video,
 pad, touch and audio all confirmed correct on real hardware, after two bugs the
@@ -222,13 +228,11 @@ build couldn't have caught here -- a 10-bit scan buffer format, and a missing
 sRGB encode step traced to Cemu's own output shader, both written up in the
 git history on `claude/dualscreen-frame-link`.
 
-Not done there yet: **DRC (GamePad) audio**, a second AX stream this does not
-touch -- the link only carries one -- and the **reset request**, which arrives
-and is logged. Reset stays that way on purpose: the only stop-a-running-title
-path Cemu has, `MainWindow::EndEmulation()`, is marked by its own author as
-unfinished, with memory leaks and crashes after about three uses, and wiring a
-shell's Reset button through that would make repeated presses worse than doing
-nothing.
+Not done there yet: the **reset request**, which arrives and is logged. Reset
+stays that way on purpose: the only stop-a-running-title path Cemu has,
+`MainWindow::EndEmulation()`, is marked by its own author as unfinished, with
+memory leaks and crashes after about three uses, and wiring a shell's Reset
+button through that would make repeated presses worse than doing nothing.
 
 ## What the shell does with it
 
