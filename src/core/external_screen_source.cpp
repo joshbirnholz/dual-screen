@@ -84,7 +84,11 @@ const ScreenTextures& ExternalScreenSource::screens() {
     for (Screen* screen : {&top_, &bottom_}) {
         const bool stale = !screen->texture.valid() || screen->serial != screen->uploaded_serial;
         if (stale && screen->width > 0 && screen->height > 0 && !screen->pixels.empty()) {
-            screen->texture.upload_xrgb8888(screen->pixels.data(), screen->width, screen->height,
+            // RGBA, not upload_xrgb8888()'s byte-swapped XRGB: what crosses
+            // this link is a GPU's own render targets (Cemu's Vulkan
+            // readback), already in the order a GPU-filled texture is in,
+            // not a CPU-rendered libretro core's swapped one.
+            screen->texture.upload_rgba8888(screen->pixels.data(), screen->width, screen->height,
                                             screen->width);
             screen->uploaded_serial = screen->serial;
         }
@@ -114,7 +118,9 @@ bool ExternalScreenSource::read_screen(ScreenId screen, ScreenReadback& out, int
     out.width = source.width;
     out.height = source.height;
     out.stride_pixels = source.width;
-    out.channel_order = ChannelOrder::XrgbBytes;
+    // A GPU's own render targets (Cemu's Vulkan readback), not a CPU-rendered
+    // libretro core's byte-swapped XRGB8888 -- see upload_rgba8888().
+    out.channel_order = ChannelOrder::Rgba;
     return true;
 }
 

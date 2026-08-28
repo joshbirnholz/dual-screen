@@ -80,10 +80,27 @@ the tests drive, so it is known to work rather than believed to.
 
 ## Six things the fork has to get right
 
-**Pixels are XRGB8888, top row first.** One `uint32_t` per pixel, `0x00RRGGBB`,
-host byte order. `stride_pixels` is the row pitch in pixels, so a padded buffer
-needs no repacking. If Cemu's readback is BGRA or bottom-up, turn it once here
-rather than making the shell guess.
+**Pixels are byte order R,G,B,A, top row first.** One `uint32_t` per pixel,
+byte 0 = red -- what a GPU-filled RGBA8 render target already is, on every
+backend that matters here (Vulkan's `VK_FORMAT_R8G8B8A8_*`, OpenGL's
+`GL_RGBA`/`GL_UNSIGNED_BYTE`). `stride_pixels` is the row pitch in pixels, so
+a padded buffer needs no repacking.
+
+Do not turn this into the XRGB8888 a CPU-rendered libretro core sends (byte
+order B,G,R,0, alpha dropped) before publishing it. That repack is a full CPU
+pass over every pixel of every screen, every frame -- measured on a fork's
+first attempt at costing ~700ms of *every second* of wall-clock time on a
+discrete GPU, where reading a readback buffer back on the CPU at all turned
+out to be far slower than on an APU's shared memory, and repacking multiplied
+that cost by walking the whole buffer a second time. The shell already knows
+the difference: `ScreenReadback::channel_order` (`ChannelOrder::Rgba` for a
+GPU source) says which convention a given screen arrived in, so it uploads
+byte order R,G,B,A as-is rather than needing it turned into the other
+convention first. A conversion is only needed for what genuinely is not
+already 8-bit RGBA -- a packed 10-bit-per-channel scan buffer, or a gamma
+mismatch between what the source was stored as and what the destination
+expects -- and even then, pack the *result* the same way (R,G,B,0xff), not
+back into XRGB8888.
 
 **Both screens of one moment share a serial.** `serial` is what stops the
 television from one frame being shown beside the GamePad from another. Any
@@ -139,7 +156,7 @@ screenshot happens when somebody presses F12:
   `SubmitCommandBuffer()` and `WaitCommandBufferFinished(...)` -- a full flush
   and a CPU wait.
 
-Both hand back **RGB24**, not the XRGB8888 this link carries, and both walk
+Both hand back **RGB24**, not the RGBA8888 this link carries, and both walk
 every pixel on the CPU when the source and destination disagree about sRGB.
 
 So the fork attaches at that call site and brings its own readback: a ring of

@@ -69,17 +69,12 @@ void Texture::set_linear_filtering(bool linear) {
     }
 }
 
-void Texture::upload_xrgb8888(const uint32_t* source,
-                              int width,
-                              int height,
-                              int source_stride_pixels) {
-    if (source == nullptr || width <= 0 || height <= 0) {
-        return;
-    }
-    if (!ensure_created()) {
-        return;
-    }
-    channel_order_ = ChannelOrder::XrgbBytes;
+// Shared by upload_xrgb8888() and upload_rgba8888(): the two differ only in
+// which ChannelOrder they leave the texture tagged with, since GL is handed
+// the same four bytes a pixel either way and it is only the shader on the far
+// side that needs to know whether they arrived pre-swapped.
+void Texture::upload_four_bytes_a_pixel(const uint32_t* source, int width, int height,
+                                        int source_stride_pixels) {
     gl::BindTexture(GL_TEXTURE_2D, id_);
 
     if (filter_dirty_) {
@@ -116,6 +111,34 @@ void Texture::upload_xrgb8888(const uint32_t* source,
     } else {
         gl::TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, upload_from);
     }
+}
+
+void Texture::upload_xrgb8888(const uint32_t* source,
+                              int width,
+                              int height,
+                              int source_stride_pixels) {
+    if (source == nullptr || width <= 0 || height <= 0) {
+        return;
+    }
+    if (!ensure_created()) {
+        return;
+    }
+    channel_order_ = ChannelOrder::XrgbBytes;
+    upload_four_bytes_a_pixel(source, width, height, source_stride_pixels);
+}
+
+void Texture::upload_rgba8888(const uint32_t* source,
+                              int width,
+                              int height,
+                              int source_stride_pixels) {
+    if (source == nullptr || width <= 0 || height <= 0) {
+        return;
+    }
+    if (!ensure_created()) {
+        return;
+    }
+    channel_order_ = ChannelOrder::Rgba;
+    upload_four_bytes_a_pixel(source, width, height, source_stride_pixels);
 }
 
 void Texture::upload_rgb565(const uint8_t* source, int width, int height) {

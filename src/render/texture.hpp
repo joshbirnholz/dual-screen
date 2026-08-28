@@ -37,6 +37,15 @@ public:
                          int height,
                          int source_stride_pixels);
 
+    // Uploads a tightly packed or strided region that is already byte order
+    // R,G,B,A -- what a GPU-rendered screen (a Wii U's, over the external
+    // frame link) arrives as, unlike a CPU-rendered libretro core's XRGB8888.
+    // No swizzling needed downstream; see ChannelOrder.
+    void upload_rgba8888(const uint32_t* source,
+                         int width,
+                         int height,
+                         int source_stride_pixels);
+
     // Uploads tightly packed RGB565, the form a streamed screen arrives in.
     //
     // Uploading it as itself rather than expanding to 8 bits a channel first
@@ -69,6 +78,10 @@ private:
     // False when there is no context to create one against, which every
     // upload treats as "nothing to upload into".
     bool ensure_created();
+    // Shared by upload_xrgb8888() and upload_rgba8888(), which differ only in
+    // the ChannelOrder they leave the texture tagged with afterward.
+    void upload_four_bytes_a_pixel(const uint32_t* source, int width, int height,
+                                   int source_stride_pixels);
 
     GLuint id_ = 0;
     int width_ = 0;

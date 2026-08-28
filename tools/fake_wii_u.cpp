@@ -39,7 +39,10 @@ constexpr int kPadHeight = 480;
 
 uint32_t pack(int r, int g, int b) {
     const auto clamp = [](int v) { return static_cast<uint32_t>(v < 0 ? 0 : (v > 255 ? 255 : v)); };
-    return (clamp(r) << 16) | (clamp(g) << 8) | clamp(b);
+    // Byte order R,G,B,0xff -- what a real Wii U's GPU-rendered screens
+    // arrive as (see ExternalScreenSource::screens()'s upload_rgba8888()),
+    // not the byte-swapped layout a CPU-rendered libretro core uses.
+    return clamp(r) | (clamp(g) << 8) | (clamp(b) << 16) | (0xffu << 24);
 }
 
 // Two pictures that are obviously different from each other and obviously
