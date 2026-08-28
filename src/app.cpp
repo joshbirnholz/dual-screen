@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <optional>
 
 #include "audio/audio_output.hpp"
 #include "config/game_config.hpp"
@@ -333,6 +334,19 @@ struct App::Impl {
     // to automatically rather than left on whatever a solo session was
     // showing. See the host poll loop.
     bool host_had_companion = false;
+    // The screen last asked of an external producer (a Wii U's Cemu) via
+    // ExternalScreenSource::request_screen() -- absent means nothing has been
+    // asked for. Tracked so the host poll loop only calls request_screen()
+    // when what is wanted actually changes, the same as send_input() dedupes
+    // on its own side of the same link.
+    std::optional<ScreenId> external_requested_screen;
+    // Whether the external producer was connected as of last frame. A
+    // companion can connect, and so decide what is wanted, before Cemu ever
+    // does -- request_screen() sent in that gap has nowhere to go and is
+    // silently dropped (the control socket has no peer yet), so the rising
+    // edge here is a second reason to resend, on top of the value itself
+    // changing.
+    bool external_link_was_running = false;
 
     State state = State::Playing;
     bool message_is_fatal = false;
@@ -2020,7 +2034,17 @@ void App::Impl::render() {
     }
 
     const ScreenTextures* frames = nullptr;
-    if (ScreenSource* drawing = active_source()) {
+    if (system == SystemId::WiiU && !is_companion() && external_source &&
+        external_source->running()) {
+        // Never composited locally any more -- Cemu's own window is the only
+        // place either of a Wii U's screens appears now, and a connected
+        // companion gets whichever one it asked for over the network. See
+        // the request_screen() block in the host poll loop.
+        const SystemProfile& profile = system_profile(system);
+        render_waiting_screen(quads, text, button_glyphs, width, height,
+                              "Playing on " + profile.core_description,
+                              {game_title, "F1 or Tab for the menu"}, {});
+    } else if (ScreenSource* drawing = active_source()) {
         const ScreenTextures& textures = drawing->screens();
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
                           router);
@@ -2489,24 +2513,52 @@ int App::run(const AppOptions& options) {
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
-            // A second screen connecting to a Wii U is the console's own
-            // arrangement -- one screen on each device -- so it is switched to
-            // automatically rather than left on whatever a solo session was
-            // showing. Only on the rising edge, so choosing something else
-            // after connecting is not undone every frame the companion stays.
             const bool host_now_has_companion = impl.host_session->has_companion();
-            if (host_now_has_companion && !impl.host_had_companion &&
-                impl.system == SystemId::WiiU) {
-                const std::string& per_device_id = system_profile(impl.system).default_layout_id;
-                if (!per_device_id.empty() && impl.active_layout_id != per_device_id) {
-                    impl.active_layout_id = impl.registry.resolve(per_device_id).id;
-                    impl.persist_game_config();
-                    if (impl.picker && impl.picker->is_open()) {
-                        impl.picker->set_selected_layout(impl.active_layout_id);
+            // For a Wii U, a companion connecting or changing which screen it
+            // wants is what decides which screen exists here at all: Cemu
+            // keeps whichever one nobody asked for entirely to itself (its
+            // own window shows it, its own audio plays it), so this end only
+            // ever has the one screen the companion is actually watching --
+            // and never composites it into anything of its own: Cemu's own
+            // window is the only place the complementary screen appears now,
+            // so there is nothing here for this end to show either, paired
+            // or not. No companion means nothing is asked for, which is what
+            // makes not running this app alongside Cemu at all a perfectly
+            // normal way to just play the game.
+            if (impl.system == SystemId::WiiU && impl.external_source) {
+                const std::optional<ScreenId> wanted =
+                    host_now_has_companion
+                        ? std::optional<ScreenId>(impl.host_session->companion_screen())
+                        : std::nullopt;
+                const bool external_now_running = impl.external_source->running();
+                // A companion can decide what is wanted before Cemu has even
+                // connected; a request sent into that gap has no peer to
+                // reach yet and is silently dropped, so a fresh connection
+                // is resent regardless of whether the value itself changed.
+                const bool freshly_connected =
+                    external_now_running && !impl.external_link_was_running;
+                if (freshly_connected || wanted != impl.external_requested_screen) {
+                    impl.external_source->request_screen(wanted);
+                    impl.external_requested_screen = wanted;
+                    log_info(wanted.has_value()
+                                 ? "a companion wants the " + std::string(to_string(*wanted)) +
+                                       " screen; asking Cemu for it"
+                                 : std::string("no companion connected; not asking Cemu for a "
+                                                "screen"));
+                }
+                impl.external_link_was_running = external_now_running;
+                // Told to the companion as SharedState.layout_id below, so it
+                // knows which single screen the video it is about to receive
+                // actually is -- this end never draws it itself (see above),
+                // so the only reader of this value is the far end.
+                if (wanted.has_value()) {
+                    const std::string& single_id =
+                        (*wanted == ScreenId::Top) ? "tv_only" : "gamepad_only";
+                    const std::string& resolved_id = impl.registry.resolve(single_id).id;
+                    if (impl.active_layout_id != resolved_id) {
+                        impl.active_layout_id = resolved_id;
+                        impl.persist_game_config();
                     }
-                    log_info("a second screen connected; switching to the " +
-                             impl.registry.resolve(per_device_id).display_name + " layout");
-                    impl.reset_wii_u_audio_defaults_if_per_device(impl.active_layout_id);
                 }
             }
             // The other direction: a target still pointing at a device that
@@ -2618,6 +2670,10 @@ int App::run(const AppOptions& options) {
                 impl.running = false;
             }
             // Whichever screen the companion took, the host shows the other.
+            // Moot for a Wii U -- this app never composites either of its
+            // screens locally any more, see the request_screen() block above
+            // -- but harmless to leave computed the same way for every
+            // system rather than special-cased for one that does not read it.
             impl.local_screen = impl.host_session->host_screen();
         }
         if (impl.companion_session) {

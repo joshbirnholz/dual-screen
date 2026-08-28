@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# The whole Wii U path across two machines: fake_wii_u hands a television and a
-# GamePad screen to a host over shared memory, and the host hands the GamePad on
-# to a second device over the network.
+# The whole Wii U path across two machines: fake_wii_u hands only the screen a
+# companion actually asked for to a host over shared memory (see
+# ExternalControl::RequestScreen), and the host hands that on to the companion
+# over the network. Cemu's own window is where the other screen appears now,
+# which nothing here can screenshot -- fake_wii_u stands in for Cemu, not for a
+# window of its own -- so what this checks on the host's side is that it never
+# composites either screen locally any more, only that it asked for and
+# forwarded the right one.
 #
 # Three processes, and every seam between them is the real one -- the frame
-# link, the wire protocol, the video encoder and the video decoder. What it
-# checks is that each device ended up showing its own screen, which needs all of
-# them to have worked. The host starts explicitly on Upper Screen Focus rather
-# than the default, so that ending up split across two devices anyway also
-# checks a second screen connecting switches to that arrangement on its own,
-# not only that a fresh session starts there.
+# link, the wire protocol, the video encoder and the video decoder.
 #
 # It also checks the screens went as video rather than as changed tiles. That is
 # not a preference here, it is the measurement: a GamePad screen in motion costs
@@ -50,7 +50,6 @@ SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
     "$DUALSCREEN" \
         --game "$WORK_DIR/game.wud" \
         --external-socket "$SOCKET" \
-        --layout upper_focus \
         --windowed \
         --exit-after-seconds 18 \
         --screenshot-at-seconds 13 \
@@ -121,6 +120,8 @@ require "$WORK_DIR/host.log" "a game connected" \
     "nothing ever connected over the frame link"
 require "$WORK_DIR/host.log" "connected as the bottom screen" \
     "the host never accepted a companion, so nothing crossed the network"
+require "$WORK_DIR/host.log" "a companion wants the bottom screen; asking Cemu for it" \
+    "the host never asked the far end for the screen the companion wanted"
 require "$WORK_DIR/companion.log" "following the host: Wii U" \
     "the companion did not learn which console it had joined"
 require "$WORK_DIR/host.log" "video encoder: " \
@@ -134,12 +135,14 @@ if grep -q "falling back to tiles" "$WORK_DIR/host.log" 2>/dev/null; then
     FAILED=1
 fi
 
-# One screen on each device: the television stays here, the GamePad goes over.
-if [ ! -f "$HOST_SHOT" ]; then
-    echo "no screenshot from the host" >&2
-    FAILED=1
-elif ! "$CHECKER" "$HOST_SHOT" center=blue; then
-    echo "the host was not showing the television" >&2
+# The GamePad screen goes to the companion; the television is Cemu's own
+# window to show now, not this app's -- so the host never composites either
+# screen locally any more (see request_screen() in app.cpp). "compositing a
+# screen" only ever logs once real pixels are drawn, so its absence here is
+# the proof, not a screenshot color that a placeholder could coincidentally
+# match.
+if grep -q "compositing a screen" "$WORK_DIR/host.log" 2>/dev/null; then
+    echo "the host composited a screen locally; it should have left both to Cemu and the companion" >&2
     FAILED=1
 fi
 if [ ! -f "$COMPANION_SHOT" ]; then
@@ -209,6 +212,6 @@ fi
 }
 
 if [ "$FAILED" -eq 0 ]; then
-    echo "ok - a Wii U's two screens reached two devices, the far one as video"
+    echo "ok - a companion's requested screen reached it as video, and the host composited neither"
 fi
 exit "$FAILED"

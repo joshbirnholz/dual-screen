@@ -4,16 +4,15 @@
 # memory, and a picture on screen that came out of the other one.
 #
 # fake_wii_u stands in for Cemu -- see tools/fake_wii_u.cpp. It publishes a blue
-# television screen and a green GamePad screen over the frame link, and this
-# checks that the shell showed them. Which is the point of the whole exercise:
-# every piece on this side of the link can be finished and held to before the
-# emulator on the other side of it exists.
-#
-# Two runs, because a Wii U alone shows one screen at a time (SoloScreens::One).
-# The first is left as it starts and should be the television; the second taps
-# the swap key and should be the GamePad. Together they say both screens crossed
-# the link, that the shell picked a layout that can hold them, and that the key
-# a Wii U player needs -- the pad has no button to spare for it -- works.
+# television screen and a green GamePad screen over the frame link, but only
+# the one this app actually asks for over ExternalControl::RequestScreen (see
+# ShouldCapture on the real Cemu fork's side of the same idea) -- and alone,
+# with nobody else connected, this app asks for nothing at all: Cemu's own
+# window is the television now, which nothing here can screenshot, and there
+# is no second device yet for either screen to go to. So what a solo run
+# proves is the opposite of what it used to: that nothing is requested and
+# nothing is composited, which is what actually removes the cost a real
+# Cemu would otherwise pay for a screen nobody is watching through this app.
 #
 # Usage: run_wii_u_test.sh <xvfb-run> <dualscreen> <fake_wii_u> <work dir> <checker>
 
@@ -40,11 +39,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# $1 run name, $2 expected colour, $3... extra dualscreen arguments
+# $1 run name, $2... extra dualscreen arguments
 run_session() {
     local name="$1"
-    local expect="$2"
-    shift 2
+    shift 1
 
     local socket="$WORK_DIR/$name.sock"
     local shot="$WORK_DIR/$name.ppm"
@@ -100,40 +98,28 @@ run_session() {
         echo "$name: the shell did not take the two screen sizes the game announced" >&2
         FAILED=1
     fi
-    if ! grep -q "compositing a screen" "$shell_log" 2>/dev/null; then
-        echo "$name: the shell never drew a screen, so nothing reached the compositor" >&2
+
+    # Alone, with nothing asked for, neither screen should ever reach the
+    # compositor -- see the top-of-file note on what a solo run proves now.
+    if grep -q "compositing a screen" "$shell_log" 2>/dev/null; then
+        echo "$name: the shell composited a screen with nobody connected to watch it" >&2
         FAILED=1
     fi
 
     if [ ! -f "$shot" ]; then
         echo "$name: no screenshot" >&2
         FAILED=1
-    elif ! "$CHECKER" "$shot" "center=$expect"; then
-        echo "$name: the shell was not showing the $expect screen" >&2
+    elif ! "$CHECKER" "$shot" "text=0.1,0.35,0.9,0.60"; then
+        echo "$name: the shell showed something other than its own idle screen with nothing "\
+"connected" >&2
         FAILED=1
     fi
 }
 
-# The television, which is where a Wii U starts: it is the game, and the
-# GamePad is a second view of it.
-run_session television blue
-
-# F3 is the swap key. A Wii U game reads both stick presses itself, so this is
-# the one console where the shortcut cannot live on the pad -- see
-# SystemProfile::game_uses_every_control.
-#
-# With a finger held on it, because a GamePad is a touch screen and the whole
-# point of showing it here is being able to use it.
-run_session gamepad green --simulate-key F3 --simulate-touch 0.5,0.5
-
-# And the touch reached the program playing the game, in that screen's own
-# pixels rather than in this window's -- the middle of 854x480. Which is the
-# whole input path: a finger on the glass here, through the shell's own touch
-# mapping, across the link, to the emulator.
-if ! grep -q "touch(427,240)" "$WORK_DIR/gamepad-game.log" 2>/dev/null; then
-    echo "the touch did not reach the game at the middle of its own 854x480 screen" >&2
-    FAILED=1
-fi
+# Nobody is watching either screen through this app, so neither should ever be
+# requested from the far end or drawn here -- Cemu's own window is the
+# television now, and there is no second device for the GamePad to go to.
+run_session solo
 
 # And with nothing on the other end at all. The emulator is a separate program
 # and may simply not have been started, and a blank window is indistinguishable
@@ -218,12 +204,15 @@ JSON
         echo "launched: the shell started no emulator, or the one it started never connected" >&2
         FAILED=1
     fi
+    # Same as every other solo run in this file: alone, nothing is requested
+    # or composited, so what proves the emulator actually connected is the
+    # log line above, not a screenshot of a screen this app no longer draws.
+    if grep -q "compositing a screen" "$log" 2>/dev/null; then
+        echo "launched: the shell composited a screen with nobody connected to watch it" >&2
+        FAILED=1
+    fi
     if [ ! -f "$shot" ]; then
         echo "launched: no screenshot" >&2
-        FAILED=1
-    elif ! "$CHECKER" "$shot" center=blue; then
-        echo "launched: the television never appeared, so starting the emulator is not enough on "\
-"its own" >&2
         FAILED=1
     fi
 

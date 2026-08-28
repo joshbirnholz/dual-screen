@@ -91,6 +91,10 @@ LayoutRegistry::LayoutRegistry() {
         layout.id = "standard";
         layout.display_name = "Standard";
         layout.uses_console_frame = true;
+        // A Wii U's two screens are not one picture the way a DS's or a
+        // 3DS's are, and it no longer has both available to compose here at
+        // all -- see tv_only/gamepad_only below and docs/cemu-integration.md.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 
@@ -115,6 +119,8 @@ LayoutRegistry::LayoutRegistry() {
         layout.composition.gap_toggleable = true;
         // L3 flips between the two focus layouts -- see Layout::swap_layout_id.
         layout.swap_layout_id = "touch_focus";
+        // See "standard" above: a Wii U never has both screens to compose.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 
@@ -134,6 +140,8 @@ LayoutRegistry::LayoutRegistry() {
             kFocusGap, kFocusMargin);
         layout.composition.gap_toggleable = true;
         layout.swap_layout_id = "upper_focus";
+        // See "standard" above: a Wii U never has both screens to compose.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 
@@ -194,6 +202,11 @@ LayoutRegistry::LayoutRegistry() {
             LayoutAxis::Vertical,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
             kVerticalGap, kVerticalMargin);
+        // A Wii U's own per-device split is Cemu keeping one screen to itself
+        // and this app only ever holding the other -- see tv_only/gamepad_only
+        // below -- rather than this app resolving a two-screen layout down to
+        // one side of it.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 

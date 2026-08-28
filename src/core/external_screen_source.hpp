@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,12 @@ public:
 
     // Only the program playing the game knows what restarting one means.
     void reset() { link_.request_reset(); }
+
+    // Tells the far end which single screen, if any, this app actually wants
+    // captured and sent right now -- see ExternalFrameLink::request_screen().
+    // A Wii U's Cemu shows whichever screen this does not ask for in its own
+    // window, so leaving both alone (the default) costs it nothing at all.
+    void request_screen(std::optional<ScreenId> screen) { link_.request_screen(screen); }
 
     // Both players' pads, already merged, on their way to whatever is playing
     // the game. Translated on the way out: what crosses the link is a

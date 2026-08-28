@@ -140,10 +140,12 @@ SystemProfile make_wii_u() {
     // device on its own shows one screen rather than both squeezed together.
     profile.prefers_video = true;
     profile.solo_screens = SoloScreens::One;
-    // One screen on each device is the Wii U's own arrangement, so it is where
-    // a game starts rather than something to go and find. Alone, that shows
-    // the television and the swap key reaches the GamePad -- see SoloScreens.
-    profile.default_layout_id = "upper_on_tv";
+    // Which single screen is actually shown here is decided at runtime, not
+    // by this id -- see the host poll loop in app.cpp, which switches
+    // between "tv_only" and "gamepad_only" as what a connected companion
+    // wants changes. This is just where things sit before that has ever run:
+    // the television, the same screen Cemu shows on its own by default too.
+    profile.default_layout_id = "tv_only";
     // Cemu has its own resolution settings and they are not this app's to
     // second-guess, so there is nothing here to cycle through.
     profile.max_render_scale = 1;

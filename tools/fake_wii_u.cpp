@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -216,7 +217,13 @@ int main(int argc, char** argv) {
         }
 
         const int scene_frame = frame - scene_origin;
-        if (!pad_only) {
+        // Only whichever screen the shell has actually asked for -- see
+        // ExternalControl::RequestScreen. Mirrors the gate a real fork of
+        // Cemu applies (DualscreenSession::ShouldCapture), so a test run
+        // against this stand-in exercises the same "nothing arrives for a
+        // screen nobody wanted" behavior a real one does.
+        const std::optional<ds::ScreenId> requested = producer.requested_screen();
+        if (!pad_only && requested == ds::ScreenId::Top) {
             draw(tv, kTvWidth, kTvHeight, scene_frame, /*television=*/true);
             if (!producer.publish(ds::ScreenId::Top, static_cast<uint64_t>(frame), tv.data(),
                                   kTvWidth, kTvHeight, kTvWidth, &error)) {
@@ -224,11 +231,13 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        draw(pad, kPadWidth, kPadHeight, scene_frame, /*television=*/false);
-        if (!producer.publish(ds::ScreenId::Bottom, static_cast<uint64_t>(frame), pad.data(),
-                              kPadWidth, kPadHeight, kPadWidth, &error)) {
-            ds::log_info("could not publish the GamePad screen: " + error);
-            break;
+        if (requested == ds::ScreenId::Bottom) {
+            draw(pad, kPadWidth, kPadHeight, scene_frame, /*television=*/false);
+            if (!producer.publish(ds::ScreenId::Bottom, static_cast<uint64_t>(frame), pad.data(),
+                                  kPadWidth, kPadHeight, kPadWidth, &error)) {
+                ds::log_info("could not publish the GamePad screen: " + error);
+                break;
+            }
         }
 
         // A tone, so the audio path carries something a listener could tell
