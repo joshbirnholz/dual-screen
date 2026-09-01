@@ -457,11 +457,13 @@ void test_the_other_buttons_still_work() {
               "face button");
 }
 
-// A Wii U gets its own two audio buttons in place of the shared Sound one --
-// and, unlike Sound, they are offered even alone: Off is a real choice on
-// either stream with or without a second device, where Sound has nothing to
-// say until there is somewhere else to send the one stream it means.
-void test_wii_u_gets_two_audio_buttons_instead_of_one() {
+// A Wii U's quick menu is a plain list -- Resume, Settings, Disconnect (only
+// with a companion attached), Quit -- and nothing else: no layout tiles (see
+// test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape), no
+// audio, hands, pointer, right-stick or render-scale buttons, and no
+// face-button shortcuts standing in for any of them. Which screen is shown
+// was decided once, at connect; everything else here now lives in Settings.
+void test_wii_u_menu_is_a_plain_list() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
@@ -469,44 +471,101 @@ void test_wii_u_gets_two_audio_buttons_instead_of_one() {
     for (const bool session_active : {false, true}) {
         state.session_active = session_active;
 
-        int tv_audio = 0;
-        int gamepad_audio = 0;
-        int sound = 0;
+        int resume = 0, settings = 0, disconnect = 0, quit = 0;
+        int anything_else = 0;
         for (float y = 4.0f; y < kHeight; y += 8.0f) {
             for (float x = 4.0f; x < kWidth; x += 8.0f) {
                 LayoutPicker picker(registry);
                 picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
                 picker.open(state);
                 const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
-                if (result.tv_audio_target_changed) ++tv_audio;
-                if (result.gamepad_audio_target_changed) ++gamepad_audio;
-                if (result.audio_target_changed) ++sound;
+                if (result.close_requested) ++resume;
+                if (result.settings_requested) ++settings;
+                if (result.disconnect_requested) ++disconnect;
+                if (picker.awaiting_confirmation()) ++quit;
+                if (result.selection_changed || result.audio_target_changed ||
+                    result.tv_audio_target_changed || result.gamepad_audio_target_changed ||
+                    result.handedness_changed || result.cursor_mode_changed ||
+                    result.render_scale_changed || result.right_stick_mode_changed ||
+                    result.screen_gap_toggled || result.filtering_toggled ||
+                    result.reset_requested) {
+                    ++anything_else;
+                }
             }
         }
-        CHECK_MSG(tv_audio > 0, "no tap reached TV Audio on a Wii U's menu");
-        CHECK_MSG(gamepad_audio > 0, "no tap reached GamePad Audio on a Wii U's menu");
-        CHECK_MSG(sound == 0, "a Wii U's menu still offered the shared Sound button");
+        CHECK_MSG(resume > 0, "no tap reached Resume on a Wii U's menu");
+        CHECK_MSG(settings > 0, "no tap reached Settings on a Wii U's menu");
+        CHECK_MSG(quit > 0, "no tap reached Quit on a Wii U's menu");
+        CHECK_MSG(session_active == (disconnect > 0),
+                  "Disconnect did not follow whether a companion is attached");
+        CHECK_MSG(anything_else == 0,
+                  "a Wii U's menu still offered something outside its plain list");
     }
 
-    // And the reverse: a DS keeps the single shared button and never grows
-    // the Wii U's pair, session active or not.
+    // The shortcuts every other console's menu answers to are not offered
+    // here either -- see update()'s Wii U branch -- so a press that arrives
+    // anyway (a shared keybinding, a macro) does nothing rather than reaching
+    // past the list.
     state.session_active = true;
+    LayoutPicker shortcuts(registry);
+    shortcuts.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    shortcuts.open(state);
+    for (const UiAction action :
+         {UiAction::MenuQuit, UiAction::MenuDisconnect, UiAction::MenuSettings}) {
+        const LayoutPickerResult result = shortcuts.update({action}, {}, kWidth, kHeight);
+        CHECK_MSG(!result.settings_requested && !result.disconnect_requested &&
+                      !shortcuts.awaiting_confirmation(),
+                  "a face-button shortcut still worked on a Wii U's plain-list menu");
+    }
+
+    // And the reverse: a DS keeps every one of its own buttons and never
+    // shrinks to the Wii U's plain list.
     int sound = 0;
-    int wii_u_buttons = 0;
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             picker.set_screens(system_profile(SystemId::Ds).screens, SystemId::Ds);
             picker.open(state);
-            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
-            if (result.audio_target_changed) ++sound;
-            if (result.tv_audio_target_changed || result.gamepad_audio_target_changed) {
-                ++wii_u_buttons;
-            }
+            if (picker.update({}, {tap(x, y)}, kWidth, kHeight).audio_target_changed) ++sound;
         }
     }
     CHECK(sound > 0);
-    CHECK_EQ(wii_u_buttons, 0);
+}
+
+// The control guide is what actually tells a player what a press does, so the
+// list has to shrink there too: A and B only, nothing named for a control
+// that no longer does anything on this menu.
+void test_wii_u_menu_guide_is_just_ok_and_resume() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.session_active = true;
+
+    LayoutPicker picker(registry);
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    picker.open(state);
+
+    QuadRenderer quads;
+    TextRenderer text;
+    ButtonGlyphSheet glyphs;
+    picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
+
+    bool found_a = false;
+    bool found_b = false;
+    bool found_other = false;
+    for (float y = 2.0f; y < kHeight; y += 4.0f) {
+        for (float x = 2.0f; x < kWidth; x += 4.0f) {
+            switch (picker.guide_button_at(x, y)) {
+                case ButtonGlyph::A: found_a = true; break;
+                case ButtonGlyph::B: found_b = true; break;
+                case ButtonGlyph::Count: break;
+                default: found_other = true; break;
+            }
+        }
+    }
+    CHECK_MSG(found_a, "a Wii U's menu guide is missing A");
+    CHECK_MSG(found_b, "a Wii U's menu guide is missing B");
+    CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A and B");
 }
 
 // Reset and Quit throw away something the player cannot get back, so neither
@@ -805,53 +864,33 @@ void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
     LayoutRegistry registry;
     const std::vector<std::string> handheld =
         layouts_offered_for(registry, SystemId::Ds, system_profile(SystemId::Ds).screens);
-    const std::vector<std::string> wii_u =
-        layouts_offered_for(registry, SystemId::WiiU, system_profile(SystemId::WiiU).screens);
 
     const auto offers = [](const std::vector<std::string>& ids, const std::string& id) {
         return std::find(ids.begin(), ids.end(), id) != ids.end();
     };
     CHECK_MSG(offers(handheld, "standard"),
               "a console this app has a picture of stopped offering its own arrangement");
-    CHECK_MSG(!offers(wii_u, "standard"),
-              "a console with no picture of itself was still offered the layout that draws one");
 
-    // Vertical Screens and Side-by-Side stand in for a DS's hinge -- a Wii U
-    // has none, so neither is offered there. TV Only and GamePad Only are the
-    // opposite: only a Wii U has a screen that is ever the whole of the game
-    // rather than half of one, so only a Wii U offers them.
+    // Vertical Screens and Side-by-Side stand in for a DS's hinge, so both are
+    // offered there.
     for (const char* hinge : {"vertical", "side_by_side"}) {
         CHECK_MSG(offers(handheld, hinge),
                   "a console with a hinge stopped being offered the layout standing in for it");
-        CHECK_MSG(!offers(wii_u, hinge),
-                  "a Wii U was offered a layout standing in for a hinge it does not have");
     }
+    // Standing in for a Wii U's screen that is ever the whole of the game
+    // rather than half of one, so a console with a hinge has no use for
+    // either.
     for (const char* solo : {"tv_only", "gamepad_only"}) {
-        CHECK_MSG(offers(wii_u, solo), "a Wii U was not offered its own single-screen layout");
         CHECK_MSG(!offers(handheld, solo),
                   "a console with no screen that stands alone was offered one anyway");
     }
 
-    for (const std::string& id : wii_u) {
-        CHECK_MSG(layout_fits_system(registry.resolve(id), SystemId::WiiU,
-                                     system_profile(SystemId::WiiU).screens),
-                  "the menu offered a layout with nowhere to put this console's screens");
-    }
-
-    // And the console starts on one it was actually offered, rather than on the
-    // one that was taken away -- leading the menu, not just reachable somewhere
-    // inside it.
-    const std::string starts_on = system_profile(SystemId::WiiU).default_layout_id;
-    CHECK_MSG(!starts_on.empty() && offers(wii_u, starts_on),
-              "a Wii U game starts on a layout its own menu does not offer");
-
-    LayoutPicker leading(registry);
-    leading.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    LayoutPickerState opens_on_default;
-    opens_on_default.layout_id = starts_on;
-    leading.open(opens_on_default);
-    CHECK_MSG(leading.focus() == 0,
-              "a Wii U's own default layout is not the first tile in its own menu");
+    // A Wii U itself offers no layout at all any more: which single screen it
+    // shows was decided once, at connect, and its menu is the plain list
+    // test_wii_u_menu_is_a_plain_list covers instead -- see rebuild_tiles().
+    const std::vector<std::string> wii_u =
+        layouts_offered_for(registry, SystemId::WiiU, system_profile(SystemId::WiiU).screens);
+    CHECK_MSG(wii_u.empty(), "a Wii U's menu still offered a layout to pick");
 }
 
 // The settings belong to the machine running the game, and the menu is the one
@@ -920,7 +959,8 @@ int main() {
     test_choosing_a_gap_layout_reveals_the_button();
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
-    test_wii_u_gets_two_audio_buttons_instead_of_one();
+    test_wii_u_menu_is_a_plain_list();
+    test_wii_u_menu_guide_is_just_ok_and_resume();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();
     test_nothing_else_answers_while_a_confirmation_is_up();

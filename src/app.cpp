@@ -2202,6 +2202,12 @@ int App::run(const AppOptions& options) {
         // needs to be told how many fingers are down, and a screen handed over
         // as a mouse can only ever report one.
         log_info("touch devices SDL can see: " + std::to_string(SDL_GetNumTouchDevices()));
+        // Said here rather than left to only show up as "cannot decode video"
+        // once a companion connects -- that line is about the far end, and
+        // this host equally needs a codec built in before it can ever
+        // encode a Wii U's GamePad screen as video instead of tiles.
+        log_info(std::string("video encode: ") +
+                 (video::available() ? "available" : "not built into this binary"));
     }
     // Touch on a desktop should not also arrive as synthetic mouse events, or
     // every tap would register twice.

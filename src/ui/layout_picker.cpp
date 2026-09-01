@@ -35,6 +35,12 @@ void LayoutPicker::set_screens(const SystemScreens& screens, SystemId system) {
 
 void LayoutPicker::rebuild_tiles() {
     tiles_.clear();
+    if (system_ == SystemId::WiiU) {
+        // Which single screen shows here is decided once, at connect, and
+        // does not change for the rest of the session -- see the host poll
+        // loop in app.cpp. There is nothing left to pick a layout between.
+        return;
+    }
     for (std::size_t index = 0; index < registry_->size(); ++index) {
         if (layout_fits_system(registry_->at(index), system_, screens_)) {
             tiles_.push_back(index);
@@ -89,6 +95,23 @@ void LayoutPicker::set_selected_layout(const std::string& layout_id) {
 
 void LayoutPicker::rebuild_footer() {
     footer_.clear();
+    if (system_ == SystemId::WiiU) {
+        // A plain list, the same shape as the main menu -- see LauncherScreen
+        // and render()'s Wii U branch. Nothing here is a value to cycle from a
+        // control, unlike everything below: a real GamePad has none of these
+        // as face-button shortcuts either, so neither does this one. See
+        // update()'s Wii U branch for the controls this deliberately ignores.
+        footer_.push_back(Footer::Resume);
+        footer_.push_back(Footer::OpenSettings);
+        if (state_.session_active) {
+            footer_.push_back(Footer::Disconnect);
+        }
+        footer_.push_back(Footer::Quit);
+        if (focus_ >= focus_count()) {
+            focus_ = std::max(0, focus_count() - 1);
+        }
+        return;
+    }
     // Smoothing, Reset and Quit are not here any more: each is a face button
     // named in the guide along the bottom. What is left is the row of settings
     // that have a value to cycle, which is what a button with a label on it is
@@ -170,6 +193,12 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::RightStick:
             return std::string("Right Stick: ") + to_string(state_.right_stick_mode);
         case Footer::ScreenGap: break;
+        // Plain names, not "Label: value" pairs like the rest above -- these
+        // are actions, not settings with a current value to show.
+        case Footer::Resume: return "Resume";
+        case Footer::OpenSettings: return "Settings";
+        case Footer::Disconnect: return "Disconnect";
+        case Footer::Quit: return "Quit";
     }
     return state_.screen_gap ? "Screen Gap: On" : "Screen Gap: Off";
 }
@@ -177,6 +206,35 @@ std::string LayoutPicker::footer_label(Footer kind) const {
 LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float output_height) const {
     Geometry geometry;
     geometry.scale = UiTheme::base_scale(output_height);
+
+    if (system_ == SystemId::WiiU) {
+        // A plain vertical list, laid out the same way LauncherScreen lays out
+        // the main menu's rows -- see render()'s Wii U branch, which draws
+        // these with draw_menu_row() rather than the tile/footer-button look
+        // below. tiles_ is always empty here (see rebuild_tiles()), so
+        // geometry.tiles is left empty and everything lives in geometry.footer.
+        const float margin = std::round(output_width * 0.12f);
+        geometry.panel = PixelRect{margin, std::round(output_height * 0.10f),
+                                   output_width - margin * 2.0f,
+                                   output_height - std::round(output_height * 0.20f)};
+        const float line = TextRenderer::line_height(geometry.scale);
+        const float row_height = line * 2.4f;
+        const float row_gap = line * 0.5f;
+        // Room for the game title above the list, the same as a tile grid
+        // leaves above itself.
+        const float top = geometry.panel.y + line * 3.5f;
+        geometry.columns = 1;
+        geometry.footer_columns = 1;
+        for (std::size_t index = 0; index < footer_.size(); ++index) {
+            geometry.footer.push_back(PixelRect{
+                geometry.panel.x,
+                top + static_cast<float>(index) * (row_height + row_gap),
+                geometry.panel.w,
+                row_height,
+            });
+        }
+        return geometry;
+    }
 
     const float margin = std::round(output_width * 0.06f);
     geometry.panel = PixelRect{margin, std::round(output_height * 0.06f),
@@ -423,6 +481,21 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         case Footer::ScreenGap:
             result.screen_gap_toggled = true;
             return true;
+        // Wii U's plain list -- see rebuild_footer(). Each of these is what
+        // the corresponding face-button shortcut already does for a DS or a
+        // 3DS above; this is just the one place a Wii U session reaches them.
+        case Footer::Resume:
+            result.close_requested = true;
+            return true;
+        case Footer::OpenSettings:
+            result.settings_requested = true;
+            return true;
+        case Footer::Disconnect:
+            if (state_.session_active) result.disconnect_requested = true;
+            return true;
+        case Footer::Quit:
+            confirm_ = MenuConfirm::Quit;
+            return true;
     }
     return false;
 }
@@ -498,18 +571,32 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             // The app's own quit key, which is not a face button and is not
             // asked about twice.
             case UiAction::Quit: result.quit_requested = true; break;
-            case UiAction::MenuQuit: confirm_ = MenuConfirm::Quit; break;
+            // Wii U's menu is a plain list with nothing mapped to a control
+            // beyond Confirm/Cancel above -- see rebuild_footer() and
+            // render()'s Wii U branch, which draws no prompt for any of
+            // these three and so gives a player no reason to press them, but
+            // a controller that sends one anyway (a shared keybinding, a
+            // macro) still should not reach past the list.
+            case UiAction::MenuQuit:
+                if (system_ != SystemId::WiiU) confirm_ = MenuConfirm::Quit;
+                break;
             case UiAction::MenuReset:
-                if (state_.reset_available) confirm_ = MenuConfirm::Reset;
+                if (system_ != SystemId::WiiU && state_.reset_available) {
+                    confirm_ = MenuConfirm::Reset;
+                }
                 break;
             // Not asked about: unlike resetting or quitting, reconnecting is a
             // menu away and costs nothing but the walk back.
             case UiAction::MenuDisconnect:
-                if (state_.session_active) result.disconnect_requested = true;
+                if (system_ != SystemId::WiiU && state_.session_active) {
+                    result.disconnect_requested = true;
+                }
                 break;
             // Not asked about either, and not a value this menu holds: the
             // caller puts the screen up and this one gets out of the way.
-            case UiAction::MenuSettings: result.settings_requested = true; break;
+            case UiAction::MenuSettings:
+                if (system_ != SystemId::WiiU) result.settings_requested = true;
+                break;
             // R3 is handled by the app, so that it means the same thing here
             // as it does in a game; the app pushes the result back in with
             // set_filtering(). Toggling it again here would undo that.
@@ -665,41 +752,66 @@ void LayoutPicker::render(QuadRenderer& quads,
                   menu_row_text(focused || selected), TextAlign::Center);
     }
 
-    for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
-        const PixelRect& button = geometry.footer[index];
-        const bool focused = (tile_count() + static_cast<int>(index) == focus_);
-        draw_menu_tile(quads, button, focused, false, scale);
+    if (system_ == SystemId::WiiU) {
+        // A plain list, drawn the same way LauncherScreen draws the main
+        // menu's rows -- left-aligned full-width rows rather than the small
+        // centred buttons below, since there is no short label here fighting
+        // for room the way "GamePad Audio: Bottom" does.
+        for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
+            const PixelRect& row = geometry.footer[index];
+            const bool focused = (static_cast<int>(index) == focus_);
+            draw_menu_row(quads, row, focused, scale);
 
-        const std::string label = footer_label(footer_[index]);
-        // A label is shrunk rather than allowed to run past the edge of its
-        // button: the longest of them is much longer than the rest.
-        float label_scale = scale;
-        const float room = button.w - scale * 6.0f;
-        const float natural = TextRenderer::measure_width(label, scale);
-        if (natural > room && natural > 0.0f) {
-            label_scale = scale * (room / natural);
+            const float pad = line * 0.7f;
+            const bool is_quit = (footer_[index] == Footer::Quit);
+            text.draw(quads, footer_label(footer_[index]), row.x + pad,
+                      row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
+                      is_quit && !focused ? theme.danger : menu_row_text(focused));
         }
-        const float label_line = TextRenderer::line_height(label_scale);
-        text.draw(quads, label, button.x + button.w * 0.5f,
-                  button.y + (button.h - label_line) * 0.5f, label_scale,
-                  focused ? theme.background : theme.text, TextAlign::Center);
+    } else {
+        for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
+            const PixelRect& button = geometry.footer[index];
+            const bool focused = (tile_count() + static_cast<int>(index) == focus_);
+            draw_menu_tile(quads, button, focused, false, scale);
+
+            const std::string label = footer_label(footer_[index]);
+            // A label is shrunk rather than allowed to run past the edge of its
+            // button: the longest of them is much longer than the rest.
+            float label_scale = scale;
+            const float room = button.w - scale * 6.0f;
+            const float natural = TextRenderer::measure_width(label, scale);
+            if (natural > room && natural > 0.0f) {
+                label_scale = scale * (room / natural);
+            }
+            const float label_line = TextRenderer::line_height(label_scale);
+            text.draw(quads, label, button.x + button.w * 0.5f,
+                      button.y + (button.h - label_line) * 0.5f, label_scale,
+                      focused ? theme.background : theme.text, TextAlign::Center);
+        }
     }
 
     std::vector<GuidePrompt> guide;
-    // Leftmost, and always: it is the one prompt here that is about the machine
-    // rather than about the game, so it sits apart from the rest.
-    guide.push_back({ButtonGlyph::Minus, "Settings"});
-    if (state_.session_active) {
-        guide.push_back({ButtonGlyph::Plus, "Disconnect"});
-    }
-    if (state_.smoothing_available) {
-        guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
-    }
-    guide.push_back({ButtonGlyph::A, "OK"});
-    guide.push_back({ButtonGlyph::B, "Resume"});
-    guide.push_back({ButtonGlyph::X, "Quit"});
-    if (state_.reset_available) {
-        guide.push_back({ButtonGlyph::Y, "Reset"});
+    if (system_ == SystemId::WiiU) {
+        // Everything else this menu can do lives in the list above, reached
+        // by A -- there is nothing left for a face-button shortcut to name.
+        guide.push_back({ButtonGlyph::A, "OK"});
+        guide.push_back({ButtonGlyph::B, "Resume"});
+    } else {
+        // Leftmost, and always: it is the one prompt here that is about the
+        // machine rather than about the game, so it sits apart from the rest.
+        guide.push_back({ButtonGlyph::Minus, "Settings"});
+        if (state_.session_active) {
+            guide.push_back({ButtonGlyph::Plus, "Disconnect"});
+        }
+        if (state_.smoothing_available) {
+            guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
+        }
+        guide.push_back({ButtonGlyph::A, "OK"});
+        guide.push_back({ButtonGlyph::B, "Resume"});
+        guide.push_back({ButtonGlyph::X, "Quit"});
+        if (state_.reset_available) {
+            guide.push_back({ButtonGlyph::Y, "Reset"});
+        }
     }
     draw_control_guide(quads, text, glyphs, guide, geometry.panel.x + geometry.panel.w,
                        geometry.panel.y + geometry.panel.h - control_guide_height(scale * 0.9f),

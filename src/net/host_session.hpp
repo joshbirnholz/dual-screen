@@ -243,7 +243,12 @@ private:
     bool companion_input_fresh_ = false;
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
-    bool video_failed_ = false;
+    // Zero means video is not backed off. Set to a future monotonic_millis()
+    // after an encoder open or encode fails, so a transient failure (a cold
+    // hardware encoder, one bad frame) costs a few seconds of tiles rather
+    // than falling back to tiles for the rest of the connection -- see
+    // use_video_for() and encode_one_screen().
+    uint64_t video_retry_at_ms_ = 0;
     bool companion_menu_open_ = false;
     bool companion_asked_for_menu_ = false;
     int companion_display_width_ = 0;

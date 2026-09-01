@@ -35,6 +35,13 @@ constexpr std::size_t kMaxQueuedFrames = 8;
 // 48 kHz stereo.
 constexpr std::size_t kMaxQueuedAudioBytes = 32 * 1024;
 
+// How long a failed video encoder stays backed off to tiles before the next
+// frame is allowed to try it again. Long enough that a genuinely broken
+// backend is not reopened and warned about every frame, short enough that a
+// cold GPU encoder or one bad frame costs a few seconds of tiles rather than
+// tiles for the rest of the connection -- see use_video_for().
+constexpr uint64_t kVideoRetryCooldownMs = 3000;
+
 }  // namespace
 
 bool HostSession::start(const Config& config, std::string* error) {
@@ -87,7 +94,7 @@ void HostSession::set_video_wanted(bool wanted) {
         // Asked for again. This is called every frame with the same answer, so
         // reaching here at all means somebody changed their mind -- which is
         // reason enough to try an encoder that failed before.
-        video_failed_ = false;
+        video_retry_at_ms_ = 0;
         return;
     }
     // Closed rather than left idle, so that turning it back on opens a fresh
@@ -188,7 +195,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_accepts_video_ = false;
     // A different device may be a different size, and the encoder is opened
     // for the size it is given, so the next one gets its own attempt.
-    video_failed_ = false;
+    video_retry_at_ms_ = 0;
     refresh_beacon();
 }
 
@@ -630,7 +637,8 @@ bool HostSession::use_video_for(const ScreenPixels& source) {
     // Every one of these has to be true, and each is a different party's
     // answer: what this session was asked for, what the far end can decode,
     // and whether this build has an encoder at all.
-    if (!video_wanted_ || video_failed_ || !companion_accepts_video_ || !video::available()) {
+    if (!video_wanted_ || monotonic_millis() < video_retry_at_ms_ || !companion_accepts_video_ ||
+        !video::available()) {
         return false;
     }
     // 4:2:0 cannot represent an odd number of pixels. A screen that is one is
@@ -658,15 +666,14 @@ bool HostSession::encode_one_screen(ScreenId screen,
         config.bitrate_kbps = 8000;
         std::string error;
         if (!encoder.open(config, &error)) {
-            // Not fatal, and not worth saying twice: the tile codec carries
-            // every screen this app has ever sent, just less cheaply.
+            // Not fatal, and not worth saying twice a frame apart: the tile
+            // codec carries every screen this app has ever sent, just less
+            // cheaply. Backed off rather than disabled outright, so a cold
+            // hardware encoder or a driver that needed a moment gets a second
+            // try instead of running this connection on tiles from here on.
             log_warn("no video encoder for the " + std::string(to_string(screen)) +
                      " screen, falling back to tiles: " + error);
-            // Remembered rather than clearing the request: the frame loop sets
-            // that from the player's setting every frame and would put it
-            // straight back, so this would otherwise be a failed open and a
-            // warning every frame for the rest of the session.
-            video_failed_ = true;
+            video_retry_at_ms_ = monotonic_millis() + kVideoRetryCooldownMs;
             frame.encoding = FrameEncoding::Rgb565DeflateTiles;
             return encode_screen_tiles(source.pixels, source.width, source.height,
                                        source.stride_pixels, previous, frame.payload,
@@ -684,7 +691,7 @@ bool HostSession::encode_one_screen(ScreenId screen,
     if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &error)) {
         log_warn("the video encoder failed, falling back to tiles: " + error);
         encoder.close();
-        video_failed_ = true;
+        video_retry_at_ms_ = monotonic_millis() + kVideoRetryCooldownMs;
         frame.encoding = FrameEncoding::Rgb565DeflateTiles;
         return encode_screen_tiles(source.pixels, source.width, source.height,
                                    source.stride_pixels, previous, frame.payload,

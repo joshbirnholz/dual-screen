@@ -249,6 +249,14 @@ private:
         Cursor,
         RightStick,
         ScreenGap,
+        // A Wii U session's whole menu is these four, in place of everything
+        // above: there is no layout to pick (see rebuild_tiles()) and nothing
+        // else here is a value worth cycling from a footer button -- see
+        // rebuild_footer()'s Wii U branch and render()'s.
+        Resume,
+        OpenSettings,
+        Disconnect,
+        Quit,
     };
 
 
