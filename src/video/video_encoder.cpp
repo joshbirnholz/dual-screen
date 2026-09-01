@@ -1,5 +1,8 @@
 #include "video/video_encoder.hpp"
 
+#include <cstdarg>
+#include <cstdio>
+
 #include "util/log.hpp"
 
 #if DS_HAVE_VIDEO_CODEC
@@ -41,6 +44,29 @@ AVPixelFormat hw_pixel_format(AVHWDeviceType type) {
     }
 }
 
+// FFmpeg's default log handler writes only to stderr, which Game Mode has no
+// terminal for -- so on its own, a VAAPI failure detailed enough to actually
+// explain itself (which entrypoint or rate-control mode a driver rejected,
+// for instance) never reaches anyone. This forwards it into the app's own
+// log instead, at the level FFmpeg itself already picked.
+void ffmpeg_log_callback(void* /*avcl*/, int level, const char* fmt, va_list args) {
+    if (level > av_log_get_level()) return;
+    char buffer[1024];
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    std::string message(buffer);
+    while (!message.empty() && (message.back() == '\n' || message.back() == '\r')) {
+        message.pop_back();
+    }
+    if (message.empty()) return;
+    if (level <= AV_LOG_ERROR) {
+        log_error("ffmpeg: " + message);
+    } else if (level <= AV_LOG_WARNING) {
+        log_warn("ffmpeg: " + message);
+    } else {
+        log_info("ffmpeg: " + message);
+    }
+}
+
 }  // namespace
 
 bool available() { return true; }
@@ -53,6 +79,7 @@ void quieten_ffmpeg() {
     if (done) return;
     done = true;
     av_log_set_level(AV_LOG_ERROR);
+    av_log_set_callback(ffmpeg_log_callback);
 }
 
 VideoEncoder::~VideoEncoder() { close(); }
