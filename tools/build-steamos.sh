@@ -51,13 +51,23 @@ done
 # linker checks the binary's own directory before giving up, so a copy
 # sitting right beside it is what a SteamOS host with no FFmpeg installed
 # actually finds.
+#
+# Called once per binary that links FFmpeg, and both binaries share this
+# same directory -- so by the time this runs for the second one, $ORIGIN
+# already resolves to the first one's copies, and ldd reports those instead
+# of the container's system ones. The -ef check is what tells that apart
+# from a genuinely new file to fetch: cp refuses a file onto itself either
+# way, but only this catches it before that refusal, rather than after, as a
+# script failure under set -e.
 bundle_ffmpeg_libs() {
     local binary="$1"
     local dest
     dest="$(dirname "$binary")"
     ldd "$binary" 2>/dev/null | awk '/libav(codec|util)\.so|libswscale\.so/ {print $3}' |
         while read -r lib; do
-            [ -n "$lib" ] && [ -f "$lib" ] && cp -uL "$lib" "$dest/"
+            [ -n "$lib" ] && [ -f "$lib" ] || continue
+            [ "$lib" -ef "$dest/$(basename "$lib")" ] && continue
+            cp -uL "$lib" "$dest/"
         done
 }
 
