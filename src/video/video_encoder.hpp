@@ -28,6 +28,11 @@ public:
     // the GPU took this is the difference between a few percent of a frame and
     // most of one.
     const std::string& backend() const { return backend_; }
+    // What open() was last configured for. The caller's own job to notice
+    // this no longer matches the screen it is encoding and reopen -- see
+    // HostSession::try_encode_video, which is the only caller.
+    int width() const { return width_; }
+    int height() const { return height_; }
 
     // XRGB8888 in, at `stride_pixels` per row. `out` is emptied first, so an
     // encoder that produced nothing this frame is `out.empty()` rather than

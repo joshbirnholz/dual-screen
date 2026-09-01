@@ -101,6 +101,14 @@ struct DecodedFrame {
     bool valid() const { return width > 0 && height > 0 && !pixels.empty(); }
 };
 
+// The byte order of the pixels VideoEncoder::encode() is handed. Most screens
+// come from a libretro core's software framebuffer, XRGB8888 -- BGRA in
+// memory on a little-endian machine. A screen read back off the GPU (a
+// hardware-rendered core, or Cemu across the external frame link) comes back
+// R,G,B,A instead: see ChannelOrder in core/screen_source.hpp for why that is
+// tagged rather than swizzled back to match on the way out.
+enum class PixelOrder { Bgra, Rgba };
+
 struct EncoderConfig {
     int width = 0;
     int height = 0;
@@ -111,6 +119,7 @@ struct EncoderConfig {
     // Tried in order; the first that opens wins. Hardware first, always: the
     // host is running an emulator with the rest of the frame.
     std::vector<std::string> backends{"h264_vaapi", "libx264"};
+    PixelOrder pixel_order = PixelOrder::Bgra;
 };
 
 struct DecoderConfig {

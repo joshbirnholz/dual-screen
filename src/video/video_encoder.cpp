@@ -258,8 +258,12 @@ bool VideoEncoder::open_backend(const std::string& name,
     }
 
     // XRGB8888 as this app stores it is BGRA in memory on a little-endian
-    // machine, which is what AV_PIX_FMT_BGRA means.
-    scaler_ = sws_getContext(config.width, config.height, AV_PIX_FMT_BGRA, config.width,
+    // machine, which is what AV_PIX_FMT_BGRA means -- but a GPU-read-back
+    // screen (see PixelOrder's own comment) arrives R,G,B,A instead, and
+    // feeding that in as BGRA swaps red and blue across the whole picture.
+    const AVPixelFormat source_format =
+        (config.pixel_order == PixelOrder::Rgba) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_BGRA;
+    scaler_ = sws_getContext(config.width, config.height, source_format, config.width,
                              config.height, software_format, SWS_BILINEAR, nullptr, nullptr,
                              nullptr);
     if (scaler_ == nullptr) {

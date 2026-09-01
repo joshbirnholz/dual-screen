@@ -675,20 +675,39 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         reason = "the connected device cannot decode video";
         return false;
     }
-    // 4:2:0 cannot represent an odd number of pixels.
-    if ((source.width % 2) != 0 || (source.height % 2) != 0) {
+    // 4:2:0 cannot represent an odd number of pixels. Rather than refuse to
+    // stream at all over what is at most a single edge row/column, crop it
+    // away -- Cemu has its own resolution settings this app does not
+    // second-guess (see make_wii_u() in system.cpp), and they are not always
+    // going to land on an even number.
+    const int width = source.width & ~1;
+    const int height = source.height & ~1;
+    if (width <= 0 || height <= 0) {
         reason = "this screen is " + std::to_string(source.width) + "x" +
-                 std::to_string(source.height) + ", which H.264 4:2:0 cannot carry";
+                 std::to_string(source.height) + ", too small to encode";
         return false;
     }
 
     video::VideoEncoder& encoder = (screen == ScreenId::Top) ? video_top_ : video_bottom_;
-    if (!encoder.is_open()) {
+    // Reopens on a resolution change too, not just the first time -- a render
+    // scale or layout change mid-session leaves width/height different from
+    // what the encoder (and the scaler and frame pool inside it) were last
+    // configured for, and feeding it pixels of a new size through the old
+    // configuration is exactly what produced the partial/duplicated pictures
+    // a render scale change used to cause.
+    if (!encoder.is_open() || encoder.width() != width || encoder.height() != height) {
         video::EncoderConfig config;
-        config.width = source.width;
-        config.height = source.height;
+        config.width = width;
+        config.height = height;
         config.fps = 60;
         config.bitrate_kbps = 8000;
+        // A GPU-read-back screen (3DS, or Cemu across the external frame
+        // link) hands its pixels over R,G,B,A rather than this app's usual
+        // XRGB8888/BGRA -- see PixelOrder's own comment. Missing this swapped
+        // red and blue across the whole picture.
+        config.pixel_order = (source.channel_order == PixelChannelOrder::Rgba)
+                                  ? video::PixelOrder::Rgba
+                                  : video::PixelOrder::Bgra;
         std::string open_error;
         if (!encoder.open(config, &open_error)) {
             reason = "no video encoder would open: " + open_error;
