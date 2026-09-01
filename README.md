@@ -461,18 +461,29 @@ SDL2 and libc, and that is it. Two reasons:
   is the same property that lets the renderer take an OpenGL ES context on one
   machine and desktop GL on another.
 
-FFmpeg is the one exception to "SDL2 and libc, and that is it": Debian's
-`libavcodec-dev` and friends ship no static archives the way libstdc++ does,
-so a binary built with H.264 support genuinely needs `libavcodec.so`,
-`libavutil.so` and `libswscale.so` at runtime — versions the SteamOS host
-does not have, since its own FFmpeg, if it has one, is a different
-Arch-packaged build under different sonames. Rather than requiring anything
-installed on the host, the script copies the container's own copies of those
-three files into `build/` next to the binary (`bundle_ffmpeg_libs` in
-`tools/build-steamos.sh`), and the binary's own `$ORIGIN` rpath (set in
-`CMakeLists.txt` when FFmpeg is found) is what makes it look there before
-giving up. A build without FFmpeg available to build against copies nothing
-and needs nothing extra, same as before.
+FFmpeg is the one exception to "SDL2 and libc, and that is it," and it ships
+no static archives the way libstdc++ does, so a binary built with H.264
+support genuinely needs `libavcodec.so`, `libavutil.so` and `libswscale.so`
+at runtime. Debian's own `libavcodec-dev` was the obvious way to get them,
+but a stock build of it links dozens of codecs this project has no use for
+— AV1, HEVC, Theora, JPEG XL (which alone drags in librsvg, libcairo and
+glib) — every one of which the SteamOS host would then also need too, or
+this script would have to bundle. `build_ffmpeg_if_needed` in
+`tools/build-steamos.sh` builds FFmpeg from source instead, configured with
+nothing but the h264 decoder/parser and the h264_vaapi encoder/hwaccel (see
+**What streaming a screen costs**, and `src/video/video_encoder.cpp`/
+`video_decoder.cpp` for what actually gets called). The result is three
+small libraries whose own dependencies — `libva`, `libdrm`, `libX11` — are
+exactly the "any Linux desktop with GPU acceleration already has this"
+class of library `libGL` above is already left unbundled for; `libx264` is
+deliberately not built at all, keeping this LGPL rather than GPL. Cached
+under `.ffmpeg-steamos/` at the repo root (separate from `build/`, so
+`--rebuild` does not force redoing a from-source FFmpeg build every time),
+`bundle_ffmpeg_libs` copies just those three files into `build/` next to
+the binary, and the binary's own `$ORIGIN` rpath (set in `CMakeLists.txt`
+when FFmpeg is found) is what makes it look there before giving up. A build
+without FFmpeg available to configure against copies nothing and needs
+nothing extra, same as before.
 
 **Do not use `sudo steamos-readonly disable`** to install a compiler on the
 host. It works until the next SteamOS update wipes it, and then it works again
