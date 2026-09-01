@@ -4,18 +4,24 @@
 # Built with devkitPro's devkitA64 toolchain and libnx. It needs switch-sdl2 and
 # switch-zlib from the portlibs -- on Windows, from the MSYS2 shell devkitPro's
 # own installer sets up, with no `sudo` (there is no such command in that
-# shell, and the whole devkitPro tree is already owned by your own account
-# there; on Linux, prefix these with `sudo` if devkitPro was installed
-# somewhere only root can write):
+# shell -- what a `sudo` typed there actually runs is Windows' own unrelated
+# sudo.exe, gated behind a Settings toggle that has nothing to do with this --
+# and the whole devkitPro tree is already owned by your own account there; on
+# Linux, prefix these with `sudo` if devkitPro was installed somewhere only
+# root can write). devkitPro's own convention is `(dkp-)pacman`, meaning
+# either name should resolve to the same thing on a properly set-up install,
+# but only plain `pacman` is guaranteed to be on PATH -- it ships with MSYS2
+# itself, where `dkp-pacman` is a devkitPro-added wrapper that is not always
+# there to find:
 #
-#   dkp-pacman -S switch-dev switch-sdl2 switch-zlib
+#   pacman -S switch-dev switch-sdl2 switch-zlib
 #   make            # -> Dualscreen.nro
 #
 # switch-ffmpeg is optional -- add it and the GamePad screen streams as H.264
 # instead of changed tiles, at a fraction of the bandwidth (see
 # docs/research-notes.md), through Averne's NVTEGRA hwaccel it is built with:
 #
-#   dkp-pacman -S switch-ffmpeg
+#   pacman -S switch-ffmpeg
 #
 # The sources under ../src are the desktop app's own, compiled unchanged: the
 # wire protocol, discovery, the session, the layout arithmetic and the
@@ -99,7 +105,7 @@ SDL2_CONFIG := $(PORTLIBS)/bin/sdl2-config
 # by the same $(PORTLIBS)/lib devkitPro already installs everything else
 # into, nothing extra to point at.
 #
-#   dkp-pacman -S switch-ffmpeg
+#   pacman -S switch-ffmpeg
 #
 HAVE_FFMPEG := $(if $(wildcard $(PORTLIBS)/lib/libavcodec.a),1,0)
 ifeq ($(HAVE_FFMPEG),1)
@@ -131,13 +137,22 @@ LIBS    := $(shell $(SDL2_CONFIG) --libs) -lz -lnx
 # *that* needs in turn) are still static archives this binary has to satisfy
 # itself, the same as any static link -- ffmpeg only ever gets this far
 # because something upstream of it pulled a symbol out of libdav1d.a or
-# libass.a, not because this program calls either directly. --start-group /
+# libass.a, not because this program calls either directly. -lswresample is
+# the same story from a different direction: libavcodec's native Opus
+# decoder references it internally (used for downmix), and static linking
+# pulls in whole object files rather than individual functions, so anything
+# else this program needs out of that same file drags Opus's own unused
+# references along with it. -ldrm_nouveau is switch-libdrm_nouveau, the
+# portlib providing the GPU-memory-mapping calls (mmuRequest*, mmuInitialize,
+# mmuExit -- nothing to do with libnx itself) that Averne's NVTEGRA hwaccel
+# needs to talk to the Tegra's NVDEC block directly. --start-group /
 # --end-group sidesteps having to work out and maintain the right pairwise
 # order among all of them by hand, which the version bundled with this one
 # changing would otherwise be a standing invitation to get wrong.
 ifeq ($(HAVE_FFMPEG),1)
 LIBS += -Wl,--start-group \
         -lavcodec -lavutil -lswscale -lswresample -ldav1d -lass -lfribidi -lfreetype -lbz2 \
+        -ldrm_nouveau \
         -Wl,--end-group
 endif
 
@@ -158,7 +173,7 @@ endif
 # A missing portlib otherwise shows up as several hundred undefined SDL
 # symbols at the link, which says nothing about what to install.
 ifeq ($(wildcard $(SDL2_CONFIG)),)
-$(error Cannot find $(SDL2_CONFIG) -- install it with: dkp-pacman -S switch-sdl2)
+$(error Cannot find $(SDL2_CONFIG) -- install it with: pacman -S switch-sdl2)
 endif
 
 # $(TOPDIR), not $(CURDIR): the sub-make re-reads this file from $(BUILD),
@@ -173,7 +188,7 @@ endif
 CMAKE ?= cmake
 ifeq ($(shell command -v $(CMAKE) 2>/dev/null),)
 $(error Cannot find cmake, which turns the console artwork into source. \
-        dkp-pacman -S cmake, or set CMAKE to it)
+        pacman -S cmake, or set CMAKE to it)
 endif
 
 #---------------------------------------------------------------------------------
