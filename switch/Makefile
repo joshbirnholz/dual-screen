@@ -137,7 +137,7 @@ LIBS    := $(shell $(SDL2_CONFIG) --libs) -lz -lnx
 # changing would otherwise be a standing invitation to get wrong.
 ifeq ($(HAVE_FFMPEG),1)
 LIBS += -Wl,--start-group \
-        -lavcodec -lavutil -lswscale -ldav1d -lass -lfribidi -lfreetype -lbz2 \
+        -lavcodec -lavutil -lswscale -lswresample -ldav1d -lass -lfribidi -lfreetype -lbz2 \
         -Wl,--end-group
 endif
 
