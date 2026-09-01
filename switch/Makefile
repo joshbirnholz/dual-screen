@@ -142,17 +142,26 @@ LIBS    := $(shell $(SDL2_CONFIG) --libs) -lz -lnx
 # decoder references it internally (used for downmix), and static linking
 # pulls in whole object files rather than individual functions, so anything
 # else this program needs out of that same file drags Opus's own unused
-# references along with it. -ldrm_nouveau is switch-libdrm_nouveau, the
-# portlib providing the GPU-memory-mapping calls (mmuRequest*, mmuInitialize,
-# mmuExit -- nothing to do with libnx itself) that Averne's NVTEGRA hwaccel
-# needs to talk to the Tegra's NVDEC block directly. --start-group /
-# --end-group sidesteps having to work out and maintain the right pairwise
-# order among all of them by hand, which the version bundled with this one
-# changing would otherwise be a standing invitation to get wrong.
+# references along with it. --start-group / --end-group sidesteps having to
+# work out and maintain the right pairwise order among all of them by hand,
+# which the version bundled with this one changing would otherwise be a
+# standing invitation to get wrong.
+#
+# mmuRequest*/mmuInitialize/mmuExit, which Averne's NVTEGRA hwaccel calls to
+# talk to the Tegra's NVDEC block, are not missing from any archive -- they
+# are libnx's own (nx/source/services/mm.c, despite the file being named
+# "mm" and not "mmu"), and -lnx is already on this link line above. The
+# problem is purely order: a static archive is only scanned once, for
+# whatever symbols are still undefined at the point the linker reaches it,
+# and -lnx sits before ffmpeg's archives -- so by the time avutil's nvtegra
+# code creates the need for mmuRequestInitialize, the linker has already
+# passed over libnx.a and never comes back to it. Repeating -lnx inside this
+# group makes the linker scan it again alongside ffmpeg's own archives,
+# after that need exists.
 ifeq ($(HAVE_FFMPEG),1)
 LIBS += -Wl,--start-group \
         -lavcodec -lavutil -lswscale -lswresample -ldav1d -lass -lfribidi -lfreetype -lbz2 \
-        -ldrm_nouveau \
+        -lnx \
         -Wl,--end-group
 endif
 
