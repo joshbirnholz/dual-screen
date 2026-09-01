@@ -14,7 +14,9 @@
 #     ./tools/build-steamos.sh
 #
 # Pass --rebuild to start from a clean build directory, or --shell to drop into
-# the build container instead of building.
+# the build container instead of building. --rebuild does not redo the FFmpeg
+# build below (that is cached separately, and takes real time); delete
+# .ffmpeg-steamos/ by hand for that.
 
 set -euo pipefail
 
@@ -22,6 +24,28 @@ CONTAINER_NAME="dualscreen-build"
 CONTAINER_IMAGE="debian:12"
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${REPO_DIR}/build"
+
+# A from-source, deliberately minimal FFmpeg: H.264 decode and VAAPI-encode
+# only, nothing else. Debian's own libavcodec-dev links dozens of codecs
+# this project has no use for -- AV1 (dav1d, rav1e, SVT-AV1, aom), HEVC
+# (x265), Theora, and JPEG XL, which drags in librsvg, libcairo and glib for
+# reasons that have nothing to do with video -- every one of which the
+# SteamOS host would then also need, and bundling private copies of glib and
+# cairo alongside whatever the Deck's desktop is already running is the kind
+# of thing that usually works and occasionally does not. A stripped build
+# has none of that: three small libraries whose own dependencies are just
+# libva/libdrm/libX11, the same class of "any Linux desktop with GPU
+# acceleration already has this" assumption libGL already gets elsewhere in
+# this build (see CMakeLists.txt) -- so only avcodec/avutil/swscale
+# themselves need bundling, not everything they in turn pull in.
+#
+# Cached under the repo root rather than $BUILD_DIR so a plain --rebuild (or
+# CI wiping build/ between runs) does not force redoing it every time; only
+# dualscreen's own build is meant to be cheap to repeat.
+FFMPEG_VERSION="n7.1.5"
+FFMPEG_DIR="${REPO_DIR}/.ffmpeg-steamos"
+FFMPEG_SRC="${FFMPEG_DIR}/src"
+FFMPEG_PREFIX="${FFMPEG_DIR}/prefix"
 
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*" >&2; }
@@ -33,37 +57,69 @@ for argument in "$@"; do
     case "$argument" in
         --rebuild) REBUILD=1 ;;
         --shell)   SHELL_ONLY=1 ;;
-        -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) die "unrecognised argument: $argument" ;;
     esac
 done
 
-# FFmpeg's dev packages ship no static archives on Debian, unlike libstdc++
-# (which -static-libstdc++ handles), so a binary built with a video codec
-# compiled in needs libavcodec/libavutil/libswscale as shared libraries at
-# runtime -- ones the SteamOS host does not have, since its own FFmpeg (if
-# it has one at all) is a different, Arch-packaged build with different
-# sonames. Copied straight from ldd's own answer rather than a hardcoded
-# list of filenames, so this asks nothing about which FFmpeg version the
-# container happens to have and copies nothing when there is no video codec
-# to begin with -- the grep simply matches nothing. CMakeLists.txt gives the
-# binary a "$ORIGIN" rpath, which is the other half of this: the dynamic
-# linker checks the binary's own directory before giving up, so a copy
-# sitting right beside it is what a SteamOS host with no FFmpeg installed
-# actually finds.
+# Builds the minimal FFmpeg described above into $FFMPEG_PREFIX, unless a
+# previous run already did. --disable-everything turns off every codec,
+# format, filter and protocol; the --enable-* lines below turn back on
+# exactly the four things dualscreen actually calls into (see
+# src/video/video_encoder.cpp and video_decoder.cpp): the h264 decoder and
+# parser, and the h264_vaapi encoder and hwaccel. avformat/avdevice/avfilter
+# stay off entirely -- this project never links against them (see
+# CMakeLists.txt's pkg_check_modules call, which only asks for
+# libavcodec/libavutil/libswscale), so there is nothing here to build them
+# for.
+build_ffmpeg_if_needed() {
+    if [ -f "${FFMPEG_PREFIX}/lib/pkgconfig/libavcodec.pc" ]; then
+        return 0
+    fi
+    say "building a minimal FFmpeg (H.264 only) -- first run only, a few minutes"
+    if [ ! -d "$FFMPEG_SRC" ]; then
+        git clone --branch "$FFMPEG_VERSION" --depth 1 \
+            https://github.com/FFmpeg/FFmpeg.git "$FFMPEG_SRC"
+    fi
+    (
+        cd "$FFMPEG_SRC"
+        ./configure \
+            --prefix="$FFMPEG_PREFIX" \
+            --disable-static --enable-shared \
+            --disable-programs --disable-doc \
+            --disable-avdevice --disable-avformat --disable-avfilter \
+            --disable-swresample --disable-network \
+            --disable-everything \
+            --enable-avcodec --enable-avutil --enable-swscale \
+            --enable-decoder=h264 \
+            --enable-parser=h264 \
+            --enable-encoder=h264_vaapi \
+            --enable-hwaccel=h264_vaapi \
+            --enable-vaapi
+        make -j"$(nproc)"
+        make install
+    )
+}
+
+# Copies dualscreen's own three FFmpeg libraries -- not their dependencies,
+# which are exactly the libva/libdrm/libX11 baseline described above and
+# left to the host, the same as libGL -- to sit beside a binary that links
+# them. $FFMPEG_PREFIX is not on the dynamic linker's normal search path (it
+# was never registered with ldconfig, on purpose: this is a private prefix,
+# not a system install), so LD_LIBRARY_PATH is what lets ldd resolve them
+# here at all, inside the container or out.
 #
-# Called once per binary that links FFmpeg, and both binaries share this
-# same directory -- so by the time this runs for the second one, $ORIGIN
-# already resolves to the first one's copies, and ldd reports those instead
-# of the container's system ones. The -ef check is what tells that apart
-# from a genuinely new file to fetch: cp refuses a file onto itself either
-# way, but only this catches it before that refusal, rather than after, as a
-# script failure under set -e.
+# Called once per binary that links FFmpeg. cp refuses a file onto itself,
+# and re-running this script after the first copy already landed would
+# otherwise hit exactly that -- the -ef check is what skips a source that
+# has already become the destination, rather than asking cp to prove it the
+# hard way and abort the whole build under set -e.
 bundle_ffmpeg_libs() {
     local binary="$1"
     local dest
     dest="$(dirname "$binary")"
-    ldd "$binary" 2>/dev/null | awk '/libav(codec|util)\.so|libswscale\.so/ {print $3}' |
+    LD_LIBRARY_PATH="${FFMPEG_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        ldd "$binary" 2>/dev/null | awk '/libav(codec|util)\.so|libswscale\.so/ {print $3}' |
         while read -r lib; do
             [ -n "$lib" ] && [ -f "$lib" ] || continue
             [ "$lib" -ef "$dest/$(basename "$lib")" ] && continue
@@ -77,7 +133,9 @@ build_here() {
     if [ "$REBUILD" -eq 1 ]; then
         rm -rf "$BUILD_DIR"
     fi
-    cmake -S "$REPO_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    build_ffmpeg_if_needed
+    PKG_CONFIG_PATH="${FFMPEG_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+        cmake -S "$REPO_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo
     cmake --build "$BUILD_DIR" -j"$(nproc)"
     bundle_ffmpeg_libs "$BUILD_DIR/dualscreen"
     bundle_ffmpeg_libs "$BUILD_DIR/dualscreen-companion"
@@ -87,7 +145,7 @@ install_dependencies() {
     sudo apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         build-essential cmake pkg-config libsdl2-dev nlohmann-json3-dev \
-        libavcodec-dev libavutil-dev libswscale-dev
+        git nasm libva-dev libdrm-dev
 }
 
 # --- already inside a container (or a normal Linux dev box)? just build -------
@@ -140,6 +198,8 @@ distrobox enter "$CONTAINER_NAME" -- bash -lc "
     set -euo pipefail
     export DUALSCREEN_IN_CONTAINER=1
     REPO_DIR='${REPO_DIR}' BUILD_DIR='${BUILD_DIR}' REBUILD='${REBUILD}'
+    FFMPEG_VERSION='${FFMPEG_VERSION}' FFMPEG_DIR='${FFMPEG_DIR}' FFMPEG_SRC='${FFMPEG_SRC}' FFMPEG_PREFIX='${FFMPEG_PREFIX}'
+    $(declare -f build_ffmpeg_if_needed)
     $(declare -f bundle_ffmpeg_libs)
     $(declare -f build_here)
     build_here

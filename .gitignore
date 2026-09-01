@@ -3,3 +3,4 @@ build-*/
 *.ppm
 .cache/
 compile_commands.json
+.ffmpeg-steamos/
