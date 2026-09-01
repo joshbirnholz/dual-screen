@@ -185,7 +185,15 @@ bool VideoEncoder::open_backend(const std::string& name,
     context_->max_b_frames = 0;
     context_->flags |= AV_CODEC_FLAG_LOW_DELAY;
 
-    const AVPixelFormat software_format = AV_PIX_FMT_YUV420P;
+    // Hardware encoders -- VAAPI included -- work in NV12 (one luma plane,
+    // one interleaved chroma plane), not YUV420P's three separate planes;
+    // AMD's own VAAPI driver enforces this strictly, silently accepting a
+    // YUV420P surface all the way through allocation and upload and only
+    // rejecting it once the actual hardware encode runs, which is what the
+    // "invalid VASurfaceID" failure at vaEndPicture actually was. Software
+    // encoding has no such constraint, and libx264 wants YUV420P.
+    const AVPixelFormat software_format =
+        (hw_type != AV_HWDEVICE_TYPE_NONE) ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
     if (hw_type != AV_HWDEVICE_TYPE_NONE) {
         context_->pix_fmt = hw_pixel_format(hw_type);
         AVBufferRef* frames = av_hwframe_ctx_alloc(hw_device_);
