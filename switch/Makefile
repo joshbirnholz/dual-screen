@@ -2,16 +2,20 @@
 # Dualscreen for the Nintendo Switch.
 #
 # Built with devkitPro's devkitA64 toolchain and libnx. It needs switch-sdl2 and
-# switch-zlib from the portlibs:
+# switch-zlib from the portlibs -- on Windows, from the MSYS2 shell devkitPro's
+# own installer sets up, with no `sudo` (there is no such command in that
+# shell, and the whole devkitPro tree is already owned by your own account
+# there; on Linux, prefix these with `sudo` if devkitPro was installed
+# somewhere only root can write):
 #
-#   sudo dkp-pacman -S switch-dev switch-sdl2 switch-zlib
+#   dkp-pacman -S switch-dev switch-sdl2 switch-zlib
 #   make            # -> Dualscreen.nro
 #
 # switch-ffmpeg is optional -- add it and the GamePad screen streams as H.264
 # instead of changed tiles, at a fraction of the bandwidth (see
 # docs/research-notes.md), through Averne's NVTEGRA hwaccel it is built with:
 #
-#   sudo dkp-pacman -S switch-ffmpeg
+#   dkp-pacman -S switch-ffmpeg
 #
 # The sources under ../src are the desktop app's own, compiled unchanged: the
 # wire protocol, discovery, the session, the layout arithmetic and the
@@ -95,7 +99,7 @@ SDL2_CONFIG := $(PORTLIBS)/bin/sdl2-config
 # by the same $(PORTLIBS)/lib devkitPro already installs everything else
 # into, nothing extra to point at.
 #
-#   sudo dkp-pacman -S switch-ffmpeg
+#   dkp-pacman -S switch-ffmpeg
 #
 HAVE_FFMPEG := $(if $(wildcard $(PORTLIBS)/lib/libavcodec.a),1,0)
 ifeq ($(HAVE_FFMPEG),1)

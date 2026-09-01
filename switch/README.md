@@ -68,10 +68,14 @@ waiting; a host that never answers is given a few seconds and then says so.
 
 ## Building
 
-Needs devkitPro with the Switch toolchain and two portlibs:
+Needs devkitPro with the Switch toolchain and two portlibs. On Windows, run
+this from the MSYS2 shell devkitPro's own installer sets up, with no `sudo`
+— there is no such command in that shell, and the whole devkitPro tree is
+already owned by your own account there. On Linux, prefix `dkp-pacman` with
+`sudo` if devkitPro was installed somewhere only root can write:
 
 ```sh
-sudo dkp-pacman -S switch-dev switch-sdl2 switch-zlib
+dkp-pacman -S switch-dev switch-sdl2 switch-zlib
 export DEVKITPRO=/opt/devkitpro
 cd switch && make
 ```
@@ -85,7 +89,7 @@ Add `switch-ffmpeg` and the GamePad screen streams as H.264 through Averne's
 NVTEGRA hwaccel instead of as changed tiles, at a fraction of the bandwidth:
 
 ```sh
-sudo dkp-pacman -S switch-ffmpeg
+dkp-pacman -S switch-ffmpeg
 ```
 
 Optional, and detected automatically: `make` finds it or does not, and says
