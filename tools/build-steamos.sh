@@ -51,7 +51,8 @@ build_here() {
 install_dependencies() {
     sudo apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-        build-essential cmake pkg-config libsdl2-dev nlohmann-json3-dev
+        build-essential cmake pkg-config libsdl2-dev nlohmann-json3-dev \
+        libavcodec-dev libavutil-dev libswscale-dev
 }
 
 # --- already inside a container (or a normal Linux dev box)? just build -------

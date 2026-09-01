@@ -481,6 +481,19 @@ If nlohmann::json is not installed, CMake fetches it. `build-steamos.sh` also
 detects a non-SteamOS machine with a compiler and just builds directly, so it
 is safe to use everywhere.
 
+H.264 encoding (see **Which of the two a session uses**, above) needs FFmpeg's
+dev packages found by `pkg-config` at configure time:
+
+```sh
+sudo apt install libavcodec-dev libavutil-dev libswscale-dev  # Debian/Ubuntu
+sudo pacman -S ffmpeg                                          # Arch
+```
+
+Without them, CMake prints `video codec: not available, building without one`
+and carries on -- a build like that still runs everything else, but a game
+whose streaming format is set to H.264 shows a video streaming error on
+connect rather than a picture, since there is nothing here to fall back to.
+
 Useful CMake options: `-DDUALSCREEN_PORTABLE=OFF` (link libstdc++ dynamically),
 `-DDUALSCREEN_BUILD_TESTS=OFF`, `-DDUALSCREEN_WERROR=ON`.
 
