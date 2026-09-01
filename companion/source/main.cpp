@@ -355,6 +355,8 @@ bool Client::start() {
             audio_.push(samples, frames);
         });
 
+    session_.set_rumble_callback([this](bool active) { input_.set_rumble(active); });
+
     // Straight in when the command line said which screen to be; otherwise
     // the opening screen asks.
     if (options_.auto_connect) {

@@ -354,6 +354,21 @@ bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
     return true;
 }
 
+void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, message.active ? 1u : 0u);
+    finish_message(out, start, MessageType::Rumble);
+}
+
+bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out) {
+    Reader reader(data, size);
+    uint8_t active = 0;
+    reader.u8(active);
+    if (!reader.ok()) return false;
+    out.active = active != 0;
+    return true;
+}
+
 namespace {
 
 bool menu_action_from_wire(uint8_t value, MenuAction& out) {

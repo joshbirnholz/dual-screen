@@ -83,6 +83,12 @@ void CompanionSession::disconnect() {
         status_ = Status::Searching;
         status_detail_.clear();
     }
+    // A session ending is not the host saying the motor stopped, but leaving
+    // this device buzzing until the next one happens to say so is worse than
+    // assuming it did.
+    if (rumble_callback_) {
+        rumble_callback_(false);
+    }
 }
 
 void CompanionSession::fail(const std::string& reason) {
@@ -92,6 +98,9 @@ void CompanionSession::fail(const std::string& reason) {
     menu_open_ = false;
     status_ = Status::Failed;
     status_detail_ = reason;
+    if (rumble_callback_) {
+        rumble_callback_(false);
+    }
     log_warn("companion session failed: " + reason);
 }
 
@@ -219,6 +228,16 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             if (audio_callback_) {
                 audio_callback_(audio.samples.data(), audio.samples.size() / 2,
                                 audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_);
+            }
+            break;
+        }
+        case MessageType::Rumble: {
+            RumbleMessage rumble;
+            if (!decode_rumble(payload.data(), payload.size(), rumble)) {
+                return;  // not worth ending a session over
+            }
+            if (rumble_callback_) {
+                rumble_callback_(rumble.active);
             }
             break;
         }

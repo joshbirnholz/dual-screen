@@ -123,6 +123,12 @@ public:
     // The rate the host said it produces audio at, known from the handshake.
     uint32_t audio_sample_rate() const { return audio_sample_rate_; }
 
+    // Called whenever the host says the Wii U GamePad's motor turned on or
+    // off, so this device can rumble whatever controller it has in its
+    // place. Set before connecting, same as the audio callback above.
+    using RumbleCallback = std::function<void(bool active)>;
+    void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
+
     // The last frame received for a screen, as XRGB8888 pixels on the CPU,
     // with the serial that identifies it so a caller can tell a new frame from
     // one it has already drawn. Valid until the next poll(). Empty until
@@ -330,6 +336,7 @@ private:
     bool ever_sent_input_ = false;
     AudioCallback audio_callback_;
     uint32_t audio_sample_rate_ = 0;
+    RumbleCallback rumble_callback_;
 };
 
 const char* to_string(CompanionSession::Status status);

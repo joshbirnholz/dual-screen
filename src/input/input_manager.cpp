@@ -102,6 +102,23 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
     log_info("controller disconnected");
 }
 
+void InputManager::set_rumble(bool active) {
+    // SDL has no "rumble until told otherwise" mode, only a duration -- so a
+    // short one is used and refreshed by every repeated "on" this is called
+    // with while the far end's motor stays on, which is what makes a run of
+    // such calls feel continuous rather than pulsed. If an "off" is ever
+    // lost in transit this stops on its own within a quarter second instead
+    // of buzzing forever, the same self-healing shape as everything else
+    // this link tolerates dropping.
+    constexpr uint32_t kRumbleMs = 250;
+    const uint16_t strength = active ? 0xffffu : 0u;
+    const uint32_t duration = active ? kRumbleMs : 0u;
+    for (const auto& [instance_id, controller] : controllers_) {
+        if (controller == nullptr) continue;
+        SDL_GameControllerRumble(controller, strength, strength, duration);
+    }
+}
+
 void InputManager::set_game_input_enabled(bool enabled) {
     if (enabled && !game_input_enabled_) {
         // Anything already held when the game starts listening again was meant

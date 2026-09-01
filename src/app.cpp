@@ -451,7 +451,7 @@ struct App::Impl {
     void apply_settings_result(const SettingsScreenResult& result);
     // Plays what arrives from the host, opening this device's audio output the
     // first time something does -- the rate is not known until then.
-    void attach_companion_audio();
+    void attach_companion_callbacks();
     // Pushes the current choice down to whichever source is drawing, and
     // remembers it. Cheap enough to call whenever it changes.
     void apply_filtering();
@@ -1266,7 +1266,7 @@ void App::Impl::apply_filtering() {
     }
 }
 
-void App::Impl::attach_companion_audio() {
+void App::Impl::attach_companion_callbacks() {
     if (!companion_session) {
         return;
     }
@@ -1289,6 +1289,8 @@ void App::Impl::attach_companion_audio() {
             }
             audio.push(samples, frames);
         });
+    companion_session->set_rumble_callback(
+        [this](bool active) { input.set_rumble(active); });
 }
 
 void App::Impl::open_settings() {
@@ -1358,7 +1360,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     if (!companion_session) {
         companion_session.reset(new net::CompanionSession());
     }
-    attach_companion_audio();
+    attach_companion_callbacks();
     std::string error;
     if (!companion_session->begin_search(settings.device_name, wanted_screen, &error)) {
         enter_message(MessageKind::Error, "Cannot look for other devices", error,
@@ -1581,6 +1583,14 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                             static_cast<uint32_t>(external_source->audio_sample_rate()));
                     }
                 });
+            external_source->set_rumble_callback([this](bool active) {
+                // Nothing plays this locally -- this machine is not holding
+                // the GamePad, whatever is connected to it over the network
+                // is -- so the only place this goes is onward.
+                if (host_session) {
+                    host_session->publish_rumble(active);
+                }
+            });
 
             const std::string socket_path = options.external_socket.empty()
                                                 ? ExternalFrameLink::default_socket_path()
@@ -2290,7 +2300,7 @@ int App::run(const AppOptions& options) {
             // The same setup start_companion() does for the menu route. This
             // path skipped it, which left --connect with no streamed sound at
             // all and nothing for the host's settings to override.
-            impl.attach_companion_audio();
+            impl.attach_companion_callbacks();
             impl.local_screen = wanted;
             impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
             impl.audio_target = impl.settings.audio_target;

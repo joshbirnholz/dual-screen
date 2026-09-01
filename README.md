@@ -177,10 +177,11 @@ Three things are different about a Wii U session:
   also why every button on the pad, and both triggers as ZL and ZR, go straight
   through to the game — including from the second device, whose touches arrive
   as touches on the GamePad's own screen.
-- **Screens go out as H.264 rather than as changed tiles.** A GamePad screen in
-  motion measures at 42.8 Mbit/s as tiles and 2.45 as video, so this is not a
-  preference — see **What streaming a screen costs** below. If the other device
-  cannot decode it, the session falls back to tiles on its own.
+- **Screens go out as H.264 by default, rather than as changed tiles.** A
+  GamePad screen in motion measures at 42.8 Mbit/s as tiles and 2.45 as video —
+  see **What streaming a screen costs** below. If the other device cannot
+  decode it, the session says so rather than falling back; **Streaming format
+  (Wii U)** on the Settings screen switches it to tiles.
 
 Cemu owns everything about the emulation: the resolution it renders at, its own
 controller bindings, its own saves. The shell offers no render scale for a Wii U
@@ -272,22 +273,20 @@ Three things keep it as low as it can go:
   renderer can upload that, which is a whole pass over every frame and half the
   bytes to the GPU that never happen.
 
-**Which of the two a session uses** is decided by the console being played: a DS
-and a 3DS send changed tiles, a Wii U sends H.264. The **Screens sent to a
-second device** row on the Settings screen overrules that either way, which is
-how you see what the answer it did not pick looks like on your own machines and
-your own network. `--video-codec auto|tiles|h264` does the same for one run
-without editing anything.
+**Which of the two a session uses** is a setting per console: **Streaming
+format (DS)**, **Streaming format (3DS)** and **Streaming format (Wii U)** on
+the Settings screen, each Tiles or H.264. DS and 3DS default to tiles, Wii U to
+H.264 — the answer each measures better at, from the numbers above. `--video-codec
+tiles|h264` overrides whichever of those the game being launched would have used,
+for one run, without editing anything.
 
-Changing it takes effect on the session you are in, not the next one — that is
-the point, since comparing the two is what it is for. A session that has given
-up on video (no encoder here, or nothing at the far end that can decode) stays
-on tiles until you ask for it again.
-
-Asking for video is a request rather than a guarantee: the far end has to be
-able to decode it, and a build without FFmpeg cannot. When it cannot the session
-sends tiles and says so in the log — worth checking, because a screenshot looks
-identical either way.
+There is no fallback between the two. Asking for H.264 needs a real answer from
+both ends — an encoder here, a decoder at the far end — and if that answer is
+no, the session says so on screen rather than quietly sending tiles instead: a
+picture that arrived by the other path would say nothing about why the one you
+asked for did not work, which defeats the point of being able to ask for either
+on purpose. A build without FFmpeg, or a companion that cannot decode it, is
+what a video streaming error names.
 
 If a companion still cannot keep up, in order of how much they buy:
 

@@ -142,6 +142,16 @@ public:
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
 
+    // Rumbles every connected controller, or stops them -- for a companion
+    // standing in for a Wii U GamePad, whose one motor this collapses onto
+    // whatever this device actually has. On/off rather than a duration: the
+    // far end says when it starts and when it stops, same as it would if
+    // this were the GamePad's motor itself, so this only ever needs to be
+    // told which of those just happened. Harmless to call with nothing
+    // connected, or on a platform where SDL cannot rumble at all -- both
+    // just do nothing.
+    void set_rumble(bool active);
+
     // Letters printed on the menu confirm/cancel buttons for the connected pad,
     // for on-screen prompts. Display only -- it never changes what a button does.
     MenuButtonLabels menu_labels() const;

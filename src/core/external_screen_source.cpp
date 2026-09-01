@@ -77,6 +77,11 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
             audio_callback_(id, audio.data(), audio.size() / 2);
         }
     }
+
+    bool rumble_active = false;
+    if (link_.take_rumble(rumble_active) && rumble_callback_) {
+        rumble_callback_(rumble_active);
+    }
     return true;
 }
 

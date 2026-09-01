@@ -118,6 +118,16 @@ public:
     void set_audio_enabled(bool enabled) { audio_enabled_ = enabled; }
     bool audio_enabled() const { return audio_enabled_; }
 
+    // Tells the companion whether the Wii U GamePad's motor is on right now,
+    // so its own device can rumble in its place -- the companion holds the
+    // GamePad's controls regardless of which screen it is showing (see
+    // companion_wants()' own comment on menu vs. per-device layout for the
+    // same distinction elsewhere), so this is sent whenever a companion is
+    // connected at all, not only while it is displaying the GamePad screen.
+    // Cheap to call every time the state changes, like publish_audio -- only
+    // sent when it actually changed.
+    void publish_rumble(bool active);
+
     // Ends the session from this end. The companion is told, so it returns to
     // its launcher rather than waiting for a timeout.
     void disconnect_companion(const std::string& reason);
@@ -258,6 +268,8 @@ private:
     bool companion_input_fresh_ = false;
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
+    bool rumble_active_ = false;
+    bool have_sent_rumble_ = false;
     // Zero means video is not backed off. Set to a future monotonic_millis()
     // after any reason it does not work, so a transient one (a cold hardware
     // encoder, one bad frame) is not retried and reported 60 times a second

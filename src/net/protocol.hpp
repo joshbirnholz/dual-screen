@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 19;
+constexpr uint16_t kProtocolVersion = 20;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -46,6 +46,9 @@ enum class MessageType : uint16_t {
     SessionState = 12,
     Frame = 13,
     Audio = 14,
+    // The GamePad's motor turning on or off. Sent only on Wii U, and only
+    // when it changes -- see HostSession::publish_rumble().
+    Rumble = 15,
     // either way
     Ping = 20,
 };
@@ -280,6 +283,15 @@ struct BeaconMessage {
     bool bottom_available = true;
 };
 
+// The Wii U GamePad's own motor, standing in for whichever controller the
+// companion actually holds -- see ExternalControl::Rumble for where this
+// starts. Just on/off: what a real Wii U GamePad's motor does with a finer
+// pattern than that is not something a phone's or a Joy-Con's single motor
+// could reproduce over a network link anyway.
+struct RumbleMessage {
+    bool active = false;
+};
+
 struct InputMessage {
     uint32_t buttons = 0;
     bool touching = false;
@@ -307,6 +319,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
 void encode_frame(const FrameMessage& message, std::vector<uint8_t>& out);
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out);
 void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
+void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 void encode_bye(std::vector<uint8_t>& out);
 void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out);
@@ -323,6 +336,7 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
 bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out);
 bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out);
 bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out);
+bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
 bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out);
 
 // Pulls one complete message off the front of `buffer`, erasing it. Returns

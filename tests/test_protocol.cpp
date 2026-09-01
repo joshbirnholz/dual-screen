@@ -300,6 +300,25 @@ void test_input_round_trip() {
     CHECK_EQ(received.c_stick_y, 8000);
 }
 
+void test_rumble_round_trip() {
+    for (const bool active : {true, false}) {
+        RumbleMessage sent;
+        sent.active = active;
+
+        std::vector<uint8_t> buffer;
+        encode_rumble(sent, buffer);
+        MessageType type = MessageType::Ping;
+        std::vector<uint8_t> payload;
+        CHECK(one_message(buffer, type, payload));
+        CHECK(type == MessageType::Rumble);
+
+        RumbleMessage received;
+        received.active = !active;  // start wrong, so a no-op decode cannot pass by accident
+        CHECK(decode_rumble(payload.data(), payload.size(), received));
+        CHECK_EQ(received.active, active);
+    }
+}
+
 // Several messages written back to back must come out one at a time, in order,
 // and a partial tail must simply not be returned yet.
 void test_stream_framing() {
@@ -734,6 +753,7 @@ int main() {
     test_welcome_and_session_round_trip();
     test_request_round_trip();
     test_input_round_trip();
+    test_rumble_round_trip();
     test_stream_framing();
     test_absurd_length_is_fatal();
     test_truncation_is_rejected_everywhere();

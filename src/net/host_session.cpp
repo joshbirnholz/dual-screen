@@ -198,6 +198,11 @@ void HostSession::drop_companion(const std::string& reason) {
     // for the size it is given, so the next one gets its own attempt.
     video_retry_at_ms_ = 0;
     video_error_reported_ = false;
+    // Whoever connects next has not been told anything about the motor yet --
+    // its own device starts at rest, same as this one's did, so there is
+    // nothing to catch it up on until the GamePad's own state next changes.
+    rumble_active_ = false;
+    have_sent_rumble_ = false;
     refresh_beacon();
 }
 
@@ -642,6 +647,22 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
     std::vector<uint8_t> out;
     encode_audio(message, out);
     companion_.send(out);
+}
+
+void HostSession::publish_rumble(bool active) {
+    if (!has_companion()) {
+        return;
+    }
+    if (have_sent_rumble_ && active == rumble_active_) {
+        return;
+    }
+    RumbleMessage message;
+    message.active = active;
+    std::vector<uint8_t> out;
+    encode_rumble(message, out);
+    companion_.send(out);
+    rumble_active_ = active;
+    have_sent_rumble_ = true;
 }
 
 bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,

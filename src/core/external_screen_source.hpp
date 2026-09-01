@@ -56,6 +56,13 @@ public:
     double audio_sample_rate() const;
     double frames_per_second() const;
 
+    // Called whenever the GamePad's own motor turns on or off, so a shell can
+    // forward that to whatever is standing in for the GamePad -- see
+    // ExternalFrameLink::take_rumble(). Set before the game connects, same as
+    // the audio callback above.
+    using RumbleCallback = std::function<void(bool active)>;
+    void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
+
     // Only the program playing the game knows what restarting one means.
     void reset() { link_.request_reset(); }
 
@@ -92,6 +99,7 @@ private:
     Screen bottom_;
     AudioCallback audio_callback_;
     std::vector<int16_t> audio_[2];
+    RumbleCallback rumble_callback_;
     bool ended_ = false;
     std::string ended_reason_;
 };

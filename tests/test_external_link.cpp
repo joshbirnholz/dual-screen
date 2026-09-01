@@ -369,6 +369,59 @@ void test_a_second_game_is_told_the_pad_from_the_beginning() {
     }
 }
 
+// The GamePad's motor crosses the other way from the pad -- producer to
+// consumer -- and only on the edges: take_rumble() is a one-shot, so a caller
+// forwarding it onward is never told "on" a second time for a motor that
+// never turned off in between.
+void test_rumble_crosses_only_on_the_edges() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    bool active = true;
+    CHECK_MSG(!link.take_rumble(active), "the motor was reported as having changed before "
+                                          "anything was ever sent");
+
+    producer.send_rumble(true);
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    bool got_on = false;
+    while (!got_on && std::chrono::steady_clock::now() < give_up_at) {
+        std::string error;
+        CHECK(link.poll(&error));
+        active = false;
+        if (link.take_rumble(active)) got_on = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(got_on, "the motor turning on never arrived");
+    CHECK_MSG(active, "the motor turning on arrived as off");
+
+    // Sent again with the same value: nothing crosses, because nothing
+    // changed -- a companion holding this device does not need to be told
+    // "still on" every time this is polled.
+    producer.send_rumble(true);
+    std::string error;
+    for (int poll = 0; poll < 50; ++poll) {
+        CHECK(link.poll(&error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    active = false;
+    CHECK_MSG(!link.take_rumble(active),
+              "the same motor state was delivered twice, which would be heard as a fresh pulse "
+              "rather than one continuous one");
+
+    producer.send_rumble(false);
+    bool got_off = false;
+    const auto off_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!got_off && std::chrono::steady_clock::now() < off_by) {
+        CHECK(link.poll(&error));
+        active = true;
+        if (link.take_rumble(active)) got_off = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(got_off, "the motor turning off never arrived");
+    CHECK_MSG(!active, "the motor turning off arrived as on");
+}
+
 // The ordinary end of a session is the game being closed, and it has to look
 // like that rather than like a stall.
 void test_the_game_closing_ends_the_session() {
@@ -441,6 +494,7 @@ int main() {
     test_audio_and_resets_go_the_way_they_are_meant_to();
     test_the_pad_crosses_and_arrives_whole();
     test_a_second_game_is_told_the_pad_from_the_beginning();
+    test_rumble_crosses_only_on_the_edges();
     test_the_game_closing_ends_the_session();
     test_a_screen_too_big_to_carry_is_refused();
     return test::finish("external-link");
