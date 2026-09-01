@@ -1215,10 +1215,14 @@ void test_frames_that_arrive_together_are_shown_on_a_clock() {
         return;
     }
 
-    // Three at once, as a moment of network jitter delivers them.
+    // Two at once, as a moment of network jitter delivers them -- matching
+    // kMaxQueuedFrames (see host_session.cpp), the most the host will now let
+    // itself get ahead of an unacknowledged frame. A third here would not
+    // test this pacing any further; it would just be the host's own backlog
+    // limit dropping it before it was ever sent, which is its own behaviour
+    // (and its own coverage) rather than this one's.
     publish(2);
     publish(3);
-    publish(4);
     // Give the socket a moment, without letting the companion read them yet.
     // Long enough that the pacing clock is unambiguously stale and restarts
     // from the first pass below, so what follows does not depend on how long
@@ -1237,22 +1241,19 @@ void test_frames_that_arrive_together_are_shown_on_a_clock() {
                   std::to_string(companion.newest_frame_serial_for_test()) +
                   " rather than advancing one frame from 1");
     // The rest are held, not thrown away: each is a difference from the last.
-    CHECK_MSG(companion.buffered_frames() == 2,
-              std::to_string(companion.buffered_frames()) + " frames were held rather than 2");
+    CHECK_MSG(companion.buffered_frames() == 1,
+              std::to_string(companion.buffered_frames()) + " frames were held rather than 1");
 
     // A pass before the next frame is due changes nothing on screen.
     companion.poll(start_ms + 4);
     CHECK_MSG(companion.newest_frame_serial_for_test() == 2,
               "a pass before the frame was due showed it early");
 
-    // One frame period later it is due, and exactly one more is shown.
+    // One frame period later it is due, and the one held frame is shown.
     companion.poll(start_ms + 40);
     CHECK_MSG(companion.newest_frame_serial_for_test() == 3,
               "the pass after a frame period showed serial " +
                   std::to_string(companion.newest_frame_serial_for_test()) + " rather than 3");
-    companion.poll(start_ms + 80);
-    CHECK_MSG(companion.newest_frame_serial_for_test() == 4,
-              "the pass after that did not reach serial 4");
 
     // Throughout, the host must have been told all four arrived -- the two
     // that were waiting had got there, whatever was on screen.

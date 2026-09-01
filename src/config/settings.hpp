@@ -148,7 +148,16 @@ struct Settings {
 
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;
-    bool vsync = true;
+    // Off by default: this loop reads input and sends it to the other device
+    // in the same iteration it swaps the window (see the main loop's own
+    // comment on this), so vsync does not just pace drawing here, it paces
+    // input right along with it -- up to a whole display refresh added to
+    // every button press and touch before it even leaves this device. Without
+    // it, the loop is still correctly paced to the emulator's own frame rate
+    // rather than spinning uselessly (same comment), so this is not trading
+    // smooth video for a busy-loop -- only for the tear a player who wants it
+    // back can still opt into from Settings.
+    bool vsync = false;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

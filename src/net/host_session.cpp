@@ -21,19 +21,24 @@ namespace {
 // What the limit is really about is how far behind what the player sees is
 // allowed to fall, and that has always been a number of frames.
 //
-// Eight rather than two or three, because the companion's answer takes a
-// moment to come back and nothing may be sent while the host waits for it. At
-// most this many frames can be outstanding per round trip, so a tight number
-// stops being a backlog limit and becomes a frame rate cap: three frames
-// against a 50 ms wifi round trip is 60fps exactly, with nothing left for
-// jitter. Eight leaves the pipeline full on a link like that and still bounds
-// how far behind the picture can fall at about an eighth of a second.
-constexpr std::size_t kMaxQueuedFrames = 8;
+// Two rather than eight: this used to leave up to an eighth of a second of
+// stale, already-superseded frames sitting in the pipeline before a jittery
+// link started dropping them, on the reasoning that a tight cap becomes a
+// frame rate ceiling instead of a backlog limit -- three frames against a
+// 50 ms wifi round trip is 60fps exactly, with nothing left for jitter. That
+// tradeoff favours smoothness over responsiveness, and this link exists for
+// gameplay a player is reacting to in real time, where a late frame is worse
+// than a dropped one: two bounds the backlog at one frame's worth of slack
+// past that same 50 ms/60fps baseline rather than six, at the cost of
+// falling back to whatever frame rate the link actually sustains sooner when
+// it cannot keep up, instead of quietly queuing behind it.
+constexpr std::size_t kMaxQueuedFrames = 2;
 
 // Audio still goes by bytes, because a sound packet is a fixed span of time
-// and its size does not wander. This is a little under a fifth of a second of
-// 48 kHz stereo.
-constexpr std::size_t kMaxQueuedAudioBytes = 32 * 1024;
+// and its size does not wander. Cut down from a little under a fifth of a
+// second to about a fortieth, in step with the frame budget above -- for the
+// same reason: a backlog of correct audio a beat late is still late.
+constexpr std::size_t kMaxQueuedAudioBytes = 8 * 1024;
 
 // How long a failed video encoder stays backed off to tiles before the next
 // frame is allowed to try it again. Long enough that a genuinely broken
