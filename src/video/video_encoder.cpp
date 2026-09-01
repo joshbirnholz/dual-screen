@@ -224,9 +224,15 @@ bool VideoEncoder::open_backend(const std::string& name,
     }
 
     if (hw_type != AV_HWDEVICE_TYPE_NONE) {
+        // Not filled from the pool here -- encode() does that fresh for every
+        // frame. VAAPI encode is asynchronous, so the driver can still be
+        // working on (or holding as a reference) the surface behind a frame
+        // submitted a call or two ago; a single surface reused for every
+        // frame gets overwritten out from under it, which is what
+        // initial_pool_size above is there to prevent.
         hw_frame_ = av_frame_alloc();
-        if (hw_frame_ == nullptr || av_hwframe_get_buffer(context_->hw_frames_ctx, hw_frame_, 0) < 0) {
-            if (error != nullptr) *error = "could not take a frame from the device pool";
+        if (hw_frame_ == nullptr) {
+            if (error != nullptr) *error = "out of memory";
             return false;
         }
     }
@@ -275,6 +281,15 @@ bool VideoEncoder::encode(const uint32_t* pixels,
 
     AVFrame* submitted = frame_;
     if (hw_frame_ != nullptr) {
+        // A fresh surface from the pool every frame -- see the comment in
+        // open_backend(). av_frame_unref() releases this encoder's hold on
+        // whichever surface hw_frame_ pointed at last time; the pool gives
+        // one back that is not still in use.
+        av_frame_unref(hw_frame_);
+        if (av_hwframe_get_buffer(context_->hw_frames_ctx, hw_frame_, 0) < 0) {
+            if (error != nullptr) *error = "could not take a frame from the device pool";
+            return false;
+        }
         if (av_hwframe_transfer_data(hw_frame_, frame_, 0) < 0) {
             if (error != nullptr) *error = "the frame would not go to the device";
             return false;
