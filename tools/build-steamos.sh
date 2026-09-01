@@ -38,6 +38,29 @@ for argument in "$@"; do
     esac
 done
 
+# FFmpeg's dev packages ship no static archives on Debian, unlike libstdc++
+# (which -static-libstdc++ handles), so a binary built with a video codec
+# compiled in needs libavcodec/libavutil/libswscale as shared libraries at
+# runtime -- ones the SteamOS host does not have, since its own FFmpeg (if
+# it has one at all) is a different, Arch-packaged build with different
+# sonames. Copied straight from ldd's own answer rather than a hardcoded
+# list of filenames, so this asks nothing about which FFmpeg version the
+# container happens to have and copies nothing when there is no video codec
+# to begin with -- the grep simply matches nothing. CMakeLists.txt gives the
+# binary a "$ORIGIN" rpath, which is the other half of this: the dynamic
+# linker checks the binary's own directory before giving up, so a copy
+# sitting right beside it is what a SteamOS host with no FFmpeg installed
+# actually finds.
+bundle_ffmpeg_libs() {
+    local binary="$1"
+    local dest
+    dest="$(dirname "$binary")"
+    ldd "$binary" 2>/dev/null | awk '/libav(codec|util)\.so|libswscale\.so/ {print $3}' |
+        while read -r lib; do
+            [ -n "$lib" ] && [ -f "$lib" ] && cp -uL "$lib" "$dest/"
+        done
+}
+
 # The commands that actually do the build. Run inside the container, or
 # directly if we are already somewhere with a compiler.
 build_here() {
@@ -46,6 +69,8 @@ build_here() {
     fi
     cmake -S "$REPO_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo
     cmake --build "$BUILD_DIR" -j"$(nproc)"
+    bundle_ffmpeg_libs "$BUILD_DIR/dualscreen"
+    bundle_ffmpeg_libs "$BUILD_DIR/dualscreen-companion"
 }
 
 install_dependencies() {
@@ -105,6 +130,7 @@ distrobox enter "$CONTAINER_NAME" -- bash -lc "
     set -euo pipefail
     export DUALSCREEN_IN_CONTAINER=1
     REPO_DIR='${REPO_DIR}' BUILD_DIR='${BUILD_DIR}' REBUILD='${REBUILD}'
+    $(declare -f bundle_ffmpeg_libs)
     $(declare -f build_here)
     build_here
 "

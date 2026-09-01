@@ -171,6 +171,20 @@ if(DUALSCREEN_PORTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_link_options(dualscreen PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
+# FFmpeg's own dev packages ship no static archives on Debian, unlike
+# libstdc++ above, so PkgConfig::FFMPEG is necessarily a shared-library
+# dependency -- one a container-built binary's host will not have, and a
+# different problem from the glibc-floor one DUALSCREEN_PORTABLE exists for.
+# $ORIGIN in the rpath is the other half of that: tools/build-steamos.sh
+# copies the exact .so files this binary resolved to sit right next to it,
+# and this is what makes the dynamic linker look there before giving up --
+# see that script's bundle_ffmpeg_libs(). A path that turns out not to exist
+# (there is nothing to copy when FFmpeg was not found at all) is simply
+# skipped, not an error.
+if(FFMPEG_FOUND)
+    set_target_properties(dualscreen PROPERTIES BUILD_RPATH "$ORIGIN")
+endif()
+
 install(TARGETS dualscreen RUNTIME DESTINATION bin)
 
 # The companion clients: the same program for a desktop, a Nintendo Switch and
@@ -215,6 +229,11 @@ endif()
 target_compile_options(dualscreen-companion PRIVATE -Wall -Wextra)
 if(DUALSCREEN_PORTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_link_options(dualscreen-companion PRIVATE -static-libstdc++ -static-libgcc)
+endif()
+
+# Same reasoning as dualscreen's own BUILD_RPATH above.
+if(FFMPEG_FOUND)
+    set_target_properties(dualscreen-companion PROPERTIES BUILD_RPATH "$ORIGIN")
 endif()
 
 if(DUALSCREEN_BUILD_TESTS)

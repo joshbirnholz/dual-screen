@@ -420,7 +420,10 @@ cd dual-screen
 That is the whole thing. First run takes a few minutes to fetch the container
 image; after that it is seconds. The result is `build/dualscreen`, which runs
 **on the SteamOS host** — in Game Mode, with no container at runtime, and it
-keeps working across SteamOS updates.
+keeps working across SteamOS updates. If FFmpeg was available to build
+against, `build/` also holds a handful of `.so` files the binary needs for
+H.264 — see below — so treat `build/` as the artifact to move around (to add
+as a Steam shortcut from elsewhere, say) rather than `dualscreen` alone.
 
 <details>
 <summary>Why it works this way</summary>
@@ -457,6 +460,19 @@ SDL2 and libc, and that is it. Two reasons:
   direct dependency and there is no GL/EGL version coupling to get wrong. This
   is the same property that lets the renderer take an OpenGL ES context on one
   machine and desktop GL on another.
+
+FFmpeg is the one exception to "SDL2 and libc, and that is it": Debian's
+`libavcodec-dev` and friends ship no static archives the way libstdc++ does,
+so a binary built with H.264 support genuinely needs `libavcodec.so`,
+`libavutil.so` and `libswscale.so` at runtime — versions the SteamOS host
+does not have, since its own FFmpeg, if it has one, is a different
+Arch-packaged build under different sonames. Rather than requiring anything
+installed on the host, the script copies the container's own copies of those
+three files into `build/` next to the binary (`bundle_ffmpeg_libs` in
+`tools/build-steamos.sh`), and the binary's own `$ORIGIN` rpath (set in
+`CMakeLists.txt` when FFmpeg is found) is what makes it look there before
+giving up. A build without FFmpeg available to build against copies nothing
+and needs nothing extra, same as before.
 
 **Do not use `sudo steamos-readonly disable`** to install a compiler on the
 host. It works until the next SteamOS update wipes it, and then it works again
