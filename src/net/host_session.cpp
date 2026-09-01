@@ -95,6 +95,7 @@ void HostSession::set_video_wanted(bool wanted) {
         // reaching here at all means somebody changed their mind -- which is
         // reason enough to try an encoder that failed before.
         video_retry_at_ms_ = 0;
+        video_error_reported_ = false;
         return;
     }
     // Closed rather than left idle, so that turning it back on opens a fresh
@@ -196,6 +197,7 @@ void HostSession::drop_companion(const std::string& reason) {
     // A different device may be a different size, and the encoder is opened
     // for the size it is given, so the next one gets its own attempt.
     video_retry_at_ms_ = 0;
+    video_error_reported_ = false;
     refresh_beacon();
 }
 
@@ -551,6 +553,15 @@ bool HostSession::take_companion_quit_request() {
     return true;
 }
 
+bool HostSession::take_video_error(std::string& out_reason) {
+    if (!has_pending_video_error_) {
+        return false;
+    }
+    out_reason = pending_video_error_;
+    has_pending_video_error_ = false;
+    return true;
+}
+
 std::size_t HostSession::queue_limit() const { return kMaxQueuedAudioBytes; }
 
 // Where a slow stream is actually being lost is not something that can be
@@ -633,28 +644,21 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
     companion_.send(out);
 }
 
-bool HostSession::use_video_for(const ScreenPixels& source) {
-    // Every one of these has to be true, and each is a different party's
-    // answer: what this session was asked for, what the far end can decode,
-    // and whether this build has an encoder at all.
-    if (!video_wanted_ || monotonic_millis() < video_retry_at_ms_ || !companion_accepts_video_ ||
-        !video::available()) {
+bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,
+                                   std::string& reason) {
+    if (!video::available()) {
+        reason = "this build has no video encoder compiled in";
         return false;
     }
-    // 4:2:0 cannot represent an odd number of pixels. A screen that is one is
-    // not a failure -- it goes down the path that never cared.
-    return (source.width % 2) == 0 && (source.height % 2) == 0;
-}
-
-bool HostSession::encode_one_screen(ScreenId screen,
-                                    const ScreenPixels& source,
-                                    std::vector<uint8_t>& previous,
-                                    FrameMessage& frame) {
-    if (!use_video_for(source)) {
-        frame.encoding = FrameEncoding::Rgb565DeflateTiles;
-        return encode_screen_tiles(source.pixels, source.width, source.height,
-                                   source.stride_pixels, previous, frame.payload,
-                                   source.channel_order);
+    if (!companion_accepts_video_) {
+        reason = "the connected device cannot decode video";
+        return false;
+    }
+    // 4:2:0 cannot represent an odd number of pixels.
+    if ((source.width % 2) != 0 || (source.height % 2) != 0) {
+        reason = "this screen is " + std::to_string(source.width) + "x" +
+                 std::to_string(source.height) + ", which H.264 4:2:0 cannot carry";
+        return false;
     }
 
     video::VideoEncoder& encoder = (screen == ScreenId::Top) ? video_top_ : video_bottom_;
@@ -664,20 +668,10 @@ bool HostSession::encode_one_screen(ScreenId screen,
         config.height = source.height;
         config.fps = 60;
         config.bitrate_kbps = 8000;
-        std::string error;
-        if (!encoder.open(config, &error)) {
-            // Not fatal, and not worth saying twice a frame apart: the tile
-            // codec carries every screen this app has ever sent, just less
-            // cheaply. Backed off rather than disabled outright, so a cold
-            // hardware encoder or a driver that needed a moment gets a second
-            // try instead of running this connection on tiles from here on.
-            log_warn("no video encoder for the " + std::string(to_string(screen)) +
-                     " screen, falling back to tiles: " + error);
-            video_retry_at_ms_ = monotonic_millis() + kVideoRetryCooldownMs;
-            frame.encoding = FrameEncoding::Rgb565DeflateTiles;
-            return encode_screen_tiles(source.pixels, source.width, source.height,
-                                       source.stride_pixels, previous, frame.payload,
-                                       source.channel_order);
+        std::string open_error;
+        if (!encoder.open(config, &open_error)) {
+            reason = "no video encoder would open: " + open_error;
+            return false;
         }
     }
     // A video frame means nothing without the frames before it, so a companion
@@ -687,22 +681,63 @@ bool HostSession::encode_one_screen(ScreenId screen,
     }
 
     video::EncodedFrame encoded;
-    std::string error;
-    if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &error)) {
-        log_warn("the video encoder failed, falling back to tiles: " + error);
+    std::string encode_error;
+    if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &encode_error)) {
         encoder.close();
-        video_retry_at_ms_ = monotonic_millis() + kVideoRetryCooldownMs;
+        reason = "the video encoder failed: " + encode_error;
+        return false;
+    }
+    if (encoded.empty()) {
+        return false;  // nothing to send this frame -- reason stays empty, not a failure
+    }
+    frame.encoding = FrameEncoding::H264;
+    frame.payload = std::move(encoded.bytes);
+    return true;
+}
+
+bool HostSession::encode_one_screen(ScreenId screen,
+                                    const ScreenPixels& source,
+                                    std::vector<uint8_t>& previous,
+                                    FrameMessage& frame) {
+    if (!video_wanted_) {
         frame.encoding = FrameEncoding::Rgb565DeflateTiles;
         return encode_screen_tiles(source.pixels, source.width, source.height,
                                    source.stride_pixels, previous, frame.payload,
                                    source.channel_order);
     }
-    if (encoded.empty()) {
+
+    // Video was asked for -- see Settings' per-system streaming format -- so
+    // nothing past here falls back to tiles: a screen this cannot actually
+    // send as H.264 is a failure the player asked to be told about instead of
+    // having painted over, through take_video_error(). See its own comment
+    // for why silently substituting the other format would defeat the whole
+    // point of choosing one to test.
+    if (monotonic_millis() < video_retry_at_ms_) {
+        return false;  // still backed off from the last failure -- see below
+    }
+
+    std::string reason;
+    if (try_encode_video(screen, source, frame, reason)) {
+        video_error_reported_ = false;  // it is working, or working again
+        return true;
+    }
+    if (reason.empty()) {
         return false;  // nothing to send this frame, which is not a failure
     }
-    frame.encoding = FrameEncoding::H264;
-    frame.payload = std::move(encoded.bytes);
-    return true;
+
+    // A genuine failure. Backed off so it is retried and, if it is still
+    // broken, reported again in a few seconds rather than sixty times a
+    // second -- but reported only once per failure, not once per retry.
+    video_retry_at_ms_ = monotonic_millis() + kVideoRetryCooldownMs;
+    if (!video_error_reported_) {
+        video_error_reported_ = true;
+        pending_video_error_ =
+            std::string(to_string(screen)) + " screen: " + reason;
+        has_pending_video_error_ = true;
+        log_warn("video streaming is not working, and nothing is sent in its place: " +
+                 pending_video_error_);
+    }
+    return false;
 }
 
 void HostSession::publish_screens(const ScreenPixels& top,

@@ -153,6 +153,18 @@ public:
     // that nobody ever cleared would keep the game paused forever.
     bool take_menu_open_request();
 
+    // Set once when video was asked for -- see set_video_wanted() -- and then
+    // turns out not to work: no codec built into this binary, the companion
+    // said it cannot decode, a screen size 4:2:0 cannot carry, or the encoder
+    // itself failing to open or to encode a frame. There is no fallback to
+    // report around: see ScreenCodec's own comment for why sending tiles
+    // instead, silently, is exactly what this is for telling apart from
+    // working video. Latched the same way take_menu_open_request() is above --
+    // once per failure that starts, not once per frame it keeps failing on --
+    // and cleared the moment video works again, so the caller can show it once
+    // rather than fighting to keep only one copy on screen.
+    bool take_video_error(std::string& out_reason);
+
     // The companion's own window, in device pixels, if it has said. Not part
     // of the shared session state -- it is never broadcast anywhere, just kept
     // so the caller can decide how much detail a screen it sends is worth
@@ -224,14 +236,17 @@ private:
     std::vector<uint8_t> inbox_;
     bool handshake_done_ = false;
     std::string companion_name_;
-    // Whether this screen goes as video, and the encoding of one screen's
-    // frame. Split out because the answer involves three parties and a
-    // fallback, which is more than belongs inline in a send loop.
-    bool use_video_for(const ScreenPixels& source);
+    // The encoding of one screen's frame -- tiles if that is what was asked
+    // for, otherwise video with nothing standing in for it if video does not
+    // actually work; see take_video_error(). try_encode_video() is the half
+    // of that which can fail, with why in `reason` -- empty means it simply
+    // had nothing new to send, which is not a failure.
     bool encode_one_screen(ScreenId screen,
                            const ScreenPixels& source,
                            std::vector<uint8_t>& previous,
                            FrameMessage& frame);
+    bool try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,
+                          std::string& reason);
 
     ScreenId companion_screen_ = ScreenId::Bottom;
     std::string last_notice_;
@@ -244,11 +259,16 @@ private:
     uint64_t sent_serial_ = 0;
     bool audio_enabled_ = true;
     // Zero means video is not backed off. Set to a future monotonic_millis()
-    // after an encoder open or encode fails, so a transient failure (a cold
-    // hardware encoder, one bad frame) costs a few seconds of tiles rather
-    // than falling back to tiles for the rest of the connection -- see
-    // use_video_for() and encode_one_screen().
+    // after any reason it does not work, so a transient one (a cold hardware
+    // encoder, one bad frame) is not retried and reported 60 times a second
+    // -- see encode_one_screen() and try_encode_video().
     uint64_t video_retry_at_ms_ = 0;
+    // Whether the current failure, if there is one, has already been handed
+    // out by take_video_error() -- see its own comment for why this is once
+    // per failure rather than once per retry.
+    bool video_error_reported_ = false;
+    std::string pending_video_error_;
+    bool has_pending_video_error_ = false;
     bool companion_menu_open_ = false;
     bool companion_asked_for_menu_ = false;
     int companion_display_width_ = 0;

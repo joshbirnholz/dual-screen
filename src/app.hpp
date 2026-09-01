@@ -24,10 +24,10 @@ struct AppOptions {
     // Runs for this many frames and then exits. Used by the headless smoke
     // test; 0 means run until the player quits.
     int exit_after_frames = 0;
-    // Overrides the "screen_codec" setting for one run: "auto", "tiles" or
-    // "h264". Empty leaves the setting alone, which is the usual case -- this
-    // is here so a test, or somebody comparing two runs, does not have to edit
-    // a config file between them.
+    // Overrides whichever console is played this run's own streaming format
+    // setting: "tiles" or "h264". Empty leaves the setting alone, which is the
+    // usual case -- this is here so a test, or somebody comparing two runs,
+    // does not have to edit a config file between them.
     std::string video_codec_override;
     // Where a console played by another program hands its screens over. Empty
     // means the usual place; a second copy of this app, or a test, needs its

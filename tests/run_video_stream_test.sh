@@ -14,9 +14,10 @@
 # the frame having survived encode, wire, decode and upload.
 #
 # ASKED_BY says how the host was told to use video: "flag" for --video-codec, or
-# "setting" for the "screen_codec" entry in settings.json. The two have to reach
-# the same place -- the flag exists so a run can differ from the setting without
-# editing a file, and a setting nobody could act on would be worse than none.
+# "setting" for the DS game's own "screen_codec_ds" entry in settings.json. The
+# two have to reach the same place -- the flag exists so a run can differ from
+# the setting without editing a file, and a setting nobody could act on would
+# be worse than none.
 #
 # Usage: run_video_stream_test.sh <xvfb-run> <dualscreen> <mock core> <work dir> <checker>
 
@@ -36,7 +37,7 @@ printf 'dualscreen video stream test rom' > "$WORK_DIR/fake.nds"
 
 CODEC_ARGUMENTS=()
 if [ "$ASKED_BY" = "setting" ]; then
-    printf '{"screen_codec": "h264"}' > "$WORK_DIR/host/config/dualscreen/settings.json"
+    printf '{"screen_codec_ds": "h264"}' > "$WORK_DIR/host/config/dualscreen/settings.json"
 else
     CODEC_ARGUMENTS=(--video-codec h264)
 fi
@@ -118,9 +119,11 @@ if ! grep -q "video decoder: " "$WORK_DIR/companion.log" 2>/dev/null; then
 "the video path" >&2
     FAILED=1
 fi
-# A fallback is silent otherwise, and a green screenshot would look identical.
-if grep -q "falling back to tiles" "$WORK_DIR/host.log" 2>/dev/null; then
-    echo "the host gave up on video and sent tiles instead" >&2
+# There is no fallback to tiles any more -- see ScreenCodec's own comment --
+# so a video failure here would otherwise only show up as a screenshot that
+# never got its picture, which says nothing about why.
+if grep -q "video streaming is not working" "$WORK_DIR/host.log" 2>/dev/null; then
+    echo "the host gave up on video instead of sending it" >&2
     FAILED=1
 fi
 

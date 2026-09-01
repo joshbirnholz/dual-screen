@@ -113,11 +113,16 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
-        case Row::ScreenCodec:
-            // One way round only. Three entries is short enough that cycling
-            // forwards reaches any of them faster than deciding which
-            // direction to press.
-            settings_.screen_codec = video::next_screen_codec(settings_.screen_codec);
+        case Row::ScreenCodecDs:
+            settings_.screen_codec_ds = video::next_screen_codec(settings_.screen_codec_ds);
+            result.settings_changed = true;
+            break;
+        case Row::ScreenCodecThreeDs:
+            settings_.screen_codec_3ds = video::next_screen_codec(settings_.screen_codec_3ds);
+            result.settings_changed = true;
+            break;
+        case Row::ScreenCodecWiiU:
+            settings_.screen_codec_wii_u = video::next_screen_codec(settings_.screen_codec_wii_u);
             result.settings_changed = true;
             break;
         case Row::Vsync:
@@ -205,7 +210,9 @@ void SettingsScreen::render(QuadRenderer& quads,
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
         {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
-        {"Screens sent to a second device", video::to_string(settings_.screen_codec)},
+        {"Streaming format (DS)", video::to_string(settings_.screen_codec_ds)},
+        {"Streaming format (3DS)", video::to_string(settings_.screen_codec_3ds)},
+        {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"Back", ""},
     };

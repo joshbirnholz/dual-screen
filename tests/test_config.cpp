@@ -269,7 +269,11 @@ void test_settings_round_trip() {
     defaults.wii_u_tv_audio_target = AudioTarget::Off;
     defaults.wii_u_gamepad_audio_target = AudioTarget::Both;
     defaults.cursor_mode = CursorMode::Hidden;
-    defaults.screen_codec = video::ScreenCodec::H264;
+    // All three set away from their defaults, and not to the same value as
+    // each other, so a round trip that mixed them up would be caught.
+    defaults.screen_codec_ds = video::ScreenCodec::H264;
+    defaults.screen_codec_3ds = video::ScreenCodec::H264;
+    defaults.screen_codec_wii_u = video::ScreenCodec::Tiles;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -285,7 +289,12 @@ void test_settings_round_trip() {
     CHECK(reloaded.wii_u_tv_audio_target == AudioTarget::Off);
     CHECK(reloaded.wii_u_gamepad_audio_target == AudioTarget::Both);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
-    CHECK(reloaded.screen_codec == video::ScreenCodec::H264);
+    CHECK(reloaded.screen_codec_ds == video::ScreenCodec::H264);
+    CHECK(reloaded.screen_codec_3ds == video::ScreenCodec::H264);
+    CHECK(reloaded.screen_codec_wii_u == video::ScreenCodec::Tiles);
+    CHECK(reloaded.screen_codec_for(SystemId::Ds) == video::ScreenCodec::H264);
+    CHECK(reloaded.screen_codec_for(SystemId::ThreeDs) == video::ScreenCodec::H264);
+    CHECK(reloaded.screen_codec_for(SystemId::WiiU) == video::ScreenCodec::Tiles);
 
     // A config file that names arguments replaces them rather than adding to
     // them: a fork with different flags must not inherit these.
@@ -311,7 +320,9 @@ void test_settings_round_trip() {
     CHECK(recovered.wii_u_tv_audio_target == AudioTarget::TopScreen);
     CHECK(recovered.wii_u_gamepad_audio_target == AudioTarget::BottomScreen);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
-    CHECK(recovered.screen_codec == video::ScreenCodec::Auto);
+    CHECK(recovered.screen_codec_ds == video::ScreenCodec::Tiles);
+    CHECK(recovered.screen_codec_3ds == video::ScreenCodec::Tiles);
+    CHECK(recovered.screen_codec_wii_u == video::ScreenCodec::H264);
 
     // Text nobody recognises falls back rather than becoming a fourth state.
     CHECK(audio_target_from_key("sideways") == AudioTarget::Both);
@@ -323,14 +334,20 @@ void test_settings_round_trip() {
     CHECK(next_cursor_mode(CursorMode::Shown) == CursorMode::Hidden);
     CHECK(next_cursor_mode(CursorMode::Hidden) == CursorMode::Shown);
 
-    // A codec nobody recognises is the automatic one rather than an error: a
-    // typo in a config file should leave the app working as it would have.
-    CHECK(video::screen_codec_from_key("mpeg2") == video::ScreenCodec::Auto);
-    CHECK(video::screen_codec_from_key("") == video::ScreenCodec::Auto);
-    CHECK(video::screen_codec_from_key("tiles") == video::ScreenCodec::Tiles);
-    CHECK(video::next_screen_codec(video::ScreenCodec::Auto) == video::ScreenCodec::Tiles);
+    // A codec nobody recognises leaves the setting where it already was
+    // rather than becoming an error or picking one of the two for the
+    // caller: a typo in a config file should leave the app working as it
+    // would have, whichever console's default that happens to be.
+    CHECK(video::screen_codec_from_key("mpeg2", video::ScreenCodec::H264) ==
+          video::ScreenCodec::H264);
+    CHECK(video::screen_codec_from_key("", video::ScreenCodec::Tiles) == video::ScreenCodec::Tiles);
+    CHECK(video::screen_codec_from_key("tiles", video::ScreenCodec::H264) ==
+          video::ScreenCodec::Tiles);
+    CHECK(video::screen_codec_from_key("h264", video::ScreenCodec::Tiles) ==
+          video::ScreenCodec::H264);
+    // Two entries, so cycling is a toggle either way round.
     CHECK(video::next_screen_codec(video::ScreenCodec::Tiles) == video::ScreenCodec::H264);
-    CHECK(video::next_screen_codec(video::ScreenCodec::H264) == video::ScreenCodec::Auto);
+    CHECK(video::next_screen_codec(video::ScreenCodec::H264) == video::ScreenCodec::Tiles);
 
     // Cycling visits all three and comes back round.
     CHECK(next_audio_target(AudioTarget::Both) == AudioTarget::TopScreen);

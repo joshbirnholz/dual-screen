@@ -148,8 +148,8 @@ std::string usage_text() {
         "                       Where a console played by another program hands\n"
         "                       its screens over, instead of the usual place\n"
         "  --video-codec <how>  How to send screens to a second device for this\n"
-        "                       run: auto, tiles or h264. Overrides the\n"
-        "                       \"screen_codec\" setting\n"
+        "                       run: tiles or h264. Overrides whichever console\n"
+        "                       is played this run's own streaming format setting\n"
         "  --list-layouts       Print the available layout ids and exit\n"
         "  --verbose            Log core and frontend debug output\n"
         "  --trace-core-gl      Log every OpenGL call a GPU-rendering core makes,\n"
@@ -193,10 +193,9 @@ AppOptions parse_command_line(int argc, char** argv) {
         } else if (argument == "--video-codec") {
             options.video_codec_override =
                 next_argument(argc, argv, index, "--video-codec", options.parse_error);
-            if (options.video_codec_override != "auto" &&
-                options.video_codec_override != "tiles" &&
+            if (options.video_codec_override != "tiles" &&
                 options.video_codec_override != "h264") {
-                options.parse_error = "--video-codec wants 'auto', 'tiles' or 'h264'";
+                options.parse_error = "--video-codec wants 'tiles' or 'h264'";
             }
         } else if (argument == "--external-socket") {
             options.external_socket =
@@ -755,14 +754,10 @@ const ScreenSource* App::Impl::local_game() const {
 bool App::Impl::wants_video() const {
     const video::ScreenCodec chosen =
         options.video_codec_override.empty()
-            ? settings.screen_codec
-            : video::screen_codec_from_key(options.video_codec_override);
-    switch (chosen) {
-        case video::ScreenCodec::Tiles: return false;
-        case video::ScreenCodec::H264: return true;
-        case video::ScreenCodec::Auto: break;
-    }
-    return system_profile(system).prefers_video;
+            ? settings.screen_codec_for(system)
+            : video::screen_codec_from_key(options.video_codec_override,
+                                           settings.screen_codec_for(system));
+    return chosen == video::ScreenCodec::H264;
 }
 
 double App::Impl::local_frames_per_second() const {
@@ -2682,6 +2677,16 @@ int App::run(const AppOptions& options) {
                 // not waiting to be told to.
                 impl.running = false;
             }
+            // Streaming format is an explicit per-console choice with no
+            // fallback -- see Settings::screen_codec_for() -- so a format
+            // that does not actually work is shown rather than quietly
+            // replaced by the other one. Non-fatal: the local game, and
+            // whatever this device shows of it, is untouched either way.
+            std::string video_error;
+            if (impl.host_session->take_video_error(video_error)) {
+                impl.enter_message(MessageKind::Error, "Video streaming isn't working",
+                                   video_error, {}, false);
+            }
             // Whichever screen the companion took, the host shows the other.
             // Moot for a Wii U -- this app never composites either of its
             // screens locally any more, see the request_screen() block above
@@ -2913,16 +2918,33 @@ int App::run(const AppOptions& options) {
             ScreenReadback top;
             ScreenReadback bottom;
             // Sent at the console's own resolution regardless of the render
-            // scale, for now: a general-purpose CPU codec was never going to
-            // keep pace with several times the pixels every frame, and a
-            // choppy stream at a sharper resolution is a worse trade than a
-            // smooth one at a softer one. Revisit once a real hardware video
-            // pipeline exists to carry the extra detail instead.
+            // scale when carried as changed tiles: a general-purpose CPU codec
+            // was never going to keep pace with several times the pixels every
+            // frame, and a choppy stream at a sharper resolution is a worse
+            // trade than a smooth one at a softer one. H.264 has no such
+            // trouble -- that is the whole reason it exists on this link --
+            // so a screen sent that way is asked for at everything the core
+            // actually rendered instead. read_screen() itself still clamps to
+            // that: this is a ceiling, not a demand, for a core that is not
+            // rendering above native to begin with.
+            const bool full_resolution = impl.wants_video();
+            const SystemScreens& native = system_profile(impl.system).screens;
             if (impl.host_session->companion_wants(ScreenId::Top)) {
-                playing->read_screen(ScreenId::Top, top);
+                if (full_resolution) {
+                    playing->read_screen(ScreenId::Top, top, native.top.width * impl.render_scale,
+                                         native.top.height * impl.render_scale);
+                } else {
+                    playing->read_screen(ScreenId::Top, top);
+                }
             }
             if (impl.host_session->companion_wants(ScreenId::Bottom)) {
-                playing->read_screen(ScreenId::Bottom, bottom);
+                if (full_resolution) {
+                    playing->read_screen(ScreenId::Bottom, bottom,
+                                         native.bottom.width * impl.render_scale,
+                                         native.bottom.height * impl.render_scale);
+                } else {
+                    playing->read_screen(ScreenId::Bottom, bottom);
+                }
             }
             if (top.valid() || bottom.valid()) {
                 const auto wire_order = [](ChannelOrder order) {

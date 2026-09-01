@@ -25,57 +25,53 @@ namespace ds::video {
 
 // How this device sends screens to another one.
 //
-// A preference rather than a capability: what the build can do is available()
-// below, and what the console being played wants is SystemProfile::prefers_video.
-// This is the player overruling both, which is the whole of what it is for --
-// the only reason to reach for it is to see what the other answer looks like on
-// a particular pair of machines and a particular network.
-//
-// Overruling it towards video is still a request rather than a guarantee. The
-// far end has to be able to decode, and a screen with an odd number of pixels
-// cannot go through 4:2:0 at all; either way the session falls back to tiles
-// and says so in the log.
+// Set per system being played -- Settings has one of these each for a DS, a
+// 3DS and a Wii U -- and taken exactly as chosen, with no automatic fallback
+// to the other if this one turns out not to work. That is deliberate: a
+// silent substitution is indistinguishable from the format actually working,
+// which is the one thing this exists to let a player tell apart. If it
+// cannot be honoured -- the far end cannot decode, this build has no encoder,
+// a screen an odd number of pixels wide or tall meets 4:2:0 -- the session
+// says so instead of quietly sending the other one. See
+// HostSession::take_video_error().
 enum class ScreenCodec {
-    Auto,   // whatever the console being played asks for
-    Tiles,  // changed tiles, whatever it asks for
-    H264,   // video, wherever the far end can take it
+    Tiles,  // changed tiles
+    H264,   // video
 };
 
-// The order the settings screen cycles through, which is also the order above.
+// The settings screen only ever toggles between the two.
 inline ScreenCodec next_screen_codec(ScreenCodec codec) {
     switch (codec) {
-        case ScreenCodec::Auto: return ScreenCodec::Tiles;
         case ScreenCodec::Tiles: return ScreenCodec::H264;
-        case ScreenCodec::H264: return ScreenCodec::Auto;
+        case ScreenCodec::H264: return ScreenCodec::Tiles;
     }
-    return ScreenCodec::Auto;
+    return ScreenCodec::Tiles;
 }
 
 // What settings.json holds, and what --video-codec accepts.
 inline const char* screen_codec_key(ScreenCodec codec) {
     switch (codec) {
-        case ScreenCodec::Auto: return "auto";
         case ScreenCodec::Tiles: return "tiles";
         case ScreenCodec::H264: return "h264";
     }
-    return "auto";
+    return "tiles";
 }
 
-// Anything unrecognised is Auto rather than an error: a typo in a config file
-// should leave the app working the way it would have anyway.
-inline ScreenCodec screen_codec_from_key(const std::string& key) {
+// Anything unrecognised falls back to the caller's own current value rather
+// than to one of these two picked for them: a typo in a config file should
+// leave the setting where it already was rather than silently choosing.
+inline ScreenCodec screen_codec_from_key(const std::string& key, ScreenCodec fallback) {
     if (key == screen_codec_key(ScreenCodec::Tiles)) return ScreenCodec::Tiles;
     if (key == screen_codec_key(ScreenCodec::H264)) return ScreenCodec::H264;
-    return ScreenCodec::Auto;
+    return fallback;
 }
 
 inline const char* to_string(ScreenCodec codec) {
     switch (codec) {
-        case ScreenCodec::Auto: return "Automatic";
-        case ScreenCodec::Tiles: return "Changed tiles";
-        case ScreenCodec::H264: return "H.264 video";
+        case ScreenCodec::Tiles: return "Tiles";
+        case ScreenCodec::H264: return "H264";
     }
-    return "Automatic";
+    return "Tiles";
 }
 
 // Whether this build has a video codec at all. The Switch and Android
