@@ -79,6 +79,20 @@ cd switch && make
 That produces `Dualscreen.nro`. Copy it to `/switch/` on the console's
 SD card and start it from the homebrew menu.
 
+### H.264 video
+
+Add `switch-ffmpeg` and the GamePad screen streams as H.264 through Averne's
+NVTEGRA hwaccel instead of as changed tiles, at a fraction of the bandwidth:
+
+```sh
+sudo dkp-pacman -S switch-ffmpeg
+```
+
+Optional, and detected automatically: `make` finds it or does not, and says
+which in its own output. Nothing else changes — a host that cannot encode
+video, or a companion the host is not sending it to, still gets the tile
+codec exactly as before.
+
 A finished `.nro` carries an asset section on the end — `icon.jpg` and the name
 and version from the top of the `Makefile` — so a menu shows it as *dualscreen
 companion* with the two-screen icon rather than as a bare filename. If a loader

@@ -69,6 +69,54 @@ Both halves of SDL2 are built from that source tree: the native library, and
 the `SDLActivity` Java class this app's activity extends. They have to be the
 same version, which is why a prebuilt `.aar` is not used.
 
+### H.264 video
+
+Optional, the same way it is for the desktop build and the Switch one: the
+GamePad screen carries fine as changed tiles without it, just at several
+times the bandwidth. Unlike the Switch, there is no one official package for
+this — build FFmpeg yourself with the NDK, with MediaCodec (Android's own
+hardware decoder, reached through FFmpeg's JNI bridge) enabled:
+
+```sh
+git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg ffmpeg
+cd ffmpeg
+export ANDROID_NDK_HOME=/path/to/your/ndk   # the same one Gradle uses
+TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+API=21   # matches minSdk in app/build.gradle
+# --cross-prefix has no API number -- it names ar/ranlib/strip, which the NDK
+# does not version -- but --cc/--cxx do, since the compiler is what minSdk
+# actually governs. A version on --cross-prefix too is the usual way this
+# silently falls back to a host gcc that happens to be on PATH instead.
+./configure --prefix=/path/to/ffmpeg-android/arm64-v8a \
+    --target-os=android --arch=aarch64 --cpu=armv8-a \
+    --sysroot=$TOOLCHAIN/sysroot \
+    --cross-prefix=$TOOLCHAIN/bin/llvm- \
+    --cc=$TOOLCHAIN/bin/aarch64-linux-android$API-clang \
+    --cxx=$TOOLCHAIN/bin/aarch64-linux-android$API-clang++ \
+    --enable-cross-compile --enable-pic --enable-jni --enable-mediacodec \
+    --enable-static --disable-shared --disable-programs --disable-doc \
+    --disable-avdevice --disable-avformat --disable-encoders --disable-muxers \
+    --enable-decoder=h264_mediacodec --enable-hwaccel=h264_mediacodec \
+    --enable-swscale
+make -j$(nproc) && make install
+```
+
+Repeat for `armeabi-v7a` if that ABI matters to you —
+`build.gradle`'s `abiFilters` builds both by default — with `--arch=arm
+--cpu=armv7-a` and the compiler names swapped for
+`armv7a-linux-androideabi$API-clang`/`clang++` (`arm`, not `aarch64`, is the
+only thing that changes in the triple). Then point the app's build at
+wherever `--prefix` for each ABI landed, one directory holding both:
+
+```sh
+export FFMPEG_ANDROID_DIR=/path/to/ffmpeg-android
+```
+
+Detected automatically from there: `cmake --log-level=STATUS` (or Android
+Studio's own build output) says whether it was found. Nothing else
+changes — a host that cannot encode video, or a companion the host is not
+sending it to, still gets the tile codec exactly as before.
+
 ## Reading the log
 
 Everything the app does goes to logcat:

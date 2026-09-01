@@ -7,6 +7,12 @@
 #   sudo dkp-pacman -S switch-dev switch-sdl2 switch-zlib
 #   make            # -> Dualscreen.nro
 #
+# switch-ffmpeg is optional -- add it and the GamePad screen streams as H.264
+# instead of changed tiles, at a fraction of the bandwidth (see
+# docs/research-notes.md), through Averne's NVTEGRA hwaccel it is built with:
+#
+#   sudo dkp-pacman -S switch-ffmpeg
+#
 # The sources under ../src are the desktop app's own, compiled unchanged: the
 # wire protocol, discovery, the session, the layout arithmetic and the
 # controller mapping are one implementation used by both ends rather than two
@@ -81,9 +87,26 @@ ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 PORTLIBS   := $(PORTLIBS_PATH)/switch
 SDL2_CONFIG := $(PORTLIBS)/bin/sdl2-config
 
+# Optional, the same way CMakeLists.txt treats it for every other build: the
+# GamePad screen carries fine as changed tiles without it, just at several
+# times the bandwidth -- see docs/research-notes.md. `switch-ffmpeg` is an
+# official devkitPro portlib built with --enable-nvtegra (Averne's NVDEC
+# work), so its presence here is the same as the SDL2 check just above: found
+# by the same $(PORTLIBS)/lib devkitPro already installs everything else
+# into, nothing extra to point at.
+#
+#   sudo dkp-pacman -S switch-ffmpeg
+#
+HAVE_FFMPEG := $(if $(wildcard $(PORTLIBS)/lib/libavcodec.a),1,0)
+ifeq ($(HAVE_FFMPEG),1)
+$(info video codec: libavcodec found, building with the NVTEGRA decoder)
+else
+$(info video codec: switch-ffmpeg not installed, building without one)
+endif
+
 CFLAGS  := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(DEFINES) \
            $(shell $(SDL2_CONFIG) --cflags) \
-           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=0 $(INCLUDE)
+           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=$(HAVE_FFMPEG) $(INCLUDE)
 # The template's -fno-rtti -fno-exceptions are deliberately not here. The
 # shared code throws nothing and asks nothing its type, so neither flag would
 # change what the program does -- only what happens if the standard library
@@ -99,6 +122,20 @@ LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $
 # program links no GL of its own: gl_loader.cpp reaches every entry point
 # through SDL_GL_GetProcAddress, so it names no GL symbol at link time.
 LIBS    := $(shell $(SDL2_CONFIG) --libs) -lz -lnx
+
+# switch-ffmpeg's own dependencies (switch-dav1d, switch-libass and what
+# *that* needs in turn) are still static archives this binary has to satisfy
+# itself, the same as any static link -- ffmpeg only ever gets this far
+# because something upstream of it pulled a symbol out of libdav1d.a or
+# libass.a, not because this program calls either directly. --start-group /
+# --end-group sidesteps having to work out and maintain the right pairwise
+# order among all of them by hand, which the version bundled with this one
+# changing would otherwise be a standing invitation to get wrong.
+ifeq ($(HAVE_FFMPEG),1)
+LIBS += -Wl,--start-group \
+        -lavcodec -lavutil -lswscale -ldav1d -lass -lfribidi -lfreetype -lbz2 \
+        -Wl,--end-group
+endif
 
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 

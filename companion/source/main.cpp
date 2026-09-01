@@ -35,6 +35,18 @@
 
 #ifdef __ANDROID__
 #include <SDL_system.h>
+// FFmpeg's MediaCodec decoder reaches Android's own decoder through JNI, and
+// needs the JavaVM handed to it before anything asks it to open one -- see
+// where av_jni_set_java_vm() is called below. Guarded the same way every
+// other FFmpeg header in this codebase is: DS_HAVE_VIDEO_CODEC is always
+// defined (0 or 1) by whichever build is running, so a build with no video
+// codec compiled in never needs libavcodec's own headers to exist at all.
+#if DS_HAVE_VIDEO_CODEC
+#include <jni.h>
+extern "C" {
+#include <libavcodec/jni.h>
+}
+#endif
 #endif
 
 #include <algorithm>
@@ -985,6 +997,22 @@ int main(int argc, char** argv) {
         set_log_file(std::string(storage) + "/Dualscreen.log");
     }
     log_info("Dualscreen starting");
+#if DS_HAVE_VIDEO_CODEC
+    // Once, before anything can ask this build's video decoder to open --
+    // CompanionSession does that lazily, on the first frame the host actually
+    // sends as video, which is well after this point but never before it.
+    // SDL already holds the JNIEnv this thread was handed at start-up; all
+    // this does is ask it for the JavaVM underneath, which is what FFmpeg's
+    // side of the MediaCodec bridge wants instead.
+    if (JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv())) {
+        JavaVM* vm = nullptr;
+        if (env->GetJavaVM(&vm) == 0 && vm != nullptr) {
+            if (av_jni_set_java_vm(vm, nullptr) < 0) {
+                log_warn("could not hand this device's video decoder a Java VM");
+            }
+        }
+    }
+#endif
 #endif
 
     int status = 0;

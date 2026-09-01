@@ -193,6 +193,32 @@ void test_a_screen_that_cannot_be_encoded_says_so() {
     CHECK_MSG(!encoder.is_open(), "a failed open left the encoder half-open");
 }
 
+// A device-attached backend -- VAAPI on a desktop, NVTEGRA on a Switch -- is
+// the plain "h264" decoder with a hardware device context attached; FFmpeg
+// registers no decoder literally named "h264_vaapi" or "h264_nvtegra". So a
+// build with no such device (this machine has no VAAPI-capable render node)
+// still has to fail for the *right* reason: the decoder was found and it was
+// the device that would not create, not "no such decoder" -- which is what a
+// build that still asked avcodec_find_decoder_by_name() for the label itself
+// would say instead, wrongly, since "h264" always exists once video::available()
+// is true at all.
+void test_a_device_attached_backend_fails_on_the_device_not_the_decoder() {
+    video::VideoDecoder decoder;
+    video::DecoderConfig config;
+    config.backends = {"h264_vaapi"};
+    std::string error;
+    const bool opened = decoder.open(config, &error);
+    // Opens outright on a machine that does have a VAAPI device -- either
+    // answer is a pass, since this is exercising which failure a build
+    // without a real device gets, not asserting this sandbox lacks one.
+    if (!opened) {
+        CHECK_MSG(error.find("no such decoder") == std::string::npos,
+                  "h264_vaapi was rejected as an unknown decoder rather than an unavailable "
+                  "device: " +
+                      error);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -206,5 +232,6 @@ int main() {
     test_the_first_frame_stands_alone_and_more_can_be_asked_for();
     test_the_picture_survives_the_round_trip();
     test_a_screen_that_cannot_be_encoded_says_so();
+    test_a_device_attached_backend_fails_on_the_device_not_the_decoder();
     return test::finish("video-codec");
 }

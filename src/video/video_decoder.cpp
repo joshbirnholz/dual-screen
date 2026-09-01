@@ -2,6 +2,8 @@
 
 #include "util/log.hpp"
 
+#include <cstring>
+
 #if DS_HAVE_VIDEO_CODEC
 
 extern "C" {
@@ -22,6 +24,17 @@ std::string av_error(int code) {
 
 // The one place a platform is named. Everything else on this path is the same
 // FFmpeg calls whichever of these it turns out to be.
+//
+// Not every backend below wants a device context: VAAPI and NVTEGRA are the
+// plain software decoder with one attached, so its absence is what asks
+// FFmpeg to negotiate the hardware pixel format through the ordinary
+// get_format callback -- see decoder_name_for() just below, which is the
+// other half of that same fact. MediaCodec decodes through Android's own API
+// via JNI regardless, and a device context on top of that is what asks it for
+// zero-copy Surface output instead of the plain CPU-readable frames to_rgb()
+// below already knows how to read -- a second pipeline (EGL/GL interop with
+// an Android Surface) this app does not have, so none is attached here and
+// the decoder is left to hand back ordinary frames the same as any other.
 AVHWDeviceType hw_device_for(const std::string& backend) {
     if (backend.find("nvtegra") != std::string::npos) {
         // A Switch. Averne's NVDEC work reaches FFmpeg as an ordinary hwaccel,
@@ -33,9 +46,25 @@ AVHWDeviceType hw_device_for(const std::string& backend) {
 #endif
     }
     if (backend.find("_vaapi") != std::string::npos) return AV_HWDEVICE_TYPE_VAAPI;
-    if (backend.find("mediacodec") != std::string::npos) return AV_HWDEVICE_TYPE_MEDIACODEC;
     if (backend.find("_cuvid") != std::string::npos) return AV_HWDEVICE_TYPE_CUDA;
     return AV_HWDEVICE_TYPE_NONE;
+}
+
+// The name to actually hand avcodec_find_decoder_by_name(). Most backends are
+// their own answer, but not the two hw_device_for() above attaches a context
+// to: FFmpeg registers no "h264_vaapi" or "h264_nvtegra" decoder, only the
+// plain "h264" one that a device context turns into a hardware decode --
+// unlike MediaCodec or CUVID, which really are their own separate decoders
+// under those exact names. The suffix stays part of the backend label either
+// way, since hw_device_for() above still needs it to decide what to attach.
+std::string decoder_name_for(const std::string& backend) {
+    for (const char* suffix : {"_vaapi", "_nvtegra"}) {
+        const std::size_t length = std::strlen(suffix);
+        if (backend.size() > length && backend.compare(backend.size() - length, length, suffix) == 0) {
+            return backend.substr(0, backend.size() - length);
+        }
+    }
+    return backend;
 }
 
 }  // namespace
@@ -80,7 +109,7 @@ bool VideoDecoder::open(const DecoderConfig& config, std::string* error) {
 }
 
 bool VideoDecoder::open_backend(const std::string& name, std::string* error) {
-    const AVCodec* codec = avcodec_find_decoder_by_name(name.c_str());
+    const AVCodec* codec = avcodec_find_decoder_by_name(decoder_name_for(name).c_str());
     if (codec == nullptr) {
         if (error != nullptr) *error = "this build has no such decoder";
         return false;

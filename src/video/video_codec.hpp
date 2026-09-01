@@ -118,9 +118,20 @@ struct EncoderConfig {
 };
 
 struct DecoderConfig {
-    // Tried in order, the same way. On a Switch this is where the NVTEGRA
-    // hwaccel goes; on Android, MediaCodec.
-    std::vector<std::string> backends{"h264"};
+    // Tried in order, the same way. Named per platform because unlike the
+    // encoder above -- which only ever runs on a desktop host -- every one of
+    // these might be the one running this decoder: a Switch, an Android
+    // device, or a desktop companion, each with a different hardware decode
+    // path FFmpeg reaches under a different name. See VideoDecoder::open()
+    // and hw_device_for()/decoder_name_for() in video_decoder.cpp for what
+    // each one actually does once it opens.
+#if defined(__SWITCH__)
+    std::vector<std::string> backends{"h264_nvtegra", "h264"};
+#elif defined(__ANDROID__)
+    std::vector<std::string> backends{"h264_mediacodec", "h264"};
+#else
+    std::vector<std::string> backends{"h264_vaapi", "h264"};
+#endif
 };
 
 }  // namespace ds::video

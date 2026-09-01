@@ -70,4 +70,39 @@ target_include_directories(main PRIVATE
 # codec's, and the NDK ships it. `log` is what logcat output goes through.
 target_link_libraries(main PRIVATE SDL2 SDL2main z log android)
 
+# Optional, the same way the desktop build and the Switch one both treat it:
+# the GamePad screen carries fine as changed tiles without it, just at
+# several times the bandwidth. There is no one official FFmpeg-for-Android
+# package the way switch-ffmpeg is for the Switch, so this expects a
+# self-built one -- see android/README.md for the configure line that gets
+# h264_mediacodec built in -- laid out as <dir>/<ANDROID_ABI>/{include,lib},
+# which is what FFmpeg's own android build instructions produce.
+# FFMPEG_ANDROID_DIR names it, the same way SDL2_ANDROID_SRC names the SDL2
+# source above; ANDROID_ABI is set for us by the NDK's own CMake toolchain
+# file, to whichever ABI this particular build is for.
+if(DEFINED ENV{FFMPEG_ANDROID_DIR})
+    set(FFMPEG_DIR "$ENV{FFMPEG_ANDROID_DIR}/${ANDROID_ABI}")
+endif()
+if(FFMPEG_DIR AND EXISTS "${FFMPEG_DIR}/lib/libavcodec.a")
+    message(STATUS "video codec: libavcodec found at ${FFMPEG_DIR}, building with MediaCodec")
+    target_compile_definitions(main PRIVATE DS_HAVE_VIDEO_CODEC=1)
+    target_include_directories(main PRIVATE "${FFMPEG_DIR}/include")
+    # --start-group/--end-group rather than a fixed order: what a from-scratch
+    # FFmpeg build actually needs beyond these three depends on how it was
+    # configured -- a build with libdav1d or libass enabled statically links
+    # those into libavcodec.a's own symbol table the same way switch-ffmpeg
+    # does, and there is no one list of extras that is right for every build
+    # a reader might have made. Add more .a files to this list if the link
+    # asks for symbols none of these three provide.
+    target_link_libraries(main PRIVATE
+        -Wl,--start-group
+        "${FFMPEG_DIR}/lib/libavcodec.a"
+        "${FFMPEG_DIR}/lib/libavutil.a"
+        "${FFMPEG_DIR}/lib/libswscale.a"
+        -Wl,--end-group)
+else()
+    message(STATUS "video codec: FFMPEG_ANDROID_DIR not set or incomplete, building without one")
+    target_compile_definitions(main PRIVATE DS_HAVE_VIDEO_CODEC=0)
+endif()
+
 target_compile_options(main PRIVATE -Wall -Wextra)
