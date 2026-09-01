@@ -57,7 +57,8 @@ SOURCE_DIRS := $(CLIENT) \
                $(SHARED)/net \
                $(SHARED)/render \
                $(SHARED)/ui \
-               $(SHARED)/util
+               $(SHARED)/util \
+               $(SHARED)/video
 
 CPPFILES    := main.cpp \
                audio_output.cpp \
@@ -65,6 +66,7 @@ CPPFILES    := main.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp input_manager.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
+               video_decoder.cpp video_encoder.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp \
@@ -81,7 +83,7 @@ SDL2_CONFIG := $(PORTLIBS)/bin/sdl2-config
 
 CFLAGS  := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(DEFINES) \
            $(shell $(SDL2_CONFIG) --cflags) \
-           -D__SWITCH__ $(INCLUDE)
+           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=0 $(INCLUDE)
 # The template's -fno-rtti -fno-exceptions are deliberately not here. The
 # shared code throws nothing and asks nothing its type, so neither flag would
 # change what the program does -- only what happens if the standard library

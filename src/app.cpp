@@ -2054,7 +2054,13 @@ void App::Impl::render() {
         quads.clear(compositor.style().background);
     }
 
-    if (state == State::Menu) {
+    // Settings gets the same blurred backdrop as the menu it was opened from,
+    // when that is where it was opened from: the game is still paused behind
+    // it either way, and a Settings reached from the Launcher has no game
+    // frame to blur at all.
+    const bool show_menu_backdrop =
+        state == State::Menu || (state == State::Settings && settings_came_from == State::Menu);
+    if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is
         // exactly the frame underneath it -- and taken again when that frame
         // stops being the one that was copied, which is what picking a layout
@@ -2063,13 +2069,14 @@ void App::Impl::render() {
             menu_backdrop.capture(output_width, output_height, compositor.composition_key());
         }
         menu_backdrop.draw(quads, width, height);
-        // The previews are drawn from the frame the game is paused on, so each
-        // tile shows what picking it will actually look like.
-        picker->render(quads, text, button_glyphs, width, height, game_title, frames);
     } else {
         menu_backdrop.forget();
     }
-    if (state == State::Settings) {
+    if (state == State::Menu) {
+        // The previews are drawn from the frame the game is paused on, so each
+        // tile shows what picking it will actually look like.
+        picker->render(quads, text, button_glyphs, width, height, game_title, frames);
+    } else if (state == State::Settings) {
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
         message.render(quads, text, button_glyphs, width, height);
