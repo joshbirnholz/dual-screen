@@ -199,6 +199,7 @@ distrobox enter "$CONTAINER_NAME" -- bash -lc "
     export DUALSCREEN_IN_CONTAINER=1
     REPO_DIR='${REPO_DIR}' BUILD_DIR='${BUILD_DIR}' REBUILD='${REBUILD}'
     FFMPEG_VERSION='${FFMPEG_VERSION}' FFMPEG_DIR='${FFMPEG_DIR}' FFMPEG_SRC='${FFMPEG_SRC}' FFMPEG_PREFIX='${FFMPEG_PREFIX}'
+    $(declare -f say)
     $(declare -f build_ffmpeg_if_needed)
     $(declare -f bundle_ffmpeg_libs)
     $(declare -f build_here)
