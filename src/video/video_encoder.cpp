@@ -163,6 +163,18 @@ bool VideoEncoder::open_backend(const std::string& name,
     context_->time_base = AVRational{1, config.fps};
     context_->framerate = AVRational{config.fps, 1};
     context_->bit_rate = static_cast<int64_t>(config.bitrate_kbps) * 1000;
+    // Without this, FFmpeg's VAAPI rate-control picker (vaapi_encode_init_
+    // rate_control) only chooses CBR when rc_max_rate == bit_rate; left at 0,
+    // it tries AVBR and VBR first and takes whichever the driver claims to
+    // support, and on the Steam Deck's own AMD driver that is a real
+    // difference -- CBR is confirmed working there
+    // (github.com/ValveSoftware/SteamOS/issues/1609 catches the same driver
+    // getting a *different* rate-control mode, CQP, wrong), while a
+    // silently-broken VBR/AVBR path is exactly the shape of the "invalid
+    // VASurfaceID" failure this is fixing. Harmless for the software and
+    // other hardware backends too: a live stream has no use for a max rate
+    // above its target rate anyway.
+    context_->rc_max_rate = context_->bit_rate;
     // A keyframe costs several times what a delta does, and on a LAN nothing is
     // lost that needs one on a schedule -- a device that joins asks for one.
     // Two seconds keeps recovery bounded without paying for it constantly.
