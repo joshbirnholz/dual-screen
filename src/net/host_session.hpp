@@ -214,27 +214,58 @@ private:
     void drop_companion(const std::string& reason);
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
 public:
-    // Total bytes ever handed to the companion's socket. Lets a test see
-    // whether a frame was queued at all, which is the thing the backlog limit
-    // decides.
-    uint64_t queued_bytes_for_test() const { return companion_.queued_total(); }
+    // Total bytes ever handed to the media socket for a frame. Lets a test see
+    // whether a frame was actually sent, which is what the ack-based backlog
+    // limit decides -- UDP has no send queue of its own to inspect the way
+    // the TCP connection this used to ride did.
+    uint64_t queued_bytes_for_test() const { return media_bytes_sent_; }
     // How far behind the companion says it is, which is what the frame limit
     // throttles on. A companion's own smoothing must not show up here.
     uint64_t companion_frames_behind_for_test() const {
         return (acked_serial_ != 0 && sent_serial_ > acked_serial_) ? sent_serial_ - acked_serial_
                                                                     : 0;
     }
+    // Whether the media channel's own address handshake has completed -- see
+    // poll(). True some time after has_companion() (an extra UDP round trip,
+    // negligible on a real LAN but real on a test's synthetic clock), so a
+    // test publishing a screen or audio immediately after "connected" should
+    // wait for this too, the same way the real app's every-frame retry
+    // naturally would without ever having to check for it explicitly.
+    bool companion_media_ready_for_test() const { return companion_media_known_; }
 
 private:
-    // How many whole frames have been queued but have not yet left the
-    // machine. Prunes the ones that have.
-    std::size_t frames_in_flight();
-    // The same, in frames of sound rather than packets -- see audio_marks_.
-    std::size_t audio_frames_in_flight();
+    // A datagram off the media channel, already past the session-token check
+    // -- see poll(). Frame and Audio are host->companion only, so one
+    // arriving here is ignored; Input and FrameAck are this direction's real
+    // traffic.
+    void handle_media_datagram(MessageType type, const uint8_t* payload, std::size_t payload_size);
+    // Splits one screen's frame payload across as many UDP datagrams as it
+    // takes -- see kMaxMediaDatagramBytes -- and sends each one. Returns the
+    // number of bytes actually handed to the socket, for
+    // queued_bytes_for_test() and stats_sent_.
+    std::size_t send_frame_fragments(const FrameMessage& frame);
 
     Config config_;
     TcpListener listener_;
     HostAnnouncer announcer_;
+    // Video, audio, input and frame-acks -- everything on the latency-critical
+    // path -- ride here instead of the TCP connection below. See kMediaPort's
+    // own comment for why the two are kept apart.
+    UdpSocket media_socket_;
+    // Generated fresh whenever a companion's handshake completes and sent to
+    // it in WelcomeMessage; every media datagram either side sends carries it,
+    // so a stray or late one from a different session is silently ignored
+    // rather than acted on -- UDP has no connection of its own to say that for
+    // it the way the TCP stream below does.
+    uint64_t session_token_ = 0;
+    // The companion's own media socket is not on a fixed port the way this
+    // one is, so its address is learned from the first datagram it sends
+    // rather than agreed on in advance -- see poll().
+    std::string companion_media_address_;
+    uint16_t companion_media_port_ = 0;
+    bool companion_media_known_ = false;
+    // See queued_bytes_for_test().
+    uint64_t media_bytes_sent_ = 0;
 
     TcpStream companion_;
     std::vector<uint8_t> inbox_;
@@ -279,33 +310,13 @@ private:
     bool companion_asked_for_menu_ = false;
     int companion_display_width_ = 0;
     int companion_display_height_ = 0;
-    // The size of the last screen payload actually sent, both screens
-    // combined. Bounds how much backlog is allowed to build up before a frame
-    // is dropped -- in frame-times rather than a fixed byte count, so the
-    // limit rises and falls with whatever resolution is currently being
-    // streamed instead of being tuned for one console and wrong for another.
-    // Where each queued frame ends, counted in bytes ever handed to the
-    // socket. A frame has gone once that many bytes have actually departed.
-    std::deque<uint64_t> frame_marks_;
-    // The newest frame the companion says it has decoded. Zero until it has
-    // said anything.
+    // How far ahead of what the companion has acknowledged decoding this end
+    // is allowed to get before a new frame is dropped rather than sent -- see
+    // kMaxQueuedFrames. UDP has no send queue of its own to also bound the
+    // way the old TCP-based backstop did (frames_in_flight(), removed with
+    // it): a datagram is either sent now or not at all, so this ack-based
+    // limit is the only pacing this needs.
     uint64_t acked_serial_ = 0;
-    // The same idea as frame_marks_, but for audio: where each queued packet
-    // ends, in bytes ever handed to the socket, paired with how many frames
-    // of sound that packet was. Audio shares that socket with video, so how
-    // many bytes are sitting unsent says nothing about audio specifically --
-    // a single queued video frame can be many times the size of a sane audio
-    // backlog limit, and would starve audio out on that basis alone. This
-    // fills in behind whatever video is ahead of it in the queue instead of
-    // being dropped for video's backlog. The frame count alongside each mark
-    // is what lets audio_frames_in_flight() measure the backlog in time
-    // rather than packet count -- a Wii U's audio arrives in far smaller,
-    // far more frequent packets than a DS or 3DS's (Cemu's mixer runs on a
-    // ~3ms cycle; a libretro core hands over roughly a video frame's worth at
-    // once), so a fixed packet count is nowhere near the same number of
-    // milliseconds for the two, and tuning it for one starves or over-buffers
-    // the other.
-    std::deque<std::pair<uint64_t, std::size_t>> audio_marks_;
 
     // Once-a-second streaming summary, for working out on real hardware where
     // a slow stream is actually being lost. Debug level, so --verbose asks for

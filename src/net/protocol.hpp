@@ -319,11 +319,23 @@ void encode_reject(const RejectMessage& message, std::vector<uint8_t>& out);
 void encode_session_state(const SessionStateMessage& message, std::vector<uint8_t>& out);
 void encode_frame(const FrameMessage& message, std::vector<uint8_t>& out);
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out);
+// As encode_audio_payload() is to encode_audio() above: what decode_input()
+// reads back, without the TCP connection's length/type framing -- what the
+// UDP media channel appends after encode_media_header().
+void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out);
 void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
+// The same fields encode_audio() sends, but without the length/type framing
+// that wraps them for the TCP connection -- exactly what decode_audio()
+// reads back either way, since it was already payload-only. This is what the
+// UDP media channel appends after encode_media_header(); encode_audio()
+// above is defined in terms of it.
+void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out);
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 void encode_bye(std::vector<uint8_t>& out);
 void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out);
+// As encode_audio_payload() is to encode_audio() above.
+void encode_frame_ack_payload(uint64_t serial, std::vector<uint8_t>& out);
 bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial);
 // The beacon is not framed -- it replaces the buffer with one datagram.
 void encode_beacon(const BeaconMessage& message, std::vector<uint8_t>& out);

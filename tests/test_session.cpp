@@ -41,7 +41,7 @@ bool spin(HostSession& host, CompanionSession& companion, Predicate done, int mi
 // anything the welcome carries is still unset.
 bool paired(HostSession& host, CompanionSession& companion) {
     return spin(host, companion, [&] {
-        return host.has_companion() &&
+        return host.has_companion() && host.companion_media_ready_for_test() &&
                companion.status() == CompanionSession::Status::Connected;
     });
 }
@@ -116,7 +116,8 @@ void test_host_and_companion_pair_up() {
 
     companion.connect_to(target);
     const bool connected = spin(host, companion, [&] {
-        return companion.status() == CompanionSession::Status::Connected && host.has_companion();
+        return companion.status() == CompanionSession::Status::Connected && host.has_companion() &&
+               host.companion_media_ready_for_test();
     });
     CHECK_MSG(connected, std::string("handshake did not complete: ") + companion.status_detail());
     if (!connected) return;
@@ -296,7 +297,8 @@ void test_a_screen_above_the_old_native_only_size_still_arrives() {
 
     companion.connect_to(companion.hosts().front());
     const bool connected = spin(host, companion, [&] {
-        return companion.status() == CompanionSession::Status::Connected && host.has_companion();
+        return companion.status() == CompanionSession::Status::Connected && host.has_companion() &&
+               host.companion_media_ready_for_test();
     });
     CHECK_MSG(connected, std::string("handshake did not complete: ") + companion.status_detail());
     if (!connected) return;
@@ -415,7 +417,7 @@ void test_companion_gets_the_screen_it_asked_for() {
         companion.connect_to(found);
         const bool connected = spin(host, companion, [&] {
             return companion.status() == CompanionSession::Status::Connected &&
-                   host.has_companion();
+                   host.has_companion() && host.companion_media_ready_for_test();
         });
         CHECK_MSG(connected, "handshake did not complete");
         if (!connected) {
@@ -1195,7 +1197,7 @@ void test_frames_that_arrive_together_are_shown_on_a_clock() {
     companion.connect_to(companion.hosts().front());
     if (!spin(host, companion, [&] {
             return companion.status() == CompanionSession::Status::Connected &&
-                   host.has_companion();
+                   host.has_companion() && host.companion_media_ready_for_test();
         })) {
         CHECK_MSG(false, "handshake did not complete");
         return;
@@ -1287,7 +1289,7 @@ void test_a_companion_that_falls_behind_stops_being_sent_frames() {
     companion.connect_to(companion.hosts().front());
     if (!spin(host, companion, [&] {
             return companion.status() == CompanionSession::Status::Connected &&
-                   host.has_companion();
+                   host.has_companion() && host.companion_media_ready_for_test();
         })) {
         CHECK_MSG(false, "handshake did not complete");
         return;

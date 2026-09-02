@@ -45,9 +45,16 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // whichever path the last session ended by, a fresh one starts with
     // nothing carried over from it, this included.
     menu_open_ = false;
+    session_token_ = 0;
+    reassembly_top_ = FrameReassembly();
+    reassembly_bottom_ = FrameReassembly();
 
     std::string error;
     if (!stream_.start_connect(host.address, host.session_port, &error)) {
+        fail(error);
+        return;
+    }
+    if (!media_socket_.open() && !media_socket_.start(0, false, &error)) {
         fail(error);
         return;
     }
@@ -72,9 +79,13 @@ void CompanionSession::disconnect() {
         stream_.pump(ignored, &error);
     }
     stream_.close();
+    media_socket_.stop();
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
+    session_token_ = 0;
+    reassembly_top_ = FrameReassembly();
+    reassembly_bottom_ = FrameReassembly();
     pending_frames_.clear();
     received_serial_ = 0;
     next_due_ms_ = 0;
@@ -93,9 +104,13 @@ void CompanionSession::disconnect() {
 
 void CompanionSession::fail(const std::string& reason) {
     stream_.close();
+    media_socket_.stop();
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
+    session_token_ = 0;
+    reassembly_top_ = FrameReassembly();
+    reassembly_bottom_ = FrameReassembly();
     status_ = Status::Failed;
     status_detail_ = reason;
     if (rumble_callback_) {
@@ -116,6 +131,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             system_ = welcome.system;
             granted_screen_ = welcome.granted_screen;
             audio_sample_rate_ = welcome.audio_sample_rate;
+            session_token_ = welcome.session_token;
             status_ = Status::Connected;
             status_detail_ = "showing the " + std::string(to_string(granted_screen_)) +
                              " screen of " + game_title_;
@@ -126,6 +142,19 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             // from anywhere else.
             log_info("this session is going out from " + stream_.local_address() + " to " +
                      stream_.peer_address());
+            // The host's own media socket is on a fixed, well-known port, but
+            // it does not know this device's until a datagram actually
+            // arrives there -- see HostSession::poll(). send_input() and the
+            // frame-ack below would eventually do that on their own, but
+            // input only sends on a change and the first ack needs a frame
+            // that cannot arrive until the host knows where to send it; this
+            // breaks that circularity with one immediate, unconditional send.
+            host_address_ = stream_.peer_address();
+            {
+                std::vector<uint8_t> hello;
+                encode_media_header(session_token_, MessageType::Ping, hello);
+                media_socket_.send_to(host_address_, kMediaPort, hello.data(), hello.size());
+            }
             break;
         }
         case MessageType::Reject: {
@@ -161,66 +190,6 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             granted_screen_ = state.companion_screen;
             break;
         }
-        case MessageType::Frame: {
-            FrameMessage frame;
-            if (!decode_frame(payload.data(), payload.size(), frame)) {
-                fail("the host sent a frame we could not read");
-                return;
-            }
-            // Bounded before allocating: these dimensions came off a socket,
-            // and decode_screen_pixels() sizes its buffers from them alone,
-            // before it has even looked at the payload. 4096 is not tied to
-            // any one console -- it only has to comfortably clear whatever a
-            // real screen, read back at whatever resolution the recipient
-            // asked for, could actually come out to (a 3DS top screen at its
-            // maximum render scale is 1200 wide), with headroom for larger
-            // consoles this app plays later rather than needing to be raised
-            // again the next time one arrives.
-            constexpr uint16_t kMaxFrameDimension = 4096;
-            if (frame.width == 0 || frame.height == 0 || frame.width > kMaxFrameDimension ||
-                frame.height > kMaxFrameDimension) {
-                fail("the host sent a frame with impossible dimensions");
-                return;
-            }
-            // Held rather than applied here: poll() shows frames on a clock,
-            // so the cadence on screen is even whatever the arrivals did.
-            if (frame.serial != received_serial_) {
-                const uint64_t now = monotonic_millis();
-                if (last_arrival_ms_ != 0 && now > last_arrival_ms_) {
-                    // Smoothed, because any one gap is mostly jitter. This is
-                    // how fast the host is really producing, which is what the
-                    // picture should advance at.
-                    const double gap = static_cast<double>(now - last_arrival_ms_);
-                    if (gap >= 4.0 && gap <= 100.0) {
-                        frame_period_ms_ = frame_period_ms_ * 0.95 + gap * 0.05;
-                    }
-                }
-                last_arrival_ms_ = now;
-                received_serial_ = frame.serial;
-            }
-            pending_frames_.push_back(std::move(frame));
-            break;
-        }
-        case MessageType::Audio: {
-            AudioMessage audio;
-            if (!decode_audio(payload.data(), payload.size(), audio)) {
-                return;  // a bad audio packet is not worth ending a session over
-            }
-            if (audio.samples.empty()) {
-                return;
-            }
-            // Shared is a DS or 3DS's one soundtrack and always plays. A Wii
-            // U's TopDevice/BottomDevice streams reach a companion at all
-            // only when the host decided this device is the one holding that
-            // screen -- see HostSession::publish_audio and the External
-            // source's own audio callback in app.cpp -- so whichever one
-            // arrives here always plays too; there is nothing left to check.
-            if (audio_callback_) {
-                audio_callback_(audio.samples.data(), audio.samples.size() / 2,
-                                audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_);
-            }
-            break;
-        }
         case MessageType::Rumble: {
             RumbleMessage rumble;
             if (!decode_rumble(payload.data(), payload.size(), rumble)) {
@@ -240,6 +209,120 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         default:
             break;
     }
+}
+
+void CompanionSession::handle_media_datagram(MessageType type, const uint8_t* payload,
+                                             std::size_t payload_size) {
+    switch (type) {
+        case MessageType::Frame:
+            handle_frame_fragment(payload, payload_size);
+            break;
+        case MessageType::Audio: {
+            AudioMessage audio;
+            if (!decode_audio(payload, payload_size, audio)) {
+                return;  // a bad audio packet is not worth ending a session over
+            }
+            if (audio.samples.empty()) {
+                return;
+            }
+            // Shared is a DS or 3DS's one soundtrack and always plays. A Wii
+            // U's TopDevice/BottomDevice streams reach a companion at all
+            // only when the host decided this device is the one holding that
+            // screen -- see HostSession::publish_audio and the External
+            // source's own audio callback in app.cpp -- so whichever one
+            // arrives here always plays too; there is nothing left to check.
+            if (audio_callback_) {
+                audio_callback_(audio.samples.data(), audio.samples.size() / 2,
+                                audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_);
+            }
+            break;
+        }
+        default:
+            // Input and FrameAck are companion->host only; anything else on
+            // this channel is not this end's to act on.
+            break;
+    }
+}
+
+void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t payload_size) {
+    FrameFragmentHeader header;
+    const uint8_t* chunk = nullptr;
+    std::size_t chunk_size = 0;
+    if (!decode_frame_fragment(payload, payload_size, header, chunk, chunk_size)) {
+        return;
+    }
+    // Bounded before allocating: these dimensions came off a socket, and
+    // decode_screen_pixels() sizes its buffers from them alone, before it has
+    // even looked at the payload. 4096 is not tied to any one console -- it
+    // only has to comfortably clear whatever a real screen, read back at
+    // whatever resolution the recipient asked for, could actually come out to
+    // (a 3DS top screen at its maximum render scale is 1200 wide), with
+    // headroom for larger consoles this app plays later rather than needing
+    // to be raised again the next time one arrives.
+    constexpr uint16_t kMaxFrameDimension = 4096;
+    if (header.width == 0 || header.height == 0 || header.width > kMaxFrameDimension ||
+        header.height > kMaxFrameDimension || header.fragment_count == 0 ||
+        header.fragment_index >= header.fragment_count) {
+        return;  // not worth ending a session over -- see the class comment
+    }
+
+    FrameReassembly& slot = (header.screen == ScreenId::Top) ? reassembly_top_ : reassembly_bottom_;
+    // A fragment for anything other than what is already in progress starts a
+    // fresh reassembly, discarding whatever partial fragments were held for
+    // the old one -- the sender has moved on to a newer frame, and the two
+    // can never be pieced together into one anyway. Anything older than the
+    // one already in progress is ignored outright.
+    if (!slot.active || header.serial > slot.serial) {
+        slot = FrameReassembly();
+        slot.active = true;
+        slot.serial = header.serial;
+        slot.screen = header.screen;
+        slot.encoding = header.encoding;
+        slot.width = header.width;
+        slot.height = header.height;
+        slot.fragment_count = header.fragment_count;
+        slot.fragments.resize(header.fragment_count);
+        slot.received.assign(header.fragment_count, false);
+    } else if (header.serial < slot.serial) {
+        return;
+    }
+    if (!slot.received[header.fragment_index]) {
+        slot.fragments[header.fragment_index].assign(chunk, chunk + chunk_size);
+        slot.received[header.fragment_index] = true;
+        ++slot.received_count;
+    }
+    if (slot.received_count < slot.fragment_count) {
+        return;
+    }
+
+    FrameMessage frame;
+    frame.screen = slot.screen;
+    frame.serial = slot.serial;
+    frame.width = slot.width;
+    frame.height = slot.height;
+    frame.encoding = slot.encoding;
+    for (const std::vector<uint8_t>& fragment : slot.fragments) {
+        frame.payload.insert(frame.payload.end(), fragment.begin(), fragment.end());
+    }
+    slot = FrameReassembly();
+
+    // Held rather than applied here: poll() shows frames on a clock, so the
+    // cadence on screen is even whatever the arrivals did.
+    if (frame.serial != received_serial_) {
+        const uint64_t now = monotonic_millis();
+        if (last_arrival_ms_ != 0 && now > last_arrival_ms_) {
+            // Smoothed, because any one gap is mostly jitter. This is how
+            // fast the host is really producing, which is what the picture
+            // should advance at.
+            const double gap = static_cast<double>(now - last_arrival_ms_);
+            if (gap >= 4.0 && gap <= 100.0) {
+                frame_period_ms_ = frame_period_ms_ * 0.95 + gap * 0.05;
+            }
+        }
+        last_arrival_ms_ = now;
+        received_serial_ = frame.serial;
+    }
+    pending_frames_.push_back(std::move(frame));
 }
 
 void CompanionSession::poll(uint64_t now_ms) {
@@ -308,6 +391,30 @@ void CompanionSession::poll(uint64_t now_ms) {
         }
     }
 
+    // Frame, Audio, Input and FrameAck all ride the media channel instead --
+    // see kMediaPort. Drained the same way the TCP inbox above is, and
+    // ignored (not treated as a session failure) if it does not check out:
+    // UDP has no stream to desynchronise, so a bad or stray datagram is just
+    // one bad datagram.
+    {
+        std::vector<uint8_t> datagram;
+        std::string from_address;
+        while (media_socket_.receive(datagram, from_address)) {
+            uint64_t token = 0;
+            MessageType type = MessageType::Ping;
+            const uint8_t* payload = nullptr;
+            std::size_t payload_size = 0;
+            if (!decode_media_header(datagram.data(), datagram.size(), token, type, payload,
+                                     payload_size)) {
+                continue;
+            }
+            if (session_token_ == 0 || token != session_token_) {
+                continue;
+            }
+            handle_media_datagram(type, payload, payload_size);
+        }
+    }
+
     // Advance the picture on the host's cadence rather than this device's.
     //
     // A frame that arrived early waits until it is due, which is what pays for
@@ -346,16 +453,13 @@ void CompanionSession::poll(uint64_t now_ms) {
     // left for the next poll: an ack that describes the state of things two
     // polls ago reads to the host as a device two frames further behind than
     // it is, and the host throttles on exactly that number.
-    if (status_ == Status::Connected && stream_.open() && received_serial_ != acked_serial_) {
+    if (status_ == Status::Connected && received_serial_ != acked_serial_) {
         const uint64_t newest = received_serial_;
         acked_serial_ = newest;
         std::vector<uint8_t> ack;
-        encode_frame_ack(newest, ack);
-        stream_.send(ack);
-        std::string flush_error;
-        if (!stream_.pump(inbox_, &flush_error)) {
-            fail(flush_error);
-        }
+        encode_media_header(session_token_, MessageType::FrameAck, ack);
+        encode_frame_ack_payload(newest, ack);
+        media_socket_.send_to(host_address_, kMediaPort, ack.data(), ack.size());
     }
 }
 
@@ -385,8 +489,9 @@ void CompanionSession::send_input(const DsInputState& state) {
     message.c_stick_x = state.c_stick_x;
     message.c_stick_y = state.c_stick_y;
     std::vector<uint8_t> out;
-    encode_input(message, out);
-    stream_.send(out);
+    encode_media_header(session_token_, MessageType::Input, out);
+    encode_input_payload(message, out);
+    media_socket_.send_to(host_address_, kMediaPort, out.data(), out.size());
 
     last_sent_input_ = state;
     ever_sent_input_ = true;

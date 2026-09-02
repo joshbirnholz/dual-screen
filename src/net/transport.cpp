@@ -550,7 +550,11 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address,
     if (descriptor_ < 0) {
         return false;
     }
-    uint8_t chunk[2048];
+    // Comfortably above kMaxMediaDatagramBytes (protocol.hpp), which is what
+    // every sender in this codebase is meant to stay under -- this is a
+    // safety margin against a truncated read silently corrupting a datagram
+    // that overran it, not the real bound.
+    uint8_t chunk[4096];
     sockaddr_in peer {};
     socklen_t length = sizeof(peer);
     const ssize_t read = ::recvfrom(descriptor_, chunk, sizeof(chunk), 0,

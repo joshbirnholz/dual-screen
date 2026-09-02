@@ -195,6 +195,35 @@ public:
 
 private:
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
+    // Frame and Audio, the host->companion half of the media channel -- see
+    // kMediaPort. A malformed or stray datagram is simply ignored rather than
+    // ending the session: UDP has no stream to desynchronise, so one bad
+    // packet is just one bad packet.
+    void handle_media_datagram(MessageType type, const uint8_t* payload, std::size_t payload_size);
+    // Accumulates one screen's fragments (see FrameFragmentHeader) until
+    // they are all in, then hands the whole thing to pending_frames_ the same
+    // way a TCP-carried Frame message used to arrive complete already. A
+    // fragment for a newer serial than whatever is in progress discards the
+    // old, incomplete one -- the sender has moved on, so waiting for stray
+    // fragments of a frame that will never complete would only add latency.
+    struct FrameReassembly {
+        bool active = false;
+        uint64_t serial = 0;
+        ScreenId screen = ScreenId::Top;
+        FrameEncoding encoding = FrameEncoding::Rgb565Deflate;
+        uint16_t width = 0;
+        uint16_t height = 0;
+        uint16_t fragment_count = 0;
+        std::size_t received_count = 0;
+        std::vector<std::vector<uint8_t>> fragments;
+        // Separate from fragments[i].empty(): a fragment can legitimately
+        // carry zero payload bytes, which must not read as "not received yet"
+        // and stall a reassembly that is otherwise already complete.
+        std::vector<bool> received;
+    };
+    void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
+    FrameReassembly reassembly_top_;
+    FrameReassembly reassembly_bottom_;
     void send_request(RequestMessage request);
     void fail(const std::string& reason);
 
@@ -222,6 +251,17 @@ private:
     HostBrowser browser_;
     TcpStream stream_;
     std::vector<uint8_t> inbox_;
+    // Video, audio, input and frame-acks ride here instead of the TCP
+    // connection above -- see kMediaPort. An ephemeral local port is enough:
+    // this device only ever sends to and receives from the one host, whose
+    // fixed, well-known port it already sends to directly.
+    UdpSocket media_socket_;
+    // From WelcomeMessage, echoed on every datagram this device sends there
+    // -- see HostSession::session_token_'s own comment for why.
+    uint64_t session_token_ = 0;
+    // The host's own address, learned from the TCP connection (same machine,
+    // just a different port for the media channel).
+    std::string host_address_;
 
     Status status_ = Status::Idle;
     std::string status_detail_;

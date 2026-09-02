@@ -1,11 +1,23 @@
 #include "net/host_session.hpp"
 
 #include <algorithm>
+#include <random>
 
 #include "util/log.hpp"
 
 namespace ds::net {
 namespace {
+
+// A fresh one per companion, unpredictable enough that a stray datagram from
+// a previous session (or from anything else that happens to find this port)
+// essentially never matches it -- see session_token_'s own comment. Not
+// trying to be a security boundary, just a filter: this is a LAN between two
+// of the player's own devices.
+uint64_t random_session_token() {
+    static std::mt19937_64 engine(std::random_device{}());
+    std::uniform_int_distribution<uint64_t> distribution;
+    return distribution(engine);
+}
 
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
@@ -34,25 +46,33 @@ namespace {
 // it cannot keep up, instead of quietly queuing behind it.
 constexpr std::size_t kMaxQueuedFrames = 2;
 
-// Counted in milliseconds of sound, not bytes and not packets. Bytes stopped
-// working for the same reason as video: audio shares one connection with
-// video, so bytes still sitting in the socket are mostly video's, not
-// audio's, and a single queued video frame can outweigh a very generous
-// audio backlog many times over -- gating on that punished audio for
-// video's backlog and dropped whole packets, heard as a pop rather than the
-// mild extra lag a byte limit was meant to bound. Packets do not work
-// either: a Wii U's TV/GamePad audio arrives in far smaller, far more
-// frequent packets than a DS or 3DS's (Cemu's mixer runs on a ~3ms cycle,
-// against a libretro core handing over roughly a video frame's worth at
-// once), so a fixed packet count is nowhere near the same number of
-// milliseconds for the two -- a limit loose enough not to starve the Wii U
-// case let a stuck DS/3DS stream queue the better part of a second before
-// anything gave way. Milliseconds are what this is actually about either
-// way: how far ahead of what has left the machine this end is allowed to
-// get, converted to a packet's own frame count via its own sample rate so
-// the two streams are held to the same standard instead of two different
-// ones by accident.
-constexpr uint64_t kMaxQueuedAudioMs = 80;
+// Audio needs no backlog limit of its own any more. The old one existed
+// because a fat queued video frame sitting ahead of it in the same TCP
+// connection could starve it out or force a byte-count guess at how much of
+// that shared queue was really audio's; UDP has neither problem, since a send
+// either goes out now or is simply gone -- there is nothing here for a queue
+// to grow into in the first place.
+
+// How much of one UDP media datagram is left for a Frame message's payload
+// once the media header (encode_media_header()) and the fragment header
+// (encode_frame_fragment()) are both accounted for -- see
+// kMaxMediaDatagramBytes for why the datagram itself is capped where it is.
+constexpr std::size_t kMediaHeaderBytes = 9;    // u64 session_token + u8 type
+constexpr std::size_t kFragmentHeaderBytes = 18;  // FrameFragmentHeader, on the wire
+constexpr std::size_t kMaxFragmentPayload =
+    kMaxMediaDatagramBytes - kMediaHeaderBytes - kFragmentHeaderBytes;
+
+// Audio's own fixed header inside encode_audio_payload(): u8 stream + u32
+// sample_rate + u32 sample count.
+constexpr std::size_t kAudioPayloadHeaderBytes = 9;
+// A batch handed to publish_audio() can be much larger than one datagram
+// safely holds -- unlike a video frame, audio has no fragment header or
+// reassembly to fall back on, so it is capped at the source instead, split
+// into as many independent packets as it takes. Independent is exactly what
+// a run of PCM samples already is: there is no cross-packet state to carry,
+// so this costs nothing beyond a few extra small sends.
+constexpr std::size_t kMaxAudioFramesPerPacket =
+    (kMaxMediaDatagramBytes - kMediaHeaderBytes - kAudioPayloadHeaderBytes) / (2 * sizeof(int16_t));
 
 // How long a failed video encoder stays backed off to tiles before the next
 // frame is allowed to try it again. Long enough that a genuinely broken
@@ -69,6 +89,10 @@ bool HostSession::start(const Config& config, std::string* error) {
     companion_screen_ = (config.host_screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
 
     if (!listener_.start(kSessionPort, error)) {
+        return false;
+    }
+    if (!media_socket_.start(kMediaPort, false, error)) {
+        listener_.stop();
         return false;
     }
     std::string announce_error;
@@ -93,6 +117,7 @@ void HostSession::stop() {
     }
     companion_.close();
     listener_.stop();
+    media_socket_.stop();
     announcer_.stop();
     inbox_.clear();
     handshake_done_ = false;
@@ -197,12 +222,17 @@ void HostSession::drop_companion(const std::string& reason) {
     // direction.
     companion_display_width_ = 0;
     companion_display_height_ = 0;
-    frame_marks_.clear();
     frame_sent_at_.clear();
-    audio_marks_.clear();
     resend_screens_ = false;
     sent_serial_ = 0;
     acked_serial_ = 0;
+    // Whoever connects next gets a fresh token and has to say hello on the
+    // media channel again -- its address there is not carried over from a
+    // companion that is gone.
+    session_token_ = 0;
+    companion_media_address_.clear();
+    companion_media_port_ = 0;
+    companion_media_known_ = false;
     previous_top_.clear();
     previous_bottom_.clear();
     // The same reasoning as the two lines above, in video form: a stream's
@@ -273,6 +303,13 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             companion_name_ = hello.device_name.empty() ? "companion" : hello.device_name;
             companion_accepts_video_ = hello.accepts_video;
             handshake_done_ = true;
+            // Fresh for this companion; see session_token_'s own comment. The
+            // companion's own address on the media channel is not known yet --
+            // that arrives with its first datagram there, once it has this.
+            session_token_ = random_session_token();
+            companion_media_address_.clear();
+            companion_media_port_ = 0;
+            companion_media_known_ = false;
 
             WelcomeMessage welcome;
             welcome.game_title = config_.game_title;
@@ -280,6 +317,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             welcome.granted_screen = companion_screen_;
             welcome.system = config_.system;
             welcome.audio_sample_rate = config_.audio_sample_rate;
+            welcome.session_token = session_token_;
             std::vector<uint8_t> out;
             encode_welcome(welcome, out);
             companion_.send(out);
@@ -290,26 +328,6 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             log_info(companion_name_ + " connected as the " +
                      std::string(to_string(companion_screen_)) + " screen");
             refresh_beacon();
-            break;
-        }
-        case MessageType::Input: {
-            InputMessage input;
-            if (!decode_input(payload.data(), payload.size(), input)) {
-                drop_companion("that device sent malformed input");
-                return;
-            }
-            companion_input_.buttons = input.buttons;
-            companion_input_.touching = input.touching;
-            // Clamped rather than trusted: these arrive from another machine,
-            // and to this console's own touch screen rather than a DS's.
-            const ScreenSize touch = system_profile(config_.system).screens.bottom;
-            companion_input_.touch_x = std::min(std::max<int>(input.touch_x, 0), touch.width - 1);
-            companion_input_.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
-            companion_input_.circle_x = input.circle_x;
-            companion_input_.circle_y = input.circle_y;
-            companion_input_.c_stick_x = input.c_stick_x;
-            companion_input_.c_stick_y = input.c_stick_y;
-            companion_input_fresh_ = true;
             break;
         }
         case MessageType::Request: {
@@ -404,9 +422,48 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             }
             break;
         }
+        case MessageType::Bye:
+            drop_companion("the other device left");
+            break;
+        case MessageType::Ping:
+            break;
+        default:
+            // A message we do not expect from a companion. Ignored rather than
+            // fatal, so a newer companion sending extra chatter still works.
+            break;
+    }
+}
+
+// Input and FrameAck, the companion->host half of the media channel -- see
+// kMediaPort. Unlike handle_message() above, a malformed datagram here is
+// simply ignored rather than treated as a reason to drop the whole session:
+// UDP has no stream to desynchronise, so one bad packet is just one bad
+// packet, not evidence the connection itself is broken.
+void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload,
+                                        std::size_t payload_size) {
+    switch (type) {
+        case MessageType::Input: {
+            InputMessage input;
+            if (!decode_input(payload, payload_size, input)) {
+                return;
+            }
+            companion_input_.buttons = input.buttons;
+            companion_input_.touching = input.touching;
+            // Clamped rather than trusted: these arrive from another machine,
+            // and to this console's own touch screen rather than a DS's.
+            const ScreenSize touch = system_profile(config_.system).screens.bottom;
+            companion_input_.touch_x = std::min(std::max<int>(input.touch_x, 0), touch.width - 1);
+            companion_input_.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
+            companion_input_.circle_x = input.circle_x;
+            companion_input_.circle_y = input.circle_y;
+            companion_input_.c_stick_x = input.c_stick_x;
+            companion_input_.c_stick_y = input.c_stick_y;
+            companion_input_fresh_ = true;
+            break;
+        }
         case MessageType::FrameAck: {
             uint64_t serial = 0;
-            if (decode_frame_ack(payload.data(), payload.size(), serial)) {
+            if (decode_frame_ack(payload, payload_size, serial)) {
                 acked_serial_ = std::max(acked_serial_, serial);
                 // Everything up to the acked frame has arrived, so time the
                 // newest of them and discard the rest.
@@ -424,14 +481,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             }
             break;
         }
-        case MessageType::Bye:
-            drop_companion("the other device left");
-            break;
-        case MessageType::Ping:
-            break;
         default:
-            // A message we do not expect from a companion. Ignored rather than
-            // fatal, so a newer companion sending extra chatter still works.
+            // Frame and Audio are host->companion only; anything else on this
+            // channel is not this end's to act on.
             break;
     }
 }
@@ -440,6 +492,37 @@ void HostSession::poll(uint64_t now_ms) {
     announcer_.poll(now_ms);
     if (has_companion()) {
         report_stream(now_ms);
+    }
+
+    // Drained every call, companion or not: a stray datagram (an old
+    // session's, or anything else that finds this port) should not sit in
+    // the kernel's receive buffer crowding out real traffic, and there is
+    // nothing here that needs a TCP handshake to already be done -- a
+    // datagram whose token does not match whatever session_token_ currently
+    // is (zero, before any companion has connected, matches nothing) is
+    // simply ignored.
+    std::vector<uint8_t> datagram;
+    std::string from_address;
+    uint16_t from_port = 0;
+    while (media_socket_.receive(datagram, from_address, from_port)) {
+        uint64_t token = 0;
+        MessageType type = MessageType::Ping;
+        const uint8_t* payload = nullptr;
+        std::size_t payload_size = 0;
+        if (!decode_media_header(datagram.data(), datagram.size(), token, type, payload,
+                                 payload_size)) {
+            continue;
+        }
+        if (!handshake_done_ || token != session_token_) {
+            continue;
+        }
+        // Learned here rather than announced anywhere: the companion's media
+        // socket is on an ephemeral port, and this is simply whichever
+        // address its most recent datagram actually came from.
+        companion_media_address_ = from_address;
+        companion_media_port_ = from_port;
+        companion_media_known_ = true;
+        handle_media_datagram(type, payload, payload_size);
     }
 
     if (!companion_.open()) {
@@ -581,14 +664,14 @@ bool HostSession::take_video_error(std::string& out_reason) {
 void HostSession::report_stream(uint64_t now_ms) {
     if (stats_at_ms_ == 0) {
         stats_at_ms_ = now_ms;
-        stats_bytes_ = companion_.queued_total();
+        stats_bytes_ = media_bytes_sent_;
         return;
     }
     const uint64_t elapsed = now_ms - stats_at_ms_;
     if (elapsed < 1000) {
         return;
     }
-    const uint64_t bytes = companion_.queued_total() - stats_bytes_;
+    const uint64_t bytes = media_bytes_sent_ - stats_bytes_;
     const unsigned dropped = stats_produced_ - stats_sent_;
     const uint64_t behind = (acked_serial_ != 0 && sent_serial_ > acked_serial_)
                                 ? sent_serial_ - acked_serial_
@@ -597,14 +680,13 @@ void HostSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
               std::to_string(dropped) + " dropped, " +
               std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, companion " +
-              std::to_string(behind) + " frames behind, " +
-              std::to_string(companion_.backlog_bytes()) + " B unsent, round trip " +
+              std::to_string(behind) + " frames behind, round trip " +
               std::to_string(stats_round_trips_ > 0
                                  ? stats_round_trip_total_ms_ / stats_round_trips_
                                  : 0) +
               "ms avg " + std::to_string(stats_round_trip_worst_ms_) + "ms worst");
     stats_at_ms_ = now_ms;
-    stats_bytes_ = companion_.queued_total();
+    stats_bytes_ = media_bytes_sent_;
     stats_produced_ = 0;
     stats_sent_ = 0;
     stats_round_trips_ = 0;
@@ -612,29 +694,10 @@ void HostSession::report_stream(uint64_t now_ms) {
     stats_round_trip_worst_ms_ = 0;
 }
 
-std::size_t HostSession::frames_in_flight() {
-    const uint64_t departed = companion_.departed_total();
-    while (!frame_marks_.empty() && frame_marks_.front() <= departed) {
-        frame_marks_.pop_front();
-    }
-    return frame_marks_.size();
-}
-
-std::size_t HostSession::audio_frames_in_flight() {
-    const uint64_t departed = companion_.departed_total();
-    while (!audio_marks_.empty() && audio_marks_.front().first <= departed) {
-        audio_marks_.pop_front();
-    }
-    std::size_t total = 0;
-    for (const auto& mark : audio_marks_) {
-        total += mark.second;
-    }
-    return total;
-}
-
 void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved_stereo,
                                 std::size_t frames, uint32_t sample_rate) {
-    if (!has_companion() || interleaved_stereo == nullptr || frames == 0) {
+    if (!has_companion() || !companion_media_known_ || interleaved_stereo == nullptr ||
+        frames == 0) {
         return;
     }
     // Shared keeps using the coarse flag app.cpp derives from audio_target,
@@ -647,28 +710,30 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
         !audio_enabled_) {
         return;
     }
-    // Audio is dropped rather than queued when it is genuinely falling behind,
-    // for the same reason as video: a growing queue is heard as drift, not as
-    // buffering. Measured in audio's own frames in flight, converted from
-    // kMaxQueuedAudioMs via this packet's own sample rate -- not packets, and
-    // not the connection's total unsent bytes, which video dominates; see
-    // kMaxQueuedAudioMs for why both of those fail for a Wii U's audio
-    // specifically.
-    const std::size_t max_frames =
-        static_cast<std::size_t>((static_cast<uint64_t>(sample_rate) * kMaxQueuedAudioMs) / 1000);
-    if (max_frames > 0 && audio_frames_in_flight() >= max_frames) {
-        return;
+    // No backlog check here any more -- see the comment where
+    // kMaxQueuedAudioMs used to be. A send is either handed to the socket now
+    // or not at all; there is nothing this end could still be behind on.
+
+    // Split at the source rather than trusting one send to carry it all --
+    // see kMaxAudioFramesPerPacket. Each slice is a complete, independent
+    // AudioMessage: there is nothing linking one packet to the next, so a
+    // lost one is just a lost one, the same as any other audio loss here.
+    for (std::size_t offset = 0; offset < frames; offset += kMaxAudioFramesPerPacket) {
+        const std::size_t slice = std::min(kMaxAudioFramesPerPacket, frames - offset);
+        AudioMessage message;
+        message.stream = stream;
+        message.sample_rate = sample_rate;
+        message.samples.assign(interleaved_stereo + offset * 2,
+                               interleaved_stereo + (offset + slice) * 2);
+
+        std::vector<uint8_t> out;
+        encode_media_header(session_token_, MessageType::Audio, out);
+        encode_audio_payload(message, out);
+        if (media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
+                                  out.size())) {
+            media_bytes_sent_ += out.size();
+        }
     }
-
-    AudioMessage message;
-    message.stream = stream;
-    message.sample_rate = sample_rate;
-    message.samples.assign(interleaved_stereo, interleaved_stereo + frames * 2);
-
-    std::vector<uint8_t> out;
-    encode_audio(message, out);
-    companion_.send(out);
-    audio_marks_.emplace_back(companion_.queued_total(), frames);
 }
 
 void HostSession::publish_rumble(bool active) {
@@ -802,10 +867,44 @@ bool HostSession::encode_one_screen(ScreenId screen,
     return false;
 }
 
+std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
+    if (frame.payload.empty()) {
+        // Not itself a failure -- see encode_one_screen()'s own comment on an
+        // empty payload meaning nothing changed -- but there is nothing here
+        // to fragment or send, so this is done.
+        return 0;
+    }
+    FrameFragmentHeader header;
+    header.serial = frame.serial;
+    header.screen = frame.screen;
+    header.encoding = frame.encoding;
+    header.width = frame.width;
+    header.height = frame.height;
+    header.fragment_count = static_cast<uint16_t>(
+        (frame.payload.size() + kMaxFragmentPayload - 1) / kMaxFragmentPayload);
+
+    std::size_t sent_bytes = 0;
+    std::size_t offset = 0;
+    for (uint16_t index = 0; index < header.fragment_count; ++index) {
+        header.fragment_index = index;
+        const std::size_t chunk =
+            std::min(kMaxFragmentPayload, frame.payload.size() - offset);
+        std::vector<uint8_t> out;
+        encode_media_header(session_token_, MessageType::Frame, out);
+        encode_frame_fragment(header, frame.payload.data() + offset, chunk, out);
+        if (media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
+                                  out.size())) {
+            sent_bytes += out.size();
+        }
+        offset += chunk;
+    }
+    return sent_bytes;
+}
+
 void HostSession::publish_screens(const ScreenPixels& top,
                                   const ScreenPixels& bottom,
                                   uint64_t serial) {
-    if (!has_companion()) {
+    if (!has_companion() || !companion_media_known_) {
         return;
     }
     // Normally an unchanged frame costs nothing: the serial only moves when the
@@ -817,22 +916,17 @@ void HostSession::publish_screens(const ScreenPixels& top,
         return;
     }
     ++stats_produced_;
-    // Never let the send queue grow without bound: a companion that cannot keep
-    // up should see dropped frames, not mounting latency.
-    //
-    // What the companion says it has decoded is the measure that counts, since
-    // it is the only one that includes the queues on its side of the wire. It
-    // is trusted only once it has said anything at all, so a companion that
-    // never acks falls behind rather than being starved of frames outright.
+    // Never let this end run further ahead than the companion can plausibly
+    // still be watching: it is trusted only once it has acked at least one
+    // frame, so a companion that never acks falls behind rather than being
+    // starved of frames outright. UDP has no send queue of its own to also
+    // bound the way a TCP-based backstop here once did -- see
+    // acked_serial_'s own comment.
     if (acked_serial_ != 0 && sent_serial_ >= acked_serial_ + kMaxQueuedFrames) {
         return;
     }
-    // Until then, and as a backstop, what has not yet left this machine.
-    if (frames_in_flight() >= kMaxQueuedFrames) {
-        return;
-    }
 
-    std::vector<uint8_t> out;
+    bool sent_anything = false;
     const struct {
         ScreenId screen;
         const ScreenPixels& pixels;
@@ -854,14 +948,14 @@ void HostSession::publish_screens(const ScreenPixels& top,
         if (!encode_one_screen(entry.screen, source, entry.previous, frame)) {
             continue;
         }
-        encode_frame(frame, out);
+        const std::size_t sent_bytes = send_frame_fragments(frame);
+        if (sent_bytes > 0) {
+            media_bytes_sent_ += sent_bytes;
+            sent_anything = true;
+        }
     }
 
-    if (!out.empty()) {
-        companion_.send(out);
-        // Where this frame ends, so frames_in_flight() can tell later whether
-        // it has actually gone.
-        frame_marks_.push_back(companion_.queued_total());
+    if (sent_anything) {
         frame_sent_at_.emplace_back(serial, monotonic_millis());
         // A companion that stops acking must not make this grow for ever.
         while (frame_sent_at_.size() > 240) {

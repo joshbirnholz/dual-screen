@@ -269,8 +269,7 @@ void encode_frame(const FrameMessage& message, std::vector<uint8_t>& out) {
     finish_message(out, start, MessageType::Frame);
 }
 
-void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
-    const std::size_t start = begin_message(out);
+void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out) {
     put_u32(out, message.buttons);
     put_u8(out, message.touching ? 1u : 0u);
     put_u16(out, static_cast<uint16_t>(message.touch_x));
@@ -279,6 +278,11 @@ void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
     put_u16(out, static_cast<uint16_t>(message.circle_y));
     put_u16(out, static_cast<uint16_t>(message.c_stick_x));
     put_u16(out, static_cast<uint16_t>(message.c_stick_y));
+}
+
+void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    encode_input_payload(message, out);
     finish_message(out, start, MessageType::Input);
 }
 
@@ -315,14 +319,18 @@ bool decode_beacon(const uint8_t* data, std::size_t size, BeaconMessage& out) {
     return true;
 }
 
-void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out) {
-    const std::size_t start = begin_message(out);
+void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, static_cast<uint8_t>(message.stream));
     put_u32(out, message.sample_rate);
     put_u32(out, static_cast<uint32_t>(message.samples.size()));
     for (const int16_t sample : message.samples) {
         put_u16(out, static_cast<uint16_t>(sample));
     }
+}
+
+void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    encode_audio_payload(message, out);
     finish_message(out, start, MessageType::Audio);
 }
 
@@ -485,9 +493,11 @@ void encode_bye(std::vector<uint8_t>& out) {
     finish_message(out, begin_message(out), MessageType::Bye);
 }
 
+void encode_frame_ack_payload(uint64_t serial, std::vector<uint8_t>& out) { put_u64(out, serial); }
+
 void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
-    put_u64(out, serial);
+    encode_frame_ack_payload(serial, out);
     finish_message(out, start, MessageType::FrameAck);
 }
 
