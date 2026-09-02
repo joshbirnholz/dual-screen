@@ -19,6 +19,22 @@ uint64_t random_session_token() {
     return distribution(engine);
 }
 
+// Called on every FrameAck, for each screen's tile diffing -- see
+// previous_top_/bottom_ and tile_snapshots_top_/bottom_'s own comments. Finds
+// the newest still-held snapshot at or before `acked_serial`, promotes it to
+// be the new confirmed baseline, and discards every snapshot up to and
+// including it: an ack for serial N confirms the companion has everything a
+// diff up to N could have carried, so anything this end was holding onto in
+// case of an earlier loss is now moot.
+void promote_tile_baseline(std::vector<uint8_t>& baseline,
+                           std::deque<std::pair<uint64_t, std::vector<uint8_t>>>& snapshots,
+                           uint64_t acked_serial) {
+    while (!snapshots.empty() && snapshots.front().first <= acked_serial) {
+        baseline = std::move(snapshots.front().second);
+        snapshots.pop_front();
+    }
+}
+
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
 //
@@ -235,6 +251,8 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_media_known_ = false;
     previous_top_.clear();
     previous_bottom_.clear();
+    tile_snapshots_top_.clear();
+    tile_snapshots_bottom_.clear();
     // The same reasoning as the two lines above, in video form: a stream's
     // frames only mean anything after the keyframe they descend from, so
     // whoever connects next needs a stream of their own rather than the middle
@@ -478,6 +496,8 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
                         stats_round_trip_worst_ms_ = std::max(stats_round_trip_worst_ms_, trip);
                     }
                 }
+                promote_tile_baseline(previous_top_, tile_snapshots_top_, serial);
+                promote_tile_baseline(previous_bottom_, tile_snapshots_bottom_, serial);
             }
             break;
         }
@@ -534,6 +554,8 @@ void HostSession::poll(uint64_t now_ms) {
             // Whatever the last companion was sent means nothing to this one.
             previous_top_.clear();
             previous_bottom_.clear();
+            tile_snapshots_top_.clear();
+            tile_snapshots_bottom_.clear();
             log_info("a device is connecting from " + companion_.peer_address() + ", to this machine at " + companion_.local_address());
             refresh_beacon();
         }
@@ -930,9 +952,10 @@ void HostSession::publish_screens(const ScreenPixels& top,
     const struct {
         ScreenId screen;
         const ScreenPixels& pixels;
-        std::vector<uint8_t>& previous;
-    } screens[] = {{ScreenId::Top, top, previous_top_},
-                   {ScreenId::Bottom, bottom, previous_bottom_}};
+        std::vector<uint8_t>& acked_baseline;
+        std::deque<std::pair<uint64_t, std::vector<uint8_t>>>& snapshots;
+    } screens[] = {{ScreenId::Top, top, previous_top_, tile_snapshots_top_},
+                   {ScreenId::Bottom, bottom, previous_bottom_, tile_snapshots_bottom_}};
 
     for (const auto& entry : screens) {
         const ScreenPixels& source = entry.pixels;
@@ -945,13 +968,24 @@ void HostSession::publish_screens(const ScreenPixels& top,
         frame.serial = serial;
         frame.width = static_cast<uint16_t>(source.width);
         frame.height = static_cast<uint16_t>(source.height);
-        if (!encode_one_screen(entry.screen, source, entry.previous, frame)) {
+        // A tile diff is computed from a copy of the confirmed baseline, not
+        // the baseline itself -- see previous_top_/bottom_'s own comment.
+        // encode_one_screen() (its tiles branch, by way of
+        // encode_screen_tiles()) mutates whatever it is given into the new
+        // frame's full state, which is exactly what gets kept as this send's
+        // own snapshot below; a video frame leaves the copy untouched, so
+        // there is nothing to keep for it.
+        std::vector<uint8_t> attempt = entry.acked_baseline;
+        if (!encode_one_screen(entry.screen, source, attempt, frame)) {
             continue;
         }
         const std::size_t sent_bytes = send_frame_fragments(frame);
         if (sent_bytes > 0) {
             media_bytes_sent_ += sent_bytes;
             sent_anything = true;
+            if (frame.encoding == FrameEncoding::Rgb565DeflateTiles) {
+                entry.snapshots.emplace_back(serial, std::move(attempt));
+            }
         }
     }
 

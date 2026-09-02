@@ -333,14 +333,34 @@ private:
     uint64_t stats_bytes_ = 0;
     unsigned stats_produced_ = 0;
     unsigned stats_sent_ = 0;
-    // The last frame of each screen that was actually put on the wire, in
-    // RGB565, which the next one is sent as the difference from. The frame
-    // *sent* rather than the one produced: a frame skipped because the link
-    // was behind must still be carried into the next one that goes out, or
-    // the tiles it held would never arrive. Cleared when a companion comes or
-    // goes, so the next one starts from a whole frame.
+    // The last frame of each screen the companion has actually acknowledged
+    // decoding, in RGB565 -- what a new tile diff is computed against. The
+    // frame *acked* rather than the one sent: over UDP a diff can simply
+    // never arrive, and diffing the next one against a frame that was never
+    // received patches tiles onto whatever state the companion actually has,
+    // not the one this end assumes -- a picture that silently desyncs and
+    // never recovers, since every diff after the lost one keeps being computed
+    // against ground that was never laid. Rebaselining onto what is actually
+    // confirmed instead means a lost diff costs one stale-looking frame, not
+    // the rest of the session; the tradeoff is that a still-unacked send has
+    // to be recomputed from this same confirmed baseline rather than building
+    // incrementally on the one before it, which the fresh-per-send copy in
+    // publish_screens() (see tile_snapshots_top_/bottom_ below) is for.
+    // Cleared when a companion comes or goes, so the next one starts from a
+    // whole frame.
     std::vector<uint8_t> previous_top_;
     std::vector<uint8_t> previous_bottom_;
+    // One entry per tile frame sent but not yet acked, holding the full
+    // RGB565 state that frame's diff was computed against and left the
+    // companion in -- what previous_top_/bottom_ above is promoted to once
+    // its ack arrives (see handle_media_datagram()'s FrameAck case), and what
+    // is thrown away, unpromoted, for every serial at or before it once that
+    // happens: those are superseded, since the diff that reached this serial
+    // already accounts for everything they would have.  Bounded by
+    // kMaxQueuedFrames, the most frames this end ever lets itself have
+    // outstanding at once.
+    std::deque<std::pair<uint64_t, std::vector<uint8_t>>> tile_snapshots_top_;
+    std::deque<std::pair<uint64_t, std::vector<uint8_t>>> tile_snapshots_bottom_;
     // One per screen: the two are separate streams at separate sizes, and a
     // video encoder's whole value is what it remembers of the frame before.
     video::VideoEncoder video_top_;
