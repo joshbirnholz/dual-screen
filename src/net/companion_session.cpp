@@ -501,6 +501,27 @@ void CompanionSession::poll(uint64_t now_ms) {
         if (next_due_ms_ == 0 || now_ms >= next_due_ms_) {
             budget = std::max<std::size_t>(budget, 1);
         }
+        // The clock above shows one frame per period, which keeps the cadence
+        // even -- and conserves whatever depth the queue happens to have,
+        // because one frame in is one frame out for ever. So a backlog built
+        // during a single hiccup is never given back: it becomes latency for
+        // the rest of the session. Measured on real hardware, a session that
+        // started out showing frames the moment they arrived climbed over
+        // about twenty seconds to sitting two whole frames -- 66ms at this
+        // stream's rate -- behind, and stayed exactly there. Capping the depth
+        // does not help, because the cap is what it settles at.
+        //
+        // So whenever the oldest frame in hand has been waiting longer than
+        // this link's own unevenness actually calls for, show an extra one and
+        // walk the backlog down. One extra per pass rather than draining to
+        // empty at once: the picture catches up over a few frames instead of
+        // jumping. A calm link settles at one frame in hand, which is the least
+        // that still lets the clock pace anything at all; a rough one keeps
+        // buying cover up to the ceiling for as long as it stays rough.
+        const uint64_t allowance = video_hold_allowance_ms(jitter_ms_, period);
+        if (!complete_at_.empty() && now_ms > complete_at_.front().second + allowance) {
+            budget = std::max<std::size_t>(budget, 2);
+        }
         std::size_t shown = 0;
         for (; shown < budget && decode_next_frame(); ++shown) {
         }
@@ -828,6 +849,11 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {
         return kMaxVideoBufferFrames;
     }
     return static_cast<std::size_t>(target);
+}
+
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms) {
+    const auto measured = static_cast<uint64_t>(std::max(0.0, jitter_ms) + 0.5);
+    return std::clamp(measured, period_ms, period_ms * 2);
 }
 
 std::size_t CompanionSession::target_buffer_frames() const {

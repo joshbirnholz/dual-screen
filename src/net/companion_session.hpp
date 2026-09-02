@@ -35,6 +35,20 @@ inline constexpr std::size_t kMaxVideoBufferFrames = 4;
 // buys exactly the cover it needs, for exactly as long as it needs it.
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 
+// How long a finished frame may sit waiting before the pacing clock has to
+// give ground and let it through, in milliseconds.
+//
+// This is what stops the clock hoarding. Showing one frame per period keeps
+// the cadence even but conserves the queue's depth exactly, so any backlog
+// becomes permanent latency. Letting a frame through once it has waited longer
+// than the link's own measured unevenness drains that backlog instead, so the
+// queue settles at the depth the link needs rather than at whatever a past
+// hiccup left behind. Never below one period, or there would be nothing left
+// for the clock to pace with and frames would simply be shown on arrival,
+// jitter and all; never above two, so no jitter estimate can talk this back
+// into hoarding.
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms);
+
 // The companion half: finds hosts, connects to one, and presents the screens it
 // receives as a ScreenSource -- the same seam the libretro core plugs into, so
 // the compositor and layout system never learn where the pixels came from.

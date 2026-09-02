@@ -1696,6 +1696,33 @@ void test_an_uneven_link_buys_cover_and_gives_it_back() {
     CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMinVideoBufferFrames + 1);
 }
 
+// Measured on hardware: the pacing clock shows one frame per period, which
+// conserves the queue's depth exactly, so a backlog built during one hiccup
+// became permanent latency -- a session climbed from showing frames on arrival
+// to sitting a fixed 66ms behind and stayed there for its whole length. The
+// allowance is what forces the clock to give that back.
+void test_a_backlog_is_given_back_rather_than_carried_for_ever() {
+    constexpr uint64_t period = 33;  // a 30fps stream, as these actually run
+
+    // A calm link settles at one frame in hand. Never less: below a period
+    // there is nothing left for the clock to pace with and frames would just
+    // be shown on arrival, jitter and all. Never the two frames that were
+    // being carried either -- that second frame was bought by a hiccup long
+    // past and then never given back.
+    CHECK_EQ(video_hold_allowance_ms(0.0, period), period);
+    CHECK_EQ(video_hold_allowance_ms(15.0, period), period);
+    CHECK_EQ(video_hold_allowance_ms(22.0, period), period);
+
+    // A link that really is uneven buys cover for as long as it stays uneven.
+    CHECK_EQ(video_hold_allowance_ms(50.0, period), 50u);
+    CHECK(video_hold_allowance_ms(50.0, period) > video_hold_allowance_ms(15.0, period));
+
+    // However wild the estimate gets, it can never talk its way back into
+    // hoarding more than a couple of frames.
+    CHECK_EQ(video_hold_allowance_ms(5000.0, period), period * 2);
+    CHECK(video_hold_allowance_ms(1e9, period) == period * 2);
+}
+
 }  // namespace
 
 int main() {
@@ -1719,6 +1746,7 @@ int main() {
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
+    test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();
