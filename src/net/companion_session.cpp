@@ -146,8 +146,6 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_paused_ = state.paused;
             host_filtering_ = state.bilinear_filtering;
             host_audio_target_ = state.audio_target;
-            host_tv_audio_target_ = state.tv_audio_target;
-            host_gamepad_audio_target_ = state.gamepad_audio_target;
             host_handedness_ = state.handedness;
             host_right_stick_mode_ = state.right_stick_mode;
             host_render_scale_ = state.render_scale;
@@ -212,19 +210,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 return;
             }
             // Shared is a DS or 3DS's one soundtrack and always plays. A Wii
-            // U's TopDevice/BottomDevice streams are each routed by their own
-            // target against the screen the host granted this device --
-            // the same check the host itself made before sending it, kept
-            // here too since the host may still be serving a stream from
-            // before this device's target last changed.
-            const bool wanted = (audio.stream == AudioStreamId::TopDevice)
-                                    ? audio_reaches(host_tv_audio_target_, granted_screen_)
-                                : (audio.stream == AudioStreamId::BottomDevice)
-                                    ? audio_reaches(host_gamepad_audio_target_, granted_screen_)
-                                    : true;
-            if (!wanted) {
-                return;
-            }
+            // U's TopDevice/BottomDevice streams reach a companion at all
+            // only when the host decided this device is the one holding that
+            // screen -- see HostSession::publish_audio and the External
+            // source's own audio callback in app.cpp -- so whichever one
+            // arrives here always plays too; there is nothing left to check.
             if (audio_callback_) {
                 audio_callback_(audio.samples.data(), audio.samples.size() / 2,
                                 audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_);
@@ -487,20 +477,6 @@ void CompanionSession::request_audio_target(AudioTarget target) {
     RequestMessage request;
     request.wants_audio_target = true;
     request.audio_target = target;
-    send_request(request);
-}
-
-void CompanionSession::request_tv_audio_target(AudioTarget target) {
-    RequestMessage request;
-    request.wants_tv_audio_target = true;
-    request.tv_audio_target = target;
-    send_request(request);
-}
-
-void CompanionSession::request_gamepad_audio_target(AudioTarget target) {
-    RequestMessage request;
-    request.wants_gamepad_audio_target = true;
-    request.gamepad_audio_target = target;
     send_request(request);
 }
 

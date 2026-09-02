@@ -329,11 +329,6 @@ struct App::Impl {
     // told a previous one, so that edge has to force a resend even when the
     // window happens not to have changed since.
     bool companion_was_connected = false;
-    // The host's own view of the same edge, for a Wii U: a second screen
-    // connecting is what the console's own arrangement is, so it is switched
-    // to automatically rather than left on whatever a solo session was
-    // showing. See the host poll loop.
-    bool host_had_companion = false;
     // The screen last asked of an external producer (a Wii U's Cemu) via
     // ExternalScreenSource::request_screen() -- absent means nothing has been
     // asked for. Tracked so the host poll loop only calls request_screen()
@@ -354,18 +349,9 @@ struct App::Impl {
     std::string active_layout_id;
     bool bilinear_filtering = false;
     // Which device makes the sound. Only meaningful once two are connected.
-    // DS/3DS only -- a Wii U uses the pair below instead, one per stream.
+    // DS/3DS only -- a Wii U's TV and GamePad audio are not a player choice
+    // at all, see the External source's own audio callback.
     AudioTarget audio_target = AudioTarget::Both;
-    // A Wii U's two independent streams, meaningful even alone: muting the
-    // GamePad's stream, say, is a real choice with or without a second
-    // device. See clamp_wii_u_audio_target().
-    AudioTarget tv_audio_target = AudioTarget::TopScreen;
-    AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
-    // What the External source's own audio callback last logged its routing
-    // decision as, per stream -- so it can say again when either input to
-    // that decision changes, without saying it every few milliseconds.
-    std::optional<std::pair<AudioTarget, ScreenId>> tv_audio_route_logged;
-    std::optional<std::pair<AudioTarget, ScreenId>> gamepad_audio_route_logged;
     // Which hand holds the stylus. Shared with the other device, since it
     // changes what both of them are drawing.
     Handedness handedness = Handedness::Right;
@@ -490,9 +476,6 @@ struct App::Impl {
     void request_layout(const std::string& layout_id);
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
-    // A Wii U's two independent streams, asked for the same way.
-    void request_tv_audio_target(AudioTarget target);
-    void request_gamepad_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
     void request_render_scale(int scale);
     void request_screen_gap(bool include_gap);
@@ -507,14 +490,6 @@ struct App::Impl {
     // The next scale in the cycle, wrapping at the system's maximum.
     int next_render_scale() const;
     void adopt_audio_target(AudioTarget target);
-    void adopt_tv_audio_target(AudioTarget target);
-    void adopt_gamepad_audio_target(AudioTarget target);
-    // Switching a Wii U to its per-device layout is switching to the
-    // console's own arrangement, so the audio follows it back to the
-    // console's own defaults too -- TV on the television, GamePad on the
-    // GamePad -- the same as a fresh session starts with. Called from every
-    // place `active_layout_id` becomes that layout; a no-op anywhere else.
-    void reset_wii_u_audio_defaults_if_per_device(const std::string& layout_id);
     void adopt_handedness(Handedness hand);
     void adopt_screen_gap(bool include_gap);
     void adopt_right_stick_mode(RightStickMode mode);
@@ -824,8 +799,6 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     state.layout_id = companion_session->host_layout_id();
     state.bilinear_filtering = companion_session->host_filtering();
     state.audio_target = companion_session->host_audio_target();
-    state.tv_audio_target = companion_session->host_tv_audio_target();
-    state.gamepad_audio_target = companion_session->host_gamepad_audio_target();
     state.handedness = companion_session->host_handedness();
     state.render_scale = companion_session->host_render_scale();
     state.screen_gap = companion_session->host_screen_gap();
@@ -879,12 +852,6 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
             if (result.audio_target_changed) {
                 request_audio_target(next_audio_target(audio_target));
-            }
-            if (result.tv_audio_target_changed) {
-                request_tv_audio_target(next_wii_u_audio_target(tv_audio_target, paired()));
-            }
-            if (result.gamepad_audio_target_changed) {
-                request_gamepad_audio_target(next_wii_u_audio_target(gamepad_audio_target, paired()));
             }
             if (result.handedness_changed) {
                 request_handedness(other_hand(handedness));
@@ -953,8 +920,6 @@ void App::Impl::open_picker() {
     picker_state.session_active = paired();
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
-    picker_state.tv_audio_target = tv_audio_target;
-    picker_state.gamepad_audio_target = gamepad_audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
     picker_state.handedness = handedness;
     picker_state.render_scale = render_scale;
@@ -1042,7 +1007,6 @@ void App::Impl::request_layout(const std::string& layout_id) {
         picker->set_selected_layout(active_layout_id);
     }
     log_info("layout: " + active_layout().display_name);
-    reset_wii_u_audio_defaults_if_per_device(active_layout_id);
 }
 
 void App::Impl::request_right_stick_mode(RightStickMode mode) {
@@ -1160,22 +1124,6 @@ void App::Impl::request_audio_target(AudioTarget target) {
     adopt_audio_target(target);
 }
 
-void App::Impl::request_tv_audio_target(AudioTarget target) {
-    if (is_companion()) {
-        companion_session->request_tv_audio_target(target);
-        return;
-    }
-    adopt_tv_audio_target(target);
-}
-
-void App::Impl::request_gamepad_audio_target(AudioTarget target) {
-    if (is_companion()) {
-        companion_session->request_gamepad_audio_target(target);
-        return;
-    }
-    adopt_gamepad_audio_target(target);
-}
-
 void App::Impl::adopt_filtering(bool bilinear) {
     if (bilinear == bilinear_filtering) {
         return;
@@ -1209,52 +1157,12 @@ void App::Impl::adopt_audio_target(AudioTarget target) {
              to_string(audio_target));
 }
 
-void App::Impl::adopt_tv_audio_target(AudioTarget target) {
-    if (target == tv_audio_target) {
-        return;
-    }
-    tv_audio_target = target;
-    if (picker) {
-        picker->set_tv_audio_target(tv_audio_target);
-    }
-    if (!is_companion()) {
-        settings.wii_u_tv_audio_target = tv_audio_target;
-        settings.save(paths);
-    }
-    log_info(std::string(is_companion() ? "following the host: TV audio " : "TV audio: ") +
-             to_string(tv_audio_target));
-}
-
-void App::Impl::adopt_gamepad_audio_target(AudioTarget target) {
-    if (target == gamepad_audio_target) {
-        return;
-    }
-    gamepad_audio_target = target;
-    if (picker) {
-        picker->set_gamepad_audio_target(gamepad_audio_target);
-    }
-    if (!is_companion()) {
-        settings.wii_u_gamepad_audio_target = gamepad_audio_target;
-        settings.save(paths);
-    }
-    log_info(std::string(is_companion() ? "following the host: GamePad audio " : "GamePad audio: ") +
-             to_string(gamepad_audio_target));
-}
-
-void App::Impl::reset_wii_u_audio_defaults_if_per_device(const std::string& layout_id) {
-    if (system != SystemId::WiiU || layout_id != system_profile(system).default_layout_id) {
-        return;
-    }
-    adopt_tv_audio_target(AudioTarget::TopScreen);
-    adopt_gamepad_audio_target(AudioTarget::BottomScreen);
-}
-
 bool App::Impl::sound_plays_here() const {
     // A DS or 3DS has one soundtrack, so alone there is nobody else to hand
-    // it to and it always plays here. A Wii U's screens each have their own
-    // independent audio and are routed separately -- see the two
-    // wii_u_*_audio_target checks in the External source's audio callback --
-    // so this is never asked on that system's behalf.
+    // it to and it always plays here. A Wii U's TV and GamePad audio are
+    // routed by a fixed rule instead, not a player choice -- see the
+    // External source's own audio callback -- so this is never asked on that
+    // system's behalf.
     if (!paired()) {
         return true;  // nobody else to hand it to
     }
@@ -1380,8 +1288,6 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     bilinear_filtering = settings.default_bilinear_filtering;
     render_scale = settings.default_render_scale;
     audio_target = settings.audio_target;
-    tv_audio_target = settings.wii_u_tv_audio_target;
-    gamepad_audio_target = settings.wii_u_gamepad_audio_target;
     handedness = settings.handedness;
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
@@ -1438,8 +1344,6 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     active_layout_id = settings.default_layout_id;
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
-    tv_audio_target = settings.wii_u_tv_audio_target;
-    gamepad_audio_target = settings.wii_u_gamepad_audio_target;
     handedness = settings.handedness;
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
@@ -1568,43 +1472,28 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             external_source.reset(new ExternalScreenSource(system));
             external_source->set_audio_callback(
                 [this](ScreenId screen, const int16_t* samples, std::size_t frames) {
-                    // A Wii U's TV and GamePad audio are independent streams,
-                    // each routed by its own target rather than by the single
-                    // audio_target a DS or 3DS session uses. A player who
-                    // points both at the same place (e.g. both "Both") hears
-                    // them layered rather than mixed, since this pushes each
-                    // into the one local output in turn -- narrower than a
-                    // real mixer, but that combination is not how either
-                    // stream is meant to be set up.
-                    const AudioTarget target =
-                        (screen == ScreenId::Top) ? tv_audio_target : gamepad_audio_target;
-                    const bool plays_here = audio_reaches(target, local_screen);
-                    // Temporary: a report of GamePad audio still playing
-                    // locally survived the ShouldCapture fix on Cemu's side,
-                    // which only ever gates whether this callback fires at
-                    // all -- so the next thing to rule out is this decision,
-                    // the one place left that could still play it here too.
-                    // Logged only when it changes, since this runs every
-                    // audio block.
-                    auto& logged = (screen == ScreenId::Top) ? tv_audio_route_logged
-                                                              : gamepad_audio_route_logged;
-                    const auto current = std::make_pair(target, local_screen);
-                    if (!logged.has_value() || *logged != current) {
-                        logged = current;
-                        log_info(std::string("audio routing: ") + to_string(screen) +
-                                 " target=" + to_string(target) +
-                                 " local_screen=" + to_string(local_screen) +
-                                 (plays_here ? " -> plays here" : " -> not played here"));
-                    }
-                    if (plays_here) {
-                        audio.push(samples, frames);
-                    }
+                    // Not a player choice on either end, and no target to
+                    // track here at all: Cemu already made this call on its
+                    // own side (see DualscreenSession::ShouldCapture in
+                    // ax_out.cpp) before this callback ever fires -- a screen
+                    // it is showing locally is never sent over the link in
+                    // the first place, only played there directly, so
+                    // whichever screen's audio does arrive here is, by
+                    // construction, audio meant for whatever is connected,
+                    // never for this machine. That is also what makes this
+                    // already handle a companion holding either screen: a
+                    // companion connecting as the top screen leaves Cemu
+                    // showing (and playing) the GamePad locally and sending
+                    // only the television's audio here, the mirror image of
+                    // the usual case, with nothing here needing to know
+                    // which way round it is.
                     if (host_session) {
-                        host_session->publish_audio(
-                            screen == ScreenId::Top ? net::AudioStreamId::TopDevice
-                                                     : net::AudioStreamId::BottomDevice,
-                            samples, frames,
-                            static_cast<uint32_t>(external_source->audio_sample_rate()));
+                        host_session->publish_audio(screen == ScreenId::Top
+                                                        ? net::AudioStreamId::TopDevice
+                                                        : net::AudioStreamId::BottomDevice,
+                                                    samples, frames,
+                                                    static_cast<uint32_t>(
+                                                        external_source->audio_sample_rate()));
                     }
                 });
             external_source->set_rumble_callback([this](bool active) {
@@ -2328,8 +2217,6 @@ int App::run(const AppOptions& options) {
             impl.local_screen = wanted;
             impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
             impl.audio_target = impl.settings.audio_target;
-            impl.tv_audio_target = impl.settings.wii_u_tv_audio_target;
-            impl.gamepad_audio_target = impl.settings.wii_u_gamepad_audio_target;
             impl.handedness = impl.settings.handedness;
             impl.screen_gap = impl.settings.default_screen_gap;
             impl.apply_filtering();
@@ -2526,8 +2413,6 @@ int App::run(const AppOptions& options) {
             shared.paused = paused_here;
             shared.bilinear_filtering = impl.bilinear_filtering;
             shared.audio_target = impl.audio_target;
-            shared.tv_audio_target = impl.tv_audio_target;
-            shared.gamepad_audio_target = impl.gamepad_audio_target;
             shared.handedness = impl.handedness;
             shared.render_scale = impl.render_scale;
             shared.screen_gap = impl.screen_gap;
@@ -2603,16 +2488,6 @@ int App::run(const AppOptions& options) {
                     }
                 }
             }
-            // The other direction: a target still pointing at a device that
-            // just left names nothing any more, so it is corrected to Off
-            // rather than left silently unreachable. See
-            // clamp_wii_u_audio_target().
-            if (!host_now_has_companion && impl.host_had_companion && impl.system == SystemId::WiiU) {
-                impl.adopt_tv_audio_target(clamp_wii_u_audio_target(impl.tv_audio_target, false));
-                impl.adopt_gamepad_audio_target(
-                    clamp_wii_u_audio_target(impl.gamepad_audio_target, false));
-            }
-            impl.host_had_companion = host_now_has_companion;
 
             // The companion can ask for any of the shared settings; the host
             // owns them all, so a layout id it does not recognise is refused
@@ -2628,7 +2503,6 @@ int App::run(const AppOptions& options) {
                             impl.picker->set_selected_layout(impl.active_layout_id);
                         }
                         log_info("companion asked for the " + resolved.display_name + " layout");
-                        impl.reset_wii_u_audio_defaults_if_per_device(impl.active_layout_id);
                     }
                 }
                 if (request.wants_filtering) {
@@ -2636,12 +2510,6 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_audio_target) {
                     impl.adopt_audio_target(request.audio_target);
-                }
-                if (request.wants_tv_audio_target) {
-                    impl.adopt_tv_audio_target(request.tv_audio_target);
-                }
-                if (request.wants_gamepad_audio_target) {
-                    impl.adopt_gamepad_audio_target(request.gamepad_audio_target);
                 }
                 if (request.wants_handedness) {
                     impl.adopt_handedness(request.handedness);
@@ -2789,8 +2657,6 @@ int App::run(const AppOptions& options) {
                              (impl.bilinear_filtering ? "on" : "off"));
                 }
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
-                impl.adopt_tv_audio_target(impl.companion_session->host_tv_audio_target());
-                impl.adopt_gamepad_audio_target(impl.companion_session->host_gamepad_audio_target());
                 impl.adopt_handedness(impl.companion_session->host_handedness());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());

@@ -266,8 +266,6 @@ void test_settings_round_trip() {
     defaults.default_screen_gap = false;
     defaults.default_right_stick_mode = RightStickMode::DPad;
     defaults.audio_target = AudioTarget::BottomScreen;
-    defaults.wii_u_tv_audio_target = AudioTarget::Off;
-    defaults.wii_u_gamepad_audio_target = AudioTarget::Both;
     defaults.cursor_mode = CursorMode::Hidden;
     // All three set away from their defaults, and not to the same value as
     // each other, so a round trip that mixed them up would be caught.
@@ -286,8 +284,6 @@ void test_settings_round_trip() {
     CHECK(reloaded.default_right_stick_mode == RightStickMode::DPad);
     CHECK_EQ(reloaded.default_screen_gap, false);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
-    CHECK(reloaded.wii_u_tv_audio_target == AudioTarget::Off);
-    CHECK(reloaded.wii_u_gamepad_audio_target == AudioTarget::Both);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
     CHECK(reloaded.screen_codec_ds == video::ScreenCodec::H264);
     CHECK(reloaded.screen_codec_3ds == video::ScreenCodec::H264);
@@ -317,8 +313,6 @@ void test_settings_round_trip() {
     CHECK_EQ(recovered.default_render_scale, 1);
     CHECK_EQ(recovered.default_screen_gap, true);
     CHECK(recovered.audio_target == AudioTarget::Both);
-    CHECK(recovered.wii_u_tv_audio_target == AudioTarget::TopScreen);
-    CHECK(recovered.wii_u_gamepad_audio_target == AudioTarget::BottomScreen);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
     CHECK(recovered.screen_codec_ds == video::ScreenCodec::Tiles);
     CHECK(recovered.screen_codec_3ds == video::ScreenCodec::Tiles);

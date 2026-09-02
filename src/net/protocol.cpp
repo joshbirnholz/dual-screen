@@ -253,8 +253,6 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.right_stick_choosable ? 1u : 0u);
     put_u8(out, message.cursor_shown ? 1u : 0u);
     put_u8(out, message.settings_open ? 1u : 0u);
-    put_u8(out, audio_target_to_wire(message.tv_audio_target));
-    put_u8(out, audio_target_to_wire(message.gamepad_audio_target));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -397,10 +395,6 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.bilinear_filtering ? 1u : 0u);
     put_u8(out, message.wants_audio_target ? 1u : 0u);
     put_u8(out, audio_target_to_wire(message.audio_target));
-    put_u8(out, message.wants_tv_audio_target ? 1u : 0u);
-    put_u8(out, audio_target_to_wire(message.tv_audio_target));
-    put_u8(out, message.wants_gamepad_audio_target ? 1u : 0u);
-    put_u8(out, audio_target_to_wire(message.gamepad_audio_target));
     put_u8(out, message.wants_handedness ? 1u : 0u);
     put_u8(out, handedness_to_wire(message.handedness));
     put_u8(out, message.wants_render_scale ? 1u : 0u);
@@ -428,10 +422,6 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     uint8_t filtering = 0;
     uint8_t wants_audio = 0;
     uint8_t audio = 0;
-    uint8_t wants_tv_audio = 0;
-    uint8_t tv_audio = 0;
-    uint8_t wants_gamepad_audio = 0;
-    uint8_t gamepad_audio = 0;
     uint8_t wants_hands = 0;
     uint8_t hands = 0;
     uint8_t wants_scale = 0;
@@ -446,10 +436,6 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     reader.u8(filtering);
     reader.u8(wants_audio);
     reader.u8(audio);
-    reader.u8(wants_tv_audio);
-    reader.u8(tv_audio);
-    reader.u8(wants_gamepad_audio);
-    reader.u8(gamepad_audio);
     reader.u8(wants_hands);
     reader.u8(hands);
     reader.u8(wants_scale);
@@ -480,8 +466,6 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     out.wants_filtering = (wants_filtering != 0);
     out.bilinear_filtering = (filtering != 0);
     out.wants_audio_target = (wants_audio != 0);
-    out.wants_tv_audio_target = (wants_tv_audio != 0);
-    out.wants_gamepad_audio_target = (wants_gamepad_audio != 0);
     out.wants_handedness = (wants_hands != 0);
     out.wants_render_scale = (wants_scale != 0);
     out.wants_display_size = (wants_size != 0);
@@ -493,8 +477,6 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     out.wants_right_stick_mode = (wants_right_stick != 0);
     if (!right_stick_mode_from_wire(right_stick, out.right_stick_mode)) return false;
     if (!handedness_from_wire(hands, out.handedness)) return false;
-    if (!audio_target_from_wire(tv_audio, out.tv_audio_target)) return false;
-    if (!audio_target_from_wire(gamepad_audio, out.gamepad_audio_target)) return false;
     return audio_target_from_wire(audio, out.audio_target);
 }
 
@@ -588,10 +570,6 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     uint8_t settings_open = 0;
     reader.u8(cursor_shown);
     reader.u8(settings_open);
-    uint8_t tv_audio = 0;
-    uint8_t gamepad_audio = 0;
-    reader.u8(tv_audio);
-    reader.u8(gamepad_audio);
     if (!reader.ok()) return false;
     out.cursor_shown = (cursor_shown != 0);
     out.settings_open = (settings_open != 0);
@@ -603,8 +581,6 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     out.right_stick_choosable = (right_stick_choosable != 0);
     if (!right_stick_mode_from_wire(right_stick, out.right_stick_mode)) return false;
     if (!audio_target_from_wire(audio, out.audio_target)) return false;
-    if (!audio_target_from_wire(tv_audio, out.tv_audio_target)) return false;
-    if (!audio_target_from_wire(gamepad_audio, out.gamepad_audio_target)) return false;
     if (!handedness_from_wire(hands, out.handedness)) return false;
     return screen_from_wire(screen, out.companion_screen);
 }

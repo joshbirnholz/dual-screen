@@ -131,8 +131,6 @@ void HostSession::set_session_state(const SharedState& state) {
         state.per_device_layout != shared_.per_device_layout || state.paused != shared_.paused ||
         state.bilinear_filtering != shared_.bilinear_filtering ||
         state.audio_target != shared_.audio_target ||
-        state.tv_audio_target != shared_.tv_audio_target ||
-        state.gamepad_audio_target != shared_.gamepad_audio_target ||
         state.handedness != shared_.handedness ||
         state.right_stick_mode != shared_.right_stick_mode ||
         state.render_scale != shared_.render_scale ||
@@ -329,16 +327,6 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_audio_target = true;
                 request.audio_target = request_.audio_target;
             }
-            if (have_request_ && !request.wants_tv_audio_target &&
-                request_.wants_tv_audio_target) {
-                request.wants_tv_audio_target = true;
-                request.tv_audio_target = request_.tv_audio_target;
-            }
-            if (have_request_ && !request.wants_gamepad_audio_target &&
-                request_.wants_gamepad_audio_target) {
-                request.wants_gamepad_audio_target = true;
-                request.gamepad_audio_target = request_.gamepad_audio_target;
-            }
             if (have_request_ && !request.wants_right_stick_mode &&
                 request_.wants_right_stick_mode) {
                 request.wants_right_stick_mode = true;
@@ -464,8 +452,6 @@ void HostSession::poll(uint64_t now_ms) {
         state.paused = shared_.paused;
         state.bilinear_filtering = shared_.bilinear_filtering;
         state.audio_target = shared_.audio_target;
-        state.tv_audio_target = shared_.tv_audio_target;
-        state.gamepad_audio_target = shared_.gamepad_audio_target;
         state.handedness = shared_.handedness;
         state.right_stick_mode = shared_.right_stick_mode;
         state.render_scale = static_cast<uint8_t>(shared_.render_scale);
@@ -626,16 +612,14 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
     if (!has_companion() || interleaved_stereo == nullptr || frames == 0) {
         return;
     }
-    // Shared keeps using the coarse flag app.cpp derives from audio_target;
-    // TopDevice/BottomDevice check their own target directly against what
-    // screen the companion has, since a Wii U's two streams can want
-    // different answers and one flag cannot hold both at once.
-    const bool wanted = (stream == AudioStreamId::TopDevice)
-                            ? audio_reaches(shared_.tv_audio_target, companion_screen_)
-                        : (stream == AudioStreamId::BottomDevice)
-                            ? audio_reaches(shared_.gamepad_audio_target, companion_screen_)
-                            : audio_enabled_;
-    if (!wanted) {
+    // Shared keeps using the coarse flag app.cpp derives from audio_target,
+    // for a DS or 3DS's single, player-chosen stream. TopDevice/BottomDevice
+    // need no such check: the caller (see the External source's own audio
+    // callback in app.cpp) only ever reaches this for a screen Cemu itself
+    // decided is not playing locally, so it is always meant for whoever is
+    // connected -- already checked above.
+    if (stream != AudioStreamId::TopDevice && stream != AudioStreamId::BottomDevice &&
+        !audio_enabled_) {
         return;
     }
     // Audio is dropped rather than queued when the link is behind, for the same

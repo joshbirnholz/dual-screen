@@ -156,12 +156,6 @@ struct RequestMessage {
     bool bilinear_filtering = false;
     bool wants_audio_target = false;
     AudioTarget audio_target = AudioTarget::Both;
-    // A Wii U's two independent streams, asked for the same way -- see
-    // SessionStateMessage's fields of the same names.
-    bool wants_tv_audio_target = false;
-    AudioTarget tv_audio_target = AudioTarget::TopScreen;
-    bool wants_gamepad_audio_target = false;
-    AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
     bool wants_handedness = false;
     Handedness handedness = Handedness::Right;
     // How many pixels the core renders per console pixel. The companion is not
@@ -224,12 +218,6 @@ struct SessionStateMessage {
     bool paused = false;
     bool bilinear_filtering = false;
     AudioTarget audio_target = AudioTarget::Both;
-    // A Wii U's two independent streams. Meaningless for a DS or 3DS, which
-    // route their one stream through audio_target above instead; sent
-    // regardless so the struct's shape never depends on which console this
-    // session turns out to be.
-    AudioTarget tv_audio_target = AudioTarget::TopScreen;
-    AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
     Handedness handedness = Handedness::Right;
     uint8_t render_scale = 1;
     bool screen_gap = true;

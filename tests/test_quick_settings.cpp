@@ -484,7 +484,6 @@ void test_wii_u_menu_is_a_plain_list() {
                 if (result.disconnect_requested) ++disconnect;
                 if (picker.awaiting_confirmation()) ++quit;
                 if (result.selection_changed || result.audio_target_changed ||
-                    result.tv_audio_target_changed || result.gamepad_audio_target_changed ||
                     result.handedness_changed || result.cursor_mode_changed ||
                     result.render_scale_changed || result.right_stick_mode_changed ||
                     result.screen_gap_toggled || result.filtering_toggled ||

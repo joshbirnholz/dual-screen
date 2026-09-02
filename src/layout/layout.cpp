@@ -58,31 +58,6 @@ AudioTarget audio_target_from_key(const std::string& key) {
     return AudioTarget::Both;
 }
 
-AudioTarget clamp_wii_u_audio_target(AudioTarget target, bool other_connected) {
-    if (other_connected) {
-        return target;
-    }
-    if (target == AudioTarget::BottomScreen || target == AudioTarget::Both) {
-        return AudioTarget::Off;
-    }
-    return target;
-}
-
-AudioTarget next_wii_u_audio_target(AudioTarget target, bool other_connected) {
-    if (!other_connected) {
-        // Nothing named "Bottom" is here to receive it, so the cycle is just
-        // this device or nothing.
-        return target == AudioTarget::Off ? AudioTarget::TopScreen : AudioTarget::Off;
-    }
-    switch (target) {
-        case AudioTarget::TopScreen: return AudioTarget::BottomScreen;
-        case AudioTarget::BottomScreen: return AudioTarget::Both;
-        case AudioTarget::Both: return AudioTarget::Off;
-        case AudioTarget::Off: break;
-    }
-    return AudioTarget::TopScreen;
-}
-
 ScreenRotation mirror_rotation(ScreenRotation rotation) {
     switch (rotation) {
         case ScreenRotation::Clockwise: return ScreenRotation::CounterClockwise;
