@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 21;
+constexpr uint16_t kProtocolVersion = 22;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -151,6 +151,15 @@ enum class AudioStreamId : uint8_t {
 struct AudioMessage {
     AudioStreamId stream = AudioStreamId::Shared;
     uint32_t sample_rate = 0;
+    // Counts up by one per packet actually sent on this stream (see
+    // HostSession::publish_audio) -- never per audio frame or sample, so a
+    // packet split off a bigger batch (kMaxAudioFramesPerPacket) still only
+    // costs one. The far end has no other way to tell a genuinely missing
+    // packet (audible as a click -- samples that should have played never
+    // did) from ordinary jitter in when packets happen to arrive, since UDP
+    // promises neither order nor delivery. See CompanionSession's own use of
+    // this for what a gap does about it.
+    uint32_t sequence = 0;
     // Interleaved stereo 16-bit, sent uncompressed: it is about 1 Mbit/s at DS
     // rates, which is comparable to the video and costs no latency to produce.
     std::vector<int16_t> samples;

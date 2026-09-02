@@ -371,6 +371,12 @@ private:
     AudioCallback audio_callback_;
     uint32_t audio_sample_rate_ = 0;
     RumbleCallback rumble_callback_;
+    // Per AudioStreamId (3 entries -- Shared/TopDevice/BottomDevice), for
+    // detecting a genuinely missing audio packet rather than the ordinary
+    // jitter UDP never promised against -- see AudioMessage::sequence and
+    // handle_media_datagram()'s Audio case.
+    bool audio_sequence_known_[3] = {false, false, false};
+    uint32_t audio_next_sequence_[3] = {0, 0, 0};
 };
 
 const char* to_string(CompanionSession::Status status);

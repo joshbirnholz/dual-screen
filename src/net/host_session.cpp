@@ -745,6 +745,7 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
         AudioMessage message;
         message.stream = stream;
         message.sample_rate = sample_rate;
+        message.sequence = audio_sequence_[static_cast<uint8_t>(stream)]++;
         message.samples.assign(interleaved_stereo + offset * 2,
                                interleaved_stereo + (offset + slice) * 2);
 

@@ -266,6 +266,11 @@ private:
     bool companion_media_known_ = false;
     // See queued_bytes_for_test().
     uint64_t media_bytes_sent_ = 0;
+    // One counter per AudioStreamId, so the companion can tell a genuinely
+    // missing packet from ordinary jitter -- see AudioMessage::sequence.
+    // Indexed by static_cast<uint8_t>(stream); 3 entries because that enum
+    // has exactly Shared/TopDevice/BottomDevice.
+    uint32_t audio_sequence_[3] = {0, 0, 0};
 
     TcpStream companion_;
     std::vector<uint8_t> inbox_;

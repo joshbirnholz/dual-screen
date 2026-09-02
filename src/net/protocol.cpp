@@ -322,6 +322,7 @@ bool decode_beacon(const uint8_t* data, std::size_t size, BeaconMessage& out) {
 void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, static_cast<uint8_t>(message.stream));
     put_u32(out, message.sample_rate);
+    put_u32(out, message.sequence);
     put_u32(out, static_cast<uint32_t>(message.samples.size()));
     for (const int16_t sample : message.samples) {
         put_u16(out, static_cast<uint16_t>(sample));
@@ -340,6 +341,7 @@ bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
     uint32_t count = 0;
     reader.u8(stream);
     reader.u32(out.sample_rate);
+    reader.u32(out.sequence);
     reader.u32(count);
     if (!reader.ok()) return false;
     // Two bytes per sample must actually be there before anything is reserved.

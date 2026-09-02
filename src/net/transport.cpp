@@ -482,6 +482,14 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
     if (allow_broadcast) {
         ::setsockopt(descriptor_, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
     }
+    // Same reasoning as TCP's own bound_send_queue() -- see its comment. UDP
+    // has no flow control of its own to lean on instead: left at the kernel's
+    // default, a socket that size can absorb far more than kMaxQueuedFrames'
+    // worth of video before a single send ever reports back pressure, which
+    // defeats the whole point of that cap. This is what makes a full kernel
+    // buffer (and, best-effort, whatever sits just past it) actually show up
+    // as a dropped send instead of as growing, invisible latency.
+    bound_send_queue(descriptor_);
 
     if (listen_port != 0) {
         sockaddr_in address {};

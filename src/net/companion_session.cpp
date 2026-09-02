@@ -48,6 +48,9 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    for (int stream = 0; stream < 3; ++stream) {
+        audio_sequence_known_[stream] = false;
+    }
 
     std::string error;
     if (!stream_.start_connect(host.address, host.session_port, &error)) {
@@ -224,6 +227,45 @@ void CompanionSession::handle_media_datagram(MessageType type, const uint8_t* pa
             }
             if (audio.samples.empty()) {
                 return;
+            }
+            const std::size_t index = static_cast<std::size_t>(audio.stream);
+            // A gap means whatever the host actually sent for those missing
+            // sequence numbers never played here at all -- not silence, just
+            // absent, which is what a click or pop actually is: playback
+            // jumping straight from one packet's last sample to the next
+            // packet's first with no continuity between them. There is no
+            // getting those samples back over a link that never promised
+            // them, but there is no need to make the jump any sharper than
+            // it has to be either.
+            bool gap = false;
+            uint32_t missing = 0;
+            if (index < 3) {
+                if (audio_sequence_known_[index] && audio.sequence != audio_next_sequence_[index]) {
+                    gap = true;
+                    missing = audio.sequence > audio_next_sequence_[index]
+                                  ? audio.sequence - audio_next_sequence_[index]
+                                  : 0;
+                }
+                audio_sequence_known_[index] = true;
+                audio_next_sequence_[index] = audio.sequence + 1;
+            }
+            if (gap) {
+                log_warn("audio stream " + std::to_string(index) + " lost " +
+                         std::to_string(missing) + " packet(s) -- fading back in");
+                // A short linear ramp back to full volume in place of the
+                // instant jump a lost packet would otherwise leave: still
+                // audibly a gap, but a soft one rather than a click. Capped
+                // at the packet's own length, since a very short packet has
+                // nothing longer to ramp across.
+                constexpr std::size_t kFadeInFrames = 64;
+                const std::size_t fade_frames =
+                    std::min(kFadeInFrames, audio.samples.size() / 2);
+                for (std::size_t frame = 0; frame < fade_frames; ++frame) {
+                    const double gain = static_cast<double>(frame) / fade_frames;
+                    audio.samples[frame * 2] = static_cast<int16_t>(audio.samples[frame * 2] * gain);
+                    audio.samples[frame * 2 + 1] =
+                        static_cast<int16_t>(audio.samples[frame * 2 + 1] * gain);
+                }
             }
             // Shared is a DS or 3DS's one soundtrack and always plays. A Wii
             // U's TopDevice/BottomDevice streams reach a companion at all
