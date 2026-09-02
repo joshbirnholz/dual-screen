@@ -110,8 +110,20 @@ struct DecodedFrame {
 enum class PixelOrder { Bgra, Rgba };
 
 struct EncoderConfig {
+    // What actually gets encoded and sent. May be smaller than the source
+    // pixels handed to encode() -- see source_width/source_height below --
+    // when the far end's own display cannot show the source at full size
+    // anyway: fewer pixels to compress, send and decode, and a smaller
+    // keyframe to ever have to get there in one piece.
     int width = 0;
     int height = 0;
+    // The size of the pixel buffer encode() is actually given. Zero means
+    // "the same as width/height": nothing to scale, which is every caller
+    // except HostSession::try_encode_video. When the two differ, open()
+    // sets the scaler up to resize on the way to the encoder rather than
+    // just convert pixel format in place.
+    int source_width = 0;
+    int source_height = 0;
     int fps = 60;
     // What the link is being asked to carry. A LAN has room for far more than
     // this, but every bit spent is latency when a burst meets a slow radio.

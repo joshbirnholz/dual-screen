@@ -176,6 +176,63 @@ void test_the_picture_survives_the_round_trip() {
                " Mbit/s at " + std::to_string(kFps) + "fps");
 }
 
+// HostSession::try_encode_video downsizes a screen larger than the
+// companion's own display before it is ever encoded -- see
+// compute_capped_encode_size() in host_session.cpp -- by leaving
+// EncoderConfig::width/height smaller than the source pixels it is actually
+// handed. Exercised here at the VideoEncoder level, since that is where the
+// scaler that has to make it happen lives.
+void test_encoding_can_downscale_from_the_source() {
+    // kWidth (854) is odd, which is fine for a source -- only what actually
+    // gets encoded has to land on an even number of pixels, same as ever. A
+    // multiple of 16 specifically, here: this app's own
+    // compute_capped_encode_size() (host_session.cpp) always rounds a capped
+    // size down to one, and not just for the usual 4:2:0 reason -- a small,
+    // non-macroblock-aligned width has been observed to corrupt memory
+    // outright encoding through libx264 on some builds, rather than merely
+    // losing the partial edge macroblock the way a hardware encoder does.
+    constexpr int kEncodeWidth = 432;
+    constexpr int kEncodeHeight = 240;
+    video::VideoEncoder encoder;
+    video::EncoderConfig config = software_config();
+    config.source_width = kWidth;
+    config.source_height = kHeight;
+    config.width = kEncodeWidth;
+    config.height = kEncodeHeight;
+    std::string error;
+    CHECK_MSG(encoder.open(config, &error), "a downscaling config was refused: " + error);
+    CHECK_EQ(encoder.width(), kEncodeWidth);
+    CHECK_EQ(encoder.height(), kEncodeHeight);
+    CHECK_EQ(encoder.source_width(), kWidth);
+    CHECK_EQ(encoder.source_height(), kHeight);
+
+    video::VideoDecoder decoder;
+    video::DecoderConfig decoder_config;
+    CHECK_MSG(decoder.open(decoder_config, &error), "no decoder to test with: " + error);
+
+    std::vector<uint32_t> source;
+    video::DecodedFrame received;
+    int decoded_frames = 0;
+    for (int index = 0; index < 5; ++index) {
+        // Full source-sized pixels in, at the source's own stride -- exactly
+        // what a screen wider than the companion's display hands over.
+        draw(source, kWidth, kHeight, index);
+        video::EncodedFrame encoded;
+        CHECK_MSG(encoder.encode(source.data(), kWidth, encoded, &error),
+                  "the encoder failed on a downscaled frame: " + error);
+        if (encoded.empty()) continue;
+        CHECK_MSG(decoder.decode(encoded.bytes.data(), encoded.bytes.size(), received, &error),
+                  "the decoder failed on a downscaled frame: " + error);
+        if (!received.valid()) continue;
+        ++decoded_frames;
+        // What actually left the encoder is what matters here -- the whole
+        // point is that this is smaller than the source, not a copy of it.
+        CHECK_EQ(received.width, kEncodeWidth);
+        CHECK_EQ(received.height, kEncodeHeight);
+    }
+    CHECK_MSG(decoded_frames > 0, "no downscaled frame ever made it through decoding");
+}
+
 void test_a_screen_that_cannot_be_encoded_says_so() {
     video::VideoEncoder encoder;
     video::EncoderConfig config = software_config();
@@ -231,6 +288,7 @@ int main() {
     test_every_frame_comes_straight_back_out();
     test_the_first_frame_stands_alone_and_more_can_be_asked_for();
     test_the_picture_survives_the_round_trip();
+    test_encoding_can_downscale_from_the_source();
     test_a_screen_that_cannot_be_encoded_says_so();
     test_a_device_attached_backend_fails_on_the_device_not_the_decoder();
     return test::finish("video-codec");

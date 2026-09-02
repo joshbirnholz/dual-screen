@@ -35,6 +35,51 @@ void promote_tile_baseline(std::vector<uint8_t>& baseline,
     }
 }
 
+// The far end's own display can never show more than it has pixels for, so
+// streaming a picture wider or taller than that spends bandwidth (and, worse,
+// keyframe size -- see kMaxMediaBytesPerPoll's own comment) on detail nobody
+// will ever see, over the very link a giant keyframe most needs to not
+// overwhelm. Scales the source down to fit inside the display, preserving its
+// aspect ratio (so nothing is stretched, only reduced), and never scales up:
+// a display bigger than the source is not a reason to invent detail that was
+// never there. A multiple of 16 comes out either way, on both counts: 4:2:0
+// only needs even dimensions, but a software x264 encode of a small,
+// non-macroblock-aligned width has been observed to corrupt memory outright
+// on some builds (this app's own test suite reproduced it: 428x240 crashed,
+// 320x240 and 432x240 did not) rather than merely losing the partial edge
+// macroblock the way a hardware encoder does -- and this is exactly the
+// resolution range a display-size cap moves into, where the source itself
+// (854 wide, and never a problem) would not have. Landing on a multiple of
+// 16 sidesteps having a partial macroblock at all.
+void compute_capped_encode_size(int source_width,
+                                int source_height,
+                                int display_width,
+                                int display_height,
+                                int& out_width,
+                                int& out_height) {
+    out_width = source_width;
+    out_height = source_height;
+    if (display_width <= 0 || display_height <= 0) {
+        return;  // Nothing reported yet -- see companion_display_size().
+    }
+    const double scale = std::min(
+        1.0, std::min(static_cast<double>(display_width) / source_width,
+                      static_cast<double>(display_height) / source_height));
+    if (scale >= 1.0) {
+        return;  // The source already fits; scaling up is not this function's job.
+    }
+    // A floor rather than letting a tiny reported display size shrink this to
+    // nothing: 64 is well below anything worth encoding at all, just large
+    // enough that the codec and scaler never see a degenerate width or height
+    // -- and already a multiple of 16, so it also holds as the floor below.
+    constexpr int kMinEncodeDimension = 64;
+    constexpr int kAlignment = 16;
+    out_width = std::max(kMinEncodeDimension,
+                         static_cast<int>(source_width * scale) / kAlignment * kAlignment);
+    out_height = std::max(kMinEncodeDimension,
+                          static_cast<int>(source_height * scale) / kAlignment * kAlignment);
+}
+
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
 //
@@ -831,17 +876,33 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         return false;
     }
 
+    // Never sent any larger than the companion can actually show -- see
+    // compute_capped_encode_size()'s own comment. Unknown display size (still
+    // false before the companion has ever reported one) leaves encode_width/
+    // height equal to width/height, the same as always.
+    int display_width = 0;
+    int display_height = 0;
+    companion_display_size(display_width, display_height);
+    int encode_width = width;
+    int encode_height = height;
+    compute_capped_encode_size(width, height, display_width, display_height, encode_width,
+                               encode_height);
+
     video::VideoEncoder& encoder = (screen == ScreenId::Top) ? video_top_ : video_bottom_;
     // Reopens on a resolution change too, not just the first time -- a render
-    // scale or layout change mid-session leaves width/height different from
-    // what the encoder (and the scaler and frame pool inside it) were last
-    // configured for, and feeding it pixels of a new size through the old
-    // configuration is exactly what produced the partial/duplicated pictures
-    // a render scale change used to cause.
-    if (!encoder.is_open() || encoder.width() != width || encoder.height() != height) {
+    // scale or layout change mid-session, or the companion's own window being
+    // resized, leaves one of these dimensions different from what the encoder
+    // (and the scaler and frame pool inside it) were last configured for, and
+    // feeding it pixels of a new size through the old configuration is
+    // exactly what produced the partial/duplicated pictures a render scale
+    // change used to cause.
+    if (!encoder.is_open() || encoder.source_width() != width || encoder.source_height() != height ||
+        encoder.width() != encode_width || encoder.height() != encode_height) {
         video::EncoderConfig config;
-        config.width = width;
-        config.height = height;
+        config.width = encode_width;
+        config.height = encode_height;
+        config.source_width = width;
+        config.source_height = height;
         config.fps = 60;
         config.bitrate_kbps = 8000;
         // A GPU-read-back screen (3DS, or Cemu across the external frame

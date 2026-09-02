@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <thread>
 #include <vector>
@@ -1464,6 +1465,111 @@ void test_the_codec_can_change_without_reconnecting() {
     host.stop();
 }
 
+// A screen streamed as H.264 is never sent any larger than the companion's
+// own reported display -- see compute_capped_encode_size() in
+// host_session.cpp. This is the session-level half of that: the encoder-level
+// scaling itself is test_video_codec.cpp's job, this is confirming
+// HostSession actually asks for it once it knows the companion's display is
+// smaller than the screen being sent.
+void test_video_is_capped_to_the_companions_display_size() {
+    if (!video::available()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+    host.set_video_wanted(true);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    CHECK_MSG(host.companion_accepts_video(), "the far end cannot decode video");
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    const std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    uint64_t serial = 1;
+    host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return companion.screen_pixels(ScreenId::Bottom).valid(); }),
+              "no video frame arrived at all");
+    const CompanionSession::ScreenPixels native = companion.screen_pixels(ScreenId::Bottom);
+    CHECK_EQ(native.width, kDsScreenWidth);
+    CHECK_EQ(native.height, kDsScreenHeight);
+
+    // Smaller than the DS screen in both dimensions. 120x90 is deliberately
+    // the same 4:3 shape the DS screen already is: both request_display_size
+    // arguments below stay clean fractions of it (120/256 == 90/192 exactly
+    // in binary floating point), so the width and height bounds land evenly
+    // rather than one of them tripping over a rounding edge the aspect-ratio
+    // check below would then have to be loose enough to absorb.
+    constexpr int kDisplayWidth = 120;
+    constexpr int kDisplayHeight = 90;
+    companion.request_display_size(kDisplayWidth, kDisplayHeight);
+    int reported_width = 0;
+    int reported_height = 0;
+    CHECK_MSG(spin(host, companion,
+                   [&] { return host.companion_display_size(reported_width, reported_height); }),
+              "the companion's display size never reached the host");
+
+    ++serial;
+    host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+    const bool shrank = spin(host, companion, [&] {
+        const CompanionSession::ScreenPixels frame = companion.screen_pixels(ScreenId::Bottom);
+        return frame.valid() && frame.width != native.width;
+    });
+    CHECK_MSG(shrank, "the stream was not capped down once the companion's display was smaller "
+                      "than the screen being sent");
+    const CompanionSession::ScreenPixels capped = companion.screen_pixels(ScreenId::Bottom);
+    CHECK_MSG(capped.width <= kDisplayWidth && capped.height <= kDisplayHeight,
+              "the capped frame (" + std::to_string(capped.width) + "x" +
+                  std::to_string(capped.height) + ") still does not fit the companion's own " +
+                  std::to_string(kDisplayWidth) + "x" + std::to_string(kDisplayHeight) +
+                  " display");
+    CHECK_MSG(capped.width < native.width && capped.height < native.height,
+              "the cap did not actually shrink both dimensions of the screen being sent");
+    // A multiple of 16, not just even -- see compute_capped_encode_size()'s
+    // own comment on why a capped size lands there rather than only on an
+    // even number the way an uncapped one only needs to.
+    CHECK_MSG((capped.width % 16) == 0 && (capped.height % 16) == 0,
+              "a capped H.264 frame (" + std::to_string(capped.width) + "x" +
+                  std::to_string(capped.height) + ") was not macroblock-aligned");
+    // Loose on purpose: rounding each dimension down to its own nearest
+    // multiple of 16 does not distribute the same fraction of loss to both,
+    // so a little aspect drift is expected at a target this small -- the
+    // point of this check is that the cap scaled the picture down rather
+    // than stretching it to fill the display's own shape regardless of the
+    // source's, which a factor of two or more off would still catch.
+    const double source_aspect =
+        static_cast<double>(native.width) / static_cast<double>(native.height);
+    const double capped_aspect =
+        static_cast<double>(capped.width) / static_cast<double>(capped.height);
+    CHECK_MSG(capped_aspect > source_aspect * 0.75 && capped_aspect < source_aspect * 1.25,
+              "the capped frame's aspect ratio drifted from the source's");
+
+    companion.disconnect();
+    host.stop();
+}
+
 }  // namespace
 
 int main() {
@@ -1486,5 +1592,6 @@ int main() {
     test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
+    test_video_is_capped_to_the_companions_display_size();
     return test::finish("session");
 }

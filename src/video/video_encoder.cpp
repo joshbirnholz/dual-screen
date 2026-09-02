@@ -284,7 +284,12 @@ bool VideoEncoder::open_backend(const std::string& name,
     // feeding that in as BGRA swaps red and blue across the whole picture.
     const AVPixelFormat source_format =
         (config.pixel_order == PixelOrder::Rgba) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_BGRA;
-    scaler_ = sws_getContext(config.width, config.height, source_format, config.width,
+    const int source_width = config.source_width > 0 ? config.source_width : config.width;
+    const int source_height = config.source_height > 0 ? config.source_height : config.height;
+    // SWS_BILINEAR here does double duty: it is what turns "convert pixel
+    // format" into "convert pixel format and resample" the moment source and
+    // dest sizes differ -- see EncoderConfig::source_width/source_height.
+    scaler_ = sws_getContext(source_width, source_height, source_format, config.width,
                              config.height, software_format, SWS_BILINEAR, nullptr, nullptr,
                              nullptr);
     if (scaler_ == nullptr) {
@@ -303,6 +308,8 @@ bool VideoEncoder::open_backend(const std::string& name,
     backend_ = name;
     width_ = config.width;
     height_ = config.height;
+    source_width_ = source_width;
+    source_height_ = source_height;
     return true;
 }
 
@@ -323,7 +330,11 @@ bool VideoEncoder::encode(const uint32_t* pixels,
 
     const auto* source = reinterpret_cast<const uint8_t*>(pixels);
     const int source_stride = stride_pixels * 4;
-    sws_scale(scaler_, &source, &source_stride, 0, height_, frame_->data, frame_->linesize);
+    // The number of rows sws_scale reads from the source, which is its own
+    // height, not the encoded frame's -- the two now differ whenever
+    // EncoderConfig::source_width/source_height asked for downscaling.
+    sws_scale(scaler_, &source, &source_stride, 0, source_height_, frame_->data,
+             frame_->linesize);
     frame_->pts = next_pts_++;
     if (force_keyframe_) {
         frame_->pict_type = AV_PICTURE_TYPE_I;

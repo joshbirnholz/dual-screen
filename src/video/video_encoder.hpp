@@ -33,6 +33,11 @@ public:
     // HostSession::try_encode_video, which is the only caller.
     int width() const { return width_; }
     int height() const { return height_; }
+    // What open() was actually given, before any scaling down to width/height
+    // above -- see EncoderConfig::source_width/source_height. The caller's
+    // job to notice this no longer matches either, same as width()/height().
+    int source_width() const { return source_width_; }
+    int source_height() const { return source_height_; }
 
     // XRGB8888 in, at `stride_pixels` per row. `out` is emptied first, so an
     // encoder that produced nothing this frame is `out.empty()` rather than
@@ -56,6 +61,8 @@ private:
     std::string backend_;
     int width_ = 0;
     int height_ = 0;
+    int source_width_ = 0;
+    int source_height_ = 0;
     int64_t next_pts_ = 0;
     bool force_keyframe_ = true;
 };
