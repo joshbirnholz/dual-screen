@@ -1,5 +1,7 @@
 #include "audio/audio_output.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "util/log.hpp"
@@ -9,7 +11,81 @@ namespace {
 
 constexpr int kBytesPerFrame = 4;  // 2 channels x int16
 
+// How much of the way to the newly computed rate each block moves. The
+// correction is chasing clock drift, which changes over seconds, not over
+// single packets, so easing towards it keeps a momentarily long or short queue
+// -- one late packet, one busy frame -- from swinging the rate around.
+constexpr double kRatioSmoothing = 0.05;
+
+// Turns "how far off target" into a rate. Deliberately steep next to
+// kAudioMaxRateAdjust: anything more than about a quarter of the target out
+// already runs at the full correction, so real drift is worked off as fast as
+// it can be while the rate still stays inaudible.
+constexpr double kRateGain = 0.04;
+
+int16_t lerp_sample(int16_t a, int16_t b, double t) {
+    const double value = static_cast<double>(a) + (static_cast<double>(b) - a) * t;
+    return static_cast<int16_t>(std::lround(std::clamp(value, -32768.0, 32767.0)));
+}
+
 }  // namespace
+
+double audio_drift_ratio(std::size_t queued_frames, std::size_t target_frames, double current) {
+    if (target_frames == 0) {
+        return 1.0;
+    }
+    const double target = static_cast<double>(target_frames);
+    const double error = (static_cast<double>(queued_frames) - target) / target;
+    const double desired = std::clamp(1.0 + kRateGain * error, 1.0 - kAudioMaxRateAdjust,
+                                      1.0 + kAudioMaxRateAdjust);
+    return current + (desired - current) * kRatioSmoothing;
+}
+
+void AudioResampler::reset() {
+    phase_ = 0.0;
+    last_frame_[0] = 0;
+    last_frame_[1] = 0;
+    have_last_ = false;
+}
+
+void AudioResampler::resample(const int16_t* interleaved_stereo, std::size_t frames, double ratio,
+                              std::vector<int16_t>& out) {
+    if (interleaved_stereo == nullptr || frames == 0 || ratio <= 0.0) {
+        return;
+    }
+
+    // Index -1 is the previous block's last frame, so a read position that
+    // lands between two blocks interpolates across the join instead of
+    // restarting from this block's first sample.
+    const auto frame_at = [&](std::ptrdiff_t index, int channel) -> int16_t {
+        if (index < 0) {
+            return have_last_ ? last_frame_[channel] : interleaved_stereo[channel];
+        }
+        const std::size_t clamped =
+            std::min(static_cast<std::size_t>(index), frames - 1);
+        return interleaved_stereo[clamped * 2 + static_cast<std::size_t>(channel)];
+    };
+
+    // phase_ is the read position the next output frame falls at, measured
+    // from this block's first frame. It starts at 0 for the very first block
+    // and afterwards carries over somewhere in [-1, 0): the tail of the
+    // previous block that the next output frame interpolates out of, which is
+    // what index -1 above supplies.
+    double position = phase_;
+    while (position + 1.0 < static_cast<double>(frames)) {
+        const double floor_position = std::floor(position);
+        const auto index = static_cast<std::ptrdiff_t>(floor_position);
+        const double fraction = position - floor_position;
+        out.push_back(lerp_sample(frame_at(index, 0), frame_at(index + 1, 0), fraction));
+        out.push_back(lerp_sample(frame_at(index, 1), frame_at(index + 1, 1), fraction));
+        position += ratio;
+    }
+
+    phase_ = std::clamp(position - static_cast<double>(frames), -1.0, 0.0);
+    last_frame_[0] = interleaved_stereo[(frames - 1) * 2];
+    last_frame_[1] = interleaved_stereo[(frames - 1) * 2 + 1];
+    have_last_ = true;
+}
 
 AudioOutput::~AudioOutput() { close(); }
 
@@ -53,8 +129,13 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
         }
     }
 
-    // Cap latency at roughly a quarter second of audio.
-    high_watermark_frames_ = static_cast<std::size_t>(spec_.freq / 4);
+    // Both measured against the device's own rate, since that is what the queue
+    // these bound is actually drained at.
+    target_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioTargetQueueMs / 1000;
+    panic_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioPanicQueueMs / 1000;
+    rate_ratio_ = 1.0;
+    resampler_.reset();
+    primed_ = false;
 
     SDL_PauseAudioDevice(device_, 0);
     paused_ = false;
@@ -88,6 +169,9 @@ void AudioOutput::flush() {
     if (stream_ != nullptr) {
         SDL_AudioStreamClear(stream_);
     }
+    rate_ratio_ = 1.0;
+    resampler_.reset();
+    primed_ = false;
 }
 
 std::size_t AudioOutput::queued_frames() const {
@@ -95,20 +179,49 @@ std::size_t AudioOutput::queued_frames() const {
     return SDL_GetQueuedAudioSize(device_) / kBytesPerFrame;
 }
 
+void AudioOutput::prime() {
+    primed_ = true;
+    if (target_frames_ == 0) {
+        return;
+    }
+    const std::vector<int16_t> silence(target_frames_ * 2, 0);
+    SDL_QueueAudio(device_, silence.data(),
+                   static_cast<Uint32>(silence.size() * sizeof(int16_t)));
+}
+
 void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     if (device_ == 0 || interleaved_stereo == nullptr || frames == 0) {
         return;
     }
 
-    // Drop audio rather than let the queue grow without bound; a deep queue is
-    // audible as lag between what you press and what you hear.
-    if (queued_frames() > high_watermark_frames_) {
+    if (!primed_) {
+        prime();
+    }
+
+    if (queued_frames() > panic_frames_) {
+        // Not drift -- see kAudioPanicQueueMs. Everything queued is already
+        // far enough behind to be worthless, so it goes, and playback picks up
+        // from here rather than working through it.
+        SDL_ClearQueuedAudio(device_);
+        if (stream_ != nullptr) {
+            SDL_AudioStreamClear(stream_);
+        }
+        rate_ratio_ = 1.0;
+        resampler_.reset();
+        prime();
+    }
+
+    rate_ratio_ = audio_drift_ratio(queued_frames(), target_frames_, rate_ratio_);
+
+    scratch_.clear();
+    resampler_.resample(interleaved_stereo, frames, rate_ratio_, scratch_);
+    if (scratch_.empty()) {
         return;
     }
 
-    const int byte_count = static_cast<int>(frames * kBytesPerFrame);
+    const int byte_count = static_cast<int>(scratch_.size() * sizeof(int16_t));
     if (stream_ != nullptr) {
-        if (SDL_AudioStreamPut(stream_, interleaved_stereo, byte_count) != 0) {
+        if (SDL_AudioStreamPut(stream_, scratch_.data(), byte_count) != 0) {
             return;
         }
         static thread_local std::vector<uint8_t> converted;
@@ -123,7 +236,7 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
         }
         return;
     }
-    SDL_QueueAudio(device_, interleaved_stereo, static_cast<Uint32>(byte_count));
+    SDL_QueueAudio(device_, scratch_.data(), static_cast<Uint32>(byte_count));
 }
 
 }  // namespace ds
