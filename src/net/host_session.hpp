@@ -248,9 +248,12 @@ private:
     // machine yet, but the closest thing either of those has ever had to
     // track and not worth a separate, more precise accounting just for them.
     std::size_t send_frame_fragments(const FrameMessage& frame);
-    // Hands pending_media_sends_ to the socket, a bounded number of bytes at
-    // a time -- see its own call site in poll() for why.
-    void drain_pending_media_sends();
+    // Hands pending_media_sends_ to the socket, at a rate tied to the
+    // currently configured encode bitrate rather than a fixed number of
+    // bytes per call -- see its own definition for why a fixed number could
+    // not stay right once resolution capping and per-resolution bitrate made
+    // the encoders' own output rate no longer a constant this file picks.
+    void drain_pending_media_sends(uint64_t now_ms);
 
     Config config_;
     TcpListener listener_;
@@ -280,6 +283,19 @@ private:
     // frames' worth of these can ever be waiting at once, by refusing to
     // queue a new one until earlier ones are acked.
     std::deque<std::vector<uint8_t>> pending_media_sends_;
+    // When drain_pending_media_sends() last ran, and the encoders' own
+    // configured rate at that point -- see its own comment for why the drain
+    // rate tracks these instead of being a flat constant. Zero means it has
+    // never run (or a companion just arrived, see drop_companion()): the
+    // first call after that starts the clock rather than assuming whatever
+    // time has passed since the process started was all fair game to send in.
+    uint64_t media_pacing_last_ms_ = 0;
+    // Set in try_encode_video() whenever that screen's encoder (re)opens, so
+    // drain_pending_media_sends() knows what rate the data it is draining is
+    // actually arriving at. Zero when that screen has never opened a video
+    // encoder (tiles, or nothing sent yet).
+    uint32_t video_bitrate_kbps_top_ = 0;
+    uint32_t video_bitrate_kbps_bottom_ = 0;
     // One counter per AudioStreamId, so the companion can tell a genuinely
     // missing packet from ordinary jitter -- see AudioMessage::sequence.
     // Indexed by static_cast<uint8_t>(stream); 3 entries because that enum

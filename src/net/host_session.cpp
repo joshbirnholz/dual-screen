@@ -80,6 +80,29 @@ void compute_capped_encode_size(int source_width,
                           static_cast<int>(source_height * scale) / kAlignment * kAlignment);
 }
 
+// A flat bitrate either wastes bits on a small picture (blocky at 480p is a
+// lot more bits per pixel than the same blockiness at 1080p needs) or starves
+// a large one -- and a fixed 8 Mbps, this app's number until now, is well
+// under what a LAN actually has room for: Moonlight/Sunshine set-ups commonly
+// run 1080p+ at 50 Mbps on the same kind of network this targets. Scaling
+// with the picture's own pixel count keeps the same visual quality target at
+// every size instead of picking one number that is only right for one of
+// them. 0.35 bits/pixel/frame at 60fps lands close to that 50 Mbps figure at
+// 1080p (2,073,600 px * 60 * 0.35 ~= 43.5 Mbps) while keeping the previous
+// 8 Mbps roughly where it was for a Wii U GamePad's native 854x480 (~8.6
+// Mbps) -- not tuned to hit either number exactly, just what one consistent
+// quality target happens to produce at each end.
+int bitrate_kbps_for_encode_size(int width, int height) {
+    constexpr double kBitsPerPixelPerFrame = 0.35;
+    constexpr int kFps = 60;
+    constexpr int kMinBitrateKbps = 2000;
+    constexpr int kMaxBitrateKbps = 60000;
+    const double bits_per_second =
+        static_cast<double>(width) * static_cast<double>(height) * kFps * kBitsPerPixelPerFrame;
+    const int kbps = static_cast<int>(bits_per_second / 1000.0);
+    return std::clamp(kbps, kMinBitrateKbps, kMaxBitrateKbps);
+}
+
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
 //
@@ -142,26 +165,38 @@ constexpr std::size_t kMaxAudioFramesPerPacket =
 // tiles for the rest of the connection -- see use_video_for().
 constexpr uint64_t kVideoRetryCooldownMs = 3000;
 
-// How many bytes of pending_media_sends_ poll() will actually hand to the
-// socket in one call, rather than draining the whole thing in one go. A
-// resolution change forces a fresh keyframe -- far bigger than an ordinary
-// frame, since it cannot lean on the one before it the way every frame in
-// between does -- and sending an oversized one in a single burst of
-// back-to-back datagrams is what the socket's own send buffer used to have
-// to absorb all at once (see kMediaSendQueueBytes in transport.cpp): fine
-// most of the time, but a large enough keyframe -- a bigger screen, a higher
-// internal render resolution from a graphics pack -- could still exceed
-// whatever that buffer happened to be sized for, and there is always a
-// keyframe big enough to find that ceiling.
-//
-// Spreading a big frame's fragments across several poll() calls instead
-// removes the ceiling entirely: nothing here needs to fit in one burst any
-// more, whatever its size, since it is never sent as one. An ordinary frame
-// (a few tens of KB at these bitrates) still clears this budget in a single
-// tick and goes out exactly as before; only a frame too big for that -- a
-// keyframe, overwhelmingly -- spends a few extra poll() calls doing it,
-// which at 60 of them a second is a handful of milliseconds, not a stall.
-constexpr std::size_t kMaxMediaBytesPerPoll = 32 * 1024;
+// drain_pending_media_sends() paces how fast pending_media_sends_ empties
+// onto the socket by elapsed wall-clock time rather than a flat number of
+// bytes per poll() call -- see its own definition. kPacingHeadroomMultiplier
+// is how far above the encoders' own combined configured rate that pacing
+// clock runs: comfortably above 1 so an ordinary frame, and even a moderately
+// oversized one, still clears in a tick or two rather than perpetually
+// trailing the rate new frames arrive at, while still spreading a much
+// bigger keyframe burst across several poll() calls instead of one -- see
+// kMaxMediaDatagramBytes and send_frame_fragments() for why a keyframe still
+// has to leave as many small datagrams either way.
+constexpr double kPacingHeadroomMultiplier = 2.0;
+// A floor under the pacing rate for whenever nothing has told it a real
+// number yet -- video not open (tiles, or nothing sent since a companion
+// connected -- see drop_companion()). This app's old flat rate before
+// per-resolution bitrate existed, so a tile-only or not-yet-started session
+// paces exactly as it always used to rather than at whatever a zero would
+// otherwise compute to.
+constexpr uint32_t kMinPacingBitrateKbps = 8000;
+// However little time has passed since the last drain, always let at least
+// one fragment through. Otherwise two poll() calls close enough together to
+// round to zero elapsed milliseconds -- easy on a machine running well above
+// 1000 calls a second -- would starve the queue outright rather than merely
+// pace it.
+constexpr std::size_t kMinDrainBudgetBytes = kMediaHeaderBytes + kFragmentHeaderBytes + kMaxFragmentPayload;
+// An upper bound on how much elapsed time one drain call is credited for, so
+// that a long gap since the last one -- a companion that just connected, a
+// slow test, a machine that stalled for a moment -- does not hand back a
+// single enormous budget that empties the whole queue in one burst, which is
+// exactly what pacing exists to avoid. 250 ms is generous next to a normal
+// poll() cadence (tens of milliseconds at most) while still being nowhere
+// near long enough to matter as a stall.
+constexpr uint64_t kMaxPacingElapsedMs = 250;
 
 }  // namespace
 
@@ -318,6 +353,12 @@ void HostSession::drop_companion(const std::string& reason) {
     // Fragments queued for the companion that just left are for a session
     // nobody at the other end will ever see the token of again.
     pending_media_sends_.clear();
+    // Whoever connects next starts its own pacing clock -- see
+    // drain_pending_media_sends() -- rather than inheriting a rate computed
+    // for a companion, and a picture, that may no longer be relevant at all.
+    media_pacing_last_ms_ = 0;
+    video_bitrate_kbps_top_ = 0;
+    video_bitrate_kbps_bottom_ = 0;
     previous_top_.clear();
     previous_bottom_.clear();
     tile_snapshots_top_.clear();
@@ -615,13 +656,13 @@ void HostSession::poll(uint64_t now_ms) {
     }
 
     // Paced rather than dumped on the socket all at once by
-    // send_frame_fragments() itself -- see kMaxMediaBytesPerPoll's own
+    // send_frame_fragments() itself -- see drain_pending_media_sends()'s own
     // comment on why a big frame's fragments are spread across several of
     // these calls instead. Run every poll(), companion or not, the same as
     // the receive loop above: draining is what lets a fresh companion's
     // fragments (queued for the one that just left, then cleared by
     // drop_companion()) never pile up either.
-    drain_pending_media_sends();
+    drain_pending_media_sends(now_ms);
 
     if (!companion_.open()) {
         TcpStream incoming;
@@ -904,7 +945,7 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         config.source_width = width;
         config.source_height = height;
         config.fps = 60;
-        config.bitrate_kbps = 8000;
+        config.bitrate_kbps = bitrate_kbps_for_encode_size(encode_width, encode_height);
         // A GPU-read-back screen (3DS, or Cemu across the external frame
         // link) hands its pixels over R,G,B,A rather than this app's usual
         // XRGB8888/BGRA -- see PixelOrder's own comment. Missing this swapped
@@ -917,6 +958,11 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
             reason = "no video encoder would open: " + open_error;
             return false;
         }
+        // Tells drain_pending_media_sends() what rate to expect from this
+        // screen from now on -- see its own comment.
+        uint32_t& bitrate_member =
+            (screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_;
+        bitrate_member = static_cast<uint32_t>(config.bitrate_kbps);
     }
     // A video frame means nothing without the frames before it, so a companion
     // that has just started needing this screen gets one that stands alone.
@@ -1016,9 +1062,40 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     return queued_bytes;
 }
 
-void HostSession::drain_pending_media_sends() {
+void HostSession::drain_pending_media_sends(uint64_t now_ms) {
+    if (pending_media_sends_.empty()) {
+        // Nothing queued -- start the pacing clock from here rather than
+        // whatever time has passed since it last had something to send,
+        // which would otherwise hand the next real frame a huge one-off
+        // budget built from an idle gap that was never actually a backlog.
+        media_pacing_last_ms_ = now_ms;
+        return;
+    }
+    // The rate this drains at tracks the encoders' own combined configured
+    // rate, not a flat guess -- a constant sized for this app's old flat
+    // 8 Mbps was already a poor fit once resolution capping and
+    // per-resolution bitrate meant the encoders could legitimately be asked
+    // for anywhere from a couple Mbps (a DS screen) to several dozen (a Wii U
+    // picture at 1080p): sized for the low end, a high-bitrate stream would
+    // arrive faster than it could ever drain and the backlog this exists to
+    // avoid would simply build somewhere else instead -- in
+    // pending_media_sends_ rather than the socket's own send buffer, but
+    // still growing, unbounded, for as long as the stream kept going. Tied to
+    // the real rate instead, the budget always keeps pace with whatever is
+    // actually being produced, with kPacingHeadroomMultiplier's own room to
+    // also work through the backlog a keyframe burst leaves behind.
+    const uint32_t combined_kbps =
+        std::max(kMinPacingBitrateKbps, video_bitrate_kbps_top_ + video_bitrate_kbps_bottom_);
+    const double bytes_per_ms = (static_cast<double>(combined_kbps) / 8.0) * kPacingHeadroomMultiplier;
+    const uint64_t elapsed_ms = (media_pacing_last_ms_ == 0 || now_ms <= media_pacing_last_ms_)
+                                    ? 0
+                                    : std::min(now_ms - media_pacing_last_ms_, kMaxPacingElapsedMs);
+    const std::size_t budget = std::max<std::size_t>(
+        kMinDrainBudgetBytes, static_cast<std::size_t>(static_cast<double>(elapsed_ms) * bytes_per_ms));
+    media_pacing_last_ms_ = now_ms;
+
     std::size_t drained = 0;
-    while (!pending_media_sends_.empty() && drained < kMaxMediaBytesPerPoll) {
+    while (!pending_media_sends_.empty() && drained < budget) {
         const std::vector<uint8_t>& out = pending_media_sends_.front();
         if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
                                    out.size())) {
