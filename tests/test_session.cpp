@@ -1329,6 +1329,99 @@ void test_a_companion_that_falls_behind_stops_being_sent_frames() {
                                 " frames for a companion that had stopped answering");
 }
 
+void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
+    // A companion that has merely fallen behind (the test above) still acks
+    // eventually, so the backlog gate reopens on its own. This is the harder
+    // case, reproduced live on real hardware: every frame the host currently
+    // has outstanding is lost together (a real packet-loss burst was enough,
+    // since kMaxQueuedFrames only ever allows a couple), so no ack for any
+    // of them is ever coming -- nothing here retries a lost UDP datagram.
+    // Without a way out, the host would wait for that ack forever: sent_serial_
+    // stuck at acked_serial_ + kMaxQueuedFrames, publish_screens() refusing
+    // every frame after, looking to both ends like the picture had simply
+    // stopped -- audio included, since a stalled video path was mistaken
+    // upstream for a stalled session. See kAckStallMs's own comment.
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "vertical", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!spin(host, companion, [&] {
+            return companion.status() == CompanionSession::Status::Connected &&
+                   host.has_companion() && host.companion_media_ready_for_test();
+        })) {
+        CHECK_MSG(false, "handshake did not complete");
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    const auto publish = [&](uint64_t serial) {
+        bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        host.poll(monotonic_millis());
+    };
+
+    // Keeping up first, the same as the test above, so this is a companion
+    // that was working and then went silent -- not one that never answered
+    // at all.
+    for (uint64_t serial = 1; serial <= 6; ++serial) {
+        publish(serial);
+        companion.poll(monotonic_millis());
+    }
+    CHECK_MSG(companion.newest_frame_serial_for_test() > 0,
+              "the companion never decoded a frame while it was keeping up");
+
+    // Now every frame from here is lost together: publish enough to fill
+    // the backlog gate, and never let the companion see any of them.
+    for (uint64_t serial = 7; serial <= 9; ++serial) {
+        publish(serial);
+    }
+    const uint64_t behind_before = host.companion_frames_behind_for_test();
+    CHECK_MSG(behind_before > 0,
+              "the host was not actually backlogged before the stall -- this test needs it to be");
+
+    // Confirm the gate really is shut, same as the test above: publishing a
+    // change right now must not queue anything.
+    const uint64_t queued_before_wait = host.queued_bytes_for_test();
+    publish(10);
+    CHECK_MSG(host.queued_bytes_for_test() == queued_before_wait,
+              "the host sent something while still within the ack-stall grace period");
+
+    // Past kAckStallMs (host_session.cpp) with no ack having arrived in
+    // between -- real time, since the stall check reads the clock directly
+    // rather than through poll()'s own now_ms parameter, the same way
+    // video_retry_at_ms_ elsewhere in this file already does.
+    std::this_thread::sleep_for(std::chrono::milliseconds(3200));
+
+    const uint64_t queued_before_recovery = host.queued_bytes_for_test();
+    publish(11);
+    CHECK_MSG(host.queued_bytes_for_test() != queued_before_recovery,
+              "the host never recovered from a companion that stopped acking entirely");
+
+    // And the companion, once it starts listening again, gets a full,
+    // correct picture rather than a diff computed against a baseline it was
+    // never actually confirmed to have.
+    if (!spin(host, companion, [&] { return companion.newest_frame_serial_for_test() == 11; })) {
+        CHECK_MSG(false, "the companion never caught back up after the host recovered");
+    }
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -1590,6 +1683,7 @@ int main() {
     test_a_real_host_is_not_timed_out();
     test_frames_that_arrive_together_are_shown_on_a_clock();
     test_a_companion_that_falls_behind_stops_being_sent_frames();
+    test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

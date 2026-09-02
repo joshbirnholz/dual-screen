@@ -130,6 +130,23 @@ int bitrate_kbps_for_encode_size(int width, int height) {
 // it cannot keep up, instead of quietly queuing behind it.
 constexpr std::size_t kMaxQueuedFrames = 2;
 
+// How long the oldest still-unacked frame is allowed to sit before this end
+// stops waiting for its ack and treats it as gone rather than merely late.
+// UDP never retries a lost datagram, so if every frame currently allowed to
+// be outstanding (kMaxQueuedFrames of them) is lost together -- one bad
+// burst is enough, since two is all this ever lets be in flight -- the ack
+// that would open the gate again is never coming, and without this, nothing
+// here would ever send another frame: sent_serial_ stuck at
+// acked_serial_ + kMaxQueuedFrames forever, looking to both ends like a
+// picture that simply stopped, audio included, with the link itself still
+// up (this was reproduced live: a real packet-loss burst on real hardware,
+// confirmed from both ends' own logs -- the companion's decode rate falling
+// to zero and staying there, not recovering, while the host's own sent/s
+// does the same). Three seconds is well clear of the round trips this link
+// already tolerates while still recovering -- kVideoRetryCooldownMs below
+// is the other constant already picked at this same rough scale.
+constexpr uint64_t kAckStallMs = 3000;
+
 // Audio needs no backlog limit of its own any more. The old one existed
 // because a fat queued video frame sitting ahead of it in the same TCP
 // connection could starve it out or force a byte-count guess at how much of
@@ -1133,7 +1150,30 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // bound the way a TCP-based backstop here once did -- see
     // acked_serial_'s own comment.
     if (acked_serial_ != 0 && sent_serial_ >= acked_serial_ + kMaxQueuedFrames) {
-        return;
+        // Still worth waiting for, unless the oldest of these has been
+        // outstanding long enough that the ack which would release it is
+        // never coming -- see kAckStallMs's own comment for why that is a
+        // real, reproduced failure and not just a hypothetical one.
+        const bool stalled = !frame_sent_at_.empty() &&
+                             monotonic_millis() - frame_sent_at_.front().second >= kAckStallMs;
+        if (!stalled) {
+            return;
+        }
+        // Recover by treating every outstanding frame as gone rather than
+        // merely late: open the gate as if they had all been acked, but
+        // without promoting the tile baselines those unconfirmed sends were
+        // computed against -- doing that would risk exactly the picture
+        // drift ack-based rebaselining exists to prevent, on baselines that
+        // were never actually confirmed. Clearing them outright and forcing
+        // a fresh full send instead is the tile equivalent of the keyframe
+        // resend_screens_ already forces for video, below.
+        acked_serial_ = sent_serial_;
+        frame_sent_at_.clear();
+        previous_top_.clear();
+        previous_bottom_.clear();
+        tile_snapshots_top_.clear();
+        tile_snapshots_bottom_.clear();
+        resend_screens_ = true;
     }
 
     bool sent_anything = false;
