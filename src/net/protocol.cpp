@@ -225,6 +225,7 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, screen_to_wire(message.granted_screen));
     put_u8(out, system_to_wire(message.system));
     put_u32(out, message.audio_sample_rate);
+    put_u64(out, message.session_token);
     finish_message(out, start, MessageType::Welcome);
 }
 
@@ -529,6 +530,7 @@ bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) 
     reader.u8(screen);
     reader.u8(system);
     reader.u32(out.audio_sample_rate);
+    reader.u64(out.session_token);
     if (!reader.ok() || !system_from_wire(system, out.system)) return false;
     return screen_from_wire(screen, out.granted_screen);
 }
@@ -669,6 +671,64 @@ bool take_message(std::vector<uint8_t>& buffer,
     out_type = static_cast<MessageType>(buffer[4] | (buffer[5] << 8));
     out_payload.assign(buffer.begin() + 6, buffer.begin() + 6 + length);
     buffer.erase(buffer.begin(), buffer.begin() + 6 + length);
+    return true;
+}
+
+// --- the UDP media channel ---------------------------------------------------
+
+void encode_media_header(uint64_t session_token, MessageType type, std::vector<uint8_t>& out) {
+    put_u64(out, session_token);
+    put_u8(out, static_cast<uint8_t>(type));
+}
+
+bool decode_media_header(const uint8_t* data, std::size_t size, uint64_t& out_token,
+                         MessageType& out_type, const uint8_t*& out_payload,
+                         std::size_t& out_payload_size) {
+    Reader reader(data, size);
+    uint8_t type = 0;
+    reader.u64(out_token);
+    reader.u8(type);
+    if (!reader.ok()) {
+        return false;
+    }
+    out_type = static_cast<MessageType>(type);
+    // 8 (session_token) + 1 (type).
+    out_payload = data + 9;
+    out_payload_size = size - 9;
+    return true;
+}
+
+void encode_frame_fragment(const FrameFragmentHeader& header, const uint8_t* payload,
+                           std::size_t payload_size, std::vector<uint8_t>& out) {
+    put_u64(out, header.serial);
+    put_u8(out, screen_to_wire(header.screen));
+    put_u8(out, static_cast<uint8_t>(header.encoding));
+    put_u16(out, header.width);
+    put_u16(out, header.height);
+    put_u16(out, header.fragment_index);
+    put_u16(out, header.fragment_count);
+    out.insert(out.end(), payload, payload + payload_size);
+}
+
+bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentHeader& out_header,
+                           const uint8_t*& out_payload, std::size_t& out_payload_size) {
+    Reader reader(data, size);
+    uint8_t screen = 0;
+    uint8_t encoding = 0;
+    reader.u64(out_header.serial);
+    reader.u8(screen);
+    reader.u8(encoding);
+    reader.u16(out_header.width);
+    reader.u16(out_header.height);
+    reader.u16(out_header.fragment_index);
+    reader.u16(out_header.fragment_count);
+    if (!reader.ok() || !screen_from_wire(screen, out_header.screen)) {
+        return false;
+    }
+    out_header.encoding = static_cast<FrameEncoding>(encoding);
+    // 8 (serial) + 1 (screen) + 1 (encoding) + 2*4 (width/height/index/count).
+    out_payload = data + 18;
+    out_payload_size = size - 18;
     return true;
 }
 

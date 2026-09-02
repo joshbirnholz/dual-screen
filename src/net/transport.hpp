@@ -85,7 +85,9 @@ private:
     uint16_t port_ = 0;
 };
 
-// UDP, used only for the discovery beacon.
+// UDP. Originally just the discovery beacon's broadcast/listen; now also the
+// point-to-point media channel (video, audio, input, frame-acks) -- see
+// send_to() below.
 class UdpSocket {
 public:
     ~UdpSocket();
@@ -96,8 +98,17 @@ public:
     bool open() const { return descriptor_ >= 0; }
 
     bool broadcast(uint16_t port, const uint8_t* data, std::size_t size);
+    // One datagram to one address, unlike broadcast() above -- the media
+    // channel's own send, once the far end's address and port are known
+    // (learned from a received datagram; see receive() below).
+    bool send_to(const std::string& address, uint16_t port, const uint8_t* data,
+                std::size_t size);
     // Returns true once per waiting datagram.
     bool receive(std::vector<uint8_t>& out, std::string& from_address);
+    // The same, but also reporting the sender's port -- what send_to() above
+    // needs to answer a datagram whose sender is not listening on a fixed,
+    // well-known port (an ephemeral one, like a companion's media socket).
+    bool receive(std::vector<uint8_t>& out, std::string& from_address, uint16_t& from_port);
 
 private:
     int descriptor_ = -1;

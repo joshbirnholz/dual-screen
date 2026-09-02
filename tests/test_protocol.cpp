@@ -49,6 +49,7 @@ void test_welcome_and_session_round_trip() {
     welcome.rom_sha1 = "a9993e364706816aba3e25717850c26c9cd0d89d";
     welcome.granted_screen = ScreenId::Top;
     welcome.system = SystemId::ThreeDs;
+    welcome.session_token = 0x0123456789abcdefull;
 
     std::vector<uint8_t> buffer;
     encode_welcome(welcome, buffer);
@@ -63,6 +64,7 @@ void test_welcome_and_session_round_trip() {
     CHECK_STR_EQ(received.rom_sha1, welcome.rom_sha1);
     CHECK(received.granted_screen == ScreenId::Top);
     CHECK(received.system == SystemId::ThreeDs);
+    CHECK(received.session_token == welcome.session_token);
 
     SessionStateMessage state;
     state.layout_id = "upper_on_tv";
@@ -675,6 +677,89 @@ void test_corrupt_pixel_payload_is_rejected() {
     CHECK(!decode_screen_pixels(encoded, 256, 192, decoded));
 }
 
+// The UDP media channel's own header, carrying which session a datagram
+// belongs to and which of the four latency-critical message types it is --
+// see kMediaPort. No length prefix (a datagram already delimits itself), so
+// this is its own small round trip rather than going through take_message().
+void test_media_header_round_trip() {
+    std::vector<uint8_t> buffer;
+    encode_media_header(0xfeedfacecafebeefull, MessageType::Audio, buffer);
+    // Payload after the header, so a real caller's decode can find it too.
+    buffer.push_back(0x42);
+
+    uint64_t token = 0;
+    MessageType type = MessageType::Ping;
+    const uint8_t* payload = nullptr;
+    std::size_t payload_size = 0;
+    CHECK(decode_media_header(buffer.data(), buffer.size(), token, type, payload, payload_size));
+    CHECK(token == 0xfeedfacecafebeefull);
+    CHECK(type == MessageType::Audio);
+    CHECK_EQ(static_cast<int>(payload_size), 1);
+    CHECK_EQ(static_cast<int>(payload[0]), 0x42);
+}
+
+void test_media_header_rejects_truncation() {
+    std::vector<uint8_t> buffer;
+    encode_media_header(1, MessageType::Input, buffer);
+    for (std::size_t length = 0; length < buffer.size(); ++length) {
+        uint64_t token = 0;
+        MessageType type = MessageType::Ping;
+        const uint8_t* payload = nullptr;
+        std::size_t payload_size = 0;
+        CHECK(!decode_media_header(buffer.data(), length, token, type, payload, payload_size));
+    }
+}
+
+// A Frame message's payload travels as a short run of these instead of one
+// encode_frame() call, so an H.264 frame (or a large tile payload) too big
+// for one UDP datagram can still cross as several -- see kMaxMediaDatagramBytes.
+void test_frame_fragment_round_trip() {
+    FrameFragmentHeader header;
+    header.serial = 0x1122334455667788ull;
+    header.screen = ScreenId::Bottom;
+    header.encoding = FrameEncoding::H264;
+    header.width = 854;
+    header.height = 480;
+    header.fragment_index = 2;
+    header.fragment_count = 5;
+
+    const std::vector<uint8_t> slice = {0xde, 0xad, 0xbe, 0xef, 0x00};
+    std::vector<uint8_t> buffer;
+    encode_frame_fragment(header, slice.data(), slice.size(), buffer);
+
+    FrameFragmentHeader received;
+    const uint8_t* payload = nullptr;
+    std::size_t payload_size = 0;
+    CHECK(decode_frame_fragment(buffer.data(), buffer.size(), received, payload, payload_size));
+    CHECK(received.serial == header.serial);
+    CHECK(received.screen == ScreenId::Bottom);
+    CHECK(received.encoding == FrameEncoding::H264);
+    CHECK_EQ(static_cast<int>(received.width), 854);
+    CHECK_EQ(static_cast<int>(received.height), 480);
+    CHECK_EQ(static_cast<int>(received.fragment_index), 2);
+    CHECK_EQ(static_cast<int>(received.fragment_count), 5);
+    CHECK_EQ(static_cast<int>(payload_size), static_cast<int>(slice.size()));
+    CHECK(std::vector<uint8_t>(payload, payload + payload_size) == slice);
+}
+
+void test_frame_fragment_rejects_truncation() {
+    FrameFragmentHeader header;
+    header.serial = 7;
+    const std::vector<uint8_t> slice = {1, 2, 3};
+    std::vector<uint8_t> buffer;
+    encode_frame_fragment(header, slice.data(), slice.size(), buffer);
+    // Every length up to but not including the full header must fail --
+    // truncated exactly at the header boundary (no payload) is legitimate
+    // and must still succeed, since a fragment can carry zero payload bytes.
+    const std::size_t header_size = buffer.size() - slice.size();
+    for (std::size_t length = 0; length < header_size; ++length) {
+        FrameFragmentHeader received;
+        const uint8_t* payload = nullptr;
+        std::size_t payload_size = 0;
+        CHECK(!decode_frame_fragment(buffer.data(), length, received, payload, payload_size));
+    }
+}
+
 }  // namespace
 
 // Every console has to survive the wire and the config file, and adding one has
@@ -745,5 +830,9 @@ int main() {
     test_corrupt_tiled_payload_is_rejected();
     test_corrupt_pixel_payload_is_rejected();
     test_every_system_round_trips();
+    test_media_header_round_trip();
+    test_media_header_rejects_truncation();
+    test_frame_fragment_round_trip();
+    test_frame_fragment_rejects_truncation();
     return test::finish("protocol");
 }

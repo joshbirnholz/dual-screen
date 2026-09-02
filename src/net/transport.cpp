@@ -524,7 +524,29 @@ bool UdpSocket::broadcast(uint16_t port, const uint8_t* data, std::size_t size) 
     return any;
 }
 
+bool UdpSocket::send_to(const std::string& address, uint16_t port, const uint8_t* data,
+                        std::size_t size) {
+    if (descriptor_ < 0 || data == nullptr || size == 0) {
+        return false;
+    }
+    sockaddr_in target {};
+    target.sin_family = AF_INET;
+    target.sin_port = htons(port);
+    if (::inet_pton(AF_INET, address.c_str(), &target.sin_addr) != 1) {
+        return false;
+    }
+    const ssize_t sent = ::sendto(descriptor_, data, size, 0,
+                                  reinterpret_cast<sockaddr*>(&target), sizeof(target));
+    return sent == static_cast<ssize_t>(size);
+}
+
 bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address) {
+    uint16_t ignored_port = 0;
+    return receive(out, from_address, ignored_port);
+}
+
+bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address,
+                        uint16_t& from_port) {
     if (descriptor_ < 0) {
         return false;
     }
@@ -538,6 +560,7 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address) {
     }
     out.assign(chunk, chunk + read);
     from_address = describe(peer);
+    from_port = ntohs(peer.sin_port);
     return true;
 }
 

@@ -469,6 +469,55 @@ void test_a_beacon_pinned_to_an_interface_still_arrives() {
               "a beacon arrived without a source address for a companion to dial back");
 }
 
+// The media channel's own send: one datagram to one address, learned from a
+// received one rather than self-reported -- see UdpSocket::send_to() and
+// HostSession's session-token handshake.
+void test_send_to_reaches_an_address_learned_from_a_receive() {
+    UdpSocket host_socket;
+    std::string error;
+    // Bound to the real media port, the way HostSession actually would --
+    // its address is what the companion's own send_to() needs to know in
+    // advance (unlike the reply below, which is learned from a receive).
+    CHECK(host_socket.start(kMediaPort, false, &error));
+
+    UdpSocket companion_socket;
+    CHECK(companion_socket.start(0, false, &error));
+
+    // The companion announces itself, the same way it would send its
+    // session-token datagram to the host's kMediaPort in the real handshake.
+    const std::vector<uint8_t> hello_payload {9};
+    CHECK(companion_socket.send_to("127.0.0.1", kMediaPort, hello_payload.data(),
+                                   hello_payload.size()));
+
+    std::vector<uint8_t> received;
+    std::string companion_address;
+    uint16_t companion_port = 0;
+    const uint64_t deadline = monotonic_millis() + 1000;
+    while (received.empty() && monotonic_millis() < deadline) {
+        if (!host_socket.receive(received, companion_address, companion_port)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    CHECK_MSG(!received.empty(), "the companion's announcing datagram never reached the host");
+    CHECK(companion_port != 0);
+
+    // Now the host answers back to the address and port it just learned,
+    // without either side having agreed on it in advance.
+    const std::vector<uint8_t> reply_payload {1, 2, 3};
+    CHECK(host_socket.send_to(companion_address, companion_port, reply_payload.data(),
+                              reply_payload.size()));
+
+    std::vector<uint8_t> reply;
+    std::string ignored_address;
+    const uint64_t reply_deadline = monotonic_millis() + 1000;
+    while (reply.empty() && monotonic_millis() < reply_deadline) {
+        if (!companion_socket.receive(reply, ignored_address)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+    }
+    CHECK(reply == reply_payload);
+}
+
 }  // namespace
 
 int main() {
@@ -482,5 +531,6 @@ int main() {
     test_one_network_reached_twice_is_called_out();
     test_a_network_reached_twice_is_announced_once_over_the_wire();
     test_a_beacon_pinned_to_an_interface_still_arrives();
+    test_send_to_reaches_an_address_learned_from_a_receive();
     return test::finish("net");
 }

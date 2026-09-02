@@ -21,12 +21,18 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 20;
+constexpr uint16_t kProtocolVersion = 21;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
 constexpr uint16_t kDiscoveryPort = 47820;
 constexpr uint16_t kSessionPort = 47821;
+// The UDP media channel -- Frame, Audio, Input, FrameAck. Separate from the
+// TCP session above rather than sharing its port: connection setup, session
+// state, menu/settings requests, rumble and quit all stay on that reliable
+// connection unchanged, since none of it is latency-critical and all of it
+// already works. This port carries only the four message types that are.
+constexpr uint16_t kMediaPort = 47822;
 
 constexpr uint32_t kMaxMessageBytes = 4u * 1024u * 1024u;
 
@@ -121,6 +127,13 @@ struct WelcomeMessage {
     // So the companion can open its own audio output at the rate the host is
     // actually producing, rather than resampling something it guessed.
     uint32_t audio_sample_rate = 0;
+    // Generated fresh by the host for this session and echoed on every UDP
+    // media datagram either side sends (see kMediaPort). UDP has no
+    // connection state of its own to say which session a stray datagram
+    // belongs to -- a late packet from a previous session, or anything else
+    // that happens to land on this port -- so every one carries this and is
+    // ignored if it does not match.
+    uint64_t session_token = 0;
 };
 
 // Which device an audio stream belongs to.
@@ -334,6 +347,56 @@ bool take_message(std::vector<uint8_t>& buffer,
                   MessageType& out_type,
                   std::vector<uint8_t>& out_payload,
                   bool& fatal);
+
+// --- the UDP media channel ---------------------------------------------------
+//
+// Frame, Audio, Input and FrameAck ride here instead of the TCP connection
+// above -- see kMediaPort. A datagram already delimits itself, so there is no
+// length prefix; each one starts with a small header saying which session it
+// belongs to and what it carries.
+
+// [u64 session_token][u8 type][payload ...]. Appends to `out`, which the
+// caller then fills with the encoded payload (encode_frame_fragment(),
+// encode_input(), encode_audio(), or encode_frame_ack()) before handing the
+// whole thing to UdpSocket::send_to().
+void encode_media_header(uint64_t session_token, MessageType type, std::vector<uint8_t>& out);
+// Reads the header off the front of one received datagram. `out_payload` and
+// `out_payload_size` point into `data` itself -- no copy -- for whichever
+// decode_* the caller picks based on `out_type`. False if the datagram is too
+// short to even hold a header.
+bool decode_media_header(const uint8_t* data, std::size_t size, uint64_t& out_token,
+                         MessageType& out_type, const uint8_t*& out_payload,
+                         std::size_t& out_payload_size);
+
+// How large one UDP media datagram is allowed to be, media header and
+// fragment header included. Comfortably under a LAN's usual 1500-byte MTU so
+// IP itself never has to fragment -- losing one IP fragment loses the whole
+// datagram either way, so fragmenting up here instead means a lost chunk
+// costs one chunk, not everything already sent alongside it.
+constexpr std::size_t kMaxMediaDatagramBytes = 1200;
+
+// A Frame message's own payload can run well past one datagram (an H.264
+// frame especially), so it travels as a short run of these instead of one
+// encode_frame() -- everything encode_frame() would send except the payload
+// itself, which arrives in pieces.
+struct FrameFragmentHeader {
+    uint64_t serial = 0;
+    ScreenId screen = ScreenId::Top;
+    FrameEncoding encoding = FrameEncoding::Rgb565Deflate;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    uint16_t fragment_index = 0;
+    uint16_t fragment_count = 1;
+};
+
+// Appends one fragment (header plus its slice of the payload) to `out`. The
+// caller slices a frame's payload into pieces and calls this once per piece
+// -- see HostSession::publish_screens() for the loop that does it.
+void encode_frame_fragment(const FrameFragmentHeader& header, const uint8_t* payload,
+                           std::size_t payload_size, std::vector<uint8_t>& out);
+// The inverse, again pointing `out_payload` into `data` rather than copying.
+bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentHeader& out_header,
+                           const uint8_t*& out_payload, std::size_t& out_payload_size);
 
 // --- pixel conversion -------------------------------------------------------
 
