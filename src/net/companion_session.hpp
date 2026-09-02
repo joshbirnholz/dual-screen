@@ -49,6 +49,20 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 // into hoarding.
 uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms);
 
+// How far to advance the pacing clock after showing `shown` frames.
+//
+// Normally exactly one period per frame, which is what keeps the cadence even.
+// While a backlog is being given back the clock runs a few percent fast
+// instead, so the excess drains a fraction of a frame at a time.
+//
+// It has to be the rate that bends rather than the frame count. Draining by
+// showing an extra frame empties the queue far faster, but an extra frame
+// shown in one pass is an extra frame never seen, and dropping frames several
+// times a second is far more obvious than the delay it buys back. Bending the
+// rate shows every frame and takes about half a second to give back a frame's
+// worth of delay, which nobody can see.
+uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining);
+
 // The companion half: finds hosts, connects to one, and presents the screens it
 // receives as a ScreenSource -- the same seam the libretro core plugs into, so
 // the compositor and layout system never learn where the pixels came from.

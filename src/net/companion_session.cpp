@@ -496,8 +496,15 @@ void CompanionSession::poll(uint64_t now_ms) {
     if (!pending_frames_.empty()) {
         const uint64_t period = frame_period();
         const std::size_t waiting = buffered_frames();
-        const std::size_t target = target_buffer_frames();
-        std::size_t budget = waiting > target ? waiting - target : 0;
+        // Skipping frames is the last resort here, not the ordinary way of
+        // keeping up: every frame past the first in one pass is a frame that
+        // is decoded, applied and then immediately overwritten, so nobody ever
+        // sees it. Ordinary backlog is given back by pacing instead -- see
+        // video_pace_step_ms() -- and only a queue past the ceiling, which is
+        // further behind than gentle pacing will clear in any reasonable time,
+        // is worth catching up on this way.
+        std::size_t budget =
+            waiting > kMaxVideoBufferFrames ? waiting - kMaxVideoBufferFrames : 0;
         if (next_due_ms_ == 0 || now_ms >= next_due_ms_) {
             budget = std::max<std::size_t>(budget, 1);
         }
@@ -511,17 +518,16 @@ void CompanionSession::poll(uint64_t now_ms) {
         // stream's rate -- behind, and stayed exactly there. Capping the depth
         // does not help, because the cap is what it settles at.
         //
-        // So whenever the oldest frame in hand has been waiting longer than
-        // this link's own unevenness actually calls for, show an extra one and
-        // walk the backlog down. One extra per pass rather than draining to
-        // empty at once: the picture catches up over a few frames instead of
-        // jumping. A calm link settles at one frame in hand, which is the least
-        // that still lets the clock pace anything at all; a rough one keeps
-        // buying cover up to the ceiling for as long as it stays rough.
+        // Whether that backlog is currently worth giving back. What is done
+        // about it is below, where the clock is advanced: showing an extra
+        // frame here would drain it in one pass, but an extra frame shown is
+        // an extra frame *skipped*, since both land in the same pass and only
+        // the last is ever seen. That was tried, and traded the latency for
+        // visible judder several times a second -- a bad bargain, and a much
+        // more noticeable one than the delay it bought back.
         const uint64_t allowance = video_hold_allowance_ms(jitter_ms_, period);
-        if (!complete_at_.empty() && now_ms > complete_at_.front().second + allowance) {
-            budget = std::max<std::size_t>(budget, 2);
-        }
+        const bool draining =
+            !complete_at_.empty() && now_ms > complete_at_.front().second + allowance;
         std::size_t shown = 0;
         for (; shown < budget && decode_next_frame(); ++shown) {
         }
@@ -529,7 +535,7 @@ void CompanionSession::poll(uint64_t now_ms) {
             // Advanced from when it was due, not from now, so the pace does
             // not drift slower by however late each pass happened to run. A
             // clock that has fallen far behind is started again instead.
-            const uint64_t step = period * shown;
+            const uint64_t step = video_pace_step_ms(period, shown, draining);
             next_due_ms_ = (next_due_ms_ == 0 || now_ms > next_due_ms_ + period * 4)
                                ? now_ms + period
                                : next_due_ms_ + step;
@@ -849,6 +855,18 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {
         return kMaxVideoBufferFrames;
     }
     return static_cast<std::size_t>(target);
+}
+
+uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining) {
+    const uint64_t step = period_ms * (shown > 0 ? shown : 1);
+    if (!draining) {
+        return step;
+    }
+    // A few percent fast, and never less than one millisecond of a step so a
+    // tiny period cannot round the clock away entirely.
+    constexpr uint64_t kDrainPercent = 8;
+    const uint64_t drained = step * (100 - kDrainPercent) / 100;
+    return drained > 0 ? drained : 1;
 }
 
 uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms) {

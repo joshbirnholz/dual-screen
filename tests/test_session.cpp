@@ -1723,6 +1723,34 @@ void test_a_backlog_is_given_back_rather_than_carried_for_ever() {
     CHECK(video_hold_allowance_ms(1e9, period) == period * 2);
 }
 
+// A backlog has to be given back by running the clock slightly fast, never by
+// showing an extra frame. Both frames of a two-frame pass land before anything
+// is drawn, so the first is not shown at all -- and dropping frames several
+// times a second is far more obvious than the delay it buys back. That was
+// tried on hardware and the judder was the thing people noticed.
+void test_a_backlog_is_drained_by_pacing_not_by_skipping_frames() {
+    constexpr uint64_t period = 33;
+
+    // Settled: exactly the frames shown, at exactly the period.
+    CHECK_EQ(video_pace_step_ms(period, 1, false), period);
+    CHECK_EQ(video_pace_step_ms(period, 2, false), period * 2);
+
+    // Draining: the same frames, a little sooner. Never zero, and never so
+    // aggressive that the picture visibly speeds up.
+    const uint64_t drained = video_pace_step_ms(period, 1, true);
+    CHECK(drained < period);
+    CHECK(drained > period * 3 / 4);
+    CHECK(video_pace_step_ms(1, 1, true) >= 1u);
+
+    // Giving back a whole frame of delay should take on the order of half a
+    // second -- slow enough to be invisible, quick enough to matter.
+    const uint64_t gained = period - drained;
+    CHECK(gained > 0);
+    const uint64_t frames_to_recover = period / gained;
+    CHECK(frames_to_recover >= 5);
+    CHECK(frames_to_recover <= 30);
+}
+
 }  // namespace
 
 int main() {
@@ -1747,6 +1775,7 @@ int main() {
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
+    test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();
