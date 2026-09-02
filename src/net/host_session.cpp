@@ -34,11 +34,16 @@ namespace {
 // it cannot keep up, instead of quietly queuing behind it.
 constexpr std::size_t kMaxQueuedFrames = 2;
 
-// Audio still goes by bytes, because a sound packet is a fixed span of time
-// and its size does not wander. Cut down from a little under a fifth of a
-// second to about a fortieth, in step with the frame budget above -- for the
-// same reason: a backlog of correct audio a beat late is still late.
-constexpr std::size_t kMaxQueuedAudioBytes = 8 * 1024;
+// Counted in packets, like kMaxQueuedFrames, and for the same reason bytes
+// stopped working for video: audio shares one connection with video, so bytes
+// still sitting in the socket are mostly video's, not audio's, and a single
+// queued video frame can outweigh a very generous audio backlog many times
+// over. Gating on that punished audio for video's backlog and dropped whole
+// packets -- heard as a pop, not the mild extra lag a byte limit was meant to
+// bound. Counting only audio's own packets fixes that: this is about how many
+// beats of sound this end is allowed to be ahead of what has actually left,
+// not how much of anything is queued.
+constexpr std::size_t kMaxQueuedAudioPackets = 4;
 
 // How long a failed video encoder stays backed off to tiles before the next
 // frame is allowed to try it again. Long enough that a genuinely broken
@@ -185,6 +190,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_display_height_ = 0;
     frame_marks_.clear();
     frame_sent_at_.clear();
+    audio_marks_.clear();
     resend_screens_ = false;
     sent_serial_ = 0;
     acked_serial_ = 0;
@@ -558,8 +564,6 @@ bool HostSession::take_video_error(std::string& out_reason) {
     return true;
 }
 
-std::size_t HostSession::queue_limit() const { return kMaxQueuedAudioBytes; }
-
 // Where a slow stream is actually being lost is not something that can be
 // worked out from the far end, or from a machine that is not on the same
 // network. This says, once a second: how many frames the game produced, how
@@ -607,6 +611,14 @@ std::size_t HostSession::frames_in_flight() {
     return frame_marks_.size();
 }
 
+std::size_t HostSession::audio_packets_in_flight() {
+    const uint64_t departed = companion_.departed_total();
+    while (!audio_marks_.empty() && audio_marks_.front() <= departed) {
+        audio_marks_.pop_front();
+    }
+    return audio_marks_.size();
+}
+
 void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved_stereo,
                                 std::size_t frames, uint32_t sample_rate) {
     if (!has_companion() || interleaved_stereo == nullptr || frames == 0) {
@@ -622,9 +634,12 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
         !audio_enabled_) {
         return;
     }
-    // Audio is dropped rather than queued when the link is behind, for the same
-    // reason as video: a growing queue is heard as drift, not as buffering.
-    if (companion_.pending_bytes() > queue_limit()) {
+    // Audio is dropped rather than queued when it is genuinely falling behind,
+    // for the same reason as video: a growing queue is heard as drift, not as
+    // buffering. Measured in audio's own packets in flight -- see
+    // kMaxQueuedAudioPackets -- not in the connection's total unsent bytes,
+    // which video dominates.
+    if (audio_packets_in_flight() >= kMaxQueuedAudioPackets) {
         return;
     }
 
@@ -636,6 +651,7 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
     std::vector<uint8_t> out;
     encode_audio(message, out);
     companion_.send(out);
+    audio_marks_.push_back(companion_.queued_total());
 }
 
 void HostSession::publish_rumble(bool active) {

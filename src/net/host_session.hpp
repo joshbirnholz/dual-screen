@@ -213,9 +213,6 @@ private:
     void refresh_beacon();
     void drop_companion(const std::string& reason);
     void handle_message(MessageType type, const std::vector<uint8_t>& payload);
-    // How much may sit unsent before a frame is dropped rather than queued --
-    // see kMaxQueuedFrames.
-    std::size_t queue_limit() const;
 public:
     // Total bytes ever handed to the companion's socket. Lets a test see
     // whether a frame was queued at all, which is the thing the backlog limit
@@ -232,6 +229,8 @@ private:
     // How many whole frames have been queued but have not yet left the
     // machine. Prunes the ones that have.
     std::size_t frames_in_flight();
+    // The same, for audio packets -- see audio_marks_.
+    std::size_t audio_packets_in_flight();
 
     Config config_;
     TcpListener listener_;
@@ -291,6 +290,15 @@ private:
     // The newest frame the companion says it has decoded. Zero until it has
     // said anything.
     uint64_t acked_serial_ = 0;
+    // The same idea as frame_marks_, but for audio: where each queued packet
+    // ends, in bytes ever handed to the socket. Audio shares that socket with
+    // video, so how many bytes are sitting unsent says nothing about audio
+    // specifically -- a single queued video frame can be many times the size
+    // of the whole audio backlog limit, and would starve audio out on that
+    // basis alone. Counting packets actually belonging to audio sidesteps
+    // that: this fills in behind whatever video is ahead of it in the queue
+    // instead of being dropped for video's backlog.
+    std::deque<uint64_t> audio_marks_;
 
     // Once-a-second streaming summary, for working out on real hardware where
     // a slow stream is actually being lost. Debug level, so --verbose asks for
