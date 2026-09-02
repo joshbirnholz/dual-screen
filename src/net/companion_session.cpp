@@ -386,6 +386,12 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         }
         last_arrival_ms_ = now;
         received_serial_ = frame.serial;
+        complete_at_.emplace_back(frame.serial, now);
+        // A frame that is never shown (a serial dropped for being behind)
+        // would otherwise leave its entry here for ever.
+        while (complete_at_.size() > 240) {
+            complete_at_.pop_front();
+        }
     }
     pending_frames_.push_back(std::move(frame));
 }
@@ -784,10 +790,21 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     }
     log_debug("stream: " + std::to_string(stats_decoded_ * 1000 / elapsed) +
               " decoded/s, " + std::to_string(stats_drawn_ * 1000 / elapsed) +
-              " drawn/s, newest is " + std::to_string(acked_serial_));
+              " drawn/s, newest is " + std::to_string(acked_serial_) + ", held " +
+              std::to_string(stats_waits_ > 0 ? stats_wait_total_ms_ / stats_waits_ : 0) +
+              "ms avg " + std::to_string(stats_wait_worst_ms_) + "ms worst in a buffer of " +
+              std::to_string(target_buffer_frames()) + " (jitter " +
+              std::to_string(static_cast<uint64_t>(jitter_ms_ + 0.5)) + "ms), decode " +
+              std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
+              "ms avg");
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
+    stats_wait_total_ms_ = 0;
+    stats_wait_worst_ms_ = 0;
+    stats_waits_ = 0;
+    stats_decode_total_ms_ = 0;
+    stats_decodes_ = 0;
 }
 
 // How long each frame should be on screen: what the host is producing at,
@@ -883,10 +900,25 @@ bool CompanionSession::decode_next_frame() {
         return false;
     }
     const uint64_t serial = pending_frames_.front().serial;
+    const uint64_t started_ms = monotonic_millis();
+    while (!complete_at_.empty() && complete_at_.front().first < serial) {
+        complete_at_.pop_front();  // never shown; nothing to measure
+    }
+    if (!complete_at_.empty() && complete_at_.front().first == serial) {
+        const uint64_t waited =
+            started_ms > complete_at_.front().second ? started_ms - complete_at_.front().second : 0;
+        stats_wait_total_ms_ += waited;
+        stats_wait_worst_ms_ = std::max(stats_wait_worst_ms_, waited);
+        ++stats_waits_;
+        complete_at_.pop_front();
+    }
     while (!pending_frames_.empty() && pending_frames_.front().serial == serial) {
         apply_frame(pending_frames_.front());
         pending_frames_.pop_front();
     }
+    const uint64_t finished_ms = monotonic_millis();
+    stats_decode_total_ms_ += finished_ms > started_ms ? finished_ms - started_ms : 0;
+    ++stats_decodes_;
     return true;
 }
 

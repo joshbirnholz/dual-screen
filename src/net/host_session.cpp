@@ -851,12 +851,17 @@ void HostSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_round_trips_ > 0
                                  ? stats_round_trip_total_ms_ / stats_round_trips_
                                  : 0) +
-              "ms avg " + std::to_string(stats_round_trip_worst_ms_) + "ms worst");
+              "ms avg " + std::to_string(stats_round_trip_worst_ms_) + "ms worst, encode " +
+              std::to_string(stats_encodes_ > 0 ? stats_encode_total_ms_ / stats_encodes_ : 0) +
+              "ms avg, pacing queue " + std::to_string(stats_pacing_worst_ms_) + "ms worst");
     stats_at_ms_ = now_ms;
     stats_bytes_ = media_bytes_sent_;
     stats_produced_ = 0;
     stats_sent_ = 0;
     stats_round_trips_ = 0;
+    stats_encode_total_ms_ = 0;
+    stats_encodes_ = 0;
+    stats_pacing_worst_ms_ = 0;
     stats_round_trip_total_ms_ = 0;
     stats_round_trip_worst_ms_ = 0;
 }
@@ -1122,6 +1127,19 @@ void HostSession::drain_pending_media_sends(uint64_t now_ms) {
         kMinDrainBudgetBytes, static_cast<std::size_t>(static_cast<double>(elapsed_ms) * bytes_per_ms));
     media_pacing_last_ms_ = now_ms;
 
+    // What is still queued, expressed as the time it will take to go out at
+    // the rate above. This is latency the pacing itself is adding, and the
+    // only place it can be seen -- from either end it just looks like a frame
+    // that arrived late.
+    if (bytes_per_ms > 0.0) {
+        std::size_t queued_bytes = 0;
+        for (const std::vector<uint8_t>& pending : pending_media_sends_) {
+            queued_bytes += pending.size();
+        }
+        const auto queued_ms = static_cast<uint64_t>(queued_bytes / bytes_per_ms);
+        stats_pacing_worst_ms_ = std::max(stats_pacing_worst_ms_, queued_ms);
+    }
+
     std::size_t drained = 0;
     while (!pending_media_sends_.empty() && drained < budget) {
         const std::vector<uint8_t>& out = pending_media_sends_.front();
@@ -1215,7 +1233,13 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // own snapshot below; a video frame leaves the copy untouched, so
         // there is nothing to keep for it.
         std::vector<uint8_t> attempt = entry.acked_baseline;
-        if (!encode_one_screen(entry.screen, source, attempt, frame)) {
+        const uint64_t encode_started_ms = monotonic_millis();
+        const bool encoded = encode_one_screen(entry.screen, source, attempt, frame);
+        const uint64_t encode_ended_ms = monotonic_millis();
+        stats_encode_total_ms_ +=
+            encode_ended_ms > encode_started_ms ? encode_ended_ms - encode_started_ms : 0;
+        ++stats_encodes_;
+        if (!encoded) {
             continue;
         }
         const std::size_t queued_bytes = send_frame_fragments(frame);

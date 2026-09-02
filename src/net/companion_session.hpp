@@ -340,6 +340,18 @@ private:
     double jitter_ms_ = 0.0;
     std::size_t target_buffer_frames() const;
 
+    // When each frame finished reassembling, so that the wait between having
+    // every byte of a picture and actually showing it can be measured rather
+    // than reasoned about. That wait is the one part of the end-to-end delay
+    // this end chooses rather than inherits, which makes it the first thing
+    // worth knowing the real size of -- see report_stream().
+    std::deque<std::pair<uint64_t, uint64_t>> complete_at_;
+    uint64_t stats_wait_total_ms_ = 0;
+    uint64_t stats_wait_worst_ms_ = 0;
+    unsigned stats_waits_ = 0;
+    uint64_t stats_decode_total_ms_ = 0;
+    unsigned stats_decodes_ = 0;
+
     // The other half of the host's once-a-second summary: what actually
     // arrived here. The two together say whether frames are being lost on the
     // wire or never sent in the first place.

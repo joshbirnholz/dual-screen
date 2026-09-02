@@ -308,6 +308,12 @@ private:
     // first call after that starts the clock rather than assuming whatever
     // time has passed since the process started was all fair game to send in.
     uint64_t media_pacing_last_ms_ = 0;
+    // Where the host's own share of the delay goes: how long encoding a frame
+    // takes, and how much time is sitting in the pacing queue waiting to go
+    // out. Reported once a second alongside the rest -- see report_stream().
+    uint64_t stats_encode_total_ms_ = 0;
+    unsigned stats_encodes_ = 0;
+    uint64_t stats_pacing_worst_ms_ = 0;
     // Set in try_encode_video() whenever that screen's encoder (re)opens, so
     // drain_pending_media_sends() knows what rate the data it is draining is
     // actually arriving at. Zero when that screen has never opened a video
