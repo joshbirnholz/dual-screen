@@ -240,10 +240,17 @@ private:
     // traffic.
     void handle_media_datagram(MessageType type, const uint8_t* payload, std::size_t payload_size);
     // Splits one screen's frame payload across as many UDP datagrams as it
-    // takes -- see kMaxMediaDatagramBytes -- and sends each one. Returns the
-    // number of bytes actually handed to the socket, for
-    // queued_bytes_for_test() and stats_sent_.
+    // takes -- see kMaxMediaDatagramBytes -- and queues each one onto
+    // pending_media_sends_ rather than sending it immediately (see poll()'s
+    // own comment on why). Returns the number of bytes queued, for
+    // queued_bytes_for_test() and stats_sent_ -- an approximation once
+    // pacing is involved, since those bytes have not necessarily left the
+    // machine yet, but the closest thing either of those has ever had to
+    // track and not worth a separate, more precise accounting just for them.
     std::size_t send_frame_fragments(const FrameMessage& frame);
+    // Hands pending_media_sends_ to the socket, a bounded number of bytes at
+    // a time -- see its own call site in poll() for why.
+    void drain_pending_media_sends();
 
     Config config_;
     TcpListener listener_;
@@ -266,6 +273,13 @@ private:
     bool companion_media_known_ = false;
     // See queued_bytes_for_test().
     uint64_t media_bytes_sent_ = 0;
+    // Fully framed datagrams (media header and fragment header both already
+    // written) waiting to actually go out -- see poll()'s own comment on why
+    // this exists rather than send_frame_fragments() just calling send_to()
+    // itself. No cap of its own: kMaxQueuedFrames already bounds how many
+    // frames' worth of these can ever be waiting at once, by refusing to
+    // queue a new one until earlier ones are acked.
+    std::deque<std::vector<uint8_t>> pending_media_sends_;
     // One counter per AudioStreamId, so the companion can tell a genuinely
     // missing packet from ordinary jitter -- see AudioMessage::sequence.
     // Indexed by static_cast<uint8_t>(stream); 3 entries because that enum

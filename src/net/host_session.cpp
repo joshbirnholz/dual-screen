@@ -97,6 +97,27 @@ constexpr std::size_t kMaxAudioFramesPerPacket =
 // tiles for the rest of the connection -- see use_video_for().
 constexpr uint64_t kVideoRetryCooldownMs = 3000;
 
+// How many bytes of pending_media_sends_ poll() will actually hand to the
+// socket in one call, rather than draining the whole thing in one go. A
+// resolution change forces a fresh keyframe -- far bigger than an ordinary
+// frame, since it cannot lean on the one before it the way every frame in
+// between does -- and sending an oversized one in a single burst of
+// back-to-back datagrams is what the socket's own send buffer used to have
+// to absorb all at once (see kMediaSendQueueBytes in transport.cpp): fine
+// most of the time, but a large enough keyframe -- a bigger screen, a higher
+// internal render resolution from a graphics pack -- could still exceed
+// whatever that buffer happened to be sized for, and there is always a
+// keyframe big enough to find that ceiling.
+//
+// Spreading a big frame's fragments across several poll() calls instead
+// removes the ceiling entirely: nothing here needs to fit in one burst any
+// more, whatever its size, since it is never sent as one. An ordinary frame
+// (a few tens of KB at these bitrates) still clears this budget in a single
+// tick and goes out exactly as before; only a frame too big for that -- a
+// keyframe, overwhelmingly -- spends a few extra poll() calls doing it,
+// which at 60 of them a second is a handful of milliseconds, not a stall.
+constexpr std::size_t kMaxMediaBytesPerPoll = 32 * 1024;
+
 }  // namespace
 
 bool HostSession::start(const Config& config, std::string* error) {
@@ -249,6 +270,9 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_media_address_.clear();
     companion_media_port_ = 0;
     companion_media_known_ = false;
+    // Fragments queued for the companion that just left are for a session
+    // nobody at the other end will ever see the token of again.
+    pending_media_sends_.clear();
     previous_top_.clear();
     previous_bottom_.clear();
     tile_snapshots_top_.clear();
@@ -544,6 +568,15 @@ void HostSession::poll(uint64_t now_ms) {
         companion_media_known_ = true;
         handle_media_datagram(type, payload, payload_size);
     }
+
+    // Paced rather than dumped on the socket all at once by
+    // send_frame_fragments() itself -- see kMaxMediaBytesPerPoll's own
+    // comment on why a big frame's fragments are spread across several of
+    // these calls instead. Run every poll(), companion or not, the same as
+    // the receive loop above: draining is what lets a fresh companion's
+    // fragments (queued for the one that just left, then cleared by
+    // drop_companion()) never pile up either.
+    drain_pending_media_sends();
 
     if (!companion_.open()) {
         TcpStream incoming;
@@ -906,7 +939,7 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     header.fragment_count = static_cast<uint16_t>(
         (frame.payload.size() + kMaxFragmentPayload - 1) / kMaxFragmentPayload);
 
-    std::size_t sent_bytes = 0;
+    std::size_t queued_bytes = 0;
     std::size_t offset = 0;
     for (uint16_t index = 0; index < header.fragment_count; ++index) {
         header.fragment_index = index;
@@ -915,21 +948,29 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         std::vector<uint8_t> out;
         encode_media_header(session_token_, MessageType::Frame, out);
         encode_frame_fragment(header, frame.payload.data() + offset, chunk, out);
-        if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
-                                   out.size())) {
-            // A fragment that failed to send is not coming back for a later
-            // retry the way it would over TCP, and the ones already sent
-            // ahead of it are now bytes spent on a frame the far end can
-            // never actually reassemble -- see kMediaSendQueueBytes' own
-            // comment on why this can happen at all. No point sending the
-            // rest of a doomed frame; the next one gets a fresh attempt
-            // instead, on a socket buffer that has had a moment to drain.
-            return 0;
-        }
-        sent_bytes += out.size();
+        queued_bytes += out.size();
+        pending_media_sends_.push_back(std::move(out));
         offset += chunk;
     }
-    return sent_bytes;
+    return queued_bytes;
+}
+
+void HostSession::drain_pending_media_sends() {
+    std::size_t drained = 0;
+    while (!pending_media_sends_.empty() && drained < kMaxMediaBytesPerPoll) {
+        const std::vector<uint8_t>& out = pending_media_sends_.front();
+        if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
+                                   out.size())) {
+            // Try again next poll() rather than losing this fragment outright
+            // -- a transient send failure (e.g. a momentarily full OS send
+            // buffer) is exactly what pacing is meant to give room to
+            // recover from, not a reason to give up on the frame.
+            break;
+        }
+        media_bytes_sent_ += out.size();
+        drained += out.size();
+        pending_media_sends_.pop_front();
+    }
 }
 
 void HostSession::publish_screens(const ScreenPixels& top,
@@ -988,9 +1029,11 @@ void HostSession::publish_screens(const ScreenPixels& top,
         if (!encode_one_screen(entry.screen, source, attempt, frame)) {
             continue;
         }
-        const std::size_t sent_bytes = send_frame_fragments(frame);
-        if (sent_bytes > 0) {
-            media_bytes_sent_ += sent_bytes;
+        const std::size_t queued_bytes = send_frame_fragments(frame);
+        if (queued_bytes > 0) {
+            // media_bytes_sent_ is credited by drain_pending_media_sends() at
+            // actual-send time, not here at queue time -- see its own
+            // comment on why sending is paced rather than immediate.
             sent_anything = true;
             if (frame.encoding == FrameEncoding::Rgb565DeflateTiles) {
                 entry.snapshots.emplace_back(serial, std::move(attempt));
