@@ -134,6 +134,15 @@ bool VideoDecoder::open_backend(const std::string& name, std::string* error) {
     // the encoder emits no B-frames, so display order is decode order and any
     // delay here would be latency for nothing.
     context_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    // FFmpeg's default threading model for H.264 is frame-level: several
+    // frames decoded across several threads at once for throughput, each held
+    // until its turn to be emitted in order. That is exactly the buffering
+    // LOW_DELAY above is trying to avoid -- a live stream pays for it as
+    // several frames of decode latency, not as anything faster arriving on
+    // screen. Slice-level threading parallelises inside one frame instead of
+    // across several, so it can still use more than one core without ever
+    // holding a frame back waiting on the next one.
+    context_->thread_type = FF_THREAD_SLICE;
 
     const int rc = avcodec_open2(context_, codec, nullptr);
     if (rc < 0) {

@@ -224,6 +224,17 @@ bool VideoEncoder::open_backend(const std::string& name,
             return false;
         }
         context_->hw_frames_ctx = frames;
+        if (name.find("_vaapi") != std::string::npos) {
+            // Defaults to 2: the driver may be holding a second frame mid-encode
+            // so the next submission does not have to wait for the first to
+            // finish, which is a throughput trade this link has no use for --
+            // every frame still queued behind another is a frame of latency
+            // nobody asked for. One means a submission now waits for the
+            // previous frame to actually finish encoding rather than piling up
+            // behind it, which is the right trade for a live stream over a
+            // link that already has spare encode headroom.
+            av_opt_set_int(context_->priv_data, "async_depth", 1, 0);
+        }
     } else {
         context_->pix_fmt = software_format;
         // Software encoders are the ones that would otherwise buffer for

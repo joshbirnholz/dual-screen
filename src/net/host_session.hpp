@@ -229,8 +229,8 @@ private:
     // How many whole frames have been queued but have not yet left the
     // machine. Prunes the ones that have.
     std::size_t frames_in_flight();
-    // The same, for audio packets -- see audio_marks_.
-    std::size_t audio_packets_in_flight();
+    // The same, in frames of sound rather than packets -- see audio_marks_.
+    std::size_t audio_frames_in_flight();
 
     Config config_;
     TcpListener listener_;
@@ -291,14 +291,21 @@ private:
     // said anything.
     uint64_t acked_serial_ = 0;
     // The same idea as frame_marks_, but for audio: where each queued packet
-    // ends, in bytes ever handed to the socket. Audio shares that socket with
-    // video, so how many bytes are sitting unsent says nothing about audio
-    // specifically -- a single queued video frame can be many times the size
-    // of the whole audio backlog limit, and would starve audio out on that
-    // basis alone. Counting packets actually belonging to audio sidesteps
-    // that: this fills in behind whatever video is ahead of it in the queue
-    // instead of being dropped for video's backlog.
-    std::deque<uint64_t> audio_marks_;
+    // ends, in bytes ever handed to the socket, paired with how many frames
+    // of sound that packet was. Audio shares that socket with video, so how
+    // many bytes are sitting unsent says nothing about audio specifically --
+    // a single queued video frame can be many times the size of a sane audio
+    // backlog limit, and would starve audio out on that basis alone. This
+    // fills in behind whatever video is ahead of it in the queue instead of
+    // being dropped for video's backlog. The frame count alongside each mark
+    // is what lets audio_frames_in_flight() measure the backlog in time
+    // rather than packet count -- a Wii U's audio arrives in far smaller,
+    // far more frequent packets than a DS or 3DS's (Cemu's mixer runs on a
+    // ~3ms cycle; a libretro core hands over roughly a video frame's worth at
+    // once), so a fixed packet count is nowhere near the same number of
+    // milliseconds for the two, and tuning it for one starves or over-buffers
+    // the other.
+    std::deque<std::pair<uint64_t, std::size_t>> audio_marks_;
 
     // Once-a-second streaming summary, for working out on real hardware where
     // a slow stream is actually being lost. Debug level, so --verbose asks for

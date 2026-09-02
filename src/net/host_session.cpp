@@ -34,16 +34,25 @@ namespace {
 // it cannot keep up, instead of quietly queuing behind it.
 constexpr std::size_t kMaxQueuedFrames = 2;
 
-// Counted in packets, like kMaxQueuedFrames, and for the same reason bytes
-// stopped working for video: audio shares one connection with video, so bytes
-// still sitting in the socket are mostly video's, not audio's, and a single
-// queued video frame can outweigh a very generous audio backlog many times
-// over. Gating on that punished audio for video's backlog and dropped whole
-// packets -- heard as a pop, not the mild extra lag a byte limit was meant to
-// bound. Counting only audio's own packets fixes that: this is about how many
-// beats of sound this end is allowed to be ahead of what has actually left,
-// not how much of anything is queued.
-constexpr std::size_t kMaxQueuedAudioPackets = 4;
+// Counted in milliseconds of sound, not bytes and not packets. Bytes stopped
+// working for the same reason as video: audio shares one connection with
+// video, so bytes still sitting in the socket are mostly video's, not
+// audio's, and a single queued video frame can outweigh a very generous
+// audio backlog many times over -- gating on that punished audio for
+// video's backlog and dropped whole packets, heard as a pop rather than the
+// mild extra lag a byte limit was meant to bound. Packets do not work
+// either: a Wii U's TV/GamePad audio arrives in far smaller, far more
+// frequent packets than a DS or 3DS's (Cemu's mixer runs on a ~3ms cycle,
+// against a libretro core handing over roughly a video frame's worth at
+// once), so a fixed packet count is nowhere near the same number of
+// milliseconds for the two -- a limit loose enough not to starve the Wii U
+// case let a stuck DS/3DS stream queue the better part of a second before
+// anything gave way. Milliseconds are what this is actually about either
+// way: how far ahead of what has left the machine this end is allowed to
+// get, converted to a packet's own frame count via its own sample rate so
+// the two streams are held to the same standard instead of two different
+// ones by accident.
+constexpr uint64_t kMaxQueuedAudioMs = 80;
 
 // How long a failed video encoder stays backed off to tiles before the next
 // frame is allowed to try it again. Long enough that a genuinely broken
@@ -611,12 +620,16 @@ std::size_t HostSession::frames_in_flight() {
     return frame_marks_.size();
 }
 
-std::size_t HostSession::audio_packets_in_flight() {
+std::size_t HostSession::audio_frames_in_flight() {
     const uint64_t departed = companion_.departed_total();
-    while (!audio_marks_.empty() && audio_marks_.front() <= departed) {
+    while (!audio_marks_.empty() && audio_marks_.front().first <= departed) {
         audio_marks_.pop_front();
     }
-    return audio_marks_.size();
+    std::size_t total = 0;
+    for (const auto& mark : audio_marks_) {
+        total += mark.second;
+    }
+    return total;
 }
 
 void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved_stereo,
@@ -636,10 +649,14 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
     }
     // Audio is dropped rather than queued when it is genuinely falling behind,
     // for the same reason as video: a growing queue is heard as drift, not as
-    // buffering. Measured in audio's own packets in flight -- see
-    // kMaxQueuedAudioPackets -- not in the connection's total unsent bytes,
-    // which video dominates.
-    if (audio_packets_in_flight() >= kMaxQueuedAudioPackets) {
+    // buffering. Measured in audio's own frames in flight, converted from
+    // kMaxQueuedAudioMs via this packet's own sample rate -- not packets, and
+    // not the connection's total unsent bytes, which video dominates; see
+    // kMaxQueuedAudioMs for why both of those fail for a Wii U's audio
+    // specifically.
+    const std::size_t max_frames =
+        static_cast<std::size_t>((static_cast<uint64_t>(sample_rate) * kMaxQueuedAudioMs) / 1000);
+    if (max_frames > 0 && audio_frames_in_flight() >= max_frames) {
         return;
     }
 
@@ -651,7 +668,7 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
     std::vector<uint8_t> out;
     encode_audio(message, out);
     companion_.send(out);
-    audio_marks_.push_back(companion_.queued_total());
+    audio_marks_.emplace_back(companion_.queued_total(), frames);
 }
 
 void HostSession::publish_rumble(bool active) {
