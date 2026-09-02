@@ -44,6 +44,12 @@ public:
     // last frame's bytes again.
     bool encode(const uint32_t* pixels, int stride_pixels, EncodedFrame& out, std::string* error);
 
+    // The pts encode() gave the frame it most recently took in. The encoder
+    // pipelines, so the packet that same call handed back is usually an
+    // earlier one -- pairing this with EncodedFrame::pts is how a caller
+    // works out which of its own frames the bytes it just received describe.
+    int64_t last_submitted_pts() const { return last_submitted_pts_; }
+
     // The next frame stands alone, whatever the encoder had planned. A device
     // that has just joined can draw nothing until one arrives, and waiting for
     // the next scheduled one is a second of black.
@@ -65,6 +71,7 @@ private:
     int source_height_ = 0;
     int64_t next_pts_ = 0;
     bool force_keyframe_ = true;
+    int64_t last_submitted_pts_ = -1;
 };
 
 }  // namespace ds::video

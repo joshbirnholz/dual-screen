@@ -225,15 +225,25 @@ bool VideoEncoder::open_backend(const std::string& name,
         }
         context_->hw_frames_ctx = frames;
         if (name.find("_vaapi") != std::string::npos) {
-            // Defaults to 2: the driver may be holding a second frame mid-encode
-            // so the next submission does not have to wait for the first to
-            // finish, which is a throughput trade this link has no use for --
-            // every frame still queued behind another is a frame of latency
-            // nobody asked for. One means a submission now waits for the
-            // previous frame to actually finish encoding rather than piling up
-            // behind it, which is the right trade for a live stream over a
-            // link that already has spare encode headroom.
-            av_opt_set_int(context_->priv_data, "async_depth", 1, 0);
+            // Two, so that submitting a frame does not wait for it to finish
+            // encoding. This was one, on the reasoning that a frame queued
+            // behind another is a frame of latency nobody asked for -- which
+            // is true of the encoder in isolation and quite wrong in context.
+            // The wait does not happen in the encoder's own time: it happens
+            // on the thread that also paces sending, processes acks and
+            // forwards input. Measured against a game that keeps the GPU busy
+            // (Bayonetta 2), that wait was 17ms per frame -- the encode job
+            // queues behind the game's own rendering -- and the stream fell to
+            // a third of the frames the game was producing. The same encoder
+            // against an idle GPU costs 4ms and keeps up fine, which is why
+            // this only ever showed up on the heavier games.
+            //
+            // With two, the packet handed back is generally the previous
+            // submission's rather than this one's. That is a frame of
+            // pipeline delay, paid once, against a stall paid on every single
+            // frame -- and it is why EncodedFrame carries the pts of whatever
+            // actually came out instead of the caller assuming it matches.
+            av_opt_set_int(context_->priv_data, "async_depth", 2, 0);
         }
     } else {
         context_->pix_fmt = software_format;
@@ -336,6 +346,7 @@ bool VideoEncoder::encode(const uint32_t* pixels,
     sws_scale(scaler_, &source, &source_stride, 0, source_height_, frame_->data,
              frame_->linesize);
     frame_->pts = next_pts_++;
+    last_submitted_pts_ = frame_->pts;
     if (force_keyframe_) {
         frame_->pict_type = AV_PICTURE_TYPE_I;
         force_keyframe_ = false;
@@ -367,19 +378,23 @@ bool VideoEncoder::encode(const uint32_t* pixels,
         if (error != nullptr) *error = "the encoder refused a frame: " + av_error(rc);
         return false;
     }
-    while (true) {
-        rc = avcodec_receive_packet(context_, packet_);
-        if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) {
-            break;
-        }
-        if (rc < 0) {
-            if (error != nullptr) *error = "the encoder failed: " + av_error(rc);
-            return false;
-        }
-        out.bytes.insert(out.bytes.end(), packet_->data, packet_->data + packet_->size);
-        out.keyframe = out.keyframe || (packet_->flags & AV_PKT_FLAG_KEY) != 0;
-        av_packet_unref(packet_);
+    // One packet, not everything available: with the encoder pipelining, two
+    // packets waiting are two different pictures, and concatenating them
+    // would hand the caller one frame's worth of bytes labelled with the
+    // other's moment. Anything still queued comes out of the next call, which
+    // stays balanced because each call also puts exactly one frame in.
+    rc = avcodec_receive_packet(context_, packet_);
+    if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) {
+        return true;  // still encoding; out stays empty, which is not a failure
     }
+    if (rc < 0) {
+        if (error != nullptr) *error = "the encoder failed: " + av_error(rc);
+        return false;
+    }
+    out.bytes.assign(packet_->data, packet_->data + packet_->size);
+    out.keyframe = (packet_->flags & AV_PKT_FLAG_KEY) != 0;
+    out.pts = packet_->pts;
+    av_packet_unref(packet_);
     return true;
 }
 

@@ -368,6 +368,9 @@ void HostSession::drop_companion(const std::string& reason) {
     frame_sent_at_.clear();
     resend_screens_ = false;
     sent_serial_ = 0;
+    submitted_serial_ = 0;
+    encode_serials_top_.clear();
+    encode_serials_bottom_.clear();
     acked_serial_ = 0;
     // Whoever connects next gets a fresh token and has to say hello on the
     // media channel again -- its address there is not carried over from a
@@ -927,6 +930,31 @@ void HostSession::publish_rumble(bool active) {
     have_sent_rumble_ = true;
 }
 
+// Which frame the bytes an encoder just handed back actually describe.
+//
+// A pipelining encoder returns the packet for an earlier submission than the
+// one that went in with it, so the caller cannot assume what comes out is what
+// it just put in -- and sending a picture under the wrong serial would tell the
+// companion it is newer than it is, which its pacing, its acks and its tile
+// baselines are all built on being true.
+//
+// `pending` is every frame still unaccounted for, oldest first, as (pts,
+// serial). Anything older than the packet that arrived never came out at all
+// (an encoder reset drops what it was holding) and is discarded rather than
+// waited for.
+bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, int64_t pts,
+                            uint64_t& out_serial) {
+    while (!pending.empty() && pending.front().first < pts) {
+        pending.pop_front();
+    }
+    if (pending.empty() || pending.front().first != pts) {
+        return false;
+    }
+    out_serial = pending.front().second;
+    pending.pop_front();
+    return true;
+}
+
 bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,
                                    std::string& reason) {
     if (!video::available()) {
@@ -963,6 +991,8 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
                                encode_height);
 
     video::VideoEncoder& encoder = (screen == ScreenId::Top) ? video_top_ : video_bottom_;
+    std::deque<std::pair<int64_t, uint64_t>>& pending =
+        (screen == ScreenId::Top) ? encode_serials_top_ : encode_serials_bottom_;
     // Reopens on a resolution change too, not just the first time -- a render
     // scale or layout change mid-session, or the companion's own window being
     // resized, leaves one of these dimensions different from what the encoder
@@ -996,6 +1026,9 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         uint32_t& bitrate_member =
             (screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_;
         bitrate_member = static_cast<uint32_t>(config.bitrate_kbps);
+        // A reopened encoder counts from zero again, so anything still mapped
+        // against the old one's numbering would resolve to the wrong moment.
+        pending.clear();
     }
     // A video frame means nothing without the frames before it, so a companion
     // that has just started needing this screen gets one that stands alone.
@@ -1007,12 +1040,29 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     std::string encode_error;
     if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &encode_error)) {
         encoder.close();
+        pending.clear();
         reason = "the video encoder failed: " + encode_error;
         return false;
     }
-    if (encoded.empty()) {
-        return false;  // nothing to send this frame -- reason stays empty, not a failure
+    // What went in, remembered against the moment it belongs to. The encoder
+    // pipelines, so the bytes that come back below are usually an earlier
+    // submission's -- sending them under this frame's serial would tell the
+    // companion a picture is newer than it is, and its own pacing, acking and
+    // tile baselines are all built on that number being true.
+    pending.emplace_back(encoder.last_submitted_pts(), frame.serial);
+    // A frame whose packet never arrives (an encoder reset losing what it was
+    // holding) must not leave its entry here for ever.
+    while (pending.size() > 8) {
+        pending.pop_front();
     }
+    if (encoded.empty()) {
+        return false;  // still in the encoder -- reason stays empty, not a failure
+    }
+    uint64_t resolved = 0;
+    if (!resolve_encoded_serial(pending, encoded.pts, resolved)) {
+        return false;  // cannot say which moment this is, so it does not go
+    }
+    frame.serial = resolved;
     frame.encoding = FrameEncoding::H264;
     frame.payload = std::move(encoded.bytes);
     return true;
@@ -1168,7 +1218,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // sent -- it opened its menu, whose previews show both -- the pixels may
     // never change again while it waits, since a menu pauses the game. So a
     // change in what it needs forces one send of whatever is current.
-    if (serial == sent_serial_ && !resend_screens_) {
+    if (serial == submitted_serial_ && !resend_screens_) {
         return;
     }
     ++stats_produced_;
@@ -1206,6 +1256,10 @@ void HostSession::publish_screens(const ScreenPixels& top,
     }
 
     bool sent_anything = false;
+    // The newest serial whose bytes actually left, which is what the ack gate
+    // and the round-trip bookkeeping below are about -- not the newest one
+    // handed to the encoder.
+    uint64_t emitted_serial = 0;
     const struct {
         ScreenId screen;
         const ScreenPixels& pixels;
@@ -1248,21 +1302,30 @@ void HostSession::publish_screens(const ScreenPixels& top,
             // actual-send time, not here at queue time -- see its own
             // comment on why sending is paced rather than immediate.
             sent_anything = true;
+            // frame.serial rather than serial: video comes out of the encoder
+            // a frame behind what went in (see try_encode_video), so what was
+            // actually just sent is not always the moment being published.
+            emitted_serial = std::max(emitted_serial, frame.serial);
             if (frame.encoding == FrameEncoding::Rgb565DeflateTiles) {
-                entry.snapshots.emplace_back(serial, std::move(attempt));
+                entry.snapshots.emplace_back(frame.serial, std::move(attempt));
             }
         }
     }
 
     if (sent_anything) {
-        frame_sent_at_.emplace_back(serial, monotonic_millis());
+        frame_sent_at_.emplace_back(emitted_serial, monotonic_millis());
         // A companion that stops acking must not make this grow for ever.
         while (frame_sent_at_.size() > 240) {
             frame_sent_at_.pop_front();
         }
         ++stats_sent_;
+        sent_serial_ = emitted_serial;
     }
-    sent_serial_ = serial;
+    // Always, even when the encoder held this frame back: it says what has
+    // been offered, which is what decides whether the next call has anything
+    // new to do at all. sent_serial_ above says what has actually gone out,
+    // which is a different question and the one the ack gate asks.
+    submitted_serial_ = serial;
     resend_screens_ = false;
 }
 

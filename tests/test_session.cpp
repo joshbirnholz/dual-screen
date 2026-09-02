@@ -1751,6 +1751,65 @@ void test_a_backlog_is_drained_by_pacing_not_by_skipping_frames() {
     CHECK(frames_to_recover <= 30);
 }
 
+// The hardware encoder hands back the packet for an earlier submission than
+// the one that just went in, which is what lets the send loop stop waiting on
+// the GPU. None of that is reachable through the software encoder these tests
+// run on -- it answers on the same call -- so the mapping that keeps a
+// picture's serial honest across that delay is checked directly.
+void test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial() {
+    std::deque<std::pair<int64_t, uint64_t>> pending;
+    uint64_t serial = 0;
+
+    // A software encoder: in and out on the same call.
+    pending.clear();
+    pending.emplace_back(0, 100);
+    CHECK(resolve_encoded_serial(pending, 0, serial));
+    CHECK_EQ(serial, 100u);
+    CHECK(pending.empty());
+
+    // A pipelining one: three frames in, and the packet that arrives is the
+    // first of them. It must be sent as serial 100, not as the 102 that went
+    // in alongside it -- that is the whole bug this guards.
+    pending.clear();
+    pending.emplace_back(0, 100);
+    pending.emplace_back(1, 101);
+    pending.emplace_back(2, 102);
+    CHECK(resolve_encoded_serial(pending, 0, serial));
+    CHECK_EQ(serial, 100u);
+    CHECK(resolve_encoded_serial(pending, 1, serial));
+    CHECK_EQ(serial, 101u);
+    CHECK_EQ(pending.size(), std::size_t{1});
+
+    // A frame the encoder swallowed (a reset loses what it was holding) must
+    // not strand everything behind it waiting for a packet that never comes.
+    pending.clear();
+    pending.emplace_back(7, 200);
+    pending.emplace_back(8, 201);
+    pending.emplace_back(9, 202);
+    CHECK(resolve_encoded_serial(pending, 9, serial));
+    CHECK_EQ(serial, 202u);
+    CHECK(pending.empty());
+
+    // A packet newer than the oldest frame outstanding means that oldest one
+    // is never coming, so it goes rather than stranding the queue behind it.
+    pending.clear();
+    pending.emplace_back(5, 300);
+    CHECK(!resolve_encoded_serial(pending, 6, serial));
+    CHECK(pending.empty());
+
+    // A packet older than anything still outstanding says nothing about any
+    // moment in hand, so it is refused rather than sent under a guess -- and
+    // must not disturb the frames that are still waiting.
+    pending.clear();
+    pending.emplace_back(5, 300);
+    CHECK(!resolve_encoded_serial(pending, 4, serial));
+    CHECK_EQ(pending.size(), std::size_t{1});
+
+    // Nothing outstanding at all.
+    pending.clear();
+    CHECK(!resolve_encoded_serial(pending, 0, serial));
+}
+
 }  // namespace
 
 int main() {
@@ -1776,6 +1835,7 @@ int main() {
     test_an_uneven_link_buys_cover_and_gives_it_back();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
+    test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

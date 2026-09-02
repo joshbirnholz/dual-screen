@@ -88,6 +88,12 @@ struct EncodedFrame {
     // Whether this frame stands alone. A device joining mid-stream can draw
     // nothing until one of these arrives.
     bool keyframe = false;
+    // Which submitted frame these bytes are. A hardware encoder is allowed to
+    // hand back the packet for an earlier submission than the one that just
+    // went in -- that is the whole point of letting it pipeline -- so the
+    // caller cannot assume bytes coming out now describe the picture it just
+    // put in. -1 when nothing came out. See VideoEncoder::encode().
+    int64_t pts = -1;
 
     bool empty() const { return bytes.empty(); }
 };

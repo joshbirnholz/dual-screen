@@ -14,6 +14,13 @@
 
 namespace ds::net {
 
+// See the definition in host_session.cpp. Exposed for tests: it is the one
+// piece of the pipelined-encoder path whose behaviour cannot be reached
+// through a software encoder, which hands every packet back on the same call
+// that submitted it.
+bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, int64_t pts,
+                            uint64_t& out_serial);
+
 // The host half of a two-device session: announces the running game, accepts one
 // companion, streams it the screens it needs, and hands its input back.
 //
@@ -351,6 +358,15 @@ private:
     DsInputState companion_input_;
     bool companion_input_fresh_ = false;
     uint64_t sent_serial_ = 0;
+    // The newest serial handed to the encoder, which is not the same as the
+    // newest one sent: the encoder pipelines, so a frame goes in one call and
+    // its bytes come out of a later one. This is what decides whether there is
+    // anything new to publish; sent_serial_ is what the ack gate measures.
+    uint64_t submitted_serial_ = 0;
+    // Which serial each frame still inside an encoder belongs to, keyed by the
+    // pts the encoder gave it -- see try_encode_video().
+    std::deque<std::pair<int64_t, uint64_t>> encode_serials_top_;
+    std::deque<std::pair<int64_t, uint64_t>> encode_serials_bottom_;
     bool audio_enabled_ = true;
     bool rumble_active_ = false;
     bool have_sent_rumble_ = false;
