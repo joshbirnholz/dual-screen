@@ -184,6 +184,16 @@ bool VideoEncoder::open_backend(const std::string& name,
     // not need to save.
     context_->max_b_frames = 0;
     context_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    // A screen is not a camera: there is no broadcast-video convention this
+    // stream needs to honour, and left unset, encoding it into YUV's
+    // conventional limited range (16-235/16-240) throws away the outer ~14%
+    // of every channel before compression even starts -- fewer discrete
+    // steps across a gradient than the source actually has, which reads as
+    // banding whether or not the far end interprets the range correctly.
+    // Signalled in the bitstream (VUI) so a decoder on another device --
+    // including a hardware one this app did not write -- reads it the same
+    // way rather than guessing at "unspecified".
+    context_->color_range = AVCOL_RANGE_JPEG;
 
     // Hardware encoders -- VAAPI included -- work in NV12 (one luma plane,
     // one interleaved chroma plane), not YUV420P's three separate planes;
@@ -270,6 +280,14 @@ bool VideoEncoder::open_backend(const std::string& name,
         if (error != nullptr) *error = "could not set up colour conversion";
         return false;
     }
+    // Full range out of this conversion too, matching context_->color_range
+    // above -- the two have to agree, since this is what actually produces
+    // the YUV bytes the encoder reads. Only dstRange changes: the source is
+    // RGB, which has no range of its own to set, and BT.601's coefficients
+    // are still the right ones for a plain colour conversion with no
+    // particular colour space asked for.
+    sws_setColorspaceDetails(scaler_, sws_getCoefficients(SWS_CS_ITU601), 0,
+                             sws_getCoefficients(SWS_CS_ITU601), 1, 0, 1 << 16, 1 << 16);
 
     backend_ = name;
     width_ = config.width;

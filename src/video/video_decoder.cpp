@@ -179,6 +179,14 @@ bool VideoDecoder::to_rgb(AVFrame* frame, DecodedFrame& out, std::string* error)
             if (error != nullptr) *error = "could not set up colour conversion";
             return false;
         }
+        // Matching the encoder's own color_range/dstRange (see
+        // video_encoder.cpp) -- the only encoder this ever decodes is this
+        // app's own, and it always signals full range now, so this reads it
+        // the same way rather than assuming the conventional limited range
+        // most YUV comes in. Only srcRange changes here: the destination is
+        // RGB, which has no range of its own.
+        sws_setColorspaceDetails(scaler_, sws_getCoefficients(SWS_CS_ITU601), 1,
+                                 sws_getCoefficients(SWS_CS_ITU601), 0, 0, 1 << 16, 1 << 16);
         scaler_width_ = source->width;
         scaler_height_ = source->height;
         scaler_format_ = source->format;
