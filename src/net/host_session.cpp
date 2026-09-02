@@ -229,6 +229,14 @@ bool HostSession::start(const Config& config, std::string* error) {
         listener_.stop();
         return false;
     }
+    // Port 0: this socket only ever sends, to an address/port the companion
+    // already told media_socket_ above, so it needs no fixed port of its own
+    // for the companion to find -- see audio_media_socket_'s own comment.
+    if (!audio_media_socket_.start(0, false, error)) {
+        listener_.stop();
+        media_socket_.stop();
+        return false;
+    }
     std::string announce_error;
     if (!announcer_.start(&announce_error)) {
         // Discovery is a convenience; a session still works if a companion is
@@ -252,6 +260,7 @@ void HostSession::stop() {
     companion_.close();
     listener_.stop();
     media_socket_.stop();
+    audio_media_socket_.stop();
     announcer_.stop();
     inbox_.clear();
     handshake_done_ = false;
@@ -888,8 +897,10 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
         std::vector<uint8_t> out;
         encode_media_header(session_token_, MessageType::Audio, out);
         encode_audio_payload(message, out);
-        if (media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
-                                  out.size())) {
+        // audio_media_socket_, not media_socket_ -- see its own comment on
+        // why audio needs a send buffer a video keyframe burst can't fill.
+        if (audio_media_socket_.send_to(companion_media_address_, companion_media_port_,
+                                        out.data(), out.size())) {
             media_bytes_sent_ += out.size();
         }
     }

@@ -258,10 +258,28 @@ private:
     Config config_;
     TcpListener listener_;
     HostAnnouncer announcer_;
-    // Video, audio, input and frame-acks -- everything on the latency-critical
-    // path -- ride here instead of the TCP connection below. See kMediaPort's
-    // own comment for why the two are kept apart.
+    // Video, input and frame-acks -- everything on the latency-critical path
+    // except audio -- ride here instead of the TCP connection below. See
+    // kMediaPort's own comment for why the two are kept apart, and
+    // audio_media_socket_'s own comment for why audio is a third, separate
+    // channel rather than sharing this one.
     UdpSocket media_socket_;
+    // Audio is sent from its own socket rather than media_socket_ above so a
+    // video keyframe burst can never make it silently disappear. Video
+    // fragments are paced through pending_media_sends_/drain_pending_media_sends()
+    // over time, but within a single drain call they are still handed to the
+    // kernel back to back with no gap, and a keyframe -- several times the
+    // size of an ordinary frame, recurring every couple of seconds by design
+    // (see video_encoder.cpp's gop_size) -- can be large enough to fill
+    // media_socket_'s own send buffer for a moment. publish_audio() is called
+    // from Cemu's real-time audio thread, independently of and concurrently
+    // with that drain, and its sendto() is fire-and-forget: a full send
+    // buffer fails it outright with nothing retried, which reads on the
+    // companion's end as exactly the kind of audio pop this was built to
+    // avoid. A dedicated socket gives audio its own send buffer that a video
+    // burst can never fill, so an audio packet is never lost to video traffic
+    // congestion. It needs no port of its own -- see start()'s own comment.
+    UdpSocket audio_media_socket_;
     // Generated fresh whenever a companion's handshake completes and sent to
     // it in WelcomeMessage; every media datagram either side sends carries it,
     // so a stray or late one from a different session is silently ignored
