@@ -1663,6 +1663,39 @@ void test_video_is_capped_to_the_companions_display_size() {
     host.stop();
 }
 
+// A link that is delivering evenly must not hold anything back speculatively:
+// every frame held is a frame of latency, and the old fixed depth of three was
+// this app's biggest single source of it.
+void test_a_steady_link_holds_the_smallest_buffer_it_can() {
+    CHECK_EQ(video_buffer_target_frames(0.0, 33.0), kMinVideoBufferFrames);
+    // Sub-frame unevenness is what a clock already absorbs; it should not buy
+    // a whole extra frame of picture.
+    CHECK_EQ(video_buffer_target_frames(0.4, 33.0), kMinVideoBufferFrames + 1);
+    // Degenerate inputs fall back to the floor rather than to something wild.
+    CHECK_EQ(video_buffer_target_frames(5.0, 0.0), kMinVideoBufferFrames);
+    CHECK_EQ(video_buffer_target_frames(-5.0, 33.0), kMinVideoBufferFrames);
+}
+
+void test_an_uneven_link_buys_cover_and_gives_it_back() {
+    // Cover grows with the unevenness actually seen...
+    const std::size_t calm = video_buffer_target_frames(1.0, 33.0);
+    const std::size_t rough = video_buffer_target_frames(50.0, 33.0);
+    CHECK(rough > calm);
+    // ...but never past the ceiling, however bad it gets.
+    CHECK_EQ(video_buffer_target_frames(10000.0, 33.0), kMaxVideoBufferFrames);
+    CHECK(video_buffer_target_frames(50.0, 33.0) <= kMaxVideoBufferFrames);
+
+    // And the decay the session applies to its jitter estimate has to actually
+    // bring the buffer back down, or a single hiccup ratchets the latency up
+    // for the rest of the session -- which is exactly the bug this replaced.
+    double jitter = 90.0;
+    CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMaxVideoBufferFrames);
+    for (int frame = 0; frame < 300; ++frame) {
+        jitter *= 0.99;  // kJitterDecayPerFrame
+    }
+    CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMinVideoBufferFrames + 1);
+}
+
 }  // namespace
 
 int main() {
@@ -1684,6 +1717,8 @@ int main() {
     test_frames_that_arrive_together_are_shown_on_a_clock();
     test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
+    test_a_steady_link_holds_the_smallest_buffer_it_can();
+    test_an_uneven_link_buys_cover_and_gives_it_back();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

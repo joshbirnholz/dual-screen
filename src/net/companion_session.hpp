@@ -14,6 +14,27 @@
 
 namespace ds::net {
 
+// Bounds on how much picture is ever held back to smooth out an uneven link.
+//
+// The floor is one frame rather than none: a frame still waits for its slot on
+// the clock, so motion keeps the host's cadence instead of this device's, but
+// nothing beyond that is held speculatively. The ceiling is what a genuinely
+// bad link is allowed to cost before the answer becomes "show it late" rather
+// than "hold more".
+inline constexpr std::size_t kMinVideoBufferFrames = 1;
+inline constexpr std::size_t kMaxVideoBufferFrames = 4;
+
+// How many frames to keep in hand given how unevenly they have been arriving.
+//
+// A fixed depth has to be sized for the worst link it will ever see, and then
+// every good link pays that cost for ever: frames sit finished and undisplayed
+// purely because a number said so. Worse, a depth that is only ever a floor
+// ratchets -- one hiccup fills it and nothing ever drains it again, so latency
+// climbs over a session and never comes back down. Sized from the jitter
+// actually measured instead, a calm link settles to the floor and a rough one
+// buys exactly the cover it needs, for exactly as long as it needs it.
+std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
+
 // The companion half: finds hosts, connects to one, and presents the screens it
 // receives as a ScreenSource -- the same seam the libretro core plugs into, so
 // the compositor and layout system never learn where the pixels came from.
@@ -311,6 +332,13 @@ private:
     uint64_t last_arrival_ms_ = 0;
     double frame_period_ms_ = 16.7;
     uint64_t frame_period() const;
+    // How unevenly frames have been arriving lately, in milliseconds, and the
+    // buffer depth that calls for. Every frame held back is a frame of latency
+    // paid for smoothness, so this buys only as much as the link is actually
+    // being uneven by, and gives it back as soon as the link settles -- see
+    // video_buffer_target_frames().
+    double jitter_ms_ = 0.0;
+    std::size_t target_buffer_frames() const;
 
     // The other half of the host's once-a-second summary: what actually
     // arrived here. The two together say whether frames are being lost on the

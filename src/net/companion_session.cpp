@@ -1,6 +1,7 @@
 #include "net/companion_session.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "util/log.hpp"
 
@@ -67,6 +68,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     received_serial_ = 0;
     next_due_ms_ = 0;
     last_arrival_ms_ = 0;
+    jitter_ms_ = 0.0;
     status_detail_ = "connecting to " + host.device_name;
     game_title_ = host.game_title;
     log_info("connecting to " + host.device_name + " at " + host.address);
@@ -93,6 +95,7 @@ void CompanionSession::disconnect() {
     received_serial_ = 0;
     next_due_ms_ = 0;
     last_arrival_ms_ = 0;
+    jitter_ms_ = 0.0;
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
         status_detail_.clear();
@@ -369,6 +372,15 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             // should advance at.
             const double gap = static_cast<double>(now - last_arrival_ms_);
             if (gap >= 4.0 && gap <= 100.0) {
+                // How far this arrival was off the pace, before the pace
+                // itself is updated to include it. Taken up immediately and
+                // given back slowly: the cover has to be there for the next
+                // uneven arrival, which has already happened by the time an
+                // average would have noticed, but a link that has settled
+                // should not keep paying for a hiccup a few seconds ago.
+                constexpr double kJitterDecayPerFrame = 0.99;
+                const double deviation = std::abs(gap - frame_period_ms_);
+                jitter_ms_ = std::max(deviation, jitter_ms_ * kJitterDecayPerFrame);
                 frame_period_ms_ = frame_period_ms_ * 0.95 + gap * 0.05;
             }
         }
@@ -472,14 +484,14 @@ void CompanionSession::poll(uint64_t now_ms) {
     //
     // A frame that arrived early waits until it is due, which is what pays for
     // the one that arrives late; the two are the same jitter either side of
-    // the same clock. Beyond a few frames waiting is a backlog rather than
-    // jitter, and holding that would only show old pictures late, so it is
-    // caught up on instead.
-    constexpr std::size_t kJitterFrames = 3;
+    // the same clock. Beyond what this link's own jitter calls for, waiting is
+    // a backlog rather than cover, and holding that would only show old
+    // pictures late, so it is caught up on instead.
     if (!pending_frames_.empty()) {
         const uint64_t period = frame_period();
         const std::size_t waiting = buffered_frames();
-        std::size_t budget = waiting > kJitterFrames ? waiting - kJitterFrames : 0;
+        const std::size_t target = target_buffer_frames();
+        std::size_t budget = waiting > target ? waiting - target : 0;
         if (next_due_ms_ == 0 || now_ms >= next_due_ms_) {
             budget = std::max<std::size_t>(budget, 1);
         }
@@ -784,6 +796,25 @@ void CompanionSession::report_stream(uint64_t now_ms) {
 uint64_t CompanionSession::frame_period() const {
     const double clamped = std::min(40.0, std::max(8.0, frame_period_ms_));
     return static_cast<uint64_t>(clamped + 0.5);
+}
+
+std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {
+    if (period_ms <= 0.0 || !(jitter_ms > 0.0)) {
+        return kMinVideoBufferFrames;
+    }
+    // Whole frames, rounded up: cover for half a frame of jitter still costs a
+    // whole frame to hold, since a frame is the smallest thing that can be
+    // held back at all.
+    const double frames = std::ceil(jitter_ms / period_ms);
+    const double target = static_cast<double>(kMinVideoBufferFrames) + frames;
+    if (target >= static_cast<double>(kMaxVideoBufferFrames)) {
+        return kMaxVideoBufferFrames;
+    }
+    return static_cast<std::size_t>(target);
+}
+
+std::size_t CompanionSession::target_buffer_frames() const {
+    return video_buffer_target_frames(jitter_ms_, static_cast<double>(frame_period()));
 }
 
 void CompanionSession::apply_frame(const FrameMessage& frame) {
