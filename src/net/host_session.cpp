@@ -915,10 +915,18 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         std::vector<uint8_t> out;
         encode_media_header(session_token_, MessageType::Frame, out);
         encode_frame_fragment(header, frame.payload.data() + offset, chunk, out);
-        if (media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
-                                  out.size())) {
-            sent_bytes += out.size();
+        if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
+                                   out.size())) {
+            // A fragment that failed to send is not coming back for a later
+            // retry the way it would over TCP, and the ones already sent
+            // ahead of it are now bytes spent on a frame the far end can
+            // never actually reassemble -- see kMediaSendQueueBytes' own
+            // comment on why this can happen at all. No point sending the
+            // rest of a doomed frame; the next one gets a fresh attempt
+            // instead, on a socket buffer that has had a moment to drain.
+            return 0;
         }
+        sent_bytes += out.size();
         offset += chunk;
     }
     return sent_bytes;

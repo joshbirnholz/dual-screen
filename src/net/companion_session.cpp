@@ -314,7 +314,18 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     // the old one -- the sender has moved on to a newer frame, and the two
     // can never be pieced together into one anyway. Anything older than the
     // one already in progress is ignored outright.
-    if (!slot.active || header.serial > slot.serial) {
+    //
+    // A fragment_count that disagrees with what is already recorded for this
+    // same serial is treated the same as a newer one: two sends can only
+    // ever legitimately share a serial by describing the exact same frame,
+    // so a mismatch here means this is actually a second, different
+    // transmission of it (a resend re-encoded after the first had already
+    // started arriving, most likely) -- mixing fragments from the two would
+    // reassemble into bytes that were never one real frame to begin with,
+    // which is corruption a decoder has no way to recover from.
+    const bool same_transmission =
+        slot.active && header.serial == slot.serial && header.fragment_count == slot.fragment_count;
+    if (!same_transmission && (!slot.active || header.serial >= slot.serial)) {
         slot = FrameReassembly();
         slot.active = true;
         slot.serial = header.serial;
@@ -325,7 +336,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         slot.fragment_count = header.fragment_count;
         slot.fragments.resize(header.fragment_count);
         slot.received.assign(header.fragment_count, false);
-    } else if (header.serial < slot.serial) {
+    } else if (!same_transmission) {
         return;
     }
     if (!slot.received[header.fragment_index]) {

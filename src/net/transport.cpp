@@ -482,14 +482,24 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
     if (allow_broadcast) {
         ::setsockopt(descriptor_, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one));
     }
-    // Same reasoning as TCP's own bound_send_queue() -- see its comment. UDP
-    // has no flow control of its own to lean on instead: left at the kernel's
-    // default, a socket that size can absorb far more than kMaxQueuedFrames'
-    // worth of video before a single send ever reports back pressure, which
-    // defeats the whole point of that cap. This is what makes a full kernel
-    // buffer (and, best-effort, whatever sits just past it) actually show up
-    // as a dropped send instead of as growing, invisible latency.
-    bound_send_queue(descriptor_);
+    // The same motivation as TCP's own bound_send_queue() -- see its comment
+    // -- but not the same number. TCP's 64KB is fine for that connection's
+    // own small, steady traffic (session state, requests, control messages);
+    // it is not fine here. A UDP send that will not fit fails outright, with
+    // nothing like TcpStream's outbox to hold the remainder for a later
+    // pump() -- and one HostSession::publish_screens() call fragments and
+    // fires off an entire H.264 frame's worth of sends back to back with no
+    // pacing between them (see send_frame_fragments()). Reusing TCP's bound
+    // here meant a keyframe -- the one frame in a session large enough to
+    // matter, arriving right at connect and then every couple of seconds
+    // after -- could fill it before its own fragments were half sent,
+    // silently losing the rest to a full buffer rather than to the network
+    // at all. Sized to comfortably clear a keyframe at the bitrates this
+    // streams at, while still well short of the kernel's own default (which
+    // is what let latency grow unseen in the first place).
+    constexpr int kMediaSendQueueBytes = 512 * 1024;
+    ::setsockopt(descriptor_, SOL_SOCKET, SO_SNDBUF, &kMediaSendQueueBytes,
+                sizeof(kMediaSendQueueBytes));
 
     if (listen_port != 0) {
         sockaddr_in address {};
