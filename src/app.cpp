@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <optional>
+#include <utility>
 
 #include "audio/audio_output.hpp"
 #include "config/game_config.hpp"
@@ -360,6 +361,11 @@ struct App::Impl {
     // device. See clamp_wii_u_audio_target().
     AudioTarget tv_audio_target = AudioTarget::TopScreen;
     AudioTarget gamepad_audio_target = AudioTarget::BottomScreen;
+    // What the External source's own audio callback last logged its routing
+    // decision as, per stream -- so it can say again when either input to
+    // that decision changes, without saying it every few milliseconds.
+    std::optional<std::pair<AudioTarget, ScreenId>> tv_audio_route_logged;
+    std::optional<std::pair<AudioTarget, ScreenId>> gamepad_audio_route_logged;
     // Which hand holds the stylus. Shared with the other device, since it
     // changes what both of them are drawing.
     Handedness handedness = Handedness::Right;
@@ -1572,7 +1578,25 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                     // stream is meant to be set up.
                     const AudioTarget target =
                         (screen == ScreenId::Top) ? tv_audio_target : gamepad_audio_target;
-                    if (audio_reaches(target, local_screen)) {
+                    const bool plays_here = audio_reaches(target, local_screen);
+                    // Temporary: a report of GamePad audio still playing
+                    // locally survived the ShouldCapture fix on Cemu's side,
+                    // which only ever gates whether this callback fires at
+                    // all -- so the next thing to rule out is this decision,
+                    // the one place left that could still play it here too.
+                    // Logged only when it changes, since this runs every
+                    // audio block.
+                    auto& logged = (screen == ScreenId::Top) ? tv_audio_route_logged
+                                                              : gamepad_audio_route_logged;
+                    const auto current = std::make_pair(target, local_screen);
+                    if (!logged.has_value() || *logged != current) {
+                        logged = current;
+                        log_info(std::string("audio routing: ") + to_string(screen) +
+                                 " target=" + to_string(target) +
+                                 " local_screen=" + to_string(local_screen) +
+                                 (plays_here ? " -> plays here" : " -> not played here"));
+                    }
+                    if (plays_here) {
                         audio.push(samples, frames);
                     }
                     if (host_session) {
