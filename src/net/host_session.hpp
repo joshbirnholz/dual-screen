@@ -399,6 +399,7 @@ private:
     // a slow stream is actually being lost. Debug level, so --verbose asks for
     // it and an ordinary run is not filled with it.
     void report_stream(uint64_t now_ms);
+    std::string encode_cost_summary();
     // When each queued frame was sent, so the ack for it can be timed. The
     // one number none of the rest of this can give: how long a frame actually
     // takes to get there and be decoded, measured on one clock.

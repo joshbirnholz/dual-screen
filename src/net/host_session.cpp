@@ -117,18 +117,26 @@ int bitrate_kbps_for_encode_size(int width, int height) {
 // What the limit is really about is how far behind what the player sees is
 // allowed to fall, and that has always been a number of frames.
 //
-// Two rather than eight: this used to leave up to an eighth of a second of
-// stale, already-superseded frames sitting in the pipeline before a jittery
-// link started dropping them, on the reasoning that a tight cap becomes a
-// frame rate ceiling instead of a backlog limit -- three frames against a
-// 50 ms wifi round trip is 60fps exactly, with nothing left for jitter. That
-// tradeoff favours smoothness over responsiveness, and this link exists for
-// gameplay a player is reacting to in real time, where a late frame is worse
-// than a dropped one: two bounds the backlog at one frame's worth of slack
-// past that same 50 ms/60fps baseline rather than six, at the cost of
-// falling back to whatever frame rate the link actually sustains sooner when
-// it cannot keep up, instead of quietly queuing behind it.
-constexpr std::size_t kMaxQueuedFrames = 2;
+// Four, and the number is a bandwidth-delay product rather than a taste
+// setting. A frame cannot be sent until an earlier one is acked, so the most
+// this end can ever sustain is the window divided by how long an ack takes to
+// come back: at 60fps and the ~40ms an ack actually takes here (the paced send
+// itself, the flight, the companion's own poll, and the flight back), anything
+// under about 2.5 is a frame rate ceiling and nothing else.
+//
+// Two was that ceiling. Measured with the encoder no longer stalling the send
+// loop, Bayonetta 2 produced 60 frames a second, sent 50, dropped 9, and sat
+// at exactly two frames outstanding in every single sample -- the window full,
+// permanently, which is what a window too small for the link looks like. The
+// dropped frames were not frames the link could not carry: bandwidth was about
+// 18 Mbps of a LAN's headroom.
+//
+// A bigger window does not queue frames at this end -- a frame that does not
+// fit is dropped, not held -- so widening it converts drops into delivered
+// frames rather than into delay. It costs only when the link genuinely cannot
+// carry what is offered, and that case is bounded elsewhere: pacing spreads
+// the bytes, and kAckStallMs recovers if the acks stop entirely.
+constexpr std::size_t kMaxQueuedFrames = 4;
 
 // How long the oldest still-unacked frame is allowed to sit before this end
 // stops waiting for its ack and treats it as gone rather than merely late.
@@ -831,6 +839,24 @@ bool HostSession::take_video_error(std::string& out_reason) {
 // network. This says, once a second: how many frames the game produced, how
 // many were worth sending, how many were dropped for the companion being
 // behind, the rate on the wire, and how far behind the companion says it is.
+// Where the encode time above actually goes, per frame, since the last report.
+// Only the screen that is being streamed has a cost to report, so the two are
+// summed rather than shown apart -- one of them is always zero.
+std::string HostSession::encode_cost_summary() {
+    const video::VideoEncoder::EncodeCost top = video_top_.take_cost();
+    const video::VideoEncoder::EncodeCost bottom = video_bottom_.take_cost();
+    const unsigned frames = top.frames + bottom.frames;
+    if (frames == 0) {
+        return std::string();
+    }
+    const auto per_frame = [frames](double total) {
+        return std::to_string(static_cast<int>(total * 100.0 / frames) / 100.0).substr(0, 4);
+    };
+    return " (scale " + per_frame(top.scale_ms + bottom.scale_ms) + "ms, upload " +
+           per_frame(top.upload_ms + bottom.upload_ms) + "ms, submit " +
+           per_frame(top.submit_ms + bottom.submit_ms) + "ms)";
+}
+
 void HostSession::report_stream(uint64_t now_ms) {
     if (stats_at_ms_ == 0) {
         stats_at_ms_ = now_ms;
@@ -854,7 +880,8 @@ void HostSession::report_stream(uint64_t now_ms) {
                                  : 0) +
               "ms avg " + std::to_string(stats_round_trip_worst_ms_) + "ms worst, encode " +
               std::to_string(stats_encodes_ > 0 ? stats_encode_total_ms_ / stats_encodes_ : 0) +
-              "ms avg, pacing queue " + std::to_string(stats_pacing_worst_ms_) + "ms worst");
+              "ms avg" + encode_cost_summary() + ", pacing queue " +
+              std::to_string(stats_pacing_worst_ms_) + "ms worst");
     stats_at_ms_ = now_ms;
     stats_bytes_ = media_bytes_sent_;
     stats_produced_ = 0;

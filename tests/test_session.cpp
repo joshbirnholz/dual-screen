@@ -1458,21 +1458,22 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
     CHECK_MSG(companion.newest_frame_serial_for_test() > 0,
               "the companion never decoded a frame while it was keeping up");
 
-    // Now every frame from here is lost together: publish enough to fill
-    // the backlog gate, and never let the companion see any of them.
-    for (uint64_t serial = 7; serial <= 9; ++serial) {
+    // Now every frame from here is lost together: fill the backlog gate and
+    // never let the companion see any of them. Filled by publishing until the
+    // gate actually shuts rather than by counting to kMaxQueuedFrames, so this
+    // keeps testing the stall itself however wide the window is set.
+    uint64_t serial = 7;
+    uint64_t queued_before_wait = host.queued_bytes_for_test();
+    bool gate_shut = false;
+    for (int attempt = 0; attempt < 64 && !gate_shut; ++attempt, ++serial) {
         publish(serial);
+        const uint64_t now_queued = host.queued_bytes_for_test();
+        gate_shut = (now_queued == queued_before_wait);
+        queued_before_wait = now_queued;
     }
-    const uint64_t behind_before = host.companion_frames_behind_for_test();
-    CHECK_MSG(behind_before > 0,
+    CHECK_MSG(gate_shut, "the backlog gate never shut, so there is no stall to recover from");
+    CHECK_MSG(host.companion_frames_behind_for_test() > 0,
               "the host was not actually backlogged before the stall -- this test needs it to be");
-
-    // Confirm the gate really is shut, same as the test above: publishing a
-    // change right now must not queue anything.
-    const uint64_t queued_before_wait = host.queued_bytes_for_test();
-    publish(10);
-    CHECK_MSG(host.queued_bytes_for_test() == queued_before_wait,
-              "the host sent something while still within the ack-stall grace period");
 
     // Past kAckStallMs (host_session.cpp) with no ack having arrived in
     // between -- real time, since the stall check reads the clock directly
@@ -1481,14 +1482,16 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
     std::this_thread::sleep_for(std::chrono::milliseconds(3200));
 
     const uint64_t queued_before_recovery = host.queued_bytes_for_test();
-    publish(11);
+    const uint64_t recovery_serial = serial + 1;
+    publish(recovery_serial);
     CHECK_MSG(host.queued_bytes_for_test() != queued_before_recovery,
               "the host never recovered from a companion that stopped acking entirely");
 
     // And the companion, once it starts listening again, gets a full,
     // correct picture rather than a diff computed against a baseline it was
     // never actually confirmed to have.
-    if (!spin(host, companion, [&] { return companion.newest_frame_serial_for_test() == 11; })) {
+    if (!spin(host, companion,
+              [&] { return companion.newest_frame_serial_for_test() == recovery_serial; })) {
         CHECK_MSG(false, "the companion never caught back up after the host recovered");
     }
 }

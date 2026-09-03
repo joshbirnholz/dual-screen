@@ -44,6 +44,25 @@ public:
     // last frame's bytes again.
     bool encode(const uint32_t* pixels, int stride_pixels, EncodedFrame& out, std::string* error);
 
+    // Where encode()'s time actually goes, accumulated since the last call to
+    // take_cost(), which resets it. Split three ways because the fix differs
+    // completely per stage: the colour conversion is CPU work that could move
+    // to another thread or a cheaper scaler, the upload is this machine's bus
+    // and the GPU's willingness to take a surface while a game is using it,
+    // and the submit is what is left once the encoder no longer waits for the
+    // packet. Worth knowing before assuming which one is worth attacking.
+    struct EncodeCost {
+        double scale_ms = 0.0;
+        double upload_ms = 0.0;
+        double submit_ms = 0.0;
+        unsigned frames = 0;
+    };
+    EncodeCost take_cost() {
+        const EncodeCost taken = cost_;
+        cost_ = EncodeCost();
+        return taken;
+    }
+
     // The pts encode() gave the frame it most recently took in. The encoder
     // pipelines, so the packet that same call handed back is usually an
     // earlier one -- pairing this with EncodedFrame::pts is how a caller
@@ -72,6 +91,7 @@ private:
     int64_t next_pts_ = 0;
     bool force_keyframe_ = true;
     int64_t last_submitted_pts_ = -1;
+    EncodeCost cost_;
 };
 
 }  // namespace ds::video

@@ -1,5 +1,7 @@
 #include "video/video_encoder.hpp"
 
+#include <chrono>
+
 #include <cstdarg>
 #include <cstdio>
 
@@ -338,6 +340,12 @@ bool VideoEncoder::encode(const uint32_t* pixels,
         return false;
     }
 
+    const auto milliseconds_since = [](std::chrono::steady_clock::time_point from) {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - from)
+            .count();
+    };
+    const auto scale_started = std::chrono::steady_clock::now();
+
     const auto* source = reinterpret_cast<const uint8_t*>(pixels);
     const int source_stride = stride_pixels * 4;
     // The number of rows sws_scale reads from the source, which is its own
@@ -345,6 +353,7 @@ bool VideoEncoder::encode(const uint32_t* pixels,
     // EncoderConfig::source_width/source_height asked for downscaling.
     sws_scale(scaler_, &source, &source_stride, 0, source_height_, frame_->data,
              frame_->linesize);
+    cost_.scale_ms += milliseconds_since(scale_started);
     frame_->pts = next_pts_++;
     last_submitted_pts_ = frame_->pts;
     if (force_keyframe_) {
@@ -354,6 +363,7 @@ bool VideoEncoder::encode(const uint32_t* pixels,
         frame_->pict_type = AV_PICTURE_TYPE_NONE;
     }
 
+    const auto upload_started = std::chrono::steady_clock::now();
     AVFrame* submitted = frame_;
     if (hw_frame_ != nullptr) {
         // A fresh surface from the pool every frame -- see the comment in
@@ -372,6 +382,8 @@ bool VideoEncoder::encode(const uint32_t* pixels,
         hw_frame_->pts = frame_->pts;
         submitted = hw_frame_;
     }
+    cost_.upload_ms += milliseconds_since(upload_started);
+    const auto submit_started = std::chrono::steady_clock::now();
 
     int rc = avcodec_send_frame(context_, submitted);
     if (rc < 0) {
@@ -385,6 +397,8 @@ bool VideoEncoder::encode(const uint32_t* pixels,
     // stays balanced because each call also puts exactly one frame in.
     rc = avcodec_receive_packet(context_, packet_);
     if (rc == AVERROR(EAGAIN) || rc == AVERROR_EOF) {
+        cost_.submit_ms += milliseconds_since(submit_started);
+        ++cost_.frames;
         return true;  // still encoding; out stays empty, which is not a failure
     }
     if (rc < 0) {
@@ -395,6 +409,8 @@ bool VideoEncoder::encode(const uint32_t* pixels,
     out.keyframe = (packet_->flags & AV_PKT_FLAG_KEY) != 0;
     out.pts = packet_->pts;
     av_packet_unref(packet_);
+    cost_.submit_ms += milliseconds_since(submit_started);
+    ++cost_.frames;
     return true;
 }
 
