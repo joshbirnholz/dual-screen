@@ -68,6 +68,13 @@ dualscreen_add_test(test_protocol)
 dualscreen_add_test(test_audio)
 dualscreen_add_test(test_net)
 dualscreen_add_test(test_session)
+# Discovery, session and media all live on fixed ports (kDiscoveryPort and the
+# two after it), so any two tests that stand a real host up cannot run at the
+# same time -- the second one's bind fails and it reads as a broken test rather
+# than as two tests wanting one port. The headless tests below are already
+# RUN_SERIAL, which excludes everything; these three only need to exclude each
+# other, and stay free to run alongside the tests that touch no socket.
+set_tests_properties(test_net test_session PROPERTIES RESOURCE_LOCK dualscreen_ports)
 dualscreen_add_test(test_config)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_quick_settings)
@@ -89,7 +96,8 @@ if(XVFB_RUN_EXECUTABLE)
             -DWORK_DIR=${CMAKE_BINARY_DIR}/smoke
             -DCHECKER=$<TARGET_FILE:check_screenshot>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_smoke_test.cmake)
-    set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300)
+    set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300
+        RESOURCE_LOCK dualscreen_ports)
 
     # The compressed screen path, end to end. No console needs it yet, so the
     # host is told to use it -- which is how it can be finished and held to

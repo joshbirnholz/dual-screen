@@ -134,6 +134,26 @@ bool VideoDecoder::open_backend(const std::string& name, std::string* error) {
     // the encoder emits no B-frames, so display order is decode order and any
     // delay here would be latency for nothing.
     context_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    // What to do about a frame that arrived damaged, which on a UDP media
+    // channel is an ordinary event rather than a broken one.
+    //
+    // By default FFmpeg discards such a frame and, having no complete
+    // reference to work from, discards everything after it until the next
+    // keyframe -- which with a ten-second GOP is a freeze measured in seconds
+    // for one lost datagram. There is already a keyframe request for that
+    // case, but it still costs a round trip.
+    //
+    // These three say the opposite: decode it anyway (SHOW_ALL, which also
+    // lets decoding start mid-GOP instead of waiting for a keyframe to join),
+    // hand it over even though it is known to be wrong (OUTPUT_CORRUPT), and
+    // take the cheap non-conformant shortcuts while doing it (FAST). The
+    // picture goes briefly smeared in the damaged region and comes right on
+    // the next frames that reference clean data, which is what a viewer would
+    // choose over a hold. Moonlight decodes with the same three for the same
+    // reason.
+    context_->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+    context_->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+    context_->flags2 |= AV_CODEC_FLAG2_FAST;
     // FFmpeg's default threading model for H.264 is frame-level: several
     // frames decoded across several threads at once for throughput, each held
     // until its turn to be emitted in order. That is exactly the buffering

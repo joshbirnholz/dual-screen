@@ -104,6 +104,15 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     // ~11ms at 44.1kHz; small enough to stay responsive, large enough not to
     // underrun when a frame takes longer than usual.
     desired.samples = 512;
+#if defined(__SWITCH__)
+    // Except on a Switch, where SDL2's audio backend does not deliver a buffer
+    // this small cleanly -- the sound comes out broken up rather than merely
+    // late. Moonlight-Switch hit the same thing and pins 4096 for the same
+    // reason (SDLAudioRenderer.cpp: "Latest SDL2 Switch port broke audio for
+    // lower samples"). That is ~85ms a buffer, which is latency this would
+    // rather not carry, but a clean 85ms beats a broken 11ms.
+    desired.samples = 4096;
+#endif
     desired.callback = nullptr;  // queue-driven
 
     device_ = SDL_OpenAudioDevice(nullptr, 0, &desired, &spec_, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
@@ -133,6 +142,23 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     // these bound is actually drained at.
     target_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioTargetQueueMs / 1000;
     panic_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioPanicQueueMs / 1000;
+    // A target below what the device takes in one go is not a target, it is a
+    // guaranteed underrun: the device empties the queue past it on every
+    // single refill, and the drift correction spends the whole session winding
+    // the rate up to chase a level it can never hold. So the target is never
+    // less than a couple of the device's own buffers, whatever it granted --
+    // which matters most exactly where the buffer had to be made large.
+    const std::size_t device_buffer_frames = static_cast<std::size_t>(spec_.samples);
+    const std::size_t floor_frames = device_buffer_frames * 2;
+    if (target_frames_ < floor_frames) {
+        log_info("audio: device buffer is " + std::to_string(device_buffer_frames) +
+                 " frames, so aiming the queue at " + std::to_string(floor_frames) +
+                 " rather than " + std::to_string(target_frames_));
+        target_frames_ = floor_frames;
+    }
+    // Keep the panic level clear of the target for the same reason it was set
+    // clear of it originally: ordinary drift must never reach it.
+    panic_frames_ = std::max(panic_frames_, target_frames_ * 4);
     rate_ratio_ = 1.0;
     resampler_.reset();
     primed_ = false;
