@@ -172,6 +172,12 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             // from anywhere else.
             log_info("this session is going out from " + stream_.local_address() + " to " +
                      stream_.peer_address());
+            // And the media channel goes out the same way. Without this the
+            // input and acks travelling back to the host would be routed
+            // independently of the connection they belong to, which on a
+            // machine that is on one subnet twice can be a different
+            // interface entirely -- see UdpSocket::set_source_address().
+            media_socket_.set_source_address(stream_.local_address());
             // The host's own media socket is on a fixed, well-known port, but
             // it does not know this device's until a datagram actually
             // arrives there -- see HostSession::poll(). send_input() and the

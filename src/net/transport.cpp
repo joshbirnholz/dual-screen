@@ -523,6 +523,12 @@ void UdpSocket::stop() {
         ::close(descriptor_);
         descriptor_ = -1;
     }
+    // A pin belongs to the session that set it. Left behind, it would be
+    // inherited by whatever this socket is next used for -- and one of these
+    // is deliberately reused rather than remade between sessions (see
+    // CompanionSession::begin_search()), so this is a real path, not a
+    // hypothetical one.
+    source_ = LocalNetwork();
 }
 
 bool UdpSocket::broadcast(uint16_t port, const uint8_t* data, std::size_t size) {
@@ -542,6 +548,23 @@ bool UdpSocket::broadcast(uint16_t port, const uint8_t* data, std::size_t size) 
     return any;
 }
 
+void UdpSocket::set_source_address(const std::string& address) {
+    source_ = LocalNetwork();
+    if (address.empty()) {
+        return;
+    }
+    // Matched against what the kernel actually reports rather than trusted as
+    // given: send_from() needs the interface that owns the address, not just
+    // the address, and an address this machine does not have would otherwise
+    // pin sends to an interface index of zero and drop them.
+    for (const LocalNetwork& network : local_networks()) {
+        if (network.address == address) {
+            source_ = network;
+            return;
+        }
+    }
+}
+
 bool UdpSocket::send_to(const std::string& address, uint16_t port, const uint8_t* data,
                         std::size_t size) {
     if (descriptor_ < 0 || data == nullptr || size == 0) {
@@ -552,6 +575,11 @@ bool UdpSocket::send_to(const std::string& address, uint16_t port, const uint8_t
     target.sin_port = htons(port);
     if (::inet_pton(AF_INET, address.c_str(), &target.sin_addr) != 1) {
         return false;
+    }
+    if (!source_.address.empty()) {
+        // The same mechanism the beacon uses to answer on every network it is
+        // on, doing the opposite job here: holding one session to one of them.
+        return send_from(descriptor_, source_, target, data, size);
     }
     const ssize_t sent = ::sendto(descriptor_, data, size, 0,
                                   reinterpret_cast<sockaddr*>(&target), sizeof(target));

@@ -88,6 +88,15 @@ private:
 // UDP. Originally just the discovery beacon's broadcast/listen; now also the
 // point-to-point media channel (video, audio, input, frame-acks) -- see
 // send_to() below.
+// One of the IPv4 networks this machine is on: the interface that reaches it,
+// the address this machine has there, and the broadcast address for it.
+struct LocalNetwork {
+    std::string interface;
+    std::string address;
+    std::string broadcast;
+    bool wireless = false;
+};
+
 class UdpSocket {
 public:
     ~UdpSocket();
@@ -103,6 +112,19 @@ public:
     // (learned from a received datagram; see receive() below).
     bool send_to(const std::string& address, uint16_t port, const uint8_t* data,
                 std::size_t size);
+    // Pins which of this machine's own addresses these datagrams leave from,
+    // and with it which interface carries them.
+    //
+    // Needed because a machine on one network twice -- ethernet and wifi on
+    // the same subnet, which is an ordinary desktop setup -- has two equally
+    // valid routes to the far end, and an unbound socket takes whichever the
+    // routing table currently prefers. That can be the wireless one even when
+    // the session's own TCP connection is on the wire, and it can change
+    // underneath a running session. Setting this to the address the far end
+    // actually connected to keeps video and audio on the same interface as
+    // the connection they belong to. An address this machine does not have,
+    // or an empty one, goes back to letting the routing table decide.
+    void set_source_address(const std::string& address);
     // Returns true once per waiting datagram.
     bool receive(std::vector<uint8_t>& out, std::string& from_address);
     // The same, but also reporting the sender's port -- what send_to() above
@@ -112,15 +134,8 @@ public:
 
 private:
     int descriptor_ = -1;
-};
-
-// One of the IPv4 networks this machine is on: the interface that reaches it,
-// the address this machine has there, and the broadcast address for it.
-struct LocalNetwork {
-    std::string interface;
-    std::string address;
-    std::string broadcast;
-    bool wireless = false;
+    // Empty until set_source_address() finds a real interface for it.
+    LocalNetwork source_;
 };
 
 // Best-effort list of the networks this machine is on, as the kernel

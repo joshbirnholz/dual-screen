@@ -390,6 +390,10 @@ void HostSession::drop_companion(const std::string& reason) {
     // A request from a companion that has gone is not one to answer.
     keyframe_asked_top_ = false;
     keyframe_asked_bottom_ = false;
+    // Back to letting the routing table decide until the next companion says
+    // which of this machine's addresses it reached.
+    media_socket_.set_source_address("");
+    audio_media_socket_.set_source_address("");
     // Fragments queued for the companion that just left are for a session
     // nobody at the other end will ever see the token of again.
     pending_media_sends_.clear();
@@ -735,6 +739,14 @@ void HostSession::poll(uint64_t now_ms) {
             tile_snapshots_top_.clear();
             tile_snapshots_bottom_.clear();
             log_info("a device is connecting from " + companion_.peer_address() + ", to this machine at " + companion_.local_address());
+            // Video and audio leave from the same address the companion
+            // reached us on. A machine that is on one subnet twice -- wired
+            // and wireless, an ordinary desktop -- otherwise lets the routing
+            // table pick, which can put the media on the wireless leg while
+            // the session itself is on the wire, and can even change mid
+            // session. See UdpSocket::set_source_address().
+            media_socket_.set_source_address(companion_.local_address());
+            audio_media_socket_.set_source_address(companion_.local_address());
             refresh_beacon();
         }
     }
