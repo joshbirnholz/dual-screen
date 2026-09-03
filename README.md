@@ -187,6 +187,29 @@ Cemu owns everything about the emulation: the resolution it renders at, its own
 controller bindings, its own saves. The shell offers no render scale for a Wii U
 because that setting is not its to offer.
 
+### Controls, and where they are configured
+
+The device holding the GamePad screen appears in Cemu's own **Input Settings**
+as a controller called **DualScreen Companion**, under an API of the same name.
+Add it to Player 1's Wii U GamePad the way you would any other pad. It is
+listed whether or not a session is running, so a game's controls can be set up
+in advance.
+
+That makes it an ordinary Cemu controller in every way that matters. Wii U games
+want wildly different control schemes, and this is where they get them: buttons,
+both sticks, stick deadzones and motion all go through Cemu's normal mapping and
+its per-game profiles. A pad plugged into the machine running Cemu keeps working
+alongside it, mapped to whatever you like — and if you would rather aim with
+that pad's gyro than the companion's, map that instead.
+
+Adding it applies a default mapping straight through — A to A, and so on — and
+switches its motion on, so a fresh setup plays correctly with nothing further
+configured. Every part of that is yours to change afterwards.
+
+Touch is the exception, and is not in the mapping: the companion's touchscreen
+drives the GamePad's directly, because a point on a screen is not a control a
+button mapping can name.
+
 ### Motion
 
 A GamePad has a gyroscope and an accelerometer, and plenty of Wii U games steer,
@@ -203,6 +226,9 @@ it a second opinion about which way is up would be worse than sending it none.
 
 Only on a console that reads it. A DS or 3DS session never switches a sensor on
 at all, which on a handheld is a gyroscope not running for an hour for nothing.
+
+Cemu reads it through the same **DualScreen Companion** controller as everything
+else (see above), with motion switched on for it by default.
 
 `motion: the host reads it; 1 of 1 connected controllers report it` in the log
 is the line that says it is working. **`0 of 1` on a Steam Deck almost always
