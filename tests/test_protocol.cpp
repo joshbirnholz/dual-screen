@@ -722,6 +722,7 @@ void test_frame_fragment_round_trip() {
     header.height = 480;
     header.fragment_index = 2;
     header.fragment_count = 5;
+    header.keyframe = true;
 
     const std::vector<uint8_t> slice = {0xde, 0xad, 0xbe, 0xef, 0x00};
     std::vector<uint8_t> buffer;
@@ -738,6 +739,9 @@ void test_frame_fragment_round_trip() {
     CHECK_EQ(static_cast<int>(received.height), 480);
     CHECK_EQ(static_cast<int>(received.fragment_index), 2);
     CHECK_EQ(static_cast<int>(received.fragment_count), 5);
+    // What tells the far end the recovery it asked for has landed, so it can
+    // stop asking -- see MessageType::KeyframeRequest.
+    CHECK(received.keyframe);
     CHECK_EQ(static_cast<int>(payload_size), static_cast<int>(slice.size()));
     CHECK(std::vector<uint8_t>(payload, payload + payload_size) == slice);
 }
@@ -757,6 +761,27 @@ void test_frame_fragment_rejects_truncation() {
         const uint8_t* payload = nullptr;
         std::size_t payload_size = 0;
         CHECK(!decode_frame_fragment(buffer.data(), length, received, payload, payload_size));
+    }
+}
+
+void test_keyframe_request_round_trip() {
+    KeyframeRequestMessage request;
+    request.screen = ScreenId::Bottom;
+    request.last_good_serial = 0x0102030405060708ull;
+
+    std::vector<uint8_t> buffer;
+    encode_keyframe_request_payload(request, buffer);
+
+    KeyframeRequestMessage received;
+    CHECK(decode_keyframe_request_payload(buffer.data(), buffer.size(), received));
+    CHECK(received.screen == ScreenId::Bottom);
+    CHECK(received.last_good_serial == request.last_good_serial);
+
+    // Anything short of the whole thing is refused rather than half-read: this
+    // arrives as a bare datagram from another machine.
+    for (std::size_t length = 0; length < buffer.size(); ++length) {
+        KeyframeRequestMessage truncated;
+        CHECK(!decode_keyframe_request_payload(buffer.data(), length, truncated));
     }
 }
 
@@ -834,5 +859,6 @@ int main() {
     test_media_header_rejects_truncation();
     test_frame_fragment_round_trip();
     test_frame_fragment_rejects_truncation();
+    test_keyframe_request_round_trip();
     return test::finish("protocol");
 }

@@ -24,6 +24,21 @@ namespace ds::net {
 inline constexpr std::size_t kMinVideoBufferFrames = 1;
 inline constexpr std::size_t kMaxVideoBufferFrames = 4;
 
+// How long to wait before asking the host again for a picture that stands on
+// its own. Comfortably longer than a round trip on the LAN this targets (tens
+// of milliseconds), so a link that is merely slow does not collect several
+// keyframes for one loss, and short enough that a lost request or a lost
+// keyframe costs a fraction of a second rather than a visible freeze.
+inline constexpr uint64_t kKeyframeRequestIntervalMs = 120;
+
+// How many decodes in a row for one screen may fail before the session is
+// given up on. A hole in the stream is recovered from by asking for a picture
+// that stands on its own, so a handful of failures in a row is an ordinary
+// bad moment on a wireless link, not a broken session. A run this long means
+// the asking is not working at all -- several seconds of a frozen picture --
+// at which point saying so beats pretending.
+inline constexpr unsigned kMaxConsecutiveDecodeFailures = 240;
+
 // How many frames to keep in hand given how unevenly they have been arriving.
 //
 // A fixed depth has to be sized for the worst link it will ever see, and then
@@ -134,6 +149,20 @@ public:
     void request_right_stick_mode(RightStickMode mode);
     void request_render_scale(int scale);
     void request_screen_gap(bool include_gap);
+
+    // Stands in for a frame that arrived in pieces and never completed, which
+    // is the one thing a test on a loopback link cannot make happen for real
+    // -- nothing is ever actually lost there. Everything downstream of this
+    // point (asking, repeating, and stopping once a keyframe lands) is the
+    // real path. See ask_for_keyframes().
+    void lose_a_frame_for_test(ScreenId screen) {
+        ((screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
+    }
+    // Whether that screen is still waiting on a picture that stands on its
+    // own. Goes back to false when one actually arrives.
+    bool waiting_for_keyframe_for_test(ScreenId screen) const {
+        return (screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
+    }
     // A press made on this device, for the host's menu to answer.
     void request_menu_action(MenuAction action);
     // Where a finger landed here, already resolved to an entry: the two
@@ -271,8 +300,35 @@ private:
         std::vector<bool> received;
     };
     void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
+    // Sends a KeyframeRequest for whichever screens are waiting on one, at
+    // most one per screen per kKeyframeRequestIntervalMs. Called every poll()
+    // while anything is waiting.
+    void ask_for_keyframes(uint64_t now_ms);
+
     FrameReassembly reassembly_top_;
     FrameReassembly reassembly_bottom_;
+    // Whether this screen is waiting on a picture that stands on its own,
+    // because a frame arrived in pieces and the rest of it never did. Until
+    // one does, everything decoded for this screen is built on a reference
+    // frame this end never saw whole. Cleared only by a keyframe actually
+    // arriving, not by having asked: the request rides UDP like everything
+    // else here and can be lost, so "keep asking until the answer lands" is
+    // the only thing that reliably ends it. See ask_for_keyframe().
+    bool keyframe_wanted_top_ = false;
+    bool keyframe_wanted_bottom_ = false;
+    // When each was last asked for, so a repeat goes out at a sensible rate
+    // rather than once per poll() -- see kKeyframeRequestIntervalMs.
+    uint64_t keyframe_asked_at_top_ = 0;
+    uint64_t keyframe_asked_at_bottom_ = 0;
+    // How many frames arrived in pieces that never completed, since the last
+    // report. The one measurement that says whether the link is actually
+    // losing anything, which is what the host's long keyframe interval is
+    // betting on.
+    unsigned stats_frames_lost_ = 0;
+    // Decodes that have failed in a row for each screen, cleared by the first
+    // picture that comes out -- see kMaxConsecutiveDecodeFailures.
+    unsigned decode_failures_top_ = 0;
+    unsigned decode_failures_bottom_ = 0;
     void send_request(RequestMessage request);
     void fail(const std::string& reason);
 

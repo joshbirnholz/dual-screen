@@ -1884,6 +1884,78 @@ void test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial() {
     CHECK(!resolve_encoded_serial(pending, 0, serial));
 }
 
+// The whole point of the encoder's long keyframe interval: a device that
+// loses a frame does not wait out that interval, it asks -- and keeps asking
+// until a picture that stands on its own actually arrives, since both the
+// request and the answer ride UDP and can be lost like anything else.
+void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
+    if (!video::available()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+    host.set_video_wanted(true);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    CHECK_MSG(host.companion_accepts_video(), "the far end cannot decode video");
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    const std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    uint64_t serial = 1;
+    host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return companion.screen_pixels(ScreenId::Bottom).valid(); }),
+              "no video frame arrived at all");
+
+    // Past the stream's own opening keyframe, so what arrives next is only a
+    // keyframe because it was asked for. Kept well under the encoder's
+    // periodic interval, which is the thing this is meant to make unnecessary.
+    for (int frame = 0; frame < 20; ++frame) {
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), ++serial);
+        spin(host, companion, [] { return false; }, 20);
+    }
+    const unsigned asked_before = host.keyframes_asked_for_test();
+
+    companion.lose_a_frame_for_test(ScreenId::Bottom);
+    CHECK_MSG(spin(host, companion,
+                   [&] { return host.keyframes_asked_for_test() > asked_before; }, 2000),
+              "the companion never told the host it had lost a frame");
+
+    // And the answer actually lands: the companion stops waiting only when a
+    // picture that stands on its own arrives, not when it has finished asking.
+    // The picture has to keep changing for the host to have anything to send.
+    CHECK_MSG(spin(host, companion,
+                   [&] {
+                       host.publish_screens(screen_pixels(top), screen_pixels(bottom), ++serial);
+                       return !companion.waiting_for_keyframe_for_test(ScreenId::Bottom);
+                   },
+                   4000),
+              "the keyframe the companion asked for never arrived");
+}
+
 }  // namespace
 
 int main() {
@@ -1911,6 +1983,7 @@ int main() {
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
+    test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

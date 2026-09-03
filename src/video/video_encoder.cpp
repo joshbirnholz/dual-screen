@@ -177,10 +177,21 @@ bool VideoEncoder::open_backend(const std::string& name,
     // other hardware backends too: a live stream has no use for a max rate
     // above its target rate anyway.
     context_->rc_max_rate = context_->bit_rate;
-    // A keyframe costs several times what a delta does, and on a LAN nothing is
-    // lost that needs one on a schedule -- a device that joins asks for one.
-    // Two seconds keeps recovery bounded without paying for it constantly.
-    context_->gop_size = config.fps * 2;
+    // A keyframe costs several times what a delta does -- tens of times, at
+    // the bitrates this runs at -- and every one of them is a burst the
+    // sender's pacing queue then has to spread out over the next several
+    // frames. That shows up on this app's own stream report as a periodic
+    // pacing-queue spike (measured at 92-160ms, arriving on exactly the
+    // two-second cadence this used to be set to), which is latency paid on a
+    // schedule for a recovery nothing had asked for.
+    //
+    // Nothing needs one on a schedule now: a device that joins asks for one,
+    // and since MessageType::KeyframeRequest a device that loses a frame asks
+    // too. So this is only a backstop for the case neither covers -- a
+    // request and its answer both lost repeatedly -- and ten seconds is far
+    // enough apart that the burst stops being a rhythm the picture can be
+    // felt keeping time with.
+    context_->gop_size = config.fps * 10;
     // The whole point. A B-frame cannot be sent until the frame after it has
     // been encoded, which is a frame of latency bought for bytes this link does
     // not need to save.

@@ -167,7 +167,7 @@ constexpr uint64_t kAckStallMs = 3000;
 // (encode_frame_fragment()) are both accounted for -- see
 // kMaxMediaDatagramBytes for why the datagram itself is capped where it is.
 constexpr std::size_t kMediaHeaderBytes = 9;    // u64 session_token + u8 type
-constexpr std::size_t kFragmentHeaderBytes = 18;  // FrameFragmentHeader, on the wire
+constexpr std::size_t kFragmentHeaderBytes = 19;  // FrameFragmentHeader, on the wire
 constexpr std::size_t kMaxFragmentPayload =
     kMaxMediaDatagramBytes - kMediaHeaderBytes - kFragmentHeaderBytes;
 
@@ -387,6 +387,9 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_media_address_.clear();
     companion_media_port_ = 0;
     companion_media_known_ = false;
+    // A request from a companion that has gone is not one to answer.
+    keyframe_asked_top_ = false;
+    keyframe_asked_bottom_ = false;
     // Fragments queued for the companion that just left are for a session
     // nobody at the other end will ever see the token of again.
     pending_media_sends_.clear();
@@ -648,6 +651,25 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
             }
             break;
         }
+        case MessageType::KeyframeRequest: {
+            KeyframeRequestMessage request;
+            if (!decode_keyframe_request_payload(payload, payload_size, request)) {
+                return;
+            }
+            // Only a flag is set here, not a keyframe forced directly: the
+            // encoder belongs to publish_screens()' own thread of control,
+            // and the next frame for this screen is the earliest anything
+            // could be sent anyway. Repeats are free -- a request the
+            // companion resends because the first was lost, or the answer to
+            // it was, simply finds the flag already set.
+            bool& asked =
+                (request.screen == ScreenId::Top) ? keyframe_asked_top_ : keyframe_asked_bottom_;
+            if (!asked) {
+                ++stats_keyframe_requests_;
+            }
+            asked = true;
+            break;
+        }
         default:
             // Frame and Audio are host->companion only; anything else on this
             // channel is not this end's to act on.
@@ -881,7 +903,9 @@ void HostSession::report_stream(uint64_t now_ms) {
               "ms avg " + std::to_string(stats_round_trip_worst_ms_) + "ms worst, encode " +
               std::to_string(stats_encodes_ > 0 ? stats_encode_total_ms_ / stats_encodes_ : 0) +
               "ms avg" + encode_cost_summary() + ", pacing queue " +
-              std::to_string(stats_pacing_worst_ms_) + "ms worst");
+              std::to_string(stats_pacing_worst_ms_) + "ms worst, " +
+              std::to_string(stats_keyframe_requests_ - stats_keyframe_requests_reported_) +
+              " keyframes asked for");
     stats_at_ms_ = now_ms;
     stats_bytes_ = media_bytes_sent_;
     stats_produced_ = 0;
@@ -890,6 +914,7 @@ void HostSession::report_stream(uint64_t now_ms) {
     stats_encode_total_ms_ = 0;
     stats_encodes_ = 0;
     stats_pacing_worst_ms_ = 0;
+    stats_keyframe_requests_reported_ = stats_keyframe_requests_;
     stats_round_trip_total_ms_ = 0;
     stats_round_trip_worst_ms_ = 0;
 }
@@ -1056,9 +1081,14 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         pending.clear();
     }
     // A video frame means nothing without the frames before it, so a companion
-    // that has just started needing this screen gets one that stands alone.
-    if (resend_screens_) {
+    // that has just started needing this screen gets one that stands alone --
+    // and so does one that has told us it lost a frame and cannot decode past
+    // it. The second is what makes the encoder's own periodic keyframe
+    // interval affordable to lengthen; see kKeyframeSeconds.
+    bool& asked = (screen == ScreenId::Top) ? keyframe_asked_top_ : keyframe_asked_bottom_;
+    if (resend_screens_ || asked) {
         encoder.request_keyframe();
+        asked = false;
     }
 
     video::EncodedFrame encoded;
@@ -1089,6 +1119,7 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     }
     frame.serial = resolved;
     frame.encoding = FrameEncoding::H264;
+    frame.keyframe = encoded.keyframe;
     frame.payload = std::move(encoded.bytes);
     return true;
 }
@@ -1099,6 +1130,16 @@ bool HostSession::encode_one_screen(ScreenId screen,
                                     FrameMessage& frame) {
     if (!video_wanted_) {
         frame.encoding = FrameEncoding::Rgb565DeflateTiles;
+        bool& asked = (screen == ScreenId::Top) ? keyframe_asked_top_ : keyframe_asked_bottom_;
+        if (asked) {
+            // The tile equivalent of an encoder keyframe: with no baseline to
+            // diff against, what goes out is the whole picture.
+            previous.clear();
+            asked = false;
+        }
+        // A tile frame stands on its own exactly when it was built without a
+        // baseline, which is what an empty `previous` means here.
+        frame.keyframe = previous.empty();
         return encode_screen_tiles(source.pixels, source.width, source.height,
                                    source.stride_pixels, previous, frame.payload,
                                    source.channel_order);
@@ -1151,6 +1192,7 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     header.encoding = frame.encoding;
     header.width = frame.width;
     header.height = frame.height;
+    header.keyframe = frame.keyframe;
     header.fragment_count = static_cast<uint16_t>(
         (frame.payload.size() + kMaxFragmentPayload - 1) / kMaxFragmentPayload);
 

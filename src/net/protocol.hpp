@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 22;
+constexpr uint16_t kProtocolVersion = 23;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -46,6 +46,18 @@ enum class MessageType : uint16_t {
     // tells the host how far behind the picture really is: a sender can see
     // its own queues, but not the ones on the far side of the wire.
     FrameAck = 5,
+    // "I lost a frame for this screen and cannot decode past it -- send a
+    // picture that stands on its own." Rides the media channel like
+    // FrameAck, and for the same reason: it is only worth anything if it
+    // arrives now. See CompanionSession's reassembly and, on the other end,
+    // HostSession::poll_media(). Its existence is what lets the encoder's
+    // periodic keyframe interval be long: without a way to ask, the only
+    // recovery from a lost frame is waiting for the next scheduled one, so
+    // that interval had to stay short enough to be the recovery time -- and
+    // every one of those keyframes is a burst tens of times the size of an
+    // ordinary frame, which is exactly what the pacing queue then has to
+    // spread out, and exactly the periodic latency spike that follows.
+    KeyframeRequest = 6,
     // host -> companion
     Welcome = 10,
     Reject = 11,
@@ -276,6 +288,10 @@ struct FrameMessage {
     uint16_t width = 0;
     uint16_t height = 0;
     FrameEncoding encoding = FrameEncoding::Rgb565Deflate;
+    // Whether this frame stands on its own -- see FrameFragmentHeader's own
+    // field, which this fills in. Not part of the TCP encoding of a frame:
+    // frames only ever travel over the media channel now.
+    bool keyframe = false;
     std::vector<uint8_t> payload;
 };
 
@@ -408,7 +424,28 @@ struct FrameFragmentHeader {
     uint16_t height = 0;
     uint16_t fragment_index = 0;
     uint16_t fragment_count = 1;
+    // Whether this frame stands on its own -- an H.264 IDR, or any tile
+    // frame, which is always whole. What tells the far end that the recovery
+    // it asked for has actually arrived, so it can stop asking; a request
+    // sent over UDP can be lost like anything else, so "stop when it lands"
+    // is the only reliable way to end the asking. Always true for encodings
+    // that have no notion of a reference frame at all.
+    bool keyframe = false;
 };
+
+// The payload of a KeyframeRequest: which screen went wrong, and the serial
+// the far end last managed to put together whole (zero if it never has). The
+// serial is only used to tell a request that crossed with a keyframe already
+// in flight from one that still needs answering.
+struct KeyframeRequestMessage {
+    ScreenId screen = ScreenId::Top;
+    uint64_t last_good_serial = 0;
+};
+
+void encode_keyframe_request_payload(const KeyframeRequestMessage& request,
+                                     std::vector<uint8_t>& out);
+bool decode_keyframe_request_payload(const uint8_t* data, std::size_t size,
+                                     KeyframeRequestMessage& out);
 
 // Appends one fragment (header plus its slice of the payload) to `out`. The
 // caller slices a frame's payload into pieces and calls this once per piece

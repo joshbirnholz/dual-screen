@@ -234,6 +234,9 @@ public:
     uint64_t companion_frames_behind_for_test() const {
         return static_cast<uint64_t>(frame_sent_at_.size());
     }
+    // How many times the companion has said it lost a frame and needed one
+    // that stands on its own, since the last stream report.
+    unsigned keyframes_asked_for_test() const { return stats_keyframe_requests_; }
     // Whether the media channel's own address handshake has completed -- see
     // poll(). True some time after has_companion() (an extra UDP round trip,
     // negligible on a real LAN but real on a test's synthetic clock), so a
@@ -323,6 +326,22 @@ private:
     uint64_t stats_encode_total_ms_ = 0;
     unsigned stats_encodes_ = 0;
     uint64_t stats_pacing_worst_ms_ = 0;
+    // How many times the companion said it had lost a frame and needed one
+    // that stands on its own. Reported alongside the rest because it is the
+    // one number that says whether a long keyframe interval is costing
+    // anything: a link losing nothing shows zero here, and the periodic
+    // keyframe burst it no longer pays for is real latency saved.
+    unsigned stats_keyframe_requests_ = 0;
+    // The same count as of the last report, so the line above can say how
+    // many arrived in that second while the counter itself keeps running for
+    // the whole session -- which is what keyframes_asked_for_test() reads,
+    // and what stops a report landing mid-test from erasing what it is
+    // waiting to see.
+    unsigned stats_keyframe_requests_reported_ = 0;
+    // Set when a companion asks for a keyframe on that screen (see
+    // handle_media_datagram) and cleared by the encode that answers it.
+    bool keyframe_asked_top_ = false;
+    bool keyframe_asked_bottom_ = false;
     // Set in try_encode_video() whenever that screen's encoder (re)opens, so
     // drain_pending_media_sends() knows what rate the data it is draining is
     // actually arriving at. Zero when that screen has never opened a video

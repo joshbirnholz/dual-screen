@@ -49,6 +49,14 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    // A keyframe wanted by a session that has ended is not one to ask the
+    // next host for.
+    keyframe_wanted_top_ = false;
+    keyframe_wanted_bottom_ = false;
+    keyframe_asked_at_top_ = 0;
+    keyframe_asked_at_bottom_ = 0;
+    decode_failures_top_ = 0;
+    decode_failures_bottom_ = 0;
     for (int stream = 0; stream < 3; ++stream) {
         audio_sequence_known_[stream] = false;
     }
@@ -91,6 +99,14 @@ void CompanionSession::disconnect() {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    // A keyframe wanted by a session that has ended is not one to ask the
+    // next host for.
+    keyframe_wanted_top_ = false;
+    keyframe_wanted_bottom_ = false;
+    keyframe_asked_at_top_ = 0;
+    keyframe_asked_at_bottom_ = 0;
+    decode_failures_top_ = 0;
+    decode_failures_bottom_ = 0;
     pending_frames_.clear();
     received_serial_ = 0;
     next_due_ms_ = 0;
@@ -117,6 +133,14 @@ void CompanionSession::fail(const std::string& reason) {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    // A keyframe wanted by a session that has ended is not one to ask the
+    // next host for.
+    keyframe_wanted_top_ = false;
+    keyframe_wanted_bottom_ = false;
+    keyframe_asked_at_top_ = 0;
+    keyframe_asked_at_bottom_ = 0;
+    decode_failures_top_ = 0;
+    decode_failures_bottom_ = 0;
     status_ = Status::Failed;
     status_detail_ = reason;
     if (rumble_callback_) {
@@ -329,6 +353,20 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     const bool same_transmission =
         slot.active && header.serial == slot.serial && header.fragment_count == slot.fragment_count;
     if (!same_transmission && (!slot.active || header.serial >= slot.serial)) {
+        if (slot.active && slot.received_count < slot.fragment_count) {
+            // A frame the host definitely sent that this end definitely never
+            // got whole -- the sender has moved on, so the missing pieces are
+            // not coming. Everything decoded from here on is built on a
+            // reference frame that was never complete, which is exactly what
+            // a picture that stands on its own repairs. This is the only
+            // place loss can be seen at all: a gap in serials means nothing
+            // (the host legitimately skips frames it could not send), and a
+            // decoder handed a stream with a hole in it mostly carries on
+            // producing plausible-looking rubbish rather than failing.
+            ++stats_frames_lost_;
+            ((slot.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) =
+                true;
+        }
         slot = FrameReassembly();
         slot.active = true;
         slot.serial = header.serial;
@@ -349,6 +387,15 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     }
     if (slot.received_count < slot.fragment_count) {
         return;
+    }
+    if (header.keyframe) {
+        // The answer landed: this picture stands on its own, so whatever was
+        // lost before it no longer matters. Cleared here rather than when the
+        // request was sent, because a request can be lost -- see
+        // keyframe_wanted_top_.
+        bool& wanted =
+            (slot.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
+        wanted = false;
     }
 
     FrameMessage frame;
@@ -551,6 +598,8 @@ void CompanionSession::poll(uint64_t now_ms) {
     // left for the next poll: an ack that describes the state of things two
     // polls ago reads to the host as a device two frames further behind than
     // it is, and the host throttles on exactly that number.
+    ask_for_keyframes(now_ms);
+
     if (status_ == Status::Connected && received_serial_ != acked_serial_) {
         const uint64_t newest = received_serial_;
         acked_serial_ = newest;
@@ -558,6 +607,40 @@ void CompanionSession::poll(uint64_t now_ms) {
         encode_media_header(session_token_, MessageType::FrameAck, ack);
         encode_frame_ack_payload(newest, ack);
         media_socket_.send_to(host_address_, kMediaPort, ack.data(), ack.size());
+    }
+}
+
+void CompanionSession::ask_for_keyframes(uint64_t now_ms) {
+    if (status_ != Status::Connected) {
+        return;
+    }
+    const struct {
+        ScreenId screen;
+        bool& wanted;
+        uint64_t& asked_at;
+    } screens[] = {{ScreenId::Top, keyframe_wanted_top_, keyframe_asked_at_top_},
+                   {ScreenId::Bottom, keyframe_wanted_bottom_, keyframe_asked_at_bottom_}};
+    for (const auto& entry : screens) {
+        if (!entry.wanted) {
+            continue;
+        }
+        // Repeated, not sent once: the request itself can be lost, and so can
+        // the keyframe answering it. Slower than the frame rate on purpose --
+        // a keyframe is tens of times the size of an ordinary frame, so
+        // asking again before the last answer could plausibly have arrived
+        // would pile several of those onto a link that has just shown it is
+        // dropping things.
+        if (entry.asked_at != 0 && now_ms - entry.asked_at < kKeyframeRequestIntervalMs) {
+            continue;
+        }
+        entry.asked_at = now_ms;
+        KeyframeRequestMessage request;
+        request.screen = entry.screen;
+        request.last_good_serial = received_serial_;
+        std::vector<uint8_t> out;
+        encode_media_header(session_token_, MessageType::KeyframeRequest, out);
+        encode_keyframe_request_payload(request, out);
+        media_socket_.send_to(host_address_, kMediaPort, out.data(), out.size());
     }
 }
 
@@ -823,7 +906,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(target_buffer_frames()) + " (jitter " +
               std::to_string(static_cast<uint64_t>(jitter_ms_ + 0.5)) + "ms), decode " +
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
-              "ms avg");
+              "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost");
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
@@ -832,6 +915,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_waits_ = 0;
     stats_decode_total_ms_ = 0;
     stats_decodes_ = 0;
+    stats_frames_lost_ = 0;
 }
 
 // How long each frame should be on screen: what the host is producing at,
@@ -919,7 +1003,28 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     video::DecodedFrame decoded;
     std::string error;
     if (!decoder.decode(frame.payload.data(), frame.payload.size(), decoded, &error)) {
-        fail("a frame from the host could not be decoded: " + error);
+        // Not the end of the session. The overwhelmingly likely cause is a
+        // frame this end never received whole -- the decoder is being handed
+        // a stream with a hole in it, and what it needs is a picture that
+        // stands on its own, which is exactly what asking gets. Ending the
+        // session over it would turn every dropped datagram on a busy
+        // wireless link into a disconnection.
+        //
+        // A reopen rather than just a request, because a decoder that has
+        // refused a packet does not reliably pick up again from the next
+        // keyframe on its own; the keyframe carries its own parameter sets
+        // (nothing here asks for out-of-band ones), so a fresh decoder has
+        // everything it needs the moment one arrives.
+        decoder.close();
+        unsigned& failures =
+            (frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_;
+        if (++failures >= kMaxConsecutiveDecodeFailures) {
+            fail("a frame from the host could not be decoded: " + error);
+            return false;
+        }
+        bool& wanted =
+            (frame.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
+        wanted = true;
         return false;
     }
     if (!decoded.valid()) {
@@ -927,6 +1032,9 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
         // nothing to show, which is a wait rather than a failure.
         return false;
     }
+    // A picture came out, so whatever went wrong before it is behind us --
+    // see the run counted above, which only means anything unbroken.
+    ((frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_) = 0;
     target.video = true;
     target.pixels = std::move(decoded.pixels);
     target.width = decoded.width;
