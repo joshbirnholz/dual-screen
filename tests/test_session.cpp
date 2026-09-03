@@ -1329,6 +1329,77 @@ void test_a_companion_that_falls_behind_stops_being_sent_frames() {
                                 " frames for a companion that had stopped answering");
 }
 
+// Serials advance at whatever rate the game produces, whoever ends up sending
+// them. A source running faster than the link carries therefore leaves gaps
+// between the serials that do get sent -- and the backlog gate, which is
+// written in frames, used to be applied to that gap. On Bayonetta 2 (60
+// produced a second, 20 sent) one frame in flight already put three serials
+// between sent and acked, so a limit of two refused to send with less than one
+// frame outstanding. Wind Waker sends every frame it makes, so the two counts
+// agreed and nothing looked wrong.
+void test_a_source_faster_than_the_link_is_still_allowed_frames_in_flight() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "vertical", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!spin(host, companion, [&] {
+            return companion.status() == CompanionSession::Status::Connected &&
+                   host.has_companion() && host.companion_media_ready_for_test();
+        })) {
+        CHECK_MSG(false, "handshake did not complete");
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    const auto publish = [&](uint64_t serial) {
+        bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        host.poll(monotonic_millis());
+    };
+
+    // Acking normally first, so the gate is armed at all.
+    for (uint64_t serial = 1; serial <= 6; ++serial) {
+        publish(serial);
+        companion.poll(monotonic_millis());
+    }
+
+    // Now the companion goes quiet and the source jumps serials the way a
+    // 60fps game does when only every third frame is being sent. The gate
+    // must still let kMaxQueuedFrames whole frames out, not stop after one
+    // because the serial numbers moved further than the frame count did.
+    uint64_t sent_while_silent = 0;
+    uint64_t previous = host.queued_bytes_for_test();
+    for (uint64_t step = 1; step <= 6; ++step) {
+        publish(100 + step * 3);
+        const uint64_t now = host.queued_bytes_for_test();
+        if (now != previous) {
+            ++sent_while_silent;
+            previous = now;
+        }
+    }
+    CHECK_MSG(sent_while_silent >= 2,
+              "a source whose serials outrun its frames was throttled to " +
+                  std::to_string(sent_while_silent) +
+                  " frame(s) in flight, below the limit the gate is written for");
+}
+
 void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
     // A companion that has merely fallen behind (the test above) still acks
     // eventually, so the backlog gate reopens on its own. This is the harder
@@ -1830,6 +1901,7 @@ int main() {
     test_a_real_host_is_not_timed_out();
     test_frames_that_arrive_together_are_shown_on_a_clock();
     test_a_companion_that_falls_behind_stops_being_sent_frames();
+    test_a_source_faster_than_the_link_is_still_allowed_frames_in_flight();
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();

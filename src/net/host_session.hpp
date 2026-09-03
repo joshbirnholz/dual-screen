@@ -226,11 +226,13 @@ public:
     // limit decides -- UDP has no send queue of its own to inspect the way
     // the TCP connection this used to ride did.
     uint64_t queued_bytes_for_test() const { return media_bytes_sent_; }
-    // How far behind the companion says it is, which is what the frame limit
-    // throttles on. A companion's own smoothing must not show up here.
+    // How many frames have been sent that the companion has not yet said it
+    // has, which is what the frame limit throttles on. Frames, not the gap
+    // between two serials -- see the gate in publish_screens() for why those
+    // are not the same number. A companion's own smoothing must not show up
+    // here.
     uint64_t companion_frames_behind_for_test() const {
-        return (acked_serial_ != 0 && sent_serial_ > acked_serial_) ? sent_serial_ - acked_serial_
-                                                                    : 0;
+        return static_cast<uint64_t>(frame_sent_at_.size());
     }
     // Whether the media channel's own address handshake has completed -- see
     // poll(). True some time after has_companion() (an extra UDP round trip,

@@ -843,9 +843,7 @@ void HostSession::report_stream(uint64_t now_ms) {
     }
     const uint64_t bytes = media_bytes_sent_ - stats_bytes_;
     const unsigned dropped = stats_produced_ - stats_sent_;
-    const uint64_t behind = (acked_serial_ != 0 && sent_serial_ > acked_serial_)
-                                ? sent_serial_ - acked_serial_
-                                : 0;
+    const uint64_t behind = static_cast<uint64_t>(frame_sent_at_.size());
     log_debug("stream: " + std::to_string(stats_produced_ * 1000 / elapsed) + " produced/s, " +
               std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
               std::to_string(dropped) + " dropped, " +
@@ -1228,7 +1226,20 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // starved of frames outright. UDP has no send queue of its own to also
     // bound the way a TCP-based backstop here once did -- see
     // acked_serial_'s own comment.
-    if (acked_serial_ != 0 && sent_serial_ >= acked_serial_ + kMaxQueuedFrames) {
+    // Frames actually in flight, not the distance between two serial numbers.
+    // Those are the same thing only when every frame the source produces gets
+    // sent. Serials advance at the source's rate whatever this end does with
+    // them, so a 60fps game whose frames are being sent every third one sits
+    // three serials apart after a single send -- and this gate, written in
+    // frames and applied to serials, then refused to send with less than one
+    // frame outstanding. Measured on Bayonetta 2: 60 produced a second, 20
+    // sent, and a reported "3 frames behind" that was one frame and three
+    // serials. Wind Waker sends every frame it produces, so the two counts
+    // matched and the gate behaved as documented -- which is why this only
+    // ever bit the games that produce faster than the link carries.
+    // frame_sent_at_ holds one entry per frame sent and is pruned on every
+    // ack, so its size is the count this was always meant to be about.
+    if (acked_serial_ != 0 && frame_sent_at_.size() >= kMaxQueuedFrames) {
         // Still worth waiting for, unless the oldest of these has been
         // outstanding long enough that the ack which would release it is
         // never coming -- see kAckStallMs's own comment for why that is a
