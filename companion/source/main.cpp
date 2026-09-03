@@ -519,13 +519,29 @@ LayoutPickerState Client::menu_state_from_host() const {
     state.right_stick_choosable = session_.host_right_stick_choosable();
     state.cursor_mode =
         session_.host_cursor_shown() ? CursorMode::Shown : CursorMode::Hidden;
+    // Properties of the console rather than of the session, worked out the
+    // same way the host works them out -- see App::Impl::menu_state_from_host,
+    // whose body this mirrors.
+    state.reset_available = system_profile(session_.system()).offers_reset;
+    state.smoothing_available = system_profile(session_.system()).offers_smoothing;
     return state;
 }
 
 void Client::open_menu() {
-    picker_.set_screens(session_.screens_geometry());
+    // With the console, not without it. Left off, the picker fell back to its
+    // default of a DS -- so a companion joining a Wii U host drew the DS's
+    // grid of layouts to choose between, on a console that has no layouts to
+    // choose and whose menu is a plain list. The host had it right and this
+    // end did not, which is exactly the disagreement the shared menu exists
+    // to prevent.
+    picker_.set_screens(session_.screens_geometry(), session_.system());
     picker_.set_bezel_art(bezel_art_.texture(session_.system()));
     picker_.open(menu_state_from_host());
+    // Which console's menu this is. Said out loud because the two devices
+    // drawing different menus is otherwise only visible by holding them side
+    // by side -- and it happened: this end defaulted to a DS's menu on a
+    // Wii U host until set_screens() above was told the console.
+    log_info(std::string("opening the ") + system_profile(session_.system()).name + " menu");
 
     menu_open_ = true;
     // Kept in step with the host even when the host is the one that opened it,
@@ -990,7 +1006,21 @@ int main(int argc, char** argv) {
     // Sockets are not on by default, and without them there is nothing this
     // app can do at all. nxlink, if a computer is listening for it, gets the
     // same lines as they happen.
-    const Result socket_result = socketInitializeDefault();
+    // Not socketInitializeDefault(): its UDP receive buffer is 42 KB, and a
+    // single H.264 keyframe for a 1280x720 screen at this app's bitrate is
+    // 40-80 KB. One keyframe therefore overflowed the buffer on its own,
+    // losing fragments -- which made this end ask for another keyframe, which
+    // overflowed it again. Measured on a real session: 5-8 frames lost every
+    // second, 7-8 keyframes asked for every second, and a picture that never
+    // stopped breaking up. Everything else in that config is libnx's own
+    // default; only the two buffers this app actually fills are raised.
+    SocketInitConfig socket_config = *socketGetDefaultInitConfig();
+    socket_config.udp_rx_buf_size = 1 * 1024 * 1024;
+    socket_config.udp_tx_buf_size = 256 * 1024;
+    // The transfer memory the buffers above are carved out of has to grow
+    // with them, or the larger sizes are quietly clamped back down.
+    socket_config.sb_efficiency = 8;
+    const Result socket_result = socketInitialize(&socket_config);
     if (R_FAILED(socket_result)) {
         const std::string reason =
             "the network would not start (error " + std::to_string(socket_result) + ")";

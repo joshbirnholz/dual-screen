@@ -55,6 +55,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
+    keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
+    keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -108,6 +110,8 @@ void CompanionSession::disconnect() {
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
+    keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
+    keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -145,6 +149,8 @@ void CompanionSession::fail(const std::string& reason) {
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
+    keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
+    keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -412,6 +418,11 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         bool& wanted =
             (slot.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
         wanted = false;
+        // Asking worked, so the next thing that goes wrong starts from a
+        // short wait again rather than from however long the last spell of
+        // trouble had stretched it to.
+        ((slot.screen == ScreenId::Top) ? keyframe_wait_top_ms_ : keyframe_wait_bottom_ms_) =
+            kKeyframeRequestIntervalMs;
     }
 
     FrameMessage frame;
@@ -634,8 +645,11 @@ void CompanionSession::ask_for_keyframes(uint64_t now_ms) {
         ScreenId screen;
         bool& wanted;
         uint64_t& asked_at;
-    } screens[] = {{ScreenId::Top, keyframe_wanted_top_, keyframe_asked_at_top_},
-                   {ScreenId::Bottom, keyframe_wanted_bottom_, keyframe_asked_at_bottom_}};
+        uint64_t& wait_ms;
+    } screens[] = {
+        {ScreenId::Top, keyframe_wanted_top_, keyframe_asked_at_top_, keyframe_wait_top_ms_},
+        {ScreenId::Bottom, keyframe_wanted_bottom_, keyframe_asked_at_bottom_,
+         keyframe_wait_bottom_ms_}};
     for (const auto& entry : screens) {
         if (!entry.wanted) {
             continue;
@@ -646,10 +660,14 @@ void CompanionSession::ask_for_keyframes(uint64_t now_ms) {
         // asking again before the last answer could plausibly have arrived
         // would pile several of those onto a link that has just shown it is
         // dropping things.
-        if (entry.asked_at != 0 && now_ms - entry.asked_at < kKeyframeRequestIntervalMs) {
+        if (entry.asked_at != 0 && now_ms - entry.asked_at < entry.wait_ms) {
             continue;
         }
         entry.asked_at = now_ms;
+        // Longer every time asking does not work -- see
+        // kMaxKeyframeRequestIntervalMs for why repeating at full speed makes
+        // a bad link worse rather than better.
+        entry.wait_ms = std::min(entry.wait_ms * 2, kMaxKeyframeRequestIntervalMs);
         KeyframeRequestMessage request;
         request.screen = entry.screen;
         request.last_good_serial = received_serial_;

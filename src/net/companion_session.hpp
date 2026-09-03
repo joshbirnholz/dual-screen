@@ -31,6 +31,19 @@ inline constexpr std::size_t kMaxVideoBufferFrames = 4;
 // keyframe costs a fraction of a second rather than a visible freeze.
 inline constexpr uint64_t kKeyframeRequestIntervalMs = 120;
 
+// How long to wait at most, once repeated asking has plainly not worked. The
+// interval doubles from the one above towards this on every unanswered
+// request, and drops back the moment a keyframe lands.
+//
+// Because asking is not free. A keyframe is tens of times the size of an
+// ordinary frame, and a link that is losing fragments is usually losing them
+// *because* something arrived faster than it could be taken in -- so asking
+// again straight away sends another burst into the very condition that lost
+// the last one. Measured on a Switch: 7-8 keyframes a second, every second,
+// none of them arriving whole, for an entire session. Backing off turns a
+// storm that cannot recover into a handful of attempts that can.
+inline constexpr uint64_t kMaxKeyframeRequestIntervalMs = 1000;
+
 // How many decodes in a row for one screen may fail before the session is
 // given up on. A hole in the stream is recovered from by asking for a picture
 // that stands on its own, so a handful of failures in a row is an ordinary
@@ -329,6 +342,12 @@ private:
     // rather than once per poll() -- see kKeyframeRequestIntervalMs.
     uint64_t keyframe_asked_at_top_ = 0;
     uint64_t keyframe_asked_at_bottom_ = 0;
+    // How long to wait before asking again, per screen. Starts at
+    // kKeyframeRequestIntervalMs, doubles while asking goes unanswered, and
+    // is reset by a keyframe actually arriving -- see
+    // kMaxKeyframeRequestIntervalMs.
+    uint64_t keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
+    uint64_t keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
     // How many frames arrived in pieces that never completed, since the last
     // report. The one measurement that says whether the link is actually
     // losing anything, which is what the host's long keyframe interval is

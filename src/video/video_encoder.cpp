@@ -309,12 +309,30 @@ bool VideoEncoder::open_backend(const std::string& name,
         (config.pixel_order == PixelOrder::Rgba) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_BGRA;
     const int source_width = config.source_width > 0 ? config.source_width : config.width;
     const int source_height = config.source_height > 0 ? config.source_height : config.height;
+    source_format_ = static_cast<int>(source_format);
+    software_format_ = static_cast<int>(software_format);
+    width_ = config.width;
+    height_ = config.height;
+    if (!rebuild_scaler(source_width, source_height, error)) {
+        return false;
+    }
+
+    backend_ = name;
+    return true;
+}
+
+bool VideoEncoder::rebuild_scaler(int source_width, int source_height, std::string* error) {
+    if (scaler_ != nullptr) {
+        sws_freeContext(scaler_);
+        scaler_ = nullptr;
+    }
     // SWS_BILINEAR here does double duty: it is what turns "convert pixel
     // format" into "convert pixel format and resample" the moment source and
     // dest sizes differ -- see EncoderConfig::source_width/source_height.
-    scaler_ = sws_getContext(source_width, source_height, source_format, config.width,
-                             config.height, software_format, SWS_BILINEAR, nullptr, nullptr,
-                             nullptr);
+    scaler_ = sws_getContext(source_width, source_height,
+                             static_cast<AVPixelFormat>(source_format_), width_, height_,
+                             static_cast<AVPixelFormat>(software_format_), SWS_BILINEAR, nullptr,
+                             nullptr, nullptr);
     if (scaler_ == nullptr) {
         if (error != nullptr) *error = "could not set up colour conversion";
         return false;
@@ -327,13 +345,28 @@ bool VideoEncoder::open_backend(const std::string& name,
     // particular colour space asked for.
     sws_setColorspaceDetails(scaler_, sws_getCoefficients(SWS_CS_ITU601), 0,
                              sws_getCoefficients(SWS_CS_ITU601), 1, 0, 1 << 16, 1 << 16);
-
-    backend_ = name;
-    width_ = config.width;
-    height_ = config.height;
     source_width_ = source_width;
     source_height_ = source_height;
     return true;
+}
+
+bool VideoEncoder::set_source_size(int width, int height, std::string* error) {
+    if (context_ == nullptr) {
+        if (error != nullptr) *error = "the encoder is not open";
+        return false;
+    }
+    if (width == source_width_ && height == source_height_) {
+        return true;
+    }
+    // Only the scaler, deliberately. Reopening the encoder for this would
+    // start a new H.264 stream -- new parameter sets, a fresh IDR, and a
+    // decoder at the far end having to reconfigure itself mid-play. That was
+    // measured happening several times a second on a real session (Cemu's
+    // GamePad scan buffer alternating between two sizes), and it is what a
+    // corrupt picture on the far end actually looked like. What comes out of
+    // this encoder is the same size as before; only what goes in has changed,
+    // and resampling is exactly what this scaler is already for.
+    return rebuild_scaler(width, height, error);
 }
 
 bool VideoEncoder::encode(const uint32_t* pixels,

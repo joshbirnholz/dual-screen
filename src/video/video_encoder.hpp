@@ -36,6 +36,12 @@ public:
     // What open() was actually given, before any scaling down to width/height
     // above -- see EncoderConfig::source_width/source_height. The caller's
     // job to notice this no longer matches either, same as width()/height().
+    // Follows a source whose size changed without disturbing the H.264
+    // stream coming out. What goes in is resampled to the same output size as
+    // before, so the far end's decoder sees one continuous stream rather than
+    // a new one -- see the definition for why that matters so much.
+    bool set_source_size(int width, int height, std::string* error);
+
     int source_width() const { return source_width_; }
     int source_height() const { return source_height_; }
 
@@ -76,6 +82,9 @@ public:
 
 private:
     bool open_backend(const std::string& name, const EncoderConfig& config, std::string* error);
+    // (Re)builds the colour conversion and resampling step for a source of
+    // this size. The encoder itself is untouched.
+    bool rebuild_scaler(int source_width, int source_height, std::string* error);
 
     AVCodecContext* context_ = nullptr;
     AVFrame* frame_ = nullptr;
@@ -86,6 +95,10 @@ private:
     std::string backend_;
     int width_ = 0;
     int height_ = 0;
+    // What rebuild_scaler() needs to make one without the config it came
+    // from: the two ends of the conversion it performs.
+    int source_format_ = 0;
+    int software_format_ = 0;
     int source_width_ = 0;
     int source_height_ = 0;
     int64_t next_pts_ = 0;

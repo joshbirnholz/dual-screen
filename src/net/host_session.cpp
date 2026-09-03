@@ -1074,6 +1074,28 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     // feeding it pixels of a new size through the old configuration is
     // exactly what produced the partial/duplicated pictures a render scale
     // change used to cause.
+    // A source whose size changed but whose encoded size did not is followed
+    // without disturbing the stream: only the scaler in front of the encoder
+    // is rebuilt. Cemu's GamePad scan buffer alternates between two sizes on
+    // some titles, and reopening for that was restarting the H.264 stream
+    // several times a second -- new parameter sets, a fresh keyframe, and a
+    // decoder at the far end reconfiguring itself mid-play, which is what a
+    // corrupt picture on a Switch actually was.
+    if (encoder.is_open() && encoder.width() == encode_width &&
+        encoder.height() == encode_height &&
+        (encoder.source_width() != width || encoder.source_height() != height)) {
+        std::string scaler_error;
+        if (encoder.set_source_size(width, height, &scaler_error)) {
+            log_info("the " + std::string(to_string(screen)) + " screen is now " +
+                     std::to_string(width) + "x" + std::to_string(height) +
+                     "; resampling it into the same stream");
+        } else {
+            // Falls through to the full reopen below, which is the older and
+            // more heavy-handed way of following the same change.
+            encoder.close();
+            pending.clear();
+        }
+    }
     if (!encoder.is_open() || encoder.source_width() != width || encoder.source_height() != height ||
         encoder.width() != encode_width || encoder.height() != encode_height) {
         video::EncoderConfig config;

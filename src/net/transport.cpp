@@ -500,6 +500,23 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
     constexpr int kMediaSendQueueBytes = 512 * 1024;
     ::setsockopt(descriptor_, SOL_SOCKET, SO_SNDBUF, &kMediaSendQueueBytes,
                 sizeof(kMediaSendQueueBytes));
+    // And the same argument for the other end of the wire, which turned out
+    // to matter more. A receiving app drains this once a frame; between two
+    // of those drains a whole keyframe can land, and a keyframe at these
+    // bitrates is tens of kilobytes arriving as a burst of small datagrams.
+    // A buffer smaller than one keyframe loses part of every keyframe --
+    // which makes the receiver ask for another one, which does not fit
+    // either. That is not hypothetical: a Switch, whose platform default is
+    // 42 KB, sat in exactly that loop (5-8 frames lost and 7-8 keyframes
+    // asked for, every second, for a whole session).
+    //
+    // Raising it is a request, not a demand: a platform with a lower ceiling
+    // keeps whatever it allows, and one whose default is already larger keeps
+    // that. Which is why the Switch build also raises the ceiling itself --
+    // see socketInitialize() in the companion's main().
+    constexpr int kMediaReceiveQueueBytes = 1024 * 1024;
+    ::setsockopt(descriptor_, SOL_SOCKET, SO_RCVBUF, &kMediaReceiveQueueBytes,
+                sizeof(kMediaReceiveQueueBytes));
 
     if (listen_port != 0) {
         sockaddr_in address {};
