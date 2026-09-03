@@ -47,6 +47,9 @@ void InputManager::initialize(const Settings& settings) {
 }
 
 void InputManager::shutdown() {
+    // Before the controllers close: switching a sensor off asks the
+    // controller about itself, which a closed one cannot answer.
+    motion_.set_enabled(false);
     for (auto& entry : controllers_) {
         if (entry.second != nullptr) {
             SDL_GameControllerClose(entry.second);
@@ -68,6 +71,10 @@ void InputManager::open_controller(int device_index) {
         return;
     }
     controllers_[id] = controller;
+    // Sensors are per controller and have to be switched on before SDL will
+    // report them, so one arriving mid-session has to be told -- see
+    // MotionReader::controller_added().
+    motion_.controller_added(controller);
 
     // Logged in full because a mis-mapped pad is otherwise very hard to
     // diagnose remotely: this one line says what SDL thinks the pad is, which
@@ -96,6 +103,7 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
         return;
     }
     if (it->second != nullptr) {
+        motion_.controller_removed(it->second);
         SDL_GameControllerClose(it->second);
     }
     controllers_.erase(it);
@@ -623,6 +631,10 @@ void InputManager::end_frame(const Layout& layout,
 
     emit_navigation_from_axes();
 
+    // Once per frame, alongside the buttons, so that the reading sent with a
+    // pad update is the one taken at the same moment as the buttons on it.
+    motion_.poll();
+
     const DsInputState held = poll_held_state();
 
     // L3 and R3 together open the menu. Neither reaches a DS or 3DS button, so
@@ -671,6 +683,13 @@ void InputManager::end_frame(const Layout& layout,
     ds_state_.clear();
     if (game_input_enabled_) {
         ds_state_.buttons = held_input_gate_.buttons();
+        // Not gated the way buttons and sticks are. The gate exists to stop
+        // the press that dismissed a menu also landing in the game, and
+        // there is no equivalent for how the device is being held: it was
+        // being held that way through the menu too, and a game handed a
+        // frozen orientation for a moment after resuming would lurch when it
+        // caught up.
+        ds_state_.motion = motion_.state();
         // The sticks reach the game as themselves. Every layer below this one
         // -- the wire, the core's analog callback -- already carries them;
         // nothing filled them in, so a 3DS could be handed a stick that was

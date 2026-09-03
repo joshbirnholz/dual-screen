@@ -167,6 +167,17 @@ void ExternalScreenSource::submit_input(const DsInputState& state) {
     input.right_x = state.c_stick_x;
     input.right_y = state.c_stick_y;
     input.touching = state.touching;
+    // Straight across, unconverted: DsMotionState and ExternalMotion are the
+    // same readings in the same units and axes on purpose, so that the one
+    // place they are interpreted is the producer's own sensor fusion.
+    input.motion.present = state.motion.present;
+    input.motion.gyro_x = state.motion.gyro_x;
+    input.motion.gyro_y = state.motion.gyro_y;
+    input.motion.gyro_z = state.motion.gyro_z;
+    input.motion.accel_x = state.motion.accel_x;
+    input.motion.accel_y = state.motion.accel_y;
+    input.motion.accel_z = state.motion.accel_z;
+    input.motion.sampled_us = state.motion.sampled_us;
     // Already in the touch screen's own pixels -- see DsInputState -- which for
     // this console is the GamePad's.
     input.touch_x = static_cast<uint16_t>(state.touch_x < 0 ? 0 : state.touch_x);

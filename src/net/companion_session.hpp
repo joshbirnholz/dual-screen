@@ -148,6 +148,14 @@ public:
     void request_handedness(Handedness handedness);
     void request_right_stick_mode(RightStickMode mode);
     void request_render_scale(int scale);
+    // Whether the host reads how this device is being held -- true only on a
+    // console that has a use for it, see SystemProfile::uses_motion. What the
+    // client switches its sensors on and off from: a gyroscope left running
+    // costs battery, so a session with a console that ignores motion never
+    // starts one. False until a host has said, which is the right answer
+    // before one has.
+    bool host_wants_motion() const { return host_wants_motion_; }
+
     void request_screen_gap(bool include_gap);
 
     // Stands in for a frame that arrived in pieces and never completed, which
@@ -314,6 +322,7 @@ private:
     // arriving, not by having asked: the request rides UDP like everything
     // else here and can be lost, so "keep asking until the answer lands" is
     // the only thing that reliably ends it. See ask_for_keyframe().
+    bool host_wants_motion_ = false;
     bool keyframe_wanted_top_ = false;
     bool keyframe_wanted_bottom_ = false;
     // When each was last asked for, so a repeat goes out at a sensible rate

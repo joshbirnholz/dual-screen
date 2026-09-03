@@ -66,6 +66,48 @@ with every button ignored until the handshake finishes, a host that is slow to
 answer was indistinguishable from the button doing nothing. **B** stops
 waiting; a host that never answers is given a few seconds and then says so.
 
+## Motion
+
+A Wii U GamePad has a gyroscope and an accelerometer, and a great many of its
+games steer, aim or look around with them -- Splatoon, ZombiU, Mario Kart 8,
+Wind Waker HD's telescope. Joined to a Wii U host, this device stands in for
+that GamePad, so how it is being held is sent along with its buttons.
+
+What crosses the wire is raw: rotation in radians per second and acceleration
+in metres per second squared, exactly as the sensors report them, plus the
+moment each reading was taken. Nothing on this side turns that into an
+orientation. Cemu already does, with sensor fusion tuned to what a real
+GamePad reports, and a second answer to the same question computed here would
+only be a different one.
+
+Only on a console that reads it. The host says whether it does, and until it
+says so no sensor is switched on at all -- a gyroscope left running is
+battery spent for nothing on a handheld. So a DS or 3DS session costs this
+nothing, and a Wii U session starts the sensors when it connects and stops
+them when it leaves.
+
+The log says what it found, once, when a Wii U host asks:
+
+```
+motion: the host reads it; 1 of 1 connected controllers report it
+motion: this device is reporting how it is being held
+```
+
+`0 of 1` is the line to look for when aiming does nothing. It means SDL cannot
+see any sensors on the pad, which is almost never the pad's fault -- see the
+device-specific note below.
+
+### On this console
+
+The six-axis unit is read through libnx rather than SDL: the Switch port's SDL
+exposes the pads' buttons and sticks but not their sensors. Handheld mode and
+a pair of joined Joy-Cons both work; a single Joy-Con held sideways does not,
+which is the same limitation Nintendo's own games have.
+
+The console must have its motion controls enabled in system settings. With
+them off, `hidGetSixAxisSensorHandles` succeeds and reports nothing, which
+comes out here as `nothing here reports how it is being held`.
+
 ## Building
 
 Needs devkitPro with the Switch toolchain and two portlibs. On Windows, run

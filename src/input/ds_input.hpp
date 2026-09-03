@@ -25,6 +25,46 @@ enum class DsButton {
 
 const char* to_string(DsButton button);
 
+// A moment's worth of a device being moved: how fast it is turning, and which
+// way gravity is pulling on it. Together those are enough to work out how a
+// thing is being held, which is what a Wii U game asking for the GamePad's
+// motion actually wants.
+//
+// Deliberately raw, and deliberately in SDL's units and axes: gyro in radians
+// per second, acceleration in metres per second squared, right-handed with
+// +x right, +y up and +z towards the player. Nothing here integrates them
+// into an orientation, because whatever consumes this already knows how --
+// Cemu has its own sensor fusion, tuned to what a real GamePad reports, and
+// two integrations disagreeing about which way "up" is would be far worse
+// than none. See ExternalInput's own motion fields.
+struct DsMotionState {
+    // False on a device with no sensors, and on one whose sensors nothing has
+    // asked for -- a phone's gyro costs battery to leave running, so it is
+    // only turned on when the far end says it is being read. Everything below
+    // is meaningless when this is false.
+    bool present = false;
+    float gyro_x = 0.0f;
+    float gyro_y = 0.0f;
+    float gyro_z = 0.0f;
+    float accel_x = 0.0f;
+    float accel_y = 0.0f;
+    float accel_z = 0.0f;
+    // When the sample was taken, by the sending device's own clock, in
+    // microseconds. Sent rather than the interval between samples so that a
+    // sample lost on the way -- these ride UDP like everything else on that
+    // channel -- widens the next interval instead of vanishing from the
+    // integration entirely. Unsigned subtraction gives the right answer
+    // across the wrap this has every seventy-one minutes.
+    uint32_t sampled_us = 0;
+
+    bool operator==(const DsMotionState& other) const {
+        return present == other.present && gyro_x == other.gyro_x && gyro_y == other.gyro_y &&
+               gyro_z == other.gyro_z && accel_x == other.accel_x && accel_y == other.accel_y &&
+               accel_z == other.accel_z && sampled_us == other.sampled_us;
+    }
+    bool operator!=(const DsMotionState& other) const { return !(*this == other); }
+};
+
 // One frame's worth of DS input. Touch is always in DS screen space
 // (256x192), never in window or layout space — mapping happens before this
 // struct is filled in, which is what lets a future network-delivered companion
@@ -45,6 +85,9 @@ struct DsInputState {
     // on a DS.
     int16_t c_stick_x = 0;
     int16_t c_stick_y = 0;
+    // How the device is being held and moved -- see DsMotionState. Absent on
+    // a device without sensors, or one nothing has asked for motion from.
+    DsMotionState motion;
 
     bool pressed(DsButton button) const {
         return (buttons & (1u << static_cast<unsigned>(button))) != 0u;
@@ -62,6 +105,7 @@ struct DsInputState {
         circle_y = 0;
         c_stick_x = 0;
         c_stick_y = 0;
+        motion = DsMotionState();
     }
 };
 

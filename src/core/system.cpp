@@ -136,6 +136,9 @@ SystemProfile make_wii_u() {
     // or R3 while a Wii U game is running.
     profile.has_analog_stick = true;
     profile.game_uses_every_control = true;
+    // A GamePad has a gyroscope and an accelerometer, and a great many Wii U
+    // games steer, aim or look around with them -- see uses_motion.
+    profile.uses_motion = true;
     // The television is the game; the GamePad is a second view of it. So one
     // device on its own shows one screen rather than both squeezed together.
     profile.solo_screens = SoloScreens::One;

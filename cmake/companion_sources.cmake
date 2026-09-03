@@ -21,6 +21,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp
     src/input/input_manager.cpp
+    src/input/motion.cpp
     src/layout/layout.cpp
     src/layout/layout_registry.cpp
     src/net/companion_session.cpp

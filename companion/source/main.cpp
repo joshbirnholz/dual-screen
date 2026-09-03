@@ -385,6 +385,11 @@ void Client::open_launcher() {
     state_ = State::Launcher;
     close_menu();
     session_.disconnect();
+    // Nothing is reading how this device is being held any more, so the
+    // sensors stop -- on a handheld that is battery not being spent sitting
+    // on a menu. Picked up again by the Playing case in poll(), from
+    // whatever the next host asks for.
+    input_.set_motion_enabled(false);
     // The app's own opening screen, minus the two entries that mean nothing
     // here: this device has no ROMs to load and nothing in Settings that would
     // apply to it. What is left is which screen to be, and leaving.
@@ -784,6 +789,14 @@ void Client::run() {
                 }
                 break;
             case State::Playing:
+                // Followed every frame rather than set once on connecting:
+                // the host sends its whole state on every change, and a
+                // session that changed console (a different game started on
+                // the host) would otherwise leave this device's sensors in
+                // whatever the last one wanted. Cheap when it has not moved
+                // -- set_motion_enabled() with what is already set does
+                // nothing at all.
+                input_.set_motion_enabled(session_.host_wants_motion());
                 // The menu is the host's too. It says whether one is up and
                 // where its cursor is; this device draws that and nothing of
                 // its own, so both screens show the same menu however it was

@@ -57,6 +57,9 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     keyframe_asked_at_bottom_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
+    // A host that has gone is not asking for anything, motion included -- so
+    // the client following this switches its sensors back off.
+    host_wants_motion_ = false;
     for (int stream = 0; stream < 3; ++stream) {
         audio_sequence_known_[stream] = false;
     }
@@ -107,6 +110,9 @@ void CompanionSession::disconnect() {
     keyframe_asked_at_bottom_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
+    // A host that has gone is not asking for anything, motion included -- so
+    // the client following this switches its sensors back off.
+    host_wants_motion_ = false;
     pending_frames_.clear();
     received_serial_ = 0;
     next_due_ms_ = 0;
@@ -141,6 +147,9 @@ void CompanionSession::fail(const std::string& reason) {
     keyframe_asked_at_bottom_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
+    // A host that has gone is not asking for anything, motion included -- so
+    // the client following this switches its sensors back off.
+    host_wants_motion_ = false;
     status_ = Status::Failed;
     status_detail_ = reason;
     if (rumble_callback_) {
@@ -215,6 +224,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_right_stick_mode_ = state.right_stick_mode;
             host_render_scale_ = state.render_scale;
             host_screen_gap_ = state.screen_gap;
+            host_wants_motion_ = state.motion_wanted;
             host_menu_open_ = state.menu_open;
             host_settings_open_ = state.settings_open;
             host_menu_focus_ = state.menu_focus;
@@ -655,7 +665,15 @@ void CompanionSession::send_input(const DsInputState& state) {
         return;
     }
     // Only changes go out. Holding a button steady costs nothing.
-    if (ever_sent_input_ && state.buttons == last_sent_input_.buttons &&
+    //
+    // Motion is the exception that swallows the rule when it is switched on:
+    // a device being held by a person is never quite still, so the reading
+    // differs every frame and this sends every frame. That is the point --
+    // a gyro is only any use as a stream -- and it is why nothing turns the
+    // sensors on until the host says it reads them. One datagram of about
+    // fifty bytes per frame is nothing next to the video going the other way.
+    if (ever_sent_input_ && state.motion == last_sent_input_.motion &&
+        state.buttons == last_sent_input_.buttons &&
         state.touching == last_sent_input_.touching &&
         state.circle_x == last_sent_input_.circle_x &&
         state.circle_y == last_sent_input_.circle_y &&
@@ -675,6 +693,13 @@ void CompanionSession::send_input(const DsInputState& state) {
     message.circle_y = state.circle_y;
     message.c_stick_x = state.c_stick_x;
     message.c_stick_y = state.c_stick_y;
+    // Only when the host said it reads it -- see host_wants_motion(). A
+    // device whose sensors are running anyway (they are shared with whatever
+    // else on this machine wanted them) should still not be filling the
+    // host's pad with readings nothing there will look at.
+    if (host_wants_motion_) {
+        message.motion = state.motion;
+    }
     std::vector<uint8_t> out;
     encode_media_header(session_token_, MessageType::Input, out);
     encode_input_payload(message, out);

@@ -1956,6 +1956,114 @@ void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
               "the keyframe the companion asked for never arrived");
 }
 
+// A Wii U game reading the GamePad's gyroscope needs the companion's, since
+// the companion is the thing being held. Two halves to this: the host has to
+// ask (a console with no use for motion must not leave a handheld's gyro
+// running), and what the companion sends has to arrive as the numbers it
+// sent -- these are raw sensor readings and nothing in between is entitled
+// to an opinion about them.
+void test_a_console_that_reads_motion_asks_for_it_and_gets_it() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.system = SystemId::WiiU;
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "tv_only");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+
+    CHECK_MSG(spin(host, companion, [&] { return companion.host_wants_motion(); }),
+              "a Wii U host never told the companion it reads how the pad is held, so the "
+              "companion would leave its gyroscope switched off");
+
+    DsInputState input;
+    input.motion.present = true;
+    input.motion.gyro_x = -0.0125f;
+    input.motion.gyro_y = 1.75f;
+    input.motion.gyro_z = 0.5f;
+    input.motion.accel_x = 0.03f;
+    input.motion.accel_y = -9.79f;
+    input.motion.accel_z = 0.42f;
+    input.motion.sampled_us = 4000000000u;
+    companion.send_input(input);
+
+    CHECK_MSG(spin(host, companion, [&] { return host.companion_input().motion.present; }),
+              "how the companion is being held never reached the host");
+    CHECK(host.companion_input().motion == input.motion);
+    // Named separately so a failure says which number went wrong. The small
+    // one matters most: a gyroscope barely moving is most of what one
+    // reports, and anything that rounded this would flatten aiming entirely.
+    CHECK_EQ(host.companion_input().motion.gyro_x, -0.0125f);
+    CHECK_EQ(host.companion_input().motion.accel_y, -9.79f);
+    CHECK_EQ(host.companion_input().motion.sampled_us, 4000000000u);
+}
+
+// And the other way round: a console with no use for motion never asks, so
+// nothing on the companion turns a sensor on for it.
+void test_a_console_that_ignores_motion_never_asks_for_it() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.system = SystemId::Ds;
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    // Given time to have said it, so this is "it never did" rather than "it
+    // had not yet".
+    spin(host, companion, [] { return false; }, 200);
+    CHECK_MSG(!companion.host_wants_motion(),
+              "a DS host asked the companion for motion, which would leave a handheld's "
+              "gyroscope running for a console that has none");
+
+    // A companion that reads its sensors anyway -- something else on that
+    // machine wanted them -- still must not fill the host's pad with
+    // readings nothing there will look at.
+    DsInputState input;
+    input.motion.present = true;
+    input.motion.gyro_y = 1.75f;
+    companion.send_input(input);
+    spin(host, companion, [&] { return host.companion_input_fresh(); }, 500);
+    CHECK_MSG(!host.companion_input().motion.present,
+              "motion was sent to a host that never asked for it");
+}
+
 }  // namespace
 
 int main() {
@@ -1984,6 +2092,8 @@ int main() {
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
     test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting();
+    test_a_console_that_reads_motion_asks_for_it_and_gets_it();
+    test_a_console_that_ignores_motion_never_asks_for_it();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

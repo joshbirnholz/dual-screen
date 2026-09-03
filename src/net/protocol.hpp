@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 23;
+constexpr uint16_t kProtocolVersion = 24;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -280,6 +280,12 @@ struct SessionStateMessage {
     // the menu that offers it is one menu, so the label it carries has to come
     // from the same place as everything else on it.
     bool cursor_shown = true;
+    // Whether the host has any use for how the companion is being held. True
+    // only when the console being played reads motion at all -- see
+    // SystemProfile::uses_motion. A companion leaves its sensors off until
+    // this says otherwise, which on a phone is the difference between a
+    // gyro running for a whole session and one that never starts.
+    bool motion_wanted = false;
 };
 
 struct FrameMessage {
@@ -330,6 +336,12 @@ struct InputMessage {
     // The right stick, standing in for a Circle Pad Pro or New 3DS's C-Stick.
     int16_t c_stick_x = 0;
     int16_t c_stick_y = 0;
+    // How the companion is being held and moved. Carried raw, in SDL's own
+    // units and axes -- see DsMotionState, whose fields these are. Absent
+    // unless the host asked for it (SessionStateMessage::motion_wanted), so a
+    // session on a console that has no use for motion costs nothing here and
+    // no battery on the device sending it.
+    DsMotionState motion;
 };
 
 // --- encoding ---------------------------------------------------------------

@@ -262,6 +262,18 @@ void test_input_round_trip() {
     // Same reasoning, and the same wire slot shape, as the circle pad above.
     sent.c_stick_x = -30000;
     sent.c_stick_y = 8000;
+    // How the device is being held. Small, signed and fractional -- a gyro at
+    // rest reads as a fraction of a radian per second -- so anything that
+    // quantised these on the way through would land on zero and the far end
+    // would see a pad that never moves.
+    sent.motion.present = true;
+    sent.motion.gyro_x = -0.0125f;
+    sent.motion.gyro_y = 1.75f;
+    sent.motion.gyro_z = 0.0f;
+    sent.motion.accel_x = 0.03f;
+    sent.motion.accel_y = -9.79f;
+    sent.motion.accel_z = 0.42f;
+    sent.motion.sampled_us = 4000000000u;  // past the halfway point of the wrap
 
     std::vector<uint8_t> buffer;
     encode_input(sent, buffer);
@@ -278,6 +290,23 @@ void test_input_round_trip() {
     CHECK_EQ(received.touch_y, 150);
     CHECK_EQ(received.circle_x, -12345);
     CHECK_EQ(received.circle_y, 32000);
+    CHECK(received.motion == sent.motion);
+    // Spelled out as well as compared, so a failure says which part went
+    // wrong rather than only that something did.
+    CHECK(received.motion.present);
+    CHECK_EQ(received.motion.gyro_x, -0.0125f);
+    CHECK_EQ(received.motion.accel_y, -9.79f);
+    CHECK_EQ(received.motion.sampled_us, 4000000000u);
+
+    // And a device with no sensors says so rather than reporting a pad that
+    // is being held perfectly still -- which to a game is a real reading.
+    InputMessage still;
+    std::vector<uint8_t> without;
+    encode_input(still, without);
+    CHECK(one_message(without, type, payload));
+    InputMessage received_still;
+    CHECK(decode_input(payload.data(), payload.size(), received_still));
+    CHECK(!received_still.motion.present);
     CHECK_EQ(received.c_stick_x, -30000);
     CHECK_EQ(received.c_stick_y, 8000);
 }

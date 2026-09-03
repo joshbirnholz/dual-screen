@@ -565,6 +565,59 @@ void test_asking_for_the_same_screen_twice_says_nothing_the_second_time() {
               "a changed request never reached the game");
 }
 
+// How the device standing in for the GamePad is being held, all the way to
+// the producer. Raw and unconverted on purpose -- see ExternalMotion -- so
+// what this checks is that the numbers arrive as the numbers that were sent,
+// down to the fractions a gyro at rest actually reports.
+void test_how_the_pad_is_being_held_crosses_too() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    std::string error;
+    bool reset = false;
+
+    ExternalInput sent;
+    sent.motion.present = true;
+    sent.motion.gyro_x = -0.0125f;
+    sent.motion.gyro_y = 1.75f;
+    sent.motion.gyro_z = 0.5f;
+    sent.motion.accel_x = 0.03f;
+    sent.motion.accel_y = -9.79f;
+    sent.motion.accel_z = 0.42f;
+    sent.motion.sampled_us = 4000000000u;
+    link.send_input(sent);
+
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!producer.have_input() && std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.have_input(), "the pad never arrived");
+    CHECK_MSG(producer.input().motion == sent.motion,
+              "how the pad is being held did not survive the trip");
+    CHECK_MSG(producer.input().motion.gyro_x == -0.0125f,
+              "a small fractional reading was lost or rounded away, which is most of what a "
+              "gyroscope at rest reports");
+    CHECK_EQ(producer.input().motion.sampled_us, 4000000000u);
+
+    // A pad with everything else identical but no motion at all is a
+    // different pad, not the same one -- otherwise a device whose sensors
+    // stopped would leave the last reading standing for ever, since only
+    // changes are sent.
+    ExternalInput without = sent;
+    without.motion = ExternalMotion();
+    CHECK_MSG(without != sent, "a pad that stopped reporting motion looks unchanged");
+    link.send_input(without);
+    const auto cleared_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (producer.input().motion.present && std::chrono::steady_clock::now() < cleared_by) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(!producer.input().motion.present,
+              "the game was never told the device had stopped reporting how it is held");
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -577,5 +630,6 @@ int main() {
     test_a_screen_too_big_to_carry_is_refused();
     test_a_game_is_told_how_big_the_screen_is_worth_making();
     test_asking_for_the_same_screen_twice_says_nothing_the_second_time();
+    test_how_the_pad_is_being_held_crosses_too();
     return test::finish("external-link");
 }

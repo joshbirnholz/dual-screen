@@ -9,6 +9,7 @@
 #include "config/settings.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
+#include "input/motion.hpp"
 #include "input/held_input_gate.hpp"
 #include "layout/layout.hpp"
 
@@ -152,6 +153,16 @@ public:
     // just do nothing.
     void set_rumble(bool active);
 
+    // Turns reading this device's own motion on or off -- see MotionReader,
+    // and SessionStateMessage::motion_wanted for who decides. Off until
+    // something asks, because a gyroscope left running costs battery on
+    // exactly the handhelds this is for.
+    void set_motion_enabled(bool enabled) { motion_.set_enabled(enabled); }
+    // How this device is being held right now, as of the last poll. Absent
+    // when motion is switched off, when nothing here has sensors, or before
+    // the first reading has arrived.
+    const DsMotionState& motion() const { return motion_.state(); }
+
     // Letters printed on the menu confirm/cancel buttons for the connected pad,
     // for on-screen prompts. Display only -- it never changes what a button does.
     MenuButtonLabels menu_labels() const;
@@ -189,6 +200,7 @@ private:
     bool game_owns_controls_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
+    MotionReader motion_;
 
     DsInputState ds_state_;
     std::vector<UiAction> ui_actions_;

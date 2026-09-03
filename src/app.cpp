@@ -2648,6 +2648,14 @@ int App::run(const AppOptions& options) {
                 impl.companion_reported_width = impl.output_width;
                 impl.companion_reported_height = impl.output_height;
             }
+            // Outside the is_companion() block below on purpose: this has to
+            // keep being told when the session ends, not only while one is up
+            // -- and host_wants_motion() goes false the moment it does. Told
+            // rather than worked out from the console here, because it is the
+            // host that knows whether anything at its far end reads motion at
+            // all. Cheap to repeat: set_motion_enabled() with what is already
+            // set does nothing.
+            impl.input.set_motion_enabled(impl.companion_session->host_wants_motion());
             // A companion follows the host on everything the two devices share
             // -- layout, smoothing, where the sound comes out. It decides none
             // of it locally, which is why they cannot drift apart. This applies
@@ -2683,6 +2691,11 @@ int App::run(const AppOptions& options) {
                 impl.adopt_handedness(impl.companion_session->host_handedness());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());
+                // Whether this machine's own gyro is being read at all. Told
+                // rather than worked out from the console, because it is the
+                // host that knows whether there is anything at the far end
+                // that reads motion -- and cheap to repeat, since
+                // set_motion_enabled() with what is already set does nothing.
                 if (impl.system != impl.companion_session->system()) {
                     impl.system = impl.companion_session->system();
                     impl.apply_system();
@@ -2779,6 +2792,15 @@ int App::run(const AppOptions& options) {
                     combined.touching = true;
                     combined.touch_x = remote.touch_x;
                     combined.touch_y = remote.touch_y;
+                }
+                // Motion is the one thing that is not merged. Two devices'
+                // buttons can be pressed at once and the union is sensible;
+                // two devices' orientations cannot be added up into
+                // anything. The companion's wins outright when it has one,
+                // because the companion is the device standing in for the
+                // GamePad -- it is the thing being tilted at the screen.
+                if (remote.motion.present) {
+                    combined.motion = remote.motion;
                 }
             }
             if (impl.source) {

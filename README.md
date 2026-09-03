@@ -187,6 +187,29 @@ Cemu owns everything about the emulation: the resolution it renders at, its own
 controller bindings, its own saves. The shell offers no render scale for a Wii U
 because that setting is not its to offer.
 
+### Motion
+
+A GamePad has a gyroscope and an accelerometer, and plenty of Wii U games steer,
+aim or look around with them. Whichever device is holding the GamePad screen is
+the thing being tilted, so that device's own sensors are what the game reads --
+a Steam Deck's, a phone's, a Switch's, or the ones in a pad plugged into the
+machine running Cemu.
+
+What crosses the link is raw: rotation in radians per second and acceleration in
+metres per second squared, exactly as the sensors report them, with the moment
+each was taken. Nothing here turns that into an orientation, because Cemu
+already does, with sensor fusion tuned to what a real GamePad reports. Sending
+it a second opinion about which way is up would be worse than sending it none.
+
+Only on a console that reads it. A DS or 3DS session never switches a sensor on
+at all, which on a handheld is a gyroscope not running for an hour for nothing.
+
+`motion: the host reads it; 1 of 1 connected controllers report it` in the log
+is the line that says it is working. **`0 of 1` on a Steam Deck almost always
+means Steam Input**, which re-presents the Deck's own pad as a virtual
+controller with no sensors on it. Launching from desktop mode, or turning Steam
+Input off for this app, gives SDL the real pad and its gyro with it.
+
 ## Playing across two devices
 
 Start the game on whichever device you want to run it — a gaming PC, or the

@@ -100,6 +100,17 @@ struct SystemProfile {
     // toggle there, so the menu's own prompt for it would be advertising a
     // control that silently does nothing.
     bool offers_smoothing = true;
+    // Whether the console being played reads how the pad is being held. True
+    // for a Wii U, whose GamePad has a gyroscope and accelerometer that a lot
+    // of its games steer, aim or look around with -- Splatoon, Wind Waker HD's
+    // telescope, ZombiU, Mario Kart 8. False for a DS and a 3DS: a DS has no
+    // sensors at all, and while a 3DS does, nothing on this side of a libretro
+    // core is wired to hand them over yet.
+    //
+    // What this decides is whether a companion is asked to turn its sensors on
+    // at all (SessionStateMessage::motion_wanted). A gyro left running costs
+    // battery on a handheld, so a console with no use for one never starts it.
+    bool uses_motion = false;
 };
 
 const SystemProfile& system_profile(SystemId id);

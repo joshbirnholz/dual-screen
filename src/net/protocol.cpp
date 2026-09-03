@@ -27,6 +27,18 @@ void put_u64(std::vector<uint8_t>& out, uint64_t value) {
     }
 }
 
+// A float goes on the wire as its own IEEE-754 bits, little-endian like every
+// other number here. Exact rather than scaled into a fixed-point integer,
+// because what these carry (see DsMotionState) is a raw sensor reading whose
+// useful range and precision are the sensor's business, not this file's --
+// and every machine this builds for stores a float this way already.
+void put_f32(std::vector<uint8_t>& out, float value) {
+    uint32_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value), "a float is not four bytes here");
+    std::memcpy(&bits, &value, sizeof(bits));
+    put_u32(out, bits);
+}
+
 void put_string(std::vector<uint8_t>& out, const std::string& value) {
     // Bounded so a hostile or corrupt sender cannot make us allocate wildly.
     const uint16_t length = static_cast<uint16_t>(std::min<std::size_t>(value.size(), 0xffffu));
@@ -49,6 +61,12 @@ public:
         if (position_ + 2 > size_) return fail();
         out = static_cast<uint16_t>(data_[position_] | (data_[position_ + 1] << 8));
         position_ += 2;
+        return true;
+    }
+    bool f32(float& out) {
+        uint32_t bits = 0;
+        if (!u32(bits)) return false;
+        std::memcpy(&out, &bits, sizeof(out));
         return true;
     }
     bool u32(uint32_t& out) {
@@ -254,6 +272,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.right_stick_choosable ? 1u : 0u);
     put_u8(out, message.cursor_shown ? 1u : 0u);
     put_u8(out, message.settings_open ? 1u : 0u);
+    put_u8(out, message.motion_wanted ? 1u : 0u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -278,6 +297,17 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
     put_u16(out, static_cast<uint16_t>(message.circle_y));
     put_u16(out, static_cast<uint16_t>(message.c_stick_x));
     put_u16(out, static_cast<uint16_t>(message.c_stick_y));
+    // Always written, even when absent, so the payload is one fixed size --
+    // a variable-length tail on a message this small buys nothing and costs a
+    // second thing that can disagree between the two ends.
+    put_u8(out, message.motion.present ? 1u : 0u);
+    put_f32(out, message.motion.gyro_x);
+    put_f32(out, message.motion.gyro_y);
+    put_f32(out, message.motion.gyro_z);
+    put_f32(out, message.motion.accel_x);
+    put_f32(out, message.motion.accel_y);
+    put_f32(out, message.motion.accel_z);
+    put_u32(out, message.motion.sampled_us);
 }
 
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
@@ -582,9 +612,12 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     reader.u8(right_stick_choosable);
     uint8_t cursor_shown = 0;
     uint8_t settings_open = 0;
+    uint8_t motion_wanted = 0;
     reader.u8(cursor_shown);
     reader.u8(settings_open);
+    reader.u8(motion_wanted);
     if (!reader.ok()) return false;
+    out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);
     out.settings_open = (settings_open != 0);
     out.paused = (paused != 0);
@@ -648,7 +681,17 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
     reader.u16(circle_y);
     reader.u16(c_stick_x);
     reader.u16(c_stick_y);
+    uint8_t has_motion = 0;
+    reader.u8(has_motion);
+    reader.f32(out.motion.gyro_x);
+    reader.f32(out.motion.gyro_y);
+    reader.f32(out.motion.gyro_z);
+    reader.f32(out.motion.accel_x);
+    reader.f32(out.motion.accel_y);
+    reader.f32(out.motion.accel_z);
+    reader.u32(out.motion.sampled_us);
     if (!reader.ok()) return false;
+    out.motion.present = (has_motion != 0);
     out.touching = (touching != 0);
     out.touch_x = static_cast<int16_t>(x);
     out.touch_y = static_cast<int16_t>(y);

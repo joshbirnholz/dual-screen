@@ -630,6 +630,12 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
             companion_input_.circle_y = input.circle_y;
             companion_input_.c_stick_x = input.c_stick_x;
             companion_input_.c_stick_y = input.c_stick_y;
+            // Passed through untouched. These are raw sensor readings in the
+            // sender's own units (see DsMotionState); anything this end did
+            // to them would be a second opinion about how the device is being
+            // held, and the one place that question is answered is the far
+            // side of the frame link, in Cemu's own sensor fusion.
+            companion_input_.motion = input.motion;
             companion_input_fresh_ = true;
             break;
         }
@@ -774,6 +780,12 @@ void HostSession::poll(uint64_t now_ms) {
         state.right_stick_choosable = shared_.right_stick_choosable;
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
+        // Not a setting anyone chose -- it is a property of the console being
+        // played, so it comes from the profile rather than from shared_. What
+        // it does at the other end is switch a gyroscope on, which is why it
+        // is told rather than assumed: a companion has no way to know which
+        // console it joined has any use for one.
+        state.motion_wanted = system_profile(config_.system).uses_motion;
         std::vector<uint8_t> out;
         encode_session_state(state, out);
         companion_.send(out);
