@@ -12,7 +12,23 @@ namespace ds {
 // How the bytes in a texture are arranged. Core output arrives as XRGB8888 and
 // is uploaded verbatim, so the shader has to swizzle it back; a texture the GPU
 // filled itself is already in the right order and must not be swizzled again.
-enum class ChannelOrder { XrgbBytes, Rgba };
+// Planar layouts are the two a video decoder hands back (see DecodedLayout in
+// video/video_codec.hpp): the conversion to RGB happens in the fragment shader
+// rather than on the CPU, which on a handheld is the difference between 22ms a
+// frame and about 4. A texture in one of these carries its chroma planes with
+// it -- see upload_nv12()/upload_yuv420p() -- so everything that draws a
+// screen carries on drawing one texture and never has to know.
+enum class ChannelOrder { XrgbBytes, Rgba, Nv12, Yuv420p };
+
+// True for the layouts whose colour is worked out while drawing.
+// Whether an NV12 texture's V component lands in .a (GL_LUMINANCE_ALPHA, the
+// OpenGL ES 2.0 spelling) or .g (GL_RG, its core-profile replacement). The
+// shader has to be told, since it is the only difference between the two.
+bool nv12_chroma_v_in_alpha();
+
+inline bool is_planar(ChannelOrder order) {
+    return order == ChannelOrder::Nv12 || order == ChannelOrder::Yuv420p;
+}
 
 class Texture {
 public:
@@ -63,6 +79,26 @@ public:
     // into. The contents are whatever the GPU puts there, in RGBA order.
     void allocate_rgba(int width, int height);
 
+    // A decoded video frame, still in the planes its decoder produced.
+    //
+    // `luma` is width x height, one byte a pixel. `chroma` is half that in
+    // each direction, two bytes a pixel for NV12 (U and V interleaved) or one
+    // byte a pixel each for the two planes of YUV420P. Each `stride` is that
+    // plane's own row length in bytes, which a decoder is free to make wider
+    // than the picture -- passing it through means no repacking pass.
+    //
+    // What arrives is uploaded as-is and turned into colour by the shader:
+    // see ChannelOrder above for why that is worth the extra texture units.
+    void upload_nv12(const uint8_t* luma, int luma_stride, const uint8_t* chroma,
+                     int chroma_stride, int width, int height);
+    void upload_yuv420p(const uint8_t* luma, int luma_stride, const uint8_t* u, int u_stride,
+                        const uint8_t* v, int v_stride, int width, int height);
+
+    // The chroma planes of a planar screen, for the renderer to bind
+    // alongside this one. Zero on a texture that is not planar.
+    GLuint chroma_id() const { return chroma_[0]; }
+    GLuint chroma_v_id() const { return chroma_[1]; }
+
     ChannelOrder channel_order() const { return channel_order_; }
 
     void set_linear_filtering(bool linear);
@@ -82,6 +118,14 @@ private:
     // the ChannelOrder they leave the texture tagged with afterward.
     void upload_four_bytes_a_pixel(const uint32_t* source, int width, int height,
                                    int source_stride_pixels);
+    // Uploads one 8-bit-per-channel plane into `id`, (re)allocating it when
+    // its size or format changed. `format` is GL_LUMINANCE for a one-byte
+    // plane or GL_LUMINANCE_ALPHA for NV12's interleaved pair -- both of them
+    // core in OpenGL ES 2.0, which is what this runs on.
+    void upload_plane(GLuint& id, int& cached_width, int& cached_height, GLenum& cached_format,
+                      GLenum format, const uint8_t* source, int source_stride, int width,
+                      int height);
+    void destroy_chroma();
 
     GLuint id_ = 0;
     int width_ = 0;
@@ -93,6 +137,13 @@ private:
     ChannelOrder channel_order_ = ChannelOrder::XrgbBytes;
     bool linear_ = false;
     bool filter_dirty_ = true;
+    // The chroma planes of a planar screen: one for NV12, two for YUV420P.
+    // Owned here so that a screen stays one Texture from every caller's point
+    // of view -- see ChannelOrder.
+    GLuint chroma_[2] = {0, 0};
+    int chroma_width_[2] = {0, 0};
+    int chroma_height_[2] = {0, 0};
+    GLenum chroma_format_[2] = {0, 0};
 };
 
 }  // namespace ds

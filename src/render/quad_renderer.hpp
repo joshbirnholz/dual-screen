@@ -66,7 +66,16 @@ public:
     void draw_outline(const PixelRect& rect, const Color& color, float thickness);
 
 private:
-    enum class Mode { Solid = 0, Screen = 1, AlphaMask = 2, ScreenRgba = 3 };
+    // Matches the u_mode the fragment shader switches on. The two planar
+    // ones are video frames converted while drawing -- see ChannelOrder.
+    enum class Mode {
+        Solid = 0,
+        Screen = 1,
+        AlphaMask = 2,
+        ScreenRgba = 3,
+        ScreenNv12 = 4,
+        ScreenYuv420p = 5,
+    };
 
     void draw(const PixelRect& rect,
               const Texture* texture,
@@ -94,6 +103,9 @@ private:
     GLint uniform_color_ = -1;
     GLint uniform_mode_ = -1;
     GLint uniform_sampler_ = -1;
+    GLint uniform_chroma_ = -1;
+    GLint uniform_chroma_v_ = -1;
+    GLint uniform_chroma_v_in_alpha_ = -1;
 
     int output_width_ = 0;
     int output_height_ = 0;

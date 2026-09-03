@@ -29,9 +29,31 @@ void main() {
 
 const char* kFragmentBody = R"(
 uniform sampler2D u_texture;
+uniform sampler2D u_chroma;   // NV12's interleaved UV, or YUV420P's U
+uniform sampler2D u_chroma_v; // YUV420P's V
 uniform vec4 u_color;
-uniform int u_mode;          // 0 solid, 1 screen (XRGB), 2 alpha mask, 3 screen (RGBA)
+// 0 solid, 1 screen (XRGB), 2 alpha mask, 3 screen (RGBA),
+// 4 screen (NV12), 5 screen (YUV420P)
+uniform int u_mode;
+// Which component of NV12's two-channel chroma texel holds V: 1 for .a, which
+// is where GL_LUMINANCE_ALPHA puts it, 0 for .g, which is where GL_RG does.
+// Set from nv12_chroma_v_in_alpha() -- see texture.cpp, where the choice is
+// made once by asking the driver whether it still has the LUMINANCE formats.
+uniform int u_chroma_v_in_alpha;
 varying vec2 v_texcoord;
+
+// Full-range BT.601, matching what the encoder signals and what the CPU
+// conversion this replaces was set up for (see sws_setColorspaceDetails in
+// video_decoder.cpp): luma is used as-is rather than stretched from 16-235,
+// and chroma is centred on 0.5.
+vec3 ds_yuv_to_rgb(float y, float u, float v) {
+    float cb = u - 0.5;
+    float cr = v - 0.5;
+    return vec3(y + 1.402 * cr,
+                y - 0.344136 * cb - 0.714136 * cr,
+                y + 1.772 * cb);
+}
+
 void main() {
     if (u_mode == 0) {
         gl_FragColor = u_color;
@@ -43,6 +65,26 @@ void main() {
     } else if (u_mode == 2) {
         float coverage = texture2D(u_texture, v_texcoord).a;
         gl_FragColor = vec4(u_color.rgb, u_color.a * coverage);
+    } else if (u_mode == 4) {
+        // A video frame, still in the planes its decoder produced. The
+        // conversion below is the whole reason those planes are uploaded
+        // rather than turned into RGB on the CPU first -- here it is a few
+        // multiplies per fragment on hardware built for them, and there it
+        // was a pass over every pixel of every frame.
+        //
+        // NV12: one byte of luma, and a half-size plane holding U and V
+        // interleaved. U arrives in .r either way; V lands wherever the
+        // two-channel format this build could get puts the second byte.
+        float y = texture2D(u_texture, v_texcoord).r;
+        vec4 chroma = texture2D(u_chroma, v_texcoord);
+        float v = u_chroma_v_in_alpha == 1 ? chroma.a : chroma.g;
+        gl_FragColor = vec4(ds_yuv_to_rgb(y, chroma.r, v) * u_color.rgb, u_color.a);
+    } else if (u_mode == 5) {
+        // The same, with U and V in planes of their own.
+        float y = texture2D(u_texture, v_texcoord).r;
+        float u = texture2D(u_chroma, v_texcoord).r;
+        float v = texture2D(u_chroma_v, v_texcoord).r;
+        gl_FragColor = vec4(ds_yuv_to_rgb(y, u, v) * u_color.rgb, u_color.a);
     } else {
         // A screen the GPU filled in itself: already in RGBA order, so
         // swizzling it the way core output needs would turn it inside out.
@@ -145,6 +187,9 @@ bool QuadRenderer::initialize(std::string* error) {
     uniform_color_ = gl::GetUniformLocation(program_, "u_color");
     uniform_mode_ = gl::GetUniformLocation(program_, "u_mode");
     uniform_sampler_ = gl::GetUniformLocation(program_, "u_texture");
+    uniform_chroma_ = gl::GetUniformLocation(program_, "u_chroma");
+    uniform_chroma_v_ = gl::GetUniformLocation(program_, "u_chroma_v");
+    uniform_chroma_v_in_alpha_ = gl::GetUniformLocation(program_, "u_chroma_v_in_alpha");
 
     if (attr_position_ < 0 || attr_texcoord_ < 0) {
         if (error != nullptr) *error = "shader program is missing its vertex attributes";
@@ -295,6 +340,23 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
             gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
             gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
         }
+        // A planar screen's chroma travels with it -- see ChannelOrder -- so
+        // this is still one texture from every caller's point of view, and
+        // only here does the second (and third) unit exist at all.
+        if (is_planar(texture->channel_order())) {
+            gl::ActiveTexture(GL_TEXTURE1);
+            gl::BindTexture(GL_TEXTURE_2D, texture->chroma_id());
+            gl::Uniform1i(uniform_chroma_, 1);
+            gl::Uniform1i(uniform_chroma_v_in_alpha_, nv12_chroma_v_in_alpha() ? 1 : 0);
+            if (texture->channel_order() == ChannelOrder::Yuv420p) {
+                gl::ActiveTexture(GL_TEXTURE2);
+                gl::BindTexture(GL_TEXTURE_2D, texture->chroma_v_id());
+                gl::Uniform1i(uniform_chroma_v_, 2);
+            }
+            // Back to unit 0, which everything else in this renderer assumes
+            // is the active one.
+            gl::ActiveTexture(GL_TEXTURE0);
+        }
     }
 
     gl::BindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
@@ -327,8 +389,13 @@ void QuadRenderer::draw_screen(const PixelRect& rect,
                                bool smooth) {
     // The texture itself says which order its bytes are in, so a caller never
     // has to know whether this screen came from the CPU or the GPU.
-    const Mode mode = texture.channel_order() == ChannelOrder::Rgba ? Mode::ScreenRgba
-                                                                    : Mode::Screen;
+    Mode mode = Mode::Screen;
+    switch (texture.channel_order()) {
+        case ChannelOrder::Rgba: mode = Mode::ScreenRgba; break;
+        case ChannelOrder::Nv12: mode = Mode::ScreenNv12; break;
+        case ChannelOrder::Yuv420p: mode = Mode::ScreenYuv420p; break;
+        case ChannelOrder::XrgbBytes: mode = Mode::Screen; break;
+    }
     // Which source corner each destination corner samples. Turning the picture
     // clockwise means the destination's top-left shows what used to be the
     // bottom-left, and so on round.

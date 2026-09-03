@@ -177,6 +177,41 @@ bool VideoDecoder::to_rgb(AVFrame* frame, DecodedFrame& out, std::string* error)
         source = software_frame_;
     }
 
+    // Planar YUV goes onward as planes, and is converted while it is drawn --
+    // see DecodedLayout. This is the whole point of the exercise: the
+    // sws_scale below is a pass over every pixel of every frame, and on a
+    // handheld it costs more than the hardware decode it follows.
+    const bool nv12 = source->format == AV_PIX_FMT_NV12;
+    const bool yuv420p = source->format == AV_PIX_FMT_YUV420P;
+    if (want_planar_ && (nv12 || yuv420p)) {
+        out.layout = nv12 ? DecodedLayout::Nv12 : DecodedLayout::Yuv420p;
+        out.width = source->width;
+        out.height = source->height;
+        out.pixels.clear();
+        // Copied rather than pointed at: the AVFrame is reused by the next
+        // decode, and what is here has to survive until it is drawn.
+        //
+        // A plain memcpy of whole rows including the decoder's own padding,
+        // which is both fewer, larger copies than trimming each row would be
+        // and exactly what the upload wants -- the stride goes with it.
+        const int planes = nv12 ? 2 : 3;
+        for (int index = 0; index < 3; ++index) {
+            if (index >= planes || source->data[index] == nullptr) {
+                out.plane[index].clear();
+                out.stride[index] = 0;
+                continue;
+            }
+            // Chroma is half the height in both layouts; luma is full.
+            const int rows = index == 0 ? source->height : (source->height + 1) / 2;
+            const int stride = source->linesize[index];
+            out.stride[index] = stride;
+            out.plane[index].resize(static_cast<std::size_t>(stride) * rows);
+            std::memcpy(out.plane[index].data(), source->data[index],
+                        static_cast<std::size_t>(stride) * rows);
+        }
+        return true;
+    }
+
     if (scaler_ == nullptr || scaler_width_ != source->width ||
         scaler_height_ != source->height || scaler_format_ != source->format) {
         if (scaler_ != nullptr) sws_freeContext(scaler_);
@@ -201,8 +236,12 @@ bool VideoDecoder::to_rgb(AVFrame* frame, DecodedFrame& out, std::string* error)
         scaler_format_ = source->format;
     }
 
+    out.layout = DecodedLayout::Xrgb8888;
     out.width = source->width;
     out.height = source->height;
+    for (std::vector<uint8_t>& plane : out.plane) {
+        plane.clear();
+    }
     out.pixels.resize(static_cast<std::size_t>(source->width) * source->height);
     auto* destination = reinterpret_cast<uint8_t*>(out.pixels.data());
     const int destination_stride = source->width * 4;

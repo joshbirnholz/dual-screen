@@ -98,13 +98,48 @@ struct EncodedFrame {
     bool empty() const { return bytes.empty(); }
 };
 
+// How a decoded frame's bytes are arranged.
+//
+// A decoder hands frames back as planar YUV -- that is what H.264 is -- and
+// turning them into RGB is a whole pass over every pixel. On a desktop that is
+// cheap next to everything else; on a handheld it is the single most expensive
+// thing in the pipeline, and it is work a GPU does for nothing while drawing.
+// Measured on a Switch at 1280x720: 22ms a frame with the conversion done on
+// the CPU, against a 16ms frame period.
+//
+// So a frame comes back in whichever of these its decoder produced, and the
+// conversion happens in the fragment shader instead -- see ChannelOrder in
+// render/texture.hpp, whose values these mirror.
+enum class DecodedLayout {
+    // Already converted. What a decoder whose output this app has no planar
+    // path for falls back to, and what every caller understood before the
+    // other two existed.
+    Xrgb8888,
+    // One full-size plane of luma, then one half-size plane of chroma with U
+    // and V interleaved. What every hardware decoder here produces.
+    Nv12,
+    // One full-size plane of luma and two half-size planes of chroma. What
+    // FFmpeg's software H.264 decoder produces.
+    Yuv420p,
+};
+
 struct DecodedFrame {
-    // XRGB8888, the byte order everything else in this app already uses.
+    DecodedLayout layout = DecodedLayout::Xrgb8888;
+    // Set only for Xrgb8888: the whole picture, four bytes a pixel.
     std::vector<uint32_t> pixels;
+    // Set only for the two planar layouts. plane[0] is luma at the full size;
+    // plane[1] is either the interleaved chroma (Nv12) or U (Yuv420p);
+    // plane[2] is V, and only for Yuv420p. `stride` is each plane's own row
+    // length in bytes, which a decoder is free to make wider than the picture.
+    std::vector<uint8_t> plane[3];
+    int stride[3] = {0, 0, 0};
     int width = 0;
     int height = 0;
 
-    bool valid() const { return width > 0 && height > 0 && !pixels.empty(); }
+    bool valid() const {
+        if (width <= 0 || height <= 0) return false;
+        return layout == DecodedLayout::Xrgb8888 ? !pixels.empty() : !plane[0].empty();
+    }
 };
 
 // The byte order of the pixels VideoEncoder::encode() is handed. Most screens

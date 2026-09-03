@@ -585,6 +585,14 @@ private:
         // tiled payload patches rgb565 and is expanded on demand; a video frame
         // decodes straight to pixels and never has a 5-6-5 form at all.
         bool video = false;
+        // Which form a video frame came back in -- see DecodedLayout. Xrgb8888
+        // means `pixels` holds it; the two planar layouts mean `plane` does,
+        // and the conversion to colour happens in the shader while it is
+        // drawn rather than here.
+        video::DecodedLayout layout = video::DecodedLayout::Xrgb8888;
+        // The planes of a planar frame, each with its own row length in bytes.
+        std::vector<uint8_t> plane[3];
+        int plane_stride[3] = {0, 0, 0};
         // The frame as it travels and as tiles are patched onto it. Canonical:
         // a tiled payload is a difference from this, so it has to survive from
         // one frame to the next.
@@ -605,7 +613,10 @@ private:
         const std::vector<uint32_t>& expanded() const;
         // Whether anything has arrived for this screen at all, whichever form
         // it arrived in.
-        bool has_frame() const { return video ? !pixels.empty() : !rgb565.empty(); }
+        bool has_frame() const {
+            if (!video) return !rgb565.empty();
+            return layout == video::DecodedLayout::Xrgb8888 ? !pixels.empty() : !plane[0].empty();
+        }
     };
     ScreenBuffer top_;
     ScreenBuffer bottom_;

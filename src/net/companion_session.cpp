@@ -752,10 +752,67 @@ void CompanionSession::send_input(const DsInputState& state) {
     ever_sent_input_ = true;
 }
 
+namespace {
+
+// The same arithmetic the fragment shader does, for the one caller that wants
+// pixels on the CPU. Full-range BT.601, matching what the encoder signals.
+void expand_planar_yuv(video::DecodedLayout layout, const std::vector<uint8_t>* plane,
+                       const int* stride, int width, int height,
+                       std::vector<uint32_t>& out) {
+    out.assign(static_cast<std::size_t>(std::max(0, width)) * std::max(0, height), 0u);
+    if (width <= 0 || height <= 0 || plane[0].empty() || plane[1].empty()) {
+        return;
+    }
+    const bool nv12 = layout == video::DecodedLayout::Nv12;
+    if (!nv12 && plane[2].empty()) {
+        return;
+    }
+    const auto clamp8 = [](float value) {
+        return static_cast<uint32_t>(std::min(255.0f, std::max(0.0f, value)));
+    };
+    for (int y = 0; y < height; ++y) {
+        const uint8_t* luma_row = plane[0].data() + static_cast<std::size_t>(y) * stride[0];
+        const int chroma_y = y / 2;
+        for (int x = 0; x < width; ++x) {
+            const int chroma_x = x / 2;
+            float cb = 0.0f;
+            float cr = 0.0f;
+            if (nv12) {
+                const uint8_t* row = plane[1].data() + static_cast<std::size_t>(chroma_y) * stride[1];
+                cb = row[chroma_x * 2] - 128.0f;
+                cr = row[chroma_x * 2 + 1] - 128.0f;
+            } else {
+                cb = plane[1][static_cast<std::size_t>(chroma_y) * stride[1] + chroma_x] - 128.0f;
+                cr = plane[2][static_cast<std::size_t>(chroma_y) * stride[2] + chroma_x] - 128.0f;
+            }
+            const float luma = static_cast<float>(luma_row[x]);
+            const uint32_t r = clamp8(luma + 1.402f * cr);
+            const uint32_t g = clamp8(luma - 0.344136f * cb - 0.714136f * cr);
+            const uint32_t b = clamp8(luma + 1.772f * cb);
+            out[static_cast<std::size_t>(y) * width + x] = (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+}  // namespace
+
 const std::vector<uint32_t>& CompanionSession::ScreenBuffer::expanded() const {
-    // A video frame is already in this form. There is nothing to expand and
-    // nothing to cache.
+    // A video frame that came back already converted is in this form
+    // already. There is nothing to expand and nothing to cache.
+    if (video && layout == video::DecodedLayout::Xrgb8888) {
+        return pixels;
+    }
+    // One that came back as planes has to be converted for a caller that
+    // wants pixels on the CPU -- which the renderer never does, since it
+    // uploads the planes and converts while drawing. This is the fallback for
+    // anything else that asks (tests, and a client with no GL path), computed
+    // once per frame rather than on every ask.
     if (video) {
+        if (!ever_expanded || expanded_serial != serial) {
+            expand_planar_yuv(layout, plane, plane_stride, width, height, pixels);
+            expanded_serial = serial;
+            ever_expanded = true;
+        }
         return pixels;
     }
     if (!ever_expanded || expanded_serial != serial) {
@@ -1030,7 +1087,19 @@ const ScreenTextures& CompanionSession::screens() {
             // channel first would be a whole pass over the frame and twice the
             // bytes to the GPU, for a picture that is 5-6-5 either way; a video
             // frame is already eight, and going back would only lose.
-            if (buffer->video) {
+            if (buffer->video && buffer->layout == video::DecodedLayout::Nv12) {
+                // Straight to the GPU in the planes the decoder produced --
+                // the conversion to colour happens in the shader, which is the
+                // whole point of asking for them. See DecodedLayout.
+                buffer->texture.upload_nv12(buffer->plane[0].data(), buffer->plane_stride[0],
+                                            buffer->plane[1].data(), buffer->plane_stride[1],
+                                            buffer->width, buffer->height);
+            } else if (buffer->video && buffer->layout == video::DecodedLayout::Yuv420p) {
+                buffer->texture.upload_yuv420p(
+                    buffer->plane[0].data(), buffer->plane_stride[0], buffer->plane[1].data(),
+                    buffer->plane_stride[1], buffer->plane[2].data(), buffer->plane_stride[2],
+                    buffer->width, buffer->height);
+            } else if (buffer->video) {
                 buffer->texture.upload_xrgb8888(buffer->pixels.data(), buffer->width,
                                                 buffer->height, buffer->width);
             } else {
@@ -1151,6 +1220,12 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
         // a broken session rather than one bad frame.
         video::DecoderConfig config;
         std::string error;
+        // Frames come back as planes wherever the decoder produces them: the
+        // conversion to colour then happens in the fragment shader, which is
+        // a few multiplies per fragment instead of a pass over every pixel on
+        // the CPU. On a Switch at 1280x720 that pass was most of the 22ms a
+        // frame that kept it from ever reaching 60. See DecodedLayout.
+        decoder.set_planar_output_wanted(true);
         if (!decoder.open(config, &error)) {
             fail("the host sent video this device cannot decode: " + error);
             return false;
@@ -1192,7 +1267,12 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     // see the run counted above, which only means anything unbroken.
     ((frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_) = 0;
     target.video = true;
+    target.layout = decoded.layout;
     target.pixels = std::move(decoded.pixels);
+    for (int index = 0; index < 3; ++index) {
+        target.plane[index] = std::move(decoded.plane[index]);
+        target.plane_stride[index] = decoded.stride[index];
+    }
     target.width = decoded.width;
     target.height = decoded.height;
     // Whatever the tile codec left here is not this picture, and keeping it
