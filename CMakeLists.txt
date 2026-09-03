@@ -101,6 +101,7 @@ add_library(dualscreen_core STATIC
     src/input/controller_mapping.cpp
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp
+    src/input/dsu_client.cpp
     src/input/input_manager.cpp
     src/input/motion.cpp
     src/input/retro_keymap.cpp

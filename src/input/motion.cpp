@@ -164,6 +164,12 @@ void MotionReader::close_sensors() {
         SDL_SensorClose(device_accel_);
         device_accel_ = nullptr;
     }
+    // And stop asking the network, so a session that turns motion off stops
+    // sending its keepalive rather than subscribing forever. Cleared too, so
+    // that turning it back on looks for a server again -- one may have been
+    // started in between.
+    dsu_.stop();
+    tried_dsu_ = false;
 }
 
 bool MotionReader::read_controller_sensors() {
@@ -271,23 +277,56 @@ bool MotionReader::read_console_sensors() {
 #endif
 }
 
+bool MotionReader::read_dsu_sensors() {
+    // Only reached when nothing on this device itself answered, and only
+    // started on the first time that happens -- a machine with working
+    // sensors of its own never opens this socket.
+    if (!tried_dsu_) {
+        tried_dsu_ = true;
+        std::string error;
+        if (!dsu_.start(&error)) {
+            log_info("motion: not asking a DSU server for it (" + error + ")");
+        } else {
+            log_debug("motion: no sensors on this device, so also asking " +
+                      DsuClient::configured_server() + " over DSU");
+        }
+    }
+    if (!dsu_.started()) {
+        return false;
+    }
+    dsu_.poll();
+    if (!dsu_.connected()) {
+        return false;
+    }
+    state_ = dsu_.state();
+    return true;
+}
+
 void MotionReader::poll() {
     if (!enabled_) {
         return;
     }
+    // Whether anything was being read before this poll, which is the only way
+    // to tell a first reading from the next one -- a source that fills state_
+    // wholesale has already set present by the time it returns.
+    const bool was_reading = state_.present;
     // In the order a device is most likely to have them, and stopping at the
     // first that answers: a pad in the player's hands beats the machine's own
     // sensors, which beat the console's built-in ones.
-    const bool got = read_controller_sensors() || read_device_sensors() || read_console_sensors();
-    if (!got) {
+    if (read_controller_sensors() || read_device_sensors() || read_console_sensors()) {
+        // Stamped here rather than at the sensor, because none of the three
+        // says when it took the reading -- so the moment it was asked for is
+        // the closest thing available.
+        state_.sampled_us = now_micros();
+    } else if (!read_dsu_sensors()) {
+        // Nothing anywhere. Not an error: plenty of devices have no sensors.
         state_.present = false;
         return;
     }
-    if (!state_.present) {
+    if (!was_reading) {
         log_info("motion: this device is reporting how it is being held");
     }
     state_.present = true;
-    state_.sampled_us = now_micros();
 }
 
 }  // namespace ds

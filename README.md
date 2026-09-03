@@ -210,6 +210,17 @@ means Steam Input**, which re-presents the Deck's own pad as a virtual
 controller with no sensors on it. Launching from desktop mode, or turning Steam
 Input off for this app, gives SDL the real pad and its gyro with it.
 
+If neither is convenient — and inside Game Mode neither really is — install
+[SteamDeckGyroDSU](https://github.com/kmicki/SteamDeckGyroDSU). It reads the
+Deck's real sensors and republishes them over DSU (cemuhook), the small UDP
+protocol emulators already speak for exactly this problem. Nothing needs
+configuring here: when no sensor on the device itself answers, this looks for a
+DSU server on `127.0.0.1:26760` and uses it if one is there, logging `motion:
+reading it from a DSU server at ...` when it finds one. Set
+`DUALSCREEN_DSU_SERVER` to point somewhere else (`host`, `host:port`, or `off`
+to skip looking) — which is also how to use a phone or anything else that
+serves DSU as the motion source.
+
 ## Playing across two devices
 
 Start the game on whichever device you want to run it — a gaming PC, or the

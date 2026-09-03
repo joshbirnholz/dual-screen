@@ -6,6 +6,7 @@
 #include <SDL.h>
 
 #include "input/ds_input.hpp"
+#include "input/dsu_client.hpp"
 
 namespace ds {
 
@@ -25,6 +26,12 @@ namespace ds {
 //
 //   The console's own six-axis unit. A Switch's is behind libnx rather than
 //   anything SDL offers, and reaching it directly is the only way to get it.
+//
+// And one more that is not the device's own sensors at all: a DSU server, for
+// the machine that has sensors none of the three above can reach. That is a
+// Steam Deck under Steam Input, which hides the real pad behind a virtual one
+// with no motion on it -- see DsuClient. Tried last, because it is the only
+// one that depends on the player having installed something.
 //
 // All three are read into the one shape and the one convention -- SDL's, see
 // DsMotionState -- so that everything downstream, on this device and on the
@@ -76,6 +83,11 @@ private:
     bool read_controller_sensors();
     bool read_device_sensors();
     bool read_console_sensors();
+    // Unlike the three above, this one carries its own timestamp: the server
+    // knows when the sample was taken and this app only knows when it drained
+    // the socket, which on a device sampling far quicker than a frame is not
+    // the same instant.
+    bool read_dsu_sensors();
 
     bool enabled_ = false;
     DsMotionState state_;
@@ -86,6 +98,11 @@ private:
     // see the class comment.
     SDL_Sensor* device_gyro_ = nullptr;
     SDL_Sensor* device_accel_ = nullptr;
+    // Opened lazily, and only once nothing on the device itself has answered
+    // -- so a machine whose own sensors work never speaks to the network at
+    // all.
+    DsuClient dsu_;
+    bool tried_dsu_ = false;
 };
 
 }  // namespace ds

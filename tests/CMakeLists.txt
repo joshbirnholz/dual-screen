@@ -66,6 +66,7 @@ dualscreen_add_test(test_launcher)
 dualscreen_add_test(test_image)
 dualscreen_add_test(test_protocol)
 dualscreen_add_test(test_audio)
+dualscreen_add_test(test_dsu)
 dualscreen_add_test(test_net)
 dualscreen_add_test(test_session)
 # Discovery, session and media all live on fixed ports (kDiscoveryPort and the

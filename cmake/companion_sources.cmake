@@ -20,6 +20,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/input/controller_mapping.cpp
     src/input/cursor_visibility.cpp
     src/input/ds_input.cpp
+    src/input/dsu_client.cpp
     src/input/input_manager.cpp
     src/input/motion.cpp
     src/layout/layout.cpp
