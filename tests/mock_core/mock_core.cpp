@@ -307,6 +307,13 @@ unsigned g_frame_counter = 0;
 bool g_layout_option_honoured = false;
 int16_t g_reported_circle_x = 0;
 int16_t g_reported_circle_y = 0;
+// The sensor interface, once the frontend has handed it over, and the last
+// readings reported -- so a message goes out when they change rather than
+// sixty times a second.
+bool g_asked_for_sensors = false;
+struct retro_sensor_interface g_sensors = {};
+float g_reported_gyro_x = 0.0f;
+float g_reported_accel_y = 0.0f;
 int16_t g_reported_c_stick_x = 0;
 int16_t g_reported_c_stick_y = 0;
 
@@ -729,6 +736,36 @@ RETRO_API void retro_run(void) {
             std::snprintf(text, sizeof(text), "circle %d,%d", circle_x, circle_y);
             struct retro_message message = {text, 60};
             g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+        }
+        // And the sensors, which a 3DS has and a DS does not. Asked for once,
+        // the way a real core does it, then read every frame and reported --
+        // so a test can see whether a companion's gyroscope actually reaches
+        // the core rather than only reaching the frontend.
+        if (!g_asked_for_sensors) {
+            g_asked_for_sensors = true;
+            struct retro_sensor_interface sensors = {};
+            if (g_environment(RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE, &sensors) &&
+                sensors.set_sensor_state != nullptr && sensors.get_sensor_input != nullptr) {
+                g_sensors = sensors;
+                g_sensors.set_sensor_state(0, RETRO_SENSOR_ACCELEROMETER_ENABLE, 60);
+                g_sensors.set_sensor_state(0, RETRO_SENSOR_GYROSCOPE_ENABLE, 60);
+            }
+        }
+        if (g_sensors.get_sensor_input != nullptr) {
+            const float gyro_x = g_sensors.get_sensor_input(0, RETRO_SENSOR_GYROSCOPE_X);
+            const float accel_y = g_sensors.get_sensor_input(0, RETRO_SENSOR_ACCELEROMETER_Y);
+            if (gyro_x != g_reported_gyro_x || accel_y != g_reported_accel_y) {
+                g_reported_gyro_x = gyro_x;
+                g_reported_accel_y = accel_y;
+                static char text[96];
+                // Thousandths, so the comparison in the test is over integers
+                // rather than over whatever the last bit of a float does.
+                std::snprintf(text, sizeof(text), "motion gyro_x=%d accel_y=%d",
+                              (int)(gyro_x * 1000.0f + (gyro_x < 0 ? -0.5f : 0.5f)),
+                              (int)(accel_y * 1000.0f + (accel_y < 0 ? -0.5f : 0.5f)));
+                struct retro_message message = {text, 60};
+                g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+            }
         }
         // Same idea, for the right stick -- a Circle Pad Pro or New 3DS's
         // C-Stick.

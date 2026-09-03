@@ -23,6 +23,13 @@ inline constexpr int kAudioTargetQueueMs = 60;
 // consuming, a session that was suspended -- and no gentle correction is going
 // to walk back a backlog that size in any reasonable time. Started clean
 // instead. Well clear of the target so ordinary drift never reaches it.
+//
+// A ceiling rather than a multiple of the target, which is the mistake the
+// first version of the device-buffer floor made: four times a 170ms target put
+// this at 682ms, so a queue that was running away had most of a second to run
+// away into before anything stopped it. Whatever the target ends up being,
+// what matters here is how far behind is too far to be worth keeping, and that
+// is a duration.
 inline constexpr int kAudioPanicQueueMs = 400;
 
 // The most the playback rate is ever bent to correct drift, as a fraction. 1%

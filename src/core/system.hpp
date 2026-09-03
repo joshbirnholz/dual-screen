@@ -100,12 +100,16 @@ struct SystemProfile {
     // toggle there, so the menu's own prompt for it would be advertising a
     // control that silently does nothing.
     bool offers_smoothing = true;
-    // Whether the console being played reads how the pad is being held. True
-    // for a Wii U, whose GamePad has a gyroscope and accelerometer that a lot
-    // of its games steer, aim or look around with -- Splatoon, Wind Waker HD's
-    // telescope, ZombiU, Mario Kart 8. False for a DS and a 3DS: a DS has no
-    // sensors at all, and while a 3DS does, nothing on this side of a libretro
-    // core is wired to hand them over yet.
+    // Whether the console being played reads how the pad is being held.
+    //
+    // True for a Wii U, whose GamePad has a gyroscope and accelerometer that a
+    // lot of its games steer, aim or look around with -- Splatoon, Wind Waker
+    // HD's telescope, ZombiU, Mario Kart 8 -- and true for a 3DS, which has
+    // both and games that use them, reached through libretro's own sensor
+    // interface (RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE in libretro_core.cpp).
+    //
+    // False for a DS, which has no sensors at all and no game that looks for
+    // any.
     //
     // What this decides is whether a companion is asked to turn its sensors on
     // at all (SessionStateMessage::motion_wanted). A gyro left running costs

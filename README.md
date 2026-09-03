@@ -228,8 +228,17 @@ each was taken. Nothing here turns that into an orientation, because Cemu
 already does, with sensor fusion tuned to what a real GamePad reports. Sending
 it a second opinion about which way is up would be worse than sending it none.
 
-Only on a console that reads it. A DS or 3DS session never switches a sensor on
-at all, which on a handheld is a gyroscope not running for an hour for nothing.
+A 3DS reads it too, through libretro's own sensor interface
+(`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE`), which is how Citra gets at the
+gyroscope and accelerometer its games use — Zelda's first-person aiming, Steel
+Diver, Kid Icarus. Whichever device holds the bottom screen is the one being
+tilted, exactly as for a Wii U, and the same three sources feed it: a pad's own
+sensors, the machine's, or a DSU server. libretro asks for acceleration in g
+and rotation in radians a second, and its axes already agree with SDL's, so
+only the unit is converted on the way in.
+
+Only on a console that reads it. A DS session never switches a sensor on at
+all, which on a handheld is a gyroscope not running for an hour for nothing.
 
 Cemu reads it through the same **DualScreen Companion** controller as everything
 else (see above), with motion switched on for it by default.

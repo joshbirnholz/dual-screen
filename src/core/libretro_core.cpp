@@ -24,6 +24,19 @@ namespace {
 // parameter, so the active core instance has to be reachable statically.
 LibretroCore* g_active_core = nullptr;
 
+// libretro hands these two straight to the core, so they have to carry
+// libretro's own types -- which is why they are here rather than on the class:
+// libretro_core.hpp deliberately does not include libretro.h.
+bool set_sensor_state_thunk(unsigned port, enum retro_sensor_action action, unsigned rate) {
+    if (g_active_core == nullptr) return false;
+    return g_active_core->on_set_sensor_state(port, static_cast<unsigned>(action), rate);
+}
+
+float sensor_input_thunk(unsigned port, unsigned id) {
+    if (g_active_core == nullptr) return 0.0f;
+    return g_active_core->on_sensor_input(port, id);
+}
+
 // Handed to a GPU-rendering core so it knows where to draw. libretro calls
 // these with its own calling convention, so they are free functions here
 // rather than members.
@@ -897,6 +910,21 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             keyboard_callback_ = callback != nullptr ? callback->callback : nullptr;
             return true;
         }
+        case RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE: {
+            // How a 3DS core is handed the gyroscope and accelerometer of
+            // whatever device is actually being tilted -- which for a session
+            // played across two devices is the companion holding the bottom
+            // screen, not the machine running the core. See
+            // DsInputState::motion, and app.cpp where a companion's reading
+            // wins over the host's own.
+            auto* sensors = static_cast<struct retro_sensor_interface*>(data);
+            if (sensors == nullptr) {
+                return false;
+            }
+            sensors->set_sensor_state = &set_sensor_state_thunk;
+            sensors->get_sensor_input = &sensor_input_thunk;
+            return true;
+        }
         case RETRO_ENVIRONMENT_SET_MESSAGE: {
             const auto* message = static_cast<const struct retro_message*>(data);
             if (message != nullptr && message->msg != nullptr) {
@@ -1088,6 +1116,55 @@ int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned in
     }
 
     return 0;
+}
+
+bool LibretroCore::on_set_sensor_state(unsigned port, unsigned action, unsigned rate) {
+    // One pad, one set of sensors: there is nothing on any other port to turn
+    // on. `rate` is a hint about how often the core would like to sample, and
+    // there is nothing here that can honour it -- readings arrive when a frame
+    // of input does -- so it is accepted and ignored rather than refused.
+    (void)rate;
+    if (port != 0) {
+        return false;
+    }
+    switch (action) {
+        case RETRO_SENSOR_ACCELEROMETER_ENABLE: wants_accelerometer_ = true; return true;
+        case RETRO_SENSOR_ACCELEROMETER_DISABLE: wants_accelerometer_ = false; return true;
+        case RETRO_SENSOR_GYROSCOPE_ENABLE: wants_gyroscope_ = true; return true;
+        case RETRO_SENSOR_GYROSCOPE_DISABLE: wants_gyroscope_ = false; return true;
+        default:
+            // Illuminance, and anything added later. Refused rather than
+            // silently accepted, so a core can tell it will get nothing.
+            return false;
+    }
+}
+
+float LibretroCore::on_sensor_input(unsigned port, unsigned id) const {
+    if (port != 0 || input_state_ == nullptr || !input_state_->motion.present) {
+        return 0.0f;
+    }
+    const DsMotionState& motion = input_state_->motion;
+    // The two conventions already agree, which is worth stating because it
+    // looks too convenient to be true: libretro puts +x to the right, +y up
+    // and +z out of the screen towards the player, with positive rotation
+    // counter-clockwise, and so does SDL -- which is what DsMotionState
+    // carries (see its comment). A device lying flat and face up reads +1g on
+    // z under both. So the axes pass straight through and only the
+    // acceleration's unit changes: libretro asks for g, this carries metres
+    // per second squared.
+    constexpr float kGravity = 9.80665f;
+    switch (id) {
+        case RETRO_SENSOR_ACCELEROMETER_X:
+            return wants_accelerometer_ ? motion.accel_x / kGravity : 0.0f;
+        case RETRO_SENSOR_ACCELEROMETER_Y:
+            return wants_accelerometer_ ? motion.accel_y / kGravity : 0.0f;
+        case RETRO_SENSOR_ACCELEROMETER_Z:
+            return wants_accelerometer_ ? motion.accel_z / kGravity : 0.0f;
+        case RETRO_SENSOR_GYROSCOPE_X: return wants_gyroscope_ ? motion.gyro_x : 0.0f;
+        case RETRO_SENSOR_GYROSCOPE_Y: return wants_gyroscope_ ? motion.gyro_y : 0.0f;
+        case RETRO_SENSOR_GYROSCOPE_Z: return wants_gyroscope_ ? motion.gyro_z : 0.0f;
+        default: return 0.0f;
+    }
 }
 
 // --- static thunks ----------------------------------------------------------

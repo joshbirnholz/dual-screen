@@ -156,9 +156,13 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
                  " rather than " + std::to_string(target_frames_));
         target_frames_ = floor_frames;
     }
-    // Keep the panic level clear of the target for the same reason it was set
-    // clear of it originally: ordinary drift must never reach it.
-    panic_frames_ = std::max(panic_frames_, target_frames_ * 4);
+    // Still clear of the target, since ordinary drift must never reach it --
+    // but by a margin rather than a multiple, so a large target cannot push
+    // this out to most of a second of backlog. See kAudioPanicQueueMs.
+    constexpr int kPanicMarginMs = 200;
+    const std::size_t margin_frames =
+        static_cast<std::size_t>(spec_.freq) * kPanicMarginMs / 1000;
+    panic_frames_ = std::max(panic_frames_, target_frames_ + margin_frames);
     rate_ratio_ = 1.0;
     resampler_.reset();
     primed_ = false;
@@ -223,7 +227,13 @@ void AudioOutput::report(uint64_t now_ms) {
               std::to_string(to_ms(target_frames_)) + "ms target, " + std::to_string(stats_empty_) +
               " empty, " + std::to_string(stats_panics_) + " cut short, playing at " +
               std::to_string(static_cast<int>((rate_ratio_ - 1.0) * 10000.0)) + " parts per "
-              "ten thousand off");
+              "ten thousand off" +
+              // Saturated means the queue is not being corrected so much as
+              // merely resisted, and it will drift until something flushes
+              // it. Worth saying outright: it is the difference between a
+              // correction working and one that cannot.
+              (std::abs(rate_ratio_ - 1.0) >= kAudioMaxRateAdjust * 0.98 ? " (at the limit)"
+                                                                         : ""));
     stats_queue_total_ = 0;
     stats_queue_worst_ = 0;
     stats_pushes_ = 0;

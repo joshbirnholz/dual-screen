@@ -88,6 +88,13 @@ SystemProfile make_three_ds() {
     // upper screen alone, and everything past it costs frames to no visible
     // end on the hardware this runs on.
     profile.max_render_scale = 3;
+    // A 3DS has a gyroscope and an accelerometer, and games use them: Zelda's
+    // first-person aiming, Steel Diver, Face Raiders, Kid Icarus. libretro has
+    // a sensor interface for exactly this and the frontend side of it is
+    // implemented here -- see RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE in
+    // libretro_core.cpp -- so a companion's readings reach the core the same
+    // way a Wii U's reach Cemu.
+    profile.uses_motion = true;
     return profile;
 }
 

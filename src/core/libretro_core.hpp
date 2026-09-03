@@ -220,6 +220,11 @@ public:
     // For the thunks in the .cpp, which cannot be members without dragging
     // libretro's calling convention into this header.
     GLuint hw_framebuffer_name() const { return hw_render_.framebuffer(); }
+    // The sensor interface, for the same reason: libretro's own enum is in its
+    // signature. `action` is a RETRO_SENSOR_* value and `id` a sensor id, kept
+    // as plain unsigned here the way the keyboard modifiers above are.
+    bool on_set_sensor_state(unsigned port, unsigned action, unsigned rate);
+    float on_sensor_input(unsigned port, unsigned id) const;
 
 private:
     bool hw_context_reset_done_ = false;
@@ -240,6 +245,12 @@ private:
 
     AudioCallback audio_callback_;
     const DsInputState* input_state_ = nullptr;
+    // Whether the core has asked for either sensor. A core that never asks
+    // gets nothing, and one that asks and then stops should stop being given
+    // readings rather than quietly keep receiving them -- which on a handheld
+    // companion is a gyroscope left running for a game that gave up on it.
+    bool wants_accelerometer_ = false;
+    bool wants_gyroscope_ = false;
     PointerSource pointer_source_;
     // The core's own keyboard-event handler, if it registered one -- same
     // signature as libretro's retro_keyboard_event_t, spelled out locally so
