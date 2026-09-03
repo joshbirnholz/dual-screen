@@ -120,8 +120,13 @@ require "$WORK_DIR/host.log" "a game connected" \
     "nothing ever connected over the frame link"
 require "$WORK_DIR/host.log" "connected as the bottom screen" \
     "the host never accepted a companion, so nothing crossed the network"
-require "$WORK_DIR/host.log" "a companion wants the bottom screen; asking Cemu for it" \
+require "$WORK_DIR/host.log" "a companion wants the bottom screen at up to .*; asking Cemu for it" \
     "the host never asked the far end for the screen the companion wanted"
+# And asked for it at a real size, not "whatever you have": that is what stops
+# a high-resolution graphics pack being read out of video memory whole and
+# scaled down here -- see ds::fit_within().
+require "$WORK_DIR/host.log" "at up to [1-9][0-9]*x[1-9][0-9]*; asking Cemu for it" \
+    "the host asked for the screen but never told the far end how big it is worth making"
 require "$WORK_DIR/companion.log" "following the host: Wii U" \
     "the companion did not learn which console it had joined"
 require "$WORK_DIR/host.log" "video encoder: " \

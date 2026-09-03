@@ -335,6 +335,10 @@ struct App::Impl {
     // when what is wanted actually changes, the same as send_input() dedupes
     // on its own side of the same link.
     std::optional<ScreenId> external_requested_screen;
+    // The size cap last asked for alongside it, tracked for the same reason
+    // and on the same terms: zero means no cap was asked for.
+    int external_requested_width = 0;
+    int external_requested_height = 0;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -2464,12 +2468,31 @@ int App::run(const AppOptions& options) {
                 // is resent regardless of whether the value itself changed.
                 const bool freshly_connected =
                     external_now_running && !impl.external_link_was_running;
-                if (freshly_connected || wanted != impl.external_requested_screen) {
-                    impl.external_source->request_screen(wanted);
+                // The size that screen is any use at: the companion's own
+                // display. Cemu may be rendering far above it -- a 4K
+                // graphics pack against a 1280x800 handheld is sixteen times
+                // the pixels -- and every one of those pixels would otherwise
+                // be copied through shared memory and scaled down on a CPU
+                // here, per frame, only to be thrown away. Cemu already has
+                // the frame on a GPU and can reduce it for nothing. Zero
+                // until the companion has said (or when none is connected),
+                // which asks for whatever size Cemu has, exactly as before.
+                int wanted_width = 0;
+                int wanted_height = 0;
+                if (host_now_has_companion) {
+                    impl.host_session->companion_display_size(wanted_width, wanted_height);
+                }
+                if (freshly_connected || wanted != impl.external_requested_screen ||
+                    wanted_width != impl.external_requested_width ||
+                    wanted_height != impl.external_requested_height) {
+                    impl.external_source->request_screen(wanted, wanted_width, wanted_height);
                     impl.external_requested_screen = wanted;
+                    impl.external_requested_width = wanted_width;
+                    impl.external_requested_height = wanted_height;
                     log_info(wanted.has_value()
                                  ? "a companion wants the " + std::string(to_string(*wanted)) +
-                                       " screen; asking Cemu for it"
+                                       " screen at up to " + std::to_string(wanted_width) + "x" +
+                                       std::to_string(wanted_height) + "; asking Cemu for it"
                                  : std::string("no companion connected; not asking Cemu for a "
                                                 "screen"));
                 }

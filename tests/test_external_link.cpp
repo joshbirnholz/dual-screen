@@ -487,6 +487,84 @@ void test_a_screen_too_big_to_carry_is_refused() {
 
 }  // namespace
 
+// A producer rendering far above what the far end can show should reduce the
+// picture itself rather than hand over pixels nobody will ever see. That only
+// works if it is told the size, and if both ends agree on what "fits inside"
+// means down to the pixel -- otherwise the consumer scales again on a CPU for
+// the sake of a couple of rows.
+void test_a_game_is_told_how_big_the_screen_is_worth_making() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    std::string error;
+    bool reset = false;
+
+    link.request_screen(ScreenId::Bottom, 1280, 800);
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (producer.requested_max_width() == 0 &&
+           std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.requested_screen().has_value() &&
+                  *producer.requested_screen() == ScreenId::Bottom,
+              "the screen itself stopped crossing once a size was sent with it");
+    CHECK_MSG(producer.requested_max_width() == 1280 && producer.requested_max_height() == 800,
+              "the game was never told how big the picture is actually worth making");
+
+    // The arithmetic both ends have to agree on, at the sizes this exists
+    // for: a 4K graphics pack feeding a handheld.
+    int width = 0;
+    int height = 0;
+    fit_within(3840, 2160, 1280, 800, width, height);
+    CHECK_MSG(width == 1280 && height == 720,
+              "fitting 4K inside a 1280x800 display did not land on 720p");
+    // Never upwards: a display bigger than the picture is not a reason to
+    // invent detail that was never rendered.
+    fit_within(854, 480, 1280, 800, width, height);
+    CHECK_MSG(width == 854 && height == 480, "a small picture was stretched to fill a display");
+    // And no cap at all leaves it alone.
+    fit_within(3840, 2160, 0, 0, width, height);
+    CHECK_MSG(width == 3840 && height == 2160, "an uncapped request still shrank the picture");
+}
+
+// Asking for the same thing twice costs nothing -- this is sent from a poll
+// loop that runs every frame, and a socket write per frame for a value that
+// has not changed is exactly what send_input() already avoids.
+void test_asking_for_the_same_screen_twice_says_nothing_the_second_time() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    std::string error;
+    bool reset = false;
+    link.request_screen(ScreenId::Top, 1280, 800);
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (producer.requested_max_width() == 0 &&
+           std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(producer.requested_max_width() == 1280);
+
+    // Thousands of repeats of the unchanged request, which would fill and
+    // then block on the socket if any of them were actually written.
+    for (int repeat = 0; repeat < 5000; ++repeat) {
+        link.request_screen(ScreenId::Top, 1280, 800);
+    }
+    // A changed one still gets through, so the dedupe is not simply stuck.
+    link.request_screen(ScreenId::Top, 640, 400);
+    const auto changed_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (producer.requested_max_width() != 640 &&
+           std::chrono::steady_clock::now() < changed_by) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.requested_max_width() == 640 && producer.requested_max_height() == 400,
+              "a changed request never reached the game");
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -497,5 +575,7 @@ int main() {
     test_rumble_crosses_only_on_the_edges();
     test_the_game_closing_ends_the_session();
     test_a_screen_too_big_to_carry_is_refused();
+    test_a_game_is_told_how_big_the_screen_is_worth_making();
+    test_asking_for_the_same_screen_twice_says_nothing_the_second_time();
     return test::finish("external-link");
 }
