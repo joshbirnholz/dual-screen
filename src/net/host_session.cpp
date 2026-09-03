@@ -1354,7 +1354,16 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // ever bit the games that produce faster than the link carries.
     // frame_sent_at_ holds one entry per frame sent and is pruned on every
     // ack, so its size is the count this was always meant to be about.
-    if (acked_serial_ != 0 && frame_sent_at_.size() >= kMaxQueuedFrames) {
+    // Not "only once an ack has arrived", which is what this used to say. A
+    // companion slow enough to take a second to produce its first ack was
+    // handed everything sent in that second: measured on a Switch at 51, 110,
+    // 170, 230 and then 240 frames outstanding before the first ack landed,
+    // whereupon the round trip read 1063ms and the picture was four seconds
+    // behind the game. The window is the window from the first frame; the
+    // stall recovery below is what stops a companion that never acks at all
+    // from being starved, and it does that job without this having to leave
+    // the gate open indefinitely to begin with.
+    if (frame_sent_at_.size() >= kMaxQueuedFrames) {
         // Still worth waiting for, unless the oldest of these has been
         // outstanding long enough that the ack which would release it is
         // never coming -- see kAckStallMs's own comment for why that is a

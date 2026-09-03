@@ -44,6 +44,30 @@ inline constexpr uint64_t kKeyframeRequestIntervalMs = 120;
 // storm that cannot recover into a handful of attempts that can.
 inline constexpr uint64_t kMaxKeyframeRequestIntervalMs = 1000;
 
+// How long a stretch to judge "can this device keep up?" over, and the two
+// thresholds it is judged against -- as milliseconds spent decoding per second
+// of wall clock.
+//
+// Turning arriving frames into drawn ones is the whole cost, not just the
+// decode call: on hardware that decodes into GPU memory it is a copy back, a
+// YUV-to-RGB conversion on the CPU and a texture upload, all of them
+// proportional to the pixel count. Above kBusyDecodeMsPerSecond that work is
+// crowding out drawing itself, which is what turns a 60fps stream into a
+// stuttering, half-second-late one. Below kEasyDecodeMsPerSecond there is
+// room to ask for the full picture again.
+//
+// The gap between the two is deliberately wide: a device sitting near one
+// threshold must not spend the session stepping up and down across it, since
+// every step is a resolution change and a fresh keyframe.
+inline constexpr uint64_t kAdaptWindowMs = 2000;
+inline constexpr uint64_t kBusyDecodeMsPerSecond = 550;
+inline constexpr uint64_t kEasyDecodeMsPerSecond = 250;
+// How far down it may go, and in what steps. A quarter of the pixels (half in
+// each direction) is as far as this will take a picture: below that the
+// argument for streaming at all starts to go with it.
+inline constexpr double kMinDisplayScale = 0.5;
+inline constexpr double kDisplayScaleStep = 0.8;
+
 // How many decodes in a row for one screen may fail before the session is
 // given up on. A hole in the stream is recovered from by asking for a picture
 // that stands on its own, so a handful of failures in a row is an ordinary
@@ -181,6 +205,16 @@ public:
     }
     // Whether that screen is still waiting on a picture that stands on its
     // own. Goes back to false when one actually arrives.
+    // Stands in for a device slow enough that turning frames into pictures
+    // costs it more than it has -- which a loopback test with a fast decoder
+    // cannot produce for real. Everything downstream of the measurement (the
+    // decision, the step, the request that goes out) is the real path.
+    void spend_this_long_decoding_for_test(uint64_t milliseconds) {
+        adapt_decode_ms_ += milliseconds;
+    }
+    // The fraction of its display size this device is currently asking for.
+    double display_scale_for_test() const { return display_scale_; }
+
     bool waiting_for_keyframe_for_test(ScreenId screen) const {
         return (screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
     }
@@ -463,6 +497,46 @@ private:
     unsigned stats_waits_ = 0;
     uint64_t stats_decode_total_ms_ = 0;
     unsigned stats_decodes_ = 0;
+
+    // --- keeping up ---------------------------------------------------------
+    //
+    // What the client asked for -- its panel -- kept separately from what is
+    // actually asked of the host, because on a slow device those are not the
+    // same thing.
+    //
+    // Turning an arriving frame into something drawable is not just the
+    // decode: on a device whose decoder hands frames back in the GPU's own
+    // memory, they have to be copied back out, converted from YUV to RGB on
+    // the CPU, and uploaded as a texture. All three cost time proportional to
+    // the pixel count, and none of them is what the hardware decoder is good
+    // at. Measured on a Switch at 1280x720: 30ms per frame, against a 16ms
+    // frame period -- so it decoded 23 frames a second, drew 11, and held
+    // every one of them 200ms while it caught up.
+    //
+    // Fewer pixels is the lever that actually moves that, and this end is the
+    // only one that can know it is needed. Asking the host for a smaller
+    // picture costs nothing on the wire and nothing on the host, which was
+    // already scaling to whatever size it was told.
+    int wanted_display_width_ = 0;
+    int wanted_display_height_ = 0;
+    // A fraction of the above, in each direction. 1.0 until this device shows
+    // it cannot keep up.
+    double display_scale_ = 1.0;
+    // Decode time accumulated since the last time that decision was made, and
+    // when that was.
+    uint64_t adapt_decode_ms_ = 0;
+    uint64_t adapt_at_ms_ = 0;
+    // Consecutive windows with room to spare, so stepping back up needs a
+    // sustained case rather than one quiet moment.
+    unsigned adapt_easy_windows_ = 0;
+
+    // Looks at what decoding has been costing and, if this device cannot keep
+    // up with it, asks the host for fewer pixels -- or for more again once it
+    // comfortably can. Called from poll().
+    void adapt_to_what_this_device_can_decode(uint64_t now_ms);
+    // Sends whatever wanted_display_width_/height_ and display_scale_
+    // currently come to.
+    void send_display_size();
 
     // The other half of the host's once-a-second summary: what actually
     // arrived here. The two together say whether frames are being lost on the

@@ -2064,6 +2064,78 @@ void test_a_console_that_ignores_motion_never_asks_for_it() {
               "motion was sent to a host that never asked for it");
 }
 
+// A device that cannot turn arriving frames into drawn ones fast enough asks
+// for fewer pixels rather than falling further and further behind. Measured on
+// a Switch: 30ms per frame against a 16ms frame period, so it decoded 23
+// frames a second, drew 11, and held every one of them 200ms.
+void test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+
+    companion.request_display_size(1280, 720);
+    int width = 0;
+    int height = 0;
+    CHECK_MSG(spin(host, companion,
+                   [&] { return host.companion_display_size(width, height); }),
+              "the companion's display size never reached the host");
+    CHECK_EQ(width, 1280);
+    CHECK_EQ(height, 720);
+    CHECK(companion.display_scale_for_test() == 1.0);
+
+    // Two windows' worth of a device spending almost all of every second on
+    // this, which is the case the whole thing exists for.
+    const double before = companion.display_scale_for_test();
+    CHECK_MSG(spin(host, companion,
+                   [&] {
+                       companion.spend_this_long_decoding_for_test(20);
+                       return companion.display_scale_for_test() < before;
+                   },
+                   8000),
+              "a device spending its whole budget on decoding never asked for less");
+    CHECK_MSG(spin(host, companion,
+                   [&] {
+                       host.companion_display_size(width, height);
+                       return width < 1280;
+                   },
+                   4000),
+              "the smaller size it settled on never reached the host");
+    // Still the same shape, so the picture is not stretched on the way down.
+    CHECK_MSG(std::abs(static_cast<double>(width) / height - 1280.0 / 720.0) < 0.02,
+              "asking for less changed the shape of the picture, not just its size");
+    // And never below the floor, however hopeless it looks.
+    spin(host, companion,
+         [&] {
+             companion.spend_this_long_decoding_for_test(20);
+             return false;
+         },
+         12000);
+    CHECK_MSG(companion.display_scale_for_test() >= 0.5,
+              "a device that cannot keep up at any size shrank the picture away to nothing");
+}
+
 }  // namespace
 
 int main() {
@@ -2094,6 +2166,7 @@ int main() {
     test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting();
     test_a_console_that_reads_motion_asks_for_it_and_gets_it();
     test_a_console_that_ignores_motion_never_asks_for_it();
+    test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

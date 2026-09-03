@@ -57,6 +57,12 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     keyframe_asked_at_bottom_ = 0;
     keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
     keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
+    // Whatever this device settled on for the last host is not a judgement
+    // about the next one, which may be sending a quite different picture.
+    display_scale_ = 1.0;
+    adapt_decode_ms_ = 0;
+    adapt_at_ms_ = 0;
+    adapt_easy_windows_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -112,6 +118,12 @@ void CompanionSession::disconnect() {
     keyframe_asked_at_bottom_ = 0;
     keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
     keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
+    // Whatever this device settled on for the last host is not a judgement
+    // about the next one, which may be sending a quite different picture.
+    display_scale_ = 1.0;
+    adapt_decode_ms_ = 0;
+    adapt_at_ms_ = 0;
+    adapt_easy_windows_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -151,6 +163,12 @@ void CompanionSession::fail(const std::string& reason) {
     keyframe_asked_at_bottom_ = 0;
     keyframe_wait_top_ms_ = kKeyframeRequestIntervalMs;
     keyframe_wait_bottom_ms_ = kKeyframeRequestIntervalMs;
+    // Whatever this device settled on for the last host is not a judgement
+    // about the next one, which may be sending a quite different picture.
+    display_scale_ = 1.0;
+    adapt_decode_ms_ = 0;
+    adapt_at_ms_ = 0;
+    adapt_easy_windows_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -626,6 +644,7 @@ void CompanionSession::poll(uint64_t now_ms) {
     // polls ago reads to the host as a device two frames further behind than
     // it is, and the host throttles on exactly that number.
     ask_for_keyframes(now_ms);
+    adapt_to_what_this_device_can_decode(now_ms);
 
     if (status_ == Status::Connected && received_serial_ != acked_serial_) {
         const uint64_t newest = received_serial_;
@@ -886,6 +905,24 @@ void CompanionSession::request_quit() {
 }
 
 void CompanionSession::request_display_size(int width, int height) {
+    // Remembered rather than sent straight out, because what actually goes to
+    // the host is this scaled by whatever this device has shown it can keep up
+    // with -- see display_scale_. A caller resizing its window is still saying
+    // the same thing it always was; how much of that is worth asking for is
+    // this end's own business.
+    wanted_display_width_ = width;
+    wanted_display_height_ = height;
+    send_display_size();
+}
+
+void CompanionSession::send_display_size() {
+    if (wanted_display_width_ <= 0 || wanted_display_height_ <= 0) {
+        return;
+    }
+    // Even numbers: the host encodes 4:2:0, which cannot represent an odd
+    // dimension, and it would only round this down again itself.
+    const int width = std::max(2, static_cast<int>(wanted_display_width_ * display_scale_) & ~1);
+    const int height = std::max(2, static_cast<int>(wanted_display_height_ * display_scale_) & ~1);
     RequestMessage request;
     request.wants_display_size = true;
     // Clamped rather than rejected: a window can be zero-sized for a moment
@@ -894,6 +931,53 @@ void CompanionSession::request_display_size(int width, int height) {
     request.display_width = static_cast<uint16_t>(std::clamp(width, 1, 65535));
     request.display_height = static_cast<uint16_t>(std::clamp(height, 1, 65535));
     send_request(request);
+}
+
+void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t now_ms) {
+    if (status_ != Status::Connected || wanted_display_width_ <= 0) {
+        return;
+    }
+    if (adapt_at_ms_ == 0) {
+        adapt_at_ms_ = now_ms;
+        adapt_decode_ms_ = 0;
+        return;
+    }
+    const uint64_t elapsed = now_ms - adapt_at_ms_;
+    if (elapsed < kAdaptWindowMs) {
+        return;
+    }
+    const uint64_t per_second = adapt_decode_ms_ * 1000 / elapsed;
+    adapt_at_ms_ = now_ms;
+    adapt_decode_ms_ = 0;
+
+    if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > kMinDisplayScale) {
+        display_scale_ = std::max(kMinDisplayScale, display_scale_ * kDisplayScaleStep);
+        adapt_easy_windows_ = 0;
+        log_info("this device is spending " + std::to_string(per_second) +
+                 "ms of every second turning frames into pictures, which is more than it can "
+                 "keep up with; asking for " +
+                 std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
+                 "% of its display size instead");
+        send_display_size();
+        return;
+    }
+    if (per_second <= kEasyDecodeMsPerSecond && display_scale_ < 1.0) {
+        // Two quiet windows, not one: a moment of still picture decodes
+        // cheaply on any device, and stepping back up on that alone is how a
+        // session ends up oscillating.
+        if (++adapt_easy_windows_ < 2) {
+            return;
+        }
+        adapt_easy_windows_ = 0;
+        display_scale_ = std::min(1.0, display_scale_ / kDisplayScaleStep);
+        log_info("this device has room to spare (" + std::to_string(per_second) +
+                 "ms of every second); asking for " +
+                 std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
+                 "% of its display size");
+        send_display_size();
+        return;
+    }
+    adapt_easy_windows_ = 0;
 }
 
 void CompanionSession::set_menu_open(bool open) {
@@ -1118,7 +1202,12 @@ bool CompanionSession::decode_next_frame() {
         pending_frames_.pop_front();
     }
     const uint64_t finished_ms = monotonic_millis();
-    stats_decode_total_ms_ += finished_ms > started_ms ? finished_ms - started_ms : 0;
+    const uint64_t cost = finished_ms > started_ms ? finished_ms - started_ms : 0;
+    stats_decode_total_ms_ += cost;
+    // The same measurement, on its own clock, for the decision in
+    // adapt_to_what_this_device_can_decode() -- which must not have its
+    // numbers cleared out from under it by the once-a-second stream report.
+    adapt_decode_ms_ += cost;
     ++stats_decodes_;
     return true;
 }
