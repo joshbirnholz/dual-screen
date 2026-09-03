@@ -202,9 +202,13 @@ its per-game profiles. A pad plugged into the machine running Cemu keeps working
 alongside it, mapped to whatever you like — and if you would rather aim with
 that pad's gyro than the companion's, map that instead.
 
+Rumble follows the same rule, and only the controller assigned to the GamePad
+gets it: assign the companion and the companion buzzes; assign a pad plugged
+into the machine running Cemu and that one does instead.
+
 Adding it applies a default mapping straight through — A to A, and so on — and
-switches its motion on, so a fresh setup plays correctly with nothing further
-configured. Every part of that is yours to change afterwards.
+switches its motion and rumble on, so a fresh setup plays correctly with nothing
+further configured. Every part of that is yours to change afterwards.
 
 Touch is the exception, and is not in the mapping: the companion's touchscreen
 drives the GamePad's directly, because a point on a screen is not a control a
