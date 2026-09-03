@@ -813,6 +813,9 @@ void Client::run() {
                 // -- set_motion_enabled() with what is already set does
                 // nothing at all.
                 input_.set_motion_enabled(session_.host_wants_motion());
+                // Alongside the session's own stream report, on the same
+                // clock, so the two lines can be read together.
+                audio_.report(now);
                 // The menu is the host's too. It says whether one is up and
                 // where its cursor is; this device draws that and nothing of
                 // its own, so both screens show the same menu however it was

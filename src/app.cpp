@@ -2656,6 +2656,9 @@ int App::run(const AppOptions& options) {
             // all. Cheap to repeat: set_motion_enabled() with what is already
             // set does nothing.
             impl.input.set_motion_enabled(impl.companion_session->host_wants_motion());
+            // Alongside the session's own stream report, on the same clock, so
+            // the two lines can be read together.
+            impl.audio.report(network_now);
             // A companion follows the host on everything the two devices share
             // -- layout, smoothing, where the sound comes out. It decides none
             // of it locally, which is why they cannot drift apart. This applies

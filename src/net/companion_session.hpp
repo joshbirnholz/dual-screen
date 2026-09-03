@@ -59,7 +59,13 @@ inline constexpr uint64_t kMaxKeyframeRequestIntervalMs = 1000;
 // The gap between the two is deliberately wide: a device sitting near one
 // threshold must not spend the session stepping up and down across it, since
 // every step is a resolution change and a fresh keyframe.
-inline constexpr uint64_t kAdaptWindowMs = 2000;
+// Short, because the cost of reacting late is paid immediately and visibly: a
+// device that cannot keep up builds a backlog it then has to hold, and at
+// two-second windows a Switch spent its first six seconds at 600-1150ms behind
+// before the ladder had stepped down far enough. Stepping down one rung too
+// far is a much smaller mistake than that, and stepping back up is what the
+// slower, more careful half of this is for.
+inline constexpr uint64_t kAdaptWindowMs = 1000;
 inline constexpr uint64_t kBusyDecodeMsPerSecond = 550;
 inline constexpr uint64_t kEasyDecodeMsPerSecond = 250;
 // How far down it may go, and in what steps. A quarter of the pixels (half in
@@ -67,6 +73,10 @@ inline constexpr uint64_t kEasyDecodeMsPerSecond = 250;
 // argument for streaming at all starts to go with it.
 inline constexpr double kMinDisplayScale = 0.5;
 inline constexpr double kDisplayScaleStep = 0.8;
+// How long before a size that was too expensive is worth trying once more.
+// Long, because every attempt that fails costs two resolution changes and two
+// keyframes, and a quiet stretch is not evidence that a busy one will fit.
+inline constexpr uint64_t kRetryLargerAfterMs = 60000;
 
 // How many decodes in a row for one screen may fail before the session is
 // given up on. A hole in the stream is recovered from by asking for a picture
@@ -529,6 +539,19 @@ private:
     // Consecutive windows with room to spare, so stepping back up needs a
     // sustained case rather than one quiet moment.
     unsigned adapt_easy_windows_ = 0;
+    // The smallest scale that has actually been measured as more than this
+    // device can keep up with, and when. Stepping back up stops just below it
+    // rather than walking into it again.
+    //
+    // Without this the ladder oscillates, and it did: 51% -> 64% -> 51% ->
+    // 64% -> 51% in one session. The cost of a step up is not predictable
+    // from the cost at the smaller size -- the bitrate rises with the
+    // resolution and the scene keeps changing -- so the only reliable thing
+    // to go on is that this size was tried and did not work. After
+    // kRetryLargerAfterMs it is worth one more try, since what a device can
+    // keep up with depends on what the game is doing.
+    double too_expensive_scale_ = 2.0;
+    uint64_t too_expensive_at_ms_ = 0;
 
     // Looks at what decoding has been costing and, if this device cannot keep
     // up with it, asks the host for fewer pixels -- or for more again once it

@@ -179,6 +179,32 @@ std::size_t AudioOutput::queued_frames() const {
     return SDL_GetQueuedAudioSize(device_) / kBytesPerFrame;
 }
 
+void AudioOutput::report(uint64_t now_ms) {
+    if (stats_at_ms_ == 0) {
+        stats_at_ms_ = now_ms;
+        return;
+    }
+    if (now_ms - stats_at_ms_ < 1000 || stats_pushes_ == 0) {
+        return;
+    }
+    stats_at_ms_ = now_ms;
+    const double rate = sample_rate_ > 0.0 ? sample_rate_ : 48000.0;
+    const auto to_ms = [rate](uint64_t frames) {
+        return static_cast<uint64_t>(frames * 1000.0 / rate);
+    };
+    log_debug("audio: queue " + std::to_string(to_ms(stats_queue_total_ / stats_pushes_)) +
+              "ms avg " + std::to_string(to_ms(stats_queue_worst_)) + "ms worst against a " +
+              std::to_string(to_ms(target_frames_)) + "ms target, " + std::to_string(stats_empty_) +
+              " empty, " + std::to_string(stats_panics_) + " cut short, playing at " +
+              std::to_string(static_cast<int>((rate_ratio_ - 1.0) * 10000.0)) + " parts per "
+              "ten thousand off");
+    stats_queue_total_ = 0;
+    stats_queue_worst_ = 0;
+    stats_pushes_ = 0;
+    stats_empty_ = 0;
+    stats_panics_ = 0;
+}
+
 void AudioOutput::prime() {
     primed_ = true;
     if (target_frames_ == 0) {
@@ -199,6 +225,7 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     }
 
     if (queued_frames() > panic_frames_) {
+        ++stats_panics_;
         // Not drift -- see kAudioPanicQueueMs. Everything queued is already
         // far enough behind to be worthless, so it goes, and playback picks up
         // from here rather than working through it.
@@ -211,7 +238,22 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
         prime();
     }
 
-    rate_ratio_ = audio_drift_ratio(queued_frames(), target_frames_, rate_ratio_);
+    const std::size_t queued = queued_frames();
+    rate_ratio_ = audio_drift_ratio(queued, target_frames_, rate_ratio_);
+
+    // What the queue is actually doing, once a second. Sound going wrong is
+    // otherwise the one thing in this app with no numbers at all behind it --
+    // "it does not sound right" and a log that says nothing. These four say
+    // which of the three ways it can go wrong is happening: running dry
+    // (empty, and the rate bent up to catch back up), running late (queued far
+    // above the target, and bent down), or being cut off outright (the panic
+    // above, which is audible as a jump).
+    stats_queue_total_ += queued;
+    ++stats_pushes_;
+    stats_queue_worst_ = std::max(stats_queue_worst_, queued);
+    if (queued == 0) {
+        ++stats_empty_;
+    }
 
     scratch_.clear();
     resampler_.resample(interleaved_stereo, frames, rate_ratio_, scratch_);

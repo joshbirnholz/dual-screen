@@ -63,6 +63,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     adapt_decode_ms_ = 0;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
+    too_expensive_scale_ = 2.0;
+    too_expensive_at_ms_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -124,6 +126,8 @@ void CompanionSession::disconnect() {
     adapt_decode_ms_ = 0;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
+    too_expensive_scale_ = 2.0;
+    too_expensive_at_ms_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -169,6 +173,8 @@ void CompanionSession::fail(const std::string& reason) {
     adapt_decode_ms_ = 0;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
+    too_expensive_scale_ = 2.0;
+    too_expensive_at_ms_ = 0;
     decode_failures_top_ = 0;
     decode_failures_bottom_ = 0;
     // A host that has gone is not asking for anything, motion included -- so
@@ -951,6 +957,10 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t now_ms) {
     adapt_decode_ms_ = 0;
 
     if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > kMinDisplayScale) {
+        // Remembered before stepping down, so the way back up knows where the
+        // ceiling is -- see too_expensive_scale_.
+        too_expensive_scale_ = std::min(too_expensive_scale_, display_scale_);
+        too_expensive_at_ms_ = now_ms;
         display_scale_ = std::max(kMinDisplayScale, display_scale_ * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
         log_info("this device is spending " + std::to_string(per_second) +
@@ -962,14 +972,27 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t now_ms) {
         return;
     }
     if (per_second <= kEasyDecodeMsPerSecond && display_scale_ < 1.0) {
-        // Two quiet windows, not one: a moment of still picture decodes
+        // Several quiet windows, not one: a moment of still picture decodes
         // cheaply on any device, and stepping back up on that alone is how a
-        // session ends up oscillating.
-        if (++adapt_easy_windows_ < 2) {
+        // session ends up oscillating. Deliberately slower than the way down
+        // -- three seconds of evidence to ask for more, one to ask for less.
+        if (++adapt_easy_windows_ < 3) {
             return;
         }
+        const double larger = std::min(1.0, display_scale_ / kDisplayScaleStep);
+        // Not back into a size already shown not to work, unless enough time
+        // has passed that the game may be doing something else entirely.
+        const bool stale = too_expensive_at_ms_ != 0 &&
+                           now_ms - too_expensive_at_ms_ >= kRetryLargerAfterMs;
+        if (larger >= too_expensive_scale_ && !stale) {
+            return;
+        }
+        if (stale) {
+            too_expensive_scale_ = 2.0;
+            too_expensive_at_ms_ = 0;
+        }
         adapt_easy_windows_ = 0;
-        display_scale_ = std::min(1.0, display_scale_ / kDisplayScaleStep);
+        display_scale_ = larger;
         log_info("this device has room to spare (" + std::to_string(per_second) +
                  "ms of every second); asking for " +
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +

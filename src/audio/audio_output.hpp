@@ -94,6 +94,15 @@ public:
     // The rate correction currently being applied, for tests and diagnostics.
     double rate_ratio() const { return rate_ratio_; }
 
+    // Says once a second what the queue has been doing, if anything has been
+    // pushed since the last time. `now_ms` is the caller's own clock, the same
+    // one the session's stream report runs on -- the two lines are meant to be
+    // read side by side.
+    //
+    // Cheap to call every frame: it does nothing at all until a second has
+    // passed.
+    void report(uint64_t now_ms);
+
 private:
     // Queues target_frames_ of silence so playback starts from the depth the
     // correction is aiming to hold, rather than from empty -- which would
@@ -107,6 +116,13 @@ private:
     std::size_t target_frames_ = 0;
     std::size_t panic_frames_ = 0;
     double rate_ratio_ = 1.0;
+    // What report() says. Cleared every time it does.
+    uint64_t stats_at_ms_ = 0;
+    uint64_t stats_queue_total_ = 0;
+    std::size_t stats_queue_worst_ = 0;
+    unsigned stats_pushes_ = 0;
+    unsigned stats_empty_ = 0;
+    unsigned stats_panics_ = 0;
     AudioResampler resampler_;
     std::vector<int16_t> scratch_;
     bool primed_ = false;
