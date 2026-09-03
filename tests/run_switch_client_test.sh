@@ -19,6 +19,12 @@
 set -uo pipefail
 
 COMPANION_SCREEN="${COMPANION_SCREEN:-bottom}"
+# Which console the host is playing. Only the extension decides it -- see
+# system_for_rom() -- so running this against another one is a mock core and
+# a filename, not a second copy of this script. The client has to work on
+# every console the host can play, and each of them lays its screens out and
+# sizes its touch space differently.
+ROM_EXTENSION="${COMPANION_ROM_EXTENSION:-nds}"
 
 XVFB_RUN="$1"
 DUALSCREEN="$2"
@@ -29,7 +35,7 @@ CHECKER="$6"
 
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR/host/config/dualscreen"
-printf 'dualscreen switch client test rom' > "$WORK_DIR/fake.nds"
+printf 'dualscreen switch client test rom' > "$WORK_DIR/fake.$ROM_EXTENSION"
 
 HOST_SHOT="$WORK_DIR/host.ppm"
 COMPANION_SHOT="$WORK_DIR/companion.ppm"
@@ -45,7 +51,7 @@ XDG_DATA_HOME="$WORK_DIR/host/data" \
 SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
 "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
     "$DUALSCREEN" \
-        --game "$WORK_DIR/fake.nds" \
+        --game "$WORK_DIR/fake.$ROM_EXTENSION" \
         --core "$MOCK_CORE" \
         --layout upper_on_tv \
         --windowed \

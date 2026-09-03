@@ -230,6 +230,22 @@ if(XVFB_RUN_EXECUTABLE)
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(switch_client_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
         ENVIRONMENT "COMPANION_SCREEN=top")
+
+    # And on a 3DS, whose screens are a different size and shape from a DS's
+    # and whose touch screen is narrower than its upper one. The client works
+    # all of that out from what the host tells it about the console, so this
+    # is where that arithmetic is actually run on the client rather than only
+    # on the host.
+    add_test(NAME switch_client_3ds_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_client_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:dualscreen-companion>
+            ${MOCK_CORE_3DS_PATH}
+            ${CMAKE_BINARY_DIR}/switch-client-3ds
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(switch_client_3ds_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=bottom;COMPANION_ROM_EXTENSION=3ds")
     # A console this app does not play itself. Two processes and the shared
     # memory between them, with fake_wii_u standing in for Cemu -- the only
     # piece of the Wii U path that does not exist yet.
@@ -252,6 +268,21 @@ if(XVFB_RUN_EXECUTABLE)
             ${CMAKE_BINARY_DIR}/wii-u-companion
             $<TARGET_FILE:check_screenshot>)
     set_tests_properties(wii_u_companion_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+
+    # And the same path again with the Switch/Android client as the second
+    # device rather than this app. Same sources, but its own window, host
+    # picker, panel size and decoder configuration -- none of which the run
+    # above exercises, and all of which a console this app does not play
+    # itself was never written with in mind.
+    add_test(NAME wii_u_client_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_wii_u_client_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:dualscreen-companion>
+            $<TARGET_FILE:fake_wii_u>
+            ${CMAKE_BINARY_DIR}/wii-u-client
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(wii_u_client_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 else()
     message(STATUS "xvfb-run not found; the headless smoke test will be skipped")
 endif()
