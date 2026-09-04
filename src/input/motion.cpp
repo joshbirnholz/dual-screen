@@ -51,14 +51,13 @@ SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
 }
 
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native) {
-    // Nearly the acceleration conversion, but not quite: yaw comes through as
-    // it is where acceleration's second axis is negated. Measured on hardware
-    // over two builds rather than derived -- see the header, which says what
-    // each of them looked like and why they settle it between them.
+    // A half turn about z, which is not the half turn about x that the
+    // acceleration takes. Settled on hardware rather than derived -- see the
+    // header for the three builds it took and what each one did in a game.
     SwitchSixAxis out;
-    out.x = native.x;
-    out.y = native.y;
-    out.z = -native.z;
+    out.x = -native.x;
+    out.y = -native.y;
+    out.z = native.z;
     return out;
 }
 
@@ -338,6 +337,61 @@ bool MotionReader::read_console_sensors() {
     state_.gyro_x = gyro.x * kTau;
     state_.gyro_y = gyro.y * kTau;
     state_.gyro_z = gyro.z * kTau;
+
+    // The reading as libnx gave it, before any of the above.
+    //
+    // This exists because working out the two conversions above took four
+    // attempts, every one of them reasoning from what a reading ought to look
+    // like rather than from one. libnx documents neither the axes nor the
+    // units, so there is nothing to read but the numbers, and until now the
+    // only numbers anywhere were the converted ones -- which answer "is this
+    // right" and not "then what is". These answer the second.
+    //
+    // Reported as the strongest sample since the last line rather than
+    // whatever the last one happened to be, so a deliberate turn lasting a
+    // second or two lands in the log at its peak instead of being missed
+    // between two reports. To read it off: hold the console upright facing
+    // you, and turn it slowly one way at a time -- sweep it to your left, tip
+    // its top away from you, dip its right edge -- and each turn names the
+    // component that moves and the sign it moves with.
+    static uint32_t raw_at_ms = 0;
+    static HidSixAxisSensorState loudest = {};
+    static float loudest_rate = -1.0f;
+    const float rate = std::abs(sample.angular_velocity.x) +
+                       std::abs(sample.angular_velocity.y) +
+                       std::abs(sample.angular_velocity.z);
+    if (rate > loudest_rate) {
+        loudest_rate = rate;
+        loudest = sample;
+    }
+    if (raw_at_ms == 0 || now_ms - raw_at_ms >= 1000) {
+        raw_at_ms = now_ms;
+        if (loudest_rate >= 0.0f) {
+            // The peak magnitude names the unit, which libnx also does not
+            // document and which this multiplies by tau on the assumption
+            // that it is revolutions a second. A deliberate turn of the
+            // console is somewhere around a quarter to a whole turn a second,
+            // so a peak near 1 is revolutions, near 5 is radians, and in the
+            // hundreds is degrees. Moonlight-Switch's own comment says the
+            // rotation it forwards is radians a second, which is a reason to
+            // check rather than a reason to change it blind.
+            const char* unit = loudest_rate > 60.0f    ? "degrees"
+                               : loudest_rate > 2.5f   ? "radians"
+                                                       : "revolutions";
+            char text[224];
+            std::snprintf(text, sizeof(text),
+                          "motion: libnx gave accel %.2f,%.2f,%.2f and rotation "
+                          "%.3f,%.3f,%.3f unconverted; that peak looks like %s a second",
+                          static_cast<double>(loudest.acceleration.x),
+                          static_cast<double>(loudest.acceleration.y),
+                          static_cast<double>(loudest.acceleration.z),
+                          static_cast<double>(loudest.angular_velocity.x),
+                          static_cast<double>(loudest.angular_velocity.y),
+                          static_cast<double>(loudest.angular_velocity.z), unit);
+            log_debug(text);
+        }
+        loudest_rate = -1.0f;
+    }
     return true;
 #else
     return false;

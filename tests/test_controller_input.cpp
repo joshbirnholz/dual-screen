@@ -821,38 +821,52 @@ void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
     CHECK(std::abs(upright.y) > std::abs(upright.z));
 }
 
-// And the other half, which took two builds on hardware to settle because it
-// is not the conversion above and it is not the negative of it either.
+// And the other half, which took four attempts because every one of them
+// reasoned about what a reading ought to be instead of measuring one.
 //
-// This test is written as the two things those builds ruled out, since that is
-// what the evidence actually is -- see switch_gyro_to_sdl() for what each
-// build looked like in a game.
-void test_a_switch_turn_comes_out_turning_the_same_way() {
+// The check worth having is not the three signs -- those are in the function,
+// and repeating them here would only assert that the file has not changed.
+// It is the property that would have thrown out two of the four before they
+// ever reached hardware.
+void test_a_switch_turn_is_a_turn_of_the_frame_and_not_a_mirroring_of_it() {
+    // Both conversions have to be rotations. A frame differs from another
+    // frame by a rotation; nothing physical differs from anything by a
+    // reflection, so an assignment of signs whose determinant is -1 describes
+    // no console that could exist. Two of the four guesses were reflections
+    // and both were shipped.
+    const auto determinant = [](const SwitchSixAxis& x, const SwitchSixAxis& y,
+                                const SwitchSixAxis& z) {
+        return x.x * (y.y * z.z - y.z * z.y) - x.y * (y.x * z.z - y.z * z.x) +
+               x.z * (y.x * z.y - y.y * z.x);
+    };
+    // Each conversion applied to the three unit readings is its matrix.
+    for (const auto& convert : {&switch_accel_to_sdl, &switch_gyro_to_sdl}) {
+        const float value = determinant(convert({1.0f, 0.0f, 0.0f}), convert({0.0f, 1.0f, 0.0f}),
+                                        convert({0.0f, 0.0f, 1.0f}));
+        CHECK_MSG(test::nearly_equal(value, 1.0),
+                  "a six-axis conversion that is not a rotation, which is a mirrored console");
+    }
+
+    // And rotation is not acceleration's conversion, nor its negative. Those
+    // are the two shortcuts that look right and are not: the first swaps left
+    // and right in a game, the second leaves nothing pointing anywhere. Both
+    // are ruled out by measurement rather than by argument -- see
+    // switch_gyro_to_sdl() for what each did on hardware.
     const SwitchSixAxis native = {0.4f, -1.1f, 2.3f};
     const SwitchSixAxis as_accel = switch_accel_to_sdl(native);
     const SwitchSixAxis as_gyro = switch_gyro_to_sdl(native);
+    const auto same = [](const SwitchSixAxis& a, const SwitchSixAxis& b) {
+        return test::nearly_equal(a.x, b.x) && test::nearly_equal(a.y, b.y) &&
+               test::nearly_equal(a.z, b.z);
+    };
+    CHECK_MSG(!same(as_gyro, as_accel), "rotation is being converted like acceleration");
+    CHECK_MSG(!same(as_gyro, {-as_accel.x, -as_accel.y, -as_accel.z}),
+              "rotation is being converted as acceleration's opposite");
 
-    // Not the acceleration conversion. That build tilted correctly and swapped
-    // left for right, which is a wrong sign on the axis nothing corrects.
-    CHECK_MSG(!test::nearly_equal(as_gyro.y, as_accel.y),
-              "rotation is being converted like acceleration, which swaps left and right");
-
-    // Nor its negative. That build had every axis wrong, which showed as
-    // motion that never pointed anywhere and kept being dragged back by
-    // gravity -- the signature of pitch and roll fighting the accelerometer.
-    CHECK_MSG(!test::nearly_equal(as_gyro.x, -as_accel.x),
-              "rotation is being converted as the opposite of acceleration, which leaves pitch "
-              "and roll fighting gravity");
-
-    // What is left, stated outright: the same first two axes as the reading,
-    // and the third turned over.
-    CHECK(test::nearly_equal(as_gyro.x, native.x));
-    CHECK(test::nearly_equal(as_gyro.y, native.y));
-    CHECK(test::nearly_equal(as_gyro.z, -native.z));
-
-    // Which is to say a sweep to the player's left, about the console's own up
-    // axis, stays a sweep to the left.
-    const SwitchSixAxis yaw = switch_gyro_to_sdl({0.0f, 1.5f, 0.0f});
+    // A sweep to the player's left, about the console's own up axis, has to
+    // stay a sweep to the left: it is the one axis nothing else corrects, so
+    // it is the one a game is stuck with.
+    const SwitchSixAxis yaw = switch_gyro_to_sdl({0.0f, -1.5f, 0.0f});
     CHECK(test::nearly_equal(yaw.y, 1.5));
     CHECK(test::nearly_equal(yaw.x, 0.0));
     CHECK(test::nearly_equal(yaw.z, 0.0));
@@ -862,7 +876,7 @@ void test_a_switch_turn_comes_out_turning_the_same_way() {
 
 int main() {
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
-    test_a_switch_turn_comes_out_turning_the_same_way();
+    test_a_switch_turn_is_a_turn_of_the_frame_and_not_a_mirroring_of_it();
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "skipping: SDL game controller subsystem unavailable: %s\n",

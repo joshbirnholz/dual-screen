@@ -196,6 +196,56 @@ touch control, and it is drawn over the game, so it is pinned to `c_stick`
 (Citra spells the same value `C-Stick`). And `citra_enable_motion` is on by
 default, which is the only reason the gyro works at all: see below.
 
+### A Switch's own six-axis unit, and four wrong answers
+
+`HidSixAxisSensorState` is six floats and three doc comments that repeat their
+own field names. libnx documents neither the axes nor the units of either
+reading, and neither does switchbrew. So there is nothing to reason from, and
+four builds went out reasoning anyway:
+
+| rotation mapping | determinant | what a game did |
+| --- | --- | --- |
+| `( x,  y,  z)` | +1 | held upright read as lying flat |
+| `( x, -y, -z)` | +1 | tilting left and right reversed |
+| `(-x,  y,  z)` | **-1** | never points the right way, drifts and is dragged back |
+| `( x,  y, -z)` | **-1** | backwards on every axis |
+| `(-x, -y,  z)` | +1 | *(current)* |
+
+Two things are worth taking from that.
+
+The first is a check that costs nothing and would have thrown out two of the
+four before they reached hardware: **a frame conversion has to be a rotation.**
+Its determinant must be +1. A determinant of -1 is a reflection, and no rigid
+frame differs from another by a reflection — it describes a mirrored console.
+Half of all sign assignments are reflections, so the check halves the search
+space, and both of the assignments that produced the strangest reports were in
+the half that cannot be right. There is a test for it now.
+
+The second is how to read a report. Whatever consumes a six-axis reading fuses
+it against gravity, and gravity only constrains two of the three axes:
+
+- **pitch and roll** are pulled back towards the accelerometer, so a wrong sign
+  on either shows up as tilt going the wrong way, and settles rather than
+  wandering;
+- **yaw** has nothing correcting it — no part of a six-axis reading knows which
+  way a device is pointing — so a wrong sign there is permanent, and shows up
+  as a heading that drifts off and stays there.
+
+That is what makes three vague reports into one answer: "tilt is reversed"
+means x and z, "it wanders and never points right" means y, and "backwards on
+every axis" means all three. Only one assignment is consistent with all of
+them, and it is the only one of the four with determinant +1 that had not
+already been tried.
+
+The remaining unknown is the **unit**. This multiplies rotation by tau, on the
+assumption that libnx reports revolutions a second; Moonlight-Switch's own
+comment says the rotation it forwards is radians a second, which is a reason to
+check rather than a reason to change it blind, since that value has been
+through borealis first. The reader now logs the raw sample with the largest
+rotation in each second, unconverted, so the next log answers it: a deliberate
+turn of a console is roughly a quarter to a whole turn a second, which reads
+near 1 in revolutions, near 5 in radians and in the hundreds in degrees.
+
 ### What libretro's sensor axes actually mean
 
 Nothing, is the short answer. `retro_sensor_interface` documents the units — g

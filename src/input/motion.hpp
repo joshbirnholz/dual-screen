@@ -73,33 +73,36 @@ namespace ds {
 // and z gives.
 //
 // Rotation does not use that same conversion, and assuming it did is what left
-// a Wii U game steering the wrong way while tilting perfectly correctly. What
-// it does use was settled by two builds on real hardware rather than derived,
-// because the theory that looked right predicted the wrong thing twice:
+// a Wii U game steering the wrong way while tilting perfectly correctly.
 //
-//   using the acceleration conversion unchanged (x, -y, -z)
-//       tilt correct, left and right swapped
-//   negating it on the reasoning that libnx counts a turn the other way
-//   round from SDL, which would be a whole-vector sign (-x, y, z)
-//       nothing points the right way, and it drifts and snaps back
+//     rotation is (-x, -y, z) where acceleration is (x, -y, -z)
 //
-// The second reading is the informative one. Pitch and roll are pulled back
-// towards gravity by whatever consumes this, so a wrong sign on either shows
-// as exactly that drift-and-snap; the first build had neither, which says its
-// x and z were already right. Yaw has nothing pulling it anywhere -- no part
-// of a six-axis reading knows which way a device is pointing -- so a wrong
-// sign there is permanent and shows as nothing but left and right swapped,
-// which is the first build exactly. So x and z stand as they are and y does
-// not get negated:
+// libnx documents neither the units nor the axes of either reading -- the
+// struct is six floats and three comments repeating their own field names --
+// so this was settled by what three builds did on real hardware:
 //
-//     rotation is (x, y, -z) where acceleration is (x, -y, -z)
+//   ( x, -y, -z)   tilting left and right reversed, otherwise fine
+//   (-x,  y,  z)   never points the right way, drifts and is dragged back
+//   ( x,  y, -z)   backwards on every axis
 //
-// That is not a rotation of the frame, and no rearranging of axes produces
-// it, which is the honest state of this: libnx's rotation is not the
-// acceleration frame's vector. Nintendo's own naming (pitch, yaw, roll) is
-// the likeliest reason -- yaw is conventionally about "up" whichever way the
-// frame's own axis points -- but that is a guess about why, and the mapping
-// above is not a guess.
+// Read against the mapping above, each of those is what it should be. The
+// first has x and z wrong: pitch and roll, both of which whatever consumes
+// this pulls back towards gravity, so they read as tilt going the wrong way
+// rather than as anything unstable. The second has only y wrong: yaw, which
+// nothing corrects, because no part of a six-axis reading knows which way a
+// device is pointing -- so the heading wanders off and stays there. The third
+// is the exact negative, and was reported in exactly those words.
+//
+// Only one assignment fits all three, and the useful check is that it is a
+// rotation: its determinant is +1, a half turn about z. The two wrong guesses
+// above both had determinant -1, which is a reflection, and no rigid frame
+// differs from another by a reflection. That rules out half the candidates
+// before any of them reaches hardware, and would have caught both.
+//
+// Why the two readings sit in frames a half turn apart is not something this
+// can answer from outside. It does mean the tempting shortcut -- convert one
+// and reuse it for the other -- is wrong, which is the mistake worth not
+// repeating.
 //
 // Free and separate from the reader so both can be tested without a console.
 struct SwitchSixAxis {
