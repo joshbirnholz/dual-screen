@@ -334,6 +334,22 @@ bool MotionReader::read_console_sensors() {
         said_fit_ = true;
         log_info("motion: this console reports rotation as " + motion_fitter_.fit().describe() +
                  " of a radian a second, worked out from its own accelerometer");
+    } else if (!motion_fitter_.fit().decided) {
+        // And how far along it is otherwise. The first version of this said
+        // nothing until it decided, and then never decided, and a log with a
+        // silence in it where the answer should be cannot be told from a log
+        // of something that was never reached. Once a second, and only while
+        // the console is actually being moved, so a session spent sitting
+        // still stays quiet.
+        static uint32_t progress_at_ms = 0;
+        if (progress_at_ms == 0 || now_ms - progress_at_ms >= 1000) {
+            progress_at_ms = now_ms;
+            const int percent = static_cast<int>(motion_fitter_.progress() * 100.0f + 0.5f);
+            if (percent > 0) {
+                log_debug("motion: working out this console's rotation frame, " +
+                          std::to_string(percent) + "% of the way there");
+            }
+        }
     }
 
     constexpr float kTau = 6.283185307f;

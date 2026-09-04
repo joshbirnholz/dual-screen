@@ -144,9 +144,10 @@ private:
     SwitchSixAxis previous_gravity_;
     SwitchSixAxis previous_rotation_;
     bool have_previous_ = false;
-    // Which directions the observed rotation has actually pointed in, so a
-    // device turned only one way is not mistaken for one turned every way.
-    float seen_[3] = {0.0f, 0.0f, 0.0f};
+    // How far the ground has travelled through the device's frame, in
+    // radians. Unitless, unlike the rotation reading, which is the point --
+    // see kNeededArc.
+    float seen_arc_ = 0.0f;
     MotionFit fit_;
 };
 

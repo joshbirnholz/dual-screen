@@ -33,21 +33,35 @@ float component(const SwitchSixAxis& v, int axis) {
     return axis == 0 ? v.x : (axis == 1 ? v.y : v.z);
 }
 
-// Deciding needs this much rotation to have gone past, in radians of arc,
-// about each of the three axes. A second of ordinary handling clears it; a
-// device left on a table never does, which is the point.
-constexpr float kNeededArc = 1.0f;
+// Deciding needs the direction of the ground to have travelled this far
+// through the device's frame, in radians.
+//
+// Measured off the accelerometer rather than off the rotation reading, which
+// is the correction to a first version that never fired once on hardware. It
+// counted the rotation reading's own magnitude against a threshold written in
+// radians -- but the whole point of this class is that the unit of that
+// reading is unknown, and the console turned out to report revolutions, so
+// "one radian" silently asked for a full turn about each of three axes.
+// Nobody does that with a games console.
+//
+// The arc the ground travels is unitless and cannot be got wrong that way. It
+// is also the better measure: it is exactly the movement this can learn from,
+// since rotation about the axis pointing at the ground moves the ground not at
+// all and says nothing about anything.
+constexpr float kNeededArc = 0.7f;
 // And the winner has to explain the movement this much better than whichever
 // candidate came second. Rotations differ from one another by a lot, so a
 // real answer wins comfortably; anything close means the movement so far
 // cannot tell two of them apart.
 constexpr float kNeededMargin = 2.0f;
-constexpr std::size_t kNeededSamples = 60;
+constexpr std::size_t kNeededSamples = 40;
 // A reading is only about gravity while nothing else is pushing the device.
 // The unit vector towards the ground cannot swing faster than the device
 // turns, so anything quicker than a very brisk wrist flick is a knock.
 constexpr float kFastestTurn = 20.0f;
-// Below this there is no rotation worth fitting to, only noise.
+// Below this the ground is not moving through the device's frame, so the
+// reading is noise however large the rotation alongside it looks. In radians a
+// second, off the accelerometer, for the same reason as kNeededArc.
 constexpr float kMovingRate = 0.02f;
 // Sanity on the fitted unit: revolutions, radians and degrees a second are
 // 6.28, 1 and 0.017 respectively, so anything outside this is not a unit.
@@ -209,17 +223,14 @@ MotionFit fit_motion_axes(const std::vector<SwitchSixAxis>& gravity,
 void MotionFitter::reset() {
     samples_.clear();
     have_previous_ = false;
-    seen_[0] = seen_[1] = seen_[2] = 0.0f;
+    seen_arc_ = 0.0f;
     fit_ = MotionFit();
 }
 
 float MotionFitter::progress() const {
-    float least = 1.0f;
-    for (const float arc : seen_) {
-        least = std::min(least, arc / kNeededArc);
-    }
-    return std::min(least, static_cast<float>(samples_.size()) /
-                               static_cast<float>(kNeededSamples));
+    return std::min({1.0f, seen_arc_ / kNeededArc,
+                     static_cast<float>(samples_.size()) /
+                         static_cast<float>(kNeededSamples)});
 }
 
 void MotionFitter::add(const SwitchSixAxis& gravity, const SwitchSixAxis& rotation,
@@ -247,28 +258,30 @@ void MotionFitter::add(const SwitchSixAxis& gravity, const SwitchSixAxis& rotati
     const SwitchSixAxis change = scaled(difference(unit, previous_unit), 1.0f / dt_seconds);
     if (length(change) > kFastestTurn) return;
 
+    const float swing = length(change);
+    if (swing < kMovingRate) return;
+
     const SwitchSixAxis middle_rotation = scaled(
         SwitchSixAxis{rotation.x + previous_rotation.x, rotation.y + previous_rotation.y,
                       rotation.z + previous_rotation.z},
         0.5f);
-    if (length(middle_rotation) < kMovingRate) return;
-
     const SwitchSixAxis middle_gravity = normalized(
         SwitchSixAxis{unit.x + previous_unit.x, unit.y + previous_unit.y, unit.z + previous_unit.z});
 
-    for (int axis = 0; axis < 3; ++axis) {
-        seen_[axis] += std::abs(component(middle_rotation, axis)) * dt_seconds;
-    }
+    seen_arc_ += swing * dt_seconds;
     if (samples_.size() < kMaxSamples) {
         samples_.push_back({middle_gravity, change, middle_rotation});
     }
 
-    // Solving is cheap but not free, and nothing can be decided before there
-    // is movement about every axis to decide it from.
+    // Solving is cheap but not free, and there is nothing to decide from until
+    // the ground has moved about the frame. Whether it has moved in enough
+    // *directions* is not checked here and does not need to be: movement
+    // confined to one plane leaves the candidates that differ only outside it
+    // fitting equally well, which shows up as a margin too small to decide on.
+    // The solver already refuses that case, so it is the one gate rather than
+    // two.
     if (samples_.size() < kNeededSamples || samples_.size() % 15 != 0) return;
-    for (const float arc : seen_) {
-        if (arc < kNeededArc) return;
-    }
+    if (seen_arc_ < kNeededArc) return;
     solve();
 }
 

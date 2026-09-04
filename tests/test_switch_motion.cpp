@@ -59,7 +59,8 @@ struct Recording {
 // rotation in, relative to the frame its acceleration is in. `unit_scale` is
 // what one of the device's rotation units is worth in radians a second -- 1
 // for radians, 1/(2*pi) for revolutions, 180/pi for degrees.
-Recording record(const MotionAxes& device, float unit_scale, float noise = 0.0f) {
+Recording record(const MotionAxes& device, float unit_scale, float noise = 0.0f,
+                 int steps = 720, float briskness = 1.0f) {
     Recording out;
     // Gravity starts pointing along -y, which is a device held upright.
     SwitchSixAxis gravity = {0.0f, -1.0f, 0.0f};
@@ -70,12 +71,13 @@ Recording record(const MotionAxes& device, float unit_scale, float noise = 0.0f)
         return (static_cast<float>((seed >> 16) & 0x7fff) / 16383.5f - 1.0f) * noise;
     };
 
-    for (int step = 0; step < 720; ++step) {
+    for (int step = 0; step < steps; ++step) {
         // A turn whose axis wanders through all three, so every part of the
         // frame is exercised. Real handling does this without being asked.
         const float t = static_cast<float>(step) * dt;
-        const SwitchSixAxis truth = {1.6f * std::sin(t * 1.7f), 1.9f * std::sin(t * 1.1f + 0.6f),
-                                     1.4f * std::sin(t * 2.3f + 1.9f)};
+        const SwitchSixAxis truth = {briskness * 1.6f * std::sin(t * 1.7f),
+                                     briskness * 1.9f * std::sin(t * 1.1f + 0.6f),
+                                     briskness * 1.4f * std::sin(t * 2.3f + 1.9f)};
 
         // What the accelerometer does about it: the ground swings the other
         // way, in the device's own frame.
@@ -164,6 +166,34 @@ void test_it_says_nothing_rather_than_guessing() {
     CHECK(!fit_motion_axes(few_gravity, few_change, few_rotation).decided);
 }
 
+// The realistic way to get a wrong answer, as opposed to no answer.
+//
+// A console turned about one axis only says a great deal about that axis and
+// nothing whatever about the other two, so several candidates explain the
+// movement exactly as well as each other. Refusing is the only correct
+// behaviour, and it is the behaviour that keeps this from becoming a sixth
+// guess with extra steps.
+void test_movement_in_one_direction_only_is_refused() {
+    Recording out;
+    SwitchSixAxis gravity = {0.0f, -1.0f, 0.0f};
+    const float dt = 1.0f / 120.0f;
+    for (int step = 0; step < 600; ++step) {
+        // Rolled back and forth about x and nothing else: plenty of gravity
+        // travel, all of it in one plane.
+        const SwitchSixAxis truth = {1.5f * std::sin(static_cast<float>(step) * dt * 2.0f), 0.0f,
+                                     0.0f};
+        const SwitchSixAxis rate = times(cross(truth, gravity), -1.0f);
+        const SwitchSixAxis next = unit(plus(gravity, times(rate, dt)));
+        const SwitchSixAxis middle = unit(plus(gravity, next));
+        out.gravity.push_back(middle);
+        out.change.push_back(times(cross(truth, middle), -1.0f));
+        out.rotation.push_back(truth);
+        gravity = next;
+    }
+    CHECK_MSG(!fit_motion_axes(out.gravity, out.change, out.rotation).decided,
+              "a console rolled about one axis was taken as evidence about all three");
+}
+
 void test_the_candidates_are_the_rotations_and_only_those() {
     const std::vector<MotionAxes>& candidates = motion_axis_candidates();
     CHECK_EQ(static_cast<int>(candidates.size()), 24);
@@ -207,6 +237,37 @@ void test_the_accumulator_holds_off_until_it_has_been_moved_every_way() {
     CHECK(fitter.fit().axes == device);
 }
 
+// The bug that got this shipped without ever running once.
+//
+// Deciding used to be gated on the rotation reading's own magnitude measured
+// against a threshold written in radians -- in a class whose entire purpose is
+// that the unit of that reading is unknown. The console reports revolutions,
+// so the gate quietly asked for a full turn about each of three axes before it
+// would say anything, and on hardware it said nothing at all: a log with a
+// silence in it exactly where the answer should have been.
+//
+// So the check is that a realistic amount of handling is enough, in the unit
+// that broke it. Three seconds, at the speed the console's own log showed a
+// hand actually turning it: peaks between a tenth and half a revolution a
+// second. The gate that shipped wanted a full revolution about each of three
+// axes, which this is nowhere near, and which is the point.
+void test_a_few_seconds_of_ordinary_handling_is_enough() {
+    const MotionAxes device = {{0, 1, 2}, {-1, -1, 1}};
+    const float revolutions = 1.0f / 6.283185307f;
+    // 360 steps at 120Hz is three seconds; half the briskness above puts the
+    // peaks near 0.9 rad/s, which read as 0.14 of a revolution a second.
+    const Recording taken = record(device, revolutions, 0.0f, 360, 0.5f);
+
+    MotionFitter fitter;
+    for (std::size_t index = 0; index < taken.gravity.size(); ++index) {
+        fitter.add(times(taken.gravity[index], 9.81f), taken.rotation[index], 1.0f / 120.0f);
+    }
+    CHECK_MSG(fitter.fit().decided,
+              "a few seconds of ordinary handling did not settle it, which is what shipped");
+    CHECK(fitter.fit().axes == device);
+    CHECK(std::abs(fitter.fit().scale / revolutions - 1.0f) < 0.05f);
+}
+
 }  // namespace
 
 int main() {
@@ -214,6 +275,8 @@ int main() {
     test_every_frame_a_device_could_use_is_recovered();
     test_it_still_works_on_a_reading_that_is_not_perfect();
     test_it_says_nothing_rather_than_guessing();
+    test_movement_in_one_direction_only_is_refused();
     test_the_accumulator_holds_off_until_it_has_been_moved_every_way();
+    test_a_few_seconds_of_ordinary_handling_is_enough();
     return test::finish("motion-fit");
 }

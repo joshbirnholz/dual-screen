@@ -271,6 +271,23 @@ says nothing, and a turn about the axis pointing at the ground says nothing
 about that axis, since a vector crossed with itself is zero — and until then
 the last guess stands.
 
+And then it did not run once. The first version gated deciding on the rotation
+reading's own magnitude against a threshold written in radians — in the one
+class whose whole premise is that the unit of that reading is unknown. The
+console reports revolutions, so "one radian about each axis" quietly asked for
+a full turn about each of three axes, and the log came back with a silence
+exactly where the answer should have been. The gate now measures the arc the
+*ground* travels through the device's frame, which is unitless and cannot be
+got wrong that way — and is the better measure anyway, since it is precisely
+the movement the method can learn from.
+
+The log did settle the unit, though, and the answer is **revolutions a second**:
+peaks of 0.21–0.43 while a hand turned the console, which is 1.3–2.7 rad/s.
+Multiplying by tau was right all along, so the scale was never the bug — worth
+recording, because "the scale must be wrong" was the reason this stopped being
+a sign hunt, and it was wrong too. Acceleration is in g, confirmed by a console
+lying flat and still reading exactly `0.00, 0.00, -1.00`.
+
 The part that matters is that this is **testable without a console**. Rotate a
 synthetic device, work out what its accelerometer and gyroscope would report
 under some convention, hand those to the solver, and see whether it names the
