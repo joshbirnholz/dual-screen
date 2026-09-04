@@ -602,10 +602,14 @@ Useful CMake options: `-DDUALSCREEN_PORTABLE=OFF` (link libstdc++ dynamically),
 ## What you need to supply
 
 **A core per console you want to play.** For DS, melonDS DS
-(`melondsds_libretro.so`). For 3DS, Citra or a fork of it
-(`citra_libretro.so`, `citra_canary_libretro.so`, `azahar_libretro.so`). Get
-them through RetroArch's core downloader, your distribution, or the projects'
-own releases. dualscreen looks in the usual RetroArch core directories and
+(`melondsds_libretro.so`). For 3DS, Azahar (`azahar_libretro.so`) for
+preference, or Citra (`citra_libretro.so`, `citra_canary_libretro.so`) —
+Azahar is looked for first, is the maintained one, and is the only one with
+gyro support. The two do not spell their options identically (Azahar's screen
+layouts are `default` where Citra's are `Default Top-Bottom Screen`, and so
+on); dualscreen asks each core which spellings it has rather than assuming, so
+either works. Get them through RetroArch's core downloader, your distribution,
+or the projects' own releases. dualscreen looks in the usual RetroArch core directories and
 `/usr/lib/libretro`, and the Settings screen lists what it found for each
 console. Override with the `core_path` and `core_path_3ds` settings, or with
 `--core` for a single run.

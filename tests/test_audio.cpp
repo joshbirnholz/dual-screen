@@ -123,34 +123,44 @@ void test_the_correction_moves_gradually_rather_than_stepping() {
     CHECK(after_one < 1.0 + kAudioMaxRateAdjust / 4.0);
 }
 
-// The one the suite missed. A limit was raised to fix a queue that could not
-// converge, the edit silently did not land, and every test still passed --
-// because nothing here asserted the limit was big enough to do its job, only
-// that the clamp clamped to whatever it was set to.
-void test_the_correction_can_outrun_a_device_whose_clock_is_off() {
-    // Measured on a Switch: the queue gains about 26ms a second against a
-    // 170ms target, which is a sink running some 2.6% slow. A correction that
-    // cannot reach that never closes the gap -- it just holds the queue's
-    // climb down to a slower climb, and the backlog grows until something
-    // flushes it.
-    constexpr double kMeasuredDrift = 0.026;
-    CHECK(kAudioMaxRateAdjust > kMeasuredDrift);
+// The property the limit exists for, which an earlier version of this file had
+// upside down.
+//
+// That version asserted the correction could reach 2.6%, so that a queue which
+// kept growing on one device would converge. It did converge, at a rate bent
+// far enough to hear: both companions came back a good half-semitone sharp
+// against the same game playing out of the host's speakers. A correction that
+// is audible has stopped being a correction, whatever it does to the queue --
+// so what has to be pinned down is the other direction.
+void test_the_correction_stays_inaudible_however_far_off_the_queue_is() {
+    // Pitch, in cents, of the widest correction this will ever apply. A
+    // semitone is 100; the ear starts picking a sustained tone apart somewhere
+    // above 20 or so, and game audio is not a sustained tone. 1% is about 17.
+    const double cents = 1200.0 * std::log2(1.0 + kAudioMaxRateAdjust);
+    CHECK_MSG(cents < 20.0, "the playback correction is wide enough to hear as a change in pitch");
 
-    // And the controller actually gets there, rather than the clamp merely
-    // permitting it: a queue sitting well above target has to drive the rate
-    // past that drift, or the two never meet.
+    // And it really is the ceiling, driven from a queue as far out as one can
+    // get: nothing about the controller lets it wind past the clamp given
+    // enough time.
     constexpr std::size_t target = 8192;
     double ratio = 1.0;
-    for (int step = 0; step < 2000; ++step) {
-        ratio = audio_drift_ratio(target * 2, target, ratio);
+    for (int step = 0; step < 5000; ++step) {
+        ratio = audio_drift_ratio(target * 20, target, ratio);
     }
-    CHECK(ratio - 1.0 >= kMeasuredDrift);
+    CHECK(ratio <= 1.0 + kAudioMaxRateAdjust + 1e-9);
+
+    // A queue that far out is not drift and is not this control's problem: it
+    // gets cut back rather than played off, which is what kAudioPanicQueueMs
+    // is for. Stated here so the two stay in step -- the panic has to sit
+    // above the target by a margin the correction could never work off on its
+    // own, or the two fight and the correction loses audibly.
+    CHECK(kAudioPanicQueueMs > kAudioTargetQueueMs);
 }
 
 }  // namespace
 
 int main() {
-    test_the_correction_can_outrun_a_device_whose_clock_is_off();
+    test_the_correction_stays_inaudible_however_far_off_the_queue_is();
     test_a_ratio_of_one_passes_samples_through_unchanged();
     test_a_faster_ratio_emits_fewer_frames_and_a_slower_one_more();
     test_consecutive_blocks_stay_continuous_across_the_join();

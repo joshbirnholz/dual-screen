@@ -217,6 +217,7 @@ void AudioOutput::report(uint64_t now_ms) {
     if (now_ms - stats_at_ms_ < 1000 || stats_pushes_ == 0) {
         return;
     }
+    const uint64_t elapsed_ms = now_ms - stats_at_ms_;
     stats_at_ms_ = now_ms;
     const double rate = sample_rate_ > 0.0 ? sample_rate_ : 48000.0;
     const auto to_ms = [rate](uint64_t frames) {
@@ -234,6 +235,20 @@ void AudioOutput::report(uint64_t now_ms) {
               // correction working and one that cannot.
               (std::abs(rate_ratio_ - 1.0) >= kAudioMaxRateAdjust * 0.98 ? " (at the limit)"
                                                                          : ""));
+    // And where the disagreement comes from, which the queue depth alone
+    // cannot say: how much audio actually arrived in the second just gone,
+    // against how much a second of audio is. Well over means the far end is
+    // sending faster than real time and no playback rate will fix it; near
+    // enough means the queue is the sink's business. See kAudioMaxRateAdjust.
+    if (elapsed_ms > 0 && rate > 0.0) {
+        const double arriving = stats_frames_in_ * 1000.0 / static_cast<double>(elapsed_ms);
+        log_debug("audio: " + std::to_string(static_cast<int>(arriving + 0.5)) +
+                  " frames arrived in the last second against a " +
+                  std::to_string(static_cast<int>(rate + 0.5)) + " Hz stream (" +
+                  std::to_string(static_cast<int>((arriving / rate - 1.0) * 10000.0)) +
+                  " parts per ten thousand off real time)");
+    }
+    stats_frames_in_ = 0;
     stats_queue_total_ = 0;
     stats_queue_worst_ = 0;
     stats_pushes_ = 0;
@@ -285,6 +300,7 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     // above the target, and bent down), or being cut off outright (the panic
     // above, which is audible as a jump).
     stats_queue_total_ += queued;
+    stats_frames_in_ += frames;
     ++stats_pushes_;
     stats_queue_worst_ = std::max(stats_queue_worst_, queued);
     if (queued == 0) {

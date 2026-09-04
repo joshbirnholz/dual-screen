@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "config/paths.hpp"
 #include "core/gl_call_trace.hpp"
@@ -29,26 +31,38 @@ constexpr const char* kOptRenderMode = "melonds_render_mode";
 constexpr const char* kOptTouchMode = "melonds_touch_mode";
 constexpr const char* kOptShowCursor = "melonds_show_cursor";
 
-// Citra's equivalent. Its "Default Top-Bottom Screen" stacks the 400x240 upper
-// screen above the 320x240 touch screen, the narrower one centred beneath the
-// wider, in a buffer 400 wide and 480 tall at 1x.
+// The 3DS equivalent, which two cores answer to: citra_libretro and Azahar,
+// the fork that succeeded it. They share the option keys -- Azahar kept
+// Citra's "citra_" prefix -- but not always the values, so each setting below
+// lists every spelling it goes by and LibretroCore picks whichever the loaded
+// core declares. Getting this wrong is not fatal, but it is loud: the core
+// falls back to its own default layout and the split lands on nothing.
+//
+// The stacked layout: the 400x240 upper screen above the 320x240 touch screen,
+// the narrower one centred beneath the wider, in a buffer 400 wide and 480
+// tall at 1x. Citra writes it out in words; Azahar uses an identifier.
 constexpr const char* kOpt3dsLayout = "citra_layout_option";
-constexpr const char* kOpt3dsLayoutValue = "Default Top-Bottom Screen";
-// "Top" means the top screen is the prominent one, which is Citra's way of
-// saying "not swapped" -- it has no disabled/enabled here.
+const std::vector<std::string> kOpt3dsLayoutValues = {"Default Top-Bottom Screen", "default"};
+// "Top" means the top screen is the prominent one, which is these cores' way
+// of saying "not swapped" -- neither has a disabled/enabled here.
 constexpr const char* kOpt3dsSwapScreens = "citra_swap_screen";
 constexpr const char* kOpt3dsSwapScreensValue = "Top";
-// Citra ignores the libretro pointer entirely unless this is on: with it off,
-// touches reach the core and are dropped, and the touch screen does nothing.
+// citra_libretro ignores the libretro pointer entirely unless this is on: with
+// it off, touches reach the core and are dropped, and the touch screen does
+// nothing. Azahar has no such option and always accepts the pointer, which is
+// why this is only applied where it exists.
 constexpr const char* kOpt3dsTouch = "citra_touch_touchscreen";
 // Its own on-screen pointer, which would sit on top of the one we draw.
+// Azahar does not draw one and has no option for it either.
 constexpr const char* kOpt3dsRenderTouch = "citra_render_touchscreen";
-// How many pixels Citra renders per 3DS pixel. Its values are spelled "2x",
-// "3x" and so on, with the first one written out in full.
+// How many pixels the core renders per 3DS pixel. Citra spells these "2x",
+// "3x" and so on with the first written out in full; Azahar uses the bare
+// number.
 constexpr const char* kOpt3dsResolution = "citra_resolution_factor";
 
-std::string citra_resolution_value(int scale) {
-    return scale <= 1 ? std::string("1x (Native)") : std::to_string(scale) + "x";
+std::vector<std::string> citra_resolution_values(int scale) {
+    return {scale <= 1 ? std::string("1x (Native)") : std::to_string(scale) + "x",
+            std::to_string(scale)};
 }
 
 std::string dimensions(int width, int height) {
@@ -172,10 +186,13 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
             break;
         case SystemId::ThreeDs:
-            core_->force_option(kOpt3dsLayout, kOpt3dsLayoutValue);
+            core_->force_option(kOpt3dsLayout, kOpt3dsLayoutValues);
             core_->force_option(kOpt3dsSwapScreens, kOpt3dsSwapScreensValue);
-            core_->force_option(kOpt3dsTouch, "enabled");        // touch reaches the core
-            core_->force_option(kOpt3dsRenderTouch, "disabled"); // we draw our own pointer
+            // Both only exist on citra_libretro; see above.
+            core_->force_option(kOpt3dsTouch, {"enabled"},
+                                LibretroCore::OptionRequirement::IfPresent);
+            core_->force_option(kOpt3dsRenderTouch, {"disabled"},
+                                LibretroCore::OptionRequirement::IfPresent);
             break;
     }
     // After the layout, because it multiplies whatever that layout produces.
@@ -413,7 +430,7 @@ void LibretroCoreScreenSource::apply_render_scale() {
             // per DS pixel and has nothing to multiply.
             break;
         case SystemId::ThreeDs:
-            core_->force_option(kOpt3dsResolution, citra_resolution_value(render_scale_));
+            core_->force_option(kOpt3dsResolution, citra_resolution_values(render_scale_));
             break;
     }
 }

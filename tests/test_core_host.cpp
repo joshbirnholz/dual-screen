@@ -353,6 +353,58 @@ void test_screen_source_handles_a_3ds_core() {
     source.close();
 }
 
+// The same 3DS core options, spelled the way Azahar spells them rather than the
+// way Citra does.
+//
+// Two cores run this system and they do not agree on the words: Citra's screen
+// layout is "Default Top-Bottom Screen" and Azahar's is "default", Citra's
+// resolution scale is "3x" and Azahar's is "3", and Azahar has no touchscreen
+// options at all. A frontend that sends Citra's spellings to Azahar gets a
+// refusal for every one of them and a game running in whatever layout the core
+// happened to default to -- which is exactly what happened the first time
+// someone installed Azahar. So the mock can speak either dialect, and the
+// frontend has to get the same pinned layout out of both.
+void test_a_3ds_core_that_spells_its_options_differently() {
+    const char* path = std::getenv("DUALSCREEN_MOCK_CORE_3DS");
+    if (path == nullptr || path[0] == '\0') return;
+
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        test::skip("no OpenGL 3.3 context available for the 3DS core");
+        return;
+    }
+
+    ::setenv("MOCK_CORE_AZAHAR_OPTIONS", "1", 1);
+    struct Restore {
+        ~Restore() { ::unsetenv("MOCK_CORE_AZAHAR_OPTIONS"); }
+    } restore;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.system = SystemId::ThreeDs;
+    config.core_path = path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    config.render_scale = 3;
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    // Nothing to report: the layout and the scale were sent in this core's own
+    // words, and the two options it does not have were not insisted on.
+    for (const std::string& warning : source.warnings()) {
+        CHECK_MSG(false, "the Azahar-spelling core refused: " + warning);
+    }
+    CHECK_MSG(source.split().valid, "the 3DS framebuffer did not split for the other spelling");
+    CHECK_EQ(source.split().top_width, 1200);
+    CHECK_EQ(source.split().bottom_width, 960);
+    CHECK_EQ(source.split().bottom_x, 120);
+    CHECK_EQ(source.screens_geometry().top.width, 400);
+    CHECK_MSG(source.advance_frame(&error), error);
+    CHECK_EQ(static_cast<int>(source.core_frame_for_test().width), 1200);
+    source.close();
+}
+
 // Rendering at 2x changes how much the core draws and nothing else. The two
 // screens have to come out of the larger buffer whole, in the same places, and
 // the geometry the layouts are built from has to stay the console's own -- a
@@ -670,6 +722,7 @@ int main() {
     test_reset_restarts_the_core();
     test_screen_source_reports_a_valid_split();
     test_screen_source_handles_a_3ds_core();
+    test_a_3ds_core_that_spells_its_options_differently();
     test_render_scale_only_changes_the_resolution();
     test_read_screen_bounds_the_target_size();
     test_render_scale_is_ignored_where_there_is_none();

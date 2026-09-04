@@ -382,6 +382,47 @@ const retro_core_option_v2_definition kOptions[] = {
     {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
 };
 
+// The same 3DS core options as Azahar spells them, which is not how Citra
+// spells them: the layouts are identifiers rather than sentences, the
+// resolution scale is a bare number, and the two touchscreen options do not
+// exist at all. Taken from what a real Azahar build reported when it refused
+// the settings written for Citra, so a test can prove the frontend copes with
+// either core rather than only the one this mock happens to imitate.
+//
+// Selected by MOCK_CORE_AZAHAR_OPTIONS; everything else about the mock is
+// unchanged, since from the frontend's side that is the only difference.
+const retro_core_option_v2_definition kAzaharOptions[] = {
+    {"citra_layout_option", "Screen layout", nullptr, "How the two screens are arranged", nullptr,
+     "screen",
+     {{"default", nullptr},
+      {"single_screen", nullptr},
+      {"large_screen", nullptr},
+      {"side_by_side", nullptr},
+      {nullptr, nullptr}},
+     "default"},
+    {"citra_swap_screen", "Prominent 3DS screen", nullptr, nullptr, nullptr, "screen",
+     {{"Top", nullptr}, {"Bottom", nullptr}, {nullptr, nullptr}}, "Top"},
+    {"citra_resolution_factor", "Resolution scale factor", nullptr, nullptr, nullptr, "video",
+     {{"1", nullptr},
+      {"2", nullptr},
+      {"3", nullptr},
+      {"4", nullptr},
+      {"5", nullptr},
+      {"6", nullptr},
+      {"7", nullptr},
+      {"8", nullptr},
+      {"9", nullptr},
+      {"10", nullptr},
+      {nullptr, nullptr}},
+     "1"},
+    {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
+};
+
+bool speaks_azahar() {
+    const char* set = std::getenv("MOCK_CORE_AZAHAR_OPTIONS");
+    return kIsThreeDs && set != nullptr && set[0] != '\0' && set[0] != '0';
+}
+
 const retro_core_option_v2_category kCategories[] = {
     {"screen", "Screen", nullptr},
     {"video", "Video", nullptr},
@@ -401,14 +442,10 @@ std::string read_variable(const char* key) {
 }
 
 // Reads citra_resolution_factor and returns whether it changed. Parsed the way
-// Citra parses it: everything before the 'x'.
+// both cores parse it: the leading number, whether or not an 'x' follows it.
 bool refresh_render_scale() {
     const std::string value = read_variable("citra_resolution_factor");
-    int scale = 1;
-    const std::size_t end = value.find('x');
-    if (end != std::string::npos && end > 0) {
-        scale = std::atoi(value.substr(0, end).c_str());
-    }
+    int scale = std::atoi(value.c_str());
     if (scale < 1 || scale > kMaxRenderScale) scale = 1;
     if (scale == g_render_scale) return false;
     g_render_scale = scale;
@@ -550,7 +587,8 @@ RETRO_API void retro_set_environment(retro_environment_t callback) {
         options_version >= 2) {
         retro_core_options_v2 options {};
         options.categories = const_cast<retro_core_option_v2_category*>(kCategories);
-        options.definitions = const_cast<retro_core_option_v2_definition*>(kOptions);
+        options.definitions = const_cast<retro_core_option_v2_definition*>(
+            speaks_azahar() ? kAzaharOptions : kOptions);
         callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &options);
     }
 
@@ -640,10 +678,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
         // Every option the frontend depends on, not just the layout: touch is
         // ignored outright unless citra_touch_touchscreen is turned on, and the
         // split lands on the wrong screen if the prominent one is swapped.
-        g_layout_option_honoured =
-            read_variable("citra_layout_option") == "Default Top-Bottom Screen" &&
-            read_variable("citra_swap_screen") == "Top" &&
-            read_variable("citra_touch_touchscreen") == "enabled";
+        const std::string layout = read_variable("citra_layout_option");
+        // Azahar has no touchscreen option to set and always takes the
+        // pointer, so requiring one here would fail a core that is behaving.
+        const bool touch_ok =
+            speaks_azahar() || read_variable("citra_touch_touchscreen") == "enabled";
+        g_layout_option_honoured = (layout == "Default Top-Bottom Screen" || layout == "default") &&
+                                   read_variable("citra_swap_screen") == "Top" && touch_ok;
     } else {
         g_layout_option_honoured = (read_variable("melonds_screen_layout1") == "top-bottom") &&
                                    (read_variable("melonds_number_of_screen_layouts") == "1") &&

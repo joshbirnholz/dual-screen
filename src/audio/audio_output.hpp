@@ -34,22 +34,30 @@ inline constexpr int kAudioPanicQueueMs = 400;
 
 // The most the playback rate is ever bent to correct drift, as a fraction.
 //
-// This was 1%, on the reasoning that 1% is about 17 cents of pitch and so
-// inaudible. The reasoning was fine and the number was not: it assumed the
-// only thing to correct is jitter around a shared clock, and a device whose
-// clock is genuinely somewhere else needs a correction the size of that
-// difference or the queue never converges at all. Measured on a Switch, twice:
-// the queue climbs about 26ms a second with the correction pinned at its limit
-// the whole way, sawtoothing between 150ms and 400ms of delay and being cut
-// short at the top, over and over, for a whole session.
+// 1% is about 17 cents of pitch, which nobody hears on game audio. This was
+// briefly 5%, to let the correction converge against a queue that kept growing
+// on a Switch, and that was a mistake worth writing down: 5% is most of a
+// semitone, and a queue that stays above target holds the correction there
+// permanently, so what it bought was not a converged queue but a whole session
+// transposed. Both companions came back higher-pitched than the same game
+// playing out of the host's own speakers, which is exactly what a saturated
+// correction sounds like.
 //
-// And the correction is not a distortion to be minimised. If a device really
-// consumes 48000-rate audio slower than 48000 a second, then feeding it
-// unresampled is what plays the game flat and late; resampling to the rate it
-// actually runs at is what makes a second of game audio take a second. So this
-// only has to be wide enough to cover a real device, and 5% covers anything
-// that is not simply broken.
-inline constexpr double kAudioMaxRateAdjust = 0.05;
+// The argument for the wider limit -- that a sink genuinely running slow needs
+// a correction its own size, and that resampling to the rate the device really
+// runs at is what makes a second of game audio take a second -- is sound as
+// far as it goes, and it does not go far enough. It only holds when the rates
+// differ because the *sink* is off. A source handing over more than a second
+// of audio per second is the other case entirely, and there the queue is not
+// drift to be resampled away, it is surplus: pitching everything up to burn it
+// off plays the game sharp for as long as the surplus lasts. Both companions
+// showing it at once points at the source, not at two unrelated clocks.
+//
+// So this stays inaudible, and a queue the correction cannot hold is dealt
+// with by dropping what is stale (see kAudioPanicQueueMs) rather than by
+// bending pitch further. report() says "(at the limit)" whenever the
+// correction is saturated, which is what makes the difference visible.
+inline constexpr double kAudioMaxRateAdjust = 0.01;
 
 // Playback rate to run at given how deep the queue currently is. Above the
 // target it returns slightly more than 1 (consume input faster, emit fewer
@@ -144,6 +152,13 @@ private:
     unsigned stats_pushes_ = 0;
     unsigned stats_empty_ = 0;
     unsigned stats_panics_ = 0;
+    // Frames handed in since the last report, against the wall clock it took
+    // to hand them in. The queue depth says the two ends disagree; only this
+    // says which way and by how much, and whether the disagreement is the
+    // sink's or the source's -- a source sending 49000 frames a second of
+    // "48000 Hz" audio is a surplus no playback rate should be asked to
+    // absorb. See kAudioMaxRateAdjust.
+    uint64_t stats_frames_in_ = 0;
     AudioResampler resampler_;
     std::vector<int16_t> scratch_;
     bool primed_ = false;

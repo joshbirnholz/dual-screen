@@ -154,6 +154,41 @@ change: `1x (Native)|2x|3x|4x|5x|6x|7x|8x|9x|10x`, spelled exactly like that —
 words. Citra parses everything before the `x`, so the frontend builds the string
 the same way.
 
+### And then Azahar, which spells half of them differently
+
+`citra_libretro` has a successor, [Azahar](https://azahar-emu.org/), and it is
+the one to install: it is maintained, and it is the only one of the two with
+any motion support at all (see the gyro section below). It keeps the `citra_`
+prefix on every option key, which makes it look drop-in, and then changes the
+values underneath four of them. Installing it against the table above produces
+this, verbatim, from `LibretroCore`'s own validation:
+
+```
+core option 'citra_layout_option' does not accept 'Default Top-Bottom Screen'
+    (it offers: default, single_screen, large_screen, side_by_side)
+this core does not have the option 'citra_render_touchscreen'
+core option 'citra_resolution_factor' does not accept '3x'
+    (it offers: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+this core does not have the option 'citra_touch_touchscreen'
+```
+
+So the differences are: the layouts are identifiers rather than sentences
+(`default` is the same stacked arrangement as Citra's `Default Top-Bottom
+Screen`), the resolution factor is a bare number, and neither touchscreen
+option exists — Azahar always accepts the libretro pointer and never draws a
+cursor of its own, so there is nothing to turn on or off. `citra_swap_screen`
+is unchanged, `Top` and all.
+
+The fix is not to swap one table for the other, since either core may be the
+one installed. `LibretroCore::force_option` takes a list of spellings and picks
+whichever the loaded core declares, and an option can be marked `IfPresent` so
+a core that simply does not have it is not a complaint. Which spelling is right
+is the core's business; the frontend only has an opinion about the setting.
+
+The mock core can speak either dialect (`MOCK_CORE_AZAHAR_OPTIONS`), so both
+paths are covered by tests rather than by whichever core happened to be
+installed on the machine that ran them.
+
 Changing it mid-game needed nothing new. Citra sees the change through
 `GET_VARIABLE_UPDATE` at the top of its next `retro_run`, recomputes its layout,
 and announces the result with a whole new `retro_system_av_info` — base *and*

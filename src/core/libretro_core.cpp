@@ -211,8 +211,18 @@ int16_t LibretroCore::pointer_axis(bool horizontal) const {
 }
 
 void LibretroCore::force_option(const std::string& key, const std::string& value) {
-    forced_options_[key] = value;
-    option_values_[key] = value;
+    force_option(key, std::vector<std::string>{value});
+}
+
+void LibretroCore::force_option(const std::string& key, std::vector<std::string> values,
+                                OptionRequirement requirement) {
+    if (values.empty()) {
+        return;
+    }
+    ForcedOption& forced = forced_options_[key];
+    forced.values = std::move(values);
+    forced.requirement = requirement;
+    option_values_[key] = forced.values.front();
     variables_dirty_ = true;
     if (options_registered_) {
         apply_forced_options();
@@ -630,30 +640,47 @@ void LibretroCore::register_option(const CoreOptionInfo& info) {
 }
 
 void LibretroCore::apply_forced_options() {
+    const auto join = [](const std::vector<std::string>& values, const char* separator,
+                         bool quoted) {
+        std::string joined;
+        for (const std::string& value : values) {
+            if (!joined.empty()) joined += separator;
+            joined += quoted ? "'" + value + "'" : value;
+        }
+        return joined;
+    };
+
     option_warnings_.clear();
     for (const auto& entry : forced_options_) {
         const std::string& key = entry.first;
-        const std::string& value = entry.second;
-        option_values_[key] = value;
+        const ForcedOption& forced = entry.second;
+        // Until the core has said what it offers there is nothing to choose
+        // between, so the first spelling stands in.
+        option_values_[key] = forced.values.front();
 
         if (!options_registered_) {
             continue;  // nothing to validate against yet
         }
         const auto declared = declared_options_.find(key);
         if (declared == declared_options_.end()) {
-            option_warnings_.push_back("this core does not have the option '" + key + "'");
+            if (forced.requirement == OptionRequirement::Required) {
+                option_warnings_.push_back("this core does not have the option '" + key + "'");
+            }
             continue;
         }
         const std::vector<std::string>& allowed = declared->second.allowed_values;
-        if (!allowed.empty() && std::find(allowed.begin(), allowed.end(), value) == allowed.end()) {
-            std::string offered;
-            for (const std::string& candidate : allowed) {
-                if (!offered.empty()) offered += ", ";
-                offered += candidate;
-            }
-            option_warnings_.push_back("core option '" + key + "' does not accept '" + value +
-                                       "' (it offers: " + offered + ")");
+        if (allowed.empty()) {
+            continue;  // free-form; whatever we asked for is what it gets
         }
+        const auto chosen = std::find_first_of(forced.values.begin(), forced.values.end(),
+                                               allowed.begin(), allowed.end());
+        if (chosen != forced.values.end()) {
+            option_values_[key] = *chosen;
+            continue;
+        }
+        option_warnings_.push_back("core option '" + key + "' does not accept " +
+                                   join(forced.values, " or ", true) + " (it offers: " +
+                                   join(allowed, ", ", false) + ")");
     }
     variables_dirty_ = true;
     // A core can declare its options more than once (a v1 table after a v2 one,

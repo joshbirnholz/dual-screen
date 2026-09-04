@@ -66,17 +66,43 @@ namespace ds {
 // An accelerometer at rest reads the up direction. Flat and face up, up is out
 // of the screen, and libnx puts it on -z; held upright, up is towards the top
 // of the console, and libnx puts it on -y with the tilt showing as a little
-// more -z. Hence +y down and +z into the screen. Under SDL's convention those
-// same two poses have to read (0, 0, +9.81) and (-0.75, +9.40, +2.72), which
-// is exactly what negating y and z gives.
+// more -z. Hence +y down and +z into the screen; x follows from those two,
+// since a frame with +y down and +z into the screen is only right-handed if
+// +x points right. Under SDL's convention those same two poses have to read
+// (0, 0, +9.81) and (-0.75, +9.40, +2.72), which is exactly what negating y
+// and z gives.
 //
-// Free and separate from the reader so it can be tested without a console.
+// Rotation does not use that same conversion, and assuming it did is what left
+// a Wii U game steering the wrong way while sitting still perfectly correctly.
+// Turning the two frames into one another is a half turn about x, which is a
+// rotation, so it moves a rotation rate exactly as it moves an acceleration --
+// the sign that differs is not the axes but the sense. libnx reports rotation
+// as positive clockwise about each axis, where SDL (and every consumer of
+// DsMotionState) uses the right-hand rule and calls that negative, so the
+// converted reading is negated on top.
+//
+// Which is visible in one axis and one only, and that is what pins it down.
+// Pitch and roll are corrected against gravity by whatever consumes this, so a
+// sign error there shows as a flick that snaps back and reads as nothing much.
+// Yaw has nothing to correct it: nothing else in a six-axis reading knows
+// which way the device is pointing, so a sign error there is permanent, and
+// "turning left turns the game right, but the tilt is fine" is precisely the
+// shape of a rotation that is right about its axes and wrong about its sense.
+//
+// The same relationship holds on the other device this reads from. Cemu's own
+// DSU reader and its SDL reader differ by exactly this: the same axes for both
+// kinds of reading, and an overall negation between the acceleration transform
+// and the rotation one. See parse_dsu_motion(), which was derived from those
+// two independently and lands in the same place.
+//
+// Free and separate from the reader so both can be tested without a console.
 struct SwitchSixAxis {
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
 };
-SwitchSixAxis switch_sixaxis_to_sdl(const SwitchSixAxis& native);
+SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native);
+SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native);
 
 class MotionReader {
 public:

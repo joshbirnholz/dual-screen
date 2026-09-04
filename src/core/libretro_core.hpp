@@ -117,10 +117,33 @@ public:
     // Whether the loaded core renders on the GPU, which it declares while the
     // game is being opened. Only meaningful after load_game().
     bool uses_hw_render() const { return hw_render_.valid(); }
+    // Whether a core that does not declare an option at all is worth
+    // reporting. A system can be run by more than one core -- 3DS games by
+    // Citra or by Azahar -- and the two do not always have the same options,
+    // so "this core has no such option" is a real problem for some settings
+    // and simply not applicable for others.
+    enum class OptionRequirement {
+        Required,   // every core we support has this one
+        IfPresent,  // only some do, and the ones that do not need no setting
+    };
+
     // Forces a core option to a value. Applied on top of the core's declared
     // defaults, and validated against the core's own option definitions once
     // those arrive (a mismatch is reported through option_warnings()).
     void force_option(const std::string& key, const std::string& value);
+
+    // The same, given several spellings of the same setting: the first one the
+    // loaded core actually offers is the one used, and only a core offering
+    // none of them is reported.
+    //
+    // This exists because the value a setting is spelled with is the core's
+    // business, not the setting's. Citra's screen layouts are written out in
+    // words ("Default Top-Bottom Screen") and Azahar's are identifiers
+    // ("default"); Citra's resolution scale is "3x" and Azahar's is "3". Both
+    // run 3DS games and either may be the one installed, so the frontend asks
+    // for the setting and lets the core say which name it goes by.
+    void force_option(const std::string& key, std::vector<std::string> values,
+                      OptionRequirement requirement = OptionRequirement::Required);
 
     // --- lifecycle ---
     bool load(const std::string& core_path, std::string* error);
@@ -199,7 +222,12 @@ private:
 
     std::map<std::string, CoreOptionInfo> declared_options_;
     std::map<std::string, std::string> option_values_;
-    std::map<std::string, std::string> forced_options_;
+    // A setting we insist on, and the spellings it may go by.
+    struct ForcedOption {
+        std::vector<std::string> values;  // in order of preference
+        OptionRequirement requirement = OptionRequirement::Required;
+    };
+    std::map<std::string, ForcedOption> forced_options_;
     std::vector<std::string> option_warnings_;
     // What has already been written to the log, so a revalidation is quiet.
     std::vector<std::string> logged_option_warnings_;

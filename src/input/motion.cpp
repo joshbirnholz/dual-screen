@@ -40,13 +40,24 @@ uint32_t now_micros() {
 
 }  // namespace
 
-SwitchSixAxis switch_sixaxis_to_sdl(const SwitchSixAxis& native) {
+SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
     // Right is right in both frames; up and out-of-the-screen are each the
     // other way round. See the header for the two readings this came from.
     SwitchSixAxis out;
     out.x = native.x;
     out.y = -native.y;
     out.z = -native.z;
+    return out;
+}
+
+SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native) {
+    // The same axes, turning the other way: libnx calls a clockwise turn
+    // positive and SDL calls it negative. See the header.
+    const SwitchSixAxis axes = switch_accel_to_sdl(native);
+    SwitchSixAxis out;
+    out.x = -axes.x;
+    out.y = -axes.y;
+    out.z = -axes.z;
     return out;
 }
 
@@ -312,14 +323,14 @@ bool MotionReader::read_console_sensors() {
     // revolutions per second; SDL uses metres per second squared and radians
     // per second.
     //
-    // And the axes do not agree, which an earlier version of this said they
-    // did. See switch_sixaxis_to_sdl().
+    // And neither the axes nor, for rotation, the direction of a turn agree
+    // with SDL's. See switch_accel_to_sdl() and switch_gyro_to_sdl().
     constexpr float kTau = 6.283185307f;
-    const SwitchSixAxis accel = switch_sixaxis_to_sdl(
+    const SwitchSixAxis accel = switch_accel_to_sdl(
         {sample.acceleration.x, sample.acceleration.y, sample.acceleration.z});
     const SwitchSixAxis gyro =
-        switch_sixaxis_to_sdl({sample.angular_velocity.x, sample.angular_velocity.y,
-                               sample.angular_velocity.z});
+        switch_gyro_to_sdl({sample.angular_velocity.x, sample.angular_velocity.y,
+                            sample.angular_velocity.z});
     state_.accel_x = accel.x * kGravity;
     state_.accel_y = accel.y * kGravity;
     state_.accel_z = accel.z * kGravity;

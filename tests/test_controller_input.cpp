@@ -798,11 +798,11 @@ namespace {
 //
 // The two cases below are real readings off a console, one per pose, and they
 // are what settled this after two plausible guesses did not. See
-// switch_sixaxis_to_sdl() for the derivation.
+// switch_accel_to_sdl() for the derivation.
 void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
     // Resting flat on a table, face up. SDL's convention puts up -- which here
     // is out of the screen -- on +z.
-    const SwitchSixAxis flat = switch_sixaxis_to_sdl({0.00f, 0.00f, -9.81f});
+    const SwitchSixAxis flat = switch_accel_to_sdl({0.00f, 0.00f, -9.81f});
     CHECK(test::nearly_equal(flat.x, 0.0));
     CHECK(test::nearly_equal(flat.y, 0.0));
     CHECK(test::nearly_equal(flat.z, 9.81));
@@ -810,7 +810,7 @@ void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
     // Held upright and tilted back about sixteen degrees, which is simply how
     // someone holds a console. Up is now mostly towards the top of the screen,
     // so it belongs on +y -- and the tilt leaves a little of it on +z.
-    const SwitchSixAxis upright = switch_sixaxis_to_sdl({-0.75f, -9.40f, -2.72f});
+    const SwitchSixAxis upright = switch_accel_to_sdl({-0.75f, -9.40f, -2.72f});
     CHECK(test::nearly_equal(upright.x, -0.75));
     CHECK(test::nearly_equal(upright.y, 9.40));
     CHECK(test::nearly_equal(upright.z, 2.72));
@@ -821,10 +821,37 @@ void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
     CHECK(std::abs(upright.y) > std::abs(upright.z));
 }
 
+// And the other half, which the first version of this got wrong by reusing the
+// conversion above: a turn has a direction as well as an axis, and the two
+// frames disagree about that too.
+void test_a_switch_turn_comes_out_turning_the_same_way() {
+    // Swept to the player's left while held upright -- the motion that steers
+    // in a Wii U game, and the one that was steering right. The axis is the
+    // console's own up, which libnx has pointing down, and libnx counts a
+    // clockwise turn as positive where SDL counts it as negative; the two
+    // cancel on this axis, so what comes out is what went in.
+    const SwitchSixAxis yaw_left = switch_gyro_to_sdl({0.0f, 1.5f, 0.0f});
+    CHECK(test::nearly_equal(yaw_left.y, 1.5));
+    CHECK_MSG(yaw_left.y > 0.0f,
+              "a turn to the left has to be a positive rotation about SDL's up axis, or a game "
+              "steers the other way");
+
+    // The axes are still the acceleration conversion's axes. Stated as the
+    // relationship rather than as three more numbers, because that is the part
+    // that is easy to get wrong twice: same axes, opposite sense.
+    const SwitchSixAxis native = {0.4f, -1.1f, 2.3f};
+    const SwitchSixAxis as_accel = switch_accel_to_sdl(native);
+    const SwitchSixAxis as_gyro = switch_gyro_to_sdl(native);
+    CHECK(test::nearly_equal(as_gyro.x, -as_accel.x));
+    CHECK(test::nearly_equal(as_gyro.y, -as_accel.y));
+    CHECK(test::nearly_equal(as_gyro.z, -as_accel.z));
+}
+
 }  // namespace
 
 int main() {
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
+    test_a_switch_turn_comes_out_turning_the_same_way();
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "skipping: SDL game controller subsystem unavailable: %s\n",
