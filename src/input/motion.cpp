@@ -248,7 +248,7 @@ bool MotionReader::read_console_sensors() {
     // itself (a Lite, or a regular one with Joy-Cons on), a detached pair, and
     // a Pro Controller.
     static HidSixAxisSensorHandle handles[2] = {};
-    static unsigned handle_count = 0;
+    static s32 handle_count = 0;
     static uint32_t retry_at_ms = 0;
     static int quiet_reads = 0;
     static const char* source_name = nullptr;
@@ -262,8 +262,12 @@ bool MotionReader::read_console_sensors() {
         retry_at_ms = now_ms + 1000;
         struct Candidate {
             HidNpadIdType id;
-            uint32_t style;
-            unsigned count;
+            // libnx's own types, not the integers underneath them: the style
+            // is an enum and the count is signed, and spelling either as
+            // something wider makes the call ambiguous rather than merely
+            // ugly.
+            HidNpadStyleTag style;
+            s32 count;
             const char* name;
         };
         const Candidate candidates[] = {
@@ -279,7 +283,7 @@ bool MotionReader::read_console_sensors() {
                 break;
             }
         }
-        for (unsigned index = 0; index < handle_count; ++index) {
+        for (s32 index = 0; index < handle_count; ++index) {
             hidStartSixAxisSensor(handles[index]);
         }
         if (handle_count > 0) {
@@ -295,7 +299,7 @@ bool MotionReader::read_console_sensors() {
         // The handles have gone stale -- Joy-Cons came off, or went on. Given
         // a moment in case it is a single dropped read, then taken again.
         if (++quiet_reads > 60) {
-            for (unsigned index = 0; index < handle_count; ++index) {
+            for (s32 index = 0; index < handle_count; ++index) {
                 hidStopSixAxisSensor(handles[index]);
             }
             handle_count = 0;

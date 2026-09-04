@@ -67,6 +67,18 @@ dualscreen_add_test(test_image)
 dualscreen_add_test(test_protocol)
 dualscreen_add_test(test_audio)
 dualscreen_add_test(test_dsu)
+
+# The Switch build cannot run here, so at least hold its libnx calls to the
+# right signatures -- see run_switch_typecheck.cmake for what that is and is
+# not worth.
+add_test(NAME switch_motion_typecheck
+    COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=${CMAKE_CXX_COMPILER}
+        -DSOURCES=${CMAKE_SOURCE_DIR}/src/input/motion.cpp
+        -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/switch_stub
+        -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
+        "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
 dualscreen_add_test(test_net)
 dualscreen_add_test(test_session)
 # Discovery, session and media all live on fixed ports (kDiscoveryPort and the
