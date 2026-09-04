@@ -59,6 +59,15 @@ constexpr const char* kOpt3dsRenderTouch = "citra_render_touchscreen";
 // "3x" and so on with the first written out in full; Azahar uses the bare
 // number.
 constexpr const char* kOpt3dsResolution = "citra_resolution_factor";
+// What the right stick does. Both cores default it to driving the C-Stick
+// *and* a touchscreen pointer, which on Azahar draws a small cross on the
+// touch screen and moves it with the stick. There is no way to press it from
+// here and nothing that needs it -- this app has its own touch control, and
+// the right stick is the C-Stick -- so it is a distraction drawn over the
+// game. Pinned to the C-Stick alone, which leaves the stick doing exactly
+// what it did and takes the cross away.
+constexpr const char* kOpt3dsAnalogFunction = "citra_analog_function";
+const std::vector<std::string> kOpt3dsAnalogFunctionValues = {"c_stick", "C-Stick"};
 
 std::vector<std::string> citra_resolution_values(int scale) {
     return {scale <= 1 ? std::string("1x (Native)") : std::to_string(scale) + "x",
@@ -193,6 +202,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
                                 LibretroCore::OptionRequirement::IfPresent);
             core_->force_option(kOpt3dsRenderTouch, {"disabled"},
                                 LibretroCore::OptionRequirement::IfPresent);
+            core_->force_option(kOpt3dsAnalogFunction, kOpt3dsAnalogFunctionValues);
             break;
     }
     // After the layout, because it multiplies whatever that layout produces.

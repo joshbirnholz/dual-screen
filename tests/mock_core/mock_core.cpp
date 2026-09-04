@@ -360,6 +360,15 @@ const retro_core_option_v2_definition kOptions[] = {
       {"10x", nullptr},
       {nullptr, nullptr}},
      "1x (Native)"},
+    // Citra's spelling of what the right stick does; Azahar's is below. Both
+    // default to driving a touchscreen pointer as well as the C-Stick, which
+    // is drawn over the game.
+    {"citra_analog_function", "Right Analog Function", nullptr, nullptr, nullptr, "input",
+     {{"C-Stick and Touchscreen Pointer", nullptr},
+      {"Touchscreen Pointer", nullptr},
+      {"C-Stick", nullptr},
+      {nullptr, nullptr}},
+     "C-Stick and Touchscreen Pointer"},
     {"melonds_number_of_screen_layouts", "Number of layouts", nullptr,
      "How many layouts to cycle through", nullptr, "screen",
      {{"1", nullptr}, {"2", nullptr}, {nullptr, nullptr}}, "2"},
@@ -402,6 +411,12 @@ const retro_core_option_v2_definition kAzaharOptions[] = {
      "default"},
     {"citra_swap_screen", "Prominent 3DS screen", nullptr, nullptr, nullptr, "screen",
      {{"Top", nullptr}, {"Bottom", nullptr}, {nullptr, nullptr}}, "Top"},
+    {"citra_analog_function", "Right Analog Function", nullptr, nullptr, nullptr, "input",
+     {{"c_stick_and_touchscreen", nullptr},
+      {"touchscreen_pointer", nullptr},
+      {"c_stick", nullptr},
+      {nullptr, nullptr}},
+     "c_stick_and_touchscreen"},
     {"citra_resolution_factor", "Resolution scale factor", nullptr, nullptr, nullptr, "video",
      {{"1", nullptr},
       {"2", nullptr},

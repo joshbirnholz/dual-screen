@@ -73,27 +73,33 @@ namespace ds {
 // and z gives.
 //
 // Rotation does not use that same conversion, and assuming it did is what left
-// a Wii U game steering the wrong way while sitting still perfectly correctly.
-// Turning the two frames into one another is a half turn about x, which is a
-// rotation, so it moves a rotation rate exactly as it moves an acceleration --
-// the sign that differs is not the axes but the sense. libnx reports rotation
-// as positive clockwise about each axis, where SDL (and every consumer of
-// DsMotionState) uses the right-hand rule and calls that negative, so the
-// converted reading is negated on top.
+// a Wii U game steering the wrong way while tilting perfectly correctly. What
+// it does use was settled by two builds on real hardware rather than derived,
+// because the theory that looked right predicted the wrong thing twice:
 //
-// Which is visible in one axis and one only, and that is what pins it down.
-// Pitch and roll are corrected against gravity by whatever consumes this, so a
-// sign error there shows as a flick that snaps back and reads as nothing much.
-// Yaw has nothing to correct it: nothing else in a six-axis reading knows
-// which way the device is pointing, so a sign error there is permanent, and
-// "turning left turns the game right, but the tilt is fine" is precisely the
-// shape of a rotation that is right about its axes and wrong about its sense.
+//   using the acceleration conversion unchanged (x, -y, -z)
+//       tilt correct, left and right swapped
+//   negating it on the reasoning that libnx counts a turn the other way
+//   round from SDL, which would be a whole-vector sign (-x, y, z)
+//       nothing points the right way, and it drifts and snaps back
 //
-// The same relationship holds on the other device this reads from. Cemu's own
-// DSU reader and its SDL reader differ by exactly this: the same axes for both
-// kinds of reading, and an overall negation between the acceleration transform
-// and the rotation one. See parse_dsu_motion(), which was derived from those
-// two independently and lands in the same place.
+// The second reading is the informative one. Pitch and roll are pulled back
+// towards gravity by whatever consumes this, so a wrong sign on either shows
+// as exactly that drift-and-snap; the first build had neither, which says its
+// x and z were already right. Yaw has nothing pulling it anywhere -- no part
+// of a six-axis reading knows which way a device is pointing -- so a wrong
+// sign there is permanent and shows as nothing but left and right swapped,
+// which is the first build exactly. So x and z stand as they are and y does
+// not get negated:
+//
+//     rotation is (x, y, -z) where acceleration is (x, -y, -z)
+//
+// That is not a rotation of the frame, and no rearranging of axes produces
+// it, which is the honest state of this: libnx's rotation is not the
+// acceleration frame's vector. Nintendo's own naming (pitch, yaw, roll) is
+// the likeliest reason -- yaw is conventionally about "up" whichever way the
+// frame's own axis points -- but that is a guess about why, and the mapping
+// above is not a guess.
 //
 // Free and separate from the reader so both can be tested without a console.
 struct SwitchSixAxis {

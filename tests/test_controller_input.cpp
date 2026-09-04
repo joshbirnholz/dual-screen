@@ -821,30 +821,41 @@ void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
     CHECK(std::abs(upright.y) > std::abs(upright.z));
 }
 
-// And the other half, which the first version of this got wrong by reusing the
-// conversion above: a turn has a direction as well as an axis, and the two
-// frames disagree about that too.
+// And the other half, which took two builds on hardware to settle because it
+// is not the conversion above and it is not the negative of it either.
+//
+// This test is written as the two things those builds ruled out, since that is
+// what the evidence actually is -- see switch_gyro_to_sdl() for what each
+// build looked like in a game.
 void test_a_switch_turn_comes_out_turning_the_same_way() {
-    // Swept to the player's left while held upright -- the motion that steers
-    // in a Wii U game, and the one that was steering right. The axis is the
-    // console's own up, which libnx has pointing down, and libnx counts a
-    // clockwise turn as positive where SDL counts it as negative; the two
-    // cancel on this axis, so what comes out is what went in.
-    const SwitchSixAxis yaw_left = switch_gyro_to_sdl({0.0f, 1.5f, 0.0f});
-    CHECK(test::nearly_equal(yaw_left.y, 1.5));
-    CHECK_MSG(yaw_left.y > 0.0f,
-              "a turn to the left has to be a positive rotation about SDL's up axis, or a game "
-              "steers the other way");
-
-    // The axes are still the acceleration conversion's axes. Stated as the
-    // relationship rather than as three more numbers, because that is the part
-    // that is easy to get wrong twice: same axes, opposite sense.
     const SwitchSixAxis native = {0.4f, -1.1f, 2.3f};
     const SwitchSixAxis as_accel = switch_accel_to_sdl(native);
     const SwitchSixAxis as_gyro = switch_gyro_to_sdl(native);
-    CHECK(test::nearly_equal(as_gyro.x, -as_accel.x));
-    CHECK(test::nearly_equal(as_gyro.y, -as_accel.y));
-    CHECK(test::nearly_equal(as_gyro.z, -as_accel.z));
+
+    // Not the acceleration conversion. That build tilted correctly and swapped
+    // left for right, which is a wrong sign on the axis nothing corrects.
+    CHECK_MSG(!test::nearly_equal(as_gyro.y, as_accel.y),
+              "rotation is being converted like acceleration, which swaps left and right");
+
+    // Nor its negative. That build had every axis wrong, which showed as
+    // motion that never pointed anywhere and kept being dragged back by
+    // gravity -- the signature of pitch and roll fighting the accelerometer.
+    CHECK_MSG(!test::nearly_equal(as_gyro.x, -as_accel.x),
+              "rotation is being converted as the opposite of acceleration, which leaves pitch "
+              "and roll fighting gravity");
+
+    // What is left, stated outright: the same first two axes as the reading,
+    // and the third turned over.
+    CHECK(test::nearly_equal(as_gyro.x, native.x));
+    CHECK(test::nearly_equal(as_gyro.y, native.y));
+    CHECK(test::nearly_equal(as_gyro.z, -native.z));
+
+    // Which is to say a sweep to the player's left, about the console's own up
+    // axis, stays a sweep to the left.
+    const SwitchSixAxis yaw = switch_gyro_to_sdl({0.0f, 1.5f, 0.0f});
+    CHECK(test::nearly_equal(yaw.y, 1.5));
+    CHECK(test::nearly_equal(yaw.x, 0.0));
+    CHECK(test::nearly_equal(yaw.z, 0.0));
 }
 
 }  // namespace

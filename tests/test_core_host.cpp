@@ -106,24 +106,35 @@ void test_core_loads_and_runs() {
 
     // Motion, through libretro's own sensor interface -- the path a 3DS game
     // reads its gyroscope over, and the one a companion's readings arrive on.
-    // The units are the conversion worth pinning: this app carries
-    // acceleration in metres per second squared and libretro asks for g, so a
-    // device lying flat reads 1.0 rather than 9.8.
+    // Two conversions are worth pinning here, and the mock happens to report
+    // exactly the two axes that show both.
+    //
+    // The unit: this app carries acceleration in metres per second squared and
+    // libretro asks for g, so one g reads 1.0 rather than 9.8.
+    //
+    // The frame: not SDL's. libretro never says what its sensor axes mean, so
+    // they mean whatever the core reading them assumes, and the core here is
+    // Azahar, which hands these straight to the 3DS's own motion device. Its
+    // SDL path defines the difference -- acceleration's second component
+    // negated, rotation's first and third -- so a reading of +1g upward
+    // arrives as -1, and rotation about x arrives with its sign turned over.
+    // Passing these through unchanged is what had a 3DS game steering the
+    // wrong way while a Wii U game, which does its own conversion, was fine.
     input.motion.present = true;
-    input.motion.gyro_x = 1.5f;                 // radians a second, unchanged
+    input.motion.gyro_x = 1.5f;                 // radians a second
     input.motion.accel_y = 9.80665f;            // one g upward
     core.run_frame();
     bool saw_motion = false;
     for (const std::string& message : core.core_messages()) {
-        if (message == "motion gyro_x=1500 accel_y=1000") saw_motion = true;
+        if (message == "motion gyro_x=-1500 accel_y=-1000") saw_motion = true;
     }
-    CHECK_MSG(saw_motion, "motion never reached the core, or arrived in the wrong units");
+    CHECK_MSG(saw_motion, "motion never reached the core, or arrived in the wrong units or frame");
 
     // And a core that has turned its sensors back off stops being given
     // readings, rather than quietly keeping them.
     CHECK(core.on_set_sensor_state(0, 1 /* RETRO_SENSOR_ACCELEROMETER_DISABLE */, 60));
     CHECK(core.on_sensor_input(0, 1 /* RETRO_SENSOR_ACCELEROMETER_Y */) == 0.0f);
-    CHECK(core.on_sensor_input(0, 3 /* RETRO_SENSOR_GYROSCOPE_X */) == 1.5f);
+    CHECK(core.on_sensor_input(0, 3 /* RETRO_SENSOR_GYROSCOPE_X */) == -1.5f);
 
     const CoreVideoFrame& frame = core.video_frame();
     CHECK(frame.valid());

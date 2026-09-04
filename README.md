@@ -235,9 +235,11 @@ nothing else), so a 3DS gyro cannot work on it however much this side
 implements. Azahar asks for the interface, has motion switched on by default,
 and is looked for first. Whichever device holds the bottom screen is the one being
 tilted, exactly as for a Wii U, and the same three sources feed it: a pad's own
-sensors, the machine's, or a DSU server. libretro asks for acceleration in g
-and rotation in radians a second, and its axes already agree with SDL's, so
-only the unit is converted on the way in.
+sensors, the machine's, or a DSU server. libretro documents the units (g, and
+radians a second) but never says what its sensor axes mean, so in practice they
+mean whatever the core reading them assumes — here, the 3DS's own frame, since
+Azahar passes them to its motion device untouched. Azahar's SDL path defines
+the difference and is what this mirrors.
 
 Only on a console that reads it. A DS session never switches a sensor on at
 all, which on a handheld is a gyroscope not running for an hour for nothing.

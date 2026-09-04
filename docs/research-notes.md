@@ -189,6 +189,58 @@ The mock core can speak either dialect (`MOCK_CORE_AZAHAR_OPTIONS`), so both
 paths are covered by tests rather than by whichever core happened to be
 installed on the machine that ran them.
 
+Two more of Azahar's options matter here. `citra_analog_function` defaults to
+`c_stick_and_touchscreen`, which puts a small cross on the touch screen and
+moves it with the right stick — nothing here can press it, this app has its own
+touch control, and it is drawn over the game, so it is pinned to `c_stick`
+(Citra spells the same value `C-Stick`). And `citra_enable_motion` is on by
+default, which is the only reason the gyro works at all: see below.
+
+### What libretro's sensor axes actually mean
+
+Nothing, is the short answer. `retro_sensor_interface` documents the units — g
+for acceleration, radians a second for rotation — and says nothing at all about
+which way the axes point. So they mean whatever the core reading them assumes,
+and the assumption is not written down there either.
+
+The first version of this passed SDL's axes straight through on the strength of
+a comment in Azahar's own libretro sensor code:
+
+```
+// LibRetro coordinate system matches 3DS: X=LEFT, Y=OUT, Z=UP
+```
+
+which is a claim about the 3DS's frame, not about libretro's, and taking it at
+face value left a 3DS game steering the wrong way while a Wii U game — which
+does its own conversion inside Cemu — was fine on the same device and the same
+reading.
+
+The reliable source is Azahar's *other* path into the same motion device. It
+reads SDL controllers directly, that path is the one people actually use, and
+it is therefore the definition of SDL → 3DS
+(`SDLState::HandleGameControllerEvent`):
+
+```cpp
+case SDL_SENSOR_ACCEL:
+    joystick->SetAccel(data[0] / SDL_STANDARD_GRAVITY,
+                      -data[1] / SDL_STANDARD_GRAVITY,
+                       data[2] / SDL_STANDARD_GRAVITY);
+case SDL_SENSOR_GYRO:
+    joystick->SetGyro(-data[0] * RAD_TO_DEG,
+                       data[1] * RAD_TO_DEG,
+                      -data[2] * RAD_TO_DEG);
+```
+
+Same axis order; acceleration's second component negated and rotation's first
+and third. Note that the rotation transform is the negative of the acceleration
+one — the same relationship Cemu's DSU and SDL readers have, derived from those
+independently. That is the pattern to expect when converting an SDL reading
+into an emulator's own frame, and it is worth checking a new one against.
+
+Azahar's libretro path applies no conversion of its own beyond
+radians-to-degrees, so the frontend has to hand over the 3DS frame directly,
+which means reproducing exactly the transform above.
+
 Changing it mid-game needed nothing new. Citra sees the change through
 `GET_VARIABLE_UPDATE` at the top of its next `retro_run`, recomputes its layout,
 and announces the result with a whole new `retro_system_av_info` — base *and*

@@ -1171,25 +1171,40 @@ float LibretroCore::on_sensor_input(unsigned port, unsigned id) const {
         return 0.0f;
     }
     const DsMotionState& motion = input_state_->motion;
-    // The two conventions already agree, which is worth stating because it
-    // looks too convenient to be true: libretro puts +x to the right, +y up
-    // and +z out of the screen towards the player, with positive rotation
-    // counter-clockwise, and so does SDL -- which is what DsMotionState
-    // carries (see its comment). A device lying flat and face up reads +1g on
-    // z under both. So the axes pass straight through and only the
-    // acceleration's unit changes: libretro asks for g, this carries metres
-    // per second squared.
+    // An earlier version of this said the two conventions already agreed and
+    // passed the axes straight through, changing only the unit. They do not
+    // agree, and a 3DS game steered the wrong way for it.
+    //
+    // libretro's sensor interface never says what its axes mean, so what they
+    // mean in practice is whatever the core reading them assumes -- and here
+    // that core is Azahar, which feeds these values directly into the 3DS's
+    // own motion device with no conversion of its own. So the frame to hand
+    // over is the 3DS's, not SDL's.
+    //
+    // Which is a claim worth sourcing rather than deriving. Azahar reads the
+    // same 3DS motion device from SDL as well, and that path is the one people
+    // actually use, so it is the definition of the conversion: in its
+    // SDLState::HandleGameControllerEvent it stores acceleration as
+    // (x, -y, z) in g and rotation as (-x, y, -z), converting radians to
+    // degrees on the way. That is what the two lists below reproduce -- the
+    // same axis order, acceleration's second component negated and rotation's
+    // first and third, which is the acceleration transform's own negative and
+    // the same relationship Cemu's two readers have (see parse_dsu_motion).
+    //
+    // The units are what libretro does document: g for acceleration, radians
+    // a second for rotation. DsMotionState carries metres per second squared
+    // and radians a second, so only the first needs converting.
     constexpr float kGravity = 9.80665f;
     switch (id) {
         case RETRO_SENSOR_ACCELEROMETER_X:
             return wants_accelerometer_ ? motion.accel_x / kGravity : 0.0f;
         case RETRO_SENSOR_ACCELEROMETER_Y:
-            return wants_accelerometer_ ? motion.accel_y / kGravity : 0.0f;
+            return wants_accelerometer_ ? -motion.accel_y / kGravity : 0.0f;
         case RETRO_SENSOR_ACCELEROMETER_Z:
             return wants_accelerometer_ ? motion.accel_z / kGravity : 0.0f;
-        case RETRO_SENSOR_GYROSCOPE_X: return wants_gyroscope_ ? motion.gyro_x : 0.0f;
+        case RETRO_SENSOR_GYROSCOPE_X: return wants_gyroscope_ ? -motion.gyro_x : 0.0f;
         case RETRO_SENSOR_GYROSCOPE_Y: return wants_gyroscope_ ? motion.gyro_y : 0.0f;
-        case RETRO_SENSOR_GYROSCOPE_Z: return wants_gyroscope_ ? motion.gyro_z : 0.0f;
+        case RETRO_SENSOR_GYROSCOPE_Z: return wants_gyroscope_ ? -motion.gyro_z : 0.0f;
         default: return 0.0f;
     }
 }

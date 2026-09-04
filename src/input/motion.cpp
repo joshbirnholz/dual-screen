@@ -51,13 +51,14 @@ SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
 }
 
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native) {
-    // The same axes, turning the other way: libnx calls a clockwise turn
-    // positive and SDL calls it negative. See the header.
-    const SwitchSixAxis axes = switch_accel_to_sdl(native);
+    // Nearly the acceleration conversion, but not quite: yaw comes through as
+    // it is where acceleration's second axis is negated. Measured on hardware
+    // over two builds rather than derived -- see the header, which says what
+    // each of them looked like and why they settle it between them.
     SwitchSixAxis out;
-    out.x = -axes.x;
-    out.y = -axes.y;
-    out.z = -axes.z;
+    out.x = native.x;
+    out.y = native.y;
+    out.z = -native.z;
     return out;
 }
 
