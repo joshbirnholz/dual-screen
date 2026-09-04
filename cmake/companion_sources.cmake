@@ -24,6 +24,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/input/input_manager.cpp
     src/input/motion.cpp
     src/input/switch_motion.cpp
+    src/input/motion_compare.cpp
     src/layout/layout.cpp
     src/layout/layout_registry.cpp
     src/net/companion_session.cpp

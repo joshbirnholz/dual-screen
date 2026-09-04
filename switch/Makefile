@@ -79,7 +79,7 @@ SOURCE_DIRS := $(CLIENT) \
 CPPFILES    := main.cpp \
                audio_output.cpp \
                system.cpp \
-               controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp switch_motion.cpp \
+               controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp switch_motion.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
                video_decoder.cpp video_encoder.cpp \

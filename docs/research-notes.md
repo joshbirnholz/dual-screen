@@ -349,6 +349,34 @@ pseudovector and picks up the reflection's sign as well, the two cancel, and a
 clean confident wrong answer comes back. Settling the accelerometer's own axes
 takes one reading in a known pose, from a person. There is no solving around it.
 
+### Measuring against a device that already works
+
+Seven rounds went into this by deriving an answer and then asking how a game
+felt. That channel cannot separate a wrong scale from a wrong sign, or a wrong
+axis from a wrong handedness — all four come back as "it's wrong somehow",
+which is what happened every time, including when all forty-eight possibilities
+were offered one at a time and none of them was right. When every candidate in
+a complete space is wrong, the thing being varied is not the thing that is
+broken.
+
+A Steam Deck's motion has been correct throughout. A device that is already
+right is a far better instrument than any amount of reasoning: hold the two
+together, screens facing the same way, and move them as one, and they are in
+the same orientation undergoing the same rotation. Whatever maps one reading
+onto the other *is* the error, with no poses to describe and no feel to report.
+
+The **host** is where that comparison belongs, because the host already holds
+both readings at the same instant — its own, and the companion's as it arrives
+— so nothing has to be lined up afterwards from two logs and two clocks.
+`MotionComparison` collects the pairs and fits a signed permutation and a scale
+for acceleration and for rotation separately. It is far better conditioned than
+fitting against the accelerometer: both vectors are known, so there is no cross
+product and nothing about the motion that cannot be observed.
+
+It logs the raw pairs as well as the answer, which is the part that matters —
+an answer derived from them can then be checked against them by hand, which
+none of the earlier attempts allowed.
+
 The part that matters is that this is **testable without a console**. Rotate a
 synthetic device, work out what its accelerometer and gyroscope would report
 under some convention, hand those to the solver, and see whether it names the

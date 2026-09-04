@@ -95,6 +95,7 @@ dualscreen_add_test(test_controller_mapping)
 dualscreen_add_test(test_retro_keymap)
 dualscreen_add_test(test_controller_input)
 dualscreen_add_test(test_switch_motion)
+dualscreen_add_test(test_motion_compare)
 dualscreen_add_test(test_core_host NEEDS_GL)
 add_dependencies(test_core_host mock_core mock_core_3ds)
 

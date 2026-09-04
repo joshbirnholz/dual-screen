@@ -149,8 +149,21 @@ void MotionReader::open_sensors() {
         log_info(std::string("motion: this device has no sensor support (") + SDL_GetError() + ")");
         return;
     }
-    for (int index = 0; index < SDL_NumSensors(); ++index) {
+    // How many, and of what, because "nothing here reports how it is being
+    // held" is two different situations that read the same in a log: SDL
+    // knowing of no sensors at all, and SDL knowing of some it will not open.
+    // On a Switch the difference decides whether libnx has to be read directly
+    // -- with all the undocumented axes and units that entails -- or whether
+    // SDL would hand the same hardware over in its own documented convention,
+    // which is what every other device here uses and the only one that has
+    // never needed guessing at.
+    const int sensor_count = SDL_NumSensors();
+    for (int index = 0; index < sensor_count; ++index) {
         const SDL_SensorType type = SDL_SensorGetDeviceType(index);
+        const char* name = SDL_SensorGetDeviceName(index);
+        log_debug("motion: SDL sensor " + std::to_string(index) + " is type " +
+                  std::to_string(static_cast<int>(type)) + ", " +
+                  (name != nullptr ? name : "unnamed"));
         if (type == SDL_SENSOR_GYRO && device_gyro_ == nullptr) {
             device_gyro_ = SDL_SensorOpen(index);
         } else if (type == SDL_SENSOR_ACCEL && device_accel_ == nullptr) {
@@ -160,7 +173,8 @@ void MotionReader::open_sensors() {
     if (device_gyro_ != nullptr && device_accel_ != nullptr) {
         log_info("motion: this device has sensors of its own to fall back on");
     } else if (with_sensors == 0) {
-        log_info("motion: nothing here reports how it is being held, so this session has none");
+        log_info("motion: nothing here reports how it is being held, so this session has none (SDL "
+                 "knows of " + std::to_string(sensor_count) + " sensors)");
     }
 }
 

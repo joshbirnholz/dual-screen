@@ -238,9 +238,14 @@ whatever it started with.
 
 **Switch gyro axes** in Settings turns that by hand instead, through all
 forty-eight possibilities, taking effect immediately so it can be walked while
-a game is running. It exists because working the answer out by guessing and
-asking cost several rounds of build-and-report; it is temporary, and once the
-answer is known it belongs in the code as a constant.
+a game is running. It is temporary, and once the answer is known it belongs in
+the code as a constant.
+
+And when a device whose motion is already correct is hosting for one whose
+motion is not, holding the two together and moving them as one makes the host
+log both readings side by side and work out what stands between them — see
+`MotionComparison`. Two readings of one motion settle in a minute what
+reasoning about conventions did not settle in seven attempts.
 
 A 3DS reads it too, through libretro's own sensor interface
 (`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE`) — but **only on `azahar_libretro`**.

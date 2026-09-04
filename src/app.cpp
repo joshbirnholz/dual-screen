@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "audio/audio_output.hpp"
+#include "input/motion_compare.hpp"
 #include "config/game_config.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
@@ -276,6 +277,10 @@ struct App::Impl {
     // the window, destroyed just before it.
     BezelArt bezel_art;
     InputManager input;
+    // Only ever fed while this device and a companion both report motion, so
+    // it costs nothing on the ordinary path. See MotionComparison for what it
+    // is for.
+    MotionComparison motion_comparison;
     AudioOutput audio;
 
     std::unique_ptr<LibretroCoreScreenSource> source;
@@ -2820,6 +2825,15 @@ int App::run(const AppOptions& options) {
                 // GamePad -- it is the thing being tilted at the screen.
                 if (remote.motion.present) {
                     combined.motion = remote.motion;
+                }
+                // And, while both devices report it, hold the two up against
+                // each other. This is the host, so both readings are in hand
+                // at the same instant with nothing to line up afterwards --
+                // which is what makes a device that is already right usable as
+                // an instrument for one that is not. See MotionComparison.
+                if (impl.input.motion().present && remote.motion.present) {
+                    impl.motion_comparison.add(impl.input.motion(), remote.motion);
+                    impl.motion_comparison.report(SDL_GetTicks());
                 }
             }
             if (impl.source) {
