@@ -632,6 +632,18 @@ void App::Impl::apply_system() {
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
     input.set_game_owns_controls(profile.game_uses_every_control);
+    // Whether this device's own sensors are read at all.
+    //
+    // Only when it is the one running the game: a companion is told by the
+    // host instead (see host_wants_motion below), because the host is the one
+    // that knows whether anything at the far end reads motion. This was
+    // missing entirely, which nothing noticed while only a Wii U used motion
+    // -- there the companion supplies it and Cemu reads its own pads. A 3DS
+    // runs its core here, so with nothing switching these on, a game played on
+    // one device had no motion to read at all.
+    if (!is_companion()) {
+        input.set_motion_enabled(profile.uses_motion);
+    }
 }
 
 void App::Impl::refresh_output_size() {

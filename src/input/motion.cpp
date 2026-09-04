@@ -39,6 +39,18 @@ uint32_t now_micros() {
 
 }  // namespace
 
+SwitchSixAxis switch_sixaxis_to_sdl(const SwitchSixAxis& native) {
+    // SDL_hidapi_switch.c, verbatim in effect:
+    //     data[0] = -scaleY * y;
+    //     data[1] =  scaleZ * z;
+    //     data[2] = -scaleX * x;
+    SwitchSixAxis out;
+    out.x = -native.y;
+    out.y = native.z;
+    out.z = -native.x;
+    return out;
+}
+
 MotionReader::~MotionReader() { close_sensors(); }
 
 void MotionReader::set_enabled(bool enabled) {
@@ -261,16 +273,22 @@ bool MotionReader::read_console_sensors() {
     // Into SDL's units and axes, which is what everything downstream expects
     // -- see DsMotionState. libnx reports acceleration in g and rotation in
     // revolutions per second; SDL uses metres per second squared and radians
-    // per second. The axes themselves already agree: both are right-handed
-    // with +x right, +y up and +z towards the player when the console is held
-    // normally.
+    // per second.
+    //
+    // And the axes do not agree, which an earlier version of this said they
+    // did. See switch_sixaxis_to_sdl().
     constexpr float kTau = 6.283185307f;
-    state_.accel_x = sample.acceleration.x * kGravity;
-    state_.accel_y = sample.acceleration.y * kGravity;
-    state_.accel_z = sample.acceleration.z * kGravity;
-    state_.gyro_x = sample.angular_velocity.x * kTau;
-    state_.gyro_y = sample.angular_velocity.y * kTau;
-    state_.gyro_z = sample.angular_velocity.z * kTau;
+    const SwitchSixAxis accel = switch_sixaxis_to_sdl(
+        {sample.acceleration.x, sample.acceleration.y, sample.acceleration.z});
+    const SwitchSixAxis gyro =
+        switch_sixaxis_to_sdl({sample.angular_velocity.x, sample.angular_velocity.y,
+                               sample.angular_velocity.z});
+    state_.accel_x = accel.x * kGravity;
+    state_.accel_y = accel.y * kGravity;
+    state_.accel_z = accel.z * kGravity;
+    state_.gyro_x = gyro.x * kTau;
+    state_.gyro_y = gyro.y * kTau;
+    state_.gyro_z = gyro.z * kTau;
     return true;
 #else
     return false;

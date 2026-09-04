@@ -229,9 +229,11 @@ already does, with sensor fusion tuned to what a real GamePad reports. Sending
 it a second opinion about which way is up would be worse than sending it none.
 
 A 3DS reads it too, through libretro's own sensor interface
-(`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE`), which is how Citra gets at the
-gyroscope and accelerometer its games use — Zelda's first-person aiming, Steel
-Diver, Kid Icarus. Whichever device holds the bottom screen is the one being
+(`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE`) — but **only on `azahar_libretro`**.
+`citra_libretro` has no motion support at all (one TODO in its source and
+nothing else), so a 3DS gyro cannot work on it however much this side
+implements. Azahar asks for the interface, has motion switched on by default,
+and is looked for first. Whichever device holds the bottom screen is the one being
 tilted, exactly as for a Wii U, and the same three sources feed it: a pad's own
 sensors, the machine's, or a DSU server. libretro asks for acceleration in g
 and rotation in radians a second, and its axes already agree with SDL's, so

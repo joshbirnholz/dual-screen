@@ -19,6 +19,7 @@
 #include "core/libretro_screen_source.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
+#include "input/motion.hpp"
 #include "core/system.hpp"
 #include "layout/layout_registry.hpp"
 
@@ -788,7 +789,35 @@ void test_the_extra_shoulders_and_stick_presses_go_where_the_console_has_room() 
     pad.detach();
 }
 
+namespace {
+
+// The Switch's own six-axis frame is not SDL's, and getting that wrong is how
+// a Wii U game came to insist the GamePad was lying flat while it was being
+// held upright. Pinned against SDL's own driver for the same hardware
+// (SDL_hidapi_switch.c), which is the thing that defines what "SDL's frame"
+// even means.
+void test_a_switch_reading_is_shuffled_into_sdls_frame() {
+    // Held upright, facing the player: gravity is along the console's own
+    // third axis, and SDL's convention puts a device at rest at +y.
+    const SwitchSixAxis upright = switch_sixaxis_to_sdl({0.0f, 0.0f, 1.0f});
+    CHECK(test::nearly_equal(upright.x, 0.0));
+    CHECK(test::nearly_equal(upright.y, 1.0));
+    CHECK(test::nearly_equal(upright.z, 0.0));
+    // Which is the whole bug: passed through unshuffled this was 0,0,1, and
+    // +z in SDL's frame is out of the screen -- a device lying face up.
+    CHECK(!test::nearly_equal(upright.z, 1.0));
+
+    // And the other two, so a change to one axis cannot quietly pass.
+    const SwitchSixAxis all = switch_sixaxis_to_sdl({1.0f, 2.0f, 3.0f});
+    CHECK(test::nearly_equal(all.x, -2.0));
+    CHECK(test::nearly_equal(all.y, 3.0));
+    CHECK(test::nearly_equal(all.z, -1.0));
+}
+
+}  // namespace
+
 int main() {
+    test_a_switch_reading_is_shuffled_into_sdls_frame();
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "skipping: SDL game controller subsystem unavailable: %s\n",

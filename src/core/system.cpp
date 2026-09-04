@@ -69,9 +69,15 @@ SystemProfile make_three_ds() {
     console.has_art = true;
 
     profile.rom_extensions = {"3ds", "3dsx", "cci", "cxi", "app", "elf", "axf", "cia"};
-    profile.core_filenames = {"citra_libretro.so", "citra2018_libretro.so",
-                              "citra_canary_libretro.so", "azahar_libretro.so"};
-    profile.core_description = "Citra";
+    // Azahar first, and not only because it is the maintained fork: it is the
+    // only one of these with motion at all. citra_libretro has no sensor code
+    // whatsoever -- one TODO about emulating motion with the mouse and nothing
+    // else -- so a 3DS game's gyroscope cannot work on it however much this
+    // side implements, while azahar asks for libretro's sensor interface and
+    // has it switched on by default.
+    profile.core_filenames = {"azahar_libretro.so", "citra_libretro.so",
+                              "citra2018_libretro.so", "citra_canary_libretro.so"};
+    profile.core_description = "Azahar or Citra";
     // A 3DS is played with the circle pad, so the stick is the circle pad and
     // the d-pad is the d-pad. Sending both from one stick is what made the
     // circle pad unreachable: every core that reads the d-pad saw it pressed.

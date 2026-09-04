@@ -41,6 +41,27 @@ namespace ds {
 // Nothing here integrates anything. What comes out is the raw pair of
 // readings and the moment they were taken; see DsMotionState for why that is
 // deliberate.
+// A Switch's six-axis unit reports in the console's own frame, which is not
+// SDL's -- and everything downstream of DsMotionState is in SDL's (see the
+// comment there). This is the shuffle between them.
+//
+// Not guessed. SDL's own driver for this hardware does exactly this, in
+// SDL_hidapi_switch.c's SendSensorUpdate, where it says outright that "the
+// order of components has been shuffled" to match the convention it uses
+// everywhere else. Getting it wrong is not subtle in the end -- with the
+// second and third axes left alone, gravity lands on the axis that means
+// "out of the screen", so a game reads a device held upright as one lying
+// flat on a table, which is what a Wii U game complaining that the GamePad is
+// "too flat" was actually reporting.
+//
+// Free and separate from the reader so it can be tested without a console.
+struct SwitchSixAxis {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
+SwitchSixAxis switch_sixaxis_to_sdl(const SwitchSixAxis& native);
+
 class MotionReader {
 public:
     ~MotionReader();
