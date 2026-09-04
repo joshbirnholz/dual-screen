@@ -346,8 +346,14 @@ bool MotionReader::read_console_sensors() {
             progress_at_ms = now_ms;
             const int percent = static_cast<int>(motion_fitter_.progress() * 100.0f + 0.5f);
             if (percent > 0) {
+                // With what it currently leans towards and by how much, once
+                // there is enough movement to lean at all. "100% of the way
+                // there" repeated for a minute and a half, with no answer and
+                // no reason given, is how the last round went; the number that
+                // was missing is the margin.
                 log_debug("motion: working out this console's rotation frame, " +
-                          std::to_string(percent) + "% of the way there");
+                          std::to_string(percent) + "% of the way there" +
+                          (percent >= 100 ? " -- " + motion_fitter_.fit().describe() : ""));
             }
         }
     }

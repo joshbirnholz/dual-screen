@@ -194,6 +194,37 @@ void test_movement_in_one_direction_only_is_refused() {
               "a console rolled about one axis was taken as evidence about all three");
 }
 
+// The limit of the method, written down so it does not get mistaken for a
+// feature twice.
+//
+// Everything is solved against the accelerometer's frame, so a wrong
+// accelerometer makes a wrong answer. It is tempting to think a *mirrored*
+// accelerometer -- an odd number of axes turned over, which is exactly the
+// ambiguity two poses on a table leave behind -- would at least announce
+// itself by fitting nothing, since a reflection changes the handedness of a
+// cross product. It does not. Angular velocity is a pseudovector and picks up
+// the reflection's sign as well, the two cancel, and what comes back is a
+// clean, confident, wrong answer.
+//
+// So this test asserts the bad news rather than the good: the fit succeeds,
+// and the frame it names is not the device's. Which means the accelerometer's
+// own axes can only be settled by a reading in a known pose, by a person, and
+// no amount of solving replaces that.
+void test_a_mirrored_accelerometer_is_not_something_this_can_notice() {
+    const MotionAxes device = {{0, 1, 2}, {1, 1, 1}};
+    Recording taken = record(device, 1.0f / 6.283185307f);
+    for (std::size_t index = 0; index < taken.gravity.size(); ++index) {
+        taken.gravity[index].x = -taken.gravity[index].x;
+        taken.change[index].x = -taken.change[index].x;
+    }
+
+    const MotionFit fit = fit_motion_axes(taken.gravity, taken.change, taken.rotation);
+    CHECK_MSG(fit.decided, "the point of this test is that it does decide, confidently");
+    CHECK_MSG(!(fit.axes == device),
+              "if this ever starts naming the real frame through a mirror, the comment above "
+              "is wrong and this method is better than it is documented to be");
+}
+
 void test_the_candidates_are_the_rotations_and_only_those() {
     const std::vector<MotionAxes>& candidates = motion_axis_candidates();
     CHECK_EQ(static_cast<int>(candidates.size()), 24);
@@ -276,6 +307,7 @@ int main() {
     test_it_still_works_on_a_reading_that_is_not_perfect();
     test_it_says_nothing_rather_than_guessing();
     test_movement_in_one_direction_only_is_refused();
+    test_a_mirrored_accelerometer_is_not_something_this_can_notice();
     test_the_accumulator_holds_off_until_it_has_been_moved_every_way();
     test_a_few_seconds_of_ordinary_handling_is_enough();
     return test::finish("motion-fit");

@@ -288,6 +288,30 @@ recording, because "the scale must be wrong" was the reason this stopped being
 a sign hunt, and it was wrong too. Acceleration is in g, confirmed by a console
 lying flat and still reading exactly `0.00, 0.00, -1.00`.
 
+It then ran, reached "100% of the way there", and sat at exactly that for
+ninety-six seconds without deciding — because the *margin* never opened up.
+Two causes, both about signal rather than about frames. A tenth of the samples
+with the most rotation in them were also the ones a hand was shoving, so the
+accelerometer in those was measuring a wrist rather than the ground; those are
+now rejected by comparing its magnitude against what the device weighs at rest,
+learned rather than assumed since the unit is never known. And `dg/dt` was
+differenced between neighbouring readings 8ms apart, which divides their noise
+by 8ms too; it is now differenced across ~80ms, over which the turn grows and
+the noise does not.
+
+The progress line also says what it currently leans towards and by how much.
+"100% of the way there" repeated for ninety seconds with no answer and no
+reason is the same failure as the silence before it, one level down.
+
+**What this method cannot do** is check the frame it is solved against. It was
+tempting to think a mirrored accelerometer frame — an odd number of axes turned
+over, which is exactly the ambiguity two poses on a table leave behind — would
+announce itself by fitting nothing, since a reflection changes the handedness of
+a cross product. It does not, and a test now says so: angular velocity is a
+pseudovector and picks up the reflection's sign as well, the two cancel, and a
+clean confident wrong answer comes back. Settling the accelerometer's own axes
+takes one reading in a known pose, from a person. There is no solving around it.
+
 The part that matters is that this is **testable without a console**. Rotate a
 synthetic device, work out what its accelerometer and gyroscope would report
 under some convention, hand those to the solver, and see whether it names the

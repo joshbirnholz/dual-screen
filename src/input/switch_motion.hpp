@@ -41,6 +41,19 @@ namespace ds {
 // each with a one-parameter least squares for the scale, is small enough to
 // simply try all of them and keep the best.
 //
+// What it cannot do is check the frame it is solved against. Everything here
+// is relative to the accelerometer, so if the accelerometer's own axes are
+// wrong the rotation is fitted to be consistent with them and the whole
+// orientation comes out wrong together -- steadily, with nothing fighting
+// anything, which is the hardest kind of wrong to see. It was tempting to
+// think a mirrored accelerometer frame would at least show up as nothing
+// fitting, since a reflection changes the handedness of a cross product; it
+// does not. Mirror the accelerometer and the rotation that fits is simply a
+// different rotation, because angular velocity picks up the reflection's sign
+// too and the two cancel. There is a test for that, so the idea does not get
+// had twice. Settling it needs one reading in a known pose, which is a
+// question for a person and not for this.
+//
 // It also has to know when it does not know. A device lying still says
 // nothing, and a turn about the axis pointing at the ground says nothing about
 // that axis, since a vector crossed with itself is zero. So a fit is only
@@ -140,10 +153,21 @@ private:
     };
     void solve();
 
+    // A recent reading, kept only long enough to be differenced against one
+    // far enough in the past to be worth differencing against.
+    struct Entry {
+        SwitchSixAxis gravity;   // unit
+        SwitchSixAxis rotation;  // as reported
+        float at = 0.0f;         // seconds since this fitter started
+    };
+
     std::vector<Sample> samples_;
-    SwitchSixAxis previous_gravity_;
-    SwitchSixAxis previous_rotation_;
-    bool have_previous_ = false;
+    std::vector<Entry> history_;
+    float elapsed_ = 0.0f;
+    // What the device weighs when nothing but gravity is acting on it, in
+    // whatever unit the accelerometer reports. Learned rather than assumed,
+    // since this never sees the unit.
+    float at_rest_ = 0.0f;
     // How far the ground has travelled through the device's frame, in
     // radians. Unitless, unlike the rotation reading, which is the point --
     // see kNeededArc.

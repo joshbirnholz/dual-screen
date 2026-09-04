@@ -59,6 +59,14 @@ constexpr std::size_t kNeededSamples = 40;
 // The unit vector towards the ground cannot swing faster than the device
 // turns, so anything quicker than a very brisk wrist flick is a knock.
 constexpr float kFastestTurn = 20.0f;
+// And how far the accelerometer's own magnitude may stray from what the device
+// weighs at rest before the reading is about a hand rather than about the
+// ground.
+constexpr float kRestingTolerance = 0.08f;
+// How far apart the two readings differenced for dg/dt are, in seconds, and
+// how many are kept to find such a pair. See the comment where these are used.
+constexpr float kBaselineSeconds = 0.08f;
+constexpr std::size_t kHistoryDepth = 32;
 // Below this the ground is not moving through the device's frame, so the
 // reading is noise however large the rotation alongside it looks. In radians a
 // second, off the accelerometer, for the same reason as kNeededArc.
@@ -118,41 +126,88 @@ std::string MotionAxes::describe() const {
     return text + ")";
 }
 
-const std::vector<MotionAxes>& motion_axis_candidates() {
-    static const std::vector<MotionAxes> candidates = [] {
-        std::vector<MotionAxes> found;
-        const int orders[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
-                                  {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
-        for (const auto& order : orders) {
-            for (int bits = 0; bits < 8; ++bits) {
-                MotionAxes axes;
-                int determinant = 1;
-                // A permutation's own sign, by counting the swaps that undo it.
-                int permutation[3] = {order[0], order[1], order[2]};
-                for (int i = 0; i < 3; ++i) {
-                    for (int j = i + 1; j < 3; ++j) {
-                        if (permutation[i] > permutation[j]) {
-                            std::swap(permutation[i], permutation[j]);
-                            determinant = -determinant;
-                        }
+namespace {
+
+std::vector<MotionAxes> build_signed_permutations(int wanted_determinant) {
+    std::vector<MotionAxes> found;
+    const int orders[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+    for (const auto& order : orders) {
+        for (int bits = 0; bits < 8; ++bits) {
+            MotionAxes axes;
+            int determinant = 1;
+            // A permutation's own sign, by counting the swaps that undo it.
+            int permutation[3] = {order[0], order[1], order[2]};
+            for (int i = 0; i < 3; ++i) {
+                for (int j = i + 1; j < 3; ++j) {
+                    if (permutation[i] > permutation[j]) {
+                        std::swap(permutation[i], permutation[j]);
+                        determinant = -determinant;
                     }
                 }
-                for (int axis = 0; axis < 3; ++axis) {
-                    axes.source[axis] = static_cast<int8_t>(order[axis]);
-                    axes.sign[axis] = ((bits >> axis) & 1) != 0 ? -1 : 1;
-                    determinant *= axes.sign[axis];
-                }
-                // Rotations only. A reflection describes a mirrored device.
-                if (determinant == 1) found.push_back(axes);
             }
+            for (int axis = 0; axis < 3; ++axis) {
+                axes.source[axis] = static_cast<int8_t>(order[axis]);
+                axes.sign[axis] = ((bits >> axis) & 1) != 0 ? -1 : 1;
+                determinant *= axes.sign[axis];
+            }
+            if (determinant == wanted_determinant) found.push_back(axes);
         }
-        return found;
-    }();
-    return candidates;
+    }
+    return found;
+}
+
+// The best scale for one candidate is a division rather than a search, since
+// the prediction is linear in it:
+//     predicted = s * p, where p = -(axes . w) x g
+//     s = sum(p . dg) / sum(p . p)
+struct Attempt {
+    float scale = 0.0f;
+    double residual = 0.0;
+    bool usable = false;
+};
+
+Attempt try_candidate(const MotionAxes& axes, const std::vector<SwitchSixAxis>& gravity,
+                      const std::vector<SwitchSixAxis>& change,
+                      const std::vector<SwitchSixAxis>& rotation, std::size_t count) {
+    Attempt attempt;
+    double numerator = 0.0;
+    double denominator = 0.0;
+    for (std::size_t index = 0; index < count; ++index) {
+        const SwitchSixAxis predicted =
+            scaled(cross(axes.apply(rotation[index]), gravity[index]), -1.0f);
+        numerator += dot(predicted, change[index]);
+        denominator += dot(predicted, predicted);
+    }
+    if (denominator <= 1e-12) return attempt;
+    attempt.scale = static_cast<float>(numerator / denominator);
+    // A negative scale is the candidate with every sign flipped, which is the
+    // other parity and therefore not this list's business.
+    if (attempt.scale < kSmallestScale || attempt.scale > kLargestScale) return attempt;
+
+    for (std::size_t index = 0; index < count; ++index) {
+        const SwitchSixAxis predicted =
+            scaled(cross(axes.apply(rotation[index]), gravity[index]), -attempt.scale);
+        attempt.residual +=
+            dot(difference(change[index], predicted), difference(change[index], predicted));
+    }
+    attempt.usable = true;
+    return attempt;
+}
+
+}  // namespace
+
+const std::vector<MotionAxes>& motion_axis_candidates() {
+    static const std::vector<MotionAxes> rotations = build_signed_permutations(1);
+    return rotations;
 }
 
 std::string MotionFit::describe() const {
-    if (!decided) return "undecided";
+    if (!decided) {
+        char text[128];
+        std::snprintf(text, sizeof(text), "undecided; %s leads, but only by %.1fx",
+                      axes.describe().c_str(), static_cast<double>(margin));
+        return text;
+    }
     char text[128];
     std::snprintf(text, sizeof(text), "%s at %.3f (%.1fx clearer than the next)",
                   axes.describe().c_str(), static_cast<double>(scale),
@@ -169,60 +224,37 @@ MotionFit fit_motion_axes(const std::vector<SwitchSixAxis>& gravity,
         return fit;
     }
 
-    float best_residual = 0.0f;
-    float second_residual = 0.0f;
+    double best = 0.0;
+    double second = 0.0;
     bool have_best = false;
     for (const MotionAxes& axes : motion_axis_candidates()) {
-        // For this candidate the prediction is linear in the scale, so the
-        // best scale is one division rather than a search:
-        //     predicted = s * p, where p = -(axes . w) x g
-        //     s = sum(p . dg) / sum(p . p)
-        double numerator = 0.0;
-        double denominator = 0.0;
-        for (std::size_t index = 0; index < count; ++index) {
-            const SwitchSixAxis predicted =
-                scaled(cross(axes.apply(rotation[index]), gravity[index]), -1.0f);
-            numerator += dot(predicted, change[index]);
-            denominator += dot(predicted, predicted);
-        }
-        if (denominator <= 1e-12) continue;
-        const float scale = static_cast<float>(numerator / denominator);
-
-        double residual = 0.0;
-        for (std::size_t index = 0; index < count; ++index) {
-            const SwitchSixAxis predicted =
-                scaled(cross(axes.apply(rotation[index]), gravity[index]), -scale);
-            residual += dot(difference(change[index], predicted),
-                            difference(change[index], predicted));
-        }
-
-        // A negative scale is the same as the candidate with every sign
-        // flipped, which is a reflection and therefore not among these -- so
-        // it means this candidate is wrong rather than that the unit is.
-        if (scale < kSmallestScale || scale > kLargestScale) continue;
-
-        if (!have_best || residual < best_residual) {
-            second_residual = have_best ? best_residual : 0.0f;
-            best_residual = static_cast<float>(residual);
+        const Attempt attempt = try_candidate(axes, gravity, change, rotation, count);
+        if (!attempt.usable) continue;
+        if (!have_best || attempt.residual < best) {
+            second = have_best ? best : 0.0;
+            best = attempt.residual;
             fit.axes = axes;
-            fit.scale = scale;
+            fit.scale = attempt.scale;
             have_best = true;
-        } else if (second_residual == 0.0f || residual < second_residual) {
-            second_residual = static_cast<float>(residual);
+        } else if (second == 0.0 || attempt.residual < second) {
+            second = attempt.residual;
         }
     }
 
-    if (!have_best || second_residual <= 0.0f) {
+    if (!have_best || second <= 0.0) {
         return fit;
     }
-    fit.margin = best_residual > 1e-12f ? second_residual / best_residual : kNeededMargin;
+    fit.margin = best > 1e-12 ? static_cast<float>(second / best) : kNeededMargin;
     fit.decided = fit.margin >= kNeededMargin;
+
     return fit;
 }
 
 void MotionFitter::reset() {
     samples_.clear();
-    have_previous_ = false;
+    history_.clear();
+    elapsed_ = 0.0f;
+    at_rest_ = 0.0f;
     seen_arc_ = 0.0f;
     fit_ = MotionFit();
 }
@@ -240,33 +272,60 @@ void MotionFitter::add(const SwitchSixAxis& gravity, const SwitchSixAxis& rotati
     }
     const float size = length(gravity);
     if (size <= 1e-6f) return;
-    const SwitchSixAxis unit = scaled(gravity, 1.0f / size);
+    elapsed_ += dt_seconds;
 
-    const SwitchSixAxis previous_unit = previous_gravity_;
-    const SwitchSixAxis previous_rotation = previous_rotation_;
-    const bool had_previous = have_previous_;
-    previous_gravity_ = unit;
-    previous_rotation_ = rotation;
-    have_previous_ = true;
-    if (!had_previous) return;
+    // How heavy the device feels on average, which is gravity plus whatever
+    // the hand holding it is doing. Tracked slowly so one shove does not move
+    // it.
+    at_rest_ = at_rest_ <= 0.0f ? size : at_rest_ + (size - at_rest_) * 0.02f;
 
-    // Only while the device is being turned rather than shoved. An
-    // accelerometer measuring a shove is not measuring the ground, and the
-    // whole method rests on it measuring the ground -- so a reading whose
-    // direction jumped further in one step than any hand could turn it is
-    // one this cannot learn anything from.
-    const SwitchSixAxis change = scaled(difference(unit, previous_unit), 1.0f / dt_seconds);
-    if (length(change) > kFastestTurn) return;
+    // A reading is only about the ground while nothing else is pushing the
+    // device, and the readings with the most rotation in them are exactly the
+    // ones a hand is also shoving -- a tenth of the liveliest samples in a
+    // real session were out by more than this. Keeping them is what left the
+    // solver unable to separate any candidate from any other: the movement it
+    // was being asked to explain was mostly somebody's wrist.
+    if (std::abs(size - at_rest_) > kRestingTolerance * at_rest_) {
+        history_.clear();  // the run is broken; do not difference across it
+        return;
+    }
 
+    history_.push_back({scaled(gravity, 1.0f / size), rotation, elapsed_});
+    while (history_.size() > kHistoryDepth) history_.erase(history_.begin());
+
+    // Differenced across a window rather than between neighbours. The ground's
+    // direction is measured, not given, so differencing two readings 8ms apart
+    // divides their noise by 8ms as well -- and that noise is what the solver
+    // was drowning in. Over a longer baseline the turn grows and the noise
+    // does not.
+    const Entry& now = history_.back();
+    const Entry* then = nullptr;
+    for (const Entry& entry : history_) {
+        if (now.at - entry.at >= kBaselineSeconds) then = &entry;
+    }
+    if (then == nullptr) return;
+
+    const float span = now.at - then->at;
+    const SwitchSixAxis change = scaled(difference(now.gravity, then->gravity), 1.0f / span);
     const float swing = length(change);
-    if (swing < kMovingRate) return;
+    if (swing > kFastestTurn || swing < kMovingRate) return;
 
-    const SwitchSixAxis middle_rotation = scaled(
-        SwitchSixAxis{rotation.x + previous_rotation.x, rotation.y + previous_rotation.y,
-                      rotation.z + previous_rotation.z},
-        0.5f);
-    const SwitchSixAxis middle_gravity = normalized(
-        SwitchSixAxis{unit.x + previous_unit.x, unit.y + previous_unit.y, unit.z + previous_unit.z});
+    // The rotation over the same window, averaged, so the two sides of the
+    // equation describe the same stretch of time.
+    SwitchSixAxis total_rotation;
+    int counted = 0;
+    for (const Entry& entry : history_) {
+        if (entry.at < then->at) continue;
+        total_rotation = SwitchSixAxis{total_rotation.x + entry.rotation.x,
+                                       total_rotation.y + entry.rotation.y,
+                                       total_rotation.z + entry.rotation.z};
+        ++counted;
+    }
+    if (counted == 0) return;
+    const SwitchSixAxis middle_rotation = scaled(total_rotation, 1.0f / counted);
+    const SwitchSixAxis middle_gravity = normalized(SwitchSixAxis{
+        now.gravity.x + then->gravity.x, now.gravity.y + then->gravity.y,
+        now.gravity.z + then->gravity.z});
 
     seen_arc_ += swing * dt_seconds;
     if (samples_.size() < kMaxSamples) {
