@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 #include "util/log.hpp"
@@ -235,32 +236,55 @@ bool MotionReader::read_console_sensors() {
     // libnx rather than SDL. The Switch port's SDL exposes the pads' buttons
     // and sticks but not their six-axis unit, and this is the only way to it.
     //
-    // Started once, on the first read that gets this far -- which is only
-    // ever reached when neither SDL path found anything, so a build of SDL
-    // that does grow sensor support takes over on its own with nothing here
-    // to undo.
-    static bool started = false;
+    // Which sensor to read is not decided once. A Switch Lite has one built
+    // in and never changes; a regular console does -- Joy-Cons attached is a
+    // different handle set from the same pair detached, and either can happen
+    // in the middle of a session. Acquired once and kept forever, this worked
+    // for whichever way the console happened to be held at startup and went
+    // silent for the other.
+    //
+    // So the handles are re-taken whenever nothing is coming back, and the
+    // three ways a Switch is actually held are tried in turn: the console
+    // itself (a Lite, or a regular one with Joy-Cons on), a detached pair, and
+    // a Pro Controller.
     static HidSixAxisSensorHandle handles[2] = {};
     static unsigned handle_count = 0;
-    if (!started) {
-        started = true;
-        // Handheld and the pair of joined Joy-Cons are the two ways a player
-        // actually holds this console; a detached pair reports as the same
-        // handle set. Failures leave handle_count at zero and this reports no
-        // motion for the session, which is what a console with its sensors
-        // switched off should do.
-        if (R_SUCCEEDED(hidGetSixAxisSensorHandles(&handles[0], 1, HidNpadIdType_Handheld,
-                                                   HidNpadStyleTag_NpadHandheld))) {
-            handle_count = 1;
-        } else if (R_SUCCEEDED(hidGetSixAxisSensorHandles(&handles[0], 2, HidNpadIdType_No1,
-                                                          HidNpadStyleTag_NpadJoyDual))) {
-            handle_count = 2;
+    static uint32_t retry_at_ms = 0;
+    static int quiet_reads = 0;
+    static const char* source_name = nullptr;
+
+    const uint32_t now_ms = SDL_GetTicks();
+    if (handle_count == 0 && (retry_at_ms == 0 || now_ms >= retry_at_ms)) {
+        // A second between attempts: this is only reached when nothing else
+        // reported motion, and asking the system for handles it does not have
+        // sixty times a second is pure waste on a console with no sensors at
+        // all.
+        retry_at_ms = now_ms + 1000;
+        struct Candidate {
+            HidNpadIdType id;
+            uint32_t style;
+            unsigned count;
+            const char* name;
+        };
+        const Candidate candidates[] = {
+            {HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld, 1, "this console's own"},
+            {HidNpadIdType_No1, HidNpadStyleTag_NpadJoyDual, 2, "a pair of Joy-Cons"},
+            {HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey, 1, "a Pro Controller"},
+        };
+        for (const Candidate& candidate : candidates) {
+            if (R_SUCCEEDED(hidGetSixAxisSensorHandles(&handles[0], candidate.count, candidate.id,
+                                                       candidate.style))) {
+                handle_count = candidate.count;
+                source_name = candidate.name;
+                break;
+            }
         }
         for (unsigned index = 0; index < handle_count; ++index) {
             hidStartSixAxisSensor(handles[index]);
         }
         if (handle_count > 0) {
-            log_info("motion: reading it from this console's six-axis sensor");
+            log_info(std::string("motion: reading it from ") + source_name + " six-axis sensor");
+            quiet_reads = 0;
         }
     }
     if (handle_count == 0) {
@@ -268,8 +292,19 @@ bool MotionReader::read_console_sensors() {
     }
     HidSixAxisSensorState sample = {};
     if (hidGetSixAxisSensorStates(handles[0], &sample, 1) < 1) {
+        // The handles have gone stale -- Joy-Cons came off, or went on. Given
+        // a moment in case it is a single dropped read, then taken again.
+        if (++quiet_reads > 60) {
+            for (unsigned index = 0; index < handle_count; ++index) {
+                hidStopSixAxisSensor(handles[index]);
+            }
+            handle_count = 0;
+            retry_at_ms = 0;
+            log_info("motion: that six-axis sensor stopped reporting; looking again");
+        }
         return false;
     }
+    quiet_reads = 0;
     // Into SDL's units and axes, which is what everything downstream expects
     // -- see DsMotionState. libnx reports acceleration in g and rotation in
     // revolutions per second; SDL uses metres per second squared and radians
@@ -345,6 +380,29 @@ void MotionReader::poll() {
         log_info("motion: this device is reporting how it is being held");
     }
     state_.present = true;
+
+    // What is actually being read, once a second.
+    //
+    // Axis conventions are the one thing here that cannot be settled by
+    // reading code: every device has its own, the documentation for several
+    // of them is other people's reverse engineering, and being wrong looks
+    // exactly like being right except the game leans the other way. Two poses
+    // and this line settle it -- held upright facing the player, gravity
+    // belongs almost entirely in accel_y; laid flat face up, in accel_z.
+    // Anything else means the axes need swapping, and says which for which.
+    constexpr uint32_t kReportEveryMs = 1000;
+    const uint32_t now = SDL_GetTicks();
+    if (reported_at_ms_ == 0 || now - reported_at_ms_ >= kReportEveryMs) {
+        reported_at_ms_ = now;
+        const auto one = [](float value) {
+            char text[32];
+            std::snprintf(text, sizeof(text), "%.2f", static_cast<double>(value));
+            return std::string(text);
+        };
+        log_debug("motion: accel " + one(state_.accel_x) + "," + one(state_.accel_y) + "," +
+                  one(state_.accel_z) + " m/s2, gyro " + one(state_.gyro_x) + "," +
+                  one(state_.gyro_y) + "," + one(state_.gyro_z) + " rad/s");
+    }
 }
 
 }  // namespace ds

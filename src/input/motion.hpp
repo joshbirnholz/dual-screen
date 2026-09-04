@@ -112,6 +112,8 @@ private:
 
     bool enabled_ = false;
     DsMotionState state_;
+    // When the reading was last written to the log; see poll().
+    uint32_t reported_at_ms_ = 0;
     // The controllers this has switched sensors on for, so they can be
     // switched off again and so one arriving mid-session is not missed.
     std::vector<SDL_GameController*> controllers_;
