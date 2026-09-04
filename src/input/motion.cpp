@@ -1,5 +1,7 @@
 #include "input/motion.hpp"
 
+#include "input/switch_motion.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -39,27 +41,6 @@ uint32_t now_micros() {
 }
 
 }  // namespace
-
-SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
-    // Right is right in both frames; up and out-of-the-screen are each the
-    // other way round. See the header for the two readings this came from.
-    SwitchSixAxis out;
-    out.x = native.x;
-    out.y = -native.y;
-    out.z = -native.z;
-    return out;
-}
-
-SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native) {
-    // A half turn about z, which is not the half turn about x that the
-    // acceleration takes. Settled on hardware rather than derived -- see the
-    // header for the three builds it took and what each one did in a game.
-    SwitchSixAxis out;
-    out.x = -native.x;
-    out.y = -native.y;
-    out.z = native.z;
-    return out;
-}
 
 MotionReader::~MotionReader() { close_sensors(); }
 
@@ -318,50 +299,72 @@ bool MotionReader::read_console_sensors() {
         return false;
     }
     quiet_reads = 0;
-    // Into SDL's units and axes, which is what everything downstream expects
-    // -- see DsMotionState. libnx reports acceleration in g and rotation in
-    // revolutions per second; SDL uses metres per second squared and radians
-    // per second.
-    //
-    // And neither the axes nor, for rotation, the direction of a turn agree
-    // with SDL's. See switch_accel_to_sdl() and switch_gyro_to_sdl().
-    constexpr float kTau = 6.283185307f;
-    const SwitchSixAxis accel = switch_accel_to_sdl(
-        {sample.acceleration.x, sample.acceleration.y, sample.acceleration.z});
-    const SwitchSixAxis gyro =
-        switch_gyro_to_sdl({sample.angular_velocity.x, sample.angular_velocity.y,
-                            sample.angular_velocity.z});
+    // Acceleration into SDL's units and axes, which is what everything
+    // downstream expects -- see DsMotionState. libnx reports it in g and puts
+    // its axes elsewhere; see switch_accel_to_sdl(), which was measured from
+    // two poses on a real console and is the one part of this that has stayed
+    // put.
+    const SwitchSixAxis native_accel = {sample.acceleration.x, sample.acceleration.y,
+                                        sample.acceleration.z};
+    const SwitchSixAxis native_gyro = {sample.angular_velocity.x, sample.angular_velocity.y,
+                                       sample.angular_velocity.z};
+    const SwitchSixAxis accel = switch_accel_to_sdl(native_accel);
     state_.accel_x = accel.x * kGravity;
     state_.accel_y = accel.y * kGravity;
     state_.accel_z = accel.z * kGravity;
-    state_.gyro_x = gyro.x * kTau;
-    state_.gyro_y = gyro.y * kTau;
-    state_.gyro_z = gyro.z * kTau;
+
+    // Rotation is not guessed at any more. Five builds guessed, on five
+    // readings of what a game felt like, and a rotation that is out by a
+    // factor as well as by its axes cannot be told apart from one that is
+    // merely out by its axes by feel -- both are just wrong all the time. So
+    // the accelerometer settles it instead: while the console turns, the
+    // direction it says the ground lies in turns with it, and only one frame
+    // and one scale make the two agree. See MotionFitter.
+    //
+    // Until it has been moved enough to be sure, the last guess stands. It
+    // costs nothing to leave it there and it is the only thing to fall back
+    // on for a console left flat on a table, which never settles anything.
+    static uint32_t fit_at_ms = 0;
+    if (fit_at_ms != 0) {
+        motion_fitter_.add(accel, native_gyro,
+                           static_cast<float>(now_ms - fit_at_ms) / 1000.0f);
+    }
+    fit_at_ms = now_ms;
+    if (motion_fitter_.fit().decided && !said_fit_) {
+        said_fit_ = true;
+        log_info("motion: this console reports rotation as " + motion_fitter_.fit().describe() +
+                 " of a radian a second, worked out from its own accelerometer");
+    }
+
+    constexpr float kTau = 6.283185307f;
+    const SwitchSixAxis gyro = motion_fitter_.fit().decided
+                                   ? motion_fitter_.fit().axes.apply(native_gyro)
+                                   : switch_gyro_to_sdl(native_gyro);
+    const float rate = motion_fitter_.fit().decided ? motion_fitter_.fit().scale : kTau;
+    state_.gyro_x = gyro.x * rate;
+    state_.gyro_y = gyro.y * rate;
+    state_.gyro_z = gyro.z * rate;
 
     // The reading as libnx gave it, before any of the above.
     //
-    // This exists because working out the two conversions above took four
-    // attempts, every one of them reasoning from what a reading ought to look
-    // like rather than from one. libnx documents neither the axes nor the
-    // units, so there is nothing to read but the numbers, and until now the
-    // only numbers anywhere were the converted ones -- which answer "is this
-    // right" and not "then what is". These answer the second.
+    // The fit is what decides now, so this is no longer how the answer gets
+    // found -- it is how the answer gets checked, which is worth keeping
+    // separate. A log with only converted numbers in it can say "this is
+    // wrong" and never "then what is", and four rounds went by on exactly
+    // that.
     //
     // Reported as the strongest sample since the last line rather than
     // whatever the last one happened to be, so a deliberate turn lasting a
-    // second or two lands in the log at its peak instead of being missed
-    // between two reports. To read it off: hold the console upright facing
-    // you, and turn it slowly one way at a time -- sweep it to your left, tip
-    // its top away from you, dip its right edge -- and each turn names the
-    // component that moves and the sign it moves with.
+    // second or two lands in the log at its peak instead of falling between
+    // two reports.
     static uint32_t raw_at_ms = 0;
     static HidSixAxisSensorState loudest = {};
     static float loudest_rate = -1.0f;
-    const float rate = std::abs(sample.angular_velocity.x) +
-                       std::abs(sample.angular_velocity.y) +
-                       std::abs(sample.angular_velocity.z);
-    if (rate > loudest_rate) {
-        loudest_rate = rate;
+    const float turn_rate = std::abs(sample.angular_velocity.x) +
+                            std::abs(sample.angular_velocity.y) +
+                            std::abs(sample.angular_velocity.z);
+    if (turn_rate > loudest_rate) {
+        loudest_rate = turn_rate;
         loudest = sample;
     }
     if (raw_at_ms == 0 || now_ms - raw_at_ms >= 1000) {

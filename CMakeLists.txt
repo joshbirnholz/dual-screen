@@ -104,6 +104,7 @@ add_library(dualscreen_core STATIC
     src/input/dsu_client.cpp
     src/input/input_manager.cpp
     src/input/motion.cpp
+    src/input/switch_motion.cpp
     src/input/retro_keymap.cpp
     src/layout/layout.cpp
     src/net/companion_session.cpp

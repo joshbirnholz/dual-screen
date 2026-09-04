@@ -237,14 +237,48 @@ every axis" means all three. Only one assignment is consistent with all of
 them, and it is the only one of the four with determinant +1 that had not
 already been tried.
 
-The remaining unknown is the **unit**. This multiplies rotation by tau, on the
-assumption that libnx reports revolutions a second; Moonlight-Switch's own
-comment says the rotation it forwards is radians a second, which is a reason to
-check rather than a reason to change it blind, since that value has been
-through borealis first. The reader now logs the raw sample with the largest
-rotation in each second, unconverted, so the next log answers it: a deliberate
-turn of a console is roughly a quarter to a whole turn a second, which reads
-near 1 in revolutions, near 5 in radians and in the hundreds in degrees.
+And then a fifth report arrived that none of it explained, and the reason is
+the row the table above does not have: **the unit**. This multiplied rotation
+by tau on the assumption that libnx reports revolutions a second, and nothing
+anywhere says it does. If that is wrong by 2π, every orientation is wrong all
+the time — and "tilt is reversed", "it drifts", "it is backwards" are all just
+what chaos looks like from the outside. Which means the three reports the table
+treats as evidence may have been evidence of nothing, and the neat derivation
+from them numerology. A wrong scale and a wrong sign cannot be told apart by
+asking someone how a game feels.
+
+### So the accelerometer answers it instead
+
+An accelerometer at rest points at the ground, and while a device turns, the
+direction it points turns with it — in the device's own frame, exactly as fast
+and exactly as far. That is a physical identity rather than a convention:
+
+    dg/dt = -w x g
+
+for `g` the unit vector towards the ground and `w` the true rotation, both in
+the device's frame. The left side comes from the accelerometer, which is known
+good here because it is what makes a still console read upright. The right side
+is the rotation reading, in whatever frame and unit the console felt like. All
+the unknowns are on one side and the equation says what they have to be.
+
+`MotionFitter` solves it. What it solves for is deliberately small: a frame
+differs from a frame by a rotation, so the answer is one of the twenty-four
+signed permutations with determinant +1, plus one positive scale for the unit.
+Twenty-four candidates, each with a one-line least squares for the scale, is
+small enough to try all of them and keep the best. It reports nothing until
+enough real movement has gone past about all three axes — a device lying still
+says nothing, and a turn about the axis pointing at the ground says nothing
+about that axis, since a vector crossed with itself is zero — and until then
+the last guess stands.
+
+The part that matters is that this is **testable without a console**. Rotate a
+synthetic device, work out what its accelerometer and gyroscope would report
+under some convention, hand those to the solver, and see whether it names the
+convention back. `test_switch_motion.cpp` does that for all twenty-four frames
+at each of the three units anyone reports rotation in — seventy-two devices,
+every one recovered, including the scale. That check is what five rounds of
+this problem never had: every previous answer could only be tested by building
+it, shipping it, and asking someone how a game felt.
 
 ### What libretro's sensor axes actually mean
 

@@ -228,6 +228,14 @@ each was taken. Nothing here turns that into an orientation, because Cemu
 already does, with sensor fusion tuned to what a real GamePad reports. Sending
 it a second opinion about which way is up would be worse than sending it none.
 
+On a Switch, which of its six-axis axes is which is not documented anywhere and
+was got wrong five times, so it is no longer asserted: the app works it out from
+the console's own accelerometer, since the direction the ground lies in turns
+with the console exactly as fast as the console turns. It settles after a second
+or two of ordinary handling and says what it found in the log. Until then the
+last known-best guess stands, which is why a console left flat on a table keeps
+whatever it started with.
+
 A 3DS reads it too, through libretro's own sensor interface
 (`RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE`) — but **only on `azahar_libretro`**.
 `citra_libretro` has no motion support at all (one TODO in its source and

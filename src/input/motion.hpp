@@ -7,6 +7,7 @@
 
 #include "input/ds_input.hpp"
 #include "input/dsu_client.hpp"
+#include "input/switch_motion.hpp"
 
 namespace ds {
 
@@ -41,77 +42,9 @@ namespace ds {
 // Nothing here integrates anything. What comes out is the raw pair of
 // readings and the moment they were taken; see DsMotionState for why that is
 // deliberate.
-// A Switch's six-axis unit reports in the console's own frame, which is not
-// SDL's -- and everything downstream of DsMotionState is in SDL's (see the
-// comment there). This is the conversion between them:
-//
-//     +x is right in both; libnx's +y points down the screen and +z into it,
-//     where SDL's +y points up and +z out towards the player.
-//
-// Measured, on the third attempt, and the first two are worth recording
-// because both were reasonable and both were wrong. Assuming the two frames
-// agreed put gravity on the screen-normal axis, so a console held upright read
-// as one lying flat -- which is what a Wii U game insisting the GamePad was
-// "too flat" was reporting. Copying the shuffle out of SDL's own driver for
-// this hardware (SDL_hidapi_switch.c) was wrong for a subtler reason: that
-// driver reads a Joy-Con's raw HID report, whose axes sit in the Joy-Con's own
-// body, and libnx hands back the console's frame instead. Same hardware,
-// different starting point.
-//
-// What settled it was two readings from a real console, one pose each:
-//
-//   resting flat on a table, face up:  libnx (0.00, 0.00, -9.81)
-//   held upright, tilted back ~16deg:  libnx (-0.75, -9.40, -2.72)
-//
-// An accelerometer at rest reads the up direction. Flat and face up, up is out
-// of the screen, and libnx puts it on -z; held upright, up is towards the top
-// of the console, and libnx puts it on -y with the tilt showing as a little
-// more -z. Hence +y down and +z into the screen; x follows from those two,
-// since a frame with +y down and +z into the screen is only right-handed if
-// +x points right. Under SDL's convention those same two poses have to read
-// (0, 0, +9.81) and (-0.75, +9.40, +2.72), which is exactly what negating y
-// and z gives.
-//
-// Rotation does not use that same conversion, and assuming it did is what left
-// a Wii U game steering the wrong way while tilting perfectly correctly.
-//
-//     rotation is (-x, -y, z) where acceleration is (x, -y, -z)
-//
-// libnx documents neither the units nor the axes of either reading -- the
-// struct is six floats and three comments repeating their own field names --
-// so this was settled by what three builds did on real hardware:
-//
-//   ( x, -y, -z)   tilting left and right reversed, otherwise fine
-//   (-x,  y,  z)   never points the right way, drifts and is dragged back
-//   ( x,  y, -z)   backwards on every axis
-//
-// Read against the mapping above, each of those is what it should be. The
-// first has x and z wrong: pitch and roll, both of which whatever consumes
-// this pulls back towards gravity, so they read as tilt going the wrong way
-// rather than as anything unstable. The second has only y wrong: yaw, which
-// nothing corrects, because no part of a six-axis reading knows which way a
-// device is pointing -- so the heading wanders off and stays there. The third
-// is the exact negative, and was reported in exactly those words.
-//
-// Only one assignment fits all three, and the useful check is that it is a
-// rotation: its determinant is +1, a half turn about z. The two wrong guesses
-// above both had determinant -1, which is a reflection, and no rigid frame
-// differs from another by a reflection. That rules out half the candidates
-// before any of them reaches hardware, and would have caught both.
-//
-// Why the two readings sit in frames a half turn apart is not something this
-// can answer from outside. It does mean the tempting shortcut -- convert one
-// and reuse it for the other -- is wrong, which is the mistake worth not
-// repeating.
-//
-// Free and separate from the reader so both can be tested without a console.
-struct SwitchSixAxis {
-    float x = 0.0f;
-    float y = 0.0f;
-    float z = 0.0f;
-};
-SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native);
-SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native);
+// How a Switch's own six-axis unit relates to the frame everything here uses
+// -- and how that is worked out rather than asserted -- lives next door, in
+// switch_motion.hpp. It took five wrong answers to earn its own file.
 
 class MotionReader {
 public:
@@ -163,6 +96,11 @@ private:
 
     bool enabled_ = false;
     DsMotionState state_;
+    // Switch only: works out how this console's rotation reading relates to
+    // its acceleration one, rather than this file asserting it. See
+    // MotionFitter, and the comment above switch_gyro_to_sdl() for why.
+    MotionFitter motion_fitter_;
+    bool said_fit_ = false;
     // When the reading was last written to the log; see poll().
     uint32_t reported_at_ms_ = 0;
     // The controllers this has switched sensors on for, so they can be
