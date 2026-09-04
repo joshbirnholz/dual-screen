@@ -32,10 +32,24 @@ inline constexpr int kAudioTargetQueueMs = 60;
 // is a duration.
 inline constexpr int kAudioPanicQueueMs = 400;
 
-// The most the playback rate is ever bent to correct drift, as a fraction. 1%
-// is about 17 cents of pitch -- inaudible on game audio, and enough to close a
-// full target's worth of error in a few seconds.
-inline constexpr double kAudioMaxRateAdjust = 0.01;
+// The most the playback rate is ever bent to correct drift, as a fraction.
+//
+// This was 1%, on the reasoning that 1% is about 17 cents of pitch and so
+// inaudible. The reasoning was fine and the number was not: it assumed the
+// only thing to correct is jitter around a shared clock, and a device whose
+// clock is genuinely somewhere else needs a correction the size of that
+// difference or the queue never converges at all. Measured on a Switch, twice:
+// the queue climbs about 26ms a second with the correction pinned at its limit
+// the whole way, sawtoothing between 150ms and 400ms of delay and being cut
+// short at the top, over and over, for a whole session.
+//
+// And the correction is not a distortion to be minimised. If a device really
+// consumes 48000-rate audio slower than 48000 a second, then feeding it
+// unresampled is what plays the game flat and late; resampling to the rate it
+// actually runs at is what makes a second of game audio take a second. So this
+// only has to be wide enough to cover a real device, and 5% covers anything
+// that is not simply broken.
+inline constexpr double kAudioMaxRateAdjust = 0.05;
 
 // Playback rate to run at given how deep the queue currently is. Above the
 // target it returns slightly more than 1 (consume input faster, emit fewer

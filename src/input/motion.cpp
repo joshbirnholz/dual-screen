@@ -41,14 +41,12 @@ uint32_t now_micros() {
 }  // namespace
 
 SwitchSixAxis switch_sixaxis_to_sdl(const SwitchSixAxis& native) {
-    // SDL_hidapi_switch.c, verbatim in effect:
-    //     data[0] = -scaleY * y;
-    //     data[1] =  scaleZ * z;
-    //     data[2] = -scaleX * x;
+    // Right is right in both frames; up and out-of-the-screen are each the
+    // other way round. See the header for the two readings this came from.
     SwitchSixAxis out;
-    out.x = -native.y;
-    out.y = native.z;
-    out.z = -native.x;
+    out.x = native.x;
+    out.y = -native.y;
+    out.z = -native.z;
     return out;
 }
 

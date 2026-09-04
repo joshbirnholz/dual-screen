@@ -43,16 +43,32 @@ namespace ds {
 // deliberate.
 // A Switch's six-axis unit reports in the console's own frame, which is not
 // SDL's -- and everything downstream of DsMotionState is in SDL's (see the
-// comment there). This is the shuffle between them.
+// comment there). This is the conversion between them:
 //
-// Not guessed. SDL's own driver for this hardware does exactly this, in
-// SDL_hidapi_switch.c's SendSensorUpdate, where it says outright that "the
-// order of components has been shuffled" to match the convention it uses
-// everywhere else. Getting it wrong is not subtle in the end -- with the
-// second and third axes left alone, gravity lands on the axis that means
-// "out of the screen", so a game reads a device held upright as one lying
-// flat on a table, which is what a Wii U game complaining that the GamePad is
-// "too flat" was actually reporting.
+//     +x is right in both; libnx's +y points down the screen and +z into it,
+//     where SDL's +y points up and +z out towards the player.
+//
+// Measured, on the third attempt, and the first two are worth recording
+// because both were reasonable and both were wrong. Assuming the two frames
+// agreed put gravity on the screen-normal axis, so a console held upright read
+// as one lying flat -- which is what a Wii U game insisting the GamePad was
+// "too flat" was reporting. Copying the shuffle out of SDL's own driver for
+// this hardware (SDL_hidapi_switch.c) was wrong for a subtler reason: that
+// driver reads a Joy-Con's raw HID report, whose axes sit in the Joy-Con's own
+// body, and libnx hands back the console's frame instead. Same hardware,
+// different starting point.
+//
+// What settled it was two readings from a real console, one pose each:
+//
+//   resting flat on a table, face up:  libnx (0.00, 0.00, -9.81)
+//   held upright, tilted back ~16deg:  libnx (-0.75, -9.40, -2.72)
+//
+// An accelerometer at rest reads the up direction. Flat and face up, up is out
+// of the screen, and libnx puts it on -z; held upright, up is towards the top
+// of the console, and libnx puts it on -y with the tilt showing as a little
+// more -z. Hence +y down and +z into the screen. Under SDL's convention those
+// same two poses have to read (0, 0, +9.81) and (-0.75, +9.40, +2.72), which
+// is exactly what negating y and z gives.
 //
 // Free and separate from the reader so it can be tested without a console.
 struct SwitchSixAxis {

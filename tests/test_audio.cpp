@@ -123,9 +123,34 @@ void test_the_correction_moves_gradually_rather_than_stepping() {
     CHECK(after_one < 1.0 + kAudioMaxRateAdjust / 4.0);
 }
 
+// The one the suite missed. A limit was raised to fix a queue that could not
+// converge, the edit silently did not land, and every test still passed --
+// because nothing here asserted the limit was big enough to do its job, only
+// that the clamp clamped to whatever it was set to.
+void test_the_correction_can_outrun_a_device_whose_clock_is_off() {
+    // Measured on a Switch: the queue gains about 26ms a second against a
+    // 170ms target, which is a sink running some 2.6% slow. A correction that
+    // cannot reach that never closes the gap -- it just holds the queue's
+    // climb down to a slower climb, and the backlog grows until something
+    // flushes it.
+    constexpr double kMeasuredDrift = 0.026;
+    CHECK(kAudioMaxRateAdjust > kMeasuredDrift);
+
+    // And the controller actually gets there, rather than the clamp merely
+    // permitting it: a queue sitting well above target has to drive the rate
+    // past that drift, or the two never meet.
+    constexpr std::size_t target = 8192;
+    double ratio = 1.0;
+    for (int step = 0; step < 2000; ++step) {
+        ratio = audio_drift_ratio(target * 2, target, ratio);
+    }
+    CHECK(ratio - 1.0 >= kMeasuredDrift);
+}
+
 }  // namespace
 
 int main() {
+    test_the_correction_can_outrun_a_device_whose_clock_is_off();
     test_a_ratio_of_one_passes_samples_through_unchanged();
     test_a_faster_ratio_emits_fewer_frames_and_a_slower_one_more();
     test_consecutive_blocks_stay_continuous_across_the_join();

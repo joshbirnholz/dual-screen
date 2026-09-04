@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <algorithm>
+#include <cmath>
 
 #include "config/paths.hpp"
 #include "config/settings.hpp"
@@ -793,31 +794,37 @@ namespace {
 
 // The Switch's own six-axis frame is not SDL's, and getting that wrong is how
 // a Wii U game came to insist the GamePad was lying flat while it was being
-// held upright. Pinned against SDL's own driver for the same hardware
-// (SDL_hidapi_switch.c), which is the thing that defines what "SDL's frame"
-// even means.
-void test_a_switch_reading_is_shuffled_into_sdls_frame() {
-    // Held upright, facing the player: gravity is along the console's own
-    // third axis, and SDL's convention puts a device at rest at +y.
-    const SwitchSixAxis upright = switch_sixaxis_to_sdl({0.0f, 0.0f, 1.0f});
-    CHECK(test::nearly_equal(upright.x, 0.0));
-    CHECK(test::nearly_equal(upright.y, 1.0));
-    CHECK(test::nearly_equal(upright.z, 0.0));
-    // Which is the whole bug: passed through unshuffled this was 0,0,1, and
-    // +z in SDL's frame is out of the screen -- a device lying face up.
-    CHECK(!test::nearly_equal(upright.z, 1.0));
+// held upright.
+//
+// The two cases below are real readings off a console, one per pose, and they
+// are what settled this after two plausible guesses did not. See
+// switch_sixaxis_to_sdl() for the derivation.
+void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
+    // Resting flat on a table, face up. SDL's convention puts up -- which here
+    // is out of the screen -- on +z.
+    const SwitchSixAxis flat = switch_sixaxis_to_sdl({0.00f, 0.00f, -9.81f});
+    CHECK(test::nearly_equal(flat.x, 0.0));
+    CHECK(test::nearly_equal(flat.y, 0.0));
+    CHECK(test::nearly_equal(flat.z, 9.81));
 
-    // And the other two, so a change to one axis cannot quietly pass.
-    const SwitchSixAxis all = switch_sixaxis_to_sdl({1.0f, 2.0f, 3.0f});
-    CHECK(test::nearly_equal(all.x, -2.0));
-    CHECK(test::nearly_equal(all.y, 3.0));
-    CHECK(test::nearly_equal(all.z, -1.0));
+    // Held upright and tilted back about sixteen degrees, which is simply how
+    // someone holds a console. Up is now mostly towards the top of the screen,
+    // so it belongs on +y -- and the tilt leaves a little of it on +z.
+    const SwitchSixAxis upright = switch_sixaxis_to_sdl({-0.75f, -9.40f, -2.72f});
+    CHECK(test::nearly_equal(upright.x, -0.75));
+    CHECK(test::nearly_equal(upright.y, 9.40));
+    CHECK(test::nearly_equal(upright.z, 2.72));
+
+    // The bug both earlier attempts had, stated as the thing that must not be
+    // true: gravity must not land on the screen-normal axis while the console
+    // is being held upright, because that is a console lying on a table.
+    CHECK(std::abs(upright.y) > std::abs(upright.z));
 }
 
 }  // namespace
 
 int main() {
-    test_a_switch_reading_is_shuffled_into_sdls_frame();
+    test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "skipping: SDL game controller subsystem unavailable: %s\n",
