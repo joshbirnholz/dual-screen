@@ -60,6 +60,11 @@ public:
     void set_enabled(bool enabled);
     bool enabled() const { return enabled_; }
 
+    // Turn a Switch's six-axis frame by hand instead of working it out, as an
+    // index into motion_axis_candidates(), or -1 to work it out. Temporary --
+    // see Settings::switch_gyro_axes for why it exists at all.
+    void set_switch_gyro_axes(int index);
+
     // Whether a real sensor was found and is being read. False before the
     // first sample arrives even when one was, since a sensor that is open but
     // has said nothing yet has nothing to report.
@@ -101,6 +106,8 @@ private:
     // MotionFitter, and the comment above switch_gyro_to_sdl() for why.
     MotionFitter motion_fitter_;
     bool said_fit_ = false;
+    // -1 when the fit decides; otherwise the frame a person chose.
+    int chosen_axes_ = -1;
     // When the reading was last written to the log; see poll().
     uint32_t reported_at_ms_ = 0;
     // The controllers this has switched sensors on for, so they can be

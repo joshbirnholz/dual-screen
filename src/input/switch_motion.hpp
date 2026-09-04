@@ -34,12 +34,22 @@ namespace ds {
 // device felt like using. Everything unknown is on one side, and the equation
 // says what it has to be.
 //
-// What is solved for is deliberately not a general matrix. A frame differs
-// from a frame by a rotation, so the answer is one of the twenty-four signed
-// permutations with determinant +1 -- a reflection would describe a mirrored
-// device -- and a single positive scale for the units. Twenty-four candidates,
-// each with a one-parameter least squares for the scale, is small enough to
-// simply try all of them and keep the best.
+// What is solved for is deliberately not a general matrix: one of the
+// forty-eight signed permutations, and a single positive scale for the units.
+// Each has a one-parameter least squares for the scale, so trying all of them
+// and keeping the best is cheap.
+//
+// Forty-eight, not twenty-four. An earlier version searched only the ones with
+// determinant +1, on the grounds that a frame differs from a frame by a
+// rotation and never by a reflection. That is true of frames and beside the
+// point here, because what separates these two readings is not only their axes
+// but their *sign convention* -- which way round each of them calls positive.
+// A gyroscope reported clockwise-positive rather than by the right-hand rule
+// is negated on all three axes, which is a determinant of -1 and a perfectly
+// ordinary thing for a vendor to do. Restricting to rotations can therefore
+// exclude the true answer outright, and the console this was written for turns
+// out to report acceleration that way -- pointing at the ground rather than at
+// the sky, which is exactly such a negation.
 //
 // What it cannot do is check the frame it is solved against. Everything here
 // is relative to the accelerometer, so if the accelerometer's own axes are
@@ -70,20 +80,28 @@ struct SwitchSixAxis {
 
 // A Switch's acceleration, into the frame everything downstream uses.
 //
-//     +x is right in both; libnx's +y points down the screen and +z into it,
-//     where SDL's +y points up and +z out towards the player.
+//     SDL's reading is the negative of libnx's, on all three axes.
 //
-// Measured, from two poses on a real console:
+// libnx's axes are SDL's -- +x right, +y up, +z out of the screen -- and what
+// it reports along them is the direction of the *ground*, where SDL reports
+// the direction of up. Nothing says so; three poses on a real console do, and
+// only this reading fits all three:
 //
-//   resting flat on a table, face up:  libnx (0.00, 0.00, -9.81)
-//   held upright, tilted back ~16deg:  libnx (-0.75, -9.40, -2.72)
+//   flat on a table, face up     libnx (0.00, 0.00, -1.00)
+//   held upright                 libnx (0.00, -0.98, -0.21)
+//   upright, right edge dipped   libnx (0.60, -0.74, -0.34)
 //
-// An accelerometer at rest reads the up direction. Flat and face up, up is out
-// of the screen, and libnx puts it on -z; held upright, up is towards the top
-// of the console, and libnx puts it on -y with the tilt showing as a little
-// more -z. Hence +y down and +z into the screen; x follows from those two,
-// since a frame with +y down and +z into the screen is only right-handed if
-// +x points right.
+// Face up, the ground is through the screen, which is -z. Upright, it is
+// towards the bottom of the screen, which is -y. Dip the right-hand edge and
+// it leans to the right, which is +x. Three poses, one story.
+//
+// The first two of those were measured a long time before the third, and two
+// poses cannot see the third axis: both leave x free, because x is near zero
+// in each. That gap was filled with reasoning instead -- that a frame with +y
+// down and +z into the screen must have +x to the right to stay right-handed
+// -- which is true of a frame and false here, because this is not a change of
+// frame at all. It is the same frame reporting the opposite vector. Every
+// rotation answer fitted against it inherited the mirror.
 SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native);
 
 // And rotation, for a console that has not been moved enough for the fit
@@ -97,8 +115,9 @@ SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native);
 // five-round problem; see MotionFitter for what replaced it.
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native);
 
-// One rotation of the axes, as a signed permutation: for each output
-// component, which input component it comes from and with which sign.
+// One mapping of the axes, as a signed permutation: for each output component,
+// which input component it comes from and with which sign. Both parities --
+// see the note above about why restricting to rotations is wrong here.
 struct MotionAxes {
     int8_t source[3] = {0, 1, 2};
     int8_t sign[3] = {1, 1, 1};
@@ -110,7 +129,7 @@ struct MotionAxes {
     bool operator==(const MotionAxes& other) const;
 };
 
-// The twenty-four that are rotations rather than reflections.
+// All forty-eight.
 const std::vector<MotionAxes>& motion_axis_candidates();
 
 struct MotionFit {
@@ -168,6 +187,9 @@ private:
     // whatever unit the accelerometer reports. Learned rather than assumed,
     // since this never sees the unit.
     float at_rest_ = 0.0f;
+    // The largest turn seen so far, so a sample with no turn in it can be
+    // recognised without knowing the unit. See kQuietRotation.
+    float loudest_rotation_ = 0.0f;
     // How far the ground has travelled through the device's frame, in
     // radians. Unitless, unlike the rotation reading, which is the point --
     // see kNeededArc.

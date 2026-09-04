@@ -303,6 +303,43 @@ The progress line also says what it currently leans towards and by how much.
 "100% of the way there" repeated for ninety seconds with no answer and no
 reason is the same failure as the silence before it, one level down.
 
+### The accelerometer's third axis, and two retractions
+
+Three poses off a real console settle the acceleration reading, and only the
+third of them settles all of it:
+
+| pose | libnx reports |
+| --- | --- |
+| flat on a table, face up | `0.00, 0.00, -1.00` |
+| held upright | `0.00, -0.98, -0.21` |
+| upright, right-hand edge dipped | `0.60, -0.74, -0.34` |
+
+Read as *libnx reports the direction of the ground, on SDL's own axes*, all
+three agree: face up the ground is through the screen (−z), upright it is
+towards the bottom of the screen (−y), and with the right edge dipped it leans
+to the right (+x). SDL reports the opposite direction, so the conversion is a
+plain negation of all three.
+
+The first two poses were measured long before the third and **cannot see x**,
+because x is near zero in both. That gap was filled by reasoning: a frame with
++y down and +z into the screen must have +x to the right to stay right-handed.
+True of a frame, and false here — this is not a change of frame at all, it is
+the same frame reporting the opposite vector. So x was backwards for six
+rounds, which mirrors roll, and mirrored every rotation answer fitted against
+it.
+
+That is also the end of the determinant rule this file recommended earlier. The
+claim was that a conversion must have determinant +1 because a frame differs
+from a frame by a rotation and never by a reflection. It excluded two guesses
+at the time. But what separates these readings is not only their axes, it is
+**which way round each of them calls positive** — and a global sign flip on
+three axes has determinant −1. A gyroscope reported clockwise-positive rather
+than by the right-hand rule is exactly that, and so is an accelerometer
+pointing at the ground rather than the sky, which is what this console does. So
+the rule could exclude the true answer, the fit now searches all forty-eight
+signed permutations rather than twenty-four, and the two guesses it once ruled
+out were ruled out for nothing.
+
 **What this method cannot do** is check the frame it is solved against. It was
 tempting to think a mirrored accelerometer frame — an odd number of axes turned
 over, which is exactly the ambiguity two poses on a table leave behind — would

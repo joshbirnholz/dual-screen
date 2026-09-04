@@ -1244,6 +1244,10 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
             log_warn("could not save settings.json");
         }
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+        // Takes effect at once, which is the whole point of this one: it is
+        // turned while a game is running, until the game feels right. See
+        // Settings::switch_gyro_axes.
+        input.set_switch_gyro_axes(settings.switch_gyro_axes);
     }
     if (result.close_requested) {
         if (settings_came_from == State::Menu && local_game()) {

@@ -70,7 +70,11 @@ constexpr std::size_t kHistoryDepth = 32;
 // Below this the ground is not moving through the device's frame, so the
 // reading is noise however large the rotation alongside it looks. In radians a
 // second, off the accelerometer, for the same reason as kNeededArc.
-constexpr float kMovingRate = 0.02f;
+constexpr float kMovingRate = 0.05f;
+// And below this fraction of the loudest turn seen so far, the rotation
+// reading is not saying anything either -- see where it is used. A fraction
+// rather than a number, since the unit is the thing being solved for.
+constexpr float kQuietRotation = 0.1f;
 // Sanity on the fitted unit: revolutions, radians and degrees a second are
 // 6.28, 1 and 0.017 respectively, so anything outside this is not a unit.
 constexpr float kSmallestScale = 0.002f;
@@ -80,10 +84,10 @@ constexpr std::size_t kMaxSamples = 900;
 }  // namespace
 
 SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
-    // Right is right in both frames; up and out-of-the-screen are each the
-    // other way round. See the header for the two readings this came from.
+    // Same axes, opposite vector: libnx points at the ground where SDL points
+    // at the sky. See the header for the three poses that settle it.
     SwitchSixAxis out;
-    out.x = native.x;
+    out.x = -native.x;
     out.y = -native.y;
     out.z = -native.z;
     return out;
@@ -197,8 +201,13 @@ Attempt try_candidate(const MotionAxes& axes, const std::vector<SwitchSixAxis>& 
 }  // namespace
 
 const std::vector<MotionAxes>& motion_axis_candidates() {
-    static const std::vector<MotionAxes> rotations = build_signed_permutations(1);
-    return rotations;
+    static const std::vector<MotionAxes> all = [] {
+        std::vector<MotionAxes> both = build_signed_permutations(1);
+        const std::vector<MotionAxes> flipped = build_signed_permutations(-1);
+        both.insert(both.end(), flipped.begin(), flipped.end());
+        return both;
+    }();
+    return all;
 }
 
 std::string MotionFit::describe() const {
@@ -255,6 +264,7 @@ void MotionFitter::reset() {
     history_.clear();
     elapsed_ = 0.0f;
     at_rest_ = 0.0f;
+    loudest_rotation_ = 0.0f;
     seen_arc_ = 0.0f;
     fit_ = MotionFit();
 }
@@ -323,6 +333,20 @@ void MotionFitter::add(const SwitchSixAxis& gravity, const SwitchSixAxis& rotati
     }
     if (counted == 0) return;
     const SwitchSixAxis middle_rotation = scaled(total_rotation, 1.0f / counted);
+
+    // And there has to be a rotation reading to fit. A still console still
+    // wobbles: its acceleration drifts by about a hundredth of a g between
+    // reports, which across the window above is a tenth of a radian a second
+    // of apparent turning -- comfortably past the movement gate, and pure
+    // noise. Those samples predict nothing for every candidate alike, so every
+    // candidate scores the same on them, and enough of them drag the margin to
+    // exactly 1.0 however good the real samples are. Which is what a real
+    // session did: ninety seconds of "undecided, leading by 1.0x".
+    //
+    // Measured against the loudest turn seen so far rather than against a
+    // number, since the unit is the thing being solved for.
+    loudest_rotation_ = std::max(loudest_rotation_, length(middle_rotation));
+    if (length(middle_rotation) < loudest_rotation_ * kQuietRotation) return;
     const SwitchSixAxis middle_gravity = normalized(SwitchSixAxis{
         now.gravity.x + then->gravity.x, now.gravity.y + then->gravity.y,
         now.gravity.z + then->gravity.z});

@@ -152,6 +152,17 @@ struct Settings {
     // back can still opt into from Settings.
     bool vsync = false;
 
+    // Which of a Switch's six-axis axes is which, as an index into
+    // motion_axis_candidates(), or -1 to work it out from the accelerometer.
+    //
+    // Temporary, and here because the working-it-out took six rounds of
+    // guessing and two retractions, every round costing a build, a hardware
+    // session and a report of how a game felt. A knob that can be turned on
+    // the console itself while a game is running finds the answer in one
+    // sitting instead. Once it is known it belongs in switch_gyro_to_sdl() as
+    // a constant, and this can go.
+    int switch_gyro_axes = -1;
+
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;
 };

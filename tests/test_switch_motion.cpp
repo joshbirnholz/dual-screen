@@ -98,7 +98,7 @@ Recording record(const MotionAxes& device, float unit_scale, float noise = 0.0f,
 }
 
 void test_every_frame_a_device_could_use_is_recovered() {
-    // All twenty-four, each at each of the three units anyone reports rotation
+    // All forty-eight, each at each of the three units anyone reports rotation
     // in. If the solver can name every one of these, it can name whichever one
     // a real console turns out to be -- which is the whole point, since asking
     // has not worked.
@@ -129,7 +129,7 @@ void test_every_frame_a_device_could_use_is_recovered() {
             ++checked;
         }
     }
-    CHECK_EQ(checked, 72);
+    CHECK_EQ(checked, 144);
 }
 
 void test_it_still_works_on_a_reading_that_is_not_perfect() {
@@ -225,21 +225,40 @@ void test_a_mirrored_accelerometer_is_not_something_this_can_notice() {
               "is wrong and this method is better than it is documented to be");
 }
 
-void test_the_candidates_are_the_rotations_and_only_those() {
+// The candidates are every signed permutation, both parities, and this is the
+// second thing in this file that is a retraction.
+//
+// An earlier version searched only the twenty-four with determinant +1, and a
+// test here asserted that as a rule: a frame differs from a frame by a
+// rotation, never by a reflection, so a reflection would describe a mirrored
+// console. True of frames, and beside the point, because what separates these
+// two readings is not only their axes but which way round each of them calls
+// positive. A gyroscope reported clockwise-positive instead of by the
+// right-hand rule is negated on all three axes -- determinant -1, and an
+// entirely ordinary thing for a vendor to do. This console turns out to report
+// its *acceleration* exactly that way, pointing at the ground rather than at
+// the sky.
+//
+// So the rule excluded answers that were real, and the two guesses it was once
+// used to rule out were ruled out for nothing.
+void test_the_candidates_are_every_signed_permutation() {
     const std::vector<MotionAxes>& candidates = motion_axis_candidates();
-    CHECK_EQ(static_cast<int>(candidates.size()), 24);
+    CHECK_EQ(static_cast<int>(candidates.size()), 48);
+
+    int rotations = 0;
     for (const MotionAxes& axes : candidates) {
-        // Every one is a rotation: determinant +1. A reflection describes a
-        // mirrored device, and shipping two of those is how this problem got
-        // as far as it did.
         const SwitchSixAxis x = axes.apply({1.0f, 0.0f, 0.0f});
         const SwitchSixAxis y = axes.apply({0.0f, 1.0f, 0.0f});
         const SwitchSixAxis z = axes.apply({0.0f, 0.0f, 1.0f});
         const float determinant = x.x * (y.y * z.z - y.z * z.y) - x.y * (y.x * z.z - y.z * z.x) +
                                   x.z * (y.x * z.y - y.y * z.x);
-        CHECK_MSG(test::nearly_equal(determinant, 1.0), "a candidate that is not a rotation");
+        CHECK(test::nearly_equal(std::abs(determinant), 1.0));
+        if (determinant > 0.0f) ++rotations;
     }
-    // And no duplicates.
+    // Half and half, which is what makes it every signed permutation rather
+    // than some of them.
+    CHECK_EQ(rotations, 24);
+
     for (std::size_t a = 0; a < candidates.size(); ++a) {
         for (std::size_t b = a + 1; b < candidates.size(); ++b) {
             CHECK(!(candidates[a] == candidates[b]));
@@ -302,7 +321,7 @@ void test_a_few_seconds_of_ordinary_handling_is_enough() {
 }  // namespace
 
 int main() {
-    test_the_candidates_are_the_rotations_and_only_those();
+    test_the_candidates_are_every_signed_permutation();
     test_every_frame_a_device_could_use_is_recovered();
     test_it_still_works_on_a_reading_that_is_not_perfect();
     test_it_says_nothing_rather_than_guessing();
