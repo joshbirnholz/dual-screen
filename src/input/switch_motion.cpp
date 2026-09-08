@@ -94,14 +94,10 @@ SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
 }
 
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native) {
-    // A half turn about z, which is not the half turn about x that the
-    // acceleration takes. The best of five guesses and still only a guess --
-    // see the header, and MotionFitter for the thing that does not guess.
-    SwitchSixAxis out;
-    out.x = -native.x;
-    out.y = -native.y;
-    out.z = native.z;
-    return out;
+    // Nothing at all: the axes are already the ones everything downstream
+    // uses, and only the unit differs. Measured twice over, by two methods
+    // sharing no machinery -- see the header.
+    return native;
 }
 
 SwitchSixAxis MotionAxes::apply(const SwitchSixAxis& in) const {

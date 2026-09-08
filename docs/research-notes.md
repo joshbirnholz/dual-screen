@@ -349,6 +349,42 @@ pseudovector and picks up the reflection's sign as well, the two cancel, and a
 clean confident wrong answer comes back. Settling the accelerometer's own axes
 takes one reading in a known pose, from a person. There is no solving around it.
 
+### The answer, and why seven attempts could not have found it
+
+Rotation on a Switch needs **nothing done to its axes at all** — only its unit:
+
+    acceleration is (-x, -y, -z),  rotation is (x, y, z) in revolutions a second
+
+So the rotation conversion is the negative of the acceleration one. That is the
+same relationship Cemu's DSU and SDL readers have with each other, and the same
+one Azahar's SDL path has: three independent places all handing an
+accelerometer and a gyroscope from the same part over pointing opposite ways.
+
+None of the first seven attempts could have found this, and it is worth being
+precise about why. They all searched the *rotation* while the **acceleration
+was mirrored on x** — an error two poses on a table could not see. Every
+rotation fitted against a mirrored frame inherits the mirror, so the correct
+answer was not in the space being searched. Walking all forty-eight
+possibilities by hand and finding none of them right is what finally said so:
+when every candidate in a complete space is wrong, the thing being varied is
+not the thing that is broken.
+
+Two measurements sharing no machinery settled it, once x was fixed:
+
+- **The console's own accelerometer.** `MotionFitter` watched the ground swing
+  through the frame and reported `(x, y, z)` at 6.166 of a radian a second,
+  which is tau to within two percent.
+- **A Steam Deck held against it and moved with it.** `MotionComparison` found
+  acceleration differing by `(x, z, -y)` and rotation by `(-x, z, y)`. Those
+  disagreeing is the whole point: had both conversions been right the two would
+  be *equal*, each being nothing but how the devices were held relative to one
+  another. Dividing one out of the other leaves `(x, y, z)` exactly.
+
+The second is the more useful lesson. A device that is already right is an
+instrument; asking a person how a game feels is not, because a wrong scale, a
+wrong sign, a wrong axis and a wrong handedness all come back as "wrong
+somehow".
+
 ### Measuring against a device that already works
 
 Seven rounds went into this by deriving an answer and then asking how a game

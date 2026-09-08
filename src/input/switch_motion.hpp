@@ -104,15 +104,36 @@ struct SwitchSixAxis {
 // rotation answer fitted against it inherited the mirror.
 SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native);
 
-// And rotation, for a console that has not been moved enough for the fit
-// below to have worked it out yet.
+// And rotation, which needs nothing done to it but its unit.
 //
-// This is the fifth guess at it and there will not be a sixth. The first four
-// each reasoned about what a reading ought to look like, shipped, and came
-// back wrong in a way that read as a different bug -- and the fifth is only
-// here as something to use for the second or two before the accelerometer
-// answers the question properly. Reaching for a constant is what made this a
-// five-round problem; see MotionFitter for what replaced it.
+//     rotation is (x, y, z), in revolutions a second.
+//
+// So the rotation conversion is the negative of the acceleration one, which is
+// the same relationship Cemu's DSU and SDL readers have with each other, and
+// the same one Azahar's SDL path has -- three independent places, all agreeing
+// that an accelerometer and a gyroscope from the same part are handed over
+// pointing opposite ways.
+//
+// This took eight attempts, and none of the first seven could have found it,
+// because they were all searching the rotation while the *acceleration* was
+// mirrored on x. Every rotation fitted against a mirrored frame inherits the
+// mirror, so the whole space was wrong and walking all forty-eight of it found
+// nothing -- which is what finally said the thing being varied was not the
+// thing that was broken.
+//
+// What settled it was two measurements that share no machinery:
+//
+//   The console's own accelerometer, once x was fixed. MotionFitter watched
+//   the ground swing through the frame and reported (x, y, z) at 6.166 of a
+//   radian a second, which is tau to within two percent.
+//
+//   A Steam Deck, whose motion has been right throughout, held against this
+//   console and moved with it. MotionComparison found acceleration differing
+//   by (x, z, -y) and rotation by (-x, z, y) -- and those disagreeing is the
+//   whole point. Had both conversions been right the two would be equal, each
+//   being nothing but how the devices were held relative to each other. The
+//   difference between them is the error, and dividing one out of the other
+//   leaves (x, y, z) exactly.
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native);
 
 // One mapping of the axes, as a signed permutation: for each output component,

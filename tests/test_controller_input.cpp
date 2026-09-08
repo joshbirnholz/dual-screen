@@ -826,30 +826,41 @@ void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
     CHECK(test::nearly_equal(rolled.y, 0.74));
 }
 
-// Rotation is still a guess, and now only a placeholder for the second or two
-// before the fit works it out properly. There is nothing to assert about its
-// signs that would not just restate them, so what is checked is the one thing
-// that held through every wrong version: it is not acceleration's conversion,
-// and it is not acceleration's conversion negated. Those are the two shortcuts
-// that look right and are not.
-void test_rotation_is_not_just_accelerations_conversion() {
+// Rotation, and the third retraction this problem has produced.
+//
+// The version of this test that stood while the answer was still unknown
+// asserted that rotation was neither acceleration's conversion nor its
+// negative -- "the two shortcuts that look right and are not". The second half
+// of that was wrong. Rotation *is* acceleration's negative here, and it is not
+// a coincidence: Cemu's DSU and SDL readers have exactly that relationship to
+// each other, and so does Azahar's SDL path. Three independent places, all
+// handing an accelerometer and a gyroscope from the same part over pointing
+// opposite ways.
+//
+// So the assertion is inverted, and it is now a positive claim with three
+// sources behind it rather than a hunch about what would be too convenient.
+void test_rotation_is_accelerations_conversion_turned_around() {
     const SwitchSixAxis native = {0.4f, -1.1f, 2.3f};
     const SwitchSixAxis as_accel = switch_accel_to_sdl(native);
     const SwitchSixAxis as_gyro = switch_gyro_to_sdl(native);
-    const auto same = [](const SwitchSixAxis& a, const SwitchSixAxis& b) {
-        return test::nearly_equal(a.x, b.x) && test::nearly_equal(a.y, b.y) &&
-               test::nearly_equal(a.z, b.z);
-    };
-    CHECK_MSG(!same(as_gyro, as_accel), "rotation is being converted like acceleration");
-    CHECK_MSG(!same(as_gyro, {-as_accel.x, -as_accel.y, -as_accel.z}),
-              "rotation is being converted as acceleration's opposite");
+    CHECK(test::nearly_equal(as_gyro.x, -as_accel.x));
+    CHECK(test::nearly_equal(as_gyro.y, -as_accel.y));
+    CHECK(test::nearly_equal(as_gyro.z, -as_accel.z));
+
+    // Which for this console means rotation is handed over exactly as it
+    // arrives. Worth stating outright, because it is what seven attempts spent
+    // themselves failing to find while the acceleration was mirrored underneath
+    // them: no axis of it needed touching, only its unit.
+    CHECK(test::nearly_equal(as_gyro.x, native.x));
+    CHECK(test::nearly_equal(as_gyro.y, native.y));
+    CHECK(test::nearly_equal(as_gyro.z, native.z));
 }
 
 }  // namespace
 
 int main() {
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
-    test_rotation_is_not_just_accelerations_conversion();
+    test_rotation_is_accelerations_conversion_turned_around();
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "skipping: SDL game controller subsystem unavailable: %s\n",
