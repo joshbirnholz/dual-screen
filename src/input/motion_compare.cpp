@@ -199,6 +199,27 @@ void MotionComparison::report(uint32_t now_ms) {
               std::to_string(rotation_pairs_.size()) + " turns compared; acceleration is " +
               acceleration_.describe() + ", rotation is " + rotation_.describe());
 
+    // And the one number here that does not depend on how the two devices
+    // happened to be held.
+    //
+    // Each measurement above is the mounting composed with whatever that
+    // reading's conversion gets wrong, and the mounting is the same for both
+    // -- so dividing one by the other cancels it. What is left is purely how
+    // far this device's own two conversions disagree with each other.
+    //
+    // Identity means they agree, which is what makes a game's aiming behave
+    // even when its idea of which way is up is wrong: the pair can be
+    // perfectly consistent and still both be turned the same wrong way. That
+    // is the failure this number cannot see and no amount of comparing can --
+    // it takes a reading of a known pose, from the device that is already
+    // right, and the raw pairs above are what to read it off.
+    if (acceleration_.decided && rotation_.decided) {
+        const MotionAxes between = rotation_.axes.after(acceleration_.axes.inverse());
+        log_debug("motion A/B: this device's own two conversions disagree by " +
+                  between.describe() + " -- identity means they agree with each other, which is "
+                  "not the same as being right");
+    }
+
     if (!said_answer_ && acceleration_.decided && rotation_.decided) {
         said_answer_ = true;
         log_info("motion A/B: the other device's acceleration is " + acceleration_.describe() +

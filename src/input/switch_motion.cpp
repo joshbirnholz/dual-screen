@@ -108,6 +108,24 @@ SwitchSixAxis MotionAxes::apply(const SwitchSixAxis& in) const {
     return out;
 }
 
+MotionAxes MotionAxes::inverse() const {
+    MotionAxes back;
+    for (int axis = 0; axis < 3; ++axis) {
+        back.source[source[axis]] = static_cast<int8_t>(axis);
+        back.sign[source[axis]] = sign[axis];
+    }
+    return back;
+}
+
+MotionAxes MotionAxes::after(const MotionAxes& first) const {
+    MotionAxes both;
+    for (int axis = 0; axis < 3; ++axis) {
+        both.source[axis] = first.source[source[axis]];
+        both.sign[axis] = static_cast<int8_t>(sign[axis] * first.sign[source[axis]]);
+    }
+    return both;
+}
+
 bool MotionAxes::operator==(const MotionAxes& other) const {
     for (int axis = 0; axis < 3; ++axis) {
         if (source[axis] != other.source[axis] || sign[axis] != other.sign[axis]) return false;

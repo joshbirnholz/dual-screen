@@ -385,6 +385,43 @@ instrument; asking a person how a game feels is not, because a wrong scale, a
 wrong sign, a wrong axis and a wrong handedness all come back as "wrong
 somehow".
 
+### What comparing two devices cannot tell you
+
+Gyro aiming came right and the plaza camera in Nintendo Land stayed upside
+down. Those two facts together are not a contradiction, they are a diagnosis:
+the console's acceleration and rotation agree **with each other** — which is
+what makes aiming behave and stops anything fighting — while the pair of them
+is turned the same wrong way against the world, which is what leaves "up"
+inverted.
+
+That is precisely the failure the A/B comparison cannot see. Each measurement
+it makes is the mounting composed with one reading's error:
+
+    M_a = T . A⁻¹        M_g = T . G⁻¹
+
+and the mounting `T` is the same for both, so only the ratio is mounting-free:
+
+    R = M_a⁻¹ . M_g      the disagreement between the two conversions
+
+`R` came back as a half-turn about z, so one of the two was out by that much.
+Nothing in the comparison says *which*. Assuming the acceleration was right and
+moving the rotation makes them agree — about a wrong "up". Assuming the
+opposite makes them agree about the right one. Both look identical to the
+instrument, and only one of them plays Nintendo Land.
+
+Two lessons worth keeping. The first is that a mounting-free residual is worth
+computing and logging explicitly rather than deriving by hand each time; it is
+now in the log. The second is that it takes **one reading of a known pose, from
+the device that is already right**, to break the tie — and the A/B already
+prints both devices' raw readings side by side every second, so holding the
+pair still in a named orientation is the whole procedure.
+
+Also worth recording, since it was nearly acted on: `DualScreenController` and
+`parse_dsu_motion` both match Cemu exactly. Cemu's SDL provider looks like it
+only negates the accelerometer's second and third axes, but it has already
+negated all three (and divided by gravity) at storage time, so the composition
+is not what a first reading of `processMotionSample`'s arguments suggests.
+
 ### Measuring against a device that already works
 
 Seven rounds went into this by deriving an answer and then asking how a game

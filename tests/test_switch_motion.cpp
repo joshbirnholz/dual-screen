@@ -241,6 +241,29 @@ void test_a_mirrored_accelerometer_is_not_something_this_can_notice() {
 //
 // So the rule excluded answers that were real, and the two guesses it was once
 // used to rule out were ruled out for nothing.
+// Dividing one mapping by another, which is the only way to get at a
+// difference that does not depend on how two devices happened to be held.
+void test_mappings_compose_and_undo_each_other() {
+    const SwitchSixAxis reading = {0.3f, -1.4f, 2.2f};
+    for (const MotionAxes& axes : motion_axis_candidates()) {
+        // Undoing a mapping gets the reading back.
+        const SwitchSixAxis there_and_back = axes.inverse().apply(axes.apply(reading));
+        CHECK(test::nearly_equal(there_and_back.x, reading.x));
+        CHECK(test::nearly_equal(there_and_back.y, reading.y));
+        CHECK(test::nearly_equal(there_and_back.z, reading.z));
+
+        // And composing agrees with applying one after the other, which is
+        // what makes a ratio of two measurements mean anything.
+        for (const MotionAxes& other : motion_axis_candidates()) {
+            const SwitchSixAxis stepwise = axes.apply(other.apply(reading));
+            const SwitchSixAxis composed = axes.after(other).apply(reading);
+            CHECK(test::nearly_equal(stepwise.x, composed.x));
+            CHECK(test::nearly_equal(stepwise.y, composed.y));
+            CHECK(test::nearly_equal(stepwise.z, composed.z));
+        }
+    }
+}
+
 void test_the_candidates_are_every_signed_permutation() {
     const std::vector<MotionAxes>& candidates = motion_axis_candidates();
     CHECK_EQ(static_cast<int>(candidates.size()), 48);
@@ -322,6 +345,7 @@ void test_a_few_seconds_of_ordinary_handling_is_enough() {
 
 int main() {
     test_the_candidates_are_every_signed_permutation();
+    test_mappings_compose_and_undo_each_other();
     test_every_frame_a_device_could_use_is_recovered();
     test_it_still_works_on_a_reading_that_is_not_perfect();
     test_it_says_nothing_rather_than_guessing();

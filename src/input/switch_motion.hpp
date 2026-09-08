@@ -144,6 +144,12 @@ struct MotionAxes {
     int8_t sign[3] = {1, 1, 1};
 
     SwitchSixAxis apply(const SwitchSixAxis& in) const;
+    // The mapping that undoes this one, and the one that applies `first` and
+    // then this. Together they let two measured mappings be divided by one
+    // another, which is how a difference that does not depend on how two
+    // devices happened to be held is got at.
+    MotionAxes inverse() const;
+    MotionAxes after(const MotionAxes& first) const;
     // Written the way this file's comments and commit messages write them,
     // e.g. "(-x, -y, z)".
     std::string describe() const;
