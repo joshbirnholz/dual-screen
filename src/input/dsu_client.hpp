@@ -67,6 +67,11 @@ private:
     uint32_t client_id_ = 0;
     uint64_t subscribed_at_ms_ = 0;
     uint64_t heard_at_ms_ = 0;
+    // When this first asked anything of the server, so a server that never
+    // answers can be told from one that answered and stopped. Separate from
+    // subscribed_at_ms_, which moves every time the subscription is renewed.
+    uint64_t first_asked_at_ms_ = 0;
+    bool said_never_answered_ = false;
     bool connected_ = false;
     bool said_connected_ = false;
     DsMotionState state_;

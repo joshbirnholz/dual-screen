@@ -174,6 +174,13 @@ Three things are different about a Wii U session:
   than whatever it was last left on. **F3** swaps it for the rest of a session
   without writing anything down.
 
+  Motion in the GamePad role comes from whatever this device reads its own
+  sensors through, which on a Steam Deck in Game Mode means
+  [SteamDeckGyroDSU](https://github.com/kmicki/SteamDeckGyroDSU) — Steam Input
+  hands SDL a pad with no sensors on it, so there is nothing else to read. See
+  **Motion** below. If nothing answers, the log says so:
+  `motion: nothing has answered at 127.0.0.1:26760 …`.
+
   A handheld starts as the **GamePad** and everything else as the **Television**,
   which is what each is: a Steam Deck held in two hands is the thing a game
   expects to be tilted, gyroscope and all, and playing that way needs no second

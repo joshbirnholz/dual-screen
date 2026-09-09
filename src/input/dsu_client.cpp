@@ -38,6 +38,11 @@ constexpr uint64_t kSubscribeIntervalMs = 1000;
 // And the mirror of it: a server that has said nothing for this long is gone,
 // whether it stopped or the machine went to sleep with it running.
 constexpr uint64_t kServerSilentMs = 2000;
+// And how long to keep asking a server that has never said anything at all
+// before saying so. Longer than the silence above, because that one is a
+// server that went away mid-session and this one is a server that may simply
+// not be up yet -- a few seconds of quiet at startup is ordinary.
+constexpr uint64_t kNeverAnsweredMs = 5000;
 
 // DSU reports rotation in degrees a second and acceleration in g; everything
 // downstream of DsMotionState is in SDL's radians a second and metres per
@@ -208,6 +213,8 @@ bool DsuClient::start(std::string* error) {
     if (client_id_ == 0) client_id_ = 1;
     subscribed_at_ms_ = 0;
     heard_at_ms_ = 0;
+    first_asked_at_ms_ = 0;
+    said_never_answered_ = false;
     connected_ = false;
     said_connected_ = false;
     state_ = DsMotionState();
@@ -228,6 +235,9 @@ void DsuClient::send_subscribe() {
     build_dsu_subscribe(client_id_, request);
     socket_.send_to(address_, port_, request, sizeof(request));
     subscribed_at_ms_ = net::monotonic_millis();
+    if (first_asked_at_ms_ == 0) {
+        first_asked_at_ms_ = subscribed_at_ms_;
+    }
 }
 
 void DsuClient::poll() {
@@ -268,6 +278,21 @@ void DsuClient::poll() {
         said_connected_ = false;
         state_ = DsMotionState();
         log_info("motion: the DSU server stopped answering");
+    }
+    // A server that has never answered, as opposed to one that stopped. The
+    // check above cannot see this case -- it only fires for a server that was
+    // connected once -- so asking into the void produced no line at all, and a
+    // log showed the request going out and then simply nothing. On a Steam
+    // Deck that is the whole of the motion path, so the difference between
+    // "the server is not running" and "something in this app is wrong" was
+    // invisible in the one place it needed to be plain.
+    if (!connected_ && heard_at_ms_ == 0 && !said_never_answered_ &&
+        first_asked_at_ms_ != 0 && now - first_asked_at_ms_ >= kNeverAnsweredMs) {
+        said_never_answered_ = true;
+        log_warn("motion: nothing has answered at " + address_ + ":" + std::to_string(port_) +
+                 " in " + std::to_string(kNeverAnsweredMs / 1000) +
+                 " seconds, so this device reports no motion. Is the DSU server running? On a "
+                 "Steam Deck that is SteamDeckGyroDSU.");
     }
 }
 
