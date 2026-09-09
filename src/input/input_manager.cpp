@@ -35,10 +35,6 @@ DsButton ds_button_for_key(SDL_Keycode key, bool& found) {
 InputManager::~InputManager() { shutdown(); }
 
 void InputManager::initialize(const Settings& settings) {
-    // Applied here and again whenever the settings screen changes it, so a
-    // frame turned by hand takes effect without restarting. See
-    // Settings::switch_gyro_axes.
-    motion_.set_switch_gyro_axes(settings.switch_gyro_axes);
     settings_ = settings;
     settings_.stick_deadzone = std::clamp(settings_.stick_deadzone, 0.05f, 0.9f);
     settings_.trigger_deadzone = std::clamp(settings_.trigger_deadzone, 0.05f, 0.9f);

@@ -78,7 +78,6 @@ private:
         ScreenCodecThreeDs,
         ScreenCodecWiiU,
         Vsync,
-        SwitchGyroAxes,
         Back,
         Count
     };

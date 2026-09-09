@@ -44,20 +44,6 @@ uint32_t now_micros() {
 
 MotionReader::~MotionReader() { close_sensors(); }
 
-void MotionReader::set_switch_gyro_axes(int index) {
-    const int count = static_cast<int>(motion_axis_candidates().size());
-    const int wanted = (index >= 0 && index < count) ? index : -1;
-    if (wanted == chosen_axes_) return;
-    chosen_axes_ = wanted;
-    said_fit_ = false;
-    if (chosen_axes_ >= 0) {
-        log_info("motion: this console's rotation frame is set by hand to " +
-                 motion_axis_candidates()[static_cast<std::size_t>(chosen_axes_)].describe());
-    } else {
-        log_info("motion: working this console's rotation frame out from its accelerometer again");
-    }
-}
-
 void MotionReader::set_enabled(bool enabled) {
     if (enabled == enabled_) {
         return;
@@ -355,16 +341,13 @@ bool MotionReader::read_console_sensors() {
     // hypothetical: it did, for months, while the acceleration above was a
     // quarter turn out. See switch_accel_to_sdl(), and MotionComparison for
     // the instrument that finally settled it.
-    const bool by_hand = chosen_axes_ >= 0;
     static uint32_t fit_at_ms = 0;
-    if (fit_at_ms != 0 && !by_hand) {
+    if (fit_at_ms != 0) {
         motion_fitter_.add(accel, native_gyro,
                            static_cast<float>(now_ms - fit_at_ms) / 1000.0f);
     }
     fit_at_ms = now_ms;
-    if (by_hand) {
-        // Nothing to report and nothing to work out; a person is turning it.
-    } else if (motion_fitter_.fit().decided && !said_fit_) {
+    if (motion_fitter_.fit().decided && !said_fit_) {
         said_fit_ = true;
         log_info("motion: this console reports rotation as " + motion_fitter_.fit().describe() +
                  " of a radian a second, worked out from its own accelerometer");
@@ -404,9 +387,7 @@ bool MotionReader::read_console_sensors() {
     // waving the console about to get there, during which the fallback below
     // is what a game actually gets. A measured answer is available from the
     // first frame and cannot drift.
-    const SwitchSixAxis gyro =
-        by_hand ? motion_axis_candidates()[static_cast<std::size_t>(chosen_axes_)].apply(native_gyro)
-                : switch_gyro_to_sdl(native_gyro);
+    const SwitchSixAxis gyro = switch_gyro_to_sdl(native_gyro);
     const float rate = kTau;
     state_.gyro_x = gyro.x * rate;
     state_.gyro_y = gyro.y * rate;

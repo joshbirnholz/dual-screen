@@ -975,6 +975,37 @@ void test_a_lone_device_shows_what_the_console_makes_sense_of() {
     }
 }
 
+// A screen shown by itself fills the device showing it, at any size.
+//
+// This is the shape of a real complaint: a companion holding a Wii U's TV
+// screen had clear space all the way round the picture. The margin came from
+// kFocusMargin, copied into TV Only and GamePad Only when they were written --
+// and it hid, because on a display of 1280x800 or less it is dropped anyway.
+// So a handheld Switch was right, the same Switch in a dock was padded, and a
+// companion holding the GamePad escaped it for an unrelated reason
+// (device_layout() sets fill_display for the bottom screen). Checked at a size
+// above that threshold, since below it every layout passes.
+void test_one_screen_alone_fills_the_device() {
+    const LayoutRegistry registry;
+    const SystemScreens& screens = system_profile(SystemId::WiiU).screens;
+    const float width = 1920.0f;
+    const float height = 1080.0f;
+    for (const char* id : {"tv_only", "gamepad_only"}) {
+        const Layout* layout = registry.find(id);
+        CHECK_MSG(layout != nullptr, std::string(id) + " went missing");
+        const std::vector<PlacedScreen> placed = place_screens(*layout, width, height, screens);
+        CHECK_MSG(placed.size() == 1, std::string(id) + " placed more than the one screen it names");
+        const PixelRect& rect = placed.front().rect;
+        // A 16:9 screen in a 16:9 window: filling it means filling it, with
+        // nothing left over on any side. A pixel of rounding is fine; eight
+        // percent of the width, which is what kFocusMargin came to here, is
+        // the bug.
+        CHECK_MSG(std::abs(rect.w - width) <= 1.0f && std::abs(rect.h - height) <= 1.0f,
+                  std::string(id) + " left " + std::to_string(width - rect.w) + "x" +
+                      std::to_string(height - rect.h) + " of the display clear around one screen");
+    }
+}
+
 // Nothing in the shell may take a control the game speaks for. Kept next to the
 // console rather than in the input code, since it is a fact about the Wii U:
 // both sticks are pressed by its games and the touch screen is played through.
@@ -1021,6 +1052,7 @@ int main() {
     test_smoothing_follows_the_texture_not_just_the_setting();
     test_the_compositor_says_when_the_picture_changed();
     test_a_lone_device_shows_what_the_console_makes_sense_of();
+    test_one_screen_alone_fills_the_device();
     test_the_wii_u_keeps_its_own_controls();
     test_audio_off_reaches_neither_screen();
     return test::finish("layout");

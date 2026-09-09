@@ -35,6 +35,22 @@ constexpr float kVerticalMargin = 3.0f / 212.0f;     // 0.014
 constexpr float kSideBySideGap = 32.0f / 154.0f;     // 0.208
 constexpr float kSideBySideMargin = 4.0f / 212.0f;   // 0.019
 
+// And none at all for a layout that is one screen and nothing else.
+//
+// Every margin above is air between things: between two screens, or between a
+// group of them and the edge of a picture that is meant to read as an object
+// sitting in a window. A single screen filling a device is not an object in a
+// window -- it is the picture, and the device is a frame around it. Clear
+// space there is not composition, it is a smaller game.
+//
+// This was a real complaint rather than a tidy-up. These two layouts are what
+// a Wii U's screens are shown through, and kFocusMargin was copied into them
+// when they were written. On a display of 1280x800 or less the margin is
+// dropped anyway (see is_small_display), so a handheld companion never saw
+// it and a docked one did: the same Switch showing the same screen padded on
+// all four sides in the dock and not out of it.
+constexpr float kAloneMargin = 0.0f;
+
 ScreenItem make_item(ScreenId screen,
                      float scale = 1.0f,
                      CrossAlign align = CrossAlign::Center,
@@ -219,7 +235,7 @@ LayoutRegistry::LayoutRegistry() {
         layout.display_name = "TV Only";
         layout.systems = {SystemId::WiiU};
         layout.composition =
-            make_composition(LayoutAxis::Horizontal, {make_item(ScreenId::Top)}, 0.0f, kFocusMargin);
+            make_composition(LayoutAxis::Horizontal, {make_item(ScreenId::Top)}, 0.0f, kAloneMargin);
         // Nothing is drawn below to touch.
         layout.accepts_touch_on_bottom = false;
         layouts_.push_back(layout);
@@ -232,7 +248,7 @@ LayoutRegistry::LayoutRegistry() {
         layout.display_name = "GamePad Only";
         layout.systems = {SystemId::WiiU};
         layout.composition = make_composition(LayoutAxis::Horizontal, {make_item(ScreenId::Bottom)},
-                                              0.0f, kFocusMargin);
+                                              0.0f, kAloneMargin);
         layouts_.push_back(layout);
     }
 }

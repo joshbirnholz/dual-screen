@@ -1,7 +1,5 @@
 #include "ui/settings_screen.hpp"
 
-#include "input/switch_motion.hpp"
-
 #include <algorithm>
 #include <cmath>
 
@@ -89,21 +87,6 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     return geometry;
 }
 
-namespace {
-
-// The row's value, for the temporary hand-turned override of a Switch's
-// six-axis frame. See Settings::switch_gyro_axes.
-std::string describe_switch_gyro_axes(int index) {
-    const std::vector<MotionAxes>& candidates = motion_axis_candidates();
-    if (index < 0 || index >= static_cast<int>(candidates.size())) {
-        return "Work it out";
-    }
-    return std::to_string(index + 1) + "/" + std::to_string(candidates.size()) + "  " +
-           candidates[static_cast<std::size_t>(index)].describe();
-}
-
-}  // namespace
-
 void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
     switch (static_cast<Row>(focus_)) {
         case Row::SystemDir: {
@@ -146,17 +129,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
             break;
-        case Row::SwitchGyroAxes: {
-            // -1 is "work it out from the accelerometer", then the candidates
-            // in order, so a player who wants to turn this by hand can walk
-            // the whole list and stop where the game feels right.
-            const int count = static_cast<int>(motion_axis_candidates().size());
-            int index = settings_.switch_gyro_axes + 1;  // -1 becomes 0
-            index = ((index + direction) % (count + 1) + (count + 1)) % (count + 1);
-            settings_.switch_gyro_axes = index - 1;
-            result.settings_changed = true;
-            break;
-        }
         case Row::Back:
             result.close_requested = true;
             break;
@@ -242,7 +214,6 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Streaming format (3DS)", video::to_string(settings_.screen_codec_3ds)},
         {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
-        {"Switch gyro axes", describe_switch_gyro_axes(settings_.switch_gyro_axes)},
         {"Back", ""},
     };
 

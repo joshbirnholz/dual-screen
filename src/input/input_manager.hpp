@@ -158,8 +158,6 @@ public:
     // something asks, because a gyroscope left running costs battery on
     // exactly the handhelds this is for.
     void set_motion_enabled(bool enabled) { motion_.set_enabled(enabled); }
-    // Temporary; see Settings::switch_gyro_axes.
-    void set_switch_gyro_axes(int index) { motion_.set_switch_gyro_axes(index); }
     // How this device is being held right now, as of the last poll. Absent
     // when motion is switched off, when nothing here has sensors, or before
     // the first reading has arrived.

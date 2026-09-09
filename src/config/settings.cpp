@@ -107,8 +107,6 @@ Settings Settings::load(const AppPaths& paths) {
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
     settings.trigger_deadzone = get_or<float>(document, "trigger_deadzone", settings.trigger_deadzone);
     settings.vsync = get_or<bool>(document, "vsync", settings.vsync);
-    settings.switch_gyro_axes =
-        get_or<int>(document, "switch_gyro_axes", settings.switch_gyro_axes);
 
     if (settings.system_dir.empty()) {
         settings.system_dir = paths.default_system_dir;
@@ -143,7 +141,6 @@ bool Settings::save(const AppPaths& paths) const {
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;
-    document["switch_gyro_axes"] = switch_gyro_axes;
 
     const std::string temporary = paths.settings_file + ".tmp";
     {
