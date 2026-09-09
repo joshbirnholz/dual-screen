@@ -353,6 +353,9 @@ struct App::Impl {
     // always has an opinion about it, and with nobody else connected that
     // opinion is the whole point (Settings::wii_u_screen_alone).
     std::optional<ScreenId> external_shown_screen;
+    // Whether anything has yet been pressed on a console played by another
+    // program -- see where it is set for what its absence from a log means.
+    bool said_first_pad = false;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -2122,10 +2125,7 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.paths.saves_dir);
     ensure_directory(impl.settings.system_dir);
 
-    // Must be set before any controller is opened. SDL's default is to report
-    // face buttons by printed label; this app wants positions, so that one rule
-    // -- east means A -- holds in menus and in game on every pad.
-    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
+    apply_controller_hints();
 
     // Video and events are the only subsystems worth failing over. The game
     // controller subsystem is initialised separately because it can fail on its
@@ -2874,6 +2874,21 @@ int App::run(const AppOptions& options) {
             if (impl.source) {
                 impl.source->input_sink().submit(combined);
             } else if (impl.external_source) {
+                // Said once, the first time anything is actually pressed.
+                //
+                // "The controls do not work" has two halves and they are not
+                // distinguishable from the outside: either nothing reaches
+                // this app, or it reaches this app and stops somewhere in
+                // Cemu. This line separates them. Its absence, with a game
+                // running and buttons being pressed, means this app is
+                // reading a pad that never moves -- which is what SDL hands
+                // back while another program's window is in front, and why
+                // apply_controller_hints() exists.
+                if (!impl.said_first_pad && (combined.buttons != 0 || combined.touching)) {
+                    impl.said_first_pad = true;
+                    log_info("the first pad press reached the game beside this app; controls are "
+                             "getting through");
+                }
                 impl.external_source->submit_input(combined);
             }
 

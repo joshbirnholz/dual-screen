@@ -2,6 +2,34 @@
 
 namespace ds {
 
+void apply_controller_hints() {
+    // SDL's default is to report face buttons by printed label; this app wants
+    // positions, so that one rule -- east means A -- holds in menus and in
+    // game on every pad. See kFaceButtonsByPosition.
+    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
+
+    // And read the pad even while this app's window is not the one in front.
+    //
+    // SDL's default is not to, and it means it. SDL_PrivateJoystickButton and
+    // its axis and sensor counterparts return *before* writing the new value
+    // into the joystick's own state whenever this process has windows and none
+    // of them has keyboard focus. So this is not a matter of missing events
+    // and polling instead: the polled state is never updated either. Buttons
+    // read as up, sticks stay wherever they were last allowed to be, and
+    // sensors report nothing at all. Releases are still let through, which is
+    // the one mercy -- nothing sticks down.
+    //
+    // That default is right for an ordinary application and wrong for this
+    // one, whose whole job for a Wii U is to run beside another program and
+    // hand it a pad. Cemu's window is the one in front by design -- it is
+    // what the player is looking at -- so this app spends every Wii U session
+    // in the background. A companion's pad arrives over a socket and never
+    // noticed, which is why two devices always worked; on one device this
+    // app's own pad is the GamePad, and it was reading a pad SDL had stopped
+    // filling in.
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+}
+
 bool ds_button_for_controller_button(SDL_GameControllerButton button, DsButton& out_button) {
     switch (button) {
         // Face buttons, by position. SDL is configured to report positions, so

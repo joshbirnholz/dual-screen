@@ -202,11 +202,15 @@ because that setting is not its to offer.
 
 ### Controls, and where they are configured
 
-The device holding the GamePad screen appears in Cemu's own **Input Settings**
-as a controller called **DualScreen Companion**, under an API of the same name.
-Add it to Player 1's Wii U GamePad the way you would any other pad. It is
-listed whether or not a session is running, so a game's controls can be set up
-in advance.
+Whatever is holding the GamePad screen appears in Cemu's own **Input Settings**
+as a controller called **DualScreen GamePad**, under an API called
+**DualScreen**. Add it to Player 1's Wii U GamePad the way you would any other
+pad. It is listed whether or not a session is running, so a game's controls can
+be set up in advance.
+
+One controller, whichever way you are playing: on two devices it carries the
+companion's pad, and on one it carries whatever is plugged into or built into
+the machine running the shell. Set it up once and both work.
 
 That makes it an ordinary Cemu controller in every way that matters. Wii U games
 want wildly different control schemes, and this is where they get them: buttons,
@@ -276,7 +280,7 @@ the difference and is what this mirrors.
 Only on a console that reads it. A DS session never switches a sensor on at
 all, which on a handheld is a gyroscope not running for an hour for nothing.
 
-Cemu reads it through the same **DualScreen Companion** controller as everything
+Cemu reads it through the same **DualScreen GamePad** controller as everything
 else (see above), with motion switched on for it by default.
 
 `motion: the host reads it; 1 of 1 connected controllers report it` in the log

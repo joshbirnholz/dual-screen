@@ -26,6 +26,11 @@ namespace ds {
 // is configurable -- remap the pad in Steam Input if you want something else.
 constexpr const char* kFaceButtonsByPosition = "0";
 
+// Everything SDL has to be told before a controller is opened. Called once at
+// startup; a test asserts what it leaves behind, because one of these is not
+// the kind of thing whose absence shows up anywhere but on hardware.
+void apply_controller_hints();
+
 // Menus: east confirms, south goes back.
 constexpr SDL_GameControllerButton kMenuConfirmButton = SDL_CONTROLLER_BUTTON_B;  // east
 constexpr SDL_GameControllerButton kMenuCancelButton = SDL_CONTROLLER_BUTTON_A;   // south

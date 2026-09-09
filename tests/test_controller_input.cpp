@@ -869,12 +869,37 @@ void test_rotation_is_accelerations_conversion_turned_around() {
     CHECK(test::nearly_equal(as_gyro.z, -native.y));
 }
 
+// What SDL has to be told before a pad is opened, and the half of it that
+// costs a hardware round-trip to notice is missing.
+//
+// A face-button convention that is not applied is visible on the first press
+// of the first menu. Background events are not visible at all until this app
+// is behind another program's window -- which for a Wii U it always is, since
+// Cemu's window is the one the player is looking at -- and then the pad
+// simply reads as untouched. Not stale, not laggy: SDL declines to write the
+// new value into the joystick's own state while unfocused, so polling it is
+// no escape from it either.
+//
+// That was found on hardware, on the only configuration that exposes it:
+// playing a Wii U on one device, where this app's own pad is the GamePad
+// rather than a second machine's.
+void test_a_pad_is_read_even_while_another_window_is_in_front() {
+    apply_controller_hints();
+    const char* background = SDL_GetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS);
+    CHECK_MSG(background != nullptr && std::string(background) == "1",
+              "SDL was not told to keep reading the pad while this app is in the background, so a "
+              "Wii U played on one device reads a pad that is never pressed");
+    const char* labels = SDL_GetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS);
+    CHECK_MSG(labels != nullptr && std::string(labels) == std::string(kFaceButtonsByPosition),
+              "SDL was not told to report face buttons by position");
+}
+
 }  // namespace
 
 int main() {
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
     test_rotation_is_accelerations_conversion_turned_around();
-    SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
+    test_a_pad_is_read_even_while_another_window_is_in_front();
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "skipping: SDL game controller subsystem unavailable: %s\n",
                      SDL_GetError());
