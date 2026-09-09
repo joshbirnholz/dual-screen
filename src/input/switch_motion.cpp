@@ -84,20 +84,26 @@ constexpr std::size_t kMaxSamples = 900;
 }  // namespace
 
 SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native) {
-    // Same axes, opposite vector: libnx points at the ground where SDL points
-    // at the sky. See the header for the three poses that settle it.
+    // Opposite vector, and a quarter turn about x: libnx points at the ground
+    // where SDL points at the sky, and libnx's axes lie along the *screen*
+    // where SDL's lie along the *face*. See the header for the three poses,
+    // held against a device known to be right, that settle both.
     SwitchSixAxis out;
     out.x = -native.x;
-    out.y = -native.y;
-    out.z = -native.z;
+    out.y = -native.z;
+    out.z = native.y;
     return out;
 }
 
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native) {
-    // Nothing at all: the axes are already the ones everything downstream
-    // uses, and only the unit differs. Measured twice over, by two methods
-    // sharing no machinery -- see the header.
-    return native;
+    // The same quarter turn, the other way round, since rotation is handed
+    // over pointing the opposite way to acceleration -- see the header. Only
+    // the unit is left after this, and that is applied where this is called.
+    SwitchSixAxis out;
+    out.x = native.x;
+    out.y = native.z;
+    out.z = -native.y;
+    return out;
 }
 
 SwitchSixAxis MotionAxes::apply(const SwitchSixAxis& in) const {

@@ -64,6 +64,13 @@ namespace ds {
 // had twice. Settling it needs one reading in a known pose, which is a
 // question for a person and not for this.
 //
+// That is not a hypothetical. The accelerometer this was solved against was a
+// quarter turn out for months, the rotation fitted itself to match, and the
+// pair stayed perfectly consistent -- good enough to aim a bow with in one
+// game while another's camera hung upside down. What ended it was three named
+// poses, held with a device already known to be right, and nothing else could
+// have: see switch_accel_to_sdl().
+//
 // It also has to know when it does not know. A device lying still says
 // nothing, and a turn about the axis pointing at the ground says nothing about
 // that axis, since a vector crossed with itself is zero. So a fit is only
@@ -80,60 +87,77 @@ struct SwitchSixAxis {
 
 // A Switch's acceleration, into the frame everything downstream uses.
 //
-//     SDL's reading is the negative of libnx's, on all three axes.
+//     SDL's reading is libnx's negated and turned a quarter of a turn
+//     about x: (-x, -z, y).
 //
-// libnx's axes are SDL's -- +x right, +y up, +z out of the screen -- and what
-// it reports along them is the direction of the *ground*, where SDL reports
-// the direction of up. Nothing says so; three poses on a real console do, and
-// only this reading fits all three:
+// Two separate things are going on in that, and separating them is what took
+// so long.
+//
+// The negation is the easy half. What libnx reports is the direction of the
+// *ground*, where SDL reports the direction of up. Three poses on a real
+// console say so and only this reading fits all three:
 //
 //   flat on a table, face up     libnx (0.00, 0.00, -1.00)
 //   held upright                 libnx (0.00, -0.98, -0.21)
 //   upright, right edge dipped   libnx (0.60, -0.74, -0.34)
 //
-// Face up, the ground is through the screen, which is -z. Upright, it is
-// towards the bottom of the screen, which is -y. Dip the right-hand edge and
-// it leans to the right, which is +x. Three poses, one story.
+// The quarter turn is the hard half, and it is a misreading of SDL's own
+// documentation rather than anything about a Switch. SDL defines these axes
+// for "phones held in portrait mode and game controllers held in front of
+// you", and libnx's axes are the phone reading of that: +y up the screen, +z
+// out of the screen. A controller's are not the same, because a controller's
+// "top" is its top *face*, not its top edge -- so +y comes out of the face
+// and +z runs down towards the handles. A device that is both, like a Switch
+// or a Steam Deck, has to pick one, and everything downstream here wants the
+// controller one:
 //
-// The first two of those were measured a long time before the third, and two
-// poses cannot see the third axis: both leave x free, because x is near zero
-// in each. That gap was filled with reasoning instead -- that a frame with +y
-// down and +z into the screen must have +x to the right to stay right-handed
-// -- which is true of a frame and false here, because this is not a change of
-// frame at all. It is the same frame reporting the opposite vector. Every
-// rotation answer fitted against it inherited the mirror.
+//   flat on a table, face up     up is out of the face, so +y
+//   held upright, screen at you  up is towards the top edge, so -z
+//   upright, right edge dipped   up leans left, so -x
+//
+// Which is measured, not argued: a Steam Deck, whose motion has been correct
+// throughout, was held against this console in exactly those three poses and
+// read (0.30, 9.88, 0.04), (0.80, 0.67, -9.69) and (-5.72, 1.18, -7.80) while
+// the console, converted the old way, read (0.16, 1.13, 10.05),
+// (1.11, 9.69, -0.25) and (-5.35, 8.25, 0.44). One mapping takes each of
+// those to its neighbour, and it is (x, z, -y).
+//
+// That quarter turn is why aiming in a game worked while "up" did not. The
+// rotation reading was fitted against this one, so it inherited the same turn
+// and the two stayed consistent with each other -- consistent enough to aim
+// with, and both of them a quarter turn from the truth. A game that only
+// integrates rotation (Wind Waker's telescope, Majora's Mask's bow) never
+// notices; one that reads gravity outright (Nintendo Land's plaza camera, its
+// Donkey Kong tilt game) is wrong from the first frame.
 SwitchSixAxis switch_accel_to_sdl(const SwitchSixAxis& native);
 
-// And rotation, which needs nothing done to it but its unit.
+// And rotation, which is the same quarter turn without the negation.
 //
-//     rotation is (x, y, z), in revolutions a second.
+//     rotation is (x, z, -y), in revolutions a second.
 //
-// So the rotation conversion is the negative of the acceleration one, which is
-// the same relationship Cemu's DSU and SDL readers have with each other, and
-// the same one Azahar's SDL path has -- three independent places, all agreeing
-// that an accelerometer and a gyroscope from the same part are handed over
-// pointing opposite ways.
+// So the rotation conversion is still the negative of the acceleration one,
+// which is the same relationship Cemu's DSU and SDL readers have with each
+// other, and the same one Azahar's SDL path has -- three independent places,
+// all agreeing that an accelerometer and a gyroscope from the same part are
+// handed over pointing opposite ways.
 //
-// This took eight attempts, and none of the first seven could have found it,
-// because they were all searching the rotation while the *acceleration* was
-// mirrored on x. Every rotation fitted against a mirrored frame inherits the
-// mirror, so the whole space was wrong and walking all forty-eight of it found
-// nothing -- which is what finally said the thing being varied was not the
-// thing that was broken.
+// The unit is the only other thing it needs, and that is tau: a hand turning
+// the console peaks around a fifth of a turn a second, and the console's own
+// accelerometer, watched by MotionFitter while the ground swung through its
+// frame, put the scale at 6.166 of a radian a second -- tau to within two
+// percent. The A/B against a Steam Deck agreed independently, measuring the
+// converted rotation at 1.016 of the Deck's own radians a second.
 //
-// What settled it was two measurements that share no machinery:
-//
-//   The console's own accelerometer, once x was fixed. MotionFitter watched
-//   the ground swing through the frame and reported (x, y, z) at 6.166 of a
-//   radian a second, which is tau to within two percent.
-//
-//   A Steam Deck, whose motion has been right throughout, held against this
-//   console and moved with it. MotionComparison found acceleration differing
-//   by (x, z, -y) and rotation by (-x, z, y) -- and those disagreeing is the
-//   whole point. Had both conversions been right the two would be equal, each
-//   being nothing but how the devices were held relative to each other. The
-//   difference between them is the error, and dividing one out of the other
-//   leaves (x, y, z) exactly.
+// That A/B is also what found the quarter turn, and the way it found it is
+// worth keeping. It measured acceleration differing from the Deck's by
+// (x, z, -y) and rotation differing by the same (x, z, -y). Equal, where
+// earlier rounds had them disagreeing -- and equal is what says the two
+// conversions are consistent with each other, since all that is left between
+// two devices held as one is how they were held. It was a mistake to read
+// that agreement as correctness: a mounting can only be divided out, never
+// seen, so an error the two conversions share survives it untouched. Both
+// were a quarter turn out, together, and it took reading a *known* pose off
+// the device that was already right to see it.
 SwitchSixAxis switch_gyro_to_sdl(const SwitchSixAxis& native);
 
 // One mapping of the axes, as a signed permutation: for each output component,

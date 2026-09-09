@@ -101,9 +101,10 @@ private:
 
     bool enabled_ = false;
     DsMotionState state_;
-    // Switch only: works out how this console's rotation reading relates to
-    // its acceleration one, rather than this file asserting it. See
-    // MotionFitter, and the comment above switch_gyro_to_sdl() for why.
+    // Switch only: watches how this console's rotation reading relates to
+    // its acceleration one and says so in the log. A check on the measured
+    // conversion rather than the source of it -- see MotionFitter for why it
+    // is not allowed to be the source.
     MotionFitter motion_fitter_;
     bool said_fit_ = false;
     // -1 when the fit decides; otherwise the frame a person chose.

@@ -32,7 +32,26 @@ const char* to_string(DsButton button);
 //
 // Deliberately raw, and deliberately in SDL's units and axes: gyro in radians
 // per second, acceleration in metres per second squared, right-handed with
-// +x right, +y up and +z towards the player. Nothing here integrates them
+// +x right, +y up and +z towards the player.
+//
+// Which is SDL's phrasing, and it is worth spelling out, because reading it
+// the other sensible way cost this app several rounds on a Switch. SDL
+// defines these axes for "phones held in portrait mode and game controllers
+// held in front of you" -- and a controller's "up" is out of its top *face*,
+// not towards its top edge. So for anything held like a controller, which is
+// everything here:
+//
+//   flat on a table, face up     up is out of the face, so gravity is on +y
+//   held upright, screen at you  up is towards the top edge, so -z
+//
+// A device with a screen on it is both a phone and a controller and has to
+// pick one; this picks the controller, because that is what a Wii U GamePad
+// is and what Cemu's sensor fusion expects. A Steam Deck read through DSU
+// lands here already and has been correct throughout; a Switch read through
+// libnx arrives in the phone reading of the same words and is turned a
+// quarter turn on the way in -- see switch_accel_to_sdl().
+//
+// Nothing here integrates them
 // into an orientation, because whatever consumes this already knows how --
 // Cemu has its own sensor fusion, tuned to what a real GamePad reports, and
 // two integrations disagreeing about which way "up" is would be far worse

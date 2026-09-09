@@ -341,17 +341,20 @@ bool MotionReader::read_console_sensors() {
     state_.accel_y = accel.y * kGravity;
     state_.accel_z = accel.z * kGravity;
 
-    // Rotation is not guessed at any more. Five builds guessed, on five
-    // readings of what a game felt like, and a rotation that is out by a
-    // factor as well as by its axes cannot be told apart from one that is
-    // merely out by its axes by feel -- both are just wrong all the time. So
-    // the accelerometer settles it instead: while the console turns, the
-    // direction it says the ground lies in turns with it, and only one frame
-    // and one scale make the two agree. See MotionFitter.
+    // The fit, which is now a check rather than the answer.
     //
-    // Until it has been moved enough to be sure, the last guess stands. It
-    // costs nothing to leave it there and it is the only thing to fall back
-    // on for a console left flat on a table, which never settles anything.
+    // It solves the one physical identity available here -- while the console
+    // turns, the direction it says the ground lies in turns with it, exactly
+    // as fast and exactly as far -- and that is a genuinely useful thing to
+    // have running: it will say so in the log if the console it is on reports
+    // rotation differently from the one this was measured on.
+    //
+    // What it cannot do is check itself. Everything it knows comes from the
+    // accelerometer, so a rotation that is consistent with a wrong
+    // accelerometer is exactly what it reports, confidently. That is not
+    // hypothetical: it did, for months, while the acceleration above was a
+    // quarter turn out. See switch_accel_to_sdl(), and MotionComparison for
+    // the instrument that finally settled it.
     const bool by_hand = chosen_axes_ >= 0;
     static uint32_t fit_at_ms = 0;
     if (fit_at_ms != 0 && !by_hand) {
@@ -392,12 +395,19 @@ bool MotionReader::read_console_sensors() {
     // Revolutions a second, measured: a hand turning the console peaks around a
     // fifth of a turn a second, which is what the raw log below reads.
     constexpr float kTau = 6.283185307f;
-    const bool fitted = !by_hand && motion_fitter_.fit().decided;
+    // And the frame is measured too, now, so the fit above no longer decides
+    // anything -- it runs to be logged and checked against, which is a
+    // different job. Two reasons for demoting it. It can only ever find a
+    // rotation consistent with the accelerometer it is solved against, so
+    // when that accelerometer was itself a quarter turn out the fit came back
+    // confident and wrong; and even when it is right it takes a good deal of
+    // waving the console about to get there, during which the fallback below
+    // is what a game actually gets. A measured answer is available from the
+    // first frame and cannot drift.
     const SwitchSixAxis gyro =
         by_hand ? motion_axis_candidates()[static_cast<std::size_t>(chosen_axes_)].apply(native_gyro)
-        : fitted ? motion_fitter_.fit().axes.apply(native_gyro)
-                 : switch_gyro_to_sdl(native_gyro);
-    const float rate = fitted ? motion_fitter_.fit().scale : kTau;
+                : switch_gyro_to_sdl(native_gyro);
+    const float rate = kTau;
     state_.gyro_x = gyro.x * rate;
     state_.gyro_y = gyro.y * rate;
     state_.gyro_z = gyro.z * rate;

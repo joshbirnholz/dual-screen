@@ -795,35 +795,46 @@ namespace {
 // A Switch's six-axis frame, which took a long time and several wrong answers
 // to pin down. See switch_accel_to_sdl().
 void test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose() {
-    // Resting flat on a table, face up. The ground is through the screen, so
-    // libnx puts it on -z, and SDL reports the opposite direction: +z.
+    // The three poses are not made up: a Steam Deck, whose motion has been
+    // correct throughout, was held against the console in each of them, and
+    // what it read is what these assert. That is the whole point -- every
+    // earlier version of this test asserted what the reading *ought* to be,
+    // derived from the frame libnx was assumed to use, and a derivation
+    // cannot catch a wrong assumption about the frame it starts from.
+
+    // Resting flat on a table, face up. Up is out of the console's face, and
+    // in the frame everything downstream uses -- a controller's, not a
+    // phone's, see DsMotionState -- that is +y. The Deck read (0.30, 9.88,
+    // 0.04) here.
     const SwitchSixAxis flat = switch_accel_to_sdl({0.00f, 0.00f, -9.81f});
     CHECK(test::nearly_equal(flat.x, 0.0));
-    CHECK(test::nearly_equal(flat.y, 0.0));
-    CHECK(test::nearly_equal(flat.z, 9.81));
+    CHECK(test::nearly_equal(flat.y, 9.81));
+    CHECK(test::nearly_equal(flat.z, 0.0));
+    CHECK_MSG(std::abs(flat.y) > std::abs(flat.z),
+              "gravity must land on the face-normal axis while the console lies flat, or the "
+              "frame is a phone's rather than a controller's -- which is the mistake that made "
+              "aiming work while up was a quarter turn out");
 
-    // Held upright. The ground is towards the bottom of the screen.
+    // Held upright, screen facing you. Up is now towards the top edge, which
+    // is -z. The Deck read (0.80, 0.67, -9.69).
     const SwitchSixAxis upright = switch_accel_to_sdl({0.00f, -9.61f, -2.06f});
-    CHECK(test::nearly_equal(upright.y, 9.61));
-    CHECK(test::nearly_equal(upright.z, 2.06));
-    CHECK_MSG(std::abs(upright.y) > std::abs(upright.z),
-              "gravity must not land on the screen-normal axis while the console is held "
+    CHECK(test::nearly_equal(upright.y, 2.06));
+    CHECK(test::nearly_equal(upright.z, -9.61));
+    CHECK_MSG(std::abs(upright.z) > std::abs(upright.y),
+              "gravity must not land on the face-normal axis while the console is held "
               "upright, because that is a console lying on a table");
 
     // Upright with the right-hand edge dipped: the pose the other two cannot
-    // see, and the one that settles x. Both of them leave x near zero, so for
-    // a long time it was filled in by reasoning -- that a frame with +y down
-    // and +z into the screen must have +x to the right to stay right-handed --
-    // which is true of a frame and false here, since this is the same frame
-    // reporting the opposite vector, not a different frame. Dip the right-hand
-    // edge and the ground leans right, so libnx reads +x and SDL must read -x.
-    // Getting this backwards mirrors roll, and mirrors every rotation answer
-    // fitted against it.
+    // see, and the one that settles x. Both of them leave x near zero. Dip the
+    // right-hand edge and the ground leans right, so libnx reads +x and this
+    // must read -x. Getting it backwards mirrors roll, and mirrors every
+    // rotation answer fitted against it. The Deck read (-5.72, 1.18, -7.80).
     const SwitchSixAxis rolled = switch_accel_to_sdl({0.60f, -0.74f, -0.34f});
     CHECK_MSG(rolled.x < 0.0f,
               "dipping the right-hand edge has to put up over to the left, or roll is mirrored");
     CHECK(test::nearly_equal(rolled.x, -0.60));
-    CHECK(test::nearly_equal(rolled.y, 0.74));
+    CHECK(test::nearly_equal(rolled.y, 0.34));
+    CHECK(test::nearly_equal(rolled.z, -0.74));
 }
 
 // Rotation, and the third retraction this problem has produced.
@@ -847,13 +858,15 @@ void test_rotation_is_accelerations_conversion_turned_around() {
     CHECK(test::nearly_equal(as_gyro.y, -as_accel.y));
     CHECK(test::nearly_equal(as_gyro.z, -as_accel.z));
 
-    // Which for this console means rotation is handed over exactly as it
-    // arrives. Worth stating outright, because it is what seven attempts spent
-    // themselves failing to find while the acceleration was mirrored underneath
-    // them: no axis of it needed touching, only its unit.
+    // Which for this console means a quarter turn about x and nothing else,
+    // the same one acceleration gets: libnx lays its axes along the screen and
+    // everything downstream lays them along the face. Worth stating outright,
+    // because for a long time this read "no axis of it needed touching" -- an
+    // answer that was consistent with the accelerometer it was fitted against
+    // and a quarter turn from the truth, along with it.
     CHECK(test::nearly_equal(as_gyro.x, native.x));
-    CHECK(test::nearly_equal(as_gyro.y, native.y));
-    CHECK(test::nearly_equal(as_gyro.z, native.z));
+    CHECK(test::nearly_equal(as_gyro.y, native.z));
+    CHECK(test::nearly_equal(as_gyro.z, -native.y));
 }
 
 }  // namespace
