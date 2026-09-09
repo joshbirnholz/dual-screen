@@ -5,6 +5,16 @@
 #include <random>
 #include <vector>
 
+#if defined(__unix__) || defined(__APPLE__)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#define DS_CAN_PROBE_UDP_PORT 1
+#else
+#define DS_CAN_PROBE_UDP_PORT 0
+#endif
+
 #include "util/log.hpp"
 
 namespace ds {
@@ -79,6 +89,43 @@ float read_f32(const uint8_t* data) {
     float value = 0.0f;
     std::memcpy(&value, &bits, sizeof(value));
     return value;
+}
+
+// Whether anything at all holds that UDP port.
+//
+// Asked only once, and only when a server has already failed to answer for
+// long enough to complain about, so it costs nothing in the ordinary case.
+// What it buys is the difference between the two reasons for that silence,
+// which look identical from a socket that simply never receives: a server
+// that is not running, and a server that is running and not talking to us.
+// Those want completely different things done about them, and telling them
+// apart has taken a round trip to a person and back more than once.
+//
+// A bind that succeeds means the port was free, so nothing is there. The
+// probe deliberately does not ask for address reuse: without it, binding a
+// port somebody else holds fails, which is exactly the signal wanted.
+bool nothing_is_listening(const std::string& address, uint16_t port) {
+#if DS_CAN_PROBE_UDP_PORT
+    const int probe = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (probe < 0) {
+        return false;  // cannot tell; better to say nothing than something wrong
+    }
+    sockaddr_in where{};
+    where.sin_family = AF_INET;
+    where.sin_port = htons(port);
+    if (::inet_pton(AF_INET, address.c_str(), &where.sin_addr) != 1) {
+        ::close(probe);
+        return false;
+    }
+    const bool free_port =
+        ::bind(probe, reinterpret_cast<sockaddr*>(&where), sizeof(where)) == 0;
+    ::close(probe);
+    return free_port;
+#else
+    (void)address;
+    (void)port;
+    return false;
+#endif
 }
 
 }  // namespace
@@ -289,10 +336,18 @@ void DsuClient::poll() {
     if (!connected_ && heard_at_ms_ == 0 && !said_never_answered_ &&
         first_asked_at_ms_ != 0 && now - first_asked_at_ms_ >= kNeverAnsweredMs) {
         said_never_answered_ = true;
-        log_warn("motion: nothing has answered at " + address_ + ":" + std::to_string(port_) +
-                 " in " + std::to_string(kNeverAnsweredMs / 1000) +
-                 " seconds, so this device reports no motion. Is the DSU server running? On a "
-                 "Steam Deck that is SteamDeckGyroDSU.");
+        const std::string where = address_ + ":" + std::to_string(port_);
+        if (nothing_is_listening(address_, port_)) {
+            log_warn("motion: nothing is listening on " + where +
+                     " at all, so this device reports no motion. The DSU server is not running; "
+                     "on a Steam Deck that is SteamDeckGyroDSU, and `systemctl --user status "
+                     "sdgyrodsu` says whether it is up.");
+        } else {
+            log_warn("motion: something is listening on " + where +
+                     " but it has not answered in " + std::to_string(kNeverAnsweredMs / 1000) +
+                     " seconds, so this device reports no motion. The server is running and is "
+                     "not replying to this app.");
+        }
     }
 }
 
