@@ -12,6 +12,20 @@
 
 namespace ds {
 
+// Whether this machine is something held in two hands.
+//
+// Not a guess from the display's size, which would call a small window on a
+// desk a handheld. A Switch and a phone are one by construction; a PC is
+// asked, through the one name it publishes that says what it physically is.
+// Anything unrecognised is not a handheld, because being wrong that way costs
+// a setting somebody changes once, and being wrong the other way means a
+// desktop quietly deciding it is a GamePad.
+bool device_is_handheld();
+
+// What Settings::wii_u_screen_alone starts at. A thing held in two hands is a
+// GamePad; a thing on a desk with a television attached is a television.
+ScreenId default_wii_u_screen_alone();
+
 // App-level defaults, stored in ~/.config/dualscreen/settings.json.
 struct Settings {
     std::string default_layout_id = "standard";
@@ -151,6 +165,29 @@ struct Settings {
     // smooth video for a busy-loop -- only for the tear a player who wants it
     // back can still opt into from Settings.
     bool vsync = false;
+
+    // Which of a Wii U's two screens this device is, when it is the only one
+    // there is.
+    //
+    // A Wii U's screens are not two halves of a picture, they are a
+    // television and a thing in your hands, and a device on its own has to be
+    // one or the other. Being the GamePad means Cemu shows the GamePad screen
+    // and this device's own controller -- gyroscope included -- is what the
+    // game reads as the GamePad, which is Off-TV play on a single machine.
+    // Being the television means Cemu shows the television and the GamePad is
+    // whatever the player has configured in Cemu itself, which is how to play
+    // the many games that never ask for the pad with a controller already set
+    // up for them.
+    //
+    // Only consulted while nothing else is connected. With a companion there
+    // is no question to answer: the companion says which screen it is holding
+    // and this device is the other one.
+    //
+    // What a fresh install starts at is default_wii_u_screen_alone(), applied
+    // by load() rather than here: this struct is also built by the companion
+    // client, which does not compile the settings file reader at all and has
+    // no use for the answer.
+    ScreenId wii_u_screen_alone = ScreenId::Top;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

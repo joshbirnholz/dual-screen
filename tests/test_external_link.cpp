@@ -529,6 +529,52 @@ void test_a_game_is_told_how_big_the_screen_is_worth_making() {
     CHECK_MSG(width == 3840 && height == 2160, "an uncapped request still shrank the picture");
 }
 
+// Which screen the producer should show in its own window is a separate
+// question from which one it should capture, and the interesting case is the
+// one where the second question has no answer: a device playing on its own
+// captures nothing at all, and the old rule -- "show whichever screen was not
+// asked for" -- has nothing to work from. A handheld alone is a GamePad and
+// wants the GamePad shown; a desktop alone is a television.
+void test_a_game_is_told_which_screen_to_show_even_when_asked_for_none() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    std::string error;
+    bool reset = false;
+
+    // Nothing captured, and the GamePad shown -- one device, no companion.
+    link.request_screen(std::nullopt, 0, 0, ScreenId::Bottom);
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!producer.shown_screen().has_value() &&
+           std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.shown_screen().has_value() &&
+                  *producer.shown_screen() == ScreenId::Bottom,
+              "a device on its own could not say which screen it is being");
+    CHECK_MSG(!producer.requested_screen().has_value(),
+              "asking for a screen to be shown was read as asking for it to be sent, which would "
+              "make a lone device pay to capture a picture it is not watching");
+
+    // And the two move independently: capturing the television while showing
+    // the GamePad is the two-device case, and the one that was silently
+    // getting the GamePad's picture labelled as the television's.
+    link.request_screen(ScreenId::Top, 1280, 720, ScreenId::Bottom);
+    const auto changed_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!producer.requested_screen().has_value() &&
+           std::chrono::steady_clock::now() < changed_by) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.requested_screen().has_value() &&
+                  *producer.requested_screen() == ScreenId::Top,
+              "the captured screen stopped crossing once a shown one was sent with it");
+    CHECK_MSG(producer.shown_screen().has_value() && *producer.shown_screen() == ScreenId::Bottom,
+              "the shown screen was lost when a captured one was sent alongside it");
+}
+
 // Asking for the same thing twice costs nothing -- this is sent from a poll
 // loop that runs every frame, and a socket write per frame for a value that
 // has not changed is exactly what send_input() already avoids.
@@ -563,6 +609,20 @@ void test_asking_for_the_same_screen_twice_says_nothing_the_second_time() {
     }
     CHECK_MSG(producer.requested_max_width() == 640 && producer.requested_max_height() == 400,
               "a changed request never reached the game");
+
+    // Including a change to nothing but which screen the far end should show.
+    // That one is the whole of what a player flipping this device between
+    // being a television and being a GamePad changes, so a dedupe that only
+    // watched the other three fields would swallow it entirely.
+    link.request_screen(ScreenId::Top, 640, 400, ScreenId::Bottom);
+    const auto shown_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!producer.shown_screen().has_value() &&
+           std::chrono::steady_clock::now() < shown_by) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.shown_screen().has_value() && *producer.shown_screen() == ScreenId::Bottom,
+              "a change to only the shown screen was swallowed by the dedupe");
 }
 
 // How the device standing in for the GamePad is being held, all the way to
@@ -629,6 +689,7 @@ int main() {
     test_the_game_closing_ends_the_session();
     test_a_screen_too_big_to_carry_is_refused();
     test_a_game_is_told_how_big_the_screen_is_worth_making();
+    test_a_game_is_told_which_screen_to_show_even_when_asked_for_none();
     test_asking_for_the_same_screen_twice_says_nothing_the_second_time();
     test_how_the_pad_is_being_held_crosses_too();
     return test::finish("external-link");

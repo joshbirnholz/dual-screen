@@ -304,9 +304,11 @@ struct App::Impl {
     std::unique_ptr<net::HostSession> host_session;
     std::unique_ptr<net::CompanionSession> companion_session;
     ScreenId local_screen = ScreenId::Top;
-    // Which single screen this device shows when it is on its own and the
-    // console's two are separate pictures. The television to begin with, since
-    // that is the game; the other is a second view of it. See SoloScreens.
+    // Which single screen this device is when it is on its own and the
+    // console's two are separate pictures -- see SoloScreens. Seeded from
+    // Settings::wii_u_screen_alone, where the reasoning lives, and reseeded
+    // whenever that setting changes; F3 flips it for the rest of a session
+    // without writing anything down.
     ScreenId solo_screen = ScreenId::Top;
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
@@ -344,6 +346,13 @@ struct App::Impl {
     // and on the same terms: zero means no cap was asked for.
     int external_requested_width = 0;
     int external_requested_height = 0;
+    // And the screen the producer was last told to show in its own window,
+    // which is a different question from the one above -- see
+    // ExternalFrameLink::request_screen(). Optional only to mean "nothing has
+    // been said yet", so that the first poll always says something: this end
+    // always has an opinion about it, and with nobody else connected that
+    // opinion is the whole point (Settings::wii_u_screen_alone).
+    std::optional<ScreenId> external_shown_screen;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -1249,6 +1258,10 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
             log_warn("could not save settings.json");
         }
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+        // Takes effect at once rather than at the next launch: this is the
+        // kind of thing somebody changes to see what it does, and the poll
+        // loop below picks the new value up on its next pass.
+        solo_screen = settings.wii_u_screen_alone;
     }
     if (result.close_requested) {
         if (settings_came_from == State::Menu && local_game()) {
@@ -2091,6 +2104,7 @@ int App::run(const AppOptions& options) {
     }
 
     impl.settings = Settings::load(impl.paths);
+    impl.solo_screen = impl.settings.wii_u_screen_alone;
     if (!options.system_dir.empty()) {
         impl.settings.system_dir = expand_user_path(options.system_dir);
     }
@@ -2499,33 +2513,58 @@ int App::run(const AppOptions& options) {
                 if (host_now_has_companion) {
                     impl.host_session->companion_display_size(wanted_width, wanted_height);
                 }
+                // And which screen Cemu should put in its own window, which is
+                // a separate question and one this end has always had an
+                // answer to -- it just used to be left implicit, for Cemu to
+                // infer as "the one not being captured". That inference has no
+                // answer at all when nothing is being captured, which is a
+                // device playing on its own: Cemu would show whatever it
+                // happened to be showing, and a handheld with no companion
+                // would sit there displaying a television it is not.
+                //
+                // With a companion it is still the other screen. Alone it is
+                // whichever this device is being -- see
+                // Settings::wii_u_screen_alone.
+                const ScreenId shown =
+                    wanted.has_value()
+                        ? (*wanted == ScreenId::Top ? ScreenId::Bottom : ScreenId::Top)
+                        : impl.solo_screen;
                 if (freshly_connected || wanted != impl.external_requested_screen ||
                     wanted_width != impl.external_requested_width ||
-                    wanted_height != impl.external_requested_height) {
-                    impl.external_source->request_screen(wanted, wanted_width, wanted_height);
+                    wanted_height != impl.external_requested_height ||
+                    impl.external_shown_screen != std::optional<ScreenId>(shown)) {
+                    impl.external_source->request_screen(wanted, wanted_width, wanted_height,
+                                                         shown);
                     impl.external_requested_screen = wanted;
                     impl.external_requested_width = wanted_width;
                     impl.external_requested_height = wanted_height;
+                    impl.external_shown_screen = shown;
                     log_info(wanted.has_value()
                                  ? "a companion wants the " + std::string(to_string(*wanted)) +
                                        " screen at up to " + std::to_string(wanted_width) + "x" +
-                                       std::to_string(wanted_height) + "; asking Cemu for it"
-                                 : std::string("no companion connected; not asking Cemu for a "
-                                                "screen"));
+                                       std::to_string(wanted_height) + "; asking Cemu for it and "
+                                       "for the " + to_string(shown) + " screen in its own window"
+                                 : "nobody else is connected, so this device is the " +
+                                       std::string(to_string(shown)) +
+                                       " screen; asking Cemu to show it and to send nothing");
                 }
                 impl.external_link_was_running = external_now_running;
                 // Told to the companion as SharedState.layout_id below, so it
                 // knows which single screen the video it is about to receive
                 // actually is -- this end never draws it itself (see above),
                 // so the only reader of this value is the far end.
-                if (wanted.has_value()) {
-                    const std::string& single_id =
-                        (*wanted == ScreenId::Top) ? "tv_only" : "gamepad_only";
-                    const std::string& resolved_id = impl.registry.resolve(single_id).id;
-                    if (impl.active_layout_id != resolved_id) {
-                        impl.active_layout_id = resolved_id;
-                        impl.persist_game_config();
-                    }
+                //
+                // Alone there is nobody to tell, and the id is this device's
+                // own record of which screen it is being -- kept in step for
+                // the same reason, so that a companion connecting later does
+                // not find a stale one waiting for it.
+                const ScreenId here = wanted.value_or(impl.solo_screen);
+                const std::string& single_id =
+                    (here == ScreenId::Top) ? "tv_only" : "gamepad_only";
+                const std::string& resolved_id = impl.registry.resolve(single_id).id;
+                if (impl.active_layout_id != resolved_id) {
+                    impl.active_layout_id = resolved_id;
+                    impl.persist_game_config();
                 }
             }
 

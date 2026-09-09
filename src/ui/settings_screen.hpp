@@ -78,6 +78,7 @@ private:
         ScreenCodecThreeDs,
         ScreenCodecWiiU,
         Vsync,
+        WiiUScreenAlone,
         Back,
         Count
     };

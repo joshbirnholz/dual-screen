@@ -168,8 +168,21 @@ Three things are different about a Wii U session:
 
 - **One device shows one screen.** The television is the game and the GamePad is
   a second view of it, so squeezing both into one window is not the arrangement
-  the console has. Alone, the shell shows the television and **F3** swaps to the
-  GamePad; with a second device connected, each holds one.
+  the console has. With a second device connected, each holds one. Alone, the
+  device is whichever screen **This device alone is a Wii U's** on the Settings
+  screen says — and Cemu is told, so its own window shows that screen rather
+  than whatever it was last left on. **F3** swaps it for the rest of a session
+  without writing anything down.
+
+  A handheld starts as the **GamePad** and everything else as the **Television**,
+  which is what each is: a Steam Deck held in two hands is the thing a game
+  expects to be tilted, gyroscope and all, and playing that way needs no second
+  device at all. A desktop is the television, and the GamePad is then whatever
+  you have set up in Cemu — which is how to play the many games that never ask
+  for the pad with a controller already configured for them. A Steam Deck names
+  itself to the system as a Jupiter or a Galileo and is recognised by that; a
+  machine that is a handheld and is not recognised as one just needs the setting
+  changed once.
 - **None of the controller shortcuts exist.** A Wii U game reads every control
   the console has, including both stick presses, so nothing is taken from the
   pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1** or **Tab**,
@@ -840,12 +853,14 @@ V1 does not script `shortcuts.vdf` for you.
   "handedness": "right",
   "stick_deadzone": 0.35,
   "trigger_deadzone": 0.3,
-  "vsync": true
+  "vsync": true,
+  "wii_u_screen_alone": "gamepad"
 }
 ```
 
-Paths are edited here rather than in the app: an on-screen keyboard is not
-something V1 builds. The Settings screen cycles between BIOS folders that
+`wii_u_screen_alone` is `"gamepad"` or `"tv"`, and starts as whichever this
+machine physically is -- see **Wii U games** above. Paths are edited here
+rather than in the app: an on-screen keyboard is not something V1 builds. The Settings screen cycles between BIOS folders that
 actually exist and reports what it finds in them.
 
 ## How it fits together

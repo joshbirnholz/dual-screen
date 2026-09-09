@@ -129,6 +129,13 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
             break;
+        case Row::WiiUScreenAlone:
+            // Two values, so either direction is the other one.
+            settings_.wii_u_screen_alone = (settings_.wii_u_screen_alone == ScreenId::Top)
+                                               ? ScreenId::Bottom
+                                               : ScreenId::Top;
+            result.settings_changed = true;
+            break;
         case Row::Back:
             result.close_requested = true;
             break;
@@ -214,6 +221,8 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Streaming format (3DS)", video::to_string(settings_.screen_codec_3ds)},
         {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
+        {"This device alone is a Wii U's",
+         settings_.wii_u_screen_alone == ScreenId::Bottom ? "GamePad" : "Television"},
         {"Back", ""},
     };
 

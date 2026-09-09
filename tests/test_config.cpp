@@ -272,6 +272,12 @@ void test_settings_round_trip() {
     defaults.screen_codec_ds = video::ScreenCodec::H264;
     defaults.screen_codec_3ds = video::ScreenCodec::H264;
     defaults.screen_codec_wii_u = video::ScreenCodec::Tiles;
+    // Set to the opposite of whatever this machine's shape suggests, so the
+    // round trip is checking storage rather than agreeing with the default by
+    // accident on whichever machine the test runs on.
+    defaults.wii_u_screen_alone =
+        (default_wii_u_screen_alone() == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
+    const ScreenId chosen_alone = defaults.wii_u_screen_alone;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -291,6 +297,8 @@ void test_settings_round_trip() {
     CHECK(reloaded.screen_codec_for(SystemId::Ds) == video::ScreenCodec::H264);
     CHECK(reloaded.screen_codec_for(SystemId::ThreeDs) == video::ScreenCodec::H264);
     CHECK(reloaded.screen_codec_for(SystemId::WiiU) == video::ScreenCodec::Tiles);
+    CHECK_MSG(reloaded.wii_u_screen_alone == chosen_alone,
+              "which screen this device is on its own did not survive being written down");
 
     // A config file that names arguments replaces them rather than adding to
     // them: a fork with different flags must not inherit these.
@@ -357,6 +365,34 @@ void test_settings_round_trip() {
     CHECK(audio_reaches(AudioTarget::BottomScreen, ScreenId::Bottom));
 }
 
+// Which screen a lone device starts as follows what the machine physically
+// is, not a fixed answer. Checked as the rule rather than as this machine's
+// answer, since the test runs on whatever it runs on: the point is that a
+// thing held in two hands is a GamePad and everything else is a television.
+void test_a_lone_device_starts_as_what_it_physically_is() {
+    const ScreenId expected = device_is_handheld() ? ScreenId::Bottom : ScreenId::Top;
+    CHECK_MSG(default_wii_u_screen_alone() == expected,
+              "a device on its own did not start as the screen its shape says it is");
+    // And a settings file with nothing to say about it leaves that standing,
+    // rather than pinning every machine to the same answer.
+    const std::string sandbox = make_sandbox();
+    setenv("XDG_CONFIG_HOME", path_join(sandbox, "config").c_str(), 1);
+    setenv("XDG_DATA_HOME", path_join(sandbox, "data").c_str(), 1);
+    const AppPaths paths = AppPaths::resolve();
+    {
+        std::ofstream file(paths.settings_file);
+        file << "{}";
+    }
+    CHECK(Settings::load(paths).wii_u_screen_alone == expected);
+    // As does one that says something unreadable, which is the same case as
+    // far as a person who has to live with the result is concerned.
+    {
+        std::ofstream file(paths.settings_file);
+        file << "{\"wii_u_screen_alone\": \"sideways\"}";
+    }
+    CHECK(Settings::load(paths).wii_u_screen_alone == expected);
+}
+
 void test_command_line() {
     const char* argv[] = {"dualscreen", "--game", "/roms/a.nds", "--layout", "side_by_side",
                           "--windowed"};
@@ -402,6 +438,7 @@ int main() {
     test_game_config_preserves_unknown_keys();
     test_game_config_survives_a_corrupt_file();
     test_settings_round_trip();
+    test_a_lone_device_starts_as_what_it_physically_is();
     test_command_line();
     return test::finish("config");
 }

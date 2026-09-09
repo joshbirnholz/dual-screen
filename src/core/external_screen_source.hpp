@@ -67,12 +67,14 @@ public:
     void reset() { link_.request_reset(); }
 
     // Tells the far end which single screen, if any, this app actually wants
-    // captured and sent right now, and the largest it is any use at -- see
-    // ExternalFrameLink::request_screen(). A Wii U's Cemu shows whichever
-    // screen this does not ask for in its own window, so leaving both alone
-    // (the default) costs it nothing at all.
-    void request_screen(std::optional<ScreenId> screen, int max_width = 0, int max_height = 0) {
-        link_.request_screen(screen, max_width, max_height);
+    // captured and sent right now, the largest it is any use at, and which
+    // screen the far end should show in its own window -- see
+    // ExternalFrameLink::request_screen(). Leaving all of it alone (the
+    // defaults) costs the far end nothing at all: nothing is captured and it
+    // shows whatever it was already showing.
+    void request_screen(std::optional<ScreenId> screen, int max_width = 0, int max_height = 0,
+                        std::optional<ScreenId> shown = std::nullopt) {
+        link_.request_screen(screen, max_width, max_height, shown);
     }
 
     // Both players' pads, already merged, on their way to whatever is playing
