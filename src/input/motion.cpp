@@ -40,6 +40,29 @@ uint32_t now_micros() {
     return static_cast<uint32_t>(seconds * 1000000ull + (remainder * 1000000ull) / frequency);
 }
 
+// Whether an accelerometer reading is a reading at all.
+//
+// A device sitting on a table still weighs something: gravity is always there,
+// so a real accelerometer never reports nothing. A source that hands back an
+// exact zero on all three axes is not a still device, it is a source that is
+// not delivering -- a sensor enabled but never written to, which SDL produces
+// whenever it decides not to update a joystick, and which reads back as a
+// perfectly successful call returning perfectly empty data.
+//
+// This matters because the sources below are tried in order and the first to
+// answer wins. Without this a controller that claims sensors and reports
+// nothing takes the slot for the whole session and the DSU server that would
+// have worked is never asked -- which is exactly the fallback a Steam Deck
+// depends on.
+//
+// Deliberately not a tolerance around one g: a device in a lift, or being
+// shaken, legitimately reads well away from it, and this only has to separate
+// "something" from "nothing at all".
+bool reading_has_weight(const float accel[3]) {
+    const float size = std::sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
+    return size > 0.01f;
+}
+
 }  // namespace
 
 MotionReader::~MotionReader() { close_sensors(); }
@@ -205,6 +228,21 @@ bool MotionReader::read_controller_sensors() {
         if (!got_gyro || !got_accel) {
             continue;
         }
+        // Enabled and readable is not the same as reporting -- see
+        // reading_has_weight(). Said once per controller, because a pad that
+        // is silent now will be silent all session and the line is the answer
+        // to why a game's aiming does nothing.
+        if (!reading_has_weight(accel)) {
+            if (!said_silent_controller_) {
+                said_silent_controller_ = true;
+                const char* name = SDL_GameControllerName(controller);
+                log_info(std::string("motion: ") + (name != nullptr ? name : "a controller") +
+                         " has sensors switched on but is reporting nothing, so it is being "
+                         "passed over for whatever else can report");
+            }
+            continue;
+        }
+        source_ = "a controller";
         state_.gyro_x = gyro[0];
         state_.gyro_y = gyro[1];
         state_.gyro_z = gyro[2];
@@ -226,6 +264,11 @@ bool MotionReader::read_device_sensors() {
         SDL_SensorGetData(device_accel_, accel, 3) != 0) {
         return false;
     }
+    // The same test, for the same reason -- see reading_has_weight().
+    if (!reading_has_weight(accel)) {
+        return false;
+    }
+    source_ = "this device's own sensors";
     state_.gyro_x = gyro[0];
     state_.gyro_y = gyro[1];
     state_.gyro_z = gyro[2];
@@ -470,6 +513,7 @@ bool MotionReader::read_dsu_sensors() {
     if (!dsu_.connected()) {
         return false;
     }
+    source_ = "a DSU server";
     state_ = dsu_.state();
     return true;
 }
@@ -496,7 +540,7 @@ void MotionReader::poll() {
         return;
     }
     if (!was_reading) {
-        log_info("motion: this device is reporting how it is being held");
+        log_info("motion: this device is reporting how it is being held, from " + source_);
     }
     state_.present = true;
 

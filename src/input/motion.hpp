@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <SDL.h>
@@ -96,6 +97,14 @@ private:
 
     bool enabled_ = false;
     DsMotionState state_;
+    // Which of the four sources answered, for the log. Named rather than
+    // guessed at from what else is in the log: "nothing is reporting" and
+    // "the wrong thing is reporting" look identical from outside and want
+    // opposite fixes.
+    std::string source_ = "nowhere";
+    // Whether a controller claiming sensors it does not fill in has already
+    // been mentioned. Once is a diagnosis; every frame is noise.
+    bool said_silent_controller_ = false;
     // Switch only: watches how this console's rotation reading relates to
     // its acceleration one and says so in the log. A check on the measured
     // conversion rather than the source of it -- see MotionFitter for why it

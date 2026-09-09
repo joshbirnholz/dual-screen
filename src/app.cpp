@@ -356,6 +356,7 @@ struct App::Impl {
     // Whether anything has yet been pressed on a console played by another
     // program -- see where it is set for what its absence from a log means.
     bool said_first_pad = false;
+    bool said_first_motion = false;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -2888,6 +2889,15 @@ int App::run(const AppOptions& options) {
                     impl.said_first_pad = true;
                     log_info("the first pad press reached the game beside this app; controls are "
                              "getting through");
+                }
+                // And the same for motion, separately, because the two travel
+                // together and fail apart: buttons working while aiming does
+                // not is exactly the case this distinguishes. If this line is
+                // in the log, how the device is being held crossed the link
+                // and anything still wrong is on the far side of it.
+                if (!impl.said_first_motion && combined.motion.present) {
+                    impl.said_first_motion = true;
+                    log_info("how this device is being held is reaching the game beside it too");
                 }
                 impl.external_source->submit_input(combined);
             }
