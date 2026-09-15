@@ -1771,6 +1771,41 @@ void test_an_uneven_link_buys_cover_and_gives_it_back() {
     CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMinVideoBufferFrames + 1);
 }
 
+// The window is a bandwidth-delay product, and the point of computing it
+// rather than picking it is that the delay is not a constant.
+void test_the_in_flight_window_covers_the_delay_this_link_shows() {
+    constexpr double at_60fps = 16.7;
+
+    // Where it came in: a 40ms round trip at 60fps. Four, which is the number
+    // that was hardcoded -- so a good link behaves exactly as it did.
+    CHECK_EQ(frames_in_flight_allowed(40, at_60fps), std::size_t{4});
+
+    // And the case that was costing frames. A Steam Deck on wifi averages
+    // 40ms with a tail past 110ms; at four frames every excursion past
+    // 4 * 16.7 = 66ms shuts the gate, which is where 60 produced and 15 sent
+    // came from. The window has to be bigger than the product, not equal to
+    // the average of it.
+    CHECK(frames_in_flight_allowed(110, at_60fps) > frames_in_flight_allowed(40, at_60fps));
+    CHECK(frames_in_flight_allowed(110, at_60fps) >= std::size_t{8});
+
+    // A round trip this far out is congestion, and matching it would add to
+    // it. Bounded, and bounded again by the frame count itself.
+    CHECK_EQ(frames_in_flight_allowed(1000, at_60fps), frames_in_flight_allowed(120, at_60fps));
+    CHECK(frames_in_flight_allowed(100000, 1.0) <= std::size_t{8});
+
+    // A game producing more slowly needs fewer frames to cover the same
+    // delay, which is why the rate is measured rather than assumed. Thirty a
+    // second over the same 40ms link:
+    CHECK(frames_in_flight_allowed(40, 33.3) < frames_in_flight_allowed(40, at_60fps));
+
+    // Never below a floor: one frame in flight would mean every frame waiting
+    // on the previous one's ack, which is the frame-rate ceiling this whole
+    // thing exists to avoid.
+    CHECK_EQ(frames_in_flight_allowed(0, at_60fps), std::size_t{2});
+    CHECK_EQ(frames_in_flight_allowed(40, 0.0), std::size_t{2});
+    CHECK_EQ(frames_in_flight_allowed(40, -1.0), std::size_t{2});
+}
+
 // A host that cannot send every frame it produces still numbers every one of
 // them, so the frames that do arrive come several serials apart. Counting that
 // as the link being uneven is what held a Mac companion's picture for 70ms
@@ -2258,6 +2293,7 @@ int main() {
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
+    test_the_in_flight_window_covers_the_delay_this_link_shows();
     test_frames_the_host_never_sent_are_not_the_links_unevenness();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();

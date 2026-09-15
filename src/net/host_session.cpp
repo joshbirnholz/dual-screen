@@ -136,7 +136,31 @@ int bitrate_kbps_for_encode_size(int width, int height) {
 // frames rather than into delay. It costs only when the link genuinely cannot
 // carry what is offered, and that case is bounded elsewhere: pacing spreads
 // the bytes, and kAckStallMs recovers if the acks stop entirely.
-constexpr std::size_t kMaxQueuedFrames = 4;
+//
+// So four was the same mistake as two, one notch along: a bandwidth-delay
+// product computed once, by hand, for a link with a 40ms round trip. A Steam
+// Deck on wifi averages 40ms and has a tail at 110 to 225ms, and every excursion
+// past 4/60fps = 66ms shuts the gate and drops frames in a burst until the tail
+// passes. Measured there: 60 to 82 frames produced a second and 15 to 48 sent,
+// with bandwidth *falling* as it happened, which is what a window-bound link
+// looks like rather than a full one.
+//
+// The product is now actually computed, from the round trip this link is
+// showing and the rate frames are really being produced at. On a link with a
+// 40ms round trip at 60fps it works out at four, which is where it came in.
+// See frames_in_flight_allowed().
+constexpr std::size_t kMinFramesInFlight = 2;
+constexpr std::size_t kMaxFramesInFlight = 8;
+// Past this a round trip is not a delay to keep pace with, it is congestion,
+// and matching it would be adding to it. At 60fps this ceiling is still eight
+// frames, so the clamp above is what actually binds; it is here so that a link
+// melting down cannot walk the window out on its own.
+constexpr uint64_t kMaxCoveredRoundTripMs = 120;
+// How fast the high-water round trip is given back, per ack. At the fifty-odd
+// acks a second this sees, a spike is most of the way forgotten in a second
+// and a half -- long enough that a tail arriving in bursts stays covered,
+// short enough that a link which has settled stops paying for it.
+constexpr double kRoundTripDecayPerAck = 0.99;
 
 // How long the oldest still-unacked frame is allowed to sit before this end
 // stops waiting for its ack and treats it as gone rather than merely late.
@@ -224,6 +248,25 @@ constexpr std::size_t kMinDrainBudgetBytes = kMediaHeaderBytes + kFragmentHeader
 constexpr uint64_t kMaxPacingElapsedMs = 250;
 
 }  // namespace
+
+std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms) {
+    if (!(produce_period_ms > 0.0)) {
+        return kMinFramesInFlight;
+    }
+    const double covered =
+        std::min(static_cast<double>(round_trip_ms), static_cast<double>(kMaxCoveredRoundTripMs));
+    // One more than the product itself, so the gate opens as the ack for the
+    // oldest frame lands rather than one frame after it -- at exactly the
+    // product, every frame waits for an ack that is already on its way.
+    const double frames = std::ceil(covered / produce_period_ms) + 1.0;
+    if (frames <= static_cast<double>(kMinFramesInFlight)) {
+        return kMinFramesInFlight;
+    }
+    if (frames >= static_cast<double>(kMaxFramesInFlight)) {
+        return kMaxFramesInFlight;
+    }
+    return static_cast<std::size_t>(frames);
+}
 
 bool HostSession::start(const Config& config, std::string* error) {
     stop();
@@ -403,6 +446,9 @@ void HostSession::drop_companion(const std::string& reason) {
     media_pacing_last_ms_ = 0;
     video_bitrate_kbps_top_ = 0;
     video_bitrate_kbps_bottom_ = 0;
+    round_trip_high_ms_ = 0.0;
+    produce_period_ms_ = 16.7;
+    last_produced_at_ms_ = 0;
     previous_top_.clear();
     previous_bottom_.clear();
     tile_snapshots_top_.clear();
@@ -654,6 +700,15 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
                         ++stats_round_trips_;
                         stats_round_trip_total_ms_ += trip;
                         stats_round_trip_worst_ms_ = std::max(stats_round_trip_worst_ms_, trip);
+                        // Taken up at once and given back slowly. The window
+                        // below has to cover the trips this link actually
+                        // takes, not the ones it averages: an average that
+                        // ignores the tail is a window that shuts on every
+                        // excursion into it, which is where the dropped
+                        // frames were coming from.
+                        round_trip_high_ms_ =
+                            std::max(static_cast<double>(trip),
+                                     round_trip_high_ms_ * kRoundTripDecayPerAck);
                     }
                 }
                 promote_tile_baseline(previous_top_, tile_snapshots_top_, serial);
@@ -920,7 +975,10 @@ void HostSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
               std::to_string(dropped) + " dropped, " +
               std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, companion " +
-              std::to_string(behind) + " frames behind, round trip " +
+              std::to_string(behind) + " of " +
+              std::to_string(frames_in_flight_allowed(
+                  static_cast<uint64_t>(round_trip_high_ms_ + 0.5), produce_period_ms_)) +
+              " frames in flight, round trip " +
               std::to_string(stats_round_trips_ > 0
                                  ? stats_round_trip_total_ms_ / stats_round_trips_
                                  : 0) +
@@ -1335,6 +1393,21 @@ void HostSession::publish_screens(const ScreenPixels& top,
         return;
     }
     ++stats_produced_;
+    // How fast frames are really arriving from the source, which with the
+    // round trip above is the whole of the window's arithmetic. Measured
+    // rather than taken from the console's nominal rate: a game that is not
+    // holding its frame rate needs a smaller window, not the one 60fps would
+    // have called for.
+    {
+        const uint64_t now = monotonic_millis();
+        if (last_produced_at_ms_ != 0 && now > last_produced_at_ms_) {
+            const double gap = static_cast<double>(now - last_produced_at_ms_);
+            if (gap >= 4.0 && gap <= 100.0) {
+                produce_period_ms_ = produce_period_ms_ * 0.95 + gap * 0.05;
+            }
+        }
+        last_produced_at_ms_ = now;
+    }
     // Never let this end run further ahead than the companion can plausibly
     // still be watching: it is trusted only once it has acked at least one
     // frame, so a companion that never acks falls behind rather than being
@@ -1363,7 +1436,9 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // stall recovery below is what stops a companion that never acks at all
     // from being starved, and it does that job without this having to leave
     // the gate open indefinitely to begin with.
-    if (frame_sent_at_.size() >= kMaxQueuedFrames) {
+    if (frame_sent_at_.size() >= frames_in_flight_allowed(
+                                     static_cast<uint64_t>(round_trip_high_ms_ + 0.5),
+                                     produce_period_ms_)) {
         // Still worth waiting for, unless the oldest of these has been
         // outstanding long enough that the ack which would release it is
         // never coming -- see kAckStallMs's own comment for why that is a

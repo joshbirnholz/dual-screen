@@ -26,6 +26,17 @@ bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, i
 //
 // Polled from the frame loop like everything else. It never blocks and never
 // owns a thread, so a companion that stalls slows nothing down locally.
+// How many frames may be outstanding at once, from the delay this link is
+// actually showing rather than the one it was assumed to have.
+//
+// A frame cannot be sent until an earlier one is acked, so the window divided
+// by the round trip is a hard ceiling on the frame rate -- and a window that
+// only covers the average round trip shuts on every excursion above it and
+// drops frames in a burst until the link settles. Which is judder at the far
+// end, not a saving: during an excursion the picture is not any newer for
+// having fewer frames in it. See kMinFramesInFlight and its neighbours.
+std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms);
+
 class HostSession {
 public:
     struct Config {
@@ -423,6 +434,12 @@ private:
     // one number none of the rest of this can give: how long a frame actually
     // takes to get there and be decoded, measured on one clock.
     std::deque<std::pair<uint64_t, uint64_t>> frame_sent_at_;
+    // What the window is computed from: the round trip this link is actually
+    // showing, as a high-water mark that decays, and how fast frames are
+    // really being produced. See frames_in_flight_allowed().
+    double round_trip_high_ms_ = 0.0;
+    double produce_period_ms_ = 16.7;
+    uint64_t last_produced_at_ms_ = 0;
     unsigned stats_round_trips_ = 0;
     uint64_t stats_round_trip_total_ms_ = 0;
     uint64_t stats_round_trip_worst_ms_ = 0;
