@@ -254,6 +254,34 @@ if(XVFB_RUN_EXECUTABLE)
     set_tests_properties(switch_client_top_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
         ENVIRONMENT "COMPANION_SCREEN=top")
 
+    # And once more in an OpenGL 3.3 core context, which is a different
+    # renderer path and not a different feature.
+    #
+    # shader_preamble() has three: GLES, core, and compatibility. Every other
+    # test here takes whichever one the machine's driver hands out, which on
+    # Linux is GLES -- so the core path was written for a Citra core, used by
+    # nobody else, and covered by nothing. DUALSCREEN_FORCE_GL33 existed to
+    # exercise it and no test set it, which the comment beside it claimed
+    # otherwise about.
+    #
+    # It is the macOS companion that makes this worth having rather than
+    # tidy. Apple's platforms have no GLES at all and a legacy profile frozen
+    # at 2.1, so a core context is not a fallback there, it is the only path
+    # -- and it is the one path that cannot be run on the machine this is
+    # built on. This runs it here instead: a whole session against a real
+    # host, drawn through the same shaders a Mac will use, checked by the same
+    # screenshot.
+    add_test(NAME switch_client_gl33_headless
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_client_test.sh
+            ${XVFB_RUN_EXECUTABLE}
+            $<TARGET_FILE:dualscreen>
+            $<TARGET_FILE:dualscreen-companion>
+            ${MOCK_CORE_PATH}
+            ${CMAKE_BINARY_DIR}/switch-client-gl33
+            $<TARGET_FILE:check_screenshot>)
+    set_tests_properties(switch_client_gl33_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
+        ENVIRONMENT "COMPANION_SCREEN=bottom;DUALSCREEN_FORCE_GL33=1")
+
     # And on a 3DS, whose screens are a different size and shape from a DS's
     # and whose touch screen is narrower than its upper one. The client works
     # all of that out from what the host tells it about the console, so this

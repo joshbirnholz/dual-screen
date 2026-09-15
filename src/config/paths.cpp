@@ -26,14 +26,6 @@ std::string home_dir() {
     return std::string(".");
 }
 
-std::string env_or(const char* name, const std::string& fallback) {
-    const char* value = std::getenv(name);
-    if (value != nullptr && value[0] != '\0') {
-        return std::string(value);
-    }
-    return fallback;
-}
-
 }  // namespace
 
 std::string path_join(const std::string& a, const std::string& b) {
@@ -295,19 +287,60 @@ bool list_directory(const std::string& directory,
     return true;
 }
 
-AppPaths AppPaths::resolve() {
-    const std::string home = home_dir();
-    const std::string xdg_config = env_or("XDG_CONFIG_HOME", path_join(home, ".config"));
-    const std::string xdg_data = env_or("XDG_DATA_HOME", path_join(home, ".local/share"));
+PathStyle native_path_style() {
+#if defined(__APPLE__)
+    return PathStyle::AppleLibrary;
+#else
+    return PathStyle::Xdg;
+#endif
+}
 
+PathConvention path_convention(PathStyle style, const std::string& home,
+                               const std::function<std::string(const char*)>& environment) {
+    PathConvention convention;
+    if (style == PathStyle::AppleLibrary) {
+        // Where a Mac application is expected to put things, and where a
+        // person looking for them will look. Application Support for what the
+        // app owns, Logs for the log, and no environment variable in either:
+        // XDG_CONFIG_HOME on a Mac is a variable nothing sets and nothing
+        // reads, so honouring it would only mean a second place for the same
+        // file to hide in.
+        //
+        // Settings and saves share a root here, unlike the XDG split. That is
+        // the platform's own arrangement rather than a shortcut -- macOS
+        // separates by *who owns a file*, not by what kind of file it is, and
+        // both of these are the application's.
+        const std::string library = path_join(home, "Library");
+        convention.config_root = path_join(library, "Application Support");
+        convention.data_root = convention.config_root;
+        convention.log_root = path_join(library, "Logs");
+        return convention;
+    }
+    const std::string config = environment("XDG_CONFIG_HOME");
+    const std::string data = environment("XDG_DATA_HOME");
+    convention.config_root = config.empty() ? path_join(home, ".config") : config;
+    convention.data_root = data.empty() ? path_join(home, ".local/share") : data;
+    convention.log_root = convention.data_root;
+    return convention;
+}
+
+AppPaths AppPaths::under(const PathConvention& convention) {
     AppPaths paths;
-    paths.config_dir = path_join(xdg_config, "dualscreen");
+    paths.config_dir = path_join(convention.config_root, "dualscreen");
     paths.games_dir = path_join(paths.config_dir, "games");
     paths.settings_file = path_join(paths.config_dir, "settings.json");
-    paths.saves_dir = path_join(path_join(xdg_data, "dualscreen"), "saves");
-    paths.default_system_dir = path_join(path_join(xdg_data, "dualscreen"), "system");
-    paths.log_file = path_join(path_join(xdg_data, "dualscreen"), "dualscreen.log");
+    const std::string data = path_join(convention.data_root, "dualscreen");
+    paths.saves_dir = path_join(data, "saves");
+    paths.default_system_dir = path_join(data, "system");
+    paths.log_file = path_join(path_join(convention.log_root, "dualscreen"), "dualscreen.log");
     return paths;
+}
+
+AppPaths AppPaths::resolve() {
+    return under(path_convention(native_path_style(), home_dir(), [](const char* name) {
+        const char* value = std::getenv(name);
+        return std::string(value != nullptr ? value : "");
+    }));
 }
 
 std::vector<std::string> candidate_system_dirs(const AppPaths& paths) {

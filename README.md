@@ -352,11 +352,14 @@ The **companion** does one thing: join a game running somewhere else and be one
 of its two screens. It has no emulator in it and needs no ROM, no BIOS and no
 core — everything is being played on the other device.
 
-It is one program, in `companion/`, built for three kinds of device:
+It is one program, in `companion/`, built for four kinds of device:
 
 - a **Nintendo Switch**, as homebrew — see [switch/README.md](switch/README.md)
 - an **Android** handheld, phone or tablet — see
   [android/README.md](android/README.md); aimed at a Logitech G Cloud
+- a **Mac**, as an ordinary application — see
+  [apple/README.md](apple/README.md), which is also honest about the fact that
+  it has not been run on one yet
 - this **desktop app** itself, with *Connect as top/bottom screen*
 
 It shares the parts that describe a session — the protocol, discovery, the

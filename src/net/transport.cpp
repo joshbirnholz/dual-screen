@@ -78,13 +78,28 @@ void enable_keepalive(int descriptor) {
     // option only where the TCP stack exposes one. Where it does not -- the
     // Switch's does not -- keepalive is still on, just on that stack's own
     // schedule, which is the difference between noticing a vanished peer late
-    // and never noticing at all.
-#if defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL) && defined(TCP_KEEPCNT)
+    // and never noticing at all. Late means hours: the default first probe is
+    // two hours away on every stack here, and a companion sitting on a dead
+    // session for two hours is indistinguishable from one that has hung.
     const int idle_seconds = 3;
     const int interval_seconds = 2;
     const int probe_count = 3;
+    (void)idle_seconds;
+    (void)interval_seconds;
+    (void)probe_count;
+    // Linux's name for "seconds of quiet before the first probe".
+#if defined(TCP_KEEPIDLE)
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPIDLE, &idle_seconds, sizeof(idle_seconds));
+    // Apple's name for the same thing, and only the same thing -- the two
+    // below it are spelled alike on both, which is why this is the one option
+    // that needs saying twice rather than the whole block being duplicated.
+#elif defined(TCP_KEEPALIVE)
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPALIVE, &idle_seconds, sizeof(idle_seconds));
+#endif
+#if defined(TCP_KEEPINTVL)
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPINTVL, &interval_seconds, sizeof(interval_seconds));
+#endif
+#if defined(TCP_KEEPCNT)
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_KEEPCNT, &probe_count, sizeof(probe_count));
 #endif
 }
@@ -108,6 +123,32 @@ constexpr int kSendQueueBytes = 64 * 1024;
 
 void bound_send_queue(int descriptor) {
     ::setsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &kSendQueueBytes, sizeof(kSendQueueBytes));
+}
+
+// Writing to a socket whose peer has gone raises SIGPIPE, which by default
+// ends the process. Nothing here wants that: a peer disappearing is an
+// ordinary end to a session and the error return says so perfectly well.
+//
+// The two ways of refusing it are not interchangeable, and which one exists
+// is the platform's business. Linux has a per-send flag; the BSDs, and so
+// Apple's platforms, have a per-socket option instead and no flag at all --
+// naming MSG_NOSIGNAL there is not a runtime difference, it is a name that
+// does not compile. So the flag is defined to nothing where it is missing and
+// the option is set where it exists, and between them every socket in this
+// file is covered on every platform.
+#if defined(MSG_NOSIGNAL)
+constexpr int kSendFlags = MSG_NOSIGNAL;
+#else
+constexpr int kSendFlags = 0;
+#endif
+
+void refuse_sigpipe(int descriptor) {
+#if defined(SO_NOSIGPIPE)
+    const int one = 1;
+    ::setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#else
+    (void)descriptor;
+#endif
 }
 
 #if defined(DS_HAVE_GETIFADDRS)
@@ -219,6 +260,7 @@ TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
     stream.descriptor_ = descriptor;
     stream.peer_address_ = std::move(peer_address);
     set_non_blocking(descriptor);
+    refuse_sigpipe(descriptor);
     const int one = 1;
     // Frames are latency-sensitive and small; waiting to coalesce them adds
     // exactly the delay this is meant to avoid.
@@ -237,6 +279,7 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
         return false;
     }
     set_non_blocking(descriptor_);
+    refuse_sigpipe(descriptor_);
     const int one = 1;
     ::setsockopt(descriptor_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     bound_send_queue(descriptor_);
@@ -360,7 +403,7 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
     // Writes first, so a frame queued this tick goes out this tick.
     while (outbox_sent_ < outbox_.size()) {
         const ssize_t written = ::send(descriptor_, outbox_.data() + outbox_sent_,
-                                       outbox_.size() - outbox_sent_, MSG_NOSIGNAL);
+                                       outbox_.size() - outbox_sent_, kSendFlags);
         if (written > 0) {
             outbox_sent_ += static_cast<std::size_t>(written);
             continue;
@@ -414,6 +457,7 @@ bool TcpListener::start(uint16_t port, std::string* error) {
     const int one = 1;
     ::setsockopt(descriptor_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     set_non_blocking(descriptor_);
+    refuse_sigpipe(descriptor_);
 
     sockaddr_in address {};
     address.sin_family = AF_INET;

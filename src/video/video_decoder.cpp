@@ -46,25 +46,25 @@ AVHWDeviceType hw_device_for(const std::string& backend) {
 #endif
     }
     if (backend.find("_vaapi") != std::string::npos) return AV_HWDEVICE_TYPE_VAAPI;
+    if (backend.find("_videotoolbox") != std::string::npos) {
+        // Apple's, on every platform it has.
+        //
+        // Deliberately not wrapped in an #ifdef the way the Switch's is above.
+        // These names are enumerators in AVHWDeviceType, not macros, so the
+        // preprocessor cannot see them at all: #ifdef on one is false however
+        // new the FFmpeg is, and the guarded line is simply never compiled.
+        // Writing that here would have meant a Mac silently decoding in
+        // software while the log said it had opened the hardware backend --
+        // which is the quietest possible way for this to be wrong, and
+        // indistinguishable from a slow machine.
+        //
+        // Nothing is lost by naming it outright: AVHWDeviceType has carried
+        // this value since FFmpeg 3.4, long below anything that could build
+        // the rest of this.
+        return AV_HWDEVICE_TYPE_VIDEOTOOLBOX;
+    }
     if (backend.find("_cuvid") != std::string::npos) return AV_HWDEVICE_TYPE_CUDA;
     return AV_HWDEVICE_TYPE_NONE;
-}
-
-// The name to actually hand avcodec_find_decoder_by_name(). Most backends are
-// their own answer, but not the two hw_device_for() above attaches a context
-// to: FFmpeg registers no "h264_vaapi" or "h264_nvtegra" decoder, only the
-// plain "h264" one that a device context turns into a hardware decode --
-// unlike MediaCodec or CUVID, which really are their own separate decoders
-// under those exact names. The suffix stays part of the backend label either
-// way, since hw_device_for() above still needs it to decide what to attach.
-std::string decoder_name_for(const std::string& backend) {
-    for (const char* suffix : {"_vaapi", "_nvtegra"}) {
-        const std::size_t length = std::strlen(suffix);
-        if (backend.size() > length && backend.compare(backend.size() - length, length, suffix) == 0) {
-            return backend.substr(0, backend.size() - length);
-        }
-    }
-    return backend;
 }
 
 }  // namespace

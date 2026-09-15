@@ -87,6 +87,62 @@ void test_paths_resolve_under_xdg() {
     CHECK(ensure_directory(paths.games_dir));
 }
 
+// Where a Mac puts things, checked from a machine that is not one.
+//
+// This is the point of PathConvention being a value rather than a set of
+// conditionals. A directory convention is not something to get wrong quietly
+// on somebody else's computer, and a build for a platform this test does not
+// run on cannot otherwise be checked at all -- the ifdef would simply be
+// taken on trust until a person on a Mac noticed their settings in a folder
+// no Mac application uses.
+void test_each_platform_puts_things_where_that_platform_keeps_them() {
+    // Nothing in the environment, which is Apple's case: macOS has no XDG
+    // convention, and honouring one would only give the same file a second
+    // place to hide in.
+    const auto nothing_set = [](const char*) { return std::string(); };
+
+    const PathConvention mac = path_convention(PathStyle::AppleLibrary, "/Users/someone",
+                                               nothing_set);
+    const AppPaths mac_paths = AppPaths::under(mac);
+    CHECK_STR_EQ(mac_paths.config_dir, "/Users/someone/Library/Application Support/dualscreen");
+    CHECK_STR_EQ(mac_paths.settings_file,
+                 "/Users/someone/Library/Application Support/dualscreen/settings.json");
+    CHECK_STR_EQ(mac_paths.saves_dir,
+                 "/Users/someone/Library/Application Support/dualscreen/saves");
+    // Logs are the one thing macOS keeps somewhere else, and a Mac user
+    // looking for a log looks in exactly one place.
+    CHECK_STR_EQ(mac_paths.log_file, "/Users/someone/Library/Logs/dualscreen/dualscreen.log");
+    CHECK_MSG(mac_paths.config_dir.find("/.config") == std::string::npos,
+              "a Mac build was going to write to a dot directory nothing on a Mac reads");
+
+    // An Apple build must ignore XDG even where something has set it, or a
+    // Mac that once ran something Linuxish gets its settings in two places.
+    const auto xdg_set = [](const char* name) {
+        return std::string(name) == "XDG_CONFIG_HOME" ? std::string("/elsewhere")
+                                                      : std::string();
+    };
+    CHECK_STR_EQ(path_convention(PathStyle::AppleLibrary, "/Users/someone", xdg_set).config_root,
+                 "/Users/someone/Library/Application Support");
+
+    // And the other way round: the XDG style is the one that reads them, and
+    // falls back to the standard defaults when it finds nothing.
+    const PathConvention plain = path_convention(PathStyle::Xdg, "/home/someone", nothing_set);
+    CHECK_STR_EQ(plain.config_root, "/home/someone/.config");
+    CHECK_STR_EQ(plain.data_root, "/home/someone/.local/share");
+    CHECK_STR_EQ(AppPaths::under(plain).log_file,
+                 "/home/someone/.local/share/dualscreen/dualscreen.log");
+    CHECK_STR_EQ(path_convention(PathStyle::Xdg, "/home/someone", xdg_set).config_root,
+                 "/elsewhere");
+
+    // This build's own answer is the one resolve() uses, and on anything that
+    // is not Apple it is the freedesktop one.
+#if defined(__APPLE__)
+    CHECK(native_path_style() == PathStyle::AppleLibrary);
+#else
+    CHECK(native_path_style() == PathStyle::Xdg);
+#endif
+}
+
 void test_path_helpers() {
     CHECK_STR_EQ(path_join("/a", "b"), "/a/b");
     CHECK_STR_EQ(path_join("/a/", "b"), "/a/b");
@@ -433,6 +489,7 @@ int main() {
     test_sha1_known_vectors();
     test_sha1_file();
     test_paths_resolve_under_xdg();
+    test_each_platform_puts_things_where_that_platform_keeps_them();
     test_path_helpers();
     test_game_config_round_trip();
     test_game_config_preserves_unknown_keys();

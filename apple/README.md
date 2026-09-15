@@ -1,0 +1,126 @@
+# The Apple companion
+
+A Mac being a second screen for a game running on another machine. Everything
+the Switch, Android and desktop companions do, including H.264 — it is the same
+source files compiled again, not a port of them. What is here is the build and
+the bundle.
+
+**macOS only so far, and not yet run on one.** It was written on Linux, where
+it cannot be compiled: nothing below has been through an Apple compiler, let
+alone a Mac. The parts that could be checked from here were — see **What has
+actually been verified** at the end, which is worth reading before assuming
+this works.
+
+iOS and tvOS are the reason this lives in its own directory with one source
+list and one plist template rather than as a branch of the root build. Neither
+is written yet.
+
+## Building it
+
+```sh
+brew install cmake sdl2 ffmpeg
+cmake -S apple -B build-macos
+cmake --build build-macos
+open "build-macos/Dualscreen Companion.app"
+```
+
+FFmpeg is optional and wanted: without it a Wii U's GamePad screen arrives as
+changed tiles at roughly seventeen times the bandwidth (see
+`docs/research-notes.md`). Homebrew's build has VideoToolbox in it, which is
+the hardware decoder on every Apple machine — the configure step says
+`video codec: libavcodec …, decoding through VideoToolbox` when it found one,
+and `building without one` when it did not.
+
+`zlib` and `OpenGL` come with macOS. The deployment target is 11.0, the first
+release on Apple silicon; override with `-DCMAKE_OSX_DEPLOYMENT_TARGET=` if you
+want an older one.
+
+For a universal binary:
+
+```sh
+cmake -S apple -B build-macos -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+```
+
+— which needs Homebrew's SDL2 and FFmpeg to be universal too, and they are not
+by default. One architecture at a time is the ordinary case.
+
+## Running it
+
+It looks for a host on the local network by itself, the same as every other
+companion. `--connect <address>` skips the search.
+
+**macOS will ask about the local network the first time**, and the app does
+nothing at all if refused — finding a machine on the network *is* the app. The
+sentence in the permission dialog comes from `NSLocalNetworkUsageDescription`
+in `Info.plist.in`. If it was refused once and never asked again, it is in
+System Settings → Privacy & Security → Local Network.
+
+The log is at `~/Library/Logs/dualscreen/dualscreen.log`, which is also where
+Console.app will show it. There is a log at all because a bundle started from
+Finder has nowhere to put stdout, and on the evidence of this project the log
+is usually the thing that answers the question.
+
+## What is Apple's and what is shared
+
+Almost nothing here is Apple's:
+
+| | |
+| --- | --- |
+| `CMakeLists.txt` | the build, the bundle, and the icon |
+| `Info.plist.in` | what macOS needs told about the app |
+| everything else | `cmake/companion_sources.cmake`, the same list the Switch, Android and desktop builds compile |
+
+The handful of places the shared code knows it is on an Apple platform:
+
+- **`src/config/paths.cpp`** — `~/Library/Application Support` and
+  `~/Library/Logs`, not `~/.config`. A Mac application writing to a dot
+  directory is one somebody has to explain. `PathConvention` is a value rather
+  than a set of conditionals precisely so this can be checked from a machine
+  that is not a Mac, and `test_config` does.
+- **`src/video/video_codec.hpp`** and **`src/video/video_decoder.cpp`** —
+  VideoToolbox. It behaves like VAAPI rather than like MediaCodec: a device
+  context attached to the ordinary `h264` decoder, not a decoder of its own.
+  `h264_videotoolbox` *does* exist as an **encoder**, which is the trap —
+  asking for it by name on the decode side finds nothing and reads like a
+  build with no hardware decoding in it. `test_video_codec` pins the mapping.
+- **`src/net/transport.cpp`** — `MSG_NOSIGNAL` does not exist on Darwin;
+  `SO_NOSIGPIPE` on the socket is the same thing done in a different place.
+  Naming the flag would not have been a behaviour difference, it would have
+  been a name that does not compile. Apple also spells the keepalive idle time
+  `TCP_KEEPALIVE` where Linux says `TCP_KEEPIDLE`, and without it a companion
+  takes two hours to notice a host that has gone.
+- **`src/render/gl_window.cpp`** — a core profile first. Apple has no OpenGL ES
+  at all and a legacy profile frozen at 2.1, so a core context is the only real
+  option rather than a last resort.
+
+## The icon
+
+Built at build time from `assets/ds_bezel.png` with `sips` and `iconutil`,
+both part of macOS, rather than committing a second copy of a picture already
+in the repository. That artwork is a photograph of a DS, square-cropped — it is
+the right shape and is not really the right picture. A purpose-drawn
+`Dualscreen.icns` dropped in beside this file and named in `CMakeLists.txt`
+would be better. A machine without those two tools builds a bundle with the
+generic icon on it rather than failing.
+
+## What has actually been verified
+
+From Linux, which is the honest limit:
+
+- The whole of `CMakeLists.txt` parses (CMake reads a listfile completely
+  before executing it, so a syntax error anywhere would have shown).
+- Every file in the shared source list exists.
+- `Info.plist.in` expands with no placeholder left behind, and the result
+  parses as a real property list.
+- **The renderer path macOS will take runs a whole session.**
+  `switch_client_gl33_headless` forces an OpenGL 3.3 core context and plays
+  through a real host with a screenshot check. Apple's platforms have no GLES,
+  so this is the path a Mac uses and it had no coverage at all until this port
+  needed it.
+- The VideoToolbox name mapping, in `test_video_codec`.
+- The `~/Library` layout, in `test_config`.
+
+Not verified, because it cannot be from here: that it compiles with Apple's
+toolchain, that SDL2 and FFmpeg link as expected from Homebrew, that the bundle
+launches, that VideoToolbox decode actually opens on real hardware, or that the
+local-network prompt behaves as described.

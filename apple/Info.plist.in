@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+	<key>CFBundleName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleDisplayName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleIdentifier</key>
+	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+	<key>CFBundleIconFile</key>
+	<string>${MACOSX_BUNDLE_ICON_FILE}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+	<key>CFBundleVersion</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.games</string>
+
+	<!-- Without this a Retina Mac hands the app a window at half the pixels
+	     and scales the result, which on a screen whose whole job is showing
+	     another machine's screen is the difference between exact and soft.
+	     The renderer already asks SDL for the drawable size rather than the
+	     window size, so there is nothing else to do for it. -->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+
+	<!-- A Mac with two GPUs should be allowed to stay on the quiet one. This
+	     app draws two textured quads a frame. -->
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+
+	<!-- macOS 15 and later ask the person before letting an application talk
+	     to anything on the local network, and this is the sentence they are
+	     shown while deciding. It is the whole of what this app does: find a
+	     computer on the same network that is running a game, and be a screen
+	     for it. Refused, the app works exactly as well as a television with
+	     the aerial out. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Dualscreen Companion finds the computer on your network that is running a game, so this Mac can be a second screen for it.</string>
+</dict>
+</plist>

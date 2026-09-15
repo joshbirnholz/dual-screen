@@ -57,6 +57,7 @@ extern "C" {
 #include <vector>
 
 #include "audio/audio_output.hpp"
+#include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
@@ -1061,6 +1062,24 @@ int main(int argc, char** argv) {
         }
     }
 #endif
+#endif
+
+#ifdef __APPLE__
+    // A log on disk, because a Mac application has nowhere else to put one.
+    // Double-clicked from Finder -- which is how this is going to be started
+    // -- stdout goes to a system log nobody thinks to look in, and the app
+    // may be the only thing on the network that knows why it could not find a
+    // host. ~/Library/Logs is where a Mac keeps these and where Console.app
+    // will show it; see PathConvention for the layout and the test that pins
+    // it down from a machine that is not a Mac.
+    {
+        const AppPaths paths = AppPaths::resolve();
+        if (ensure_directory(path_dirname(paths.log_file)) && set_log_file(paths.log_file)) {
+            log_info("Dualscreen starting; log at " + paths.log_file);
+        } else {
+            log_info("Dualscreen starting");
+        }
+    }
 #endif
 
     int status = 0;

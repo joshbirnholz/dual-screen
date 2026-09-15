@@ -276,9 +276,42 @@ void test_a_device_attached_backend_fails_on_the_device_not_the_decoder() {
     }
 }
 
+// Which name FFmpeg is actually asked for, per backend label.
+//
+// Three of these labels name a hardware device to attach to the ordinary h264
+// decoder; two name decoders that really do exist under those names. Getting
+// that wrong once already cost a round of "the companion says it cannot
+// decode video" -- and Apple's is the one that punishes it quietly, because
+// h264_videotoolbox does exist as an *encoder*, so asking for it on the
+// decode side finds nothing and reads like a build with no hardware decoding
+// compiled in at all.
+//
+// Needs no codec, so it runs before the gate below and on every machine.
+void test_a_backend_label_is_not_always_a_decoder_name() {
+    for (const char* device_attached : {"h264_vaapi", "h264_nvtegra", "h264_videotoolbox"}) {
+        CHECK_MSG(video::decoder_name_for(device_attached) == "h264",
+                  std::string(device_attached) +
+                      " was passed to FFmpeg as its own name, which finds no decoder");
+    }
+    // And the ones that are their own answer stay whole. Stripping these
+    // would be the same bug the other way round: the plain h264 decoder
+    // opening where the platform's real one was meant to.
+    for (const char* its_own : {"h264_mediacodec", "h264_cuvid", "h264"}) {
+        CHECK_MSG(video::decoder_name_for(its_own) == its_own,
+                  std::string(its_own) + " was shortened into a decoder it is not");
+    }
+
+    // The default list for this build names its platform's device first and
+    // plain software second, so a machine without the device still decodes.
+    const video::DecoderConfig config;
+    CHECK_MSG(config.backends.size() >= 2 && config.backends.back() == "h264",
+              "the decoder has no plain software fallback to land on");
+}
+
 }  // namespace
 
 int main() {
+    test_a_backend_label_is_not_always_a_decoder_name();
     if (!video::available()) {
         // Not a failure: the codec is optional until every platform's toolchain
         // has it, and saying so is more use than a green tick that tested air.

@@ -175,6 +175,33 @@ struct EncoderConfig {
     PixelOrder pixel_order = PixelOrder::Bgra;
 };
 
+// The name to hand FFmpeg for a backend label, which is not always the label.
+//
+// Three of the labels this app uses name a *hardware device* to attach to the
+// ordinary h264 decoder rather than a decoder of their own: FFmpeg registers
+// no h264_vaapi, h264_nvtegra or h264_videotoolbox decoder. MediaCodec and
+// CUVID are the other way round -- those really are separate decoders under
+// exactly those names.
+//
+// Apple's is the one that punishes a wrong guess quietly, because
+// "h264_videotoolbox" *does* exist -- as an encoder. Asking for it by name on
+// the decode side finds nothing and reads, from the outside, like a build
+// with no hardware decoding in it.
+//
+// Here rather than beside the FFmpeg calls so it can be checked without
+// FFmpeg: it is a fact about naming, and the cost of getting it wrong has
+// already been paid once.
+inline std::string decoder_name_for(const std::string& backend) {
+    for (const char* suffix : {"_vaapi", "_nvtegra", "_videotoolbox"}) {
+        const std::size_t length = std::char_traits<char>::length(suffix);
+        if (backend.size() > length &&
+            backend.compare(backend.size() - length, length, suffix) == 0) {
+            return backend.substr(0, backend.size() - length);
+        }
+    }
+    return backend;
+}
+
 struct DecoderConfig {
     // Tried in order, the same way. Named per platform because unlike the
     // encoder above -- which only ever runs on a desktop host -- every one of
@@ -187,6 +214,13 @@ struct DecoderConfig {
     std::vector<std::string> backends{"h264_nvtegra", "h264"};
 #elif defined(__ANDROID__)
     std::vector<std::string> backends{"h264_mediacodec", "h264"};
+#elif defined(__APPLE__)
+    // VideoToolbox is every Apple platform's decoder -- the same API on a
+    // Mac, an iPhone and an Apple TV, and hardware on all of them. It behaves
+    // like VAAPI rather than like MediaCodec: FFmpeg registers no decoder of
+    // that name, only a device context that turns the plain h264 decoder into
+    // a hardware one. See hw_device_for() and decoder_name_for().
+    std::vector<std::string> backends{"h264_videotoolbox", "h264"};
 #else
     std::vector<std::string> backends{"h264_vaapi", "h264"};
 #endif

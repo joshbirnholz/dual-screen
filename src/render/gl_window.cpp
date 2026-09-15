@@ -40,6 +40,25 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
     // every platform on the roadmap, so the renderer is exercised against the
     // same feature set everywhere. Desktop GL 2.1 is the fallback for drivers
     // that will not hand out an ES context.
+#if defined(__APPLE__)
+    // Except on Apple's, which have no ES at all -- asking for one is two
+    // guaranteed failures before the real attempt, and the log line that
+    // reports which context was created would name the fallback as though
+    // something had gone wrong.
+    //
+    // Core 3.3 rather than 2.1 compatibility, which is the other way round
+    // from everywhere else. macOS offers exactly two things: a frozen legacy
+    // profile that stops at 2.1, and a core profile that goes to 4.1. Where
+    // the legacy one is a driver's grudging fallback elsewhere, here it is a
+    // museum piece, and the renderer already speaks core -- see
+    // shader_preamble(), which has had a core path since a Citra core needed
+    // one.
+    const ContextAttempt any_attempts[] = {
+        {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
+        {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1 compatibility"},
+        {0, 0, 0, false, "the driver's default context"},
+    };
+#else
     const ContextAttempt any_attempts[] = {
         {SDL_GL_CONTEXT_PROFILE_ES, 2, 0, true, "OpenGL ES 2.0"},
         {SDL_GL_CONTEXT_PROFILE_ES, 3, 0, true, "OpenGL ES 3.0"},
@@ -47,6 +66,7 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
         {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
         {0, 0, 0, false, "the driver's default context"},
     };
+#endif
     // A GPU-rendering core will not load without the context it asked for, so
     // when one is going to be loaded the order is reversed and the ES entries
     // drop out entirely -- an ES 2.0 context here would only mean starting up
@@ -58,7 +78,11 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
     };
 
     // A way to exercise the 3.3 path on a machine whose driver would otherwise
-    // hand over an ES context, which is what the tests use.
+    // hand over an ES context. switch_client_gl33_headless sets it and runs a
+    // whole session through it, which is the only place the core-profile
+    // shaders are actually drawn with on Linux -- and so the only advance
+    // warning of a break on Apple's platforms, where a core context is not a
+    // fallback but the only thing there is.
     const char* forced = std::getenv("DUALSCREEN_FORCE_GL33");
     if (forced != nullptr && forced[0] != '\0' && forced[0] != '0') {
         need = GlContextNeed::OpenGl33Core;

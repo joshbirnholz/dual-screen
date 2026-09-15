@@ -1,22 +1,66 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace ds {
 
 // All on-disk locations the app uses, resolved once at startup so nothing else
-// has to know about XDG rules.
+// has to know a platform's rules.
+//
+// Where a platform keeps the two kinds of thing this app writes down.
+//
+// Split out from AppPaths so that the layout is a value rather than a set of
+// conditionals: the answer for a platform this is not being compiled for can
+// then be asked for, and checked, from one that it is. Which is the whole
+// reason -- a directory convention is not something to get wrong quietly on
+// somebody else's machine, and it is exactly the sort of thing that cannot be
+// noticed from here.
+struct PathConvention {
+    // Settings and per-game files: things a person might reasonably edit.
+    std::string config_root;
+    // Saves, the system directory, the log: things the app owns.
+    std::string data_root;
+    // Where the log goes, which some platforms keep apart from the rest.
+    std::string log_root;
+};
+
+// Which convention a platform follows.
+enum class PathStyle {
+    // Freedesktop's: ~/.config and ~/.local/share, overridable by
+    // XDG_CONFIG_HOME and XDG_DATA_HOME. Linux, and the Switch and Android
+    // builds, which have a writable home of their own and no opinion.
+    Xdg,
+    // Apple's: everything under ~/Library, with logs in their own place, and
+    // no environment variable in sight -- macOS has no XDG convention and a
+    // Mac application writing to ~/.config is a Mac application somebody has
+    // to explain.
+    AppleLibrary,
+};
+
+// This build's own, which is the only one resolve() below will use.
+PathStyle native_path_style();
+
+// The roots a style puts things under, given a home directory and a way to
+// read the environment. `environment` returns an empty string for a variable
+// that is unset, which is what makes this answerable without one.
+PathConvention path_convention(PathStyle style, const std::string& home,
+                               const std::function<std::string(const char*)>& environment);
+
 struct AppPaths {
-    std::string config_dir;    // ~/.config/dualscreen
-    std::string games_dir;     // ~/.config/dualscreen/games
-    std::string settings_file; // ~/.config/dualscreen/settings.json
-    std::string saves_dir;     // ~/.local/share/dualscreen/saves
-    std::string default_system_dir;  // ~/.local/share/dualscreen/system
-    std::string log_file;            // ~/.local/share/dualscreen/dualscreen.log
+    std::string config_dir;    // ~/.config/dualscreen, or ~/Library/Application Support
+    std::string games_dir;     // .../games
+    std::string settings_file; // .../settings.json
+    std::string saves_dir;     // .../saves
+    std::string default_system_dir;  // .../system
+    std::string log_file;            // .../dualscreen.log
 
     static AppPaths resolve();
+    // The same thing from a convention already chosen, so the layout under a
+    // root can be checked without being on that platform.
+    static AppPaths under(const PathConvention& convention);
 };
 
 // Directories the app will offer as candidates for the BIOS/firmware "system"
