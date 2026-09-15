@@ -94,10 +94,14 @@ run_session() {
         echo "$name: nothing ever connected over the frame link, so this run says nothing" >&2
         FAILED=1
     fi
-    if ! grep -q "sending 1280x720 and 854x480" "$shell_log" 2>/dev/null; then
-        echo "$name: the shell did not take the two screen sizes the game announced" >&2
-        FAILED=1
-    fi
+    # There used to be a check here that the shell "took the two screen sizes
+    # the game announced". It could not have caught anything: those sizes are
+    # declared before the game has drawn a pixel, nothing clamps a frame to
+    # them, and a title rendering its television above them publishes above
+    # them. The number that means something is the size a frame arrives at --
+    # and in this scenario nobody is watching either screen, so deliberately
+    # no frame ever arrives. It is checked where frames actually flow, in
+    # run_wii_u_companion_test.sh.
 
     # Alone, with nothing asked for, neither screen should ever reach the
     # compositor -- see the top-of-file note on what a solo run proves now.

@@ -127,6 +127,21 @@ require "$WORK_DIR/host.log" "a companion wants the bottom screen at up to .*; a
 # scaled down here -- see ds::fit_within().
 require "$WORK_DIR/host.log" "at up to [1-9][0-9]*x[1-9][0-9]*; asking Cemu for it" \
     "the host asked for the screen but never told the far end how big it is worth making"
+# The size the game is actually drawing, which is the top of the resolution
+# chain and the only number in it this app does not choose. Everything below
+# is already in the log -- what the encoder opened at and whether that was the
+# game's size or a cap, and what the far end composites from -- so between them
+# "the picture is lower resolution than it should be" is answerable from one
+# log rather than by lining several up beside each other, which is how the
+# question got answered wrongly twice.
+require "$WORK_DIR/host.log" "the game is drawing its [a-z]* screen at [1-9][0-9]*x[1-9][0-9]*" \
+    "the host never said what size the game is drawing, so the resolution chain has a gap in it"
+# Either wording will do -- what is being pinned is that the encoder says
+# where its size came from at all, not which of the two answers it gave. Which
+# one is right depends on how big the companion's display is, and that is the
+# test's business to vary rather than to assume.
+require "$WORK_DIR/host.log" "drawing it at\|the game draws it at" \
+    "the encoder never said where its size came from, so a cap cannot be told from a small source"
 require "$WORK_DIR/companion.log" "following the host: Wii U" \
     "the companion did not learn which console it had joined"
 require "$WORK_DIR/host.log" "video encoder: " \

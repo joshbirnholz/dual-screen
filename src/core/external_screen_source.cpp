@@ -52,10 +52,19 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
         // Said here rather than inside the link, so that the half of the link a
         // fork of Cemu compiles brings nothing of this app with it.
         const ExternalStreamInfo& info = link_.info();
-        log_info("a game connected, sending " + std::to_string(info.top_width) + "x" +
-                 std::to_string(info.top_height) + " and " + std::to_string(info.bottom_width) +
-                 "x" + std::to_string(info.bottom_height) + " at " +
-                 std::to_string(info.audio_sample_rate) + " Hz");
+        // Without the sizes, which were never the stream's.
+        //
+        // They are what the producer declared before the game had drawn
+        // anything: a Wii U's nominal television and GamePad, hardcoded, and
+        // nothing anywhere clamps a frame to them -- the shared memory is
+        // sized for 4K, and a title rendering its television at 1080p
+        // publishes 1080p. But the line read as "this stream is 720p", which
+        // is the single most useful-looking thing in the log and was wrong,
+        // and it got read that way by the person who wrote it while
+        // diagnosing exactly this.
+        //
+        // What actually arrives is logged per screen below, as it arrives.
+        log_info("a game connected at " + std::to_string(info.audio_sample_rate) + " Hz");
     }
 
     for (const ScreenId id : {ScreenId::Top, ScreenId::Bottom}) {
@@ -64,6 +73,17 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
             continue;  // nothing new for this screen, which is not a problem
         }
         Screen& screen = screen_for(id);
+        // The size the game is really drawing this screen at, which is the
+        // top of the chain and the only number in it nothing here chooses.
+        // Everything downstream is visible already -- what the encoder was
+        // opened at and why, and what the far end composites from -- so with
+        // this one, "the picture is lower resolution than it should be" can
+        // be traced from end to end in a single log instead of inferred by
+        // laying several side by side.
+        if (screen.width != frame.width || screen.height != frame.height) {
+            log_info(std::string("the game is drawing its ") + to_string(id) + " screen at " +
+                     std::to_string(frame.width) + "x" + std::to_string(frame.height));
+        }
         screen.pixels = std::move(frame.pixels);
         screen.width = frame.width;
         screen.height = frame.height;
