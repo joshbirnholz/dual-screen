@@ -188,6 +188,30 @@ set_target_properties(dualscreen_companion PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
 )
 
+# Signed, even if only ad-hoc.
+#
+# Not about trust: it is how macOS knows one build of this app from another.
+# The permission to use the local network is remembered against a bundle's
+# identity, and a bundle with no signature has none to remember -- so the grant
+# has nothing to attach to, and a connection to a machine on the same network
+# comes back EHOSTUNREACH, which prints as "No route to host" and sends you to
+# look at your router. See explain_connect_error() in transport.cpp, which
+# catches that sentence on the way out.
+#
+# An ad-hoc signature changes with every build, so macOS may ask again after a
+# rebuild. That is worth it against not being asked at all.
+find_program(CODESIGN_TOOL codesign)
+if(CODESIGN_TOOL)
+    add_custom_command(TARGET dualscreen_companion POST_BUILD
+        COMMAND ${CODESIGN_TOOL} --force --sign -
+                "$<TARGET_BUNDLE_DIR:dualscreen_companion>"
+        COMMENT "Signing the bundle (ad-hoc)"
+        VERBATIM)
+else()
+    message(STATUS "codesign not found; the bundle will be unsigned and macOS "
+                   "may refuse it the local network")
+endif()
+
 # Where `cmake --build` leaves the thing you double-click, said out loud
 # because a bundle is a directory and does not look like a build output.
 add_custom_command(TARGET dualscreen_companion POST_BUILD

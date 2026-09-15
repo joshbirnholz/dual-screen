@@ -142,6 +142,34 @@ constexpr int kSendFlags = MSG_NOSIGNAL;
 constexpr int kSendFlags = 0;
 #endif
 
+// What a failed connect actually means, where the errno on its own misleads.
+//
+// macOS answers a connection to a local address that the app has not been
+// allowed to make with EHOSTUNREACH -- "No route to host", a sentence that
+// sends somebody to look at their router. There is nothing wrong with the
+// route. Since macOS 15 an application has to be granted the local network
+// before it may open one, and a refusal is reported as though the machine
+// were not there.
+//
+// Worth catching rather than passing the errno straight through, because
+// this app's whole business is connecting to a machine on the local network:
+// if it cannot, that is the first thing to suspect and the last thing the
+// error text suggests. It reaches the player, not just the log -- the session
+// puts its failure reason on screen.
+std::string explain_connect_error(int code, const std::string& address) {
+    std::string reason = std::string("connect: ") + std::strerror(code);
+#if defined(__APPLE__)
+    if (code == EHOSTUNREACH || code == ENETUNREACH || code == EPERM || code == EACCES) {
+        reason += " (" + address +
+                  " is on this network, so this is most likely macOS refusing the local network "
+                  "to this app: System Settings, Privacy & Security, Local Network)";
+    }
+#else
+    (void)address;
+#endif
+    return reason;
+}
+
 void refuse_sigpipe(int descriptor) {
 #if defined(SO_NOSIGPIPE)
     const int one = 1;
@@ -303,7 +331,7 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
         connecting_ = true;
         return true;
     }
-    if (error != nullptr) *error = std::string("connect: ") + std::strerror(errno);
+    if (error != nullptr) *error = explain_connect_error(errno, address);
     close();
     return false;
 }
@@ -394,7 +422,10 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
             return false;
         }
         if (result != 0) {
-            if (error != nullptr) *error = std::string("connect: ") + std::strerror(result);
+            // The same explanation as the immediate failure above: which of
+            // the two a refusal arrives through is the kernel's business, not
+            // a difference worth having two messages for.
+            if (error != nullptr) *error = explain_connect_error(result, peer_address_);
             return false;
         }
         connecting_ = false;

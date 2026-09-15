@@ -5,11 +5,11 @@ the Switch, Android and desktop companions do, including H.264 — it is the sam
 source files compiled again, not a port of them. What is here is the build and
 the bundle.
 
-**macOS only so far, and not yet run on one.** It was written on Linux, where
-it cannot be compiled: nothing below has been through an Apple compiler, let
-alone a Mac. The parts that could be checked from here were — see **What has
-actually been verified** at the end, which is worth reading before assuming
-this works.
+**macOS only so far.** It builds and runs on an Apple silicon Mac — an M2 gets
+an OpenGL 3.3 core context, finds a host on the network and loads its artwork.
+It is still developed on Linux, where it cannot be compiled, so anything below
+that has not been through a Mac is marked as such: see **What has actually been
+verified** at the end.
 
 iOS and tvOS are the reason this lives in its own directory with one source
 list and one plist template rather than as a branch of the root build. Neither
@@ -49,11 +49,41 @@ by default. One architecture at a time is the ordinary case.
 It looks for a host on the local network by itself, the same as every other
 companion. `--connect <address>` skips the search.
 
-**macOS will ask about the local network the first time**, and the app does
-nothing at all if refused — finding a machine on the network *is* the app. The
-sentence in the permission dialog comes from `NSLocalNetworkUsageDescription`
-in `Info.plist.in`. If it was refused once and never asked again, it is in
-System Settings → Privacy & Security → Local Network.
+### The local network
+
+**macOS will ask about the local network**, and the app does nothing at all if
+refused — finding a machine on the network *is* the app. The sentence in the
+dialog comes from `NSLocalNetworkUsageDescription` in `Info.plist.in`.
+
+A refusal does not look like a refusal. It looks like this:
+
+```
+[info ] found host steamdeck at 192.168.0.56 running Lunch
+[info ] joining steamdeck (192.168.0.56) as the top screen
+[warn ] companion session failed: connect: No route to host
+```
+
+Finding the host works, because *receiving* a broadcast somebody else sent is
+not something an app has to be allowed to do. Connecting to it is, and macOS
+refuses it as EHOSTUNREACH — a sentence that sends you to look at your router,
+where there is nothing wrong. The app now says so itself; that log is from
+before it did.
+
+If it happens:
+
+- **System Settings → Privacy & Security → Local Network**, and check
+  Dualscreen Companion is on. If it is not listed, it was never asked.
+- Test the route separately: `nc -vz <host address> 47821` from Terminal.
+  Terminal has its own permission, so if that connects and the app does not,
+  it is the app's grant and not the network. If *that* fails too, it is a real
+  routing problem — a VPN, or a guest network with client isolation on.
+- An app is asked at most once per identity, so a bundle macOS has no identity
+  for may never be asked. The build signs it ad-hoc for exactly this reason,
+  and an ad-hoc signature changes every build, so a rebuild can mean being
+  asked again. Copying the app to `/Applications` before the first run gives
+  it a stable home as well.
+
+### The log
 
 The log is at `~/Library/Logs/dualscreen/dualscreen.log`, which is also where
 Console.app will show it. There is a log at all because a bundle started from
@@ -120,7 +150,16 @@ From Linux, which is the honest limit:
 - The VideoToolbox name mapping, in `test_video_codec`.
 - The `~/Library` layout, in `test_config`.
 
-Not verified, because it cannot be from here: that it compiles with Apple's
-toolchain, that SDL2 and FFmpeg link as expected from Homebrew, that the bundle
-launches, that VideoToolbox decode actually opens on real hardware, or that the
-local-network prompt behaves as described.
+And on a real Mac, from the log of the first run (an M2, macOS, 3440x1440):
+
+- It compiles, links against Homebrew's SDL2 and FFmpeg, and launches.
+- `created a OpenGL 3.3 core context` — the core path, as predicted, and the
+  one `switch_client_gl33_headless` covers.
+- `video decode: available`, so FFmpeg is linked in.
+- The console artwork loads and the panel sizes itself to the display.
+- Discovery finds a host on the LAN.
+- The log lands in `~/Library/Logs/dualscreen/`.
+
+Still not verified: that VideoToolbox decode actually opens on Apple hardware
+(no session has got that far yet), that audio comes out, or that a controller
+maps as it should.
