@@ -95,52 +95,49 @@ inline constexpr unsigned kMaxConsecutiveDecodeFailures = 240;
 // climbs over a session and never comes back down. Sized from the jitter
 // actually measured instead, a calm link settles to the floor and a rough one
 // buys exactly the cover it needs, for exactly as long as it needs it.
-// What one frame's arrival says about the link's timing: how far off its due
-// time it was, and how fast the source is producing.
-struct VideoArrival {
-    // False when the arrival says nothing usable -- a serial that jumped, a
-    // gap that cannot be a frame. Neither field means anything then.
-    bool usable = false;
-    double deviation_ms = 0.0;
-    double source_period_ms = 0.0;
-};
-
-// Reads one arrival. `gap_ms` is the milliseconds since the previous frame
-// arrived and `advance` how many serials it moved on by -- which is how many
-// of the source's own frames it covers, since a host that cannot send every
-// frame still numbers them all. An arrival that is late only by the frames the
-// host chose not to send is not late at all, and this is where that
-// distinction is made; see the comments on the implementation.
-VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms);
-
-// How uneven the link has been lately, in milliseconds, from the deviations
-// fed into it.
+// How uneven the *link* has been lately, in milliseconds, from how long each
+// frame took to get here.
+//
+// Fed transit times -- the far end's send stamp subtracted from local arrival.
+// Those are not a delay anyone could act on: the two clocks have no
+// relationship, so the number includes an unknown constant offset. But the
+// offset is the same every time, so it vanishes the moment one transit is
+// compared with another, and what is left is queueing on the link. The
+// smallest transit seen recently is as close to "no queueing at all" as this
+// link gets, and everything above it is delay the link added.
+//
+// Measuring it this way rather than from the spacing of arrivals is the
+// difference between a buffer that helps and one that only costs. Arrivals
+// alone cannot tell a link that stalled from an emulator that rendered
+// slowly, and a buffer does nothing for the second: those frames were already
+// late when they were made, and holding the ones around them just adds delay
+// to a stutter that is still there. Citra on a Steam Deck swings between 18
+// and 58 frames a second, and measured from arrivals that read as 55 to 78ms
+// of link jitter -- on a link whose round trip averaged 34ms and was dropping
+// almost nothing.
 //
 // A high quantile of the recent ones rather than the worst of them. The worst
-// was what this used to be -- the largest deviation seen in the last couple of
-// seconds, decayed slowly -- and on a wifi link with an occasional bad moment
-// that is a latency ratchet: one arrival 150ms late buys four frames of buffer
-// that every frame after it then waits behind, and the next bad moment resets
-// the clock before the buffer has been given back. A Steam Deck on wifi held
-// the companion's buffer at its ceiling for whole sessions that way, on a link
-// whose round trip averaged 34ms.
-//
-// Buffering for the worst case does not even prevent the worst case: a hiccup
-// larger than whatever is held still hitches. What a buffer can do is absorb
-// the unevenness that happens all the time, and that is what a quantile
-// measures. The few arrivals past it are shown a frame late, which is the
-// trade Moonlight and Sunshine make by default and the one this app was asked
-// for.
+// is a latency ratchet: one arrival 150ms late buys four frames of buffer that
+// every frame after it waits behind, and the next bad moment re-arms it before
+// the first has been given back. Buffering for the worst case does not even
+// prevent the worst case -- a hiccup larger than what is held still hitches.
+// What a buffer can absorb is the unevenness that happens all the time, and
+// that is what a quantile measures. The few arrivals past it are shown a frame
+// late, which is the trade Moonlight and Sunshine make by default and the one
+// this app was asked for.
 class VideoJitter {
 public:
     void reset();
-    void add(double deviation_ms);
+    // `transit_ms` may be negative, and routinely is: it carries the clocks'
+    // offset, which can be of either sign. Only differences are taken.
+    void add(double transit_ms);
     double estimate() const { return estimate_; }
 
 private:
     // About two and a half seconds of a 50fps stream. Long enough to hold a
     // representative sample, short enough that a link which has settled stops
-    // paying for a spell when it had not.
+    // paying for a spell when it had not -- and short enough that the clocks
+    // drifting apart, which happens over minutes, never shows up inside it.
     static constexpr std::size_t kWindow = 128;
     std::vector<double> recent_;
     std::size_t next_ = 0;
@@ -409,6 +406,8 @@ private:
         uint16_t width = 0;
         uint16_t height = 0;
         uint16_t fragment_count = 0;
+        // What the host stamped on this picture. See VideoJitter.
+        uint32_t sent_at_ms = 0;
         std::size_t received_count = 0;
         std::vector<std::vector<uint8_t>> fragments;
         // Separate from fragments[i].empty(): a fragment can legitimately
@@ -540,11 +539,6 @@ private:
     uint64_t last_arrival_ms_ = 0;
     double frame_period_ms_ = 16.7;
     uint64_t frame_period() const;
-    // How fast the source is producing, which is not the same number once it
-    // starts dropping frames to fit the link: serials advance at the source's
-    // rate, arrivals at the link's. Only the jitter estimate wants this one --
-    // see where it is measured.
-    double source_period_ms_ = 16.7;
     // How unevenly frames have been arriving lately, in milliseconds, and the
     // buffer depth that calls for. Every frame held back is a frame of latency
     // paid for smoothness, so this buys only as much as the link is actually

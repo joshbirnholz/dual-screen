@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 24;
+constexpr uint16_t kProtocolVersion = 25;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -443,7 +443,33 @@ struct FrameFragmentHeader {
     // is the only reliable way to end the asking. Always true for encodings
     // that have no notion of a reference frame at all.
     bool keyframe = false;
+    // When the host sent this, on the host's own monotonic clock.
+    //
+    // The two machines' clocks have no relationship to each other and this
+    // does not try to give them one. What it buys is the *variation* in how
+    // long a frame took to arrive: the offset between the clocks is unknown
+    // but constant, so it cancels the moment two transit times are compared,
+    // and what is left is queueing on the link and nothing else.
+    //
+    // That distinction is the whole reason this exists. Unevenness measured
+    // from arrivals alone cannot tell a link that stalled from an emulator
+    // that rendered slowly, and buying buffer for the second does nothing but
+    // add delay -- those frames were already late when they were made. Citra
+    // on a Steam Deck swings between 18 and 58 frames a second, and that read
+    // as 55 to 78ms of link jitter on a link whose round trip averaged 34ms
+    // and was dropping almost nothing.
+    //
+    // Milliseconds, wrapping every 49 days, which outlasts any session and
+    // would be harmless anyway: only differences are ever taken.
+    uint32_t sent_at_ms = 0;
 };
+
+// FrameFragmentHeader on the wire: 8 (serial) + 1 (screen) + 1 (encoding)
+// + 2*4 (width, height, fragment index, fragment count) + 1 (keyframe)
+// + 4 (sent_at_ms). Named because the host sizes its datagram budget from it
+// and the decoder skips past it, and those two disagreeing is a whole frame
+// of garbage rather than an error.
+constexpr std::size_t kFrameFragmentHeaderBytes = 23;
 
 // The payload of a KeyframeRequest: which screen went wrong, and the serial
 // the far end last managed to put together whole (zero if it never has). The

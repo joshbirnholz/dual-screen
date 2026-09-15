@@ -763,6 +763,7 @@ void encode_frame_fragment(const FrameFragmentHeader& header, const uint8_t* pay
     put_u16(out, header.fragment_index);
     put_u16(out, header.fragment_count);
     put_u8(out, header.keyframe ? 1u : 0u);
+    put_u32(out, header.sent_at_ms);
     out.insert(out.end(), payload, payload + payload_size);
 }
 
@@ -780,15 +781,14 @@ bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentH
     reader.u16(out_header.fragment_count);
     uint8_t keyframe = 0;
     reader.u8(keyframe);
+    reader.u32(out_header.sent_at_ms);
     if (!reader.ok() || !screen_from_wire(screen, out_header.screen)) {
         return false;
     }
     out_header.encoding = static_cast<FrameEncoding>(encoding);
     out_header.keyframe = keyframe != 0u;
-    // 8 (serial) + 1 (screen) + 1 (encoding) + 2*4 (width/height/index/count)
-    // + 1 (keyframe).
-    out_payload = data + 19;
-    out_payload_size = size - 19;
+    out_payload = data + kFrameFragmentHeaderBytes;
+    out_payload_size = size - kFrameFragmentHeaderBytes;
     return true;
 }
 

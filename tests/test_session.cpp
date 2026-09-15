@@ -1806,101 +1806,87 @@ void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     CHECK_EQ(frames_in_flight_allowed(40, -1.0), std::size_t{2});
 }
 
-// A host that cannot send every frame it produces still numbers every one of
-// them, so the frames that do arrive come several serials apart. Counting that
-// as the link being uneven is what held a Mac companion's picture for 70ms
-// while the link's own round trip averaged 37ms.
-void test_frames_the_host_never_sent_are_not_the_links_unevenness() {
-    constexpr double source_period = 16.7;  // a 60fps game
-
-    // A host sending five frames out of every six, exactly on time. The gaps
-    // alternate between one period and two; nothing about the link is uneven.
-    const auto arrivals = [&] {
-        std::vector<std::pair<double, uint64_t>> out;  // gap, serials advanced
-        for (int round = 0; round < 200; ++round) {
-            for (int sent = 0; sent < 5; ++sent) out.emplace_back(source_period, 1);
-            out.emplace_back(source_period * 2, 2);
-        }
-        return out;
-    }();
-
-    VideoJitter jitter;
-    double period = source_period;
-    for (const auto& [gap, advance] : arrivals) {
-        const VideoArrival timing = video_arrival_timing(gap, advance, period);
-        CHECK(timing.usable);
-        period = timing.source_period_ms;
-        jitter.add(timing.deviation_ms);
-    }
-    CHECK(jitter.estimate() < 1.0);
-    CHECK_EQ(video_buffer_target_frames(jitter.estimate(), 20.0), kMinVideoBufferFrames);
-
-    // The same arrivals measured against the previous one instead of against
-    // the frames it covers -- which is what this replaced. The delivery period
-    // settles on the average of the two gaps, so every single arrival is
-    // "off", and the buffer pays for it.
-    double old_jitter = 0.0;
-    double delivery = source_period;
-    for (const auto& [gap, advance] : arrivals) {
-        (void)advance;
-        old_jitter = std::max(std::abs(gap - delivery), old_jitter * 0.99);
-        delivery = delivery * 0.95 + gap * 0.05;
-    }
-    CHECK(old_jitter > 10.0);
-    CHECK(video_buffer_target_frames(old_jitter, 20.0) > kMinVideoBufferFrames);
-
-    // And a frame that really is late still reads as late, which is the whole
-    // point of keeping the measurement at all.
-    const VideoArrival late = video_arrival_timing(source_period + 40.0, 1, period);
-    CHECK(late.usable);
-    CHECK(late.deviation_ms > 30.0);
-    CHECK(video_buffer_target_frames(late.deviation_ms, 20.0) > kMinVideoBufferFrames);
-
-    // A serial that jumps -- a reconnection, a counter starting again -- says
-    // nothing about the link and must not be read as a hiccup.
-    const VideoArrival jumped = video_arrival_timing(5000.0, 4000, period);
-    CHECK(!jumped.usable);
-}
-
 // The link the Steam Deck actually provides: mostly even, with one bad moment
 // a second. Sizing the buffer from the worst of those pins it at the ceiling
 // for the whole session; sizing it from what the link does nearly all the time
 // costs a hitch on the bad moments and nothing the rest of the time.
 void test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer() {
     constexpr double period = 20.0;
+    // Transit times, so every one of them carries the clocks' offset. It is
+    // deliberately large and deliberately negative here: nothing downstream
+    // may depend on the two machines agreeing about the time, or on which of
+    // them is ahead.
+    constexpr double kClockOffset = -5000.0;
 
     VideoJitter quantile;
     double worst_with_decay = 0.0;
     for (int frame = 0; frame < 600; ++frame) {
         // A twelfth of a second is about one arrival in fifty at 50fps, which
         // is what a round trip averaging 34ms with a 190ms worst looks like.
-        const double deviation = (frame % 50 == 0) ? 120.0 : 4.0;
-        quantile.add(deviation);
-        worst_with_decay = std::max(deviation, worst_with_decay * 0.99);
+        const double queued = (frame % 50 == 0) ? 120.0 : 4.0;
+        quantile.add(kClockOffset + queued);
+        worst_with_decay = std::max(queued, worst_with_decay * 0.99);
     }
 
     // What this used to do: never less than the worst of the last couple of
     // seconds, so never less than the ceiling.
     CHECK_EQ(video_buffer_target_frames(worst_with_decay, period), kMaxVideoBufferFrames);
-    // What it does now.
-    CHECK(quantile.estimate() < 20.0);
-    CHECK_EQ(video_buffer_target_frames(quantile.estimate(), period), kMinVideoBufferFrames + 1);
+    // What it does now: nothing at all. One arrival in fifty is two frames in
+    // a hundred, which is inside the five this is willing to show a frame
+    // late, so the bad moment is not bought cover for -- it is allowed to
+    // hitch. That is the trade, stated plainly: the other ninety-eight frames
+    // in the hundred are not delayed for it.
+    CHECK(quantile.estimate() < 1.0);
+    CHECK_EQ(video_buffer_target_frames(quantile.estimate(), period), kMinVideoBufferFrames);
 
     // A link that is uneven all the time still buys the cover it needs -- the
     // quantile is not a cap, it is a measurement, and it follows the link up
-    // as readily as down.
+    // as readily as down. Alternating, because a constant transit is not an
+    // uneven link at all however large it is: a link that always takes 70ms
+    // is just a slow one, and needs no buffer.
     VideoJitter rough;
     for (int frame = 0; frame < 600; ++frame) {
-        rough.add(70.0);
+        rough.add(kClockOffset + ((frame % 2 == 0) ? 0.0 : 70.0));
     }
     CHECK_EQ(video_buffer_target_frames(rough.estimate(), period), kMaxVideoBufferFrames);
 
-    // And it gives it back once the link settles, within the window rather
-    // than over a whole session.
+    // And it gives all of it back once the link settles, within the window
+    // rather than over a whole session.
     for (int frame = 0; frame < 200; ++frame) {
-        rough.add(2.0);
+        rough.add(kClockOffset + 2.0);
     }
-    CHECK_EQ(video_buffer_target_frames(rough.estimate(), period), kMinVideoBufferFrames + 1);
+    CHECK_EQ(video_buffer_target_frames(rough.estimate(), period), kMinVideoBufferFrames);
+}
+
+// The point of the whole change: a source that renders unevenly is not an
+// uneven link, and must not be paid for as one.
+void test_an_emulator_rendering_unevenly_does_not_buy_buffer() {
+    constexpr double period = 33.0;
+    constexpr double kClockOffset = 1234.0;
+
+    // Citra on a Steam Deck, swinging between 18 and 58 frames a second: the
+    // gaps between arrivals are wild, but every frame crossed a quiet link in
+    // the same 12ms, because the link was never the problem.
+    VideoJitter link;
+    for (int frame = 0; frame < 600; ++frame) {
+        link.add(kClockOffset + 12.0);
+    }
+    CHECK(link.estimate() < 1.0);
+    CHECK_EQ(video_buffer_target_frames(link.estimate(), period), kMinVideoBufferFrames);
+
+    // Measured the old way -- from the spacing of arrivals against a smoothed
+    // idea of the source's rate -- the same session reads as tens of
+    // milliseconds of unevenness, and buys buffer that cannot help: those
+    // frames were late when they were made.
+    double smoothed_period = period;
+    double worst_deviation = 0.0;
+    for (int frame = 0; frame < 600; ++frame) {
+        const double gap = (frame % 2 == 0) ? 17.0 : 55.0;  // 58fps, then 18fps
+        worst_deviation = std::max(worst_deviation, std::abs(gap - smoothed_period));
+        smoothed_period = smoothed_period * 0.95 + gap * 0.05;
+    }
+    CHECK(worst_deviation > 20.0);
+    CHECK(video_buffer_target_frames(worst_deviation, period) > kMinVideoBufferFrames);
 }
 
 // Measured on hardware: the pacing clock shows one frame per period, which
@@ -2294,8 +2280,8 @@ int main() {
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
     test_the_in_flight_window_covers_the_delay_this_link_shows();
-    test_frames_the_host_never_sent_are_not_the_links_unevenness();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
+    test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();

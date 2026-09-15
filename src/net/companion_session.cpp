@@ -421,6 +421,11 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         slot.width = header.width;
         slot.height = header.height;
         slot.fragment_count = header.fragment_count;
+        // Every fragment of one picture carries the same stamp, so the first
+        // to arrive is as good as any -- and is the one that has to be kept,
+        // because it is the only one guaranteed to exist: a frame is complete
+        // when the last piece lands, whichever piece that turns out to be.
+        slot.sent_at_ms = header.sent_at_ms;
         slot.fragments.resize(header.fragment_count);
         slot.received.assign(header.fragment_count, false);
     } else if (!same_transmission) {
@@ -455,6 +460,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     frame.width = slot.width;
     frame.height = slot.height;
     frame.encoding = slot.encoding;
+    const uint32_t sent_at_ms = slot.sent_at_ms;
     for (const std::vector<uint8_t>& fragment : slot.fragments) {
         frame.payload.insert(frame.payload.end(), fragment.begin(), fragment.end());
     }
@@ -464,20 +470,21 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     // cadence on screen is even whatever the arrivals did.
     if (frame.serial != received_serial_) {
         const uint64_t now = monotonic_millis();
+        // How long this frame took to get here, on two clocks that disagree by
+        // an unknown constant. Only ever compared with other transits, where
+        // that constant cancels -- see VideoJitter.
+        //
+        // Both sides are truncated to 32 bits on the wire, so this is done in
+        // 32-bit arithmetic and allowed to wrap: the difference comes out
+        // right across the wrap, which a wider subtraction would get wrong
+        // once every 49 days.
+        const uint32_t sent = sent_at_ms;
+        if (sent != 0) {
+            const uint32_t arrived = static_cast<uint32_t>(now);
+            jitter_.add(static_cast<double>(static_cast<int32_t>(arrived - sent)));
+        }
         if (last_arrival_ms_ != 0 && now > last_arrival_ms_) {
             const double gap = static_cast<double>(now - last_arrival_ms_);
-            // How many of the source's own frames this arrival covers.
-            // Serials advance at the rate the game produces whether or not
-            // each one is sent -- see HostSession::publish_screens, which
-            // says so at length -- so three serials is three frames of the
-            // game, not one frame arriving very late.
-            const uint64_t advance =
-                frame.serial > received_serial_ ? frame.serial - received_serial_ : 0;
-            const VideoArrival timing = video_arrival_timing(gap, advance, source_period_ms_);
-            if (timing.usable) {
-                source_period_ms_ = timing.source_period_ms;
-                jitter_.add(timing.deviation_ms);
-            }
             if (gap >= 4.0 && gap <= 100.0) {
                 // Separately: how fast frames are actually arriving, which is
                 // what the picture is advanced at. A frame the host never sent
@@ -1155,80 +1162,27 @@ uint64_t CompanionSession::frame_period() const {
     return static_cast<uint64_t>(clamped + 0.5);
 }
 
-VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms) {
-    VideoArrival out;
-    out.source_period_ms = source_period_ms;
-    // Beyond a handful, this is not a host skipping frames but a
-    // discontinuity: a stall, a reconnection, a serial counter that started
-    // again. Nothing to learn about the link's timing from it either way, and
-    // the same goes for a gap so short or so long that it cannot be one frame.
-    constexpr uint64_t kMostFramesSkipped = 8;
-    if (advance < 1 || advance > kMostFramesSkipped) {
-        return out;
-    }
-    const double steps = static_cast<double>(advance);
-    if (gap_ms < 0.0 || gap_ms > 1000.0) {
-        return out;
-    }
-    const double per_frame = gap_ms / steps;
-    // How fast the source itself is producing, which is the pace each of the
-    // frames this arrival covers would have been due at. Only updated from a
-    // gap that could plausibly be one frame: an arrival that came in a burst
-    // behind another says nothing about the rate the game is running at, and
-    // letting it in would drag the pace down towards the burst's.
-    //
-    // The deviation below is still taken from it, though, and that is the
-    // point of the two gates being separate. Frames arriving three at once
-    // and then not at all is precisely the unevenness a buffer is for, and
-    // the version of this that skipped those arrivals outright could not see
-    // the commonest shape a paced sender produces.
-    if (per_frame >= 4.0 && per_frame <= 100.0) {
-        out.source_period_ms = source_period_ms * 0.95 + per_frame * 0.05;
-    }
-    // How far this arrival was off that pace. Taken up immediately and given
-    // back slowly: the cover has to be there for the next uneven arrival,
-    // which has already happened by the time an average would have noticed,
-    // but a link that has settled should not keep paying for a hiccup a few
-    // seconds ago.
-    //
-    // Measured against the frames it covers rather than against the previous
-    // arrival, because those stop being the same question the moment the host
-    // starts dropping frames. A frame sent three serials after the last one
-    // arrives three periods later and is exactly on time; counted as two
-    // periods late, which is what comparing against the last arrival does, it
-    // pinned the buffer at kMaxVideoBufferFrames and held every picture for
-    // 70ms to smooth out an unevenness that was never in the link. A Steam
-    // Deck dropping 6 to 22 frames a second read 56 to 79ms of jitter that
-    // way, on a round trip averaging 37ms.
-    //
-    // And smoothing that out would not have helped even if it were free: the
-    // frames that do arrive are an uneven sample of a steady game, so spacing
-    // them evenly on the wall clock does not put them back where they came
-    // from. A buffer can only undo unevenness the link added, which is what
-    // this now measures and all it now pays for.
-    out.deviation_ms = std::abs(gap_ms - steps * out.source_period_ms);
-    out.usable = true;
-    return out;
-}
-
 void VideoJitter::reset() {
     recent_.clear();
     next_ = 0;
     estimate_ = 0.0;
 }
 
-void VideoJitter::add(double deviation_ms) {
-    const double value = std::max(0.0, deviation_ms);
+void VideoJitter::add(double transit_ms) {
     if (recent_.size() < kWindow) {
-        recent_.push_back(value);
+        recent_.push_back(transit_ms);
     } else {
-        recent_[next_] = value;
+        recent_[next_] = transit_ms;
         next_ = (next_ + 1) % kWindow;
     }
-    // The quantile the buffer is sized from. Not the maximum, for the reason
-    // set out on the class; not a mean either, which a long tail of on-time
-    // arrivals would drag under what the uneven ones actually need. Five
-    // arrivals in a hundred past it, each shown one frame late.
+    // The quantile the buffer is sized from, measured up from the quietest
+    // transit in the window -- which is this link with nothing queued on it,
+    // and the only baseline available when the clocks themselves are unknown.
+    //
+    // Not the maximum, for the reason set out on the class; not a mean either,
+    // which a long tail of prompt arrivals would drag under what the late ones
+    // actually need. Five frames in a hundred past it, each shown one frame
+    // late.
     constexpr double kCoverage = 0.95;
     std::vector<double> sorted(recent_);
     const std::size_t index = static_cast<std::size_t>(
@@ -1236,7 +1190,8 @@ void VideoJitter::add(double deviation_ms) {
                          kCoverage * static_cast<double>(sorted.size())));
     std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(index),
                      sorted.end());
-    estimate_ = sorted[index];
+    const double quietest = *std::min_element(recent_.begin(), recent_.end());
+    estimate_ = std::max(0.0, sorted[index] - quietest);
 }
 
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {

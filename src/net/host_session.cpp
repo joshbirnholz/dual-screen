@@ -191,7 +191,7 @@ constexpr uint64_t kAckStallMs = 3000;
 // (encode_frame_fragment()) are both accounted for -- see
 // kMaxMediaDatagramBytes for why the datagram itself is capped where it is.
 constexpr std::size_t kMediaHeaderBytes = 9;    // u64 session_token + u8 type
-constexpr std::size_t kFragmentHeaderBytes = 19;  // FrameFragmentHeader, on the wire
+constexpr std::size_t kFragmentHeaderBytes = kFrameFragmentHeaderBytes;
 constexpr std::size_t kMaxFragmentPayload =
     kMaxMediaDatagramBytes - kMediaHeaderBytes - kFragmentHeaderBytes;
 
@@ -1297,6 +1297,10 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     header.width = frame.width;
     header.height = frame.height;
     header.keyframe = frame.keyframe;
+    // Stamped once for the whole frame rather than per fragment: what the far
+    // end measures is when the picture was handed to the link, and the
+    // fragments of one picture are all the same event.
+    header.sent_at_ms = static_cast<uint32_t>(monotonic_millis());
     header.fragment_count = static_cast<uint16_t>(
         (frame.payload.size() + kMaxFragmentPayload - 1) / kMaxFragmentPayload);
 
