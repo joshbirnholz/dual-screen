@@ -29,25 +29,50 @@ open "build-macos/Dualscreen Companion.app"
 Same two commands, after `git pull`. Both of them: the configure step is what
 picks up new files and refreshes the build stamp, and it is cheap to re-run.
 
-Two things make a rebuild look like it did nothing:
+The bundle is written in place, so it looks the same afterwards whether the
+build replaced it or had nothing to do. Three ways a rebuild appears to do
+nothing, in the order they are worth checking:
 
-- **`open` on an application that is already running just brings it to the
-  front.** It does not start the new one. Quit it first — ⌘Q, or
-  `killall "Dualscreen Companion"`.
-- **There may be more than one copy.** `open` takes the path you give it, but a
+- **The app was still running.** This is the one that fools everybody, because
+  it is two problems wearing one coat. The linker replaces the file by
+  unlinking it and writing a new one, which succeeds while the old one is
+  running — and the running process carries on executing the old copy, because
+  it holds the file it started from. Then `open` on an application that is
+  already running just brings it to the front rather than launching the new
+  one. So the build genuinely succeeded, the bundle genuinely was overwritten,
+  and what is in front of you is still the old program. **Quit it first** —
+  ⌘Q, or `killall "Dualscreen Companion"`.
+- **There is more than one copy.** `open` takes the path you give it, but a
   copy in `/Applications` and a copy in `build-macos` are two different
   programs and only one of them was rebuilt.
+- **The source never changed.** `git pull` first, and check `git log
+  --oneline -1`.
 
-The first line but one of the log says which build is actually running:
+Two things say which build is which, and they should agree. The build prints
+what it wrote:
+
+```
+Built /Users/you/dual-screen/build-macos/Dualscreen Companion.app -- dedc187, configured 2026-09-15 17:39
+```
+
+and the app says what it is, in the second line of its log:
 
 ```
 [info ] Dualscreen starting; log at /Users/you/Library/Logs/dualscreen/dualscreen.log
-[info ] this build is 2eb4e96, configured 2026-09-15 17:39
+[info ] this build is dedc187, configured 2026-09-15 17:39
 ```
 
-`with local changes` after the hash means the tree had uncommitted edits when
-it was configured. A build whose stamp is older than you expect did not pick up
-what you pulled — re-run the configure step.
+If the build says one thing and the app says another, the app you are looking
+at is not the one that was just built. `with local changes` after the hash
+means the tree had uncommitted edits when it was configured.
+
+If you want to be certain of a clean start, the bundle is only a directory:
+
+```sh
+killall "Dualscreen Companion" 2>/dev/null
+rm -rf "build-macos/Dualscreen Companion.app"
+cmake -S apple -B build-macos && cmake --build build-macos
+```
 
 FFmpeg is optional and wanted: without it a Wii U's GamePad screen arrives as
 changed tiles at roughly seventeen times the bandwidth (see

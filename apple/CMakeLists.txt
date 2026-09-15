@@ -115,8 +115,13 @@ target_include_directories(dualscreen_companion PRIVATE
     ${DUALSCREEN_ROOT}/companion/source
 )
 target_compile_options(dualscreen_companion PRIVATE -Wall -Wextra)
-target_compile_definitions(dualscreen_companion PRIVATE
-    DS_BUILD_STAMP="${DUALSCREEN_GIT_HASH}, configured ${DUALSCREEN_CONFIGURED_AT}")
+# On main.cpp alone, not on the target. The stamp carries a timestamp and so
+# changes at every configure, and a definition on the target would recompile
+# all thirty-six sources each time -- turning the cheap step of the two build
+# commands into the expensive one, for a string that one file reads.
+set_source_files_properties("${DUALSCREEN_ROOT}/companion/source/main.cpp"
+    PROPERTIES COMPILE_DEFINITIONS
+    "DS_BUILD_STAMP=\"${DUALSCREEN_GIT_HASH}, configured ${DUALSCREEN_CONFIGURED_AT}\"")
 
 # --- SDL2 -------------------------------------------------------------------
 #
@@ -248,9 +253,14 @@ else()
                    "may refuse it the local network")
 endif()
 
-# Where `cmake --build` leaves the thing you double-click, said out loud
-# because a bundle is a directory and does not look like a build output.
+# What was just written, and what is in it.
+#
+# A bundle is a directory with a fixed name, so a build that wrote a new one
+# and a build that wrote nothing look identical afterwards -- the folder is
+# there either way, with the same name and the same icon. Printing the stamp
+# here means the build output itself says what it produced, without having to
+# start the app to find out.
 add_custom_command(TARGET dualscreen_companion POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo
-            "Built $<TARGET_BUNDLE_DIR:dualscreen_companion>"
+            "Built $<TARGET_BUNDLE_DIR:dualscreen_companion> -- ${DUALSCREEN_GIT_HASH}, configured ${DUALSCREEN_CONFIGURED_AT}"
     VERBATIM)
