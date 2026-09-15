@@ -95,6 +95,23 @@ inline constexpr unsigned kMaxConsecutiveDecodeFailures = 240;
 // climbs over a session and never comes back down. Sized from the jitter
 // actually measured instead, a calm link settles to the floor and a rough one
 // buys exactly the cover it needs, for exactly as long as it needs it.
+// What one frame's arrival says about the link's timing: how fast the source
+// is producing, and how uneven delivery has been.
+struct VideoArrival {
+    double jitter_ms = 0.0;
+    double source_period_ms = 0.0;
+};
+
+// Folds one arrival into both. `gap_ms` is the milliseconds since the previous
+// frame arrived and `advance` how many serials it moved on by -- which is how
+// many of the source's own frames it covers, since a host that cannot send
+// every frame still numbers them all. An arrival that is late only by the
+// frames the host chose not to send is not late at all, and this is where that
+// distinction is made; see the comments on the implementation. Returns the two
+// values unchanged when the arrival says nothing usable.
+VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms,
+                                  double jitter_ms);
+
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 
 // How long a finished frame may sit waiting before the pacing clock has to
@@ -488,6 +505,11 @@ private:
     uint64_t last_arrival_ms_ = 0;
     double frame_period_ms_ = 16.7;
     uint64_t frame_period() const;
+    // How fast the source is producing, which is not the same number once it
+    // starts dropping frames to fit the link: serials advance at the source's
+    // rate, arrivals at the link's. Only jitter_ms_ wants this one -- see
+    // where it is measured.
+    double source_period_ms_ = 16.7;
     // How unevenly frames have been arriving lately, in milliseconds, and the
     // buffer depth that calls for. Every frame held back is a frame of latency
     // paid for smoothness, so this buys only as much as the link is actually

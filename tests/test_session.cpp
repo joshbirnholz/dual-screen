@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "net/companion_session.hpp"
@@ -1770,6 +1771,61 @@ void test_an_uneven_link_buys_cover_and_gives_it_back() {
     CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMinVideoBufferFrames + 1);
 }
 
+// A host that cannot send every frame it produces still numbers every one of
+// them, so the frames that do arrive come several serials apart. Counting that
+// as the link being uneven is what held a Mac companion's picture for 70ms
+// while the link's own round trip averaged 37ms.
+void test_frames_the_host_never_sent_are_not_the_links_unevenness() {
+    constexpr double source_period = 16.7;  // a 60fps game
+
+    // A host sending five frames out of every six, exactly on time. The gaps
+    // alternate between one period and two; nothing about the link is uneven.
+    const auto arrivals = [&] {
+        std::vector<std::pair<double, uint64_t>> out;  // gap, serials advanced
+        for (int round = 0; round < 200; ++round) {
+            for (int sent = 0; sent < 5; ++sent) out.emplace_back(source_period, 1);
+            out.emplace_back(source_period * 2, 2);
+        }
+        return out;
+    }();
+
+    double jitter = 0.0;
+    double period = source_period;
+    for (const auto& [gap, advance] : arrivals) {
+        const VideoArrival timing = video_arrival_timing(gap, advance, period, jitter);
+        jitter = timing.jitter_ms;
+        period = timing.source_period_ms;
+    }
+    CHECK(jitter < 1.0);
+    CHECK_EQ(video_buffer_target_frames(jitter, 20.0), kMinVideoBufferFrames);
+
+    // The same arrivals measured against the previous one instead of against
+    // the frames it covers -- which is what this replaced. The delivery period
+    // settles on the average of the two gaps, so every single arrival is
+    // "off", and the buffer pays for it.
+    double old_jitter = 0.0;
+    double delivery = source_period;
+    for (const auto& [gap, advance] : arrivals) {
+        (void)advance;
+        old_jitter = std::max(std::abs(gap - delivery), old_jitter * 0.99);
+        delivery = delivery * 0.95 + gap * 0.05;
+    }
+    CHECK(old_jitter > 10.0);
+    CHECK(video_buffer_target_frames(old_jitter, 20.0) > kMinVideoBufferFrames);
+
+    // And a frame that really is late still buys cover, which is the whole
+    // point of keeping the measurement at all.
+    const VideoArrival late = video_arrival_timing(source_period + 40.0, 1, period, jitter);
+    CHECK(late.jitter_ms > 30.0);
+    CHECK(video_buffer_target_frames(late.jitter_ms, 20.0) > kMinVideoBufferFrames);
+
+    // A serial that jumps -- a reconnection, a counter starting again -- says
+    // nothing about the link and must not be read as a hiccup.
+    const VideoArrival jumped = video_arrival_timing(5000.0, 4000, period, jitter);
+    CHECK_EQ(jumped.jitter_ms, jitter);
+    CHECK_EQ(jumped.source_period_ms, period);
+}
+
 // Measured on hardware: the pacing clock shows one frame per period, which
 // conserves the queue's depth exactly, so a backlog built during one hiccup
 // became permanent latency -- a session climbed from showing frames on arrival
@@ -2160,6 +2216,7 @@ int main() {
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
+    test_frames_the_host_never_sent_are_not_the_links_unevenness();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
