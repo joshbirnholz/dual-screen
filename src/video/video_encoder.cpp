@@ -121,9 +121,25 @@ bool VideoEncoder::open(const EncoderConfig& config, std::string* error) {
     for (const std::string& name : config.backends) {
         std::string reason;
         if (open_backend(name, config, &reason)) {
+            // Says outright whether this size is the source's or this app's
+            // doing. Without that the line is a number with no provenance, and
+            // "the stream looks lower resolution than it should" cannot be
+            // told from the log: a Wii U title drawing its television at
+            // 960x540 and a companion small enough to have capped it there
+            // produce the same line. They are very different answers -- one is
+            // the game, the other is this end -- and reading it wrong costs a
+            // round trip to the far side of the world and back.
+            const bool reduced = config.source_width > 0 && config.source_height > 0 &&
+                                 (config.source_width != config.width ||
+                                  config.source_height != config.height);
+            const std::string provenance =
+                reduced ? ", scaled down from the " + std::to_string(config.source_width) + "x" +
+                              std::to_string(config.source_height) +
+                              " the game draws it at, to fit what the far end can show"
+                        : ", which is the size the game itself is drawing it at";
             log_info("video encoder: " + backend_ + " at " + std::to_string(config.width) + "x" +
-                     std::to_string(config.height) + ", " + std::to_string(config.bitrate_kbps) +
-                     " kbit/s");
+                     std::to_string(config.height) + provenance + ", " +
+                     std::to_string(config.bitrate_kbps) + " kbit/s");
             return true;
         }
         log_info("video encoder: " + name + " would not open: " + reason);
