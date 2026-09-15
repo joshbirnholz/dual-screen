@@ -42,6 +42,7 @@
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
 #include "util/child_process.hpp"
+#include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -2099,6 +2100,10 @@ int App::run(const AppOptions& options) {
     if (set_log_file(impl.paths.log_file)) {
         log_info("dualscreen starting; log at " + impl.paths.log_file);
     }
+    // Immediately after, because everything below is read in the light of it:
+    // a log from a binary older than the change being looked for says nothing
+    // about the change. See build_stamp.hpp.
+    log_build_stamp();
     // The environment is what actually differs between Game Mode and desktop,
     // so it is the first thing worth knowing when only one of them works.
     for (const char* name : {"XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY", "SDL_VIDEODRIVER",

@@ -47,6 +47,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/control_guide.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
+    src/util/build_stamp.cpp
     src/util/log.cpp
 )
 list(TRANSFORM DUALSCREEN_COMPANION_SOURCES PREPEND "${DUALSCREEN_ROOT}/")

@@ -80,6 +80,10 @@ dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(rodin.otf kRodinOtf BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 
+set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.cmake)
+dualscreen_stamp_build("${CMAKE_CURRENT_SOURCE_DIR}/src/util/build_stamp.cpp")
+
 add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
     src/app.cpp
@@ -132,6 +136,7 @@ add_library(dualscreen_core STATIC
     src/ui/layout_picker.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
+    src/util/build_stamp.cpp
     src/util/child_process.cpp
     src/util/log.cpp
 )
@@ -203,7 +208,6 @@ install(TARGETS dualscreen RUNTIME DESTINATION bin)
 # the client be run against a real host and looked at (see
 # tests/run_switch_client_test.sh). It is compiled on every build, so a file
 # added to the client cannot quietly go missing from the ones that are not.
-set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/companion_sources.cmake)
 
 add_executable(dualscreen-companion

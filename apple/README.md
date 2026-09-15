@@ -48,8 +48,9 @@ nothing, in the order they are worth checking:
 - **The source never changed.** `git pull` first, and check `git log
   --oneline -1`.
 
-Two things say which build is which, and they should agree. The build prints
-what it wrote:
+Every build of this app now says which build it is in the second line of its
+log, on every platform -- see `src/util/build_stamp.hpp` for why. On a Mac two
+things say it and they should agree. The build prints what it wrote:
 
 ```
 Built /Users/you/dual-screen/build-macos/Dualscreen Companion.app -- dedc187, configured 2026-09-15 17:39

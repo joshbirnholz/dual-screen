@@ -79,6 +79,7 @@ extern "C" {
 #include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/layout_picker.hpp"
+#include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
 namespace ds::sw {
@@ -1079,15 +1080,12 @@ int main(int argc, char** argv) {
         } else {
             log_info("Dualscreen starting");
         }
-        // Which build this actually is. A bundle looks the same whatever is
-        // inside it, so without this "I rebuilt it and nothing changed" cannot
-        // be told from "the build did not pick the change up" -- which is a
-        // question that has to be answered from a log, from somewhere else.
-#ifdef DS_BUILD_STAMP
-        log_info(std::string("this build is ") + DS_BUILD_STAMP);
-#endif
     }
 #endif
+
+    // Which build this actually is, on every platform rather than only the one
+    // whose bundle hides it best. See build_stamp.hpp.
+    log_build_stamp();
 
     int status = 0;
     if (!options.parse_error.empty()) {
