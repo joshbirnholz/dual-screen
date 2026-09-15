@@ -65,6 +65,14 @@ bool reading_has_weight(const float accel[3]) {
 
 }  // namespace
 
+bool motion_wanted_here(bool acting_as_companion, bool host_wants_motion,
+                        bool running_a_game_here, bool console_uses_motion) {
+    if (acting_as_companion) {
+        return host_wants_motion;
+    }
+    return running_a_game_here && console_uses_motion;
+}
+
 MotionReader::~MotionReader() { close_sensors(); }
 
 void MotionReader::set_enabled(bool enabled) {

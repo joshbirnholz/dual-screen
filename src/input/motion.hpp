@@ -12,6 +12,31 @@
 
 namespace ds {
 
+// Whether this device should be reading its own sensors at all.
+//
+// Three cases, and the middle one was missing, which cost a Steam Deck its
+// gyro for as long as it was the machine running the game:
+//
+//   Showing someone else's game -- take it from that host, which is the only
+//   end that knows whether anything over there reads motion.
+//
+//   Running the game here -- take it from the console being run. A Wii U's
+//   GamePad has motion in it; a DS does not.
+//
+//   Doing neither -- read nothing, and stop asking a DSU server for something
+//   nobody wants.
+//
+// The trap is that a host has a companion session of its own: that is how it
+// browses for other hosts, and a Steam Deck duly finds itself in its own
+// beacon. Asking that idle session what the host wants gets a flat no, and
+// answering it switched the sensors off on the machine actually running the
+// game -- every frame, a frame after start-up had switched them on. The
+// symptom was a Deck with working gyro as a companion and none as a host, and
+// a DSU client that went quiet without ever saying what it found, because the
+// reader that polls it had been closed underneath it.
+bool motion_wanted_here(bool acting_as_companion, bool host_wants_motion, bool running_a_game_here,
+                        bool console_uses_motion);
+
 // Where a device's own sense of how it is being held comes from.
 //
 // Three places, because the three devices this runs on put it in three

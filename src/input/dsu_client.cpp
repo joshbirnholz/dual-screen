@@ -338,10 +338,19 @@ void DsuClient::poll() {
         said_never_answered_ = true;
         const std::string where = address_ + ":" + std::to_string(port_);
         if (nothing_is_listening(address_, port_)) {
+            // The Steam Deck advice only where there could be one. On a Mac
+            // this line named SteamDeckGyroDSU and a systemctl unit at a
+            // machine that has neither, which reads as a real finding about
+            // the Deck in the same session -- and was quoted back as one.
+#if defined(__linux__)
+            const std::string advice =
+                " The DSU server is not running; on a Steam Deck that is SteamDeckGyroDSU, and "
+                "`systemctl --user status sdgyrodsu` says whether it is up.";
+#else
+            const std::string advice = " No DSU server is running on this machine.";
+#endif
             log_warn("motion: nothing is listening on " + where +
-                     " at all, so this device reports no motion. The DSU server is not running; "
-                     "on a Steam Deck that is SteamDeckGyroDSU, and `systemctl --user status "
-                     "sdgyrodsu` says whether it is up.");
+                     " at all, so this device reports no motion." + advice);
         } else {
             log_warn("motion: something is listening on " + where +
                      " but it has not answered in " + std::to_string(kNeverAnsweredMs / 1000) +

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "audio/audio_output.hpp"
+#include "input/motion.hpp"
 #include "input/motion_compare.hpp"
 #include "config/game_config.hpp"
 #include "config/paths.hpp"
@@ -2712,12 +2713,21 @@ int App::run(const AppOptions& options) {
             }
             // Outside the is_companion() block below on purpose: this has to
             // keep being told when the session ends, not only while one is up
-            // -- and host_wants_motion() goes false the moment it does. Told
-            // rather than worked out from the console here, because it is the
-            // host that knows whether anything at its far end reads motion at
-            // all. Cheap to repeat: set_motion_enabled() with what is already
-            // set does nothing.
-            impl.input.set_motion_enabled(impl.companion_session->host_wants_motion());
+            // -- and host_wants_motion() goes false the moment it does.
+            //
+            // But it is not the host's answer alone. This line used to hand
+            // host_wants_motion() straight through, and a host has a companion
+            // session of its own -- that is how it browses, and a Steam Deck
+            // duly finds itself in its own beacon -- so an idle session's flat
+            // no was switching off the sensors of the machine running the
+            // game, one frame after apply_system() switched them on. See
+            // motion_wanted_here(), which is where the three cases now live
+            // and where they are tested.
+            impl.input.set_motion_enabled(
+                motion_wanted_here(impl.is_companion(),
+                                   impl.companion_session->host_wants_motion(),
+                                   impl.local_game() != nullptr,
+                                   system_profile(impl.system).uses_motion));
             // Alongside the session's own stream report, on the same clock, so
             // the two lines can be read together.
             impl.audio.report(network_now);

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "input/dsu_client.hpp"
+#include "input/motion.hpp"
 #include "net/transport.hpp"
 
 using namespace ds;
@@ -257,6 +258,37 @@ void test_it_can_be_turned_off() {
 
 }  // namespace
 
+// The rule that decides whether this device reads its own sensors at all.
+//
+// Worth a test of its own because getting it wrong is silent: nothing fails,
+// nothing is logged, the sensors are simply never read, and every layer below
+// -- the DSU client included -- goes quiet without being able to say why.
+// That is exactly what happened, and this is the case that was missing.
+void test_a_host_running_the_game_reads_its_own_sensors() {
+    // The bug. A host browses for other hosts, so it has a companion session
+    // of its own, and on a Steam Deck that session even finds this very
+    // machine in its own beacon. It is not connected to anything, so it wants
+    // no motion -- and handing that answer straight through switched off the
+    // sensors of the machine actually running the game.
+    CHECK(motion_wanted_here(/*acting_as_companion=*/false, /*host_wants_motion=*/false,
+                             /*running_a_game_here=*/true, /*console_uses_motion=*/true));
+
+    // A console with no motion in it does not get its sensors read just for
+    // running a game.
+    CHECK(!motion_wanted_here(false, false, true, false));
+
+    // Nothing running here yet: the menu, the game browser, a host waiting for
+    // an emulator to connect. Nobody is reading motion, so nothing asks a DSU
+    // server for it either.
+    CHECK(!motion_wanted_here(false, false, false, true));
+
+    // Showing someone else's game: the host decides, whatever this device
+    // thinks it is running. It is the only end that knows what reads motion.
+    CHECK(motion_wanted_here(/*acting_as_companion=*/true, /*host_wants_motion=*/true,
+                             /*running_a_game_here=*/false, /*console_uses_motion=*/false));
+    CHECK(!motion_wanted_here(true, false, true, true));
+}
+
 int main() {
     test_a_reading_comes_through_in_sdl_units_and_axes();
     test_the_conversion_agrees_with_what_cemu_would_have_done_itself();
@@ -264,5 +296,6 @@ int main() {
     test_the_subscription_is_something_a_server_would_accept();
     test_the_client_subscribes_and_reads_from_a_server();
     test_it_can_be_turned_off();
+    test_a_host_running_the_game_reads_its_own_sensors();
     return test::finish("dsu");
 }
