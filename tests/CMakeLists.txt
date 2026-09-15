@@ -89,6 +89,7 @@ dualscreen_add_test(test_session)
 # other, and stay free to run alongside the tests that touch no socket.
 set_tests_properties(test_net test_session PROPERTIES RESOURCE_LOCK dualscreen_ports)
 dualscreen_add_test(test_config)
+dualscreen_add_test(test_game_title)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_quick_settings)
 dualscreen_add_test(test_controller_mapping)

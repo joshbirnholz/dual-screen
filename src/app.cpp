@@ -19,6 +19,7 @@
 #include "core/external_screen_source.hpp"
 #include "core/gl_call_trace.hpp"
 #include "core/libretro_screen_source.hpp"
+#include "core/game_title.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
@@ -1380,7 +1381,25 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         return false;
     }
 
-    game_title = path_stem(rom_path);
+    // What the console itself would call this, rather than what the file is
+    // called. See game_title.hpp: every one of these formats carries the real
+    // name, and the file name is the fallback rather than the answer.
+    game_title = game_title_for_file(rom_path);
+    if (game_title.empty()) {
+        game_title = path_stem(rom_path);
+        // Which is a guess, and says so. A Wii U keeps its name in
+        // meta/meta.xml beside the game rather than inside it, so a format
+        // that bundles the lot into one file has nothing here to read; an
+        // encrypted 3DS card image keeps its name behind a key this app does
+        // not have. Worth a line either way, because "the name is wrong" and
+        // "there was no name to find" look identical from the outside, and
+        // telling them apart from a log is the whole point of saying anything.
+        log_info("nothing in " + path_basename(rom_path) +
+                 " says what this game is called, so it is showing as \"" + game_title +
+                 "\", after the file");
+    } else if (game_title != path_stem(rom_path)) {
+        log_info("this game calls itself " + game_title);
+    }
     active_layout_id = settings.default_layout_id;
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;

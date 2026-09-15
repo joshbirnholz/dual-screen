@@ -94,6 +94,7 @@ add_library(dualscreen_core STATIC
     src/config/paths.cpp
     src/config/settings.cpp
     src/config/sha1.cpp
+    src/core/game_title.cpp
     src/core/gl_call_trace.cpp
     src/core/hw_render_target.cpp
     src/core/external_frame_link.cpp
