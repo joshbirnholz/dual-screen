@@ -68,6 +68,40 @@ dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 
 include(${DUALSCREEN_ROOT}/cmake/companion_sources.cmake)
 
+# Which build this is, in the first line of the log.
+#
+# A bundle gives no clue what is inside it, and "I rebuilt and it behaves the
+# same" has two completely different causes -- a build that did not pick up the
+# change, and a change that did not fix anything. Without this there is no way
+# to tell them apart from a log, which is the only thing that crosses the
+# distance between this machine and the one it runs on.
+#
+# Taken at configure time, so `cmake -S apple -B build-macos` is what refreshes
+# it -- which is the first of the two build commands anyway. A build that
+# skipped the configure step reports the hash it was last configured at, and
+# says so by saying nothing about the changes since.
+execute_process(
+    COMMAND git -C "${DUALSCREEN_ROOT}" rev-parse --short HEAD
+    OUTPUT_VARIABLE DUALSCREEN_GIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE DUALSCREEN_GIT_RESULT)
+if(NOT DUALSCREEN_GIT_RESULT EQUAL 0 OR DUALSCREEN_GIT_HASH STREQUAL "")
+    set(DUALSCREEN_GIT_HASH "no git here")
+else()
+    # Uncommitted changes matter as much as the commit: a hash on its own would
+    # read as an exact claim about source that has been edited since.
+    execute_process(
+        COMMAND git -C "${DUALSCREEN_ROOT}" status --porcelain --untracked-files=no
+        OUTPUT_VARIABLE DUALSCREEN_GIT_DIRTY
+        ERROR_QUIET)
+    if(NOT DUALSCREEN_GIT_DIRTY STREQUAL "")
+        set(DUALSCREEN_GIT_HASH "${DUALSCREEN_GIT_HASH} with local changes")
+    endif()
+endif()
+string(TIMESTAMP DUALSCREEN_CONFIGURED_AT "%Y-%m-%d %H:%M" UTC)
+message(STATUS "build stamp: ${DUALSCREEN_GIT_HASH}, configured ${DUALSCREEN_CONFIGURED_AT}")
+
 set(DUALSCREEN_APP_NAME "Dualscreen Companion")
 
 add_executable(dualscreen_companion MACOSX_BUNDLE
@@ -81,6 +115,8 @@ target_include_directories(dualscreen_companion PRIVATE
     ${DUALSCREEN_ROOT}/companion/source
 )
 target_compile_options(dualscreen_companion PRIVATE -Wall -Wextra)
+target_compile_definitions(dualscreen_companion PRIVATE
+    DS_BUILD_STAMP="${DUALSCREEN_GIT_HASH}, configured ${DUALSCREEN_CONFIGURED_AT}")
 
 # --- SDL2 -------------------------------------------------------------------
 #

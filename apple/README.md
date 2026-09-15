@@ -24,6 +24,31 @@ cmake --build build-macos
 open "build-macos/Dualscreen Companion.app"
 ```
 
+### Rebuilding
+
+Same two commands, after `git pull`. Both of them: the configure step is what
+picks up new files and refreshes the build stamp, and it is cheap to re-run.
+
+Two things make a rebuild look like it did nothing:
+
+- **`open` on an application that is already running just brings it to the
+  front.** It does not start the new one. Quit it first — ⌘Q, or
+  `killall "Dualscreen Companion"`.
+- **There may be more than one copy.** `open` takes the path you give it, but a
+  copy in `/Applications` and a copy in `build-macos` are two different
+  programs and only one of them was rebuilt.
+
+The first line but one of the log says which build is actually running:
+
+```
+[info ] Dualscreen starting; log at /Users/you/Library/Logs/dualscreen/dualscreen.log
+[info ] this build is 2eb4e96, configured 2026-09-15 17:39
+```
+
+`with local changes` after the hash means the tree had uncommitted edits when
+it was configured. A build whose stamp is older than you expect did not pick up
+what you pulled — re-run the configure step.
+
 FFmpeg is optional and wanted: without it a Wii U's GamePad screen arrives as
 changed tiles at roughly seventeen times the bandwidth (see
 `docs/research-notes.md`). Homebrew's build has VideoToolbox in it, which is
