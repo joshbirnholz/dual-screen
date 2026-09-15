@@ -210,6 +210,13 @@ And on a real Mac, from the log of the first run (an M2, macOS, 3440x1440):
 - Discovery finds a host on the LAN.
 - The log lands in `~/Library/Logs/dualscreen/`.
 
-Still not verified: that VideoToolbox decode actually opens on Apple hardware
-(no session has got that far yet), that audio comes out, or that a controller
-maps as it should.
+And from a whole session against a Steam Deck (the Mac as the top screen):
+
+- `video decoder: h264_videotoolbox` — the hardware decoder really does open on
+  Apple hardware, which is the thing this port was least able to check from
+  Linux. Decode came in at 3-4ms a frame for 1280x720 with no frames lost.
+- Audio plays, and the queue reports its own depth every second, so the drift
+  control is running on a real device.
+
+Still not verified: that a controller maps as it should. No pad was attached
+for that session.

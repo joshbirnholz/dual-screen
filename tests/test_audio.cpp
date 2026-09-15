@@ -157,6 +157,110 @@ void test_the_correction_stays_inaudible_however_far_off_the_queue_is() {
     CHECK(kAudioPanicQueueMs > kAudioTargetQueueMs);
 }
 
+// A queue this deep is nothing to do with drift: the source is handing over
+// more audio per second than a second holds, and the trim is what takes the
+// difference back off.
+void test_a_queue_near_its_target_is_left_alone_and_a_deep_one_is_trimmed() {
+    constexpr std::size_t target = 2880;   // 60ms at 48kHz
+    constexpr std::size_t margin = 1920;   // 40ms at 48kHz
+    constexpr std::size_t block = 480;     // 10ms at 48kHz
+
+    // At the target, below it, and inside the margin: all ordinary drift, and
+    // the rate correction's business rather than this one's.
+    CHECK(audio_trim_frames(target, target, margin, block) == 0);
+    CHECK(audio_trim_frames(target / 2, target, margin, block) == 0);
+    CHECK(audio_trim_frames(target + margin, target, margin, block) == 0);
+
+    // Past it, and the surplus goes -- but never more than half a block, so
+    // there is always audio either side of the join to cross between.
+    CHECK(audio_trim_frames(target + margin + 1, target, margin, block) == block / 2);
+    CHECK(audio_trim_frames(target * 4, target, margin, block) == block / 2);
+
+    // A surplus smaller than half a block is taken in one go.
+    constexpr std::size_t long_block = 4800;  // 100ms at 48kHz
+    CHECK(audio_trim_frames(target + margin + 40, target, margin, long_block) == margin + 40);
+
+    // And a block too short to cut in half is left whole rather than cut
+    // badly.
+    CHECK(audio_trim_frames(target * 4, target, margin, 1) == 0);
+}
+
+// The point of splicing rather than simply dropping: the join is a ramp, not
+// an edge. An edge in a waveform is exactly what a click is.
+void test_a_splice_joins_two_places_in_a_tone_without_a_step() {
+    const std::vector<int16_t> input = make_tone(512);
+    const int natural = largest_step(input);
+    constexpr std::size_t skip = 32;
+
+    // The step that matters is between what was already played and whatever
+    // comes next, so both candidates are measured with the frame before the
+    // join in front of them. Without it the cut looks perfectly smooth: it is
+    // continuous with itself, just not with the stream it is spliced into.
+    const auto after = [&input](const std::vector<int16_t>& tail) {
+        std::vector<int16_t> whole{input[0], input[1]};
+        whole.insert(whole.end(), tail.begin(), tail.end());
+        return whole;
+    };
+
+    std::vector<int16_t> spliced;
+    audio_splice(input.data(), 512, skip, spliced);
+    CHECK(spliced.size() == (512 - skip) * 2);
+
+    // A hard cut at the same place, for the comparison that makes the number
+    // above mean something.
+    const std::vector<int16_t> cut(input.begin() + skip * 2, input.end());
+
+    CHECK(largest_step(after(cut)) > natural * 10);
+    CHECK(largest_step(after(spliced)) <= natural * 3);
+
+    // Nothing is dropped when there is no surplus.
+    std::vector<int16_t> whole;
+    audio_splice(input.data(), 512, 0, whole);
+    CHECK(whole == input);
+}
+
+// The whole of what the trim exists for, run as the loop it actually sits in:
+// a source sending 4% more than real time, a device draining at real time, and
+// the rate correction doing all it is allowed to do. Without the trim this
+// walks the queue to the panic ceiling and starts again -- which is what a Mac
+// companion's log showed, 169ms to 361ms and round once more.
+void test_a_sending_source_is_paid_off_in_splices_rather_than_at_the_panic() {
+    constexpr std::size_t target = 2880;
+    constexpr std::size_t margin = 1920;
+    constexpr std::size_t panic = 48000 * kAudioPanicQueueMs / 1000;
+    constexpr std::size_t block = 480;
+    constexpr double surplus = 1.04;
+
+    const auto run = [&](bool trimming) {
+        double queued = target;
+        double ratio = 1.0;
+        double worst = queued;
+        for (int step = 0; step < 4000; ++step) {
+            const auto depth = static_cast<std::size_t>(queued);
+            ratio = audio_drift_ratio(depth, target, ratio);
+            const std::size_t skipped =
+                trimming ? audio_trim_frames(depth, target, margin, block) : 0;
+            // What the resampler emits for what arrived, then what the device
+            // took out of the queue in the time that block covered.
+            queued += static_cast<double>(block - skipped) / ratio;
+            queued -= static_cast<double>(block) / surplus;
+            queued = std::max(0.0, queued);
+            worst = std::max(worst, queued);
+        }
+        return worst;
+    };
+
+    // Untrimmed, the correction is outrun and the queue reaches the panic --
+    // the behaviour this replaces.
+    CHECK(run(false) > static_cast<double>(panic));
+
+    // Trimmed, it never leaves the margin by more than the block it is being
+    // fed in.
+    const double worst = run(true);
+    CHECK(worst < static_cast<double>(target + margin + block));
+    CHECK(worst < static_cast<double>(panic));
+}
+
 }  // namespace
 
 int main() {
@@ -166,5 +270,8 @@ int main() {
     test_consecutive_blocks_stay_continuous_across_the_join();
     test_a_deep_queue_speeds_playback_up_and_a_shallow_one_slows_it_down();
     test_the_correction_moves_gradually_rather_than_stepping();
+    test_a_queue_near_its_target_is_left_alone_and_a_deep_one_is_trimmed();
+    test_a_splice_joins_two_places_in_a_tone_without_a_step();
+    test_a_sending_source_is_paid_off_in_splices_rather_than_at_the_panic();
     return test::finish("audio");
 }

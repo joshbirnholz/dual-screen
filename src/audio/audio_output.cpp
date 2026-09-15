@@ -41,6 +41,52 @@ double audio_drift_ratio(std::size_t queued_frames, std::size_t target_frames, d
     return current + (desired - current) * kRatioSmoothing;
 }
 
+std::size_t audio_trim_frames(std::size_t queued_frames, std::size_t target_frames,
+                              std::size_t margin_frames, std::size_t block_frames) {
+    if (queued_frames <= target_frames + margin_frames) {
+        return 0;
+    }
+    const std::size_t surplus = queued_frames - target_frames;
+    // Half the block, so audio_splice() has something on both sides of the
+    // join. A block too short to cut in half is left whole rather than cut
+    // badly; the next one is read against a queue that has not moved, so
+    // nothing is lost by waiting for it.
+    return std::min(surplus, block_frames / 2);
+}
+
+void audio_splice(const int16_t* interleaved_stereo, std::size_t frames, std::size_t skip,
+                  std::vector<int16_t>& out) {
+    if (interleaved_stereo == nullptr || frames == 0) {
+        return;
+    }
+    if (skip >= frames) {
+        return;
+    }
+    const std::size_t kept = frames - skip;
+    const std::size_t base = out.size();
+    out.resize(base + kept * 2);
+    int16_t* dest = out.data() + base;
+    std::copy_n(interleaved_stereo + skip * 2, kept * 2, dest);
+    if (skip == 0) {
+        return;
+    }
+    // Ramp from what is being dropped into what replaces it. Both sides are
+    // the same signal a few milliseconds apart, so this is a short crossfade
+    // rather than a fade to nothing -- the level holds, and what changes is
+    // only the phase, over long enough not to be heard as an edge.
+    const std::size_t blend = std::min({kAudioSpliceFrames, skip, kept});
+    for (std::size_t i = 0; i < blend; ++i) {
+        const double t = static_cast<double>(i + 1) / static_cast<double>(blend + 1);
+        for (int channel = 0; channel < 2; ++channel) {
+            const double from = interleaved_stereo[i * 2 + channel];
+            const double to = interleaved_stereo[(skip + i) * 2 + channel];
+            dest[i * 2 + channel] =
+                static_cast<int16_t>(std::lround(std::clamp(from + (to - from) * t,
+                                                            -32768.0, 32767.0)));
+        }
+    }
+}
+
 void AudioResampler::reset() {
     phase_ = 0.0;
     last_frame_[0] = 0;
@@ -163,6 +209,12 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     const std::size_t margin_frames =
         static_cast<std::size_t>(spec_.freq) * kPanicMarginMs / 1000;
     panic_frames_ = std::max(panic_frames_, target_frames_ + margin_frames);
+    trim_margin_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioTrimMarginMs / 1000;
+    // A margin smaller than one of the device's own refills would have the
+    // queue crossing it purely on the sawtooth of being drained in whole
+    // buffers, and the surplus trimmed away would be the device's cadence
+    // rather than anything the source did.
+    trim_margin_frames_ = std::max(trim_margin_frames_, device_buffer_frames);
     rate_ratio_ = 1.0;
     resampler_.reset();
     primed_ = false;
@@ -248,6 +300,14 @@ void AudioOutput::report(uint64_t now_ms) {
                   std::to_string(static_cast<int>((arriving / rate - 1.0) * 10000.0)) +
                   " parts per ten thousand off real time)");
     }
+    if (stats_trims_ > 0) {
+        log_debug("audio: threw away " + std::to_string(to_ms(stats_trimmed_frames_)) +
+                  "ms over " + std::to_string(stats_trims_) +
+                  " splices to keep the queue near its target; that much more than real "
+                  "time is arriving");
+    }
+    stats_trims_ = 0;
+    stats_trimmed_frames_ = 0;
     stats_frames_in_ = 0;
     stats_queue_total_ = 0;
     stats_queue_worst_ = 0;
@@ -292,6 +352,20 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     const std::size_t queued = queued_frames();
     rate_ratio_ = audio_drift_ratio(queued, target_frames_, rate_ratio_);
 
+    // Surplus, not drift -- see kAudioTrimMarginMs. Taken off the block on the
+    // way in rather than off the queue behind it, which comes to the same
+    // audio removed from the same stream and is the end SDL will let anything
+    // be removed from: SDL_DequeueAudio() returns 0 on a playback device and
+    // leaves the queue alone. Because the depth above is read before this
+    // block is added, dropping frames here shows up in the very next reading,
+    // so the surplus cannot be paid for twice.
+    const std::size_t skipped =
+        audio_trim_frames(queued, target_frames_, trim_margin_frames_, frames);
+    if (skipped > 0) {
+        ++stats_trims_;
+        stats_trimmed_frames_ += skipped;
+    }
+
     // What the queue is actually doing, once a second. Sound going wrong is
     // otherwise the one thing in this app with no numbers at all behind it --
     // "it does not sound right" and a log that says nothing. These four say
@@ -307,8 +381,14 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
         ++stats_empty_;
     }
 
+    spliced_.clear();
+    audio_splice(interleaved_stereo, frames, skipped, spliced_);
+    if (spliced_.empty()) {
+        return;
+    }
+
     scratch_.clear();
-    resampler_.resample(interleaved_stereo, frames, rate_ratio_, scratch_);
+    resampler_.resample(spliced_.data(), spliced_.size() / 2, rate_ratio_, scratch_);
     if (scratch_.empty()) {
         return;
     }
