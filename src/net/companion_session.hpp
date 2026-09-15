@@ -95,22 +95,57 @@ inline constexpr unsigned kMaxConsecutiveDecodeFailures = 240;
 // climbs over a session and never comes back down. Sized from the jitter
 // actually measured instead, a calm link settles to the floor and a rough one
 // buys exactly the cover it needs, for exactly as long as it needs it.
-// What one frame's arrival says about the link's timing: how fast the source
-// is producing, and how uneven delivery has been.
+// What one frame's arrival says about the link's timing: how far off its due
+// time it was, and how fast the source is producing.
 struct VideoArrival {
-    double jitter_ms = 0.0;
+    // False when the arrival says nothing usable -- a serial that jumped, a
+    // gap that cannot be a frame. Neither field means anything then.
+    bool usable = false;
+    double deviation_ms = 0.0;
     double source_period_ms = 0.0;
 };
 
-// Folds one arrival into both. `gap_ms` is the milliseconds since the previous
-// frame arrived and `advance` how many serials it moved on by -- which is how
-// many of the source's own frames it covers, since a host that cannot send
-// every frame still numbers them all. An arrival that is late only by the
-// frames the host chose not to send is not late at all, and this is where that
-// distinction is made; see the comments on the implementation. Returns the two
-// values unchanged when the arrival says nothing usable.
-VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms,
-                                  double jitter_ms);
+// Reads one arrival. `gap_ms` is the milliseconds since the previous frame
+// arrived and `advance` how many serials it moved on by -- which is how many
+// of the source's own frames it covers, since a host that cannot send every
+// frame still numbers them all. An arrival that is late only by the frames the
+// host chose not to send is not late at all, and this is where that
+// distinction is made; see the comments on the implementation.
+VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms);
+
+// How uneven the link has been lately, in milliseconds, from the deviations
+// fed into it.
+//
+// A high quantile of the recent ones rather than the worst of them. The worst
+// was what this used to be -- the largest deviation seen in the last couple of
+// seconds, decayed slowly -- and on a wifi link with an occasional bad moment
+// that is a latency ratchet: one arrival 150ms late buys four frames of buffer
+// that every frame after it then waits behind, and the next bad moment resets
+// the clock before the buffer has been given back. A Steam Deck on wifi held
+// the companion's buffer at its ceiling for whole sessions that way, on a link
+// whose round trip averaged 34ms.
+//
+// Buffering for the worst case does not even prevent the worst case: a hiccup
+// larger than whatever is held still hitches. What a buffer can do is absorb
+// the unevenness that happens all the time, and that is what a quantile
+// measures. The few arrivals past it are shown a frame late, which is the
+// trade Moonlight and Sunshine make by default and the one this app was asked
+// for.
+class VideoJitter {
+public:
+    void reset();
+    void add(double deviation_ms);
+    double estimate() const { return estimate_; }
+
+private:
+    // About two and a half seconds of a 50fps stream. Long enough to hold a
+    // representative sample, short enough that a link which has settled stops
+    // paying for a spell when it had not.
+    static constexpr std::size_t kWindow = 128;
+    std::vector<double> recent_;
+    std::size_t next_ = 0;
+    double estimate_ = 0.0;
+};
 
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 
@@ -507,15 +542,15 @@ private:
     uint64_t frame_period() const;
     // How fast the source is producing, which is not the same number once it
     // starts dropping frames to fit the link: serials advance at the source's
-    // rate, arrivals at the link's. Only jitter_ms_ wants this one -- see
-    // where it is measured.
+    // rate, arrivals at the link's. Only the jitter estimate wants this one --
+    // see where it is measured.
     double source_period_ms_ = 16.7;
     // How unevenly frames have been arriving lately, in milliseconds, and the
     // buffer depth that calls for. Every frame held back is a frame of latency
     // paid for smoothness, so this buys only as much as the link is actually
     // being uneven by, and gives it back as soon as the link settles -- see
     // video_buffer_target_frames().
-    double jitter_ms_ = 0.0;
+    VideoJitter jitter_;
     std::size_t target_buffer_frames() const;
 
     // When each frame finished reassembling, so that the wait between having

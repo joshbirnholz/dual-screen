@@ -89,7 +89,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     received_serial_ = 0;
     next_due_ms_ = 0;
     last_arrival_ms_ = 0;
-    jitter_ms_ = 0.0;
+    jitter_.reset();
     status_detail_ = "connecting to " + host.device_name;
     game_title_ = host.game_title;
     log_info("connecting to " + host.device_name + " at " + host.address);
@@ -137,7 +137,7 @@ void CompanionSession::disconnect() {
     received_serial_ = 0;
     next_due_ms_ = 0;
     last_arrival_ms_ = 0;
-    jitter_ms_ = 0.0;
+    jitter_.reset();
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
         status_detail_.clear();
@@ -473,10 +473,11 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             // game, not one frame arriving very late.
             const uint64_t advance =
                 frame.serial > received_serial_ ? frame.serial - received_serial_ : 0;
-            const VideoArrival timing =
-                video_arrival_timing(gap, advance, source_period_ms_, jitter_ms_);
-            source_period_ms_ = timing.source_period_ms;
-            jitter_ms_ = timing.jitter_ms;
+            const VideoArrival timing = video_arrival_timing(gap, advance, source_period_ms_);
+            if (timing.usable) {
+                source_period_ms_ = timing.source_period_ms;
+                jitter_.add(timing.deviation_ms);
+            }
             if (gap >= 4.0 && gap <= 100.0) {
                 // Separately: how fast frames are actually arriving, which is
                 // what the picture is advanced at. A frame the host never sent
@@ -626,7 +627,7 @@ void CompanionSession::poll(uint64_t now_ms) {
         // the last is ever seen. That was tried, and traded the latency for
         // visible judder several times a second -- a bad bargain, and a much
         // more noticeable one than the delay it bought back.
-        const uint64_t allowance = video_hold_allowance_ms(jitter_ms_, period);
+        const uint64_t allowance = video_hold_allowance_ms(jitter_.estimate(), period);
         const bool draining =
             !complete_at_.empty() && now_ms > complete_at_.front().second + allowance;
         std::size_t shown = 0;
@@ -1132,7 +1133,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_waits_ > 0 ? stats_wait_total_ms_ / stats_waits_ : 0) +
               "ms avg " + std::to_string(stats_wait_worst_ms_) + "ms worst in a buffer of " +
               std::to_string(target_buffer_frames()) + " (jitter " +
-              std::to_string(static_cast<uint64_t>(jitter_ms_ + 0.5)) + "ms), decode " +
+              std::to_string(static_cast<uint64_t>(jitter_.estimate() + 0.5)) + "ms), decode " +
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
               "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost");
     stats_at_ms_ = now_ms;
@@ -1154,9 +1155,9 @@ uint64_t CompanionSession::frame_period() const {
     return static_cast<uint64_t>(clamped + 0.5);
 }
 
-VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms,
-                                  double jitter_ms) {
-    VideoArrival out{jitter_ms, source_period_ms};
+VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source_period_ms) {
+    VideoArrival out;
+    out.source_period_ms = source_period_ms;
     // Beyond a handful, this is not a host skipping frames but a
     // discontinuity: a stall, a reconnection, a serial counter that started
     // again. Nothing to learn about the link's timing from it either way, and
@@ -1166,13 +1167,24 @@ VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source
         return out;
     }
     const double steps = static_cast<double>(advance);
-    const double per_frame = gap_ms / steps;
-    if (per_frame < 4.0 || per_frame > 100.0) {
+    if (gap_ms < 0.0 || gap_ms > 1000.0) {
         return out;
     }
+    const double per_frame = gap_ms / steps;
     // How fast the source itself is producing, which is the pace each of the
-    // frames this arrival covers would have been due at.
-    out.source_period_ms = source_period_ms * 0.95 + per_frame * 0.05;
+    // frames this arrival covers would have been due at. Only updated from a
+    // gap that could plausibly be one frame: an arrival that came in a burst
+    // behind another says nothing about the rate the game is running at, and
+    // letting it in would drag the pace down towards the burst's.
+    //
+    // The deviation below is still taken from it, though, and that is the
+    // point of the two gates being separate. Frames arriving three at once
+    // and then not at all is precisely the unevenness a buffer is for, and
+    // the version of this that skipped those arrivals outright could not see
+    // the commonest shape a paced sender produces.
+    if (per_frame >= 4.0 && per_frame <= 100.0) {
+        out.source_period_ms = source_period_ms * 0.95 + per_frame * 0.05;
+    }
     // How far this arrival was off that pace. Taken up immediately and given
     // back slowly: the cover has to be there for the next uneven arrival,
     // which has already happened by the time an average would have noticed,
@@ -1194,10 +1206,37 @@ VideoArrival video_arrival_timing(double gap_ms, uint64_t advance, double source
     // them evenly on the wall clock does not put them back where they came
     // from. A buffer can only undo unevenness the link added, which is what
     // this now measures and all it now pays for.
-    constexpr double kJitterDecayPerFrame = 0.99;
-    const double deviation = std::abs(gap_ms - steps * out.source_period_ms);
-    out.jitter_ms = std::max(deviation, jitter_ms * kJitterDecayPerFrame);
+    out.deviation_ms = std::abs(gap_ms - steps * out.source_period_ms);
+    out.usable = true;
     return out;
+}
+
+void VideoJitter::reset() {
+    recent_.clear();
+    next_ = 0;
+    estimate_ = 0.0;
+}
+
+void VideoJitter::add(double deviation_ms) {
+    const double value = std::max(0.0, deviation_ms);
+    if (recent_.size() < kWindow) {
+        recent_.push_back(value);
+    } else {
+        recent_[next_] = value;
+        next_ = (next_ + 1) % kWindow;
+    }
+    // The quantile the buffer is sized from. Not the maximum, for the reason
+    // set out on the class; not a mean either, which a long tail of on-time
+    // arrivals would drag under what the uneven ones actually need. Five
+    // arrivals in a hundred past it, each shown one frame late.
+    constexpr double kCoverage = 0.95;
+    std::vector<double> sorted(recent_);
+    const std::size_t index = static_cast<std::size_t>(
+        std::min<double>(static_cast<double>(sorted.size()) - 1.0,
+                         kCoverage * static_cast<double>(sorted.size())));
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(index),
+                     sorted.end());
+    estimate_ = sorted[index];
 }
 
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {
@@ -1233,7 +1272,7 @@ uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms) {
 }
 
 std::size_t CompanionSession::target_buffer_frames() const {
-    return video_buffer_target_frames(jitter_ms_, static_cast<double>(frame_period()));
+    return video_buffer_target_frames(jitter_.estimate(), static_cast<double>(frame_period()));
 }
 
 void CompanionSession::apply_frame(const FrameMessage& frame) {

@@ -1789,15 +1789,16 @@ void test_frames_the_host_never_sent_are_not_the_links_unevenness() {
         return out;
     }();
 
-    double jitter = 0.0;
+    VideoJitter jitter;
     double period = source_period;
     for (const auto& [gap, advance] : arrivals) {
-        const VideoArrival timing = video_arrival_timing(gap, advance, period, jitter);
-        jitter = timing.jitter_ms;
+        const VideoArrival timing = video_arrival_timing(gap, advance, period);
+        CHECK(timing.usable);
         period = timing.source_period_ms;
+        jitter.add(timing.deviation_ms);
     }
-    CHECK(jitter < 1.0);
-    CHECK_EQ(video_buffer_target_frames(jitter, 20.0), kMinVideoBufferFrames);
+    CHECK(jitter.estimate() < 1.0);
+    CHECK_EQ(video_buffer_target_frames(jitter.estimate(), 20.0), kMinVideoBufferFrames);
 
     // The same arrivals measured against the previous one instead of against
     // the frames it covers -- which is what this replaced. The delivery period
@@ -1813,17 +1814,58 @@ void test_frames_the_host_never_sent_are_not_the_links_unevenness() {
     CHECK(old_jitter > 10.0);
     CHECK(video_buffer_target_frames(old_jitter, 20.0) > kMinVideoBufferFrames);
 
-    // And a frame that really is late still buys cover, which is the whole
+    // And a frame that really is late still reads as late, which is the whole
     // point of keeping the measurement at all.
-    const VideoArrival late = video_arrival_timing(source_period + 40.0, 1, period, jitter);
-    CHECK(late.jitter_ms > 30.0);
-    CHECK(video_buffer_target_frames(late.jitter_ms, 20.0) > kMinVideoBufferFrames);
+    const VideoArrival late = video_arrival_timing(source_period + 40.0, 1, period);
+    CHECK(late.usable);
+    CHECK(late.deviation_ms > 30.0);
+    CHECK(video_buffer_target_frames(late.deviation_ms, 20.0) > kMinVideoBufferFrames);
 
     // A serial that jumps -- a reconnection, a counter starting again -- says
     // nothing about the link and must not be read as a hiccup.
-    const VideoArrival jumped = video_arrival_timing(5000.0, 4000, period, jitter);
-    CHECK_EQ(jumped.jitter_ms, jitter);
-    CHECK_EQ(jumped.source_period_ms, period);
+    const VideoArrival jumped = video_arrival_timing(5000.0, 4000, period);
+    CHECK(!jumped.usable);
+}
+
+// The link the Steam Deck actually provides: mostly even, with one bad moment
+// a second. Sizing the buffer from the worst of those pins it at the ceiling
+// for the whole session; sizing it from what the link does nearly all the time
+// costs a hitch on the bad moments and nothing the rest of the time.
+void test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer() {
+    constexpr double period = 20.0;
+
+    VideoJitter quantile;
+    double worst_with_decay = 0.0;
+    for (int frame = 0; frame < 600; ++frame) {
+        // A twelfth of a second is about one arrival in fifty at 50fps, which
+        // is what a round trip averaging 34ms with a 190ms worst looks like.
+        const double deviation = (frame % 50 == 0) ? 120.0 : 4.0;
+        quantile.add(deviation);
+        worst_with_decay = std::max(deviation, worst_with_decay * 0.99);
+    }
+
+    // What this used to do: never less than the worst of the last couple of
+    // seconds, so never less than the ceiling.
+    CHECK_EQ(video_buffer_target_frames(worst_with_decay, period), kMaxVideoBufferFrames);
+    // What it does now.
+    CHECK(quantile.estimate() < 20.0);
+    CHECK_EQ(video_buffer_target_frames(quantile.estimate(), period), kMinVideoBufferFrames + 1);
+
+    // A link that is uneven all the time still buys the cover it needs -- the
+    // quantile is not a cap, it is a measurement, and it follows the link up
+    // as readily as down.
+    VideoJitter rough;
+    for (int frame = 0; frame < 600; ++frame) {
+        rough.add(70.0);
+    }
+    CHECK_EQ(video_buffer_target_frames(rough.estimate(), period), kMaxVideoBufferFrames);
+
+    // And it gives it back once the link settles, within the window rather
+    // than over a whole session.
+    for (int frame = 0; frame < 200; ++frame) {
+        rough.add(2.0);
+    }
+    CHECK_EQ(video_buffer_target_frames(rough.estimate(), period), kMinVideoBufferFrames + 1);
 }
 
 // Measured on hardware: the pacing clock shows one frame per period, which
@@ -2217,6 +2259,7 @@ int main() {
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
     test_frames_the_host_never_sent_are_not_the_links_unevenness();
+    test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
