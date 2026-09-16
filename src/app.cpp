@@ -479,6 +479,11 @@ struct App::Impl {
     void apply_system();
     // True while this device is showing another device's game.
     bool is_companion() const;
+    // Whether this device is the one being held as the GamePad, which is the
+    // one showing the GamePad's screen -- the bottom one. With a companion
+    // connected that is whichever screen the companion did not take; alone it
+    // is what Settings::wii_u_screen_alone says this device is being.
+    bool gamepad_is_here() const;
     // True while two devices are in a session, whichever end this is.
     bool paired() const;
     // Opens the layout menu with the state it should be showing.
@@ -826,6 +831,18 @@ SystemScreens App::Impl::screens_geometry() const {
 bool App::Impl::is_companion() const {
     return companion_session &&
            companion_session->status() == net::CompanionSession::Status::Connected;
+}
+
+bool App::Impl::gamepad_is_here() const {
+    // Only a Wii U has a GamePad distinct from a television; everywhere else
+    // this device is holding the whole console and the motor is its own.
+    if (system_profile(system).solo_screens == SoloScreens::Both) {
+        return true;
+    }
+    const ScreenId here = (host_session && host_session->has_companion())
+                              ? host_session->host_screen()
+                              : solo_screen;
+    return here == ScreenId::Bottom;
 }
 
 bool App::Impl::paired() const {
@@ -1562,10 +1579,22 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                     }
                 });
             external_source->set_rumble_callback([this](bool active) {
-                // Nothing plays this locally -- this machine is not holding
-                // the GamePad, whatever is connected to it over the network
-                // is -- so the only place this goes is onward.
-                if (host_session) {
+                // The motor belongs to whoever is holding the GamePad, and
+                // that is not always the other device.
+                //
+                // This used to send it onward unconditionally, on the
+                // assumption that a machine running the game is a machine on a
+                // desk with a television attached. A Steam Deck hosting for a
+                // Mac is the other way round: the Deck is the thing in two
+                // hands and the Mac is the television, so every rumble the
+                // game asked for was crossing the network to a laptop with no
+                // motor while the pad actually being held stayed still.
+                //
+                // Which device that is, is a thing this app already knows --
+                // it is whichever one is showing the GamePad's screen.
+                if (gamepad_is_here()) {
+                    input.set_rumble(active);
+                } else if (host_session) {
                     host_session->publish_rumble(active);
                 }
             });
