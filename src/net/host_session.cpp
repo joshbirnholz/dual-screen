@@ -202,14 +202,22 @@ constexpr uint64_t kVideoRetryCooldownMs = 3000;
 // bigger keyframe burst across several poll() calls instead of one -- see
 // kMaxMediaDatagramBytes and send_frame_fragments() for why a keyframe still
 // has to leave as many small datagrams either way.
-// Measured across two sessions of the same game on the same pair of devices.
-// At about 2x what the encoder really produced, the pacer became the latency:
-// its queue averaged 35ms and spiked to 159, and the round trip went with it,
-// 32ms to 40ms average. At about 4.3x, the queue averaged 14.6ms and never
-// passed 9ms on a report. Four is that, rounded, and it is a floor on how fast
-// a burst may leave rather than a target anything sends at -- nothing is sent
-// that was not produced.
-constexpr double kPacingHeadroomMultiplier = 4.0;
+// The pacer exists for one thing: a keyframe is tens of times an ordinary
+// frame, and firing all of it at the wire at once is a burst the link then has
+// to absorb. It was never meant to slow an ordinary frame down.
+//
+// At four times the measured rate it was doing exactly that. Measured with the
+// bitrate now actually binding: a typical frame is 52KB, the stream is 1740
+// KB/s, and the pacing queue averaged 12.8ms -- a third of a frame period at
+// 30fps, spent on frames that are not bursts by any definition. That is the
+// pacer being the latency again, more quietly than the 35ms it managed at two
+// times, but for no benefit at all on a frame this size.
+//
+// Sixteen puts an ordinary frame out in under two milliseconds and still
+// spreads a 400KB keyframe across about fourteen -- which is the case this is
+// for. It remains a ceiling on how fast a burst may leave rather than a rate
+// anything sends at: nothing is ever sent that was not produced.
+constexpr double kPacingHeadroomMultiplier = 16.0;
 // A floor under the pacing rate for whenever nothing has told it a real
 // number yet -- video not open (tiles, or nothing sent since a companion
 // connected -- see drop_companion()). This app's old flat rate before
