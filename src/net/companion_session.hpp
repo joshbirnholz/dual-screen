@@ -144,6 +144,26 @@ private:
     double estimate_ = 0.0;
 };
 
+// Whether transit times measured during a poll that came this long after the
+// last one say anything about the link.
+//
+// A pass that ran late reads every datagram that piled up while this device
+// was away at the moment it finally looks, so all of them appear to have been
+// held on the way. They were not -- they were held here. Counting that as link
+// jitter buys buffer, and buffer cannot cover a stall on the device doing the
+// showing: the queue drains at exactly the same standstill the picture does.
+// Worse, one such outlier stays in the window for a hundred and twenty-eight
+// frames, so a stall of half a second keeps the buffer at its ceiling, and the
+// latency with it, for seconds afterwards.
+//
+// The same distinction the host already makes when it declines to count a
+// frame it never sent -- see FrameFragmentHeader::sent_at_ms. This is its
+// mirror image at the receiving end.
+//
+// Generous on purpose: an ordinary pass runs about one period, and only a gap
+// several times that is a stall rather than a missed refresh.
+bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t period_ms);
+
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 
 // How long a finished frame may sit waiting before the pacing clock has to
@@ -416,6 +436,12 @@ private:
         std::vector<bool> received;
     };
     void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
+    // Notices frames that left the host and never got here, from the gap they
+    // leave in the run of sent_index values for that screen. Returns how many
+    // went missing, which is zero for the ordinary case of the next one in the
+    // run, and for anything arriving out of order or twice.
+    unsigned note_frames_that_never_arrived(const FrameFragmentHeader& header);
+
     // Sends a KeyframeRequest for whichever screens are waiting on one, at
     // most one per screen per kKeyframeRequestIntervalMs. Called every poll()
     // while anything is waiting.
@@ -423,6 +449,20 @@ private:
 
     FrameReassembly reassembly_top_;
     FrameReassembly reassembly_bottom_;
+    // The last sent_index seen on each screen, and whether one has been seen
+    // at all yet. The far end of FrameFragmentHeader::sent_index: a jump of
+    // more than one is frames that were sent and never arrived.
+    //
+    // This is what makes whole-frame loss visible. Reassembly can only see a
+    // frame that arrived in pieces and never finished; a frame that fits in
+    // one datagram -- which at a kilobyte a frame is nearly every DS frame --
+    // used to vanish without leaving anything behind to notice, and the
+    // decoder would go on predicting from a reference it never had until the
+    // next scheduled keyframe came round.
+    uint16_t last_sent_index_top_ = 0;
+    uint16_t last_sent_index_bottom_ = 0;
+    bool sent_index_known_top_ = false;
+    bool sent_index_known_bottom_ = false;
     // Whether this screen is waiting on a picture that stands on its own,
     // because a frame arrived in pieces and the rest of it never did. Until
     // one does, everything decoded for this screen is built on a reference
@@ -534,6 +574,11 @@ private:
     // runs out of time after several of these says what actually went wrong
     // rather than blaming a host that may well have been answering.
     std::string connect_failure_;
+    // When the last poll() ran, so this one can tell whether it is late --
+    // see poll_gap_measures_the_link() -- and whether the transits it is about
+    // to measure describe the link or this device. Zero before the first one.
+    uint64_t last_poll_ms_ = 0;
+    bool this_pass_measures_the_link_ = false;
     // When to give up on a connection that has not finished arriving. Zero
     // until the first poll() after connect_to(), so the whole timer runs on
     // the caller's clock rather than half on one and half on another.

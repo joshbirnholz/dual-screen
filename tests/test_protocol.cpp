@@ -752,6 +752,7 @@ void test_frame_fragment_round_trip() {
     header.fragment_index = 2;
     header.fragment_count = 5;
     header.keyframe = true;
+    header.sent_index = 40000;
 
     const std::vector<uint8_t> slice = {0xde, 0xad, 0xbe, 0xef, 0x00};
     std::vector<uint8_t> buffer;
@@ -771,6 +772,8 @@ void test_frame_fragment_round_trip() {
     // What tells the far end the recovery it asked for has landed, so it can
     // stop asking -- see MessageType::KeyframeRequest.
     CHECK(received.keyframe);
+    // And what tells it a frame went missing on the way at all.
+    CHECK_EQ(static_cast<int>(received.sent_index), 40000);
     CHECK_EQ(static_cast<int>(payload_size), static_cast<int>(slice.size()));
     CHECK(std::vector<uint8_t>(payload, payload + payload_size) == slice);
 }
@@ -867,6 +870,33 @@ void test_every_system_round_trips() {
     }
 }
 
+// A frame small enough to fit one datagram -- nearly every DS frame, at about
+// a kilobyte each -- either arrives whole or vanishes without trace, so
+// reassembly can never notice it missing. The run of sent_index values is the
+// only thing that can: the host counts only frames it really sent, so a gap is
+// loss on the link and never the host deciding to skip one.
+void test_a_gap_in_sent_frames_is_loss() {
+    CHECK_EQ(frames_missing_between(7, 8), 0u);   // the next one, nothing lost
+    CHECK_EQ(frames_missing_between(7, 9), 1u);   // one never arrived
+    CHECK_EQ(frames_missing_between(7, 12), 4u);  // a burst of them
+
+    // Another fragment of the frame already in hand, and one that arrived
+    // twice. Neither is loss.
+    CHECK_EQ(frames_missing_between(7, 7), 0u);
+    // One that overtook its neighbours. The gap it left was already counted
+    // when the newer frame went past, and counting it again here would have
+    // the far end asking for keyframes it does not need.
+    CHECK_EQ(frames_missing_between(9, 8), 0u);
+
+    // The counter is sixteen bits and a session outlasts it -- at sixty
+    // frames a second it comes round every eighteen minutes. Passing zero has
+    // to read as one step forward, not as the whole range going missing.
+    CHECK_EQ(frames_missing_between(65535, 0), 0u);
+    // 65535 and 0 both went missing on the way from 65534 to 1.
+    CHECK_EQ(frames_missing_between(65534, 1), 2u);
+    CHECK_EQ(frames_missing_between(0, 65535), 0u);
+}
+
 int main() {
     test_hello_round_trip();
     test_welcome_and_session_round_trip();
@@ -889,5 +919,6 @@ int main() {
     test_frame_fragment_round_trip();
     test_frame_fragment_rejects_truncation();
     test_keyframe_request_round_trip();
+    test_a_gap_in_sent_frames_is_loss();
     return test::finish("protocol");
 }

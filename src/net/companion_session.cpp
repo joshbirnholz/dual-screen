@@ -49,6 +49,13 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    // A new host counts its sent frames from the start, so nothing is known
+    // about where they are up to until the first one lands.
+    sent_index_known_top_ = false;
+    sent_index_known_bottom_ = false;
+    // Whatever gap there was before this session began says nothing about the
+    // one starting; the first poll of it measures nothing.
+    last_poll_ms_ = 0;
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
@@ -143,6 +150,13 @@ void CompanionSession::disconnect() {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    // A new host counts its sent frames from the start, so nothing is known
+    // about where they are up to until the first one lands.
+    sent_index_known_top_ = false;
+    sent_index_known_bottom_ = false;
+    // Whatever gap there was before this session began says nothing about the
+    // one starting; the first poll of it measures nothing.
+    last_poll_ms_ = 0;
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
@@ -192,6 +206,13 @@ void CompanionSession::fail(const std::string& reason) {
     session_token_ = 0;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
+    // A new host counts its sent frames from the start, so nothing is known
+    // about where they are up to until the first one lands.
+    sent_index_known_top_ = false;
+    sent_index_known_bottom_ = false;
+    // Whatever gap there was before this session began says nothing about the
+    // one starting; the first poll of it measures nothing.
+    last_poll_ms_ = 0;
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
@@ -392,6 +413,27 @@ void CompanionSession::handle_media_datagram(MessageType type, const uint8_t* pa
     }
 }
 
+unsigned CompanionSession::note_frames_that_never_arrived(const FrameFragmentHeader& header) {
+    const bool top = header.screen == ScreenId::Top;
+    uint16_t& last = top ? last_sent_index_top_ : last_sent_index_bottom_;
+    bool& known = top ? sent_index_known_top_ : sent_index_known_bottom_;
+    if (!known) {
+        // Nothing to compare the first one against. Whatever the host is up
+        // to, this is where counting starts.
+        known = true;
+        last = header.sent_index;
+        return 0;
+    }
+    const unsigned missing = frames_missing_between(last, header.sent_index);
+    // Only a fragment of something newer moves the mark. The others -- the
+    // rest of the frame already being put together, or one that overtook its
+    // neighbours on the way -- are not loss and are not progress either.
+    if (static_cast<int16_t>(header.sent_index - last) > 0) {
+        last = header.sent_index;
+    }
+    return missing;
+}
+
 void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t payload_size) {
     FrameFragmentHeader header;
     const uint8_t* chunk = nullptr;
@@ -412,6 +454,12 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         header.height > kMaxFrameDimension || header.fragment_count == 0 ||
         header.fragment_index >= header.fragment_count) {
         return;  // not worth ending a session over -- see the class comment
+    }
+
+    const unsigned missing = note_frames_that_never_arrived(header);
+    if (missing > 0) {
+        stats_frames_lost_ += missing;
+        ((header.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
     }
 
     FrameReassembly& slot = (header.screen == ScreenId::Top) ? reassembly_top_ : reassembly_bottom_;
@@ -512,7 +560,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         // right across the wrap, which a wider subtraction would get wrong
         // once every 49 days.
         const uint32_t sent = sent_at_ms;
-        if (sent != 0) {
+        if (sent != 0 && this_pass_measures_the_link_) {
             const uint32_t arrived = static_cast<uint32_t>(now);
             jitter_.add(static_cast<double>(static_cast<int32_t>(arrived - sent)));
         }
@@ -540,6 +588,17 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
 
 void CompanionSession::poll(uint64_t now_ms) {
     browser_.poll(now_ms);
+
+    // Whether what arrives this pass can be measured against the link at all.
+    // Decided before anything is read, from how long this device was away
+    // rather than from anything the datagrams themselves say -- they have no
+    // way to know they were sitting in a socket here. The first pass of a
+    // session has nothing to compare against and is taken at face value.
+    const uint64_t poll_gap_ms = (last_poll_ms_ == 0 || now_ms < last_poll_ms_)
+                                     ? 0
+                                     : now_ms - last_poll_ms_;
+    this_pass_measures_the_link_ = poll_gap_measures_the_link(poll_gap_ms, frame_period());
+    last_poll_ms_ = now_ms;
 
     if (!stream_.open()) {
         return;
@@ -1254,6 +1313,15 @@ void VideoJitter::add(double transit_ms) {
                      sorted.end());
     const double quietest = *std::min_element(recent_.begin(), recent_.end());
     estimate_ = std::max(0.0, sorted[index] - quietest);
+}
+
+bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t period_ms) {
+    if (period_ms == 0) {
+        return true;
+    }
+    // Three periods: a pass that missed a refresh or two is still a pass, and
+    // only something that stopped this device outright gets past it.
+    return poll_gap_ms <= period_ms * 3;
 }
 
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {

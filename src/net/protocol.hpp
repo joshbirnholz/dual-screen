@@ -21,7 +21,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 25;
+constexpr uint16_t kProtocolVersion = 26;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -443,6 +443,23 @@ struct FrameFragmentHeader {
     // is the only reliable way to end the asking. Always true for encodings
     // that have no notion of a reference frame at all.
     bool keyframe = false;
+    // Which frame this is in the run of frames actually sent on this screen,
+    // counting from the start of the session and wrapping.
+    //
+    // Not the serial, which counts frames the *emulator* made: the host sends
+    // only some of those -- see publish_screens() -- so a gap in serials is
+    // usually the host choosing to skip one and says nothing about the link.
+    // This counts only what went out, so a gap in it means one thing and one
+    // thing only: a frame left the host and never got here.
+    //
+    // Which is the only way whole-frame loss can be seen at all. Reassembly
+    // notices a frame that arrived in pieces and never completed, but a frame
+    // small enough to be one datagram -- which on a DS is nearly all of them,
+    // at around a kilobyte each -- either arrives or vanishes without trace.
+    // Those were being lost silently, leaving the decoder predicting from a
+    // reference frame it never received: a picture that goes wrong and stays
+    // wrong until the next keyframe comes around on its own.
+    uint16_t sent_index = 0;
     // When the host sent this, on the host's own monotonic clock.
     //
     // The two machines' clocks have no relationship to each other and this
@@ -466,10 +483,20 @@ struct FrameFragmentHeader {
 
 // FrameFragmentHeader on the wire: 8 (serial) + 1 (screen) + 1 (encoding)
 // + 2*4 (width, height, fragment index, fragment count) + 1 (keyframe)
-// + 4 (sent_at_ms). Named because the host sizes its datagram budget from it
-// and the decoder skips past it, and those two disagreeing is a whole frame
-// of garbage rather than an error.
-constexpr std::size_t kFrameFragmentHeaderBytes = 23;
+// + 4 (sent_at_ms) + 2 (sent_index). Named because the host sizes its datagram
+// budget from it and the decoder skips past it, and those two disagreeing is a
+// whole frame of garbage rather than an error.
+constexpr std::size_t kFrameFragmentHeaderBytes = 25;
+
+// How many frames went missing between the last sent_index seen on a screen
+// and one that has just arrived. Zero for the next one in the run, and zero
+// for anything that arrives out of order or twice -- a fragment of the frame
+// already being put together, or one that overtook its neighbours.
+//
+// Wrapping is handled by taking the difference as a signed sixteen-bit value,
+// so the counter passing 65535 reads as one step forward rather than as
+// sixty-five thousand frames of loss.
+unsigned frames_missing_between(uint16_t last_seen, uint16_t arrived);
 
 // The payload of a KeyframeRequest: which screen went wrong, and the serial
 // the far end last managed to put together whole (zero if it never has). The

@@ -1889,6 +1889,51 @@ void test_an_emulator_rendering_unevenly_does_not_buy_buffer() {
     CHECK(video_buffer_target_frames(worst_deviation, period) > kMinVideoBufferFrames);
 }
 
+// The same mistake at the other end of the wire: a stall on the device showing
+// the picture reads as a link that held everything, and buys buffer that
+// cannot help -- the queue drains at exactly the standstill the picture does.
+//
+// Measured on a Mac companion: its loop rate fell to 14-19 passes a second at
+// times, and the jitter estimate sat at 570-1130ms for seconds afterwards on a
+// link whose round trip averaged 20-30ms, pinning the buffer at its ceiling
+// and holding every frame about 70ms.
+void test_this_devices_own_stall_is_not_the_links_fault() {
+    constexpr uint64_t period = 16;  // a 60fps stream, as these actually run
+
+    // An ordinary pass, and one that missed a refresh or two. Both are still
+    // passes, and what they read is the link.
+    CHECK(poll_gap_measures_the_link(0, period));
+    CHECK(poll_gap_measures_the_link(period, period));
+    CHECK(poll_gap_measures_the_link(period * 2, period));
+
+    // 19 passes a second, and worse. Whatever piled up while this device was
+    // away looks held by the link and was held here.
+    CHECK(!poll_gap_measures_the_link(52, period));
+    CHECK(!poll_gap_measures_the_link(600, period));
+
+    // Nothing to measure against before a rate is known.
+    CHECK(poll_gap_measures_the_link(600, 0));
+
+    // And what it is worth: a window of quiet transits keeps the smallest
+    // buffer there is, where letting one stall's worth in would pin it at the
+    // ceiling for the rest of the window.
+    constexpr double kClockOffset = 4321.0;
+    VideoJitter without_the_stall;
+    VideoJitter with_the_stall;
+    for (int frame = 0; frame < 300; ++frame) {
+        without_the_stall.add(kClockOffset + 12.0);
+        with_the_stall.add(kClockOffset + 12.0);
+    }
+    // One pass that came 600ms late hands its whole backlog over at once.
+    for (int frame = 0; frame < 30; ++frame) {
+        with_the_stall.add(kClockOffset + 12.0 + 600.0);
+    }
+    CHECK_EQ(video_buffer_target_frames(without_the_stall.estimate(), 16.0),
+             kMinVideoBufferFrames);
+    CHECK_EQ(video_buffer_target_frames(with_the_stall.estimate(), 16.0),
+             kMaxVideoBufferFrames);
+}
+
 // Measured on hardware: the pacing clock shows one frame per period, which
 // conserves the queue's depth exactly, so a backlog built during one hiccup
 // became permanent latency -- a session climbed from showing frames on arrival
@@ -2282,6 +2327,7 @@ int main() {
     test_the_in_flight_window_covers_the_delay_this_link_shows();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
+    test_this_devices_own_stall_is_not_the_links_fault();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();

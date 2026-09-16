@@ -271,6 +271,12 @@ private:
     // machine yet, but the closest thing either of those has ever had to
     // track and not worth a separate, more precise accounting just for them.
     std::size_t send_frame_fragments(const FrameMessage& frame);
+    // How many frames have actually gone out on each screen, wrapping. Only
+    // ever incremented by send_frame_fragments(); a companion reads a gap in
+    // it as loss, so anything that made it count something that did not leave
+    // would have the far end asking for keyframes it does not need.
+    uint16_t sent_index_top_ = 0;
+    uint16_t sent_index_bottom_ = 0;
     // Hands pending_media_sends_ to the socket, at a rate tied to the
     // currently configured encode bitrate rather than a fixed number of
     // bytes per call -- see its own definition for why a fixed number could

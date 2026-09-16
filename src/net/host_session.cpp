@@ -433,6 +433,10 @@ void HostSession::drop_companion(const std::string& reason) {
     // A request from a companion that has gone is not one to answer.
     keyframe_asked_top_ = false;
     keyframe_asked_bottom_ = false;
+    // And the next companion counts sent frames from the start rather than
+    // joining part-way through a run that means nothing to it.
+    sent_index_top_ = 0;
+    sent_index_bottom_ = 0;
     // Back to letting the routing table decide until the next companion says
     // which of this machine's addresses it reached.
     media_socket_.set_source_address("");
@@ -1301,6 +1305,13 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     // end measures is when the picture was handed to the link, and the
     // fragments of one picture are all the same event.
     header.sent_at_ms = static_cast<uint32_t>(monotonic_millis());
+    // Counted per screen and only here, where a frame really does go out, so
+    // that a gap in it at the far end means a frame was lost on the way and
+    // never means this host chose to skip one. See FrameFragmentHeader's own
+    // comment, and AudioMessage::sequence, which is the same idea for sound.
+    uint16_t& sent_index =
+        (frame.screen == ScreenId::Top) ? sent_index_top_ : sent_index_bottom_;
+    header.sent_index = sent_index++;
     header.fragment_count = static_cast<uint16_t>(
         (frame.payload.size() + kMaxFragmentPayload - 1) / kMaxFragmentPayload);
 

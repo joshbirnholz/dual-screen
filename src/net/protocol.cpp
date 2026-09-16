@@ -764,6 +764,7 @@ void encode_frame_fragment(const FrameFragmentHeader& header, const uint8_t* pay
     put_u16(out, header.fragment_count);
     put_u8(out, header.keyframe ? 1u : 0u);
     put_u32(out, header.sent_at_ms);
+    put_u16(out, header.sent_index);
     out.insert(out.end(), payload, payload + payload_size);
 }
 
@@ -782,6 +783,7 @@ bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentH
     uint8_t keyframe = 0;
     reader.u8(keyframe);
     reader.u32(out_header.sent_at_ms);
+    reader.u16(out_header.sent_index);
     if (!reader.ok() || !screen_from_wire(screen, out_header.screen)) {
         return false;
     }
@@ -790,6 +792,14 @@ bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentH
     out_payload = data + kFrameFragmentHeaderBytes;
     out_payload_size = size - kFrameFragmentHeaderBytes;
     return true;
+}
+
+unsigned frames_missing_between(uint16_t last_seen, uint16_t arrived) {
+    const auto step = static_cast<int16_t>(arrived - last_seen);
+    if (step <= 0) {
+        return 0;
+    }
+    return static_cast<unsigned>(step - 1);
 }
 
 void encode_keyframe_request_payload(const KeyframeRequestMessage& request,
