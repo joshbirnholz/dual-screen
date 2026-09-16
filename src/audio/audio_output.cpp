@@ -41,12 +41,38 @@ double audio_drift_ratio(std::size_t queued_frames, std::size_t target_frames, d
     return current + (desired - current) * kRatioSmoothing;
 }
 
-std::size_t audio_trim_frames(std::size_t queued_frames, std::size_t target_frames,
+void AudioLowWater::reset(std::size_t window_frames, std::size_t queued) {
+    window_frames_ = window_frames;
+    filled_frames_ = 0;
+    // Both buckets start where the queue is, so a stream that has just been
+    // primed does not read as empty before a single push has happened.
+    current_ = queued;
+    previous_ = queued;
+}
+
+std::size_t AudioLowWater::note(std::size_t queued, std::size_t frames) {
+    current_ = std::min(current_, queued);
+    filled_frames_ += frames;
+    if (window_frames_ > 0 && filled_frames_ >= window_frames_) {
+        // The bucket just closed becomes the older of the two, and the new one
+        // starts from where the queue is now rather than from nothing -- an
+        // empty bucket would read as a queue at zero for as long as it took to
+        // fill, which is the opposite of what this is for.
+        previous_ = current_;
+        current_ = queued;
+        filled_frames_ = 0;
+    }
+    return depth();
+}
+
+std::size_t AudioLowWater::depth() const { return std::min(current_, previous_); }
+
+std::size_t audio_trim_frames(std::size_t sustained_frames, std::size_t target_frames,
                               std::size_t margin_frames, std::size_t block_frames) {
-    if (queued_frames <= target_frames + margin_frames) {
+    if (sustained_frames <= target_frames + margin_frames) {
         return 0;
     }
-    const std::size_t surplus = queued_frames - target_frames;
+    const std::size_t surplus = sustained_frames - target_frames;
     // Half the block, so audio_splice() has something on both sides of the
     // join. A block too short to cut in half is left whole rather than cut
     // badly; the next one is read against a queue that has not moved, so
@@ -215,6 +241,8 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     // buffers, and the surplus trimmed away would be the device's cadence
     // rather than anything the source did.
     trim_margin_frames_ = std::max(trim_margin_frames_, device_buffer_frames);
+    low_water_window_frames_ =
+        static_cast<std::size_t>(spec_.freq) * kAudioLowWaterWindowMs / 1000;
     rate_ratio_ = 1.0;
     resampler_.reset();
     primed_ = false;
@@ -276,7 +304,15 @@ void AudioOutput::report(uint64_t now_ms) {
         return static_cast<uint64_t>(frames * 1000.0 / rate);
     };
     log_debug("audio: queue " + std::to_string(to_ms(stats_queue_total_ / stats_pushes_)) +
-              "ms avg " + std::to_string(to_ms(stats_queue_worst_)) + "ms worst against a " +
+              "ms avg " + std::to_string(to_ms(stats_queue_worst_)) + "ms worst " +
+              // The one that says whether a deep average is a queue running
+              // late or one merely arriving in lumps, which is the difference
+              // between a surplus worth throwing away and jitter worth keeping.
+              // See AudioLowWater.
+              std::to_string(to_ms(stats_queue_lowest_ == static_cast<std::size_t>(-1)
+                                       ? 0
+                                       : stats_queue_lowest_)) +
+              "ms at its lowest, against a " +
               std::to_string(to_ms(target_frames_)) + "ms target, " + std::to_string(stats_empty_) +
               " empty, " + std::to_string(stats_panics_) + " cut short, playing at " +
               std::to_string(static_cast<int>((rate_ratio_ - 1.0) * 10000.0)) + " parts per "
@@ -309,6 +345,7 @@ void AudioOutput::report(uint64_t now_ms) {
     stats_trims_ = 0;
     stats_trimmed_frames_ = 0;
     stats_frames_in_ = 0;
+    stats_queue_lowest_ = static_cast<std::size_t>(-1);
     stats_queue_total_ = 0;
     stats_queue_worst_ = 0;
     stats_pushes_ = 0;
@@ -319,6 +356,9 @@ void AudioOutput::report(uint64_t now_ms) {
 void AudioOutput::prime() {
     primed_ = true;
     if (target_frames_ == 0) {
+        // Nothing to prime to, but the low-water mark still starts from where
+        // the queue is rather than from a stale reading of an older stream.
+        low_water_.reset(low_water_window_frames_, queued_frames());
         return;
     }
     const std::vector<int16_t> silence(target_frames_ * 2, 0);
@@ -356,11 +396,17 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     // way in rather than off the queue behind it, which comes to the same
     // audio removed from the same stream and is the end SDL will let anything
     // be removed from: SDL_DequeueAudio() returns 0 on a playback device and
-    // leaves the queue alone. Because the depth above is read before this
-    // block is added, dropping frames here shows up in the very next reading,
-    // so the surplus cannot be paid for twice.
+    // leaves the queue alone.
+    //
+    // Read against the low-water mark rather than the depth at this instant,
+    // because audio arrives in lumps and the depth at a push is whatever the
+    // lump just made it -- see AudioLowWater. The mark still moves as soon as
+    // frames are dropped here (the depth above is read before this block is
+    // added, so the next push sees the smaller queue), which is what keeps the
+    // same surplus from being paid for twice.
+    const std::size_t sustained = low_water_.note(queued, frames);
     const std::size_t skipped =
-        audio_trim_frames(queued, target_frames_, trim_margin_frames_, frames);
+        audio_trim_frames(sustained, target_frames_, trim_margin_frames_, frames);
     if (skipped > 0) {
         ++stats_trims_;
         stats_trimmed_frames_ += skipped;
@@ -377,6 +423,7 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     stats_frames_in_ += frames;
     ++stats_pushes_;
     stats_queue_worst_ = std::max(stats_queue_worst_, queued);
+    stats_queue_lowest_ = std::min(stats_queue_lowest_, queued);
     if (queued == 0) {
         ++stats_empty_;
     }

@@ -261,6 +261,115 @@ void test_a_sending_source_is_paid_off_in_splices_rather_than_at_the_panic() {
     CHECK(worst < static_cast<double>(panic));
 }
 
+// Audio does not arrive evenly: a companion drains its socket once per pass of
+// the frame loop, so half a dozen packets land together and then nothing lands
+// for a whole frame. Read at the moment of a push, the queue is whatever the
+// burst just made it -- and trimming on that throws away the very jitter the
+// queue's depth exists to absorb.
+//
+// Measured on a Mac companion: 12 to 82ms discarded every second over as many
+// as twenty splices, while the source was sending about 3ms a second more than
+// real time, and the queue still ran dry several times in the same second.
+void test_audio_arriving_in_lumps_is_not_a_surplus() {
+    constexpr std::size_t rate = 48000;
+    constexpr std::size_t target = rate * 60 / 1000;   // 60ms
+    constexpr std::size_t margin = rate * 40 / 1000;   // 40ms
+    constexpr std::size_t block = rate * 10 / 1000;    // 10ms a packet
+    constexpr std::size_t window = rate * kAudioLowWaterWindowMs / 1000;
+    constexpr std::size_t burst = 6;  // 60ms of audio landing in one pass
+
+    AudioLowWater low_water;
+    low_water.reset(window, target);
+    std::size_t queued = target;
+    std::size_t trimmed = 0;
+    std::size_t deepest = queued;
+
+    for (int pass = 0; pass < 600; ++pass) {
+        for (std::size_t packet = 0; packet < burst; ++packet) {
+            const std::size_t sustained = low_water.note(queued, block);
+            const std::size_t skipped = audio_trim_frames(sustained, target, margin, block);
+            trimmed += skipped;
+            queued += block - skipped;
+            deepest = std::max(deepest, queued);
+        }
+        // Real time out: exactly as much as arrived, so there is no surplus
+        // here at all -- only lumps.
+        queued -= std::min(queued, burst * block);
+    }
+
+    // The burst alone puts the queue well past where a trim used to fire...
+    CHECK(deepest > target + margin);
+    CHECK(audio_trim_frames(deepest, target, margin, block) > 0);
+    // ...and nothing is thrown away, because none of it was ever surplus.
+    CHECK_EQ(trimmed, static_cast<std::size_t>(0));
+}
+
+// And the case the trim is actually for, run through the same low-water mark:
+// a source sending 4% more than real time really does have to lose some, and
+// the mark must not be so slow to notice that the queue runs away first.
+void test_a_real_surplus_is_still_found_through_the_low_water_mark() {
+    constexpr std::size_t rate = 48000;
+    constexpr std::size_t target = rate * 60 / 1000;
+    constexpr std::size_t margin = rate * 40 / 1000;
+    constexpr std::size_t panic = rate * kAudioPanicQueueMs / 1000;
+    constexpr std::size_t block = rate * 10 / 1000;
+    constexpr std::size_t window = rate * kAudioLowWaterWindowMs / 1000;
+    constexpr double surplus = 1.04;
+
+    AudioLowWater low_water;
+    low_water.reset(window, target);
+    double queued = target;
+    double ratio = 1.0;
+    double worst = queued;
+    double settled = queued;
+    for (int step = 0; step < 6000; ++step) {
+        const auto depth = static_cast<std::size_t>(queued);
+        ratio = audio_drift_ratio(depth, target, ratio);
+        const std::size_t sustained = low_water.note(depth, block);
+        const std::size_t skipped = audio_trim_frames(sustained, target, margin, block);
+        queued += static_cast<double>(block - skipped) / ratio;
+        queued -= static_cast<double>(block) / surplus;
+        queued = std::max(0.0, queued);
+        worst = std::max(worst, queued);
+        settled = queued;
+    }
+
+    // Nowhere near the ceiling, which is where the whole surplus used to be
+    // paid off in one audible gap.
+    CHECK(worst < static_cast<double>(panic));
+    // The mark looks back about a second, so the queue is allowed to climb by
+    // roughly what a second of this surplus adds before the trim engages --
+    // and no further.
+    CHECK(worst < static_cast<double>(target + margin) + static_cast<double>(window) * 0.1);
+    // And it holds there rather than sawing back up to the ceiling.
+    CHECK(settled < static_cast<double>(target + margin) + static_cast<double>(window) * 0.1);
+}
+
+// The mark itself: the lowest the queue has been across about a second, with
+// both buckets starting where the queue is so that a stream which has only
+// just been primed is not read as empty.
+void test_the_low_water_mark_follows_the_trough_not_the_peak() {
+    constexpr std::size_t window = 1000;
+    AudioLowWater mark;
+    mark.reset(window, 500);
+    CHECK_EQ(mark.depth(), static_cast<std::size_t>(500));
+
+    // A spike passes straight over it.
+    CHECK_EQ(mark.note(9000, 100), static_cast<std::size_t>(500));
+    // A trough is what it takes.
+    CHECK_EQ(mark.note(120, 100), static_cast<std::size_t>(120));
+    // And that trough keeps counting until it has aged out of both buckets --
+    // one window closes the bucket it is in, the next retires it.
+    for (int push = 0; push < 10; ++push) {
+        mark.note(4000, 100);
+    }
+    CHECK_EQ(mark.depth(), static_cast<std::size_t>(120));
+    for (int push = 0; push < 10; ++push) {
+        mark.note(4000, 100);
+    }
+    CHECK_EQ(mark.depth(), static_cast<std::size_t>(4000));
+}
+
 }  // namespace
 
 int main() {
@@ -273,5 +382,8 @@ int main() {
     test_a_queue_near_its_target_is_left_alone_and_a_deep_one_is_trimmed();
     test_a_splice_joins_two_places_in_a_tone_without_a_step();
     test_a_sending_source_is_paid_off_in_splices_rather_than_at_the_panic();
+    test_audio_arriving_in_lumps_is_not_a_surplus();
+    test_a_real_surplus_is_still_found_through_the_low_water_mark();
+    test_the_low_water_mark_follows_the_trough_not_the_peak();
     return test::finish("audio");
 }

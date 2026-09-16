@@ -87,21 +87,75 @@ inline constexpr double kAudioMaxRateAdjust = 0.01;
 // audio_splice) is a tick where a third of a second is a skip.
 inline constexpr int kAudioTrimMarginMs = 40;
 
+// How much audio passes through before the low-water mark below starts a fresh
+// bucket, in milliseconds.
+//
+// Two buckets are kept, so what the trim reads is the lowest the queue has
+// been over somewhere between a quarter of a second and half of one.
+//
+// Long enough to contain a trough: packets arrive a frame apart at worst, so
+// this holds fifteen or more of the bursts it has to see past. Short enough
+// that a real surplus is caught before it has grown into latency -- the mark
+// lags the queue by whatever the surplus adds while it is looking back, which
+// at the 2 to 5 percent a Cemu produces is under twenty milliseconds of depth.
+inline constexpr int kAudioLowWaterWindowMs = 250;
+
 // Frames crossfaded across a splice, at the rate the device is running.
 // About three milliseconds at 48kHz: long enough that the join is a ramp
 // rather than a step, short enough to be over before it is heard as anything
 // of its own.
 inline constexpr std::size_t kAudioSpliceFrames = 128;
 
+// The lowest the queue has been lately, which is the difference between a
+// queue that is genuinely too deep and one that is merely spiky.
+//
+// Audio does not arrive evenly. A companion drains its socket once per pass of
+// the frame loop, so several packets land together and then nothing lands for
+// a whole frame; the queue jumps on every burst and drains between them. Read
+// at the moment of a push, the depth is whatever the burst just made it, and a
+// trim that fires on that is throwing away jitter -- which is exactly what the
+// queue's depth exists to absorb. Measured on a Mac companion: 12 to 82ms
+// discarded every second across up to twenty splices, while the source was
+// sending only about 3ms a second more than real time, and the queue still ran
+// dry several times in the same second.
+//
+// A surplus is what survives the low point. Whatever a burst adds, it is gone
+// again by the next trough, so only audio that is still queued when the queue
+// is at its emptiest is audio nobody is ever going to want.
+//
+// The same shape as the video jitter estimate, which takes the fastest transit
+// in its window as the link with nothing queued on it, for the same reason.
+class AudioLowWater {
+public:
+    // `window_frames` is how much audio fills one bucket -- see
+    // kAudioLowWaterWindowMs -- and `queued` is where the queue is starting
+    // from, so a fresh stream does not read as empty before anything has
+    // happened.
+    void reset(std::size_t window_frames, std::size_t queued);
+    // Records a push of `frames` against a queue currently `queued` deep, and
+    // returns the low-water mark as it now stands.
+    std::size_t note(std::size_t queued, std::size_t frames);
+    std::size_t depth() const;
+
+private:
+    std::size_t window_frames_ = 0;
+    std::size_t filled_frames_ = 0;
+    std::size_t current_ = 0;
+    std::size_t previous_ = 0;
+};
+
 // How many frames of a newly arrived block to throw away, given how deep the
-// queue already is. Zero until the queue is more than `margin_frames` past the
-// target.
+// queue has been staying. Zero until that is more than `margin_frames` past
+// the target.
+//
+// `sustained_frames` is the low-water mark rather than the depth at this
+// instant -- see AudioLowWater for why the difference is the whole point.
 //
 // Capped at half the block so there is always audio on both sides of the join
 // for audio_splice() to cross between -- a whole block dropped is a hard cut,
 // and paying a large surplus off over several blocks costs nothing, since the
 // queue is read afresh on each one.
-std::size_t audio_trim_frames(std::size_t queued_frames, std::size_t target_frames,
+std::size_t audio_trim_frames(std::size_t sustained_frames, std::size_t target_frames,
                               std::size_t margin_frames, std::size_t block_frames);
 
 // Appends `frames` of stereo int16 to `out` with the first `skip` of them
@@ -202,11 +256,18 @@ private:
     std::size_t target_frames_ = 0;
     std::size_t panic_frames_ = 0;
     std::size_t trim_margin_frames_ = 0;
+    // What the trim is actually read against -- see AudioLowWater.
+    AudioLowWater low_water_;
+    std::size_t low_water_window_frames_ = 0;
     double rate_ratio_ = 1.0;
     // What report() says. Cleared every time it does.
     uint64_t stats_at_ms_ = 0;
     uint64_t stats_queue_total_ = 0;
     std::size_t stats_queue_worst_ = 0;
+    // The lowest the queue got in the second just gone, which says whether a
+    // deep average is a queue that is genuinely running late or one that is
+    // merely arriving in lumps. Sentinel-high so the first push sets it.
+    std::size_t stats_queue_lowest_ = static_cast<std::size_t>(-1);
     unsigned stats_pushes_ = 0;
     unsigned stats_empty_ = 0;
     unsigned stats_panics_ = 0;
