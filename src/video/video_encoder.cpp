@@ -193,6 +193,30 @@ bool VideoEncoder::open_backend(const std::string& name,
     // other hardware backends too: a live stream has no use for a max rate
     // above its target rate anyway.
     context_->rc_max_rate = context_->bit_rate;
+    // And a window for it to hold that rate over.
+    //
+    // Left at zero, FFmpeg picks one for the driver, and on the Steam Deck's
+    // AMD VAAPI what comes out is not rate-controlled at all: asked for 43.5
+    // Mbit/s it produced 20.1, asked for 22.9 it produced 23.0, asked for 34.6
+    // it produced 21.5, asked for 22.7 it produced 23.5. Four different
+    // requests, one stream -- constant quality wearing a bitrate's clothes.
+    //
+    // That is not merely a number being ignored. At 30fps it means a typical
+    // frame of 90KB and 23 Mbit/s of UDP going out in eighty-odd datagram
+    // bursts, thirty times a second, which is real work for a handheld's
+    // wifi -- and the far end measures the result as a tail: three quarters of
+    // frames within 17ms of the quietest and one in twenty 75ms behind, with
+    // not one frame lost in a whole session. A tail with no loss is queueing,
+    // and after ruling out this end's pacing, the other end's loop and the
+    // evenness of the frames, what is left to queue is the air.
+    //
+    // Half a second of audio-style buffer would let it wander; two frames'
+    // worth holds it to the rate it was given without making every frame the
+    // same size as every other, which is what a keyframe needs room for.
+    if (config.fps > 0) {
+        context_->rc_buffer_size = static_cast<int>(context_->bit_rate * 2 / config.fps);
+        context_->rc_initial_buffer_occupancy = context_->rc_buffer_size * 3 / 4;
+    }
     // A keyframe costs several times what a delta does -- tens of times, at
     // the bitrates this runs at -- and every one of them is a burst the
     // sender's pacing queue then has to spread out over the next several
@@ -283,7 +307,33 @@ bool VideoEncoder::open_backend(const std::string& name,
         av_opt_set(context_->priv_data, "tune", "zerolatency", 0);
     }
 
-    const int rc = avcodec_open2(context_, codec, nullptr);
+    // Asked for by name where the encoder has the option, because the picker
+    // FFmpeg uses on its own is what produced the constant-quality stream
+    // above. A driver that does not offer it fails this harmlessly -- the
+    // option simply is not there -- and one that offers it and then cannot do
+    // it fails the open below, which is what the retry is for.
+    const bool asked_for_rate_control =
+        context_->priv_data != nullptr &&
+        av_opt_set(context_->priv_data, "rc_mode", "CBR", 0) == 0;
+
+    int rc = avcodec_open2(context_, codec, nullptr);
+    if (rc < 0 && asked_for_rate_control) {
+        // It took the option and then would not open with it. Better a stream
+        // that runs at whatever rate this driver likes than no stream: this is
+        // exactly the shape of the VAAPI failures this file already carries
+        // scars from, and none of them are worth a black screen.
+        log_info("video encoder: " + name +
+                 " would not open in constant-bitrate mode (" + av_error(rc) +
+                 "); letting the driver choose its own rate control instead");
+        av_opt_set(context_->priv_data, "rc_mode", "auto", 0);
+        context_->rc_buffer_size = 0;
+        context_->rc_initial_buffer_occupancy = 0;
+        rc = avcodec_open2(context_, codec, nullptr);
+    } else if (rc == 0) {
+        log_info(std::string("video encoder: rate control is ") +
+                 (asked_for_rate_control ? "the constant bitrate it was asked for"
+                                         : "whatever this encoder chose; it has no rc_mode to set"));
+    }
     if (rc < 0) {
         if (error != nullptr) *error = av_error(rc);
         return false;

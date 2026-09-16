@@ -1042,7 +1042,9 @@ void HostSession::report_stream(uint64_t now_ms) {
     log_debug("stream: " + std::to_string(stats_produced_ * 1000 / elapsed) + " produced/s, " +
               std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
               std::to_string(dropped) + " dropped, " +
-              std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, biggest frame " +
+              std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s against the " +
+              std::to_string((video_bitrate_kbps_top_ + video_bitrate_kbps_bottom_) / 8) +
+              " KB/s it was asked for, biggest frame " +
               std::to_string(stats_frame_bytes_worst_ / 1024) + "KB against a typical " +
               std::to_string(stats_frames_counted_ > 0
                                  ? stats_frame_bytes_total_ / stats_frames_counted_ / 1024
