@@ -189,8 +189,18 @@ private:
     double estimate_ = 0.0;
 };
 
-// Whether transit times measured during a poll that came this long after the
-// last one say anything about the link.
+// Whether anything measured during a poll that came this long after the last
+// one says anything about the link, given how long a pass normally takes on
+// this device.
+//
+// The baseline has to be this device's own cadence, not the stream's frame
+// period, and getting that wrong left the hole this closes. A Mac companion
+// runs its loop about every 14ms; the stream it was showing had a 33ms period,
+// so a threshold of three periods tolerated a 100ms pass -- six or seven times
+// this machine's normal one -- and counted everything that piled up during it
+// as the link being slow. A spread of exactly that shape was what the far end
+// then held 66ms of cover against: quiet for three quarters of frames and 75ms
+// behind for one in twenty.
 //
 // A pass that ran late reads every datagram that piled up while this device
 // was away at the moment it finally looks, so all of them appear to have been
@@ -207,7 +217,7 @@ private:
 //
 // Generous on purpose: an ordinary pass runs about one period, and only a gap
 // several times that is a stall rather than a missed refresh.
-bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t period_ms);
+bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t typical_gap_ms);
 
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 
@@ -685,6 +695,14 @@ private:
     unsigned stats_starved_ = 0;
     unsigned calm_seconds_ = 0;
     uint64_t last_poll_ms_ = 0;
+    // The quickest pass this device has managed lately, which is this loop
+    // with nothing in its way -- the same notion of a baseline the transit
+    // times use, for the same reason. Anything several times it is this
+    // machine being busy, not the network.
+    static constexpr std::size_t kPollGapWindow = 64;
+    std::vector<uint64_t> recent_poll_gaps_;
+    std::size_t next_poll_gap_ = 0;
+    uint64_t typical_poll_gap_ms_ = 0;
     bool this_pass_measures_the_link_ = false;
     // When to give up on a connection that has not finished arriving. Zero
     // until the first poll() after connect_to(), so the whole timer runs on

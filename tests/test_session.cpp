@@ -2120,18 +2120,29 @@ void test_the_buffer_pays_for_the_body_and_not_the_tail() {
 void test_this_devices_own_stall_is_not_the_links_fault() {
     constexpr uint64_t period = 16;  // a 60fps stream, as these actually run
 
-    // An ordinary pass, and one that missed a refresh or two. Both are still
-    // passes, and what they read is the link.
-    CHECK(poll_gap_measures_the_link(0, period));
-    CHECK(poll_gap_measures_the_link(period, period));
-    CHECK(poll_gap_measures_the_link(period * 2, period));
+    // The baseline is this device's own cadence, not the stream's. A Mac
+    // companion comes round about every 14ms while showing a 33fps stream, so
+    // measuring against the stream's period tolerated a 100ms pass -- seven
+    // times this machine's normal one -- and read everything that piled up
+    // during it as the link. That is the shape the far end then bought 66ms
+    // of cover against.
+    constexpr uint64_t typical = 14;  // a Mac companion, measured
+    CHECK(poll_gap_measures_the_link(0, typical));
+    CHECK(poll_gap_measures_the_link(typical, typical));
+    CHECK(poll_gap_measures_the_link(typical * 2, typical));
 
-    // 19 passes a second, and worse. Whatever piled up while this device was
-    // away looks held by the link and was held here.
-    CHECK(!poll_gap_measures_the_link(52, period));
-    CHECK(!poll_gap_measures_the_link(600, period));
+    // Six times a normal pass is this device having been somewhere else.
+    CHECK(!poll_gap_measures_the_link(75, typical));
+    CHECK(!poll_gap_measures_the_link(600, typical));
+    // And it would have sailed through the old rule, which is the hole: the
+    // stream in question ran at 30fps, so three of its periods is 99ms.
+    constexpr uint64_t thirty_fps_period = 33;
+    CHECK(75u <= thirty_fps_period * 3);
 
-    // Nothing to measure against before a rate is known.
+    // A loop running very fast does not reject its own ordinary variation.
+    CHECK(poll_gap_measures_the_link(4, 1));
+
+    // Nothing to measure against before a cadence is known.
     CHECK(poll_gap_measures_the_link(600, 0));
 
     // And what it is worth: a window of quiet transits keeps the smallest

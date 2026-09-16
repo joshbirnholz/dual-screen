@@ -59,6 +59,9 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // Whatever gap there was before this session began says nothing about the
     // one starting; the first poll of it measures nothing.
     last_poll_ms_ = 0;
+    recent_poll_gaps_.clear();
+    next_poll_gap_ = 0;
+    typical_poll_gap_ms_ = 0;
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
@@ -171,6 +174,9 @@ void CompanionSession::disconnect() {
     // Whatever gap there was before this session began says nothing about the
     // one starting; the first poll of it measures nothing.
     last_poll_ms_ = 0;
+    recent_poll_gaps_.clear();
+    next_poll_gap_ = 0;
+    typical_poll_gap_ms_ = 0;
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
@@ -228,6 +234,9 @@ void CompanionSession::fail(const std::string& reason) {
     // Whatever gap there was before this session began says nothing about the
     // one starting; the first poll of it measures nothing.
     last_poll_ms_ = 0;
+    recent_poll_gaps_.clear();
+    next_poll_gap_ = 0;
+    typical_poll_gap_ms_ = 0;
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
@@ -624,7 +633,17 @@ void CompanionSession::poll(uint64_t now_ms) {
     const uint64_t poll_gap_ms = (last_poll_ms_ == 0 || now_ms < last_poll_ms_)
                                      ? 0
                                      : now_ms - last_poll_ms_;
-    this_pass_measures_the_link_ = poll_gap_measures_the_link(poll_gap_ms, frame_period());
+    if (last_poll_ms_ != 0) {
+        if (recent_poll_gaps_.size() < kPollGapWindow) {
+            recent_poll_gaps_.push_back(poll_gap_ms);
+        } else {
+            recent_poll_gaps_[next_poll_gap_] = poll_gap_ms;
+            next_poll_gap_ = (next_poll_gap_ + 1) % kPollGapWindow;
+        }
+        typical_poll_gap_ms_ =
+            *std::min_element(recent_poll_gaps_.begin(), recent_poll_gaps_.end());
+    }
+    this_pass_measures_the_link_ = poll_gap_measures_the_link(poll_gap_ms, typical_poll_gap_ms_);
     last_poll_ms_ = now_ms;
 
     // Nothing to do without a socket -- except in the one state where making
@@ -836,8 +855,13 @@ void CompanionSession::poll(uint64_t now_ms) {
             // and drove the cover below straight to its ceiling, which is
             // exactly the delay it exists to avoid buying. A frame is late when
             // it is *shown* late.
-            if (next_due_ms_ != 0 && now_ms > next_due_ms_ + period / 2 &&
-                last_arrival_ms_ != 0 && now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
+            // And not on a pass this device was late to: the frame is late
+            // either way, but a stall here is one no amount of cover could
+            // have covered -- the queue stands still exactly as long as the
+            // loop does. Buying delay for it is paying twice for one pause.
+            if (this_pass_measures_the_link_ && next_due_ms_ != 0 &&
+                now_ms > next_due_ms_ + period / 2 && last_arrival_ms_ != 0 &&
+                now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
                 ++stats_starved_;
             }
             // Advanced from when it was due, not from now, so the pace does
@@ -1394,7 +1418,8 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_starved_) + " times this second (jitter " +
               std::to_string(static_cast<uint64_t>(jitter_.estimate() + 0.5)) + "ms), decode " +
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
-              "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost");
+              "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost, this device's own loop comes round every " +
+              std::to_string(typical_poll_gap_ms_) + "ms at its quickest");
     // What the buffer is actually being sized against. One number cannot say
     // whether a link is evenly a little late or mostly prompt with a bad tail,
     // and those two want quite different amounts of buffer -- so the curve
@@ -1476,13 +1501,15 @@ VideoTransitShape VideoJitter::shape() const {
     return out;
 }
 
-bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t period_ms) {
-    if (period_ms == 0) {
-        return true;
+bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t typical_gap_ms) {
+    if (typical_gap_ms == 0) {
+        return true;  // nothing to compare against yet
     }
-    // Three periods: a pass that missed a refresh or two is still a pass, and
-    // only something that stopped this device outright gets past it.
-    return poll_gap_ms <= period_ms * 3;
+    // Three times the quickest pass, plus a few milliseconds so that a loop
+    // running very fast does not reject its own ordinary variation. A pass
+    // that missed a refresh or two is still a pass; one that took six times
+    // as long is this device having been somewhere else.
+    return poll_gap_ms <= typical_gap_ms * 3 + 5;
 }
 
 std::size_t video_buffer_target_frames(double jitter_ms, double period_ms) {
