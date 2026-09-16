@@ -378,6 +378,17 @@ private:
     // and the window it is being measured across. The pacer's rate comes from
     // this rather than from the two numbers above -- see
     // media_pacing_bytes_per_ms().
+    // The size of the frames actually sent, since the last report.
+    //
+    // A stream whose frames are all much of a size puts a steady trickle on
+    // the wire; one whose frames swing several to one puts lumps on it, and
+    // the frame queued behind a lump waits for it -- which is where a tail of
+    // late arrivals comes from on a link that is losing nothing at all. The
+    // far end can measure that tail and cannot see what caused it, so the
+    // cause is reported from this end.
+    std::size_t stats_frame_bytes_worst_ = 0;
+    uint64_t stats_frame_bytes_total_ = 0;
+    uint64_t stats_frames_counted_ = 0;
     double media_produced_bytes_per_ms_ = 0.0;
     uint64_t media_produced_window_bytes_ = 0;
     uint64_t media_produced_window_at_ms_ = 0;

@@ -1042,7 +1042,12 @@ void HostSession::report_stream(uint64_t now_ms) {
     log_debug("stream: " + std::to_string(stats_produced_ * 1000 / elapsed) + " produced/s, " +
               std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
               std::to_string(dropped) + " dropped, " +
-              std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, companion " +
+              std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s, biggest frame " +
+              std::to_string(stats_frame_bytes_worst_ / 1024) + "KB against a typical " +
+              std::to_string(stats_frames_counted_ > 0
+                                 ? stats_frame_bytes_total_ / stats_frames_counted_ / 1024
+                                 : 0) +
+              "KB, companion " +
               std::to_string(behind) + " of " +
               std::to_string(frames_in_flight_allowed(
                   static_cast<uint64_t>(round_trip_high_ms_ + 0.5), produce_period_ms_)) +
@@ -1067,6 +1072,9 @@ void HostSession::report_stream(uint64_t now_ms) {
     stats_keyframe_requests_reported_ = stats_keyframe_requests_;
     stats_round_trip_total_ms_ = 0;
     stats_round_trip_worst_ms_ = 0;
+    stats_frame_bytes_worst_ = 0;
+    stats_frame_bytes_total_ = 0;
+    stats_frames_counted_ = 0;
 }
 
 void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved_stereo,
@@ -1413,6 +1421,11 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         pending_media_sends_.push_back(std::move(out));
         offset += chunk;
     }
+    // How even the frames are, which decides whether the link sees a steady
+    // trickle or a run of lumps -- see the report for why that matters.
+    stats_frame_bytes_worst_ = std::max(stats_frame_bytes_worst_, queued_bytes);
+    stats_frame_bytes_total_ += queued_bytes;
+    ++stats_frames_counted_;
     return queued_bytes;
 }
 
