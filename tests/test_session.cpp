@@ -2003,6 +2003,48 @@ void test_an_emulator_rendering_unevenly_does_not_buy_buffer() {
     CHECK(video_buffer_target_frames(worst_deviation, period) > kMinVideoBufferFrames);
 }
 
+// The trade the quantile cannot settle: what to do about the tail.
+//
+// Measured, Steam Deck to Mac over wifi: half the frames land within 9ms of
+// the quietest, three quarters within 16ms, and one in twenty 72ms behind.
+// Cover the body -- one period at 30fps -- and that one frame in twenty finds
+// nothing waiting, so the picture stalls about once a second. Cover the tail
+// and every frame waits 72ms for it. There is no quantile that is right for
+// both, and the same numbers mean different things on different wifi.
+//
+// So the cover is not chosen, it is earned: a second in which the picture ran
+// dry buys a period, a long spell without one gives it back.
+void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
+    // A link that never stalls never buys anything.
+    CHECK_EQ(hold_extra_periods(0, 0, 0), static_cast<std::size_t>(0));
+    CHECK_EQ(hold_extra_periods(0, 0, 100), static_cast<std::size_t>(0));
+
+    // One stall in a second is enough -- a player notices one a second, so
+    // this does not wait to be convinced.
+    CHECK_EQ(hold_extra_periods(0, 1, 0), static_cast<std::size_t>(1));
+    CHECK_EQ(hold_extra_periods(1, 1, 0), static_cast<std::size_t>(2));
+
+    // And it stops. Past two periods on top of the two the measurement can
+    // ask for, a link that still runs dry is not going to be fixed by waiting
+    // longer, and everything past here is delay for its own sake.
+    CHECK_EQ(hold_extra_periods(2, 5, 0), static_cast<std::size_t>(2));
+
+    // Given back only after a long calm -- and one at a time, so a link that
+    // needed the cover does not lose all of it at once on a quiet stretch.
+    CHECK_EQ(hold_extra_periods(2, 0, 9), static_cast<std::size_t>(2));
+    CHECK_EQ(hold_extra_periods(2, 0, 10), static_cast<std::size_t>(1));
+    CHECK_EQ(hold_extra_periods(1, 0, 10), static_cast<std::size_t>(0));
+    CHECK_EQ(hold_extra_periods(0, 0, 10), static_cast<std::size_t>(0));
+
+    // What it is worth on the link that prompted it: at 30fps the body asks
+    // for one period of cover, which does not reach a frame 72ms late; one
+    // period earned does.
+    constexpr uint64_t period = 33;
+    CHECK(video_hold_allowance_ms(16.0, period, 0) < 72u);
+    CHECK(video_hold_allowance_ms(16.0, period, 1) >= 66u);
+    CHECK(video_hold_allowance_ms(16.0, period, 2) >= 99u);
+}
+
 // What the buffer is sized from is a trade, and this is where it is made.
 //
 // A link that is mostly prompt with a bad tail -- a Steam Deck to a Mac over
@@ -2108,18 +2150,18 @@ void test_a_backlog_is_given_back_rather_than_carried_for_ever() {
     // be shown on arrival, jitter and all. Never the two frames that were
     // being carried either -- that second frame was bought by a hiccup long
     // past and then never given back.
-    CHECK_EQ(video_hold_allowance_ms(0.0, period), period);
-    CHECK_EQ(video_hold_allowance_ms(15.0, period), period);
-    CHECK_EQ(video_hold_allowance_ms(22.0, period), period);
+    CHECK_EQ(video_hold_allowance_ms(0.0, period, 0), period);
+    CHECK_EQ(video_hold_allowance_ms(15.0, period, 0), period);
+    CHECK_EQ(video_hold_allowance_ms(22.0, period, 0), period);
 
     // A link that really is uneven buys cover for as long as it stays uneven.
-    CHECK_EQ(video_hold_allowance_ms(50.0, period), 50u);
-    CHECK(video_hold_allowance_ms(50.0, period) > video_hold_allowance_ms(15.0, period));
+    CHECK_EQ(video_hold_allowance_ms(50.0, period, 0), 50u);
+    CHECK(video_hold_allowance_ms(50.0, period, 0) > video_hold_allowance_ms(15.0, period, 0));
 
     // However wild the estimate gets, it can never talk its way back into
     // hoarding more than a couple of frames.
-    CHECK_EQ(video_hold_allowance_ms(5000.0, period), period * 2);
-    CHECK(video_hold_allowance_ms(1e9, period) == period * 2);
+    CHECK_EQ(video_hold_allowance_ms(5000.0, period, 0), period * 2);
+    CHECK(video_hold_allowance_ms(1e9, period, 0) == period * 2);
 }
 
 // A backlog has to be given back by running the clock slightly fast, never by
@@ -2493,6 +2535,7 @@ int main() {
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();
     test_the_buffer_pays_for_the_body_and_not_the_tail();
+    test_cover_is_earned_by_running_dry_and_given_back_when_calm();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();

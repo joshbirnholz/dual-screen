@@ -817,13 +817,15 @@ void CompanionSession::poll(uint64_t now_ms) {
         // the last is ever seen. That was tried, and traded the latency for
         // visible judder several times a second -- a bad bargain, and a much
         // more noticeable one than the delay it bought back.
-        const uint64_t allowance = video_hold_allowance_ms(jitter_.estimate(), period);
+        const uint64_t allowance =
+            video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_periods_);
         const bool draining =
             !complete_at_.empty() && now_ms > complete_at_.front().second + allowance;
         std::size_t shown = 0;
         for (; shown < budget && decode_next_frame(); ++shown) {
         }
         if (shown > 0) {
+            starving_ = false;
             // Advanced from when it was due, not from now, so the pace does
             // not drift slower by however late each pass happened to run. A
             // clock that has fallen far behind is started again instead.
@@ -831,6 +833,22 @@ void CompanionSession::poll(uint64_t now_ms) {
             next_due_ms_ = (next_due_ms_ == 0 || now_ms > next_due_ms_ + period * 4)
                                ? now_ms + period
                                : next_due_ms_ + step;
+        }
+    }
+
+    // The picture was due to advance and there was nothing to advance it to.
+    //
+    // Counted here rather than anywhere the queue is inspected, because this is
+    // the moment a player sees: a frame held on screen past its turn. One spell
+    // counts once however many passes it spans, so this is a count of stalls
+    // somebody could notice rather than of polls. Only while the stream is
+    // live: a host with its menu open sends nothing at all, and that is a game
+    // that is paused, not a link that ran dry.
+    if (next_due_ms_ != 0 && now_ms >= next_due_ms_ && pending_frames_.empty() &&
+        last_arrival_ms_ != 0 && now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
+        if (!starving_) {
+            starving_ = true;
+            ++stats_starved_;
         }
     }
 
@@ -1369,7 +1387,13 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               " drawn/s, newest is " + std::to_string(acked_serial_) + ", held " +
               std::to_string(stats_waits_ > 0 ? stats_wait_total_ms_ / stats_waits_ : 0) +
               "ms avg " + std::to_string(stats_wait_worst_ms_) + "ms worst in a buffer of " +
-              std::to_string(target_buffer_frames()) + " (jitter " +
+              std::to_string(target_buffer_frames()) + ", covering up to " +
+              std::to_string(video_hold_allowance_ms(jitter_.estimate(), frame_period(),
+                                                     extra_hold_periods_)) +
+              "ms of which " +
+              std::to_string(extra_hold_periods_ * frame_period()) +
+              "ms was bought back after the picture ran dry, " +
+              std::to_string(stats_starved_) + " times this second (jitter " +
               std::to_string(static_cast<uint64_t>(jitter_.estimate() + 0.5)) + "ms), decode " +
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
               "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost");
@@ -1385,6 +1409,10 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(static_cast<uint64_t>(shape.three_quarters_ms + 0.5)) +
               "ms, nineteen in twenty within " +
               std::to_string(static_cast<uint64_t>(shape.worst_twentieth_ms + 0.5)) + "ms");
+    // Once a second, what the stalls have earned. See hold_extra_periods().
+    extra_hold_periods_ = hold_extra_periods(extra_hold_periods_, stats_starved_, calm_seconds_);
+    calm_seconds_ = (stats_starved_ == 0) ? calm_seconds_ + 1 : 0;
+    stats_starved_ = 0;
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
@@ -1486,9 +1514,35 @@ uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining
     return drained > 0 ? drained : 1;
 }
 
-uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms) {
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
+                                 std::size_t extra_periods) {
     const auto measured = static_cast<uint64_t>(std::max(0.0, jitter_ms) + 0.5);
-    return std::clamp(measured, period_ms, period_ms * 2);
+    return std::clamp(measured, period_ms, period_ms * 2) +
+           static_cast<uint64_t>(extra_periods) * period_ms;
+}
+
+std::size_t hold_extra_periods(std::size_t current, unsigned starved_last_second,
+                               unsigned calm_seconds) {
+    // Two periods on top of the two the measurement can ask for. Past that the
+    // picture is not being smoothed, it is being delayed: a link that still
+    // runs dry with four periods in hand is losing frames or falling behind,
+    // and neither is something more waiting will fix.
+    constexpr std::size_t kMaxExtraPeriods = 2;
+    // Bought on the first second that stalls, because one stall a second is
+    // already what a player notices -- this is not a threshold to be tuned up
+    // until the complaints stop.
+    if (starved_last_second > 0) {
+        return std::min(current + 1, kMaxExtraPeriods);
+    }
+    // Given back slowly, and only after long enough that a quiet spell is a
+    // quiet link rather than a quiet moment. Asymmetric on purpose: buying
+    // cover costs a period of delay once, and giving it back too eagerly costs
+    // a stall every time the link twitches.
+    constexpr unsigned kCalmSecondsBeforeGivingBack = 10;
+    if (calm_seconds >= kCalmSecondsBeforeGivingBack && current > 0) {
+        return current - 1;
+    }
+    return current;
 }
 
 std::size_t CompanionSession::target_buffer_frames() const {

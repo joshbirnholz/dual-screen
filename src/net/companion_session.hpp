@@ -24,6 +24,12 @@ namespace ds::net {
 inline constexpr std::size_t kMinVideoBufferFrames = 1;
 inline constexpr std::size_t kMaxVideoBufferFrames = 4;
 
+// How recently a frame must have arrived for this device to count the picture
+// running dry against the link rather than against a game that is paused. A
+// host with its menu open sends nothing at all, and half a second is far
+// longer than any frame this is meant to notice being late by.
+inline constexpr uint64_t kStreamIsLiveMs = 500;
+
 // How long to wait before asking the host again for a picture that stands on
 // its own. Comfortably longer than a round trip on the LAN this targets (tens
 // of milliseconds), so a link that is merely slow does not collect several
@@ -208,16 +214,40 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 // How long a finished frame may sit waiting before the pacing clock has to
 // give ground and let it through, in milliseconds.
 //
-// This is what stops the clock hoarding. Showing one frame per period keeps
-// the cadence even but conserves the queue's depth exactly, so any backlog
-// becomes permanent latency. Letting a frame through once it has waited longer
-// than the link's own measured unevenness drains that backlog instead, so the
-// queue settles at the depth the link needs rather than at whatever a past
-// hiccup left behind. Never below one period, or there would be nothing left
-// for the clock to pace with and frames would simply be shown on arrival,
-// jitter and all; never above two, so no jitter estimate can talk this back
-// into hoarding.
-uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms);
+// This is what stops the clock hoarding, and it is the number that actually
+// decides how deep the queue settles -- the buffer is not a target anything
+// enforces, it is what this allows. Showing one frame per period keeps the
+// cadence even but conserves the queue's depth exactly, so any backlog becomes
+// permanent latency. Letting a frame through once it has waited longer than
+// the link's own measured unevenness drains that backlog instead, so the queue
+// settles at the depth the link needs rather than at whatever a past hiccup
+// left behind. Never below one period, or there would be nothing left for the
+// clock to pace with and frames would simply be shown on arrival, jitter and
+// all; never above two from the measurement alone, so no jitter estimate can
+// talk this back into hoarding.
+//
+// `extra_periods` is cover this link has shown it needs beyond that, which is
+// the one thing a quantile cannot know -- see hold_extra_periods().
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
+                                 std::size_t extra_periods);
+
+// How much cover to hold beyond what the measured spread asks for, given how
+// often the picture has actually had nothing to show.
+//
+// Where the quantile the spread is read at stops being arguable and starts
+// being a guess about a tail. Measured, Steam Deck to Mac over wifi: three
+// quarters of frames land within 16ms of the quietest and one in twenty lands
+// 72ms behind it. Cover the body and that one frame in twenty finds nothing
+// waiting -- the picture stalls, about once a second, which is what a player
+// calls judder. Cover the tail and every frame waits 72ms for it. Neither is
+// a number to pick in advance, because the same numbers mean different things
+// on different wifi.
+//
+// So this watches instead of guessing. A second in which the picture ran dry
+// buys a period of cover; a spell without one gives it back. The link settles
+// it, and nobody is ever asked to tune it.
+std::size_t hold_extra_periods(std::size_t current, unsigned starved_last_second,
+                               unsigned calm_seconds);
 
 // How far to advance the pacing clock after showing `shown` frames.
 //
@@ -645,6 +675,16 @@ private:
     // When the last poll() ran, so this one can tell whether it is late --
     // see poll_gap_measures_the_link() -- and whether the transits it is about
     // to measure describe the link or this device. Zero before the first one.
+    // Cover this link has earned beyond what its measured spread asks for,
+    // in periods -- see hold_extra_periods(). Zero on a link that never runs
+    // the picture dry.
+    std::size_t extra_hold_periods_ = 0;
+    // Whether the picture is currently waiting on a frame that has not come.
+    // One spell counts once however many passes it spans, which is what makes
+    // the count a count of stalls a player could see rather than of polls.
+    bool starving_ = false;
+    unsigned stats_starved_ = 0;
+    unsigned calm_seconds_ = 0;
     uint64_t last_poll_ms_ = 0;
     bool this_pass_measures_the_link_ = false;
     // When to give up on a connection that has not finished arriving. Zero
