@@ -267,11 +267,17 @@ constexpr double kAssumedProducePeriodMs = 16.7;
 // pacing, the other end's loop and the evenness of the frames, the air is what
 // is left.
 //
-// Six bits per pixel per second puts 1080p at about 12 Mbit/s, which is in the
-// range Moonlight is normally run at for this size and half of what this was
-// putting out. Per second and not per frame, so there is no frame rate to
-// assume and none to get wrong: a link budget is a link budget whether the
-// game draws thirty pictures into it or sixty.
+// Twelve bits per pixel per second puts 1080p at about 24 Mbit/s. Per second
+// and not per frame, so there is no frame rate to assume and none to get
+// wrong: a link budget is a link budget whether the game draws thirty pictures
+// into it or sixty.
+//
+// It was six for one session, on the theory that the tail of late arrivals was
+// air time and fewer bytes would shorten it. That is now answered, and the
+// answer is no: the bytes went from 2900 KB/s to 959, a third of what they
+// were, and the tail did not move at all -- 72.8ms at the ninety-fifth
+// percentile before, 72.0ms after. It cost picture quality and bought nothing,
+// so it is back up. Whatever that tail is, it is not this stream's volume.
 //
 // The floor matters as much as the slope. Bits per pixel has to rise as a
 // picture gets smaller -- the same blockiness costs proportionally more at
@@ -279,9 +285,9 @@ constexpr double kAssumedProducePeriodMs = 16.7;
 // small end, so a Wii U GamePad's native 854x480 is held up by the floor
 // rather than by the slope.
 int bitrate_kbps_for_encode_size(int width, int height, double frames_per_second) {
-    constexpr double kBitsPerPixelPerSecond = 6.0;
+    constexpr double kBitsPerPixelPerSecond = 12.0;
     constexpr int kMinBitrateKbps = 4000;
-    constexpr int kMaxBitrateKbps = 30000;
+    constexpr int kMaxBitrateKbps = 40000;
     // Kept in the signature because the caller measures it and because the
     // keyframe interval is still built from it; the budget itself no longer
     // depends on it, which is the point.

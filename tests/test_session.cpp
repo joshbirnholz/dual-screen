@@ -1828,10 +1828,11 @@ void test_an_uneven_link_buys_cover_and_gives_it_back() {
 // encoder was honouring it the whole time (asked 22.9 it made 23.0, asked 22.7
 // it made 23.5); it was simply never asked for less than it already wanted.
 void test_the_bitrate_is_a_budget_for_the_link() {
-    // 1080p lands where a stream of this size is normally run, and at half
-    // what this was putting on the air before.
+    // 1080p lands about where this stream was already running, which is what
+    // it looked right at. Cutting it to half that was tried for a session: it
+    // cost picture and moved the tail of late arrivals by 0.8ms.
     const int at_1080p = bitrate_kbps_for_encode_size(1920, 1080, 30.0);
-    CHECK(at_1080p > 10000 && at_1080p < 14000);
+    CHECK(at_1080p > 20000 && at_1080p < 28000);
 
     // And it does not depend on the frame rate, because a link budget is the
     // same budget whether thirty pictures are drawn into it or sixty. That is
@@ -1848,7 +1849,7 @@ void test_the_bitrate_is_a_budget_for_the_link() {
     CHECK(gamepad >= 4000);
 
     // And nothing is asked for a rate no link here could carry.
-    CHECK(bitrate_kbps_for_encode_size(7680, 4320, 60.0) <= 30000);
+    CHECK(bitrate_kbps_for_encode_size(7680, 4320, 60.0) <= 40000);
 }
 
 // What the pacer drains at has to follow what the encoder really produces,
