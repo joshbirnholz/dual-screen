@@ -51,6 +51,16 @@ void AudioLowWater::reset(std::size_t window_frames, std::size_t queued) {
 }
 
 std::size_t AudioLowWater::note(std::size_t queued, std::size_t frames) {
+    if (window_frames_ == 0) {
+        // Never told how far to look back, so there is nothing to look back
+        // over. Answer with the depth in front of it rather than with a mark
+        // that can only ever fall: reading the instant is worse than reading
+        // the trough, and never reading anything above the target at all --
+        // which is what a zero window silently did -- is worse than both.
+        current_ = queued;
+        previous_ = queued;
+        return queued;
+    }
     current_ = std::min(current_, queued);
     filled_frames_ += frames;
     if (window_frames_ > 0 && filled_frames_ >= window_frames_) {
@@ -355,15 +365,15 @@ void AudioOutput::report(uint64_t now_ms) {
 
 void AudioOutput::prime() {
     primed_ = true;
-    if (target_frames_ == 0) {
-        // Nothing to prime to, but the low-water mark still starts from where
-        // the queue is rather than from a stale reading of an older stream.
-        low_water_.reset(low_water_window_frames_, queued_frames());
-        return;
+    if (target_frames_ != 0) {
+        const std::vector<int16_t> silence(target_frames_ * 2, 0);
+        SDL_QueueAudio(device_, silence.data(),
+                       static_cast<Uint32>(silence.size() * sizeof(int16_t)));
     }
-    const std::vector<int16_t> silence(target_frames_ * 2, 0);
-    SDL_QueueAudio(device_, silence.data(),
-                   static_cast<Uint32>(silence.size() * sizeof(int16_t)));
+    // Wherever the queue now stands is where the low-water mark starts, on
+    // every path through here -- there is no case where a stream begins and
+    // the mark should still be carrying a reading from an older one.
+    low_water_.reset(low_water_window_frames_, queued_frames());
 }
 
 void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {

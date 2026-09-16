@@ -345,6 +345,29 @@ void test_a_real_surplus_is_still_found_through_the_low_water_mark() {
     CHECK(settled < static_cast<double>(target + margin) + static_cast<double>(window) * 0.1);
 }
 
+// A mark that was never given a window must not answer "empty" for ever.
+//
+// It did, and it cost a whole session: reset() was being called on one path
+// through prime() and not the other, so the window stayed zero, both buckets
+// stayed at zero, and the trim read a queue that was never above its target.
+// Nothing was trimmed at all -- the log showed the queue sawing from 96ms up
+// to 395ms and being cut off at the ceiling, seventy-seven times, with not one
+// splice in between. Reading the instant is a worse answer than reading the
+// trough; reading zero is not an answer at all.
+void test_a_mark_with_no_window_still_answers_with_the_queue() {
+    AudioLowWater mark;
+    CHECK_EQ(mark.note(9000, 100), static_cast<std::size_t>(9000));
+    CHECK_EQ(mark.note(120, 100), static_cast<std::size_t>(120));
+    CHECK_EQ(mark.note(9000, 100), static_cast<std::size_t>(9000));
+
+    // Which is enough for a deep queue to be trimmed rather than left to run
+    // to the ceiling.
+    constexpr std::size_t target = 2880;
+    constexpr std::size_t margin = 1920;
+    constexpr std::size_t block = 480;
+    CHECK(audio_trim_frames(mark.note(9000, block), target, margin, block) > 0);
+}
+
 // The mark itself: the lowest the queue has been across about a second, with
 // both buckets starting where the queue is so that a stream which has only
 // just been primed is not read as empty.
@@ -385,5 +408,6 @@ int main() {
     test_audio_arriving_in_lumps_is_not_a_surplus();
     test_a_real_surplus_is_still_found_through_the_low_water_mark();
     test_the_low_water_mark_follows_the_trough_not_the_peak();
+    test_a_mark_with_no_window_still_answers_with_the_queue();
     return test::finish("audio");
 }
