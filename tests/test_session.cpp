@@ -2003,6 +2003,26 @@ void test_an_emulator_rendering_unevenly_does_not_buy_buffer() {
     CHECK(video_buffer_target_frames(worst_deviation, period) > kMinVideoBufferFrames);
 }
 
+// A picture shown on time is not a stall, however empty the queue behind it.
+//
+// The first version of this counted "the clock came due and nothing was
+// waiting", which at the least latency this can run at is the *normal* state:
+// the clock comes due, the frame arrives a moment later, it is shown on time,
+// and nothing is ever queued. That read as a stall on every frame -- thirty a
+// second on a stream keeping up perfectly -- and drove the cover straight to
+// its ceiling, which is the delay the whole mechanism exists not to buy.
+void test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time() {
+    constexpr uint64_t period = 33;
+
+    // What the loop does with what a healthy stream really produces: nothing
+    // late, so nothing bought, however often the queue was empty.
+    CHECK_EQ(hold_extra_periods(0, 0, 1), static_cast<std::size_t>(0));
+    // And what it does with the stream that was being misread: thirty stalls a
+    // second would have taken it to the ceiling in two seconds flat.
+    CHECK_EQ(hold_extra_periods(hold_extra_periods(0, 30, 0), 30, 0),
+             static_cast<std::size_t>(2));
+}
+
 // The trade the quantile cannot settle: what to do about the tail.
 //
 // Measured, Steam Deck to Mac over wifi: half the frames land within 9ms of
@@ -2536,6 +2556,7 @@ int main() {
     test_this_devices_own_stall_is_not_the_links_fault();
     test_the_buffer_pays_for_the_body_and_not_the_tail();
     test_cover_is_earned_by_running_dry_and_given_back_when_calm();
+    test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();

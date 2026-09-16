@@ -825,7 +825,21 @@ void CompanionSession::poll(uint64_t now_ms) {
         for (; shown < budget && decode_next_frame(); ++shown) {
         }
         if (shown > 0) {
-            starving_ = false;
+            // Whether this picture missed its turn, which is the only form of
+            // running dry a player can see.
+            //
+            // Not "the queue was empty when the clock came due": at the least
+            // latency this can run at, that is the *normal* state -- the clock
+            // comes due, the frame arrives a moment later, and it is shown on
+            // time with nothing ever queued behind it. Counting that read as
+            // thirty stalls a second on a stream that was keeping up perfectly,
+            // and drove the cover below straight to its ceiling, which is
+            // exactly the delay it exists to avoid buying. A frame is late when
+            // it is *shown* late.
+            if (next_due_ms_ != 0 && now_ms > next_due_ms_ + period / 2 &&
+                last_arrival_ms_ != 0 && now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
+                ++stats_starved_;
+            }
             // Advanced from when it was due, not from now, so the pace does
             // not drift slower by however late each pass happened to run. A
             // clock that has fallen far behind is started again instead.
@@ -833,22 +847,6 @@ void CompanionSession::poll(uint64_t now_ms) {
             next_due_ms_ = (next_due_ms_ == 0 || now_ms > next_due_ms_ + period * 4)
                                ? now_ms + period
                                : next_due_ms_ + step;
-        }
-    }
-
-    // The picture was due to advance and there was nothing to advance it to.
-    //
-    // Counted here rather than anywhere the queue is inspected, because this is
-    // the moment a player sees: a frame held on screen past its turn. One spell
-    // counts once however many passes it spans, so this is a count of stalls
-    // somebody could notice rather than of polls. Only while the stream is
-    // live: a host with its menu open sends nothing at all, and that is a game
-    // that is paused, not a link that ran dry.
-    if (next_due_ms_ != 0 && now_ms >= next_due_ms_ && pending_frames_.empty() &&
-        last_arrival_ms_ != 0 && now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
-        if (!starving_) {
-            starving_ = true;
-            ++stats_starved_;
         }
     }
 

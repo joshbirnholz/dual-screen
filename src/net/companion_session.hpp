@@ -679,10 +679,9 @@ private:
     // in periods -- see hold_extra_periods(). Zero on a link that never runs
     // the picture dry.
     std::size_t extra_hold_periods_ = 0;
-    // Whether the picture is currently waiting on a frame that has not come.
-    // One spell counts once however many passes it spans, which is what makes
-    // the count a count of stalls a player could see rather than of polls.
-    bool starving_ = false;
+    // Pictures shown more than half a period after they were due, which is
+    // the only running-dry a player can see -- see where this is counted for
+    // why "the queue was empty" is not the same thing at all.
     unsigned stats_starved_ = 0;
     unsigned calm_seconds_ = 0;
     uint64_t last_poll_ms_ = 0;
