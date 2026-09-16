@@ -89,6 +89,7 @@ add_library(dualscreen_core STATIC
     src/app.cpp
     src/audio/audio_output.cpp
     src/video/video_decoder.cpp
+    src/video/color_convert.cpp
     src/video/video_encoder.cpp
     src/config/game_config.cpp
     src/config/paths.cpp

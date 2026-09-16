@@ -97,6 +97,10 @@ private:
     int height_ = 0;
     // What rebuild_scaler() needs to make one without the config it came
     // from: the two ends of the conversion it performs.
+    // Which of the two orders the caller hands pixels in, kept as this app's
+    // own enum as well as the FFmpeg format below, because rgb_to_nv12() reads
+    // it directly.
+    PixelOrder pixel_order_ = PixelOrder::Bgra;
     int source_format_ = 0;
     int software_format_ = 0;
     int source_width_ = 0;

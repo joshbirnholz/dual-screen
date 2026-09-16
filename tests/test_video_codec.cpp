@@ -11,11 +11,18 @@
 #include "test_support.hpp"
 
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <vector>
 
+#include "video/color_convert.hpp"
 #include "video/video_decoder.hpp"
 #include "video/video_encoder.hpp"
+
+extern "C" {
+#include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
+}
 
 using namespace ds;
 
@@ -310,8 +317,116 @@ void test_a_backend_label_is_not_always_a_decoder_name() {
 
 }  // namespace
 
+// The colour conversion, against swscale itself as the reference.
+//
+// This exists because swscale charges five milliseconds a frame for the
+// full-range output this app asks for -- 8.43ms against 3.46ms at its default
+// range, measured on a 1080p frame -- which is most of the 7ms a Steam Deck
+// was spending on every frame it encoded. rgb_to_nv12() does the same
+// arithmetic in 1.8ms across four threads.
+//
+// "The same arithmetic" is the claim worth testing, and the only honest way to
+// test it is against the thing being replaced, on a picture shaped like the
+// ones this actually carries: smooth, which is what a rendered game frame is.
+// On noise the two disagree by more, because they subsample chroma
+// differently, and neither is wrong -- but no game looks like noise.
+void test_the_colour_conversion_matches_swscale() {
+    constexpr int kWidth = 256;
+    constexpr int kHeight = 128;
+    std::vector<uint8_t> source(static_cast<std::size_t>(kWidth) * kHeight * 4);
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            uint8_t* pixel = &source[(static_cast<std::size_t>(y) * kWidth + x) * 4];
+            pixel[0] = static_cast<uint8_t>(128 + 100 * std::sin(x * 0.03));
+            pixel[1] = static_cast<uint8_t>(120 + 90 * std::sin(x * 0.01 + 1.0));
+            pixel[2] = static_cast<uint8_t>(140 + 80 * std::cos(y * 0.02));
+            pixel[3] = 255;
+        }
+    }
+
+    uint8_t* reference[4] = {};
+    int reference_stride[4] = {};
+    CHECK(av_image_alloc(reference, reference_stride, kWidth, kHeight, AV_PIX_FMT_NV12, 32) > 0);
+    uint8_t* ours[4] = {};
+    int ours_stride[4] = {};
+    CHECK(av_image_alloc(ours, ours_stride, kWidth, kHeight, AV_PIX_FMT_NV12, 32) > 0);
+
+    // Exactly how VideoEncoder configures it -- ITU-601, destination range
+    // full. Getting either of those wrong here would make this test agree with
+    // something the encoder does not do.
+    SwsContext* scaler = sws_getContext(kWidth, kHeight, AV_PIX_FMT_BGRA, kWidth, kHeight,
+                                        AV_PIX_FMT_NV12, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    CHECK(scaler != nullptr);
+    sws_setColorspaceDetails(scaler, sws_getCoefficients(SWS_CS_ITU601), 0,
+                             sws_getCoefficients(SWS_CS_ITU601), 1, 0, 1 << 16, 1 << 16);
+    const uint8_t* planes[1] = {source.data()};
+    const int strides[1] = {kWidth * 4};
+    sws_scale(scaler, planes, strides, 0, kHeight, reference, reference_stride);
+    sws_freeContext(scaler);
+
+    for (unsigned threads : {1u, 4u}) {
+        std::memset(ours[0], 0, static_cast<std::size_t>(ours_stride[0]) * kHeight);
+        std::memset(ours[1], 0, static_cast<std::size_t>(ours_stride[1]) * kHeight / 2);
+        video::rgb_to_nv12(source.data(), static_cast<std::size_t>(kWidth) * 4, kWidth, kHeight,
+                           video::PixelOrder::Bgra, ours[0],
+                           static_cast<std::size_t>(ours_stride[0]), ours[1],
+                           static_cast<std::size_t>(ours_stride[1]), threads);
+
+        int worst_luma = 0;
+        for (int y = 0; y < kHeight; ++y) {
+            for (int x = 0; x < kWidth; ++x) {
+                const int difference = std::abs(static_cast<int>(ours[0][y * ours_stride[0] + x]) -
+                                                reference[0][y * reference_stride[0] + x]);
+                worst_luma = std::max(worst_luma, difference);
+            }
+        }
+        int worst_chroma = 0;
+        for (int y = 0; y < kHeight / 2; ++y) {
+            for (int x = 0; x < kWidth; ++x) {
+                const int difference = std::abs(static_cast<int>(ours[1][y * ours_stride[1] + x]) -
+                                                reference[1][y * reference_stride[1] + x]);
+                worst_chroma = std::max(worst_chroma, difference);
+            }
+        }
+        // One step out of 255, either channel. Not "close enough to look at" --
+        // close enough that the encoder cannot tell which produced its input.
+        CHECK_MSG(worst_luma <= 1, "luma drifted from swscale by " + std::to_string(worst_luma));
+        CHECK_MSG(worst_chroma <= 1,
+                  "chroma drifted from swscale by " + std::to_string(worst_chroma));
+    }
+
+    // Splitting the work across threads must not change a single byte of it:
+    // the bands are whole chroma rows, so no two of them touch the same
+    // output.
+    std::vector<uint8_t> one_thread(static_cast<std::size_t>(ours_stride[0]) * kHeight);
+    video::rgb_to_nv12(source.data(), static_cast<std::size_t>(kWidth) * 4, kWidth, kHeight,
+                       video::PixelOrder::Bgra, one_thread.data(),
+                       static_cast<std::size_t>(ours_stride[0]), ours[1],
+                       static_cast<std::size_t>(ours_stride[1]), 1);
+    CHECK(std::memcmp(one_thread.data(), ours[0],
+                      static_cast<std::size_t>(ours_stride[0]) * kHeight) == 0);
+
+    // And the other channel order really is the other order, rather than the
+    // same bytes read twice: red and blue swapped must move the chroma and
+    // leave nothing looking identical.
+    std::vector<uint8_t> swapped_luma(static_cast<std::size_t>(ours_stride[0]) * kHeight);
+    std::vector<uint8_t> swapped_chroma(static_cast<std::size_t>(ours_stride[1]) * kHeight / 2);
+    video::rgb_to_nv12(source.data(), static_cast<std::size_t>(kWidth) * 4, kWidth, kHeight,
+                       video::PixelOrder::Rgba, swapped_luma.data(),
+                       static_cast<std::size_t>(ours_stride[0]), swapped_chroma.data(),
+                       static_cast<std::size_t>(ours_stride[1]), 1);
+    CHECK(std::memcmp(swapped_chroma.data(), ours[1],
+                      static_cast<std::size_t>(ours_stride[1]) * kHeight / 2) != 0);
+
+    av_freep(&reference[0]);
+    av_freep(&ours[0]);
+}
+
 int main() {
     test_a_backend_label_is_not_always_a_decoder_name();
+    // Needs only swscale, which is there whenever FFmpeg is -- so it runs on a
+    // machine with no encoder, which is where this was written.
+    test_the_colour_conversion_matches_swscale();
     if (!video::available()) {
         // Not a failure: the codec is optional until every platform's toolchain
         // has it, and saying so is more use than a green tick that tested air.

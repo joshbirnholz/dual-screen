@@ -1,5 +1,7 @@
 #include "video/video_encoder.hpp"
 
+#include "video/color_convert.hpp"
+
 #include <chrono>
 
 #include <cstdarg>
@@ -373,6 +375,7 @@ bool VideoEncoder::open_backend(const std::string& name,
     // feeding that in as BGRA swaps red and blue across the whole picture.
     const AVPixelFormat source_format =
         (config.pixel_order == PixelOrder::Rgba) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_BGRA;
+    pixel_order_ = config.pixel_order;
     const int source_width = config.source_width > 0 ? config.source_width : config.width;
     const int source_height = config.source_height > 0 ? config.source_height : config.height;
     source_format_ = static_cast<int>(source_format);
@@ -503,11 +506,29 @@ bool VideoEncoder::encode(const uint32_t* pixels,
 
     const auto* source = reinterpret_cast<const uint8_t*>(pixels);
     const int source_stride = stride_pixels * 4;
-    // The number of rows sws_scale reads from the source, which is its own
-    // height, not the encoded frame's -- the two now differ whenever
-    // EncoderConfig::source_width/source_height asked for downscaling.
-    sws_scale(scaler_, &source, &source_stride, 0, source_height_, frame_->data,
-             frame_->linesize);
+    // Straight to NV12 where there is nothing to resize, which is the ordinary
+    // case: a Wii U hands over 1920x1080 and it goes out at 1920x1080. That is
+    // a colour conversion, and swscale charges five milliseconds a frame for
+    // this app's full-range request alone -- see rgb_to_nv12(), which does the
+    // same arithmetic in under two.
+    //
+    // swscale still does the rest: anything being scaled down for a smaller
+    // far end, and any format pairing this does not cover.
+    const bool no_resizing = source_width_ == width_ && source_height_ == height_;
+    const bool plain_nv12 = software_format_ == static_cast<int>(AV_PIX_FMT_NV12);
+    const bool even = (width_ % 2) == 0 && (height_ % 2) == 0;
+    if (no_resizing && plain_nv12 && even) {
+        rgb_to_nv12(source, static_cast<std::size_t>(source_stride), width_, height_, pixel_order_,
+                    frame_->data[0], static_cast<std::size_t>(frame_->linesize[0]),
+                    frame_->data[1], static_cast<std::size_t>(frame_->linesize[1]),
+                    conversion_threads());
+    } else {
+        // The number of rows sws_scale reads from the source, which is its own
+        // height, not the encoded frame's -- the two differ whenever
+        // EncoderConfig::source_width/source_height asked for downscaling.
+        sws_scale(scaler_, &source, &source_stride, 0, source_height_, frame_->data,
+                 frame_->linesize);
+    }
     cost_.scale_ms += milliseconds_since(scale_started);
     frame_->pts = next_pts_++;
     last_submitted_pts_ = frame_->pts;

@@ -84,7 +84,7 @@ CPPFILES    := main.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp switch_motion.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
-               video_decoder.cpp video_encoder.cpp \
+               color_convert.cpp video_decoder.cpp video_encoder.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp \
