@@ -37,6 +37,14 @@ bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, i
 // having fewer frames in it. See kMinFramesInFlight and its neighbours.
 std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms);
 
+// What bitrate a screen of this size, sent at this rate, should be encoded at.
+// See the definition for why the rate has to be the measured one.
+int bitrate_kbps_for_encode_size(int width, int height, double frames_per_second);
+
+// Whether a newly computed bitrate differs enough from the one in use to be
+// worth reopening the encoder -- which costs a keyframe -- for.
+bool bitrate_is_worth_reopening_for(int wanted_kbps, int current_kbps);
+
 class HostSession {
 public:
     struct Config {
@@ -365,6 +373,13 @@ private:
     // encoder (tiles, or nothing sent yet).
     uint32_t video_bitrate_kbps_top_ = 0;
     uint32_t video_bitrate_kbps_bottom_ = 0;
+    // Frames produced since the session began, and where each screen's
+    // encoder was opened in that count. The difference is how long the
+    // measured frame rate has had to settle since the bitrate was chosen
+    // from it -- see bitrate_is_worth_reopening_for().
+    uint64_t produced_total_ = 0;
+    uint64_t encoder_opened_at_top_ = 0;
+    uint64_t encoder_opened_at_bottom_ = 0;
     // One counter per AudioStreamId, so the companion can tell a genuinely
     // missing packet from ordinary jitter -- see AudioMessage::sequence.
     // Indexed by static_cast<uint8_t>(stream); 3 entries because that enum

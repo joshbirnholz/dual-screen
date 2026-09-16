@@ -1771,6 +1771,61 @@ void test_an_uneven_link_buys_cover_and_gives_it_back() {
     CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMinVideoBufferFrames + 1);
 }
 
+// Bits per pixel per frame only means that if the frame rate is the real one.
+//
+// It was hardcoded at 60. Wind Waker HD runs at 30, so a 1080p stream of it
+// asked for 43.5 Mbit/s to carry thirty frames a second -- 0.7 bits a pixel,
+// twice the quality target, twice the bytes on the air, and on a Steam Deck's
+// wifi, round-trip excursions of 100 to 130ms about once a second against a
+// 25ms average. The far end buys buffer against exactly those.
+void test_the_bitrate_follows_the_rate_the_source_really_runs_at() {
+    const int at_60 = bitrate_kbps_for_encode_size(1920, 1080, 60.0);
+    const int at_30 = bitrate_kbps_for_encode_size(1920, 1080, 30.0);
+
+    // The 60fps number is the one this has always aimed at, so a game that
+    // really does run at 60 is untouched.
+    CHECK(at_60 > 40000 && at_60 < 47000);
+    // And half the frames want half the bits, for the same picture quality on
+    // each of them.
+    CHECK(at_30 * 2 > at_60 - 1000 && at_30 * 2 < at_60 + 1000);
+
+    // A GamePad's native size stays near where it has always been.
+    const int gamepad = bitrate_kbps_for_encode_size(854, 480, 60.0);
+    CHECK(gamepad > 7000 && gamepad < 10000);
+
+    // A number that is not a frame rate -- a measurement taken while a game
+    // was loading, or a division by a period that has not settled -- is
+    // clamped rather than believed.
+    CHECK_EQ(bitrate_kbps_for_encode_size(1920, 1080, 0.0),
+             bitrate_kbps_for_encode_size(1920, 1080, 20.0));
+    CHECK_EQ(bitrate_kbps_for_encode_size(1920, 1080, 100000.0),
+             bitrate_kbps_for_encode_size(1920, 1080, 144.0));
+}
+
+// The rate is only known by measurement and the measurement is not ready when
+// the first frame has to be encoded, so the first encoder is opened on an
+// assumption and corrected once the source has shown what it does. Correcting
+// costs a keyframe, so it has to happen for a real difference and not for
+// noise.
+void test_only_a_real_change_in_rate_reopens_the_encoder() {
+    const int at_60 = bitrate_kbps_for_encode_size(1920, 1080, 60.0);
+    const int at_30 = bitrate_kbps_for_encode_size(1920, 1080, 30.0);
+
+    // A game that runs at the rate it was assumed to never reopens...
+    CHECK(!bitrate_is_worth_reopening_for(at_60, at_60));
+    // ...nor does one a few frames a second off it.
+    CHECK(!bitrate_is_worth_reopening_for(bitrate_kbps_for_encode_size(1920, 1080, 57.0), at_60));
+    // ...and one at half the rate reopens, once, in either direction.
+    CHECK(bitrate_is_worth_reopening_for(at_30, at_60));
+    CHECK(bitrate_is_worth_reopening_for(at_60, at_30));
+    // Having reopened, it stays put.
+    CHECK(!bitrate_is_worth_reopening_for(at_30, at_30));
+
+    // Nothing to compare against is not a reason to reopen.
+    CHECK(!bitrate_is_worth_reopening_for(at_30, 0));
+    CHECK(!bitrate_is_worth_reopening_for(0, at_60));
+}
+
 // The window is a bandwidth-delay product, and the point of computing it
 // rather than picking it is that the delay is not a constant.
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
@@ -2324,6 +2379,8 @@ int main() {
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
+    test_the_bitrate_follows_the_rate_the_source_really_runs_at();
+    test_only_a_real_change_in_rate_reopens_the_encoder();
     test_the_in_flight_window_covers_the_delay_this_link_shows();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();

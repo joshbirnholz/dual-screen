@@ -80,28 +80,6 @@ void compute_capped_encode_size(int source_width,
                           static_cast<int>(source_height * scale) / kAlignment * kAlignment);
 }
 
-// A flat bitrate either wastes bits on a small picture (blocky at 480p is a
-// lot more bits per pixel than the same blockiness at 1080p needs) or starves
-// a large one -- and a fixed 8 Mbps, this app's number until now, is well
-// under what a LAN actually has room for: Moonlight/Sunshine set-ups commonly
-// run 1080p+ at 50 Mbps on the same kind of network this targets. Scaling
-// with the picture's own pixel count keeps the same visual quality target at
-// every size instead of picking one number that is only right for one of
-// them. 0.35 bits/pixel/frame at 60fps lands close to that 50 Mbps figure at
-// 1080p (2,073,600 px * 60 * 0.35 ~= 43.5 Mbps) while keeping the previous
-// 8 Mbps roughly where it was for a Wii U GamePad's native 854x480 (~8.6
-// Mbps) -- not tuned to hit either number exactly, just what one consistent
-// quality target happens to produce at each end.
-int bitrate_kbps_for_encode_size(int width, int height) {
-    constexpr double kBitsPerPixelPerFrame = 0.35;
-    constexpr int kFps = 60;
-    constexpr int kMinBitrateKbps = 2000;
-    constexpr int kMaxBitrateKbps = 60000;
-    const double bits_per_second =
-        static_cast<double>(width) * static_cast<double>(height) * kFps * kBitsPerPixelPerFrame;
-    const int kbps = static_cast<int>(bits_per_second / 1000.0);
-    return std::clamp(kbps, kMinBitrateKbps, kMaxBitrateKbps);
-}
 
 // If the companion cannot keep up, dropping frames is the right failure: the
 // alternative is an ever-growing queue and input that lags further behind.
@@ -247,7 +225,71 @@ constexpr std::size_t kMinDrainBudgetBytes = kMediaHeaderBytes + kFragmentHeader
 // near long enough to matter as a stall.
 constexpr uint64_t kMaxPacingElapsedMs = 250;
 
+// What produce_period_ms_ starts at before anything has been measured -- one
+// frame of 60fps -- and how many frames have to go by after an encoder opens
+// before that measurement is trusted enough to reopen it on. Two seconds at
+// 60fps, four at 30: long enough for a 5%-per-frame smoothing to have arrived
+// wherever it is going, short enough that the wrong bitrate is not carried
+// into the part of the session anyone is playing.
+constexpr double kAssumedProducePeriodMs = 16.7;
+constexpr uint64_t kBitrateSettleFrames = 120;
+
 }  // namespace
+
+// A flat bitrate either wastes bits on a small picture (blocky at 480p is a
+// lot more bits per pixel than the same blockiness at 1080p needs) or starves
+// a large one -- and a fixed 8 Mbps, this app's number until now, is well
+// under what a LAN actually has room for: Moonlight/Sunshine set-ups commonly
+// run 1080p+ at 50 Mbps on the same kind of network this targets. Scaling
+// with the picture's own pixel count keeps the same visual quality target at
+// every size instead of picking one number that is only right for one of
+// them. 0.35 bits/pixel/frame at 60fps lands close to that 50 Mbps figure at
+// 1080p (2,073,600 px * 60 * 0.35 ~= 43.5 Mbps) while keeping the previous
+// 8 Mbps roughly where it was for a Wii U GamePad's native 854x480 (~8.6
+// Mbps) -- not tuned to hit either number exactly, just what one consistent
+// quality target happens to produce at each end.
+//
+// Bits per pixel per *frame* only means that if the frame rate is the real
+// one. It was hardcoded at 60, and Wind Waker HD runs at 30: a 1080p stream
+// of it asked for 43.5 Mbps to carry thirty frames a second, which is 0.7
+// bits a pixel -- twice the quality this is aiming at, and twice the bytes on
+// the air. That is not free latency. Measured on a Steam Deck's wifi it
+// showed up as round-trip excursions of 100 to 130ms about once a second
+// against a 25ms average, and those excursions are exactly what the far end
+// then buys buffer against: the picture arrives later because its bits took
+// longer to cross, and then waits longer still before being shown.
+int bitrate_kbps_for_encode_size(int width, int height, double frames_per_second) {
+    constexpr double kBitsPerPixelPerFrame = 0.35;
+    constexpr int kMinBitrateKbps = 2000;
+    constexpr int kMaxBitrateKbps = 60000;
+    // A rate outside this is a measurement, not a frame rate. Nothing this
+    // app plays runs slower than about twenty or faster than a couple of
+    // hundred, and either end of the clamp is safer than believing a number
+    // taken while a game was loading.
+    const double fps = std::clamp(frames_per_second, 20.0, 144.0);
+    const double bits_per_second =
+        static_cast<double>(width) * static_cast<double>(height) * fps * kBitsPerPixelPerFrame;
+    const int kbps = static_cast<int>(bits_per_second / 1000.0);
+    return std::clamp(kbps, kMinBitrateKbps, kMaxBitrateKbps);
+}
+
+// Whether a newly computed bitrate is far enough from the one in use to be
+// worth reopening the encoder for.
+//
+// The rate is only known by measurement, and the measurement is not ready
+// when the first frame has to be encoded -- so the first encoder of a session
+// is opened on an assumption and corrected once the source has shown what it
+// actually does. Reopening costs one keyframe, which is why this asks for a
+// real difference rather than any difference: a game running at the rate it
+// was assumed to must never reopen at all, and one running at half of it must
+// reopen exactly once.
+bool bitrate_is_worth_reopening_for(int wanted_kbps, int current_kbps) {
+    if (current_kbps <= 0 || wanted_kbps <= 0) {
+        return false;
+    }
+    const double ratio = static_cast<double>(wanted_kbps) / static_cast<double>(current_kbps);
+    return ratio >= 1.4 || ratio <= 1.0 / 1.4;
+}
 
 std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms) {
     if (!(produce_period_ms > 0.0)) {
@@ -451,8 +493,12 @@ void HostSession::drop_companion(const std::string& reason) {
     video_bitrate_kbps_top_ = 0;
     video_bitrate_kbps_bottom_ = 0;
     round_trip_high_ms_ = 0.0;
-    produce_period_ms_ = 16.7;
+    produce_period_ms_ = kAssumedProducePeriodMs;
     last_produced_at_ms_ = 0;
+    // The rate is being measured again from scratch, so the encoder opened
+    // for the next companion gets a full settling window before it is judged.
+    encoder_opened_at_top_ = produced_total_;
+    encoder_opened_at_bottom_ = produced_total_;
     previous_top_.clear();
     previous_bottom_.clear();
     tile_snapshots_top_.clear();
@@ -1158,6 +1204,35 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
             pending.clear();
         }
     }
+    // What the source is really producing at, which is what the bitrate and
+    // the keyframe interval both have to be built from. produce_period_ms_ is
+    // a smoothed measurement, so it is not worth anything on the first frame
+    // of a session -- which is exactly when the first encoder has to open.
+    // Hence the reopen below rather than a better guess here.
+    const double produced_fps =
+        produce_period_ms_ > 0.0 ? 1000.0 / produce_period_ms_ : 60.0;
+    const int wanted_bitrate_kbps =
+        bitrate_kbps_for_encode_size(encode_width, encode_height, produced_fps);
+    uint32_t& bitrate_member =
+        (screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_;
+    uint64_t& opened_at = (screen == ScreenId::Top) ? encoder_opened_at_top_ : encoder_opened_at_bottom_;
+
+    // Once the measurement has had time to settle, an encoder opened on the
+    // wrong assumption about the rate is reopened on the right one. Costs a
+    // keyframe, which is why it waits for the settling and asks for a real
+    // difference -- see bitrate_is_worth_reopening_for().
+    if (encoder.is_open() && produced_total_ - opened_at >= kBitrateSettleFrames &&
+        bitrate_is_worth_reopening_for(wanted_bitrate_kbps,
+                                       static_cast<int>(bitrate_member))) {
+        log_info("the game is really drawing its " + std::string(to_string(screen)) +
+                 " screen " + std::to_string(static_cast<int>(produced_fps + 0.5)) +
+                 " times a second, so it is worth " + std::to_string(wanted_bitrate_kbps) +
+                 " kbit/s rather than the " + std::to_string(bitrate_member) +
+                 " it was opened at");
+        encoder.close();
+        pending.clear();
+    }
+
     if (!encoder.is_open() || encoder.source_width() != width || encoder.source_height() != height ||
         encoder.width() != encode_width || encoder.height() != encode_height) {
         video::EncoderConfig config;
@@ -1165,8 +1240,10 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         config.height = encode_height;
         config.source_width = width;
         config.source_height = height;
-        config.fps = 60;
-        config.bitrate_kbps = bitrate_kbps_for_encode_size(encode_width, encode_height);
+        // The real rate, so the keyframe interval is the ten seconds it is
+        // meant to be rather than twenty at half the assumed rate.
+        config.fps = std::clamp(static_cast<int>(produced_fps + 0.5), 20, 144);
+        config.bitrate_kbps = wanted_bitrate_kbps;
         // A GPU-read-back screen (3DS, or Cemu across the external frame
         // link) hands its pixels over R,G,B,A rather than this app's usual
         // XRGB8888/BGRA -- see PixelOrder's own comment. Missing this swapped
@@ -1181,9 +1258,9 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         }
         // Tells drain_pending_media_sends() what rate to expect from this
         // screen from now on -- see its own comment.
-        uint32_t& bitrate_member =
-            (screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_;
         bitrate_member = static_cast<uint32_t>(config.bitrate_kbps);
+        // And when the measurement behind it gets to be judged again.
+        opened_at = produced_total_;
         // A reopened encoder counts from zero again, so anything still mapped
         // against the old one's numbering would resolve to the wrong moment.
         pending.clear();
@@ -1408,6 +1485,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
         return;
     }
     ++stats_produced_;
+    ++produced_total_;
     // How fast frames are really arriving from the source, which with the
     // round trip above is the whole of the window's arithmetic. Measured
     // rather than taken from the console's nominal rate: a game that is not
