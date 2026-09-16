@@ -56,17 +56,46 @@ public:
     // Takes ownership of an accepted descriptor.
     static TcpStream adopt(int descriptor, std::string peer_address);
 
+    // Why the last connect failed, as an errno, or 0 if it has not. Kept
+    // across close(), so a caller told of the failure by pump() can still ask
+    // what kind it was. See connect_is_undecided().
+    int connect_error() const { return connect_error_; }
+
     // The raw descriptor, for a test to inspect socket options directly.
     int descriptor_for_test() const { return descriptor_; }
 
 private:
     int descriptor_ = -1;
     bool connecting_ = false;
+    int connect_error_ = 0;
     std::string peer_address_;
     std::vector<uint8_t> outbox_;
     std::size_t outbox_sent_ = 0;
     uint64_t queued_total_ = 0;
 };
+
+// The errnos a connect fails with when the machine it is on has a permission
+// gate in front of the local network and has not opened it yet. Says nothing
+// about whether this machine has one -- see connect_is_undecided() for that --
+// so that what the codes mean can be checked anywhere rather than only on the
+// platform that produces them.
+//
+// Deliberately narrow. A refused connection is a host that is really not
+// listening and a timed-out one is a host that is really not there; asking
+// either of those again only makes the player wait longer to be told.
+bool connect_error_looks_like_a_permission_gate(int code);
+
+// Whether a connect failure is one the operating system may answer differently
+// a moment later, rather than a fact about the network.
+//
+// macOS decides whether an app may talk to the local network the first time it
+// actually tries to, and that decision does not arrive in time for the attempt
+// that asked for it: the first connect comes back "No route to host" even for
+// an app the player allowed long ago. The next one, a moment later, goes
+// through -- which is why joining a host used to take two tries there. On
+// every other platform this errno means what it says and there is nothing to
+// wait for.
+bool connect_is_undecided(int code);
 
 class TcpListener {
 public:

@@ -3,6 +3,8 @@
 
 #include "test_support.hpp"
 
+#include <cerrno>
+
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -520,6 +522,60 @@ void test_send_to_reaches_an_address_learned_from_a_receive() {
 
 }  // namespace
 
+// Which connect failures are worth asking again about.
+//
+// macOS decides whether an app may talk to the local network the first time it
+// tries to, and the attempt that asks the question is the one that gets
+// refused: joining a host used to fail on the first try and work on the
+// second, for an app the player had already allowed. Trying again inside the
+// join deadline is what turns that back into one connection that took a beat.
+//
+// The list has to stay short. A refused connection is a host that really is
+// not listening and a timed-out one is a host that really is not there;
+// retrying either only makes the player wait longer to be told so.
+void test_only_a_permission_gate_is_worth_asking_again() {
+    CHECK(connect_error_looks_like_a_permission_gate(EHOSTUNREACH));
+    CHECK(connect_error_looks_like_a_permission_gate(ENETUNREACH));
+    CHECK(connect_error_looks_like_a_permission_gate(EPERM));
+    CHECK(connect_error_looks_like_a_permission_gate(EACCES));
+
+    CHECK(!connect_error_looks_like_a_permission_gate(ECONNREFUSED));
+    CHECK(!connect_error_looks_like_a_permission_gate(ETIMEDOUT));
+    CHECK(!connect_error_looks_like_a_permission_gate(ECONNRESET));
+    CHECK(!connect_error_looks_like_a_permission_gate(0));
+
+    // And only where there is a gate to be waiting on. Everywhere else those
+    // errnos mean what they say, so a session must take them at their word
+    // rather than spending its whole join deadline asking again.
+#if defined(__APPLE__)
+    CHECK(connect_is_undecided(EHOSTUNREACH));
+#else
+    CHECK(!connect_is_undecided(EHOSTUNREACH));
+#endif
+    CHECK(!connect_is_undecided(ECONNREFUSED));
+}
+
+// The errno behind a failed connect has to outlive the socket, because the
+// caller only hears about the failure after the stream has closed itself --
+// that is where the retry decision above gets made.
+void test_a_failed_connect_remembers_why() {
+    TcpStream stream;
+    std::string error;
+    CHECK_EQ(stream.connect_error(), 0);
+    // Not an address at all, so this fails before any errno is involved: the
+    // one that follows must not be left over from it either.
+    CHECK(!stream.start_connect("not-an-address", 1, &error));
+    CHECK_EQ(stream.connect_error(), 0);
+
+    // A connect that reaches the network and comes straight back -- on
+    // loopback, nothing is listening on port 1 -- may report either now or on
+    // the first pump. Whichever it is, the reason is there to be asked for.
+    if (!stream.start_connect("127.0.0.1", 1, &error)) {
+        CHECK(stream.connect_error() != 0);
+        CHECK(!connect_is_undecided(stream.connect_error()));
+    }
+}
+
 int main() {
     test_browser_merges_and_expires();
     test_discovery_over_loopback();
@@ -527,6 +583,8 @@ int main() {
     test_streams_enable_keepalive_with_a_short_idle_time();
     test_the_kernel_send_queue_is_small_enough_to_notice();
     test_connect_to_nothing_fails();
+    test_only_a_permission_gate_is_worth_asking_again();
+    test_a_failed_connect_remembers_why();
     test_a_connect_in_progress_does_not_claim_to_be_connected();
     test_one_network_reached_twice_is_called_out();
     test_a_network_reached_twice_is_announced_once_over_the_wire();

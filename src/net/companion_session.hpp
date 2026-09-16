@@ -454,6 +454,12 @@ private:
     unsigned decode_failures_bottom_ = 0;
     void send_request(RequestMessage request);
     void fail(const std::string& reason);
+    // One attempt at reaching joining_. Leaves the session Connecting either
+    // way: a failure the operating system may answer differently in a moment
+    // schedules another attempt rather than ending the join.
+    void begin_connect();
+    // Puts that attempt down and owes another one. See connect_is_undecided().
+    void owe_another_attempt(const std::string& reason);
 
     // Frames that have arrived but not yet been applied.
     //
@@ -516,6 +522,18 @@ private:
     bool host_cursor_shown_ = true;
     bool menu_open_ = false;
     bool said_hello_ = false;
+    // The host being joined, kept for as long as the join takes: an attempt
+    // that has to be made again needs somewhere to make it to.
+    DiscoveredHost joining_;
+    // Whether an attempt is owed, and when it is due. The time is zero until
+    // the first poll() after the failure, for the same reason the deadline
+    // below is: the clock belongs to the caller.
+    bool retry_connect_ = false;
+    uint64_t retry_connect_at_ms_ = 0;
+    // Why the last attempt did not get anywhere. Kept so that a join which
+    // runs out of time after several of these says what actually went wrong
+    // rather than blaming a host that may well have been answering.
+    std::string connect_failure_;
     // When to give up on a connection that has not finished arriving. Zero
     // until the first poll() after connect_to(), so the whole timer runs on
     // the caller's clock rather than half on one and half on another.

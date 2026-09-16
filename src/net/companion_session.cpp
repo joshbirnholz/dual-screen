@@ -74,8 +74,28 @@ void CompanionSession::connect_to(DiscoveredHost host) {
         audio_sequence_known_[stream] = false;
     }
 
+    joining_ = std::move(host);
+    retry_connect_ = false;
+    retry_connect_at_ms_ = 0;
+    connect_failure_.clear();
+    connect_deadline_ms_ = 0;  // set on the first poll, off the caller's clock
+    acked_serial_ = 0;
+    received_serial_ = 0;
+    next_due_ms_ = 0;
+    last_arrival_ms_ = 0;
+    jitter_.reset();
+    game_title_ = joining_.game_title;
+    log_info("connecting to " + joining_.device_name + " at " + joining_.address);
+    begin_connect();
+}
+
+void CompanionSession::begin_connect() {
     std::string error;
-    if (!stream_.start_connect(host.address, host.session_port, &error)) {
+    if (!stream_.start_connect(joining_.address, joining_.session_port, &error)) {
+        if (connect_is_undecided(stream_.connect_error())) {
+            owe_another_attempt(error);
+            return;
+        }
         fail(error);
         return;
     }
@@ -84,15 +104,23 @@ void CompanionSession::connect_to(DiscoveredHost host) {
         return;
     }
     status_ = Status::Connecting;
-    connect_deadline_ms_ = 0;  // set on the first poll, off the caller's clock
-    acked_serial_ = 0;
-    received_serial_ = 0;
-    next_due_ms_ = 0;
-    last_arrival_ms_ = 0;
-    jitter_.reset();
-    status_detail_ = "connecting to " + host.device_name;
-    game_title_ = host.game_title;
-    log_info("connecting to " + host.device_name + " at " + host.address);
+    status_detail_ = "connecting to " + joining_.device_name;
+}
+
+void CompanionSession::owe_another_attempt(const std::string& reason) {
+    // Said once per join rather than once per attempt: several a second, all
+    // saying the same thing, would bury the line that matters if the join does
+    // go on to fail.
+    if (connect_failure_.empty()) {
+        log_info("the operating system has not let this app onto the local network yet; "
+                 "trying again until it does or the join runs out of time (" + reason + ")");
+    }
+    connect_failure_ = reason;
+    stream_.close();
+    retry_connect_ = true;
+    retry_connect_at_ms_ = 0;  // due a moment from the next poll, on its clock
+    status_ = Status::Connecting;
+    status_detail_ = "connecting to " + joining_.device_name;
 }
 
 void CompanionSession::disconnect() {
@@ -106,6 +134,9 @@ void CompanionSession::disconnect() {
     }
     stream_.close();
     media_socket_.stop();
+    retry_connect_ = false;
+    retry_connect_at_ms_ = 0;
+    connect_failure_.clear();
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
@@ -152,6 +183,8 @@ void CompanionSession::disconnect() {
 
 void CompanionSession::fail(const std::string& reason) {
     stream_.close();
+    retry_connect_ = false;
+    retry_connect_at_ms_ = 0;
     media_socket_.stop();
     inbox_.clear();
     said_hello_ = false;
@@ -525,8 +558,29 @@ void CompanionSession::poll(uint64_t now_ms) {
         if (connect_deadline_ms_ == 0) {
             connect_deadline_ms_ = now_ms + kJoinTimeoutMs;
         } else if (now_ms >= connect_deadline_ms_) {
-            fail("that device did not answer");
+            // What went wrong, where anything did. A join that spent its whole
+            // deadline being refused the local network must not tell the
+            // player the other device stayed quiet: it never heard the ask.
+            fail(connect_failure_.empty() ? std::string("that device did not answer")
+                                          : connect_failure_);
             return;
+        }
+        // An attempt the operating system had not made its mind up about is
+        // owed another one. Until that one is due there is no socket here to
+        // pump, so this is where the poll ends.
+        if (retry_connect_) {
+            if (retry_connect_at_ms_ == 0) {
+                retry_connect_at_ms_ = now_ms + kConnectRetryMs;
+            }
+            if (now_ms < retry_connect_at_ms_) {
+                return;
+            }
+            retry_connect_ = false;
+            retry_connect_at_ms_ = 0;
+            begin_connect();
+            if (status_ != Status::Connecting || retry_connect_) {
+                return;
+            }
         }
     }
 
@@ -536,6 +590,14 @@ void CompanionSession::poll(uint64_t now_ms) {
 
     std::string error;
     if (!stream_.pump(inbox_, &error)) {
+        // A refusal the operating system may take back in a moment is not the
+        // end of the join, whichever of the two ways it arrives -- straight
+        // out of connect(), or later through the socket's own error. Both land
+        // here; see connect_is_undecided().
+        if (status_ == Status::Connecting && connect_is_undecided(stream_.connect_error())) {
+            owe_another_attempt(error);
+            return;
+        }
         fail(error);
         return;
     }

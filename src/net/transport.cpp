@@ -262,6 +262,7 @@ TcpStream::~TcpStream() { close(); }
 TcpStream::TcpStream(TcpStream&& other) noexcept
     : descriptor_(other.descriptor_),
       connecting_(other.connecting_),
+      connect_error_(other.connect_error_),
       peer_address_(std::move(other.peer_address_)),
       outbox_(std::move(other.outbox_)),
       outbox_sent_(other.outbox_sent_) {
@@ -274,6 +275,7 @@ TcpStream& TcpStream::operator=(TcpStream&& other) noexcept {
         close();
         descriptor_ = other.descriptor_;
         connecting_ = other.connecting_;
+        connect_error_ = other.connect_error_;
         peer_address_ = std::move(other.peer_address_);
         outbox_ = std::move(other.outbox_);
         outbox_sent_ = other.outbox_sent_;
@@ -281,6 +283,20 @@ TcpStream& TcpStream::operator=(TcpStream&& other) noexcept {
         other.outbox_sent_ = 0;
     }
     return *this;
+}
+
+bool connect_error_looks_like_a_permission_gate(int code) {
+    return code == EHOSTUNREACH || code == ENETUNREACH || code == EPERM || code == EACCES;
+}
+
+bool connect_is_undecided(int code) {
+#if defined(__APPLE__)
+    return connect_error_looks_like_a_permission_gate(code);
+#else
+    // Nowhere else asks permission, so nowhere else has an answer pending.
+    (void)code;
+    return false;
+#endif
 }
 
 TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
@@ -300,6 +316,7 @@ TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
 
 bool TcpStream::start_connect(const std::string& address, uint16_t port, std::string* error) {
     close();
+    connect_error_ = 0;
 
     descriptor_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (descriptor_ < 0) {
@@ -331,7 +348,8 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
         connecting_ = true;
         return true;
     }
-    if (error != nullptr) *error = explain_connect_error(errno, address);
+    connect_error_ = errno;
+    if (error != nullptr) *error = explain_connect_error(connect_error_, address);
     close();
     return false;
 }
@@ -425,6 +443,7 @@ bool TcpStream::pump(std::vector<uint8_t>& inbox, std::string* error) {
             // The same explanation as the immediate failure above: which of
             // the two a refusal arrives through is the kernel's business, not
             // a difference worth having two messages for.
+            connect_error_ = result;
             if (error != nullptr) *error = explain_connect_error(result, peer_address_);
             return false;
         }

@@ -76,4 +76,12 @@ constexpr uint64_t kHostExpiryMs = 5000;
 // operating system would otherwise spend retrying.
 constexpr uint64_t kJoinTimeoutMs = 6000;
 
+// How long to wait before trying a connection again, when the last attempt
+// failed with something the operating system may answer differently in a
+// moment -- see connect_is_undecided(). Long enough not to spin, short enough
+// that a good few attempts fit inside the join deadline above, so the player
+// sees one connection that took a beat rather than one that had to be asked
+// for twice.
+constexpr uint64_t kConnectRetryMs = 250;
+
 }  // namespace ds::net
