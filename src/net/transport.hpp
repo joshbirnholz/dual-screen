@@ -10,6 +10,13 @@ namespace ds::net {
 // app's frame loop -- no threads, because a dropped frame is better than a
 // race, and the loop already runs 60 times a second.
 
+// Marks a socket's traffic as a live, interactive picture rather than bulk
+// transfer, so wifi's own queueing treats it that way. See the definition:
+// this is what Moonlight sets on its video socket and what Sunshine's QoS
+// option does, and it is the difference between a stream that waits for the
+// next beacon and one that does not.
+void mark_as_interactive_media(int descriptor);
+
 class TcpStream {
 public:
     TcpStream() = default;

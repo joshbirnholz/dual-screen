@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -305,6 +306,7 @@ TcpStream TcpStream::adopt(int descriptor, std::string peer_address) {
     stream.peer_address_ = std::move(peer_address);
     set_non_blocking(descriptor);
     refuse_sigpipe(descriptor);
+    mark_as_interactive_media(descriptor);
     const int one = 1;
     // Frames are latency-sensitive and small; waiting to coalesce them adds
     // exactly the delay this is meant to avoid.
@@ -329,6 +331,10 @@ bool TcpStream::start_connect(const std::string& address, uint16_t port, std::st
     ::setsockopt(descriptor_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
     bound_send_queue(descriptor_);
     enable_keepalive(descriptor_);
+    // Control messages are small and rare, but they are also the ones a player
+    // is waiting on when they press something -- see
+    // mark_as_interactive_media().
+    mark_as_interactive_media(descriptor_);
 
     sockaddr_in target {};
     target.sin_family = AF_INET;
@@ -562,6 +568,56 @@ bool TcpListener::accept(TcpStream& out) {
 
 UdpSocket::~UdpSocket() { stop(); }
 
+// Tells the network this traffic is a live picture, not a download.
+//
+// This is the part of what Sunshine and Moonlight do that this app was
+// missing, and it is not a tuning knob -- it is a different queue.
+//
+// Wifi does not treat all packets alike. Every 802.11n-or-later access point
+// sorts traffic into four WMM access categories, and a station's own driver
+// does the same on the way out: voice and video wait less long before trying
+// the air, get a shorter contention window when they do, and -- this is the
+// part that matters here -- are not held back by the power-save buffering that
+// parks background traffic until the next beacon. A beacon interval is about
+// 100ms, which is the size of the delay this stream keeps measuring on one
+// frame in twenty, on a link that loses nothing at all and did not care when
+// the bytes were cut to a third.
+//
+// Which category a packet lands in is decided by the DSCP bits in its IP
+// header, and nothing sets those by default, so every datagram this app sends
+// has been going out as best-effort -- the same class as a file copy. Marking
+// it Expedited Forwarding is what Moonlight sets on its video socket and what
+// Sunshine's QoS option does at the other end.
+//
+// Best-effort in both senses: a network that ignores DSCP is unaffected, a
+// kernel that refuses the option leaves the socket exactly as it was, and
+// neither is worth reporting. It costs one setsockopt and cannot make
+// anything worse.
+void mark_as_interactive_media(int descriptor) {
+    if (descriptor < 0) {
+        return;
+    }
+#if defined(IP_TOS)
+    // DSCP 46 (Expedited Forwarding) in the upper six bits: 46 << 2 == 0xb8.
+    // The same value Moonlight uses.
+    const int tos = 0xb8;
+    ::setsockopt(descriptor, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+#endif
+#if defined(SO_PRIORITY)
+    // And the local queue this leaves by, which on Linux is a separate
+    // decision from what the IP header says: 6 is the band mapped to
+    // interactive traffic by the default qdisc.
+    const int priority = 6;
+    ::setsockopt(descriptor, SOL_SOCKET, SO_PRIORITY, &priority, sizeof(priority));
+#endif
+#if defined(SO_NET_SERVICE_TYPE) && defined(NET_SERVICE_TYPE_VI)
+    // Apple's own name for the same idea, which is what actually reaches the
+    // wifi driver on a Mac; the ToS byte alone does not.
+    const int service = NET_SERVICE_TYPE_VI;
+    ::setsockopt(descriptor, SOL_SOCKET, SO_NET_SERVICE_TYPE, &service, sizeof(service));
+#endif
+}
+
 bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* error) {
     stop();
 
@@ -611,6 +667,8 @@ bool UdpSocket::start(uint16_t listen_port, bool allow_broadcast, std::string* e
     constexpr int kMediaReceiveQueueBytes = 1024 * 1024;
     ::setsockopt(descriptor_, SOL_SOCKET, SO_RCVBUF, &kMediaReceiveQueueBytes,
                 sizeof(kMediaReceiveQueueBytes));
+
+    mark_as_interactive_media(descriptor_);
 
     if (listen_port != 0) {
         sockaddr_in address {};
