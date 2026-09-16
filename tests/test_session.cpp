@@ -85,6 +85,55 @@ std::vector<uint32_t> flat_screen(uint32_t colour) {
     return std::vector<uint32_t>(static_cast<std::size_t>(kDsScreenWidth) * kDsScreenHeight, colour);
 }
 
+// A connect the operating system refuses has to be tried again, and the
+// trying has to actually happen.
+//
+// It did not. poll() returned early whenever there was no socket, and a
+// refused attempt closes its socket -- so the retry below it was code that
+// could never run. The join said "trying again" once and then sat on
+// Connecting for ever: it never retried, and it never even reached its own
+// deadline to give up. From the outside that is a connect that hangs until
+// you cancel and start over, which is exactly what it did on a Mac, every
+// first try, for as long as the retry has existed.
+void test_a_refused_connect_is_really_tried_again() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.rom_sha1 = "cafebabe";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+
+    // Exactly the state a refusal leaves behind: still joining, no socket, an
+    // attempt owed. Reached through a hook because no connect() outside macOS
+    // produces it -- see owe_an_attempt_for_test().
+    companion.owe_an_attempt_for_test();
+    CHECK(companion.status() == CompanionSession::Status::Connecting);
+    CHECK(companion.waiting_on_local_network());
+
+    // And the session gets there anyway, without anybody starting over.
+    const bool connected = spin(host, companion, [&] {
+        return companion.status() == CompanionSession::Status::Connected && host.has_companion();
+    });
+    CHECK_MSG(connected, std::string("the owed attempt was never made: ") +
+                             companion.status_detail());
+    CHECK(!companion.waiting_on_local_network());
+}
+
 void test_host_and_companion_pair_up() {
     HostSession host;
     HostSession::Config config;
@@ -1954,6 +2003,50 @@ void test_an_emulator_rendering_unevenly_does_not_buy_buffer() {
     CHECK(video_buffer_target_frames(worst_deviation, period) > kMinVideoBufferFrames);
 }
 
+// What the buffer is sized from is a trade, and this is where it is made.
+//
+// A link that is mostly prompt with a bad tail -- a Steam Deck to a Mac over
+// wifi, measured: quiet most of the time, one arrival in twenty about 75ms
+// behind the quietest -- can be covered at the tail or at the body. Covering
+// the tail makes all twenty of those frames 75ms late to save the one from
+// being shown a display interval behind. Covering the body leaves the tail to
+// be late and hands the other nineteen back their time.
+void test_the_buffer_pays_for_the_body_and_not_the_tail() {
+    constexpr double kClockOffset = 777.0;
+    constexpr double period = 33.0;  // a 30fps stream, as Wind Waker HD runs
+
+    VideoJitter link;
+    for (int frame = 0; frame < 128; ++frame) {
+        // Nineteen in twenty cross in 12ms; the twentieth takes 87.
+        link.add(kClockOffset + ((frame % 20 == 0) ? 87.0 : 12.0));
+    }
+
+    const VideoTransitShape shape = link.shape();
+    // The shape says plainly what one number cannot: the body is tight and
+    // only the tail is late. This is the line that now goes in the log.
+    CHECK(shape.median_ms < 1.0);
+    CHECK(shape.three_quarters_ms < 1.0);
+    CHECK(shape.worst_twentieth_ms > 70.0);
+
+    // So the buffer holds the least it can, and the one late frame in twenty
+    // is shown when it arrives rather than every frame waiting for it.
+    CHECK_EQ(video_buffer_target_frames(link.estimate(), period), kMinVideoBufferFrames);
+    // Where the old choice of quantile would have bought three more frames of
+    // it -- 99ms at this rate, paid on every frame there is.
+    CHECK_EQ(video_buffer_target_frames(shape.worst_twentieth_ms, period),
+             kMinVideoBufferFrames + 3);
+
+    // A link that is genuinely late rather than occasionally late still buys
+    // what it needs: this is cover for unevenness, not a decision to stop
+    // covering.
+    VideoJitter uneven;
+    for (int frame = 0; frame < 128; ++frame) {
+        uneven.add(kClockOffset + ((frame % 2 == 0) ? 5.0 : 70.0));
+    }
+    CHECK(uneven.estimate() > 60.0);
+    CHECK(video_buffer_target_frames(uneven.estimate(), period) > kMinVideoBufferFrames);
+}
+
 // The same mistake at the other end of the wire: a stall on the device showing
 // the picture reads as a link that held everything, and buys buffer that
 // cannot help -- the queue drains at exactly the standstill the picture does.
@@ -1989,8 +2082,11 @@ void test_this_devices_own_stall_is_not_the_links_fault() {
         without_the_stall.add(kClockOffset + 12.0);
         with_the_stall.add(kClockOffset + 12.0);
     }
-    // One pass that came 600ms late hands its whole backlog over at once.
-    for (int frame = 0; frame < 30; ++frame) {
+    // One pass that came 600ms late hands its whole backlog over at once --
+    // at 60fps that is about forty frames, which is a third of the window
+    // they land in, so they are a large enough share of it to move any
+    // quantile the buffer could reasonably be sized from.
+    for (int frame = 0; frame < 40; ++frame) {
         with_the_stall.add(kClockOffset + 12.0 + 600.0);
     }
     CHECK_EQ(video_buffer_target_frames(without_the_stall.estimate(), 16.0),
@@ -2369,6 +2465,7 @@ void test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture() {
 
 int main() {
     test_host_and_companion_pair_up();
+    test_a_refused_connect_is_really_tried_again();
     test_a_received_screen_is_readable_as_pixels();
     test_a_screen_above_the_old_native_only_size_still_arrives();
     test_non_split_layout_sends_both_screens();
@@ -2395,6 +2492,7 @@ int main() {
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();
+    test_the_buffer_pays_for_the_body_and_not_the_tail();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
