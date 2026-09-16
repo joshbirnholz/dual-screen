@@ -202,7 +202,14 @@ constexpr uint64_t kVideoRetryCooldownMs = 3000;
 // bigger keyframe burst across several poll() calls instead of one -- see
 // kMaxMediaDatagramBytes and send_frame_fragments() for why a keyframe still
 // has to leave as many small datagrams either way.
-constexpr double kPacingHeadroomMultiplier = 2.0;
+// Measured across two sessions of the same game on the same pair of devices.
+// At about 2x what the encoder really produced, the pacer became the latency:
+// its queue averaged 35ms and spiked to 159, and the round trip went with it,
+// 32ms to 40ms average. At about 4.3x, the queue averaged 14.6ms and never
+// passed 9ms on a report. Four is that, rounded, and it is a floor on how fast
+// a burst may leave rather than a target anything sends at -- nothing is sent
+// that was not produced.
+constexpr double kPacingHeadroomMultiplier = 4.0;
 // A floor under the pacing rate for whenever nothing has told it a real
 // number yet -- video not open (tiles, or nothing sent since a companion
 // connected -- see drop_companion()). This app's old flat rate before
@@ -225,14 +232,14 @@ constexpr std::size_t kMinDrainBudgetBytes = kMediaHeaderBytes + kFragmentHeader
 // near long enough to matter as a stall.
 constexpr uint64_t kMaxPacingElapsedMs = 250;
 
-// What produce_period_ms_ starts at before anything has been measured -- one
-// frame of 60fps -- and how many frames have to go by after an encoder opens
-// before that measurement is trusted enough to reopen it on. Two seconds at
-// 60fps, four at 30: long enough for a 5%-per-frame smoothing to have arrived
-// wherever it is going, short enough that the wrong bitrate is not carried
-// into the part of the session anyone is playing.
+// How long a window the produced-byte rate is measured over. Half a second is
+// long enough to average across a keyframe and the deltas after it, short
+// enough to follow a game that changes what it is drawing.
+constexpr uint64_t kProducedRateWindowMs = 500;
+
+// What produce_period_ms_ starts at before anything has been measured: one
+// frame of 60fps.
 constexpr double kAssumedProducePeriodMs = 16.7;
-constexpr uint64_t kBitrateSettleFrames = 120;
 
 }  // namespace
 
@@ -273,22 +280,32 @@ int bitrate_kbps_for_encode_size(int width, int height, double frames_per_second
     return std::clamp(kbps, kMinBitrateKbps, kMaxBitrateKbps);
 }
 
-// Whether a newly computed bitrate is far enough from the one in use to be
-// worth reopening the encoder for.
+// How fast the pacer is allowed to hand fragments to the socket, in bytes per
+// millisecond.
 //
-// The rate is only known by measurement, and the measurement is not ready
-// when the first frame has to be encoded -- so the first encoder of a session
-// is opened on an assumption and corrected once the source has shown what it
-// actually does. Reopening costs one keyframe, which is why this asks for a
-// real difference rather than any difference: a game running at the rate it
-// was assumed to must never reopen at all, and one running at half of it must
-// reopen exactly once.
-bool bitrate_is_worth_reopening_for(int wanted_kbps, int current_kbps) {
-    if (current_kbps <= 0 || wanted_kbps <= 0) {
-        return false;
-    }
-    const double ratio = static_cast<double>(wanted_kbps) / static_cast<double>(current_kbps);
-    return ratio >= 1.4 || ratio <= 1.0 / 1.4;
+// Built from what the encoder actually produces, not from what it was asked
+// for, because those turn out not to be the same thing. Halving the number
+// handed to h264_vaapi on a Steam Deck changed the bytes on the wire by
+// nothing at all -- 43.5 Mbit/s asked, 20.1 produced; 22.9 asked, 23.0
+// produced; 34.6 asked, 21.5 produced; 22.7 asked, 23.5 produced. The driver
+// there does what it likes and the request is a suggestion.
+//
+// That made the declared rate an unsafe thing to pace from: it halved the
+// budget while the traffic stayed where it was, so bursts that used to leave
+// immediately queued instead, and the pacing queue -- latency this end adds,
+// on top of everything the link does -- went from 14.6ms average to 34.9ms,
+// worst cases of 120 and 159ms, with the round trip following it up from 32ms
+// to 40ms.
+//
+// The measured rate cannot drift from reality that way. The declared one is
+// only a stand-in for the first half second, before anything has been
+// produced to measure.
+double media_pacing_bytes_per_ms(uint32_t declared_kbps, double produced_bytes_per_ms) {
+    constexpr double kFloorBytesPerMs = static_cast<double>(kMinPacingBitrateKbps) / 8.0;
+    const double declared_bytes_per_ms = static_cast<double>(declared_kbps) / 8.0;
+    const double base =
+        produced_bytes_per_ms > 0.0 ? produced_bytes_per_ms : declared_bytes_per_ms;
+    return std::max(base, kFloorBytesPerMs) * kPacingHeadroomMultiplier;
 }
 
 std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms) {
@@ -490,15 +507,16 @@ void HostSession::drop_companion(const std::string& reason) {
     // drain_pending_media_sends() -- rather than inheriting a rate computed
     // for a companion, and a picture, that may no longer be relevant at all.
     media_pacing_last_ms_ = 0;
+    // What the last companion's stream was producing says nothing about the
+    // next one's, which may be a different screen at a different size.
+    media_produced_bytes_per_ms_ = 0.0;
+    media_produced_window_bytes_ = 0;
+    media_produced_window_at_ms_ = 0;
     video_bitrate_kbps_top_ = 0;
     video_bitrate_kbps_bottom_ = 0;
     round_trip_high_ms_ = 0.0;
     produce_period_ms_ = kAssumedProducePeriodMs;
     last_produced_at_ms_ = 0;
-    // The rate is being measured again from scratch, so the encoder opened
-    // for the next companion gets a full settling window before it is judged.
-    encoder_opened_at_top_ = produced_total_;
-    encoder_opened_at_bottom_ = produced_total_;
     previous_top_.clear();
     previous_bottom_.clear();
     tile_snapshots_top_.clear();
@@ -1215,23 +1233,12 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         bitrate_kbps_for_encode_size(encode_width, encode_height, produced_fps);
     uint32_t& bitrate_member =
         (screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_;
-    uint64_t& opened_at = (screen == ScreenId::Top) ? encoder_opened_at_top_ : encoder_opened_at_bottom_;
 
-    // Once the measurement has had time to settle, an encoder opened on the
-    // wrong assumption about the rate is reopened on the right one. Costs a
-    // keyframe, which is why it waits for the settling and asks for a real
-    // difference -- see bitrate_is_worth_reopening_for().
-    if (encoder.is_open() && produced_total_ - opened_at >= kBitrateSettleFrames &&
-        bitrate_is_worth_reopening_for(wanted_bitrate_kbps,
-                                       static_cast<int>(bitrate_member))) {
-        log_info("the game is really drawing its " + std::string(to_string(screen)) +
-                 " screen " + std::to_string(static_cast<int>(produced_fps + 0.5)) +
-                 " times a second, so it is worth " + std::to_string(wanted_bitrate_kbps) +
-                 " kbit/s rather than the " + std::to_string(bitrate_member) +
-                 " it was opened at");
-        encoder.close();
-        pending.clear();
-    }
+    // No reopening to correct this number once the rate is known. It was
+    // tried, and measured: reopening cost a keyframe each time (three in one
+    // session, one of them for a 48fps reading taken while the game was busy)
+    // and the bytes on the wire did not move. See media_pacing_bytes_per_ms()
+    // for what the encoder actually did with the number it was given.
 
     if (!encoder.is_open() || encoder.source_width() != width || encoder.source_height() != height ||
         encoder.width() != encode_width || encoder.height() != encode_height) {
@@ -1259,8 +1266,6 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         // Tells drain_pending_media_sends() what rate to expect from this
         // screen from now on -- see its own comment.
         bitrate_member = static_cast<uint32_t>(config.bitrate_kbps);
-        // And when the measurement behind it gets to be judged again.
-        opened_at = produced_total_;
         // A reopened encoder counts from zero again, so anything still mapped
         // against the old one's numbering would resolve to the wrong moment.
         pending.clear();
@@ -1378,9 +1383,11 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     header.width = frame.width;
     header.height = frame.height;
     header.keyframe = frame.keyframe;
-    // Stamped once for the whole frame rather than per fragment: what the far
-    // end measures is when the picture was handed to the link, and the
-    // fragments of one picture are all the same event.
+    // Filled in here only so the field exists; the number that matters is
+    // written again as each datagram actually leaves, in
+    // drain_pending_media_sends(). Everything between the two is this
+    // machine's own pacing, and the far end must not read that as the link --
+    // see stamp_media_datagram_sent_at().
     header.sent_at_ms = static_cast<uint32_t>(monotonic_millis());
     // Counted per screen and only here, where a frame really does go out, so
     // that a gap in it at the far end means a frame was lost on the way and
@@ -1402,10 +1409,32 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         encode_media_header(session_token_, MessageType::Frame, out);
         encode_frame_fragment(header, frame.payload.data() + offset, chunk, out);
         queued_bytes += out.size();
+        media_produced_window_bytes_ += out.size();
         pending_media_sends_.push_back(std::move(out));
         offset += chunk;
     }
     return queued_bytes;
+}
+
+// Folds the bytes handed to the pacer since the last window into a smoothed
+// rate. Windowed rather than per-frame: a single frame's size says more about
+// what was on screen than about what the encoder is doing.
+void HostSession::note_produced_media_rate(uint64_t now_ms) {
+    if (media_produced_window_at_ms_ == 0) {
+        media_produced_window_at_ms_ = now_ms;
+        return;
+    }
+    const uint64_t window_ms = now_ms - media_produced_window_at_ms_;
+    if (window_ms < kProducedRateWindowMs) {
+        return;
+    }
+    const double rate =
+        static_cast<double>(media_produced_window_bytes_) / static_cast<double>(window_ms);
+    media_produced_bytes_per_ms_ = (media_produced_bytes_per_ms_ <= 0.0)
+                                       ? rate
+                                       : media_produced_bytes_per_ms_ * 0.5 + rate * 0.5;
+    media_produced_window_bytes_ = 0;
+    media_produced_window_at_ms_ = now_ms;
 }
 
 void HostSession::drain_pending_media_sends(uint64_t now_ms) {
@@ -1417,22 +1446,15 @@ void HostSession::drain_pending_media_sends(uint64_t now_ms) {
         media_pacing_last_ms_ = now_ms;
         return;
     }
-    // The rate this drains at tracks the encoders' own combined configured
-    // rate, not a flat guess -- a constant sized for this app's old flat
-    // 8 Mbps was already a poor fit once resolution capping and
-    // per-resolution bitrate meant the encoders could legitimately be asked
-    // for anywhere from a couple Mbps (a DS screen) to several dozen (a Wii U
-    // picture at 1080p): sized for the low end, a high-bitrate stream would
-    // arrive faster than it could ever drain and the backlog this exists to
-    // avoid would simply build somewhere else instead -- in
-    // pending_media_sends_ rather than the socket's own send buffer, but
-    // still growing, unbounded, for as long as the stream kept going. Tied to
-    // the real rate instead, the budget always keeps pace with whatever is
-    // actually being produced, with kPacingHeadroomMultiplier's own room to
-    // also work through the backlog a keyframe burst leaves behind.
-    const uint32_t combined_kbps =
-        std::max(kMinPacingBitrateKbps, video_bitrate_kbps_top_ + video_bitrate_kbps_bottom_);
-    const double bytes_per_ms = (static_cast<double>(combined_kbps) / 8.0) * kPacingHeadroomMultiplier;
+    // The rate this drains at follows what is really being produced, not a flat
+    // guess and not what the encoder was asked to produce -- see
+    // media_pacing_bytes_per_ms() for why those last two are different things.
+    // Sized too low, a stream arrives faster than it can ever drain and the
+    // backlog this exists to avoid simply builds here instead of in the
+    // socket's send buffer, still growing for as long as the stream runs.
+    note_produced_media_rate(now_ms);
+    const double bytes_per_ms = media_pacing_bytes_per_ms(
+        video_bitrate_kbps_top_ + video_bitrate_kbps_bottom_, media_produced_bytes_per_ms_);
     const uint64_t elapsed_ms = (media_pacing_last_ms_ == 0 || now_ms <= media_pacing_last_ms_)
                                     ? 0
                                     : std::min(now_ms - media_pacing_last_ms_, kMaxPacingElapsedMs);
@@ -1455,7 +1477,11 @@ void HostSession::drain_pending_media_sends(uint64_t now_ms) {
 
     std::size_t drained = 0;
     while (!pending_media_sends_.empty() && drained < budget) {
-        const std::vector<uint8_t>& out = pending_media_sends_.front();
+        std::vector<uint8_t>& out = pending_media_sends_.front();
+        // Now, not when it was built. The wait in this queue is this end's,
+        // and the far end measures what comes after -- see
+        // stamp_media_datagram_sent_at().
+        stamp_media_datagram_sent_at(out.data(), out.size(), static_cast<uint32_t>(now_ms));
         if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
                                    out.size())) {
             // Try again next poll() rather than losing this fragment outright
@@ -1485,7 +1511,6 @@ void HostSession::publish_screens(const ScreenPixels& top,
         return;
     }
     ++stats_produced_;
-    ++produced_total_;
     // How fast frames are really arriving from the source, which with the
     // round trip above is the whole of the window's arithmetic. Measured
     // rather than taken from the console's nominal rate: a game that is not

@@ -1802,28 +1802,38 @@ void test_the_bitrate_follows_the_rate_the_source_really_runs_at() {
              bitrate_kbps_for_encode_size(1920, 1080, 144.0));
 }
 
-// The rate is only known by measurement and the measurement is not ready when
-// the first frame has to be encoded, so the first encoder is opened on an
-// assumption and corrected once the source has shown what it does. Correcting
-// costs a keyframe, so it has to happen for a real difference and not for
-// noise.
-void test_only_a_real_change_in_rate_reopens_the_encoder() {
-    const int at_60 = bitrate_kbps_for_encode_size(1920, 1080, 60.0);
-    const int at_30 = bitrate_kbps_for_encode_size(1920, 1080, 30.0);
+// What the pacer drains at has to follow what the encoder really produces,
+// because that is not what it was asked to produce.
+//
+// Measured on a Steam Deck's h264_vaapi: asked for 43.5 Mbit/s it made 20.1,
+// asked for 22.9 it made 23.0, asked for 34.6 it made 21.5, asked for 22.7 it
+// made 23.5. The request is a suggestion there. Pacing from it halved the
+// budget while the traffic stayed put, and the pacing queue -- pure latency
+// this end adds -- went from 14.6ms average to 34.9ms with spikes to 159.
+void test_the_pacer_follows_what_is_really_produced() {
+    // 23 Mbit/s of real traffic is 2875 bytes a millisecond.
+    constexpr double produced = 2875.0;
 
-    // A game that runs at the rate it was assumed to never reopens...
-    CHECK(!bitrate_is_worth_reopening_for(at_60, at_60));
-    // ...nor does one a few frames a second off it.
-    CHECK(!bitrate_is_worth_reopening_for(bitrate_kbps_for_encode_size(1920, 1080, 57.0), at_60));
-    // ...and one at half the rate reopens, once, in either direction.
-    CHECK(bitrate_is_worth_reopening_for(at_30, at_60));
-    CHECK(bitrate_is_worth_reopening_for(at_60, at_30));
-    // Having reopened, it stays put.
-    CHECK(!bitrate_is_worth_reopening_for(at_30, at_30));
+    // Asked for half of what it makes, the pacer still keeps up with what it
+    // makes -- which is the case that regressed.
+    const double paced_low = media_pacing_bytes_per_ms(22922, produced);
+    CHECK(paced_low > produced * 2.0);
 
-    // Nothing to compare against is not a reason to reopen.
-    CHECK(!bitrate_is_worth_reopening_for(at_30, 0));
-    CHECK(!bitrate_is_worth_reopening_for(0, at_60));
+    // Asked for twice what it makes, the pacer does not run away to match the
+    // request either: nothing is sent that was not produced, so a budget built
+    // on the bigger number is only ever unused.
+    CHECK(std::abs(media_pacing_bytes_per_ms(43458, produced) - paced_low) < 1.0);
+
+    // Before anything has been produced to measure, the declared rate stands
+    // in -- a stream has to start somewhere.
+    CHECK(media_pacing_bytes_per_ms(22922, 0.0) > 0.0);
+    CHECK(media_pacing_bytes_per_ms(43458, 0.0) >
+          media_pacing_bytes_per_ms(22922, 0.0));
+
+    // And a screen that compresses to almost nothing -- a DS with a static
+    // picture -- still gets a floor to send through, so one small frame does
+    // not take a second to leave.
+    CHECK(media_pacing_bytes_per_ms(0, 1.0) > 100.0);
 }
 
 // The window is a bandwidth-delay product, and the point of computing it
@@ -2380,7 +2390,7 @@ int main() {
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
     test_the_bitrate_follows_the_rate_the_source_really_runs_at();
-    test_only_a_real_change_in_rate_reopens_the_encoder();
+    test_the_pacer_follows_what_is_really_produced();
     test_the_in_flight_window_covers_the_delay_this_link_shows();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
