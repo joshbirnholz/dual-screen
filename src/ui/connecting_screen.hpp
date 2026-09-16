@@ -34,12 +34,16 @@ void render_waiting_screen(QuadRenderer& quads,
 // indistinguishable from the button doing nothing, and the natural response is
 // to press it again. This says which device is being joined and how to stop
 // waiting.
+// `note` is an extra line under the two, for when the waiting has a reason
+// worth knowing -- see CompanionSession::waiting_on_local_network(). Empty
+// means no line.
 void render_connecting_screen(QuadRenderer& quads,
                               TextRenderer& text,
                               const ButtonGlyphSheet& glyphs,
                               float output_width,
                               float output_height,
                               const std::string& device_name,
-                              const std::string& game_title);
+                              const std::string& game_title,
+                              const std::string& note = std::string());
 
 }  // namespace ds

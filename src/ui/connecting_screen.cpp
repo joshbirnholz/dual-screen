@@ -61,11 +61,17 @@ void render_connecting_screen(QuadRenderer& quads,
                               float output_width,
                               float output_height,
                               const std::string& device_name,
-                              const std::string& game_title) {
+                              const std::string& game_title,
+                              const std::string& note) {
     // Named, because the point of this screen is knowing which of the devices
     // on the list is being waited for.
-    render_waiting_screen(quads, text, glyphs, output_width, output_height, "Connecting",
-                          {device_name.empty() ? std::string() : "to " + device_name, game_title},
+    std::vector<std::string> lines = {device_name.empty() ? std::string() : "to " + device_name,
+                                      game_title};
+    if (!note.empty()) {
+        lines.push_back(std::string());
+        lines.push_back(note);
+    }
+    render_waiting_screen(quads, text, glyphs, output_width, output_height, "Connecting", lines,
                           {{ButtonGlyph::B, "Stop waiting"}});
 }
 

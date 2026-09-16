@@ -125,6 +125,23 @@ inline constexpr unsigned kMaxConsecutiveDecodeFailures = 240;
 // that is what a quantile measures. The few arrivals past it are shown a frame
 // late, which is the trade Moonlight and Sunshine make by default and the one
 // this app was asked for.
+// The transit `coverage` of a window of them falls below, measured up from the
+// quietest one in it. Exposed so the shape reported in the log and the number
+// the buffer is sized from are the same arithmetic rather than two that agree
+// by inspection.
+double transit_quantile_above_quietest(const std::vector<double>& recent, double coverage);
+
+// The shape of a window of transit times, each measured up from the quietest
+// one in it. Reported once a second so that what the buffer is being sized
+// against is a thing anyone can read, rather than a single number nobody can
+// argue with -- see VideoJitter::kCoverage, which is a judgement call about
+// where on this curve to sit and should be made from the curve.
+struct VideoTransitShape {
+    double median_ms = 0.0;
+    double three_quarters_ms = 0.0;
+    double worst_twentieth_ms = 0.0;
+};
+
 class VideoJitter {
 public:
     void reset();
@@ -132,8 +149,30 @@ public:
     // offset, which can be of either sign. Only differences are taken.
     void add(double transit_ms);
     double estimate() const { return estimate_; }
+    VideoTransitShape shape() const;
 
 private:
+    // How much of the spread the buffer is sized to absorb.
+    //
+    // This is the latency-against-judder trade, and it is the whole of it.
+    // Covering a quantile means every frame waits for it: at the 95th, a link
+    // whose slowest one-in-twenty arrives 74ms after its quietest -- measured,
+    // on a Steam Deck to a Mac over wifi -- makes all twenty of them 74ms
+    // late, to save the one from being shown a frame behind. That is a bad
+    // bargain for anything aimed with a gyro, where the delay sits in the
+    // control loop twice.
+    //
+    // At three quarters, three frames in four are covered as before and the
+    // fourth is shown when it gets here, one display interval behind the
+    // cadence. A repeated frame is a much cheaper thing to spend than tens of
+    // milliseconds on every frame there is.
+    //
+    // Not lower than this without evidence: with no cover at all the picture
+    // advances at whatever unevenness the link has, which is the judder this
+    // buffer was built to remove and which the same player has already asked
+    // twice to be rid of. Read the shape line in the log before moving it.
+    static constexpr double kCoverage = 0.75;
+
     // About two and a half seconds of a 50fps stream. Long enough to hold a
     // representative sample, short enough that a link which has settled stops
     // paying for a spell when it had not -- and short enough that the clocks
@@ -224,6 +263,21 @@ public:
     const std::string& status_detail() const { return status_detail_; }
     const std::vector<DiscoveredHost>& hosts() const { return browser_.hosts(); }
     const std::string& game_title() const { return game_title_; }
+    // Whether joining is being held up by this machine refusing this app the
+    // local network, rather than by the host. Worth saying on screen: the
+    // waiting looks identical either way, and only one of them is worth
+    // waiting through.
+    bool waiting_on_local_network() const { return waiting_on_local_network_; }
+
+    // Puts this session into the state a refused connect leaves behind --
+    // Connecting, no socket, an attempt owed -- so that the retry can be
+    // exercised on a machine whose connect() never produces that refusal.
+    //
+    // Worth a hook of its own: the state is unreachable anywhere but macOS,
+    // and the bug it covers was a poll() that returned before ever looking at
+    // the owed attempt, so the retry was code that could not run and no test
+    // on any other platform could have noticed.
+    void owe_an_attempt_for_test();
     // Which console the host is playing, so this device draws it the same way.
     SystemId system() const { return system_; }
     ScreenId granted_screen() const { return granted_screen_; }
@@ -498,6 +552,9 @@ private:
     // way: a failure the operating system may answer differently in a moment
     // schedules another attempt rather than ending the join.
     void begin_connect();
+    // Reaches out to each newly found host so the operating system makes up
+    // its mind about the local network before anybody picks one.
+    void knock_on_the_local_network();
     // Puts that attempt down and owes another one. See connect_is_undecided().
     void owe_another_attempt(const std::string& reason);
 
@@ -569,6 +626,17 @@ private:
     // the first poll() after the failure, for the same reason the deadline
     // below is: the clock belongs to the caller.
     bool retry_connect_ = false;
+    // How many times this join has tried, so the log can say whether the
+    // retrying is what got there.
+    unsigned connect_attempts_ = 0;
+    // Whether the attempts are being refused by this machine's own
+    // local-network permission rather than by anything on the network. The
+    // join is given far longer in that case -- see kJoinTimeoutMs -- because
+    // what it may be waiting for is a person answering a prompt.
+    bool waiting_on_local_network_ = false;
+    // Hosts already reached out to during this search -- see
+    // knock_on_the_local_network().
+    std::vector<std::string> knocked_;
     uint64_t retry_connect_at_ms_ = 0;
     // Why the last attempt did not get anywhere. Kept so that a join which
     // runs out of time after several of these says what actually went wrong

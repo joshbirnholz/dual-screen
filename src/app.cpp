@@ -1949,8 +1949,17 @@ void App::Impl::render() {
     }
     if (companion_session &&
         companion_session->status() == net::CompanionSession::Status::Connecting) {
+        // Only when it is this machine holding things up, and said in the
+        // words the player has to act on -- a system prompt they may not be
+        // able to see behind a fullscreen window.
+        const std::string note =
+            companion_session->waiting_on_local_network()
+                ? std::string("Waiting for this Mac to allow the local network. If it asked, "
+                              "say yes; otherwise turn it on in System Settings, Privacy & "
+                              "Security, Local Network.")
+                : std::string();
         render_connecting_screen(quads, text, button_glyphs, width, height,
-                                 joining_host.device_name, joining_host.game_title);
+                                 joining_host.device_name, joining_host.game_title, note);
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         return;

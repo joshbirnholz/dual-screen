@@ -34,6 +34,9 @@ bool CompanionSession::begin_search(const std::string& device_name,
     }
     status_ = Status::Searching;
     status_detail_.clear();
+    // Each trip to the host list asks again, in case the last answer never
+    // came -- see knock_on_the_local_network().
+    knocked_.clear();
     return true;
 }
 
@@ -82,6 +85,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     }
 
     joining_ = std::move(host);
+    connect_attempts_ = 0;
+    waiting_on_local_network_ = false;
     retry_connect_ = false;
     retry_connect_at_ms_ = 0;
     connect_failure_.clear();
@@ -97,6 +102,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
 }
 
 void CompanionSession::begin_connect() {
+    ++connect_attempts_;
     std::string error;
     if (!stream_.start_connect(joining_.address, joining_.session_port, &error)) {
         if (connect_is_undecided(stream_.connect_error())) {
@@ -114,6 +120,10 @@ void CompanionSession::begin_connect() {
     status_detail_ = "connecting to " + joining_.device_name;
 }
 
+void CompanionSession::owe_an_attempt_for_test() {
+    owe_another_attempt("refused for a test");
+}
+
 void CompanionSession::owe_another_attempt(const std::string& reason) {
     // Said once per join rather than once per attempt: several a second, all
     // saying the same thing, would bury the line that matters if the join does
@@ -123,6 +133,9 @@ void CompanionSession::owe_another_attempt(const std::string& reason) {
                  "trying again until it does or the join runs out of time (" + reason + ")");
     }
     connect_failure_ = reason;
+    waiting_on_local_network_ = true;
+    log_debug("attempt " + std::to_string(connect_attempts_) +
+              " at reaching that device was refused by the operating system; trying again");
     stream_.close();
     retry_connect_ = true;
     retry_connect_at_ms_ = 0;  // due a moment from the next poll, on its clock
@@ -144,6 +157,7 @@ void CompanionSession::disconnect() {
     retry_connect_ = false;
     retry_connect_at_ms_ = 0;
     connect_failure_.clear();
+    waiting_on_local_network_ = false;
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
@@ -199,6 +213,7 @@ void CompanionSession::fail(const std::string& reason) {
     stream_.close();
     retry_connect_ = false;
     retry_connect_at_ms_ = 0;
+    waiting_on_local_network_ = false;
     media_socket_.stop();
     inbox_.clear();
     said_hello_ = false;
@@ -599,6 +614,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
 
 void CompanionSession::poll(uint64_t now_ms) {
     browser_.poll(now_ms);
+    knock_on_the_local_network();
 
     // Whether what arrives this pass can be measured against the link at all.
     // Decided before anything is read, from how long this device was away
@@ -611,7 +627,15 @@ void CompanionSession::poll(uint64_t now_ms) {
     this_pass_measures_the_link_ = poll_gap_measures_the_link(poll_gap_ms, frame_period());
     last_poll_ms_ = now_ms;
 
-    if (!stream_.open()) {
+    // Nothing to do without a socket -- except in the one state where making
+    // one is the whole job: an attempt that was refused has closed its socket
+    // and owes another, and this pass is what makes it. Returning early here
+    // regardless is what left the retry below as code that never ran: the
+    // join said it was trying again and then sat on "Connecting" for ever,
+    // never retrying and never even reaching its own deadline, until the
+    // player gave up and started over -- which is exactly what it looked
+    // like from the outside.
+    if (!stream_.open() && !retry_connect_) {
         return;
     }
 
@@ -625,8 +649,20 @@ void CompanionSession::poll(uint64_t now_ms) {
     // socket: a host that accepts the connection and then never says hello is
     // the same problem wearing a different hat.
     if (status_ == Status::Connecting) {
+        // A join being refused the local network is not waiting on a device,
+        // it is waiting on this machine -- possibly on a person answering a
+        // prompt that a fullscreen window may be sitting on top of. Giving up
+        // in six seconds guarantees they cannot. Nothing is lost by waiting:
+        // the way out is on screen the whole time.
+        const uint64_t allowed_ms =
+            waiting_on_local_network_ ? kLocalNetworkJoinTimeoutMs : kJoinTimeoutMs;
         if (connect_deadline_ms_ == 0) {
-            connect_deadline_ms_ = now_ms + kJoinTimeoutMs;
+            connect_deadline_ms_ = now_ms + allowed_ms;
+        } else if (waiting_on_local_network_ &&
+                   connect_deadline_ms_ < now_ms + kLocalNetworkJoinTimeoutMs - kJoinTimeoutMs) {
+            // Learned only once the first attempt came back, so the deadline
+            // set before that is lengthened rather than left where it was.
+            connect_deadline_ms_ = now_ms + allowed_ms;
         } else if (now_ms >= connect_deadline_ms_) {
             // What went wrong, where anything did. A join that spent its whole
             // deadline being refused the local network must not tell the
@@ -654,6 +690,12 @@ void CompanionSession::poll(uint64_t now_ms) {
         }
     }
 
+    if (!stream_.open()) {
+        // The attempt made just above did not get as far as a socket, and the
+        // rest of this pass is all about one.
+        return;
+    }
+
     if (status_ == Status::Connected) {
         report_stream(now_ms);
     }
@@ -675,6 +717,15 @@ void CompanionSession::poll(uint64_t now_ms) {
     // The hello waits until the TCP handshake has actually completed, so it is
     // never queued against a socket that turns out to be unreachable.
     if (!said_hello_ && stream_.connected()) {
+        // Whatever was holding this up has let go: the handshake is through.
+        waiting_on_local_network_ = false;
+        if (connect_attempts_ > 1) {
+            // Worth saying out loud: it means the waiting was the gate opening
+            // and not the other device being slow, and it is the only way to
+            // tell whether the retry is doing its job at all.
+            log_info("reached that device on attempt " + std::to_string(connect_attempts_) +
+                     "; the first ones were refused by this machine, not by it");
+        }
         HelloMessage hello;
         hello.device_name = device_name_;
         hello.wanted_screen = wanted_screen_;
@@ -803,6 +854,53 @@ void CompanionSession::poll(uint64_t now_ms) {
         encode_frame_ack_payload(newest, ack);
         media_socket_.send_to(host_address_, kMediaPort, ack.data(), ack.size());
     }
+}
+
+// Reaches out to each host as soon as it is found, before anybody has picked
+// one.
+//
+// macOS decides whether an app may use the local network the first time the
+// app actually tries to, and the attempt that asks the question is the one
+// that gets refused -- which is why joining used to fail and then work. The
+// retry in poll() covers that, but only after the player has already pressed
+// the button and is watching a screen that says "Connecting"; if a prompt is
+// what the system decides to show, they are watching it during the seconds
+// they have to answer a prompt they may not even be able to see behind a
+// fullscreen window.
+//
+// So the question gets asked while they are still reading the list. One
+// datagram per host, the first time it appears: the host's media socket reads
+// the token, does not recognise it, and drops it -- see
+// HostSession::poll_media(). Nothing on the far end has to know about this.
+//
+// Only where there is a gate to trigger. Everywhere else this would be a
+// stray datagram for no reason at all.
+void CompanionSession::knock_on_the_local_network() {
+#if defined(__APPLE__)
+    if (status_ != Status::Searching) {
+        return;
+    }
+    for (const DiscoveredHost& host : browser_.hosts()) {
+        if (host.address.empty() ||
+            std::find(knocked_.begin(), knocked_.end(), host.address) != knocked_.end()) {
+            continue;
+        }
+        knocked_.push_back(host.address);
+        if (!media_socket_.open()) {
+            std::string error;
+            if (!media_socket_.start(0, false, &error)) {
+                return;
+            }
+        }
+        // A media header with a token nobody will match. The point is the
+        // send, not the contents.
+        std::vector<uint8_t> hello;
+        encode_media_header(0, MessageType::Ping, hello);
+        media_socket_.send_to(host.address, kMediaPort, hello.data(), hello.size());
+        log_debug("asked the operating system for the local network early, so that joining " +
+                  host.device_name + " does not have to wait for it");
+    }
+#endif
 }
 
 void CompanionSession::ask_for_keyframes(uint64_t now_ms) {
@@ -1275,6 +1373,18 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(static_cast<uint64_t>(jitter_.estimate() + 0.5)) + "ms), decode " +
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
               "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost");
+    // What the buffer is actually being sized against. One number cannot say
+    // whether a link is evenly a little late or mostly prompt with a bad tail,
+    // and those two want quite different amounts of buffer -- so the curve
+    // goes in the log and the choice of where to sit on it (VideoJitter::
+    // kCoverage) can be argued from something.
+    const VideoTransitShape shape = jitter_.shape();
+    log_debug("stream: above the quietest arrival in the window, half of them are within " +
+              std::to_string(static_cast<uint64_t>(shape.median_ms + 0.5)) +
+              "ms, three quarters within " +
+              std::to_string(static_cast<uint64_t>(shape.three_quarters_ms + 0.5)) +
+              "ms, nineteen in twenty within " +
+              std::to_string(static_cast<uint64_t>(shape.worst_twentieth_ms + 0.5)) + "ms");
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
@@ -1300,6 +1410,28 @@ void VideoJitter::reset() {
     estimate_ = 0.0;
 }
 
+double transit_quantile_above_quietest(const std::vector<double>& recent, double coverage) {
+    if (recent.empty()) {
+        return 0.0;
+    }
+    // Measured up from the quietest transit in the window, which is this link
+    // with nothing queued on it -- and the only baseline available at all,
+    // since the two clocks' offset is unknown and only differences between
+    // transits mean anything.
+    //
+    // Not the maximum, which one bad moment owns for the whole window; not a
+    // mean either, which a long tail of prompt arrivals drags under what the
+    // late ones actually need.
+    std::vector<double> sorted(recent);
+    const std::size_t index = static_cast<std::size_t>(
+        std::min<double>(static_cast<double>(sorted.size()) - 1.0,
+                         coverage * static_cast<double>(sorted.size())));
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(index),
+                     sorted.end());
+    const double quietest = *std::min_element(recent.begin(), recent.end());
+    return std::max(0.0, sorted[index] - quietest);
+}
+
 void VideoJitter::add(double transit_ms) {
     if (recent_.size() < kWindow) {
         recent_.push_back(transit_ms);
@@ -1307,23 +1439,15 @@ void VideoJitter::add(double transit_ms) {
         recent_[next_] = transit_ms;
         next_ = (next_ + 1) % kWindow;
     }
-    // The quantile the buffer is sized from, measured up from the quietest
-    // transit in the window -- which is this link with nothing queued on it,
-    // and the only baseline available when the clocks themselves are unknown.
-    //
-    // Not the maximum, for the reason set out on the class; not a mean either,
-    // which a long tail of prompt arrivals would drag under what the late ones
-    // actually need. Five frames in a hundred past it, each shown one frame
-    // late.
-    constexpr double kCoverage = 0.95;
-    std::vector<double> sorted(recent_);
-    const std::size_t index = static_cast<std::size_t>(
-        std::min<double>(static_cast<double>(sorted.size()) - 1.0,
-                         kCoverage * static_cast<double>(sorted.size())));
-    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(index),
-                     sorted.end());
-    const double quietest = *std::min_element(recent_.begin(), recent_.end());
-    estimate_ = std::max(0.0, sorted[index] - quietest);
+    estimate_ = transit_quantile_above_quietest(recent_, kCoverage);
+}
+
+VideoTransitShape VideoJitter::shape() const {
+    VideoTransitShape out;
+    out.median_ms = transit_quantile_above_quietest(recent_, 0.50);
+    out.three_quarters_ms = transit_quantile_above_quietest(recent_, 0.75);
+    out.worst_twentieth_ms = transit_quantile_above_quietest(recent_, 0.95);
+    return out;
 }
 
 bool poll_gap_measures_the_link(uint64_t poll_gap_ms, uint64_t period_ms) {

@@ -84,4 +84,12 @@ constexpr uint64_t kJoinTimeoutMs = 6000;
 // for twice.
 constexpr uint64_t kConnectRetryMs = 250;
 
+// And how long a join is given when the attempts are being refused by this
+// machine's own local-network permission rather than by anything on the
+// network. Far longer than kJoinTimeoutMs, because what it may be waiting for
+// is a person noticing a system prompt and answering it -- six seconds is not
+// enough for that, and giving up early is what makes the first try look
+// broken and the second look fine.
+constexpr uint64_t kLocalNetworkJoinTimeoutMs = 30000;
+
 }  // namespace ds::net
