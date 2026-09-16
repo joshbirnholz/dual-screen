@@ -1,3 +1,4 @@
+#include <cctype>
 #include "core/libretro_core.hpp"
 
 #include "core/gl_call_trace.hpp"
@@ -637,6 +638,24 @@ void LibretroCore::register_option(const CoreOptionInfo& info) {
         option_values_[info.key] = info.default_value;
     }
     options_registered_ = true;
+    // What this core offers around the microphone, and exactly how it spells
+    // it. melonDS can synthesise the blow a DS game is listening for, which is
+    // the whole feature -- but the option key and the value differ between
+    // core versions, and a forced option that guesses wrong is silently
+    // ignored unless it is Required. Saying it here means one session's log
+    // settles it instead of a guess.
+    for (const auto& entry : declared_options_) {
+        if (entry.first.find("mic") == std::string::npos) {
+            continue;
+        }
+        std::string values;
+        for (const std::string& value : entry.second.allowed_values) {
+            if (!values.empty()) values += ", ";
+            values += value;
+        }
+        log_info("core option '" + entry.first + "' offers: " +
+                 (values.empty() ? std::string("anything") : values));
+    }
 }
 
 void LibretroCore::apply_forced_options() {
@@ -984,7 +1003,34 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             return true;
         }
         case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
-        case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
+        case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: {
+            // Read rather than merely accepted, because this is the only place
+            // a core says what it does with a button beyond the obvious ones.
+            // melonDS puts the DS microphone on a pad button and names it
+            // here; without this the name is in RetroArch's binding screen and
+            // nowhere else, and which button it is has to be guessed.
+            const auto* descriptor = static_cast<const struct retro_input_descriptor*>(data);
+            for (; descriptor != nullptr && descriptor->description != nullptr; ++descriptor) {
+                const std::string description = descriptor->description;
+                std::string lowered;
+                lowered.reserve(description.size());
+                for (const char character : description) {
+                    lowered.push_back(static_cast<char>(
+                        std::tolower(static_cast<unsigned char>(character))));
+                }
+                const bool interesting = lowered.find("mic") != std::string::npos ||
+                                         lowered.find("blow") != std::string::npos;
+                const std::string line =
+                    "core input: port " + std::to_string(descriptor->port) + " id " +
+                    std::to_string(descriptor->id) + " is \"" + description + "\"";
+                if (interesting) {
+                    log_info(line);
+                } else {
+                    log_debug(line);
+                }
+            }
+            return true;
+        }
         case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
         case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
         case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
