@@ -80,6 +80,33 @@ enum class RightStickMode {
     Off,        // ignored entirely, for a game that reads it as something unwanted
 };
 
+// What clicking the left stick does, on a console that has a microphone.
+//
+// Only a DS raises the question. Its microphone has to be held down to blow
+// into, and by the time this app has taken the stick clicks for its own
+// shortcuts there is no spare button left to hold -- so one of the two has to
+// give. Which one is the player's call rather than this app's, because the
+// answer depends on the game in front of them: a game that never asks to be
+// blown into loses nothing by keeping the shortcut.
+//
+// On every other console L3 swaps layouts regardless; there is no microphone
+// for it to be. See SystemProfile::has_microphone.
+enum class LeftStickPress {
+    Microphone,  // held, it blows into the console's microphone
+    SwapLayout,  // released, it swaps the two focus layouts
+};
+
+const char* to_string(LeftStickPress press);
+LeftStickPress next_left_stick_press(LeftStickPress press);
+const char* left_stick_press_key(LeftStickPress press);
+LeftStickPress left_stick_press_from_key(const std::string& key);
+
+// Whether L3 reaches the game as the microphone rather than staying one of this
+// app's own shortcuts. Both have to agree: a console with no microphone has
+// nothing to send into one, and a player who picked the swap has said which of
+// the two they would rather have.
+bool left_stick_is_microphone(bool console_has_microphone, LeftStickPress press);
+
 const char* to_string(RightStickMode mode);
 RightStickMode next_right_stick_mode(RightStickMode mode);
 // Round-trips through settings files; unknown text falls back to the default.

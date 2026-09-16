@@ -125,6 +125,11 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.screen_codec_wii_u = video::next_screen_codec(settings_.screen_codec_wii_u);
             result.settings_changed = true;
             break;
+        case Row::LeftStickPress:
+            // Two values, so either direction is the other one.
+            settings_.left_stick_press = next_left_stick_press(settings_.left_stick_press);
+            result.settings_changed = true;
+            break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -220,6 +225,8 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Streaming format (DS)", video::to_string(settings_.screen_codec_ds)},
         {"Streaming format (3DS)", video::to_string(settings_.screen_codec_3ds)},
         {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
+        {"Left stick click, where there is a microphone",
+         to_string(settings_.left_stick_press)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",
          settings_.wii_u_screen_alone == ScreenId::Bottom ? "GamePad" : "Television"},

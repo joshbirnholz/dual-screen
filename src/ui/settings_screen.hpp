@@ -77,6 +77,7 @@ private:
         ScreenCodecDs,
         ScreenCodecThreeDs,
         ScreenCodecWiiU,
+        LeftStickPress,
         Vsync,
         WiiUScreenAlone,
         Back,

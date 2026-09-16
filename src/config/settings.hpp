@@ -141,6 +141,13 @@ struct Settings {
     // remembers its own; this is only where a new one starts.
     RightStickMode default_right_stick_mode = RightStickMode::CStick;
 
+    // What clicking the left stick does on a console that has a microphone --
+    // blow into it, or swap the two focus layouts the way it does everywhere
+    // else. Defaults to the microphone, because the swap is also a press away
+    // in the quick menu while blowing has no other way in at all; a player who
+    // would rather keep the shortcut says so here. See LeftStickPress.
+    LeftStickPress left_stick_press = LeftStickPress::Microphone;
+
     // Which device plays the sound while two are connected. Chosen from the
     // layout menu rather than here, since it is the kind of thing that changes
     // with the room rather than once at setup.

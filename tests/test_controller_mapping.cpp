@@ -194,6 +194,34 @@ void test_keyboard_can_drive_menus() {
     CHECK_EQ(count_action(input.ui_actions(), UiAction::Cancel), static_cast<std::size_t>(1));
 }
 
+// What L3 is, is the answer to two questions rather than one: whether the
+// console has a microphone for it to be, and whether the player would rather
+// keep the shortcut. Either "no" leaves L3 swapping layouts, which is what it
+// has always done everywhere else.
+void test_l3_is_the_microphone_only_when_both_agree() {
+    CHECK(left_stick_is_microphone(true, LeftStickPress::Microphone));
+    CHECK(!left_stick_is_microphone(true, LeftStickPress::SwapLayout));
+    // A 3DS or a Wii U has nothing to blow into, so the setting has nothing to
+    // say there and the shortcut stays whatever the player chose.
+    CHECK(!left_stick_is_microphone(false, LeftStickPress::Microphone));
+    CHECK(!left_stick_is_microphone(false, LeftStickPress::SwapLayout));
+}
+
+// The setting is written to a file and read back from one, so its two values
+// have to survive the trip by name, and unknown text has to land somewhere
+// rather than anywhere.
+void test_what_l3_does_round_trips_by_name() {
+    CHECK(left_stick_press_from_key(left_stick_press_key(LeftStickPress::Microphone)) ==
+          LeftStickPress::Microphone);
+    CHECK(left_stick_press_from_key(left_stick_press_key(LeftStickPress::SwapLayout)) ==
+          LeftStickPress::SwapLayout);
+    CHECK(left_stick_press_from_key("nonsense") == LeftStickPress::Microphone);
+    // Cycling twice is where it started: the settings row only moves one way.
+    CHECK(next_left_stick_press(next_left_stick_press(LeftStickPress::Microphone)) ==
+          LeftStickPress::Microphone);
+    CHECK(next_left_stick_press(LeftStickPress::Microphone) == LeftStickPress::SwapLayout);
+}
+
 }  // namespace
 
 int main() {
@@ -206,5 +234,7 @@ int main() {
     test_prompt_letters_follow_the_pad();
     test_duplicate_presses_are_merged();
     test_keyboard_can_drive_menus();
+    test_l3_is_the_microphone_only_when_both_agree();
+    test_what_l3_does_round_trips_by_name();
     return test::finish("controller-mapping");
 }

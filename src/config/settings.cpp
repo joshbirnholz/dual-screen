@@ -120,6 +120,8 @@ Settings Settings::load(const AppPaths& paths) {
     settings.default_right_stick_mode = right_stick_mode_from_key(get_or<std::string>(
         document, "default_right_stick_mode",
         right_stick_mode_key(settings.default_right_stick_mode)));
+    settings.left_stick_press = left_stick_press_from_key(get_or<std::string>(
+        document, "left_stick_press", left_stick_press_key(settings.left_stick_press)));
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
     settings.handedness = handedness_from_key(
@@ -159,6 +161,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;
     document["default_right_stick_mode"] = right_stick_mode_key(default_right_stick_mode);
+    document["left_stick_press"] = left_stick_press_key(left_stick_press);
     document["wii_u_screen_alone"] = screen_alone_key(wii_u_screen_alone);
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);

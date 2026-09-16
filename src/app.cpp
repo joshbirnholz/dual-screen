@@ -653,7 +653,8 @@ void App::Impl::apply_system() {
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
     input.set_game_owns_controls(profile.game_uses_every_control);
-    input.set_microphone_button(profile.has_microphone);
+    input.set_microphone_button(
+        left_stick_is_microphone(profile.has_microphone, settings.left_stick_press));
     // Whether this device's own sensors are read at all.
     //
     // Only when it is the one running the game: a companion is told by the
@@ -1266,6 +1267,10 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
             log_warn("could not save settings.json");
         }
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+        // L3's job is one of the things that can have just changed, and the
+        // player who changed it is about to press it.
+        input.set_microphone_button(left_stick_is_microphone(
+            system_profile(system).has_microphone, settings.left_stick_press));
         // Takes effect at once rather than at the next launch: this is the
         // kind of thing somebody changes to see what it does, and the poll
         // loop below picks the new value up on its next pass.

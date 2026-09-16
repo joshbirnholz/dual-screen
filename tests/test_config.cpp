@@ -321,6 +321,7 @@ void test_settings_round_trip() {
     defaults.default_render_scale = 2;
     defaults.default_screen_gap = false;
     defaults.default_right_stick_mode = RightStickMode::DPad;
+    defaults.left_stick_press = LeftStickPress::SwapLayout;
     defaults.audio_target = AudioTarget::BottomScreen;
     defaults.cursor_mode = CursorMode::Hidden;
     // All three set away from their defaults, and not to the same value as
@@ -344,6 +345,8 @@ void test_settings_round_trip() {
     CHECK_EQ(reloaded.default_bilinear_filtering, true);
     CHECK_EQ(reloaded.default_render_scale, 2);
     CHECK(reloaded.default_right_stick_mode == RightStickMode::DPad);
+    CHECK_MSG(reloaded.left_stick_press == LeftStickPress::SwapLayout,
+              "what L3 does did not survive being written down");
     CHECK_EQ(reloaded.default_screen_gap, false);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
