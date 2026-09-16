@@ -837,7 +837,7 @@ void CompanionSession::poll(uint64_t now_ms) {
         // visible judder several times a second -- a bad bargain, and a much
         // more noticeable one than the delay it bought back.
         const uint64_t allowance =
-            video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_periods_);
+            video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_ms_);
         const bool draining =
             !complete_at_.empty() && now_ms > complete_at_.front().second + allowance;
         std::size_t shown = 0;
@@ -1411,9 +1411,8 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               "ms avg " + std::to_string(stats_wait_worst_ms_) + "ms worst in a buffer of " +
               std::to_string(target_buffer_frames()) + ", covering up to " +
               std::to_string(video_hold_allowance_ms(jitter_.estimate(), frame_period(),
-                                                     extra_hold_periods_)) +
-              "ms of which " +
-              std::to_string(extra_hold_periods_ * frame_period()) +
+                                                     extra_hold_ms_)) +
+              "ms of which " + std::to_string(extra_hold_ms_) +
               "ms was bought back after the picture ran dry, " +
               std::to_string(stats_starved_) + " times this second (jitter " +
               std::to_string(static_cast<uint64_t>(jitter_.estimate() + 0.5)) + "ms), decode " +
@@ -1433,7 +1432,8 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               "ms, nineteen in twenty within " +
               std::to_string(static_cast<uint64_t>(shape.worst_twentieth_ms + 0.5)) + "ms");
     // Once a second, what the stalls have earned. See hold_extra_periods().
-    extra_hold_periods_ = hold_extra_periods(extra_hold_periods_, stats_starved_, calm_seconds_);
+    extra_hold_ms_ =
+        hold_extra_ms(extra_hold_ms_, frame_period(), stats_starved_, calm_seconds_);
     calm_seconds_ = (stats_starved_ == 0) ? calm_seconds_ + 1 : 0;
     stats_starved_ = 0;
     stats_at_ms_ = now_ms;
@@ -1539,35 +1539,42 @@ uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining
     return drained > 0 ? drained : 1;
 }
 
-uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
-                                 std::size_t extra_periods) {
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms, uint64_t extra_ms) {
     const auto measured = static_cast<uint64_t>(std::max(0.0, jitter_ms) + 0.5);
-    return std::clamp(measured, period_ms, period_ms * 2) +
-           static_cast<uint64_t>(extra_periods) * period_ms;
+    return std::clamp(measured, period_ms, period_ms * 2) + extra_ms;
 }
 
-std::size_t hold_extra_periods(std::size_t current, unsigned starved_last_second,
-                               unsigned calm_seconds) {
-    // Two periods on top of the two the measurement can ask for. Past that the
+uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms, unsigned starved_last_second,
+                       unsigned calm_seconds) {
+    // A quarter of a period at a time, not a whole one.
+    //
+    // This used to step in whole frames, and on a 30fps stream that is 33ms a
+    // step -- so a link needing 43ms of cover was given 66ms and the picture
+    // waited the difference for nothing. Measured: 99ms of cover held against
+    // a spread whose worst one-in-twenty was 76ms, and every frame paying the
+    // 23ms of rounding. The cover has no reason to come in frame-sized pieces;
+    // only the pacing clock does.
+    const uint64_t step = std::max<uint64_t>(period_ms / 4, 1);
+    // Two periods above what the measurement can ask for. Past that the
     // picture is not being smoothed, it is being delayed: a link that still
-    // runs dry with four periods in hand is losing frames or falling behind,
-    // and neither is something more waiting will fix.
-    constexpr std::size_t kMaxExtraPeriods = 2;
+    // runs dry with that much in hand is losing frames or falling behind, and
+    // neither is something more waiting will fix.
+    const uint64_t ceiling = period_ms * 2;
     // Bought on the first second that stalls, because one stall a second is
     // already what a player notices -- this is not a threshold to be tuned up
     // until the complaints stop.
     if (starved_last_second > 0) {
-        return std::min(current + 1, kMaxExtraPeriods);
+        return std::min(current_ms + step, ceiling);
     }
     // Given back slowly, and only after long enough that a quiet spell is a
     // quiet link rather than a quiet moment. Asymmetric on purpose: buying
-    // cover costs a period of delay once, and giving it back too eagerly costs
-    // a stall every time the link twitches.
+    // cover costs delay once, and giving it back too eagerly costs a stall
+    // every time the link twitches.
     constexpr unsigned kCalmSecondsBeforeGivingBack = 10;
-    if (calm_seconds >= kCalmSecondsBeforeGivingBack && current > 0) {
-        return current - 1;
+    if (calm_seconds >= kCalmSecondsBeforeGivingBack && current_ms > 0) {
+        return current_ms - std::min(current_ms, step);
     }
-    return current;
+    return current_ms;
 }
 
 std::size_t CompanionSession::target_buffer_frames() const {

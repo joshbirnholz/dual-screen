@@ -404,11 +404,9 @@ bool VideoEncoder::rebuild_scaler(int source_width, int source_height, std::stri
     // because it converts on the GPU on the way into the encoder.
     //
     // Doing it on the GPU here is a larger change than it looks -- the frames
-    // arrive over a shared-memory link as plain bytes -- so this takes the
-    // cheaper half: swscale will split the picture into horizontal bands
-    // across as many threads as it is given, and a Deck has eight. The
-    // conversion is per-pixel with no dependency between rows, so the bands
-    // are independent and the result is identical.
+    // arrive over a shared-memory link as plain bytes -- and the cheap half,
+    // asking swscale to thread it, turned out not to work through this call.
+    // See the option below. The 7ms is still there.
     //
     // sws_getContext cannot be told this because it initialises the context
     // before returning it, and the option has to be set before that.
@@ -424,9 +422,14 @@ bool VideoEncoder::rebuild_scaler(int source_width, int source_height, std::stri
         // format" into "convert pixel format and resample" the moment source
         // and dest sizes differ -- see EncoderConfig::source_width/height.
         av_opt_set_int(scaler_, "sws_flags", SWS_BILINEAR, 0);
-        // Ignored by a build of swscale too old to know the option, which is
-        // why its result is not checked: the context is still perfectly good
-        // single-threaded, which is what this did before.
+        // Asked for, and measured as having no effect: 7.28ms before, 7.01ms
+        // after, which is noise. swscale only spreads the work across these
+        // threads when the picture goes through sws_scale_frame(); the plain
+        // sws_scale() this calls runs on the caller's thread whatever the
+        // context was told. Left in place because it costs nothing and the
+        // day this moves to sws_scale_frame() it starts working -- but it is
+        // not the 5ms it was meant to be, and the comment above should not be
+        // read as though it were.
         av_opt_set_int(scaler_, "threads", 4, 0);
         if (sws_init_context(scaler_, nullptr, nullptr) < 0) {
             sws_freeContext(scaler_);

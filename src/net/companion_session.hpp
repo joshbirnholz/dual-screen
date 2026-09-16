@@ -239,7 +239,7 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 // `extra_periods` is cover this link has shown it needs beyond that, which is
 // the one thing a quantile cannot know -- see hold_extra_periods().
 uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
-                                 std::size_t extra_periods);
+                                 uint64_t extra_ms);
 
 // How much cover to hold beyond what the measured spread asks for, given how
 // often the picture has actually had nothing to show.
@@ -256,8 +256,8 @@ uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
 // So this watches instead of guessing. A second in which the picture ran dry
 // buys a period of cover; a spell without one gives it back. The link settles
 // it, and nobody is ever asked to tune it.
-std::size_t hold_extra_periods(std::size_t current, unsigned starved_last_second,
-                               unsigned calm_seconds);
+uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms,
+                       unsigned starved_last_second, unsigned calm_seconds);
 
 // How far to advance the pacing clock after showing `shown` frames.
 //
@@ -686,9 +686,9 @@ private:
     // see poll_gap_measures_the_link() -- and whether the transits it is about
     // to measure describe the link or this device. Zero before the first one.
     // Cover this link has earned beyond what its measured spread asks for,
-    // in periods -- see hold_extra_periods(). Zero on a link that never runs
+    // in milliseconds -- see hold_extra_ms(). Zero on a link that never runs
     // the picture dry.
-    std::size_t extra_hold_periods_ = 0;
+    uint64_t extra_hold_ms_ = 0;
     // Pictures shown more than half a period after they were due, which is
     // the only running-dry a player can see -- see where this is counted for
     // why "the queue was empty" is not the same thing at all.

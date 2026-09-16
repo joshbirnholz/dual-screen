@@ -2014,56 +2014,65 @@ void test_an_emulator_rendering_unevenly_does_not_buy_buffer() {
 // its ceiling, which is the delay the whole mechanism exists not to buy.
 void test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time() {
     constexpr uint64_t period = 33;
-
     // What the loop does with what a healthy stream really produces: nothing
     // late, so nothing bought, however often the queue was empty.
-    CHECK_EQ(hold_extra_periods(0, 0, 1), static_cast<std::size_t>(0));
-    // And what it does with the stream that was being misread: thirty stalls a
-    // second would have taken it to the ceiling in two seconds flat.
-    CHECK_EQ(hold_extra_periods(hold_extra_periods(0, 30, 0), 30, 0),
-             static_cast<std::size_t>(2));
+    CHECK_EQ(hold_extra_ms(0, period, 0, 1), static_cast<uint64_t>(0));
+    // And what it did with the stream that was being misread: a stall counted
+    // on every frame took it to its ceiling and left it there.
+    uint64_t cover = 0;
+    for (int second = 0; second < 20; ++second) {
+        cover = hold_extra_ms(cover, period, 30, 0);
+    }
+    CHECK_EQ(cover, period * 2);
 }
 
 // The trade the quantile cannot settle: what to do about the tail.
 //
-// Measured, Steam Deck to Mac over wifi: half the frames land within 9ms of
-// the quietest, three quarters within 16ms, and one in twenty 72ms behind.
-// Cover the body -- one period at 30fps -- and that one frame in twenty finds
-// nothing waiting, so the picture stalls about once a second. Cover the tail
-// and every frame waits 72ms for it. There is no quantile that is right for
-// both, and the same numbers mean different things on different wifi.
+// Measured, Steam Deck to Mac over wifi: half the frames land at the quietest
+// arrival, three quarters within 19ms of it, and one in twenty 76ms behind.
+// Cover the body and that one frame in twenty finds nothing waiting, so the
+// picture stalls about once a second. Cover the tail and every frame waits
+// 76ms for it. There is no quantile right for both, and the same numbers mean
+// something else on different wifi.
 //
 // So the cover is not chosen, it is earned: a second in which the picture ran
-// dry buys a period, a long spell without one gives it back.
+// dry buys some, a long spell without one gives it back.
 void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
+    constexpr uint64_t period = 33;
+
     // A link that never stalls never buys anything.
-    CHECK_EQ(hold_extra_periods(0, 0, 0), static_cast<std::size_t>(0));
-    CHECK_EQ(hold_extra_periods(0, 0, 100), static_cast<std::size_t>(0));
+    CHECK_EQ(hold_extra_ms(0, period, 0, 0), static_cast<uint64_t>(0));
+    CHECK_EQ(hold_extra_ms(0, period, 0, 100), static_cast<uint64_t>(0));
 
     // One stall in a second is enough -- a player notices one a second, so
     // this does not wait to be convinced.
-    CHECK_EQ(hold_extra_periods(0, 1, 0), static_cast<std::size_t>(1));
-    CHECK_EQ(hold_extra_periods(1, 1, 0), static_cast<std::size_t>(2));
+    CHECK(hold_extra_ms(0, period, 1, 0) > 0);
 
-    // And it stops. Past two periods on top of the two the measurement can
-    // ask for, a link that still runs dry is not going to be fixed by waiting
-    // longer, and everything past here is delay for its own sake.
-    CHECK_EQ(hold_extra_periods(2, 5, 0), static_cast<std::size_t>(2));
+    // In quarter-frame steps, not whole ones. A link needing 43ms of cover
+    // used to be handed 66, and every frame waited the 23ms of rounding.
+    CHECK_EQ(hold_extra_ms(0, period, 1, 0), period / 4);
+    uint64_t cover = 0;
+    for (int second = 0; second < 6; ++second) {
+        cover = hold_extra_ms(cover, period, 1, 0);
+    }
+    CHECK(cover >= 40 && cover <= 50);
 
-    // Given back only after a long calm -- and one at a time, so a link that
-    // needed the cover does not lose all of it at once on a quiet stretch.
-    CHECK_EQ(hold_extra_periods(2, 0, 9), static_cast<std::size_t>(2));
-    CHECK_EQ(hold_extra_periods(2, 0, 10), static_cast<std::size_t>(1));
-    CHECK_EQ(hold_extra_periods(1, 0, 10), static_cast<std::size_t>(0));
-    CHECK_EQ(hold_extra_periods(0, 0, 10), static_cast<std::size_t>(0));
+    // And it stops. Past two periods on top of what the measurement can ask
+    // for, a link that still runs dry will not be fixed by waiting longer.
+    CHECK_EQ(hold_extra_ms(period * 2, period, 5, 0), period * 2);
 
-    // What it is worth on the link that prompted it: at 30fps the body asks
-    // for one period of cover, which does not reach a frame 72ms late; one
-    // period earned does.
-    constexpr uint64_t period = 33;
-    CHECK(video_hold_allowance_ms(16.0, period, 0) < 72u);
-    CHECK(video_hold_allowance_ms(16.0, period, 1) >= 66u);
-    CHECK(video_hold_allowance_ms(16.0, period, 2) >= 99u);
+    // Given back only after a long calm, and a step at a time, so a link that
+    // needed the cover does not lose all of it on one quiet stretch.
+    CHECK_EQ(hold_extra_ms(period, period, 0, 9), period);
+    CHECK_EQ(hold_extra_ms(period, period, 0, 10), period - period / 4);
+    CHECK_EQ(hold_extra_ms(0, period, 0, 10), static_cast<uint64_t>(0));
+
+    // What it is worth on the link that prompted it: the body asks for one
+    // period, which does not reach a frame 76ms late; the earned cover does,
+    // and without rounding up to a whole extra frame to get there.
+    CHECK(video_hold_allowance_ms(19.0, period, 0) < 76u);
+    CHECK(video_hold_allowance_ms(19.0, period, 44) >= 76u);
+    CHECK(video_hold_allowance_ms(19.0, period, 44) < video_hold_allowance_ms(19.0, period, 66));
 }
 
 // What the buffer is sized from is a trade, and this is where it is made.
