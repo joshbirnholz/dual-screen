@@ -1820,35 +1820,35 @@ void test_an_uneven_link_buys_cover_and_gives_it_back() {
     CHECK_EQ(video_buffer_target_frames(jitter, 33.0), kMinVideoBufferFrames + 1);
 }
 
-// Bits per pixel per frame only means that if the frame rate is the real one.
+// The bitrate is a budget for the wire, not a quality target for a frame.
 //
-// It was hardcoded at 60. Wind Waker HD runs at 30, so a 1080p stream of it
-// asked for 43.5 Mbit/s to carry thirty frames a second -- 0.7 bits a pixel,
-// twice the quality target, twice the bytes on the air, and on a Steam Deck's
-// wifi, round-trip excursions of 100 to 130ms about once a second against a
-// 25ms average. The far end buys buffer against exactly those.
-void test_the_bitrate_follows_the_rate_the_source_really_runs_at() {
-    const int at_60 = bitrate_kbps_for_encode_size(1920, 1080, 60.0);
-    const int at_30 = bitrate_kbps_for_encode_size(1920, 1080, 30.0);
+// It used to be bits per pixel per frame times an assumed 60, which on a 30fps
+// game came out at 43.5 Mbit/s for 1080p -- and the ask is a ceiling, so a
+// ceiling twice as high as the content wanted bound on nothing at all. The
+// encoder was honouring it the whole time (asked 22.9 it made 23.0, asked 22.7
+// it made 23.5); it was simply never asked for less than it already wanted.
+void test_the_bitrate_is_a_budget_for_the_link() {
+    // 1080p lands where a stream of this size is normally run, and at half
+    // what this was putting on the air before.
+    const int at_1080p = bitrate_kbps_for_encode_size(1920, 1080, 30.0);
+    CHECK(at_1080p > 10000 && at_1080p < 14000);
 
-    // The 60fps number is the one this has always aimed at, so a game that
-    // really does run at 60 is untouched.
-    CHECK(at_60 > 40000 && at_60 < 47000);
-    // And half the frames want half the bits, for the same picture quality on
-    // each of them.
-    CHECK(at_30 * 2 > at_60 - 1000 && at_30 * 2 < at_60 + 1000);
+    // And it does not depend on the frame rate, because a link budget is the
+    // same budget whether thirty pictures are drawn into it or sixty. That is
+    // the assumption that made the old number wrong, so there is now none to
+    // get wrong.
+    CHECK_EQ(bitrate_kbps_for_encode_size(1920, 1080, 60.0), at_1080p);
+    CHECK_EQ(bitrate_kbps_for_encode_size(1920, 1080, 0.0), at_1080p);
 
-    // A GamePad's native size stays near where it has always been.
-    const int gamepad = bitrate_kbps_for_encode_size(854, 480, 60.0);
-    CHECK(gamepad > 7000 && gamepad < 10000);
+    // A smaller picture asks for less, but not proportionally less: the same
+    // blockiness costs more bits per pixel as the picture shrinks, so the
+    // floor holds the small end up rather than the slope starving it.
+    const int gamepad = bitrate_kbps_for_encode_size(854, 480, 30.0);
+    CHECK(gamepad < at_1080p);
+    CHECK(gamepad >= 4000);
 
-    // A number that is not a frame rate -- a measurement taken while a game
-    // was loading, or a division by a period that has not settled -- is
-    // clamped rather than believed.
-    CHECK_EQ(bitrate_kbps_for_encode_size(1920, 1080, 0.0),
-             bitrate_kbps_for_encode_size(1920, 1080, 20.0));
-    CHECK_EQ(bitrate_kbps_for_encode_size(1920, 1080, 100000.0),
-             bitrate_kbps_for_encode_size(1920, 1080, 144.0));
+    // And nothing is asked for a rate no link here could carry.
+    CHECK(bitrate_kbps_for_encode_size(7680, 4320, 60.0) <= 30000);
 }
 
 // What the pacer drains at has to follow what the encoder really produces,
@@ -2559,7 +2559,7 @@ int main() {
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
-    test_the_bitrate_follows_the_rate_the_source_really_runs_at();
+    test_the_bitrate_is_a_budget_for_the_link();
     test_the_pacer_follows_what_is_really_produced();
     test_the_in_flight_window_covers_the_delay_this_link_shows();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();

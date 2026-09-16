@@ -243,39 +243,51 @@ constexpr double kAssumedProducePeriodMs = 16.7;
 
 }  // namespace
 
-// A flat bitrate either wastes bits on a small picture (blocky at 480p is a
-// lot more bits per pixel than the same blockiness at 1080p needs) or starves
-// a large one -- and a fixed 8 Mbps, this app's number until now, is well
-// under what a LAN actually has room for: Moonlight/Sunshine set-ups commonly
-// run 1080p+ at 50 Mbps on the same kind of network this targets. Scaling
-// with the picture's own pixel count keeps the same visual quality target at
-// every size instead of picking one number that is only right for one of
-// them. 0.35 bits/pixel/frame at 60fps lands close to that 50 Mbps figure at
-// 1080p (2,073,600 px * 60 * 0.35 ~= 43.5 Mbps) while keeping the previous
-// 8 Mbps roughly where it was for a Wii U GamePad's native 854x480 (~8.6
-// Mbps) -- not tuned to hit either number exactly, just what one consistent
-// quality target happens to produce at each end.
+// What to ask the encoder for, as a budget for the link rather than a quality
+// target for a frame.
 //
-// Bits per pixel per *frame* only means that if the frame rate is the real
-// one. It was hardcoded at 60, and Wind Waker HD runs at 30: a 1080p stream
-// of it asked for 43.5 Mbps to carry thirty frames a second, which is 0.7
-// bits a pixel -- twice the quality this is aiming at, and twice the bytes on
-// the air. That is not free latency. Measured on a Steam Deck's wifi it
-// showed up as round-trip excursions of 100 to 130ms about once a second
-// against a 25ms average, and those excursions are exactly what the far end
-// then buys buffer against: the picture arrives later because its bits took
-// longer to cross, and then waits longer still before being shown.
+// This used to be bits per pixel per frame times a frame rate, and both halves
+// of that were wrong in ways that cancelled into a number that did nothing.
+//
+// The frame rate was assumed to be 60 and the game runs at 30, so the ask came
+// out at 43.5 Mbit/s for a 1080p stream. And the ask is a *ceiling*, not an
+// instruction: h264_vaapi honours it perfectly well -- asked for 22.9 it made
+// 23.0, asked for 22.7 it made 23.5 -- but at 43.5 it was being handed a
+// ceiling twice as high as the content wanted, so it produced the 23 Mbit/s
+// its quality settled at and the number never bound on anything. I read those
+// same four measurements as an encoder ignoring its bitrate, and said so
+// twice. It was not ignoring it; it was never being asked for less than it
+// already wanted.
+//
+// So this is now a rate for the wire, which is the thing actually in short
+// supply: 23 Mbit/s of UDP leaving a handheld's wifi in eighty-datagram bursts
+// thirty times a second is what a far end measures as three quarters of frames
+// within 16ms of the quietest and one in twenty 79ms behind it, with nothing
+// lost at all. A tail without loss is queueing, and after ruling out this end's
+// pacing, the other end's loop and the evenness of the frames, the air is what
+// is left.
+//
+// Six bits per pixel per second puts 1080p at about 12 Mbit/s, which is in the
+// range Moonlight is normally run at for this size and half of what this was
+// putting out. Per second and not per frame, so there is no frame rate to
+// assume and none to get wrong: a link budget is a link budget whether the
+// game draws thirty pictures into it or sixty.
+//
+// The floor matters as much as the slope. Bits per pixel has to rise as a
+// picture gets smaller -- the same blockiness costs proportionally more at
+// 480p than at 1080p -- and a straight line through the origin starves the
+// small end, so a Wii U GamePad's native 854x480 is held up by the floor
+// rather than by the slope.
 int bitrate_kbps_for_encode_size(int width, int height, double frames_per_second) {
-    constexpr double kBitsPerPixelPerFrame = 0.35;
-    constexpr int kMinBitrateKbps = 2000;
-    constexpr int kMaxBitrateKbps = 60000;
-    // A rate outside this is a measurement, not a frame rate. Nothing this
-    // app plays runs slower than about twenty or faster than a couple of
-    // hundred, and either end of the clamp is safer than believing a number
-    // taken while a game was loading.
-    const double fps = std::clamp(frames_per_second, 20.0, 144.0);
+    constexpr double kBitsPerPixelPerSecond = 6.0;
+    constexpr int kMinBitrateKbps = 4000;
+    constexpr int kMaxBitrateKbps = 30000;
+    // Kept in the signature because the caller measures it and because the
+    // keyframe interval is still built from it; the budget itself no longer
+    // depends on it, which is the point.
+    (void)frames_per_second;
     const double bits_per_second =
-        static_cast<double>(width) * static_cast<double>(height) * fps * kBitsPerPixelPerFrame;
+        static_cast<double>(width) * static_cast<double>(height) * kBitsPerPixelPerSecond;
     const int kbps = static_cast<int>(bits_per_second / 1000.0);
     return std::clamp(kbps, kMinBitrateKbps, kMaxBitrateKbps);
 }
