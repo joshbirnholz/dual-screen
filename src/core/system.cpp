@@ -23,6 +23,9 @@ SystemProfile make_ds() {
     SystemProfile profile;
     profile.id = SystemId::Ds;
     profile.name = "Nintendo DS";
+    // The console with the microphone. See has_microphone: a few games will
+    // not let you past a room without being blown into.
+    profile.has_microphone = true;
     profile.screens.top = ScreenSize{256, 192};
     profile.screens.bottom = ScreenSize{256, 192};
 

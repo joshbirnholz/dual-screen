@@ -388,6 +388,23 @@ const retro_core_option_v2_definition kOptions[] = {
      {{"auto", "Auto"}, {"touch", "Touch"}, {"joystick", "Joystick"}, {nullptr, nullptr}}, "auto"},
     {"melonds_show_cursor", "Show cursor", nullptr, nullptr, nullptr, "screen",
      {{"disabled", "Disabled"}, {"enabled", "Enabled"}, {nullptr, nullptr}}, "enabled"},
+    // The microphone, spelled as melonDS DS 1.3.1 spells it -- copied from a
+    // real one's own start-up, not invented here. A DS game that wants to be
+    // blown into is unplayable without these, and the frontend insists on
+    // them, so a stand-in for that core has to have them too.
+    {"melonds_mic_input", "Microphone input", nullptr, "What the microphone hears", nullptr,
+     "input",
+     {{"silence", "Silence"},
+      {"blow", "Blow Noise"},
+      {"noise", "White Noise"},
+      {"microphone", "Microphone"},
+      {nullptr, nullptr}},
+     "silence"},
+    {"melonds_mic_input_active", "Microphone button", nullptr, "When the microphone is live",
+     nullptr, "input",
+     {{"hold", "Hold"}, {"toggle", "Toggle"}, {"always", "Always"}, {nullptr, nullptr}}, "hold"},
+    {"melonds_show_mic_state", "Show microphone state", nullptr, nullptr, nullptr, "screen",
+     {{"enabled", "Enabled"}, {"disabled", "Disabled"}, {nullptr, nullptr}}, "enabled"},
     {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
 };
 

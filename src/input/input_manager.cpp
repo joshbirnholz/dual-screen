@@ -565,6 +565,12 @@ DsInputState InputManager::poll_held_state() const {
             // this app's own shortcuts here, so they are not the game's.
             if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
             if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
+            // Except this one, on a console that has a microphone: it goes to
+            // the game as L3, which is where melonDS listens for it.
+            if (left_stick_is_mic_ &&
+                SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
+                held.set(DsButton::LeftStick, true);
+            }
         }
     }
 
@@ -657,7 +663,7 @@ void InputManager::end_frame(const Layout& layout,
     }
     // Only where the game does not want them. See set_game_owns_controls().
     if (!game_owns_controls_) {
-        if (left_stick_held_ && !left && !stick_chord_used_) {
+        if (left_stick_held_ && !left && !stick_chord_used_ && !left_stick_is_mic_) {
             push_action(UiAction::SwapLayout);
         }
         if (right_stick_held_ && !right && !stick_chord_used_) {

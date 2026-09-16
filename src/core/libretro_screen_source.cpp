@@ -30,6 +30,24 @@ constexpr const char* kOptScreenGap = "melonds_screen_gap";
 constexpr const char* kOptRenderMode = "melonds_render_mode";
 constexpr const char* kOptTouchMode = "melonds_touch_mode";
 constexpr const char* kOptShowCursor = "melonds_show_cursor";
+// The microphone. melonDS can synthesise the blow a DS game is listening for,
+// which is the only way in here: the libretro microphone interface this app
+// does not implement is exactly what the core reports missing at start-up
+// ("Microphone interface not available; substituting silence instead"), and
+// even with it the sound would have to be captured on whichever device the
+// player is holding and sent across. A generated blow needs none of that, and
+// games detect it more reliably than they detect a person.
+//
+// Spellings confirmed against melonDS DS 1.3.1, which declares:
+//   melonds_mic_input        silence, blow, noise, microphone
+//   melonds_mic_input_active hold, toggle, always
+//   melonds_show_mic_state   enabled, disabled
+// Candidates rather than single values because a core version that spells one
+// differently should pick its own spelling rather than be told; force_option()
+// takes the first the core declares and warns with the real list if none fit.
+constexpr const char* kOptMicInput = "melonds_mic_input";
+constexpr const char* kOptMicActive = "melonds_mic_input_active";
+constexpr const char* kOptShowMicState = "melonds_show_mic_state";
 
 // The 3DS equivalent, which two cores answer to: citra_libretro and Azahar,
 // the fork that succeeded it. They share the option keys -- Azahar kept
@@ -193,6 +211,18 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOptRenderMode, "software"); // composited from a CPU framebuffer
             core_->force_option(kOptTouchMode, "touch");     // touch arrives as a libretro pointer
             core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
+            // Blow rather than silence, and only while the button is held --
+            // "always" would have the console blown into for the whole
+            // session, which several games read as an input of its own.
+            core_->force_option(kOptMicInput,
+                                std::vector<std::string>{"blow", "Blow Noise", "blow noise"});
+            core_->force_option(kOptMicActive, std::vector<std::string>{"hold", "Hold"});
+            // And show it, because a microphone is the one input with no
+            // visible effect when it is working and none when it is not: a
+            // game that ignores a blow looks exactly like a button that is not
+            // reaching the core.
+            core_->force_option(kOptShowMicState, std::vector<std::string>{"enabled"},
+                                LibretroCore::OptionRequirement::IfPresent);
             break;
         case SystemId::ThreeDs:
             core_->force_option(kOpt3dsLayout, kOpt3dsLayoutValues);

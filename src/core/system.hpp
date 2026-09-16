@@ -115,6 +115,14 @@ struct SystemProfile {
     // at all (SessionStateMessage::motion_wanted). A gyro left running costs
     // battery on a handheld, so a console with no use for one never starts it.
     bool uses_motion = false;
+    // Whether this console has a microphone a game can ask to be blown into.
+    //
+    // A DS does, and a handful of games will not let you past a room without
+    // it. The emulator can synthesise the noise they are listening for -- more
+    // reliably than a person can produce it -- so what this really decides is
+    // whether a button has to be found for it, which on a console with this
+    // few of them means taking one back off this app.
+    bool has_microphone = false;
 };
 
 const SystemProfile& system_profile(SystemId id);

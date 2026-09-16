@@ -128,6 +128,10 @@ public:
     bool game_owns_controls() const { return game_owns_controls_; }
 
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
+    // Whether L3 is the console's microphone rather than one of this app's own
+    // shortcuts. See SystemProfile::has_microphone, and left_stick_is_mic_ for
+    // why this button and not another.
+    void set_microphone_button(bool has_microphone) { left_stick_is_mic_ = has_microphone; }
 
     // What the right stick is read as. Only a console with a stick of its own
     // has more than one answer worth offering -- see RightStickMode.
@@ -198,6 +202,15 @@ private:
     Settings settings_;
     bool stick_is_dpad_ = true;
     bool game_owns_controls_ = false;
+    // L3 reaches the game as the microphone instead of swapping layouts here.
+    //
+    // A DS has almost no spare buttons, and by the time this app has taken the
+    // stick presses for itself there are none at all -- so a microphone that
+    // needs holding has to take one back. L3 is the one to take: swapping
+    // layouts is also in the quick menu, a press away, while blowing has no
+    // other way in at all. A shortcut with an alternative loses to a
+    // capability without one.
+    bool left_stick_is_mic_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
     MotionReader motion_;

@@ -653,6 +653,7 @@ void App::Impl::apply_system() {
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
     input.set_game_owns_controls(profile.game_uses_every_control);
+    input.set_microphone_button(profile.has_microphone);
     // Whether this device's own sensors are read at all.
     //
     // Only when it is the one running the game: a companion is told by the

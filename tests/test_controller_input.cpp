@@ -62,7 +62,7 @@ struct VirtualPad {
     }
 };
 
-DsInputState press_and_read(SDL_GameControllerButton button) {
+DsInputState press_and_read(SDL_GameControllerButton button, bool microphone = false) {
     VirtualPad pad;
     if (!pad.attach()) {
         return DsInputState();
@@ -70,6 +70,7 @@ DsInputState press_and_read(SDL_GameControllerButton button) {
 
     InputManager input;
     input.initialize(Settings());
+    input.set_microphone_button(microphone);
 
     pad.press(button, true);
     input.begin_frame();
@@ -155,10 +156,31 @@ void test_the_stick_is_the_dpad_only_where_there_is_no_stick() {
     CHECK_MSG(without.circle_x < -16000, "the circle pad should still follow the stick");
 }
 
-// The stick click must not reach the game at all.
+// The stick clicks are this app's own, and must not reach the game -- on a
+// console that has nothing for them to be.
 void test_stick_click_is_not_a_ds_button() {
     CHECK_EQ(press_and_read(SDL_CONTROLLER_BUTTON_RIGHTSTICK).buttons, 0u);
     CHECK_EQ(press_and_read(SDL_CONTROLLER_BUTTON_LEFTSTICK).buttons, 0u);
+}
+
+// Except on a DS, where L3 is the microphone. A few games will not let you
+// past a room without being blown into, and by the time this app has taken the
+// stick presses for itself a DS has no spare button left to give -- so this
+// one is given back. It reaches the core as L3, which is where melonDS DS
+// 1.3.1 listens: its own input descriptor for port 0 id 14 is "Microphone".
+void test_the_left_stick_is_the_microphone_on_a_console_that_has_one() {
+    const DsInputState blown = press_and_read(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
+    CHECK(blown.pressed(DsButton::LeftStick));
+
+    // The right one is untouched: it is still this app's, and a console with a
+    // microphone does not suddenly have two.
+    CHECK_EQ(press_and_read(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true).buttons, 0u);
+
+    // And nothing else arrives with it. A button that also pressed something
+    // the game reads would be worse than no button at all.
+    DsInputState only_mic;
+    only_mic.set(DsButton::LeftStick, true);
+    CHECK_EQ(blown.buttons, only_mic.buttons);
 }
 
 // The right stick is a second, independent axis -- the C-Stick a Circle Pad
@@ -910,6 +932,7 @@ int main() {
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();
     test_stick_click_is_not_a_ds_button();
+    test_the_left_stick_is_the_microphone_on_a_console_that_has_one();
     test_right_stick_reaches_the_c_stick();
     test_stick_click_toggles_filtering();
     test_left_stick_click_swaps_the_layout();
