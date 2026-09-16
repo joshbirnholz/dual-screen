@@ -409,6 +409,22 @@ bool take_message(std::vector<uint8_t>& buffer,
 // encode_input(), encode_audio(), or encode_frame_ack()) before handing the
 // whole thing to UdpSocket::send_to().
 void encode_media_header(uint64_t session_token, MessageType type, std::vector<uint8_t>& out);
+
+// Writes FrameFragmentHeader::sent_at_ms into a media datagram that has
+// already been built. The only thing ever written into one after the fact,
+// and the reason is worth stating.
+//
+// The stamp has to be taken when the datagram really leaves, not when it was
+// built: everything between those two moments is the sender's own pacing --
+// see HostSession::drain_pending_media_sends() -- and the far end reads the
+// spread of transit times as jitter on the link and buys buffer against it.
+// Buffer cannot cover a delay the sender has already paid; the picture is
+// late either way. Measured as link jitter it is paid for twice, once in the
+// queue and again in the buffer.
+//
+// Returns false, changing nothing, for a datagram that is not a Frame
+// fragment or is too short to hold one.
+bool stamp_media_datagram_sent_at(uint8_t* datagram, std::size_t size, uint32_t sent_at_ms);
 // Reads the header off the front of one received datagram. `out_payload` and
 // `out_payload_size` point into `data` itself -- no copy -- for whichever
 // decode_* the caller picks based on `out_type`. False if the datagram is too

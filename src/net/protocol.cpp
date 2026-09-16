@@ -736,6 +736,29 @@ void encode_media_header(uint64_t session_token, MessageType type, std::vector<u
     put_u8(out, static_cast<uint8_t>(type));
 }
 
+bool stamp_media_datagram_sent_at(uint8_t* datagram, std::size_t size, uint32_t sent_at_ms) {
+    // u64 session_token + u8 type, then the fragment header.
+    constexpr std::size_t kMediaHeaderBytes = 9;
+    // Inside FrameFragmentHeader: serial(8) + screen(1) + encoding(1) +
+    // width(2) + height(2) + fragment_index(2) + fragment_count(2) +
+    // keyframe(1) lands sent_at_ms here. Asserted against the encoder in a
+    // test rather than trusted, because the two drifting apart would put four
+    // bytes of clock through the middle of a picture.
+    constexpr std::size_t kSentAtOffsetInFragment = 19;
+    constexpr std::size_t kOffset = kMediaHeaderBytes + kSentAtOffsetInFragment;
+    if (datagram == nullptr || size < kMediaHeaderBytes + kFrameFragmentHeaderBytes) {
+        return false;
+    }
+    if (datagram[8] != static_cast<uint8_t>(MessageType::Frame)) {
+        return false;
+    }
+    datagram[kOffset + 0] = static_cast<uint8_t>(sent_at_ms & 0xffu);
+    datagram[kOffset + 1] = static_cast<uint8_t>((sent_at_ms >> 8) & 0xffu);
+    datagram[kOffset + 2] = static_cast<uint8_t>((sent_at_ms >> 16) & 0xffu);
+    datagram[kOffset + 3] = static_cast<uint8_t>((sent_at_ms >> 24) & 0xffu);
+    return true;
+}
+
 bool decode_media_header(const uint8_t* data, std::size_t size, uint64_t& out_token,
                          MessageType& out_type, const uint8_t*& out_payload,
                          std::size_t& out_payload_size) {

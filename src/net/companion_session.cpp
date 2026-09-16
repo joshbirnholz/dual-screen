@@ -502,15 +502,26 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         slot.width = header.width;
         slot.height = header.height;
         slot.fragment_count = header.fragment_count;
-        // Every fragment of one picture carries the same stamp, so the first
-        // to arrive is as good as any -- and is the one that has to be kept,
-        // because it is the only one guaranteed to exist: a frame is complete
-        // when the last piece lands, whichever piece that turns out to be.
+        // Started here and then kept as the latest of them -- see below.
         slot.sent_at_ms = header.sent_at_ms;
         slot.fragments.resize(header.fragment_count);
         slot.received.assign(header.fragment_count, false);
     } else if (!same_transmission) {
         return;
+    }
+    // The latest departure among this picture's pieces, not the first.
+    //
+    // The pieces of one frame no longer leave together: each is stamped as it
+    // actually goes out, so a big picture's eighty-odd datagrams carry eighty
+    // different stamps spread across the sender's pacing queue. That spread is
+    // the sender's, not the link's, and a frame is not usable until its last
+    // piece lands -- so what says how long the link took is the newest stamp
+    // against the arrival of the piece that completed it. Taking the first
+    // instead would fold the whole of the sender's pacing back into the number
+    // this device buys buffer against. Signed, so the stamp wrapping every 49
+    // days does not read as a jump backwards.
+    if (static_cast<int32_t>(header.sent_at_ms - slot.sent_at_ms) > 0) {
+        slot.sent_at_ms = header.sent_at_ms;
     }
     if (!slot.received[header.fragment_index]) {
         slot.fragments[header.fragment_index].assign(chunk, chunk + chunk_size);

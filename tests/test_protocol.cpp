@@ -870,6 +870,84 @@ void test_every_system_round_trips() {
     }
 }
 
+// The stamp a fragment carries is written twice: once when the datagram is
+// built, and again as it actually leaves. Everything between those two moments
+// is the sender's own pacing queue, and the far end reads the spread of
+// transits as jitter on the link and buys buffer against it -- buffer that
+// cannot cover a delay the sender already paid.
+//
+// Which means four bytes are written into an already-encoded datagram by
+// offset. If that offset and the encoder ever disagree, the clock lands in the
+// middle of a picture, so the offset is checked against the encoder here
+// rather than trusted.
+void test_a_fragment_can_be_restamped_as_it_leaves() {
+    FrameFragmentHeader header;
+    header.serial = 99;
+    header.screen = ScreenId::Top;
+    header.encoding = FrameEncoding::H264;
+    header.width = 256;
+    header.height = 192;
+    header.fragment_index = 0;
+    header.fragment_count = 1;
+    header.keyframe = false;
+    // All four bytes different from the restamp below, so "exactly four
+    // bytes moved" means what it says.
+    header.sent_at_ms = 0x01020304u;
+    header.sent_index = 7;
+
+    const std::vector<uint8_t> slice = {1, 2, 3, 4, 5, 6, 7, 8};
+    std::vector<uint8_t> datagram;
+    encode_media_header(1234567890123456789ull, MessageType::Frame, datagram);
+    encode_frame_fragment(header, slice.data(), slice.size(), datagram);
+    const std::vector<uint8_t> before = datagram;
+
+    CHECK(stamp_media_datagram_sent_at(datagram.data(), datagram.size(), 0xa1b2c3d4u));
+
+    // The whole datagram survives except the four bytes of the stamp: same
+    // token, same type, same serial, same payload.
+    uint64_t token = 0;
+    MessageType type = MessageType::Ping;
+    const uint8_t* payload = nullptr;
+    std::size_t payload_size = 0;
+    CHECK(decode_media_header(datagram.data(), datagram.size(), token, type, payload,
+                              payload_size));
+    CHECK(token == 1234567890123456789ull);
+    CHECK(type == MessageType::Frame);
+
+    FrameFragmentHeader received;
+    const uint8_t* chunk = nullptr;
+    std::size_t chunk_size = 0;
+    CHECK(decode_frame_fragment(payload, payload_size, received, chunk, chunk_size));
+    CHECK(received.sent_at_ms == 0xa1b2c3d4u);
+    CHECK(received.serial == header.serial);
+    CHECK_EQ(static_cast<int>(received.sent_index), 7);
+    CHECK(received.encoding == FrameEncoding::H264);
+    CHECK(!received.keyframe);
+    CHECK(std::vector<uint8_t>(chunk, chunk + chunk_size) == slice);
+
+    // Exactly four bytes moved, and they are the ones the encoder put the
+    // stamp in -- which is what pins the offset to the encoder.
+    std::size_t changed = 0;
+    for (std::size_t i = 0; i < datagram.size(); ++i) {
+        if (datagram[i] != before[i]) ++changed;
+    }
+    CHECK_EQ(changed, static_cast<std::size_t>(4));
+
+    // Anything that is not a frame fragment is left alone rather than having
+    // a clock written through it.
+    std::vector<uint8_t> audio;
+    encode_media_header(1u, MessageType::Audio, audio);
+    audio.resize(audio.size() + 64, 0x5a);
+    const std::vector<uint8_t> audio_before = audio;
+    CHECK(!stamp_media_datagram_sent_at(audio.data(), audio.size(), 77u));
+    CHECK(audio == audio_before);
+
+    // And so is a datagram too short to hold a fragment header.
+    std::vector<uint8_t> stub;
+    encode_media_header(1u, MessageType::Frame, stub);
+    CHECK(!stamp_media_datagram_sent_at(stub.data(), stub.size(), 77u));
+}
+
 // A frame small enough to fit one datagram -- nearly every DS frame, at about
 // a kilobyte each -- either arrives whole or vanishes without trace, so
 // reassembly can never notice it missing. The run of sent_index values is the
@@ -920,5 +998,6 @@ int main() {
     test_frame_fragment_rejects_truncation();
     test_keyframe_request_round_trip();
     test_a_gap_in_sent_frames_is_loss();
+    test_a_fragment_can_be_restamped_as_it_leaves();
     return test::finish("protocol");
 }
