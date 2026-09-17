@@ -2075,6 +2075,64 @@ void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
     CHECK(video_hold_allowance_ms(19.0, period, 44) < video_hold_allowance_ms(19.0, period, 66));
 }
 
+// The setting that decides how much of that trade a player wants made for
+// them. Everything above is the Balanced end, which is what the app did before
+// the setting existed; these are the other two.
+void test_the_hold_setting_moves_both_ends_of_the_trade() {
+    using ds::video::VideoHold;
+    constexpr uint64_t period = 33;
+
+    // Balanced is exactly what it was, so the setting's default changed
+    // nothing about a stream nobody has touched.
+    CHECK_EQ(video_hold_allowance_ms(19.0, period, 44, VideoHold::Balanced),
+             video_hold_allowance_ms(19.0, period, 44));
+    CHECK_EQ(hold_extra_ms(0, period, 1, 0, VideoHold::Balanced), hold_extra_ms(0, period, 1, 0));
+
+    // Responsive never buys cover, however badly the picture runs dry.
+    CHECK_EQ(hold_extra_ms(0, period, 30, 0, VideoHold::Responsive), static_cast<uint64_t>(0));
+    uint64_t cover = 0;
+    for (int second = 0; second < 20; ++second) {
+        cover = hold_extra_ms(cover, period, 5, 0, VideoHold::Responsive);
+    }
+    CHECK_EQ(cover, static_cast<uint64_t>(0));
+
+    // And it holds one frame period whatever the spread says, so the clock
+    // still paces but nothing is ever waited on beyond that. Cover left over
+    // from a previous setting is not applied either.
+    CHECK_EQ(video_hold_allowance_ms(0.0, period, 0, VideoHold::Responsive), period);
+    CHECK_EQ(video_hold_allowance_ms(500.0, period, 0, VideoHold::Responsive), period);
+    CHECK_EQ(video_hold_allowance_ms(19.0, period, 44, VideoHold::Responsive), period);
+
+    // Smooth may buy twice what Balanced may, and no more.
+    CHECK_EQ(hold_extra_ms(period * 2, period, 5, 0, VideoHold::Smooth), period * 2 + period / 4);
+    CHECK_EQ(hold_extra_ms(period * 4, period, 5, 0, VideoHold::Smooth), period * 4);
+    CHECK(hold_extra_ms(period * 2, period, 5, 0, VideoHold::Smooth) >
+          hold_extra_ms(period * 2, period, 5, 0, VideoHold::Balanced));
+
+    // Which is the whole point of the setting: on the same link, the three
+    // settings really do hold a frame for three different lengths of time,
+    // in the order their names promise.
+    const uint64_t responsive = video_hold_allowance_ms(19.0, period, 132, VideoHold::Responsive);
+    const uint64_t balanced = video_hold_allowance_ms(19.0, period, 132, VideoHold::Balanced);
+    const uint64_t smooth = video_hold_allowance_ms(19.0, period, 132, VideoHold::Smooth);
+    CHECK(responsive < balanced && balanced < smooth);
+
+    // The keys survive a round trip, so a chosen setting comes back after a
+    // restart rather than quietly reverting to the default.
+    for (VideoHold hold : {VideoHold::Responsive, VideoHold::Balanced, VideoHold::Smooth}) {
+        CHECK(ds::video::video_hold_from_key(ds::video::video_hold_key(hold),
+                                             VideoHold::Balanced) == hold);
+    }
+    CHECK(ds::video::video_hold_from_key("nonsense", VideoHold::Smooth) == VideoHold::Smooth);
+    // And the cycle reaches all three and comes back round.
+    VideoHold walked = VideoHold::Responsive;
+    walked = ds::video::next_video_hold(walked);
+    CHECK(walked == VideoHold::Balanced);
+    walked = ds::video::next_video_hold(walked);
+    CHECK(walked == VideoHold::Smooth);
+    CHECK(ds::video::next_video_hold(walked) == VideoHold::Responsive);
+}
+
 // What the buffer is sized from is a trade, and this is where it is made.
 //
 // A link that is mostly prompt with a bad tail -- a Steam Deck to a Mac over
@@ -2577,6 +2635,7 @@ int main() {
     test_this_devices_own_stall_is_not_the_links_fault();
     test_the_buffer_pays_for_the_body_and_not_the_tail();
     test_cover_is_earned_by_running_dry_and_given_back_when_calm();
+    test_the_hold_setting_moves_both_ends_of_the_trade();
     test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();

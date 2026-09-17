@@ -238,8 +238,8 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 //
 // `extra_periods` is cover this link has shown it needs beyond that, which is
 // the one thing a quantile cannot know -- see hold_extra_periods().
-uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
-                                 uint64_t extra_ms);
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms, uint64_t extra_ms,
+                                 video::VideoHold hold = video::VideoHold::Balanced);
 
 // How much cover to hold beyond what the measured spread asks for, given how
 // often the picture has actually had nothing to show.
@@ -257,7 +257,18 @@ uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms,
 // buys a period of cover; a spell without one gives it back. The link settles
 // it, and nobody is ever asked to tune it.
 uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms,
-                       unsigned starved_last_second, unsigned calm_seconds);
+                       unsigned starved_last_second, unsigned calm_seconds,
+                       video::VideoHold hold = video::VideoHold::Balanced);
+
+// The two ceilings VideoHold sets: how far the measured spread alone may push
+// the hold, and how much more a link that keeps running dry may earn on top.
+//
+// Responsive pins both at the floor -- one period, nothing earned -- which is
+// pacing without smoothing. The other two differ only in how much a stalling
+// link is allowed to buy, because the measured part was never the problem:
+// it is the earned cover that reached 52ms in practice.
+uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
+uint64_t video_hold_extra_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
 
 // How far to advance the pacing clock after showing `shown` frames.
 //
@@ -430,6 +441,13 @@ public:
     // place. Set before connecting, same as the audio callback above.
     using RumbleCallback = std::function<void(bool active)>;
     void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
+
+    // How far the pacing clock may hold a frame back to even out the link --
+    // see VideoHold. Safe to set at any time, including mid-session: it
+    // changes the two ceilings, and cover already earned above the new one is
+    // simply not applied.
+    void set_video_hold(video::VideoHold hold) { video_hold_ = hold; }
+    video::VideoHold video_hold() const { return video_hold_; }
 
     // The last frame received for a screen, as XRGB8888 pixels on the CPU,
     // with the serial that identifies it so a caller can tell a new frame from
@@ -689,6 +707,8 @@ private:
     // in milliseconds -- see hold_extra_ms(). Zero on a link that never runs
     // the picture dry.
     uint64_t extra_hold_ms_ = 0;
+    // Which of the two ends of that trade this player asked for.
+    video::VideoHold video_hold_ = video::VideoHold::Balanced;
     // Pictures shown more than half a period after they were due, which is
     // the only running-dry a player can see -- see where this is counted for
     // why "the queue was empty" is not the same thing at all.

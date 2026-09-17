@@ -148,6 +148,12 @@ struct Settings {
     // would rather keep the shortcut says so here. See LeftStickPress.
     LeftStickPress left_stick_press = LeftStickPress::Microphone;
 
+    // How long a companion may hold a decoded frame back to even out an
+    // uneven link -- see VideoHold. Defaults to what this app did before the
+    // setting existed; the other two ends are there because the right answer
+    // depends on wifi nobody here can measure.
+    video::VideoHold video_hold = video::VideoHold::Balanced;
+
     // Which device plays the sound while two are connected. Chosen from the
     // layout menu rather than here, since it is the kind of thing that changes
     // with the room rather than once at setup.

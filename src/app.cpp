@@ -1261,6 +1261,7 @@ void App::Impl::attach_companion_callbacks() {
         });
     companion_session->set_rumble_callback(
         [this](bool active) { input.set_rumble(active); });
+    companion_session->set_video_hold(settings.video_hold);
 }
 
 void App::Impl::open_settings() {
@@ -1292,6 +1293,11 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         // kind of thing somebody changes to see what it does, and the poll
         // loop below picks the new value up on its next pass.
         solo_screen = settings.wii_u_screen_alone;
+        // Likewise immediate, and the one setting somebody is most likely to
+        // change while watching the thing it changes.
+        if (companion_session) {
+            companion_session->set_video_hold(settings.video_hold);
+        }
     }
     if (result.close_requested) {
         if (settings_came_from == State::Menu && local_game()) {

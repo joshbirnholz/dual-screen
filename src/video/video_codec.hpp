@@ -150,6 +150,65 @@ struct DecodedFrame {
 // tagged rather than swizzled back to match on the way out.
 enum class PixelOrder { Bgra, Rgba };
 
+// How long the companion may hold a decoded frame back before showing it, so
+// that an uneven link arrives evenly.
+//
+// A setting because the measurements say there is no single right answer, not
+// because it was easier than deciding. Steam Deck to Mac over wifi, same room:
+// half of all frames land within 17ms of the quietest and one in twenty lands
+// 72ms behind it. Hold for the body of that and the tail frames find nothing
+// waiting, so the picture stops for a beat about once a second. Hold for the
+// tail and every single frame pays 72ms for the one in twenty. The link
+// decides which of those hurts more, and the link is different in every house.
+//
+// Moonlight has the same fork in the road and answers it the same way, with a
+// frame-pacing toggle. Its default is the responsive end.
+enum class VideoHold {
+    // Pace at one frame period and show whatever has arrived. The lowest
+    // latency this can run at, and the one that judders when the link does.
+    Responsive,
+    // Follow the measured spread, and buy a little more cover whenever the
+    // picture actually runs dry. What this app did before the setting existed.
+    Balanced,
+    // The same, but allowed to buy twice as much cover before it stops. For a
+    // link whose tail is bad enough that Balanced still stutters.
+    Smooth,
+};
+
+inline VideoHold next_video_hold(VideoHold hold) {
+    switch (hold) {
+        case VideoHold::Responsive: return VideoHold::Balanced;
+        case VideoHold::Balanced: return VideoHold::Smooth;
+        case VideoHold::Smooth: break;
+    }
+    return VideoHold::Responsive;
+}
+
+inline const char* video_hold_key(VideoHold hold) {
+    switch (hold) {
+        case VideoHold::Responsive: return "responsive";
+        case VideoHold::Balanced: return "balanced";
+        case VideoHold::Smooth: break;
+    }
+    return "smooth";
+}
+
+inline VideoHold video_hold_from_key(const std::string& key, VideoHold fallback) {
+    if (key == video_hold_key(VideoHold::Responsive)) return VideoHold::Responsive;
+    if (key == video_hold_key(VideoHold::Balanced)) return VideoHold::Balanced;
+    if (key == video_hold_key(VideoHold::Smooth)) return VideoHold::Smooth;
+    return fallback;
+}
+
+inline const char* to_string(VideoHold hold) {
+    switch (hold) {
+        case VideoHold::Responsive: return "Lowest latency";
+        case VideoHold::Balanced: return "Balanced";
+        case VideoHold::Smooth: break;
+    }
+    return "Smoothest";
+}
+
 struct EncoderConfig {
     // What actually gets encoded and sent. May be smaller than the source
     // pixels handed to encode() -- see source_width/source_height below --

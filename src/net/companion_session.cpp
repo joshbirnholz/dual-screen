@@ -837,7 +837,7 @@ void CompanionSession::poll(uint64_t now_ms) {
         // visible judder several times a second -- a bad bargain, and a much
         // more noticeable one than the delay it bought back.
         const uint64_t allowance =
-            video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_ms_);
+            video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_ms_, video_hold_);
         const bool draining =
             !complete_at_.empty() && now_ms > complete_at_.front().second + allowance;
         std::size_t shown = 0;
@@ -1411,7 +1411,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               "ms avg " + std::to_string(stats_wait_worst_ms_) + "ms worst in a buffer of " +
               std::to_string(target_buffer_frames()) + ", covering up to " +
               std::to_string(video_hold_allowance_ms(jitter_.estimate(), frame_period(),
-                                                     extra_hold_ms_)) +
+                                                     extra_hold_ms_, video_hold_)) +
               "ms of which " + std::to_string(extra_hold_ms_) +
               "ms was bought back after the picture ran dry, " +
               std::to_string(stats_starved_) + " times this second (jitter " +
@@ -1433,7 +1433,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(static_cast<uint64_t>(shape.worst_twentieth_ms + 0.5)) + "ms");
     // Once a second, what the stalls have earned. See hold_extra_periods().
     extra_hold_ms_ =
-        hold_extra_ms(extra_hold_ms_, frame_period(), stats_starved_, calm_seconds_);
+        hold_extra_ms(extra_hold_ms_, frame_period(), stats_starved_, calm_seconds_, video_hold_);
     calm_seconds_ = (stats_starved_ == 0) ? calm_seconds_ + 1 : 0;
     stats_starved_ = 0;
     stats_at_ms_ = now_ms;
@@ -1539,13 +1539,40 @@ uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining
     return drained > 0 ? drained : 1;
 }
 
-uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms, uint64_t extra_ms) {
+uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms) {
+    // Never below one period whatever the setting says: with less than that
+    // there is nothing left for the clock to pace with, and frames are simply
+    // shown as they land, jitter and all.
+    return hold == video::VideoHold::Responsive ? period_ms : period_ms * 2;
+}
+
+uint64_t video_hold_extra_ceiling_ms(video::VideoHold hold, uint64_t period_ms) {
+    switch (hold) {
+        // Nothing earned. A stall buys no delay, which is the whole of what
+        // this setting means.
+        case video::VideoHold::Responsive: return 0;
+        // Two periods above what the measurement can ask for. Past that the
+        // picture is not being smoothed, it is being delayed: a link that
+        // still runs dry with that much in hand is losing frames or falling
+        // behind, and neither is something more waiting will fix.
+        case video::VideoHold::Balanced: return period_ms * 2;
+        case video::VideoHold::Smooth: break;
+    }
+    // Which is an argument, not a proof -- on a bad enough tail the extra
+    // waiting really is what fixes it, and that is this end of the setting.
+    return period_ms * 4;
+}
+
+uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms, uint64_t extra_ms,
+                                 video::VideoHold hold) {
     const auto measured = static_cast<uint64_t>(std::max(0.0, jitter_ms) + 0.5);
-    return std::clamp(measured, period_ms, period_ms * 2) + extra_ms;
+    const uint64_t ceiling = video_hold_measured_ceiling_ms(hold, period_ms);
+    return std::clamp(measured, period_ms, ceiling) +
+           std::min(extra_ms, video_hold_extra_ceiling_ms(hold, period_ms));
 }
 
 uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms, unsigned starved_last_second,
-                       unsigned calm_seconds) {
+                       unsigned calm_seconds, video::VideoHold hold) {
     // A quarter of a period at a time, not a whole one.
     //
     // This used to step in whole frames, and on a 30fps stream that is 33ms a
@@ -1555,11 +1582,7 @@ uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms, unsigned starved
     // 23ms of rounding. The cover has no reason to come in frame-sized pieces;
     // only the pacing clock does.
     const uint64_t step = std::max<uint64_t>(period_ms / 4, 1);
-    // Two periods above what the measurement can ask for. Past that the
-    // picture is not being smoothed, it is being delayed: a link that still
-    // runs dry with that much in hand is losing frames or falling behind, and
-    // neither is something more waiting will fix.
-    const uint64_t ceiling = period_ms * 2;
+    const uint64_t ceiling = video_hold_extra_ceiling_ms(hold, period_ms);
     // Bought on the first second that stalls, because one stall a second is
     // already what a player notices -- this is not a threshold to be tuned up
     // until the complaints stop.
