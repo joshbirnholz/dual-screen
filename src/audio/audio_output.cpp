@@ -246,10 +246,12 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
         static_cast<std::size_t>(spec_.freq) * kPanicMarginMs / 1000;
     panic_frames_ = std::max(panic_frames_, target_frames_ + margin_frames);
     trim_margin_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioTrimMarginMs / 1000;
-    // A margin smaller than one of the device's own refills would have the
-    // queue crossing it purely on the sawtooth of being drained in whole
-    // buffers, and the surplus trimmed away would be the device's cadence
-    // rather than anything the source did.
+    // Kept as a floor, though the low-water mark is what actually sees past
+    // the sawtooth of the device draining in whole buffers now. This costs
+    // nothing where the buffer is ordinary -- the margin above is already
+    // wider -- and it is the one case the quarter-second window could not
+    // cover on its own: a device whose single refill is itself most of that
+    // window. See AudioLowWater and kAudioTrimMarginMs.
     trim_margin_frames_ = std::max(trim_margin_frames_, device_buffer_frames);
     low_water_window_frames_ =
         static_cast<std::size_t>(spec_.freq) * kAudioLowWaterWindowMs / 1000;
@@ -323,7 +325,9 @@ void AudioOutput::report(uint64_t now_ms) {
                                        ? 0
                                        : stats_queue_lowest_)) +
               "ms at its lowest, against a " +
-              std::to_string(to_ms(target_frames_)) + "ms target, " + std::to_string(stats_empty_) +
+              std::to_string(to_ms(target_frames_)) + "ms target it is trimmed towards once it "
+              "sits above " + std::to_string(to_ms(target_frames_ + trim_margin_frames_)) +
+              "ms, " + std::to_string(stats_empty_) +
               " empty, " + std::to_string(stats_panics_) + " cut short, playing at " +
               std::to_string(static_cast<int>((rate_ratio_ - 1.0) * 10000.0)) + " parts per "
               "ten thousand off" +

@@ -345,6 +345,79 @@ void test_a_real_surplus_is_still_found_through_the_low_water_mark() {
     CHECK(settled < static_cast<double>(target + margin) + static_cast<double>(window) * 0.1);
 }
 
+// The margin's width is where the queue comes to rest, so it is latency.
+//
+// It was forty milliseconds because the trim once read the queue at the
+// instant a block landed and had to see past the device's sawtooth by itself.
+// The low-water mark does that now, and better. This runs both cases the
+// margin ever protected against, at the width it is actually set to, and
+// checks that narrowing it lowered the resting depth without costing the
+// protection.
+//
+// Measured against the run that prompted it: queue 111ms average on a 60ms
+// target, never below 79ms in nineteen minutes, no underrun -- which is the
+// old 60+40 floor, while the picture on the same link was held 24ms.
+void test_narrowing_the_margin_lowers_the_queue_without_trimming_lumps() {
+    constexpr std::size_t rate = 48000;
+    constexpr std::size_t target = rate * kAudioTargetQueueMs / 1000;
+    constexpr std::size_t margin = rate * kAudioTrimMarginMs / 1000;
+    constexpr std::size_t block = rate * 10 / 1000;
+    constexpr std::size_t window = rate * kAudioLowWaterWindowMs / 1000;
+
+    // The margin is only worth narrowing if it is narrower than the sawtooth
+    // it used to have to cover alone, which is what the mark now covers.
+    CHECK(margin < rate * 40 / 1000);
+
+    // The protection first, since that is what the width was buying: audio
+    // that merely arrives in lumps is still not a surplus at this width.
+    {
+        constexpr std::size_t burst = 6;  // 60ms landing in one pass
+        AudioLowWater low_water;
+        low_water.reset(window, target);
+        std::size_t queued = target;
+        std::size_t trimmed = 0;
+        for (int pass = 0; pass < 600; ++pass) {
+            for (std::size_t packet = 0; packet < burst; ++packet) {
+                const std::size_t sustained = low_water.note(queued, block);
+                const std::size_t skipped = audio_trim_frames(sustained, target, margin, block);
+                trimmed += skipped;
+                queued += block - skipped;
+            }
+            queued -= std::min(queued, burst * block);
+        }
+        CHECK_EQ(trimmed, static_cast<std::size_t>(0));
+    }
+
+    // And the win: a source sending more than real time settles at the floor
+    // the margin sets, so a narrower one settles lower. Same source, same
+    // mark, the two widths side by side.
+    const auto settle = [&](std::size_t width) {
+        constexpr double surplus = 1.03;  // what a Cemu was measured sending
+        AudioLowWater low_water;
+        low_water.reset(window, target);
+        double queued = target;
+        double ratio = 1.0;
+        for (int step = 0; step < 6000; ++step) {
+            const auto depth = static_cast<std::size_t>(queued);
+            ratio = audio_drift_ratio(depth, target, ratio);
+            const std::size_t sustained = low_water.note(depth, block);
+            const std::size_t skipped = audio_trim_frames(sustained, target, width, block);
+            queued += static_cast<double>(block - skipped) / ratio;
+            queued -= static_cast<double>(block) / surplus;
+            queued = std::max(0.0, queued);
+        }
+        return queued;
+    };
+    const double narrow = settle(margin);
+    const double wide = settle(rate * 40 / 1000);
+    CHECK(narrow < wide);
+    // Worth the change rather than noise: at least fifteen milliseconds off
+    // what the sound costs.
+    CHECK(wide - narrow > static_cast<double>(rate * 15 / 1000));
+    // And it still keeps a real queue, rather than trimming its way to empty.
+    CHECK(narrow > static_cast<double>(target));
+}
+
 // A mark that was never given a window must not answer "empty" for ever.
 //
 // It did, and it cost a whole session: reset() was being called on one path
@@ -408,6 +481,7 @@ int main() {
     test_audio_arriving_in_lumps_is_not_a_surplus();
     test_a_real_surplus_is_still_found_through_the_low_water_mark();
     test_the_low_water_mark_follows_the_trough_not_the_peak();
+    test_narrowing_the_margin_lowers_the_queue_without_trimming_lumps();
     test_a_mark_with_no_window_still_answers_with_the_queue();
     return test::finish("audio");
 }

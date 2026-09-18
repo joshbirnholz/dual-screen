@@ -85,7 +85,28 @@ inline constexpr double kAudioMaxRateAdjust = 0.01;
 // note. Small change wins twice: the queue stays near the target, which is the
 // whole of the latency this carries, and a few milliseconds spliced out (see
 // audio_splice) is a tick where a third of a second is a skip.
-inline constexpr int kAudioTrimMarginMs = 40;
+//
+// The size of it was forty for a while, and forty was a job already being
+// done. When this margin was written the trim read the queue at the instant a
+// block arrived, so it had to be wide enough to see past the sawtooth of the
+// device draining in whole buffers -- otherwise the surplus it threw away was
+// the device's own cadence. AudioLowWater arrived afterwards and does exactly
+// that, and does it better: it reads the lowest the queue has been over a
+// quarter-second, which has no sawtooth left in it at all. The margin kept its
+// width anyway, and since the trim never fires below target plus margin, the
+// whole of that width is where the queue comes to rest.
+//
+// Measured on a Mac companion, wired, Wind Waker HD: the queue sat at 111ms
+// against its 60ms target and never once dropped below 79ms across nineteen
+// minutes, with no underrun and nothing cut short -- the floor the trim was
+// holding it to, which is 60 plus 40. Meanwhile the picture on the same link
+// was being held 24ms. Sound trailed it by the difference.
+//
+// So the margin is now only what the low-water mark cannot already see past.
+// Jitter cannot push it down -- late audio makes the queue deeper, not
+// shallower, and a genuine gap only stops the trim rather than provoking it --
+// so what is left to cover is small.
+inline constexpr int kAudioTrimMarginMs = 15;
 
 // How much audio passes through before the low-water mark below starts a fresh
 // bucket, in milliseconds.
