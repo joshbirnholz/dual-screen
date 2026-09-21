@@ -752,6 +752,19 @@ worth reading in three parts rather than one.
   This is the thing that could not be checked from Linux at all, and it is the
   same decoder iOS and tvOS will run.
 
+**What generates an Xcode project for iOS**, with SDL handed over prebuilt:
+
+- `cmake -S apple -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
+  -DCMAKE_OSX_SYSROOT=iphonesimulator -DDUALSCREEN_SDL2_PREFIX=...`
+  configures and generates. zlib resolves inside the simulator SDK, threads
+  resolve to nothing to link, the codec line reads `VideoToolbox only`, and
+  `build-ios/dualscreen_companion.xcodeproj` is written.
+- So **the Xcode generator was never the problem — SDL's feature checks
+  were.** Removing them removed the failure. Worth being precise about,
+  because one line of that configure says the underlying fault is still
+  there: `Check if compiler accepts -pthread - no`, which is a `try_compile`
+  and which should say yes. It is simply no longer depended on.
+
 **What configured for iOS**, under the Ninja generator:
 
 - The whole of `apple/CMakeLists.txt` for `CMAKE_SYSTEM_NAME=iOS`. SDL2 builds
