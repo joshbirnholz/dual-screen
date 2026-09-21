@@ -96,6 +96,14 @@ extern "C" {
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE && !TARGET_OS_TV
+// A phone or a tablet: something that can be turned over, unlike an Apple TV.
+#define DS_APPLE_HANDHELD 1
+#endif
+#endif
+
 namespace ds::sw {
 namespace {
 
@@ -345,6 +353,28 @@ bool Client::start() {
     // The same convention the app uses: face buttons are read by where they
     // are, not by the letter printed on them.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
+#if defined(DS_APPLE_HANDHELD)
+    // Landscape, and only landscape, on a phone or a tablet.
+    //
+    // A screen being streamed here is a television's shape or a handheld's,
+    // and both of those are wider than they are tall. Portrait was never
+    // useful and it was actively harmful: SDL 2 works out its window size
+    // through UIApplication.statusBarOrientation, which iOS 27 has turned
+    // into a no-op, so every rotation left SDL believing something different
+    // from the framebuffer it was drawing into. On a device that showed up as
+    // a panel flapping between 2556x1179, 1179x2556 and -- once -- 1377x2556,
+    // which is the two subtracted from each other rather than either of them,
+    // and a picture composited into a rectangle that was not on the screen.
+    //
+    // Said in three places because three things ask separately: here for SDL,
+    // which reads this hint before anything else; the Info.plist, which is
+    // what the system enforces; and the application delegate, which SDL asks
+    // first of all. See apple/ios_scene_lifecycle.m.
+    //
+    // Must be set before the window is made. SDL reads it when the window's
+    // view controller is created and not again.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
     // Watching a screen is not idling. Every platform this runs on will dim,
     // lock or put up a screensaver over a picture nobody is touching, and on a
     // phone or an Apple TV that is a matter of a minute or two -- which is

@@ -119,15 +119,20 @@
 // to be. Answering directly makes the road short, and this file is already
 // the place where this app says how it wants to be run.
 //
-// Every orientation, matching the plist exactly. The picture is laid out from
-// the panel it is given, so turning the device over is a resize and nothing
-// more. Not on tvOS, which does not turn over and has no such API.
+// Landscape both ways round, matching the plist exactly. A screen being
+// streamed here is a television's shape or a handheld's, and neither is
+// taller than it is wide -- so portrait bought nothing and cost a great deal:
+// SDL 2 sizes its window through an API iOS 27 has made a no-op, and came out
+// of every rotation believing something other than the truth. See the hint in
+// companion/source/main.cpp for what that looked like.
+//
+// Not on tvOS, which does not turn over and has no such API.
 - (UIInterfaceOrientationMask)application:(UIApplication *)application
     supportedInterfaceOrientationsForWindow:(UIWindow *)window
 {
     (void)application;
     (void)window;
-    return UIInterfaceOrientationMaskAll;
+    return UIInterfaceOrientationMaskLandscape;
 }
 #endif
 

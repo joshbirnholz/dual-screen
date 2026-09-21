@@ -145,6 +145,54 @@ foreach(entry "Info.plist.in;macos" "Info-iOS.plist.in;ios" "Info-tvOS.plist.in;
     endif()
 endforeach()
 
+# 5. The three places that say which way up this app goes, agreeing.
+#
+# There is no one place to say it. The system enforces the Info.plist; SDL
+# reads SDL_HINT_ORIENTATIONS and nothing else; and SDL asks the application
+# delegate before either of them. All three have to say the same thing, and
+# nothing compiles any of them together, so the only thing standing between
+# them and drift is this.
+#
+# Landscape-only is not a preference. SDL 2 sizes its window through
+# UIApplication.statusBarOrientation, which iOS 27 has made a no-op, so a
+# rotation leaves SDL believing one thing and the framebuffer another: on a
+# real iPhone, a panel reported as 1179x2556 on a 2556x1179 display, and the
+# picture drawn into a rectangle that was not on the screen.
+set(scene_file "${PLIST_DIR}/ios_scene_lifecycle.m")
+set(hint_file "${PLIST_DIR}/../companion/source/main.cpp")
+if(NOT EXISTS "${scene_file}")
+    fail("ios_scene_lifecycle.m is not there, and it is what answers SDL first")
+elseif(NOT EXISTS "${hint_file}")
+    fail("companion/source/main.cpp is not there, and it is what sets SDL's hint")
+else()
+    file(READ "${PLIST_DIR}/Info-iOS.plist.in" plist_text)
+    file(READ "${scene_file}" scene_text)
+    file(READ "${hint_file}" hint_text)
+
+    set(plist_portrait FALSE)
+    if(plist_text MATCHES "UIInterfaceOrientationPortrait")
+        set(plist_portrait TRUE)
+    endif()
+    set(delegate_portrait TRUE)
+    if(scene_text MATCHES "return UIInterfaceOrientationMaskLandscape;")
+        set(delegate_portrait FALSE)
+    endif()
+    set(hint_portrait TRUE)
+    if(hint_text MATCHES "SDL_HINT_ORIENTATIONS, \"LandscapeLeft LandscapeRight\"")
+        set(hint_portrait FALSE)
+    endif()
+
+    if(NOT plist_portrait STREQUAL delegate_portrait OR
+       NOT plist_portrait STREQUAL hint_portrait)
+        fail("the three places that decide orientation disagree -- "
+             "Info-iOS.plist.in allows portrait: ${plist_portrait}; "
+             "the application delegate allows portrait: ${delegate_portrait}; "
+             "SDL_HINT_ORIENTATIONS allows portrait: ${hint_portrait}. "
+             "The system, SDL and SDL's first question all have to be told "
+             "separately, and they have to be told the same thing.")
+    endif()
+endif()
+
 if(XMLLINT_TOOL)
     message(STATUS "apple plists: checked, including a real XML parse")
 else()

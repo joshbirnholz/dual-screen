@@ -37,23 +37,27 @@
 	<key>UILaunchScreen</key>
 	<dict/>
 
-	<!-- Every orientation, on both. The picture is laid out from the panel it
-	     is given rather than from an assumption about which way round the
-	     device is – the same arithmetic that fits a Switch's screen when it
-	     comes out of its dock – so turning a phone over is a resize this
-	     already handles. A DS's two screens stacked want a tall display as
-	     much as a Wii U's one screen wants a wide one. -->
+	<!-- Landscape, and only landscape, on a phone and on a tablet alike.
+	     A screen streamed here is a television's shape or a handheld's, and
+	     neither is taller than it is wide. Portrait was never the useful way
+	     to hold this and it was not free: SDL 2 works out its window size
+	     through UIApplication.statusBarOrientation, which iOS 27 has made a
+	     no-op, so a rotation left SDL believing one thing and the framebuffer
+	     another – a panel reported as 1179x2556 while the display was
+	     2556x1179, and the picture composited into a rectangle that was not on
+	     the screen.
+
+	     This is the half the system enforces. SDL is told separately, through
+	     SDL_HINT_ORIENTATIONS in companion/source/main.cpp, and asks the
+	     application delegate before either – see apple/ios_scene_lifecycle.m.
+	     All three say landscape. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

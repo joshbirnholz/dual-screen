@@ -74,6 +74,7 @@ typedef struct {
 
 typedef unsigned long UIInterfaceOrientationMask;
 #define UIInterfaceOrientationMaskAll ((UIInterfaceOrientationMask)0x1E)
+#define UIInterfaceOrientationMaskLandscape ((UIInterfaceOrientationMask)0x18)
 
 @interface UIViewController : UIResponder
 - (void)setNeedsUpdateOfSupportedInterfaceOrientations;
