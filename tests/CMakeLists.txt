@@ -125,6 +125,21 @@ else()
     message(STATUS "no GLES2 headers here, so the device-GL typecheck is not registered")
 endif()
 
+# And the Objective-C that makes an iOS app launch at all. It needs no UIKit on
+# this machine -- tests/uikit_stub is the slice of it that file names -- but it
+# does need a clang, which not every host has.
+find_program(DUALSCREEN_OBJC_CLANG NAMES clang)
+if(DUALSCREEN_OBJC_CLANG)
+    add_test(NAME uikit_typecheck
+        COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=${DUALSCREEN_OBJC_CLANG}
+            -DSOURCE=${CMAKE_SOURCE_DIR}/apple/ios_scene_lifecycle.m
+            -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/uikit_stub
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_uikit_typecheck.cmake)
+else()
+    message(STATUS "no clang here, so the UIKit scene typecheck is not registered")
+endif()
+
 dualscreen_add_test(test_net)
 dualscreen_add_test(test_session)
 # Discovery, session and media all live on fixed ports (kDiscoveryPort and the
