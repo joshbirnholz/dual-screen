@@ -135,7 +135,9 @@ private:
     // conversion rather than the source of it -- see MotionFitter for why it
     // is not allowed to be the source.
     MotionFitter motion_fitter_;
-    bool said_fit_ = false;
+    // Switch-only, like the fitter it reports on -- see the __SWITCH__ block
+    // in motion.cpp. Carried everywhere so the class has one shape.
+    [[maybe_unused]] bool said_fit_ = false;
     // When the reading was last written to the log; see poll().
     uint32_t reported_at_ms_ = 0;
     // The controllers this has switched sensors on for, so they can be

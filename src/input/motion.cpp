@@ -20,7 +20,9 @@ namespace {
 // radians per second, and DsMotionState carries exactly that onward -- so
 // there is no conversion here at all for the two SDL paths. The console path
 // below converts into these units, which is the only reason they are named.
-constexpr float kGravity = 9.80665f;
+// Switch-only: libnx reports acceleration in g, and this turns it into m/s^2.
+// Every other platform's SDL already reports m/s^2.
+[[maybe_unused]] constexpr float kGravity = 9.80665f;
 
 uint32_t now_micros() {
     // SDL's own high-resolution counter rather than a wall clock: this is a

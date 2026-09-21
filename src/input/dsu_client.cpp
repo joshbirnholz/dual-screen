@@ -27,8 +27,7 @@ constexpr uint32_t kEventControllerData = 0x100002u;
 // Every packet starts with the same twenty bytes: four of magic, the version,
 // the length of everything after this field, the checksum, the sender's id,
 // and the event type. Only the last of those is counted in the length, which
-// is why it reads as 16 rather than 20 below.
-constexpr std::size_t kHeaderBytes = 20;
+// is why this is 16 and not 20.
 constexpr std::size_t kUncountedHeaderBytes = 16;
 // A controller-data packet is exactly this long, and the two readings sit at
 // the end of it.
