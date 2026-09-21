@@ -272,6 +272,86 @@ tvOS, which makes the probes compile without linking. If you still see it:
    the Xcode generator is for. Use it to prove the code compiles, then go back
    to Xcode for the rest.
 
+#### Getting an Xcode project
+
+The Xcode generator is what you want for anything real: choosing a destination,
+provisioning, capabilities, Instruments, archiving, submission. None of that
+has a command-line equivalent worth using.
+
+It has one problem, and it is not in this repository. **Every configure failure
+seen on iOS so far has been inside SDL's own feature checks** — a hundred lines
+of "not found" for things like `stdio.h`, ending at the first one SDL treats as
+fatal. Those are `try_compile` calls, and under the Xcode generator CMake runs a
+`try_compile` by driving `xcodebuild`, which is the part a new Xcode breaks.
+
+So build SDL once, with the generator that works, and hand it over. Then there
+is nothing left in the configure that compiles anything, and the Xcode
+generator has almost nothing to trip over.
+
+```sh
+# Once, per platform+SDK. This is the simulator; see below for a device.
+git clone --depth 1 -b release-2.30.9 https://github.com/libsdl-org/SDL.git ~/src/SDL
+cmake -S ~/src/SDL -B ~/src/sdl-ios-sim -G Ninja \
+      -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+      -DCMAKE_OSX_ARCHITECTURES=arm64 \
+      -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF \
+      -DCMAKE_INSTALL_PREFIX=~/src/sdl-ios-sim-install
+cmake --build ~/src/sdl-ios-sim --target install
+```
+
+Then the project:
+
+```sh
+cmake -S apple -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS \
+      -DCMAKE_OSX_SYSROOT=iphonesimulator \
+      -DDUALSCREEN_SDL2_PREFIX=~/src/sdl-ios-sim-install \
+      -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=XXXXXXXXXX
+open build-ios/dualscreen_companion.xcodeproj
+```
+
+or through the script, which does all three platforms:
+
+```sh
+apple/build-all.sh --xcode --sdl-prefix ~/src/sdl-ios-sim-install
+open build-apple/Dualscreen.xcworkspace
+```
+
+SDL installs its own CMake package files, so the frameworks a static SDL needs
+come with it and are not listed again here.
+
+##### The device-and-simulator catch
+
+A static `libSDL2.a` is built for one SDK. Xcode switches SDK with the
+destination, so **one prefix cannot serve both a simulator and a device** — and
+switching destination in Xcode will fail to link rather than fail clearly.
+
+Two ways round it, and as an iOS developer you will know which you prefer:
+
+- **Two build directories**, one configured with `iphonesimulator` and one
+  with `iphoneos`, each pointed at its own SDL prefix. Blunt, and it works.
+- **An `SDL2.xcframework`**, which carries device and simulator slices in one
+  bundle and lets Xcode pick per destination — which is what this arrangement
+  really wants. SDL's own `Xcode/SDL/SDL.xcodeproj` has a scheme that builds
+  one. This build does not wire that up yet: linking an xcframework also means
+  getting the header search path right for `#include <SDL.h>`, and that has
+  not been tried on a Mac from here. It is the better answer and is worth
+  doing.
+
+##### If the Xcode generator still fails
+
+Then it is CMake's Xcode support against your Xcode, and nothing here can fix
+it. Two things worth knowing before spending an evening on it:
+
+- The real error is in `build-ios/CMakeFiles/CMakeConfigureLog.yaml`.
+  `CMakeError.log` has not existed since CMake 3.26.
+- A hand-maintained `.xcodeproj` is the durable alternative, and for an app
+  heading for the App Store it may be the right one regardless. The reason
+  this repository generates rather than commits one is the source list: every
+  client compiles the same files from `cmake/companion_sources.cmake`, and a
+  second copy of that list is one that drifts. Xcode 16's file-system
+  synchronized groups would answer that, since they reference a folder rather
+  than enumerate files.
+
 #### SDL2 on a device
 
 There is no Homebrew for iOS and no system copy, so SDL is built here as a

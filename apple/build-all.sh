@@ -29,6 +29,7 @@ team=""
 device=0
 generator="Ninja"
 run=""
+sdl_prefix=""
 platforms=()
 
 usage() {
@@ -38,9 +39,14 @@ usage: apple/build-all.sh [options] [macos] [ios] [tvos]
   Named platforms, or all three if none are named.
 
   --xcode           generate Xcode projects and a workspace, instead of
-                    building with Ninja. Needed for a debugger and for
-                    deploying to real hardware -- and the thing most likely to
-                    be broken by a new Xcode, so it is not the default.
+                    building with Ninja. Needed for a debugger, for real
+                    hardware, and for anything to do with submission.
+                    Use --sdl-prefix with it.
+  --sdl-prefix <p>  an SDL2 already built and installed for this platform,
+                    instead of building one here. Strongly wanted with
+                    --xcode: SDL's own feature checks are where the Xcode
+                    generator breaks, and a prebuilt SDL has none to run.
+                    See apple/README.md for the one command that makes it.
   --run <platform>  after building, install and launch on a booted simulator
                     (ios or tvos). Needs a simulator running already:
                     open -a Simulator
@@ -61,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --device) device=1; shift ;;
         --xcode) generator="Xcode"; shift ;;
+        --sdl-prefix) sdl_prefix="${2:-}"; shift 2 ;;
         --run) run="${2:-}"; shift 2 ;;
         --team) team="${2:-}"; shift 2 ;;
         --out) out="${2:-}"; shift 2 ;;
@@ -129,6 +136,12 @@ configure_one() {
     esac
     if [[ -n "${team}" ]]; then
         flags+=("-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=${team}")
+    fi
+    # An SDL that is already built, which is what makes the Xcode generator
+    # usable: every configure failure seen on iOS so far was inside SDL's own
+    # feature checks. See DUALSCREEN_SDL2_PREFIX in CMakeLists.txt.
+    if [[ -n "${sdl_prefix}" && "${platform}" != "macos" ]]; then
+        flags+=("-DDUALSCREEN_SDL2_PREFIX=${sdl_prefix}")
     fi
 
     echo "=== configuring ${platform} (${generator})"

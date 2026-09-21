@@ -142,12 +142,56 @@ dualscreen_stamp_build("${DUALSCREEN_ROOT}/src/util/build_stamp.cpp")
 # renames main to SDL_main, and SDL2main provides the real one and stands up
 # the Cocoa or UIKit application object behind it. Without it the link fails on
 # a missing _main, which reads as something far stranger than it is.
+# An SDL2 that is already built and installed, which is the way to get an
+# Xcode project out of this.
+#
+# Every configure failure seen on iOS so far has been inside SDL's own feature
+# checks, not this project's -- a hundred lines of "not found" for things like
+# stdio.h, ending at the first one SDL treats as fatal. Those checks are
+# try_compile calls, and CMake runs a try_compile under the Xcode generator by
+# driving xcodebuild, which is the part that breaks with a new Xcode.
+#
+# Handing over an SDL that is already built removes all of them at a stroke.
+# What is left in this file is find_library for frameworks and find_package for
+# zlib, neither of which compiles anything, so the Xcode generator has almost
+# nothing left to trip over.
+#
+# Build it once, with the generator that works, and point this at it:
+#
+#   git clone --depth 1 -b release-2.30.9 https://github.com/libsdl-org/SDL.git
+#   cmake -S SDL -B sdl-ios -G Ninja \
+#         -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+#         -DCMAKE_OSX_ARCHITECTURES=arm64 \
+#         -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF \
+#         -DCMAKE_INSTALL_PREFIX=$PWD/sdl-ios-install
+#   cmake --build sdl-ios --target install
+#
+# SDL installs its own CMake package files, so the frameworks a static SDL
+# needs come with it rather than having to be listed again here.
+set(DUALSCREEN_SDL2_PREFIX "" CACHE PATH
+    "An installed SDL2 to link, rather than building one (iOS/tvOS)")
 set(DUALSCREEN_SDL2_SOURCE_DIR "" CACHE PATH
     "A local SDL2 checkout to build against, instead of fetching one (iOS/tvOS)")
 set(DUALSCREEN_SDL2_TAG "release-2.30.9" CACHE STRING
     "The SDL2 tag to fetch when no checkout is given (iOS/tvOS)")
 
-if(DUALSCREEN_EMBEDDED)
+if(DUALSCREEN_EMBEDDED AND DUALSCREEN_SDL2_PREFIX)
+    message(STATUS "SDL2: using the build at ${DUALSCREEN_SDL2_PREFIX}")
+    list(APPEND CMAKE_PREFIX_PATH "${DUALSCREEN_SDL2_PREFIX}")
+    find_package(SDL2 CONFIG REQUIRED)
+    if(TARGET SDL2::SDL2-static)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2-static)
+    elseif(TARGET SDL2::SDL2)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2)
+    else()
+        message(FATAL_ERROR
+            "${DUALSCREEN_SDL2_PREFIX} has SDL2 package files but no library "
+            "target this knows. Was it installed from an SDL2 build?")
+    endif()
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2main)
+    endif()
+elseif(DUALSCREEN_EMBEDDED)
     # Feature checks must not try to *link*, or every one of them fails.
     #
     # check_symbol_exists() and friends build a tiny program and, by default,
