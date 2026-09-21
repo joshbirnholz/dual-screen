@@ -37,6 +37,7 @@
 
 #import <UIKit/UIKit.h>
 
+#include <TargetConditionals.h>
 #include <stddef.h>
 
 #include <SDL.h>
@@ -107,6 +108,28 @@
     configuration.delegateClass = [DualscreenSceneDelegate class];
     return configuration;
 }
+
+#if !TARGET_OS_TV
+// SDL asks this before it asks anything else.
+//
+// UIKit_GetSupportedOrientations() tries the application delegate first and
+// only falls back to the Info.plist when the delegate does not answer. The
+// plist does say all four -- but the fallback reaches them through
+// UIApplication, and on a scene-based app that is a longer road than it used
+// to be. Answering directly makes the road short, and this file is already
+// the place where this app says how it wants to be run.
+//
+// Every orientation, matching the plist exactly. The picture is laid out from
+// the panel it is given, so turning the device over is a resize and nothing
+// more. Not on tvOS, which does not turn over and has no such API.
+- (UIInterfaceOrientationMask)application:(UIApplication *)application
+    supportedInterfaceOrientationsForWindow:(UIWindow *)window
+{
+    (void)application;
+    (void)window;
+    return UIInterfaceOrientationMaskAll;
+}
+#endif
 
 // SDL asks to run SDL_main as soon as the application has launched, which is
 // not necessarily after a scene has connected. SDL_main creates the window
@@ -190,6 +213,13 @@ void ds_attach_sdl_window_to_scene(SDL_Window *window)
         // SDL already called this once, before the window could be shown on
         // anything. It is idempotent and now it can do something.
         [uiwindow makeKeyAndVisible];
+#if !TARGET_OS_TV
+        // UIKit worked out which way up this scene goes before this window
+        // existed, and nothing about attaching one makes it think again. Ask
+        // it to, or the app is stuck in whichever orientation the device
+        // happened to be in at launch.
+        [uiwindow.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+#endif
         return;
     }
     SDL_Log("dualscreen: the window has no scene to attach to, so nothing will draw");

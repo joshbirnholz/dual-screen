@@ -88,6 +88,14 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Dualscreen finds the computer on your network that is running a game, so this device can be a second screen for it.</string>
 
+	<!-- Without this, UIKit tells the log "You need
+	     UIApplicationSupportsIndirectInputEvents in your Info.plist for mouse
+	     support" and withholds pointer events. An iPad with a trackpad or a
+	     mouse is an ordinary way to use one, and this app already reads a
+	     pointer everywhere else it runs. -->
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+
 	<!-- UIKit's scene life cycle. An app built against the iOS 26 SDK or later
 	     is killed at launch without it, and lowering the deployment target is
 	     no escape: the rule is about the SDK the binary was built with, not

@@ -26,17 +26,27 @@ if(UIKIT_CLANG)
     set(COMPILER "${UIKIT_CLANG}")
 endif()
 
-execute_process(
-    COMMAND "${COMPILER}" -fsyntax-only -x objective-c -fobjc-runtime=macosx
-            -Wall -Wextra -Werror
-            "-I${STUB_DIR}" "${SOURCE}"
-    RESULT_VARIABLE result
-    OUTPUT_VARIABLE output
-    ERROR_VARIABLE errors)
-if(NOT result EQUAL 0)
-    message(FATAL_ERROR
-        "${SOURCE} does not parse, and it is what makes the iOS app "
-        "launch:\n${errors}${output}")
-endif()
+# Once as each platform. The orientation code is compiled out on tvOS, and a
+# branch that only ever builds on one of the two is a branch nobody checked.
+foreach(tv IN ITEMS 0 1)
+    execute_process(
+        COMMAND "${COMPILER}" -fsyntax-only -x objective-c -fobjc-runtime=macosx
+                -Wall -Wextra -Werror
+                -DTARGET_OS_IPHONE=1 "-DTARGET_OS_TV=${tv}"
+                "-I${STUB_DIR}" "${SOURCE}"
+        RESULT_VARIABLE result
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE errors)
+    if(NOT result EQUAL 0)
+        if(tv)
+            set(which "tvOS")
+        else()
+            set(which "iOS")
+        endif()
+        message(FATAL_ERROR
+            "${SOURCE} does not parse as ${which} sees it, and it is what "
+            "makes the app launch:\n${errors}${output}")
+    endif()
+endforeach()
 
-message(STATUS "the UIKit scene life cycle file parses")
+message(STATUS "the UIKit scene life cycle file parses, as both iOS and tvOS")

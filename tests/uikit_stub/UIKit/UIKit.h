@@ -45,6 +45,7 @@ typedef struct {
 @interface NSSet : NSObject <NSFastEnumeration>
 @end
 
+@class UIApplication;
 @class UIScene;
 @class UIWindowScene;
 @class UISceneSession;
@@ -71,12 +72,23 @@ typedef struct {
 @interface UIWindowScene : UIScene
 @end
 
+typedef unsigned long UIInterfaceOrientationMask;
+#define UIInterfaceOrientationMaskAll ((UIInterfaceOrientationMask)0x1E)
+
+@interface UIViewController : UIResponder
+- (void)setNeedsUpdateOfSupportedInterfaceOrientations;
+@end
+
 @interface UIWindow : UIResponder
 @property (nonatomic, assign) UIWindowScene *windowScene;
+@property (nonatomic, assign) UIViewController *rootViewController;
 - (void)makeKeyAndVisible;
 @end
 
 @protocol UIApplicationDelegate
+@optional
+- (UIInterfaceOrientationMask)application:(UIApplication *)application
+    supportedInterfaceOrientationsForWindow:(UIWindow *)window;
 @end
 
 @protocol UISceneDelegate
