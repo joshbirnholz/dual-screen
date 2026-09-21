@@ -2236,7 +2236,7 @@ int App::run(const AppOptions& options) {
         // this host equally needs a codec built in before it can ever
         // encode a Wii U's GamePad screen as video instead of tiles.
         log_info(std::string("video encode: ") +
-                 (video::available() ? "available" : "not built into this binary"));
+                 (video::can_decode() ? "available" : "not built into this binary"));
     }
     // Touch on a desktop should not also arrive as synthetic mouse events, or
     // every tap would register twice.

@@ -333,10 +333,10 @@ bool Client::start() {
     log_info("SDL is up");
     // Said here rather than left to only show up as the host logging that this
     // device "cannot decode video" once connected -- that line names the
-    // symptom, not the cause, and the cause (this binary built without
-    // FFmpeg) is knowable the moment the process starts.
+    // symptom, not the cause, and the cause is knowable the moment the
+    // process starts.
     log_info(std::string("video decode: ") +
-             (video::available() ? "available" : "not built into this binary"));
+             (video::can_decode() ? "available" : "not built into this binary"));
     // Audio is asked for separately, and its failure is not this program's
     // failure: a second screen with no sound is still a second screen.
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {

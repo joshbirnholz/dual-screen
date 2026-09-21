@@ -353,6 +353,15 @@ bool VideoDecoder::decode_ffmpeg(const uint8_t*, std::size_t, DecodedFrame& out,
 // written for.
 namespace ds::video {
 
+// FFmpeg encodes or it does not; there is no second encoder anywhere.
+bool can_encode() { return have_ffmpeg(); }
+
+// Decoding has two possible answers, and on a phone only the second one is
+// yes. This is what a companion tells a host when it says whether to bother
+// sending video -- answering it with have_ffmpeg() is answering a different
+// question, and the host believes the answer.
+bool can_decode() { return have_ffmpeg() || VideoToolboxDecoder::available(); }
+
 VideoDecoder::~VideoDecoder() { close(); }
 
 bool VideoDecoder::is_open() const {

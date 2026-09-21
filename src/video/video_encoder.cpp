@@ -73,7 +73,7 @@ void ffmpeg_log_callback(void* /*avcl*/, int level, const char* fmt, va_list arg
 
 }  // namespace
 
-bool available() { return true; }
+bool have_ffmpeg() { return true; }
 
 // FFmpeg logs to stderr by default, and an encoder's end-of-stream statistics
 // are pages of it. This app's own log is the thing anybody reads when something
@@ -596,7 +596,7 @@ bool VideoEncoder::encode(const uint32_t* pixels,
 
 namespace ds::video {
 
-bool available() { return false; }
+bool have_ffmpeg() { return false; }
 void quieten_ffmpeg() {}
 
 VideoEncoder::~VideoEncoder() = default;

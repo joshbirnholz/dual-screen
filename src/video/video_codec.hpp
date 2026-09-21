@@ -74,10 +74,24 @@ inline const char* to_string(ScreenCodec codec) {
     return "Tiles";
 }
 
-// Whether this build has a video codec at all. The Switch and Android
-// toolchains do not have FFmpeg wired up yet, and everything DS and 3DS do
-// works without it, so it stays optional until those are ready.
-bool available();
+// Whether FFmpeg is compiled into this build. The Switch and Android
+// toolchains do not have it wired up yet, and everything DS and 3DS do works
+// without it, so it stays optional until those are ready.
+//
+// This is a fact about the build, not an answer to a question anybody asks.
+// The two questions people actually have are below, and they no longer have
+// the same answer: iOS and tvOS ship with no FFmpeg at all and decode through
+// VideoToolbox instead.
+bool have_ffmpeg();
+
+// Whether this build can turn a screen into H.264. FFmpeg's business; there
+// is no second encoder on any platform.
+bool can_encode();
+
+// Whether this build can turn H.264 back into a picture. FFmpeg or
+// VideoToolbox -- a device build has only the second, and telling a host
+// otherwise is telling it not to send any video.
+bool can_decode();
 
 // Keeps FFmpeg's own chatter out of this app's log; only errors survive.
 // Called for you when an encoder or decoder opens.

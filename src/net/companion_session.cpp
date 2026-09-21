@@ -748,9 +748,14 @@ void CompanionSession::poll(uint64_t now_ms) {
         HelloMessage hello;
         hello.device_name = device_name_;
         hello.wanted_screen = wanted_screen_;
-        // Said rather than assumed: a build without FFmpeg cannot decode video,
-        // and the host has to know before it picks how to send a screen.
-        hello.accepts_video = video::available();
+        // Said rather than assumed: a build that cannot decode H.264 has to
+        // say so, because the host picks how to send a screen from this and
+        // will send none at all if the answer is no.
+        //
+        // can_decode(), not have_ffmpeg(). iOS and tvOS have no FFmpeg and
+        // decode through VideoToolbox, and asking the FFmpeg question got the
+        // answer "no video" out of a device that decodes video perfectly well.
+        hello.accepts_video = video::can_decode();
         std::vector<uint8_t> out;
         encode_hello(hello, out);
         stream_.send(out);

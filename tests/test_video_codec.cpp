@@ -264,7 +264,7 @@ void test_a_screen_that_cannot_be_encoded_says_so() {
 // still has to fail for the *right* reason: the decoder was found and it was
 // the device that would not create, not "no such decoder" -- which is what a
 // build that still asked avcodec_find_decoder_by_name() for the label itself
-// would say instead, wrongly, since "h264" always exists once video::available()
+// would say instead, wrongly, since "h264" always exists once video::have_ffmpeg()
 // is true at all.
 void test_a_device_attached_backend_fails_on_the_device_not_the_decoder() {
     video::VideoDecoder decoder;
@@ -422,12 +422,35 @@ void test_the_colour_conversion_matches_swscale() {
     av_freep(&ours[0]);
 }
 
+// What a companion tells a host when it says whether to bother sending video.
+//
+// This answered have_ffmpeg() until an iOS build shipped, where FFmpeg is
+// absent and VideoToolbox does the decoding: the device reported that it
+// could not decode video, the host believed it, and sent nothing at all --
+// not even the tile fallback, because refusing video is a failure rather than
+// a preference (see HostSession::try_encode_video).
+//
+// Nothing here can create a VideoToolbox decoder, so what is checked is the
+// relationship: being able to encode implies being able to decode, on every
+// build, because both of those are FFmpeg. A can_decode() that ever became
+// narrower than can_encode() would be this bug again.
+void test_anything_that_can_encode_can_also_decode() {
+    if (video::can_encode()) {
+        CHECK(video::can_decode());
+    }
+    // And the FFmpeg question is not the decode question. On this machine
+    // they happen to agree; the point is that they are asked separately, so
+    // that a platform where they differ has somewhere to say so.
+    CHECK(video::can_encode() == video::have_ffmpeg());
+}
+
 int main() {
     test_a_backend_label_is_not_always_a_decoder_name();
+    test_anything_that_can_encode_can_also_decode();
     // Needs only swscale, which is there whenever FFmpeg is -- so it runs on a
     // machine with no encoder, which is where this was written.
     test_the_colour_conversion_matches_swscale();
-    if (!video::available()) {
+    if (!video::have_ffmpeg()) {
         // Not a failure: the codec is optional until every platform's toolchain
         // has it, and saying so is more use than a green tick that tested air.
         test::skip("this build has no video codec, so there was nothing to test");

@@ -1193,7 +1193,7 @@ bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, i
 
 bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,
                                    std::string& reason) {
-    if (!video::available()) {
+    if (!video::can_encode()) {
         reason = "this build has no video encoder compiled in";
         return false;
     }

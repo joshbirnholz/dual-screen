@@ -1590,7 +1590,7 @@ void test_host_can_disconnect_the_companion() {
 // the last tiled frame, and the frames in between went a different way
 // entirely. Both ends have to still be describing the same picture afterwards.
 void test_the_codec_can_change_without_reconnecting() {
-    if (!video::available()) {
+    if (!video::have_ffmpeg()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -1689,7 +1689,7 @@ void test_the_codec_can_change_without_reconnecting() {
 // HostSession actually asks for it once it knows the companion's display is
 // smaller than the screen being sent.
 void test_video_is_capped_to_the_companions_display_size() {
-    if (!video::available()) {
+    if (!video::have_ffmpeg()) {
         test::skip("this build has no video codec");
         return;
     }
@@ -2380,7 +2380,7 @@ void test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial() {
 // until a picture that stands on its own actually arrives, since both the
 // request and the answer ride UDP and can be lost like anything else.
 void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
-    if (!video::available()) {
+    if (!video::have_ffmpeg()) {
         test::skip("this build has no video codec");
         return;
     }
