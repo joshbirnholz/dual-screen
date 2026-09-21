@@ -1111,13 +1111,18 @@ int main(int argc, char** argv) {
 #endif
 
 #ifdef __APPLE__
-    // A log on disk, because a Mac application has nowhere else to put one.
+    // A log on disk, because an Apple application has nowhere else to put one.
     // Double-clicked from Finder -- which is how this is going to be started
     // -- stdout goes to a system log nobody thinks to look in, and the app
     // may be the only thing on the network that knows why it could not find a
     // host. ~/Library/Logs is where a Mac keeps these and where Console.app
     // will show it; see PathConvention for the layout and the test that pins
     // it down from a machine that is not a Mac.
+    //
+    // It matters more on a phone or an Apple TV than on a Mac, not less: there
+    // is no Console there, no terminal, and nothing to read but the container.
+    // tvOS has nowhere permanent at all and gets Library/Caches -- again see
+    // PathConvention, which answers for all three.
     {
         const AppPaths paths = AppPaths::resolve();
         if (ensure_directory(path_dirname(paths.log_file)) && set_log_file(paths.log_file)) {

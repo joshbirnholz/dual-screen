@@ -479,6 +479,21 @@ and `Info-tvOS.plist.in`. Two differences worth knowing:
 A device build is signed with a real identity rather than ad-hoc, so unlike the
 Mac it keeps its grant across rebuilds.
 
+**It does not need the multicast entitlement**, which is worth saying because
+it is the first thing anybody worries about here and it is not cheap to get —
+`com.apple.developer.networking.multicast` requires Apple's approval, per app.
+iOS 14 and later gate *sending* to broadcast and multicast addresses behind it.
+
+This app never does that from a companion. Discovery is one-way: the host
+broadcasts a beacon, the companion only ever listens. Everything the companion
+sends afterwards is unicast, to an address it learned from a beacon it
+received — including the early "knock" that provokes the permission prompt,
+which is a single datagram to one host and opens its socket with broadcast
+explicitly off (`knock_on_the_local_network()` in `companion_session.cpp`).
+
+The ordinary local-network usage description is all it wants. A *host* on iOS
+would be a different question, and there is no iOS host.
+
 ### Where things are written
 
 Not the same place on all three, and on one of them not permanently at all.
