@@ -1,3 +1,11 @@
+#if defined(__APPLE__)
+// TARGET_OS_IPHONE and TARGET_OS_TV are used below to check that this build
+// answers for the platform it is. Undefined they are zero, which would quietly
+// assert the macOS answer on an iPhone -- so the header is included rather than
+// left to arrive through SDL, which is where it happens to come from today.
+#include <TargetConditionals.h>
+#endif
+
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -134,10 +142,37 @@ void test_each_platform_puts_things_where_that_platform_keeps_them() {
     CHECK_STR_EQ(path_convention(PathStyle::Xdg, "/home/someone", xdg_set).config_root,
                  "/elsewhere");
 
+    // An iPhone or iPad is the same shape: the home directory is the app's own
+    // sandbox container rather than a person's, but Application Support means
+    // what it means and the app never shows a path to anybody anyway.
+    //
+    // An Apple TV is not. There is no Application Support and no Documents on
+    // tvOS at all -- Library/Caches is the only place an app may write a file,
+    // and the system may empty it whenever it wants the space back. Writing to
+    // a directory that does not exist there is how a companion would come up
+    // once and never save a setting again, silently.
+    const PathConvention tv = path_convention(PathStyle::AppleCaches, "/var/mobile/Containers/app",
+                                              nothing_set);
+    const AppPaths tv_paths = AppPaths::under(tv);
+    CHECK_STR_EQ(tv_paths.config_dir, "/var/mobile/Containers/app/Library/Caches/dualscreen");
+    CHECK_MSG(tv_paths.config_dir.find("Application Support") == std::string::npos,
+              "an Apple TV build was going to write where tvOS has no such directory");
+    // Including the log, which on tvOS has nowhere else to go: Library/Logs is
+    // not writable and there is no Console to read it with.
+    CHECK_STR_EQ(tv_paths.log_file,
+                 "/var/mobile/Containers/app/Library/Caches/dualscreen/dualscreen.log");
+    CHECK_STR_EQ(path_convention(PathStyle::AppleCaches, "/var/mobile/Containers/app", xdg_set)
+                     .config_root,
+                 "/var/mobile/Containers/app/Library/Caches");
+
     // This build's own answer is the one resolve() uses, and on anything that
     // is not Apple it is the freedesktop one.
 #if defined(__APPLE__)
+#if TARGET_OS_TV
+    CHECK(native_path_style() == PathStyle::AppleCaches);
+#else
     CHECK(native_path_style() == PathStyle::AppleLibrary);
+#endif
 #else
     CHECK(native_path_style() == PathStyle::Xdg);
 #endif

@@ -55,6 +55,15 @@ add_test(NAME external_link_stands_alone
         -DWORK_DIR=${CMAKE_BINARY_DIR}/external-link-alone
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_standalone_link_test.cmake)
 
+# The Apple bundles' property lists. Nothing compiles a plist, so a broken one
+# is an app that launches and misbehaves on hardware this repository is not
+# developed on -- see the script for the three that have already gone wrong.
+add_test(NAME apple_plists
+    COMMAND ${CMAKE_COMMAND}
+        -DPLIST_DIR=${CMAKE_SOURCE_DIR}/apple
+        -DCMAKE_CURRENT_BINARY_DIR=${CMAKE_BINARY_DIR}/apple-plists
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_apple_plist_test.cmake)
+
 add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
@@ -64,6 +73,7 @@ dualscreen_add_test(test_external_link)
 dualscreen_add_test(test_text)
 dualscreen_add_test(test_launcher)
 dualscreen_add_test(test_image)
+dualscreen_add_test(test_gl_window)
 dualscreen_add_test(test_protocol)
 dualscreen_add_test(test_audio)
 dualscreen_add_test(test_dsu)

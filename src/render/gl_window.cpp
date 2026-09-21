@@ -1,8 +1,12 @@
 #include "render/gl_window.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <cstdlib>
-#include <iterator>
 #include <string>
+#include <vector>
 
 #include "render/gl_loader.hpp"
 #include "util/log.hpp"
@@ -20,79 +24,112 @@ void GlWindow::destroy() {
     }
 }
 
-bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string* error) {  // NOLINT
-    GlContextNeed need = request.need;
-    SDL_Window*& window = out.window;
-    SDL_GLContext& gl_context = out.context;
-    struct ContextAttempt {
-        int profile;
-        int major;
-        int minor;
-        bool gles;
-        const char* description;
-    };
-    // Tried in order, widening as it goes. The last entry asks for nothing at
-    // all and takes whatever the driver's default context is: under gamescope
-    // an explicitly-profiled request can be refused where the default succeeds,
-    // and a working context of some kind always beats refusing to start.
-    //
-    // OpenGL ES 2.0 comes first by default: it is the common subset across
-    // every platform on the roadmap, so the renderer is exercised against the
-    // same feature set everywhere. Desktop GL 2.1 is the fallback for drivers
-    // that will not hand out an ES context.
+GlFamily native_gl_family() {
 #if defined(__APPLE__)
-    // Except on Apple's, which have no ES at all -- asking for one is two
-    // guaranteed failures before the real attempt, and the log line that
-    // reports which context was created would name the fallback as though
-    // something had gone wrong.
-    //
-    // Core 3.3 rather than 2.1 compatibility, which is the other way round
-    // from everywhere else. macOS offers exactly two things: a frozen legacy
-    // profile that stops at 2.1, and a core profile that goes to 4.1. Where
-    // the legacy one is a driver's grudging fallback elsewhere, here it is a
-    // museum piece, and the renderer already speaks core -- see
-    // shader_preamble(), which has had a core path since a Citra core needed
-    // one.
-    const ContextAttempt any_attempts[] = {
-        {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
-        {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1 compatibility"},
-        {0, 0, 0, false, "the driver's default context"},
-    };
+    // Apple is two answers, not one, and the difference is total: macOS has
+    // desktop GL and no ES, while iOS and tvOS have ES and no desktop GL.
+    // TargetConditionals.h is the only thing that tells them apart, and
+    // TARGET_OS_MAC is true on all three -- TARGET_OS_OSX is the one that
+    // means a Mac.
+#if TARGET_OS_IPHONE
+    return GlFamily::EmbeddedOnly;
 #else
-    const ContextAttempt any_attempts[] = {
+    return GlFamily::DesktopOnly;
+#endif
+#else
+    return GlFamily::EitherKind;
+#endif
+}
+
+std::vector<GlContextAttempt> gl_context_attempts(GlFamily family, GlContextNeed need) {
+    // A GPU-rendering core will not load without the context it asked for, so
+    // when one is going to be loaded the ES entries drop out entirely -- an
+    // ES 2.0 context here would only mean starting up and then failing to open
+    // the game.
+    //
+    // No such core runs on a platform with only ES, and none is built for one:
+    // this is the host's need, and the host is a desktop program. Answered
+    // anyway rather than left to fall through, because "there is no context
+    // that can do this" is a better thing for a caller to be told by an empty
+    // list than by a context that cannot.
+    if (need == GlContextNeed::OpenGl33Core) {
+        if (family == GlFamily::EmbeddedOnly) {
+            return {};
+        }
+        return {
+            {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
+            {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 3, 3, false, "OpenGL 3.3 compatibility"},
+            {},
+        };
+    }
+    switch (family) {
+        case GlFamily::DesktopOnly:
+            // Core 3.3 before 2.1 compatibility, which is the other way round
+            // from everywhere else. Where the legacy profile is a driver's
+            // grudging fallback elsewhere, on macOS it is a museum piece
+            // frozen at 2.1, and the renderer already speaks core -- see
+            // shader_preamble(), which has had a core path since a Citra core
+            // needed one.
+            return {
+                {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
+                {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1 compatibility"},
+                {},
+            };
+        case GlFamily::EmbeddedOnly:
+            // ES 3.0 is offered above 2.0 and both are kept: every iOS and
+            // tvOS device that runs this has ES 3.0, but asking for 2.0 as
+            // well costs one refused attempt in the worst case and is the
+            // feature set the renderer is actually written against.
+            //
+            // Nothing desktop is offered at all. On these platforms it is not
+            // an unlikely fallback, it is a guaranteed failure, and a list
+            // that ends in two of those is a list whose log line names a
+            // fallback as though something had gone wrong.
+            return {
+                {SDL_GL_CONTEXT_PROFILE_ES, 3, 0, true, "OpenGL ES 3.0"},
+                {SDL_GL_CONTEXT_PROFILE_ES, 2, 0, true, "OpenGL ES 2.0"},
+                {},
+            };
+        case GlFamily::EitherKind:
+            break;
+    }
+    // OpenGL ES 2.0 first: it is the common subset across every platform on
+    // the roadmap, so the renderer is exercised against the same feature set
+    // everywhere. Desktop GL is the fallback for drivers that will not hand
+    // out an ES context.
+    return {
         {SDL_GL_CONTEXT_PROFILE_ES, 2, 0, true, "OpenGL ES 2.0"},
         {SDL_GL_CONTEXT_PROFILE_ES, 3, 0, true, "OpenGL ES 3.0"},
         {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 2, 1, false, "OpenGL 2.1 compatibility"},
         {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
-        {0, 0, 0, false, "the driver's default context"},
+        {},
     };
-#endif
-    // A GPU-rendering core will not load without the context it asked for, so
-    // when one is going to be loaded the order is reversed and the ES entries
-    // drop out entirely -- an ES 2.0 context here would only mean starting up
-    // and then failing to open the game.
-    const ContextAttempt gl33_attempts[] = {
-        {SDL_GL_CONTEXT_PROFILE_CORE, 3, 3, false, "OpenGL 3.3 core"},
-        {SDL_GL_CONTEXT_PROFILE_COMPATIBILITY, 3, 3, false, "OpenGL 3.3 compatibility"},
-        {0, 0, 0, false, "the driver's default context"},
-    };
+}
+
+bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string* error) {  // NOLINT
+    GlContextNeed need = request.need;
+    SDL_Window*& window = out.window;
+    SDL_GLContext& gl_context = out.context;
 
     // A way to exercise the 3.3 path on a machine whose driver would otherwise
     // hand over an ES context. switch_client_gl33_headless sets it and runs a
     // whole session through it, which is the only place the core-profile
     // shaders are actually drawn with on Linux -- and so the only advance
-    // warning of a break on Apple's platforms, where a core context is not a
-    // fallback but the only thing there is.
+    // warning of a break on macOS, where a core context is not a fallback but
+    // the only thing there is.
     const char* forced = std::getenv("DUALSCREEN_FORCE_GL33");
     if (forced != nullptr && forced[0] != '\0' && forced[0] != '0') {
         need = GlContextNeed::OpenGl33Core;
     }
 
-    const ContextAttempt* attempts =
-        (need == GlContextNeed::OpenGl33Core) ? gl33_attempts : any_attempts;
-    const std::size_t attempt_count = (need == GlContextNeed::OpenGl33Core)
-                                          ? std::size(gl33_attempts)
-                                          : std::size(any_attempts);
+    const std::vector<GlContextAttempt> attempts = gl_context_attempts(native_gl_family(), need);
+    const std::size_t attempt_count = attempts.size();
+    if (attempts.empty()) {
+        if (error != nullptr) {
+            *error = "this platform has no OpenGL context that can run a GPU-rendering core";
+        }
+        return false;
+    }
 
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
     if (!request.windowed) {
@@ -100,10 +137,18 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
         // well-behaved client; it never asks to change the display mode.
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
+    // A phone, a tablet and a television have no windows to be one of. SDL
+    // gives an iOS or tvOS window the screen either way, but asking for
+    // fullscreen as well is what makes it report the screen's real size --
+    // and a request for a 1280x720 *window* on a device that has none is how
+    // the picture ends up drawn at a size no display here has.
+    if (native_gl_family() == GlFamily::EmbeddedOnly) {
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    }
 
     std::string last_error;
     for (std::size_t index = 0; index < attempt_count; ++index) {
-        const ContextAttempt& attempt = attempts[index];
+        const GlContextAttempt& attempt = attempts[index];
         SDL_GL_ResetAttributes();
         if (attempt.profile != 0) {
             SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, attempt.profile);

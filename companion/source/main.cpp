@@ -29,6 +29,20 @@
 
 #include <SDL.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+// iOS, iPadOS and tvOS, which are one platform for nearly everything here and
+// are not macOS for any of it. TARGET_OS_IPHONE covers all three of the
+// handheld ones; TARGET_OS_TV narrows it to an Apple TV, which is the one with
+// no touch screen and nowhere to write a file.
+#if TARGET_OS_IPHONE
+#define DS_APPLE_EMBEDDED 1
+#endif
+#endif
+#ifndef DS_APPLE_EMBEDDED
+#define DS_APPLE_EMBEDDED 0
+#endif
+
 #ifdef __SWITCH__
 #include <switch.h>
 #endif
@@ -289,6 +303,32 @@ private:
 };
 
 bool Client::start() {
+#if DS_APPLE_EMBEDDED
+    // Set before SDL_Init, because this is the one that decides what the audio
+    // session is opened as and it is read on the way up.
+    //
+    // SDL opens an iOS audio session as "ambient" unless told otherwise, and
+    // ambient is the category that obeys the ring/silent switch. A companion
+    // is a screen for a game, so a phone with its switch flipped would show
+    // the picture in silence and there would be nothing in this app to look
+    // at to find out why. Playback is what a game asks for.
+    SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");
+    // The bar at the bottom of a phone, over a picture whose whole point is
+    // being the other machine's screen exactly. "2" is hidden until a swipe
+    // asks for it.
+    SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
+#if TARGET_OS_TV
+    // The Siri Remote as a controller rather than as a source of arrow keys.
+    // This app navigates its menus with a d-pad and face buttons on every
+    // other device, and the remote's touch surface reports as one -- so the
+    // Apple TV gets the same menu behaviour as the Switch, which is the
+    // no-touch client this one is shaped like.
+    SDL_SetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS, "0");
+    // Holding the remote sideways should not rotate anything. There is one
+    // orientation on a television.
+    SDL_SetHint(SDL_HINT_APPLE_TV_REMOTE_ALLOW_ROTATION, "0");
+#endif
+#endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         start_error_ = std::string("SDL would not start: ") + SDL_GetError();
         log_error(start_error_);
@@ -309,6 +349,11 @@ bool Client::start() {
     // The same convention the app uses: face buttons are read by where they
     // are, not by the letter printed on them.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, kFaceButtonsByPosition);
+    // Watching a screen is not idling. Every platform this runs on will dim,
+    // lock or put up a screensaver over a picture nobody is touching, and on a
+    // phone or an Apple TV that is a matter of a minute or two -- which is
+    // exactly how long somebody watches a cutscene without pressing anything.
+    SDL_DisableScreenSaver();
 
     GlWindowRequest request;
     request.title = "Dualscreen";

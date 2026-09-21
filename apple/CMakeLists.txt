@@ -1,4 +1,4 @@
-# The Dualscreen companion, as an Apple application.
+# The Dualscreen companion, as an Apple application: macOS, iOS, iPadOS, tvOS.
 #
 # It builds the same sources as the desktop, Switch and Android clients -- read
 # from cmake/companion_sources.cmake, so a file cannot be added to the client
@@ -10,10 +10,15 @@
 # the host is a program for running emulator cores beside a window manager. It
 # has no meaning here. This builds the companion and nothing else.
 #
-# macOS today. iOS and tvOS are the reason the file is arranged the way it is
-# -- one source list, one plist template, and the differences between the three
-# named where they occur rather than assumed away -- but only macOS is built
-# and only macOS has been run. Nothing below claims otherwise.
+# Four products, three platforms, one source list. What actually differs
+# between them is smaller than it looks, and is named where it occurs:
+#
+#   macOS   desktop OpenGL, Homebrew's SDL2 and FFmpeg, a window, an .icns
+#   iOS     OpenGL ES, SDL2 built here, touch, a sandbox to write in
+#   iPadOS  iOS exactly -- one binary, one bundle; iPad is not a target
+#   tvOS    iOS without the touch screen, and with nowhere to keep a file
+#
+# See apple/README.md for what has been run on real hardware and what has not.
 cmake_minimum_required(VERSION 3.20)
 project(dualscreen_companion LANGUAGES C CXX)
 
@@ -28,17 +33,59 @@ if(NOT APPLE)
         "dualscreen-companion.")
 endif()
 
+# --- which Apple platform ---------------------------------------------------
+#
+# CMAKE_SYSTEM_NAME is how CMake is told, and it must be set on the configure
+# line before anything here runs:
+#
+#   cmake -S apple -B build-ios  -G Xcode -DCMAKE_SYSTEM_NAME=iOS
+#   cmake -S apple -B build-tvos -G Xcode -DCMAKE_SYSTEM_NAME=tvOS
+#
+# Left unset it is "Darwin", which is a Mac. There is no autodetection to do
+# here and guessing would be worse than asking: a build for the wrong platform
+# fails late, in the linker, over a framework that does not exist.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(DUALSCREEN_PLATFORM "ios")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+    set(DUALSCREEN_PLATFORM "tvos")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(DUALSCREEN_PLATFORM "macos")
+else()
+    message(FATAL_ERROR
+        "CMAKE_SYSTEM_NAME is '${CMAKE_SYSTEM_NAME}'. This builds for Darwin "
+        "(macOS), iOS or tvOS.")
+endif()
+
+# iOS and tvOS together, which is the distinction that actually matters to
+# nearly everything below: OpenGL ES rather than desktop GL, a bundle signed
+# for a device rather than for a desk, and no package manager to find a
+# library with.
+if(DUALSCREEN_PLATFORM STREQUAL "macos")
+    set(DUALSCREEN_EMBEDDED OFF)
+else()
+    set(DUALSCREEN_EMBEDDED ON)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
 endif()
 
 get_filename_component(DUALSCREEN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 
-# Big Sur is the floor: the first release on Apple silicon, so it is the oldest
-# macOS anybody is running this on a machine it was built for. Nothing here
-# needs anything newer.
+# --- how old a system this will run on --------------------------------------
+#
+# macOS 11 is the first release on Apple silicon. iOS and tvOS 14 are where
+# UILaunchScreen replaced the launch storyboard: without one of the two an app
+# is handed a window the size of an iPhone 4 and letterboxed, which on an app
+# whose whole job is showing another machine's screen is not a cosmetic
+# problem. A dict is cheaper than a storyboard, so 14 it is.
+if(DUALSCREEN_PLATFORM STREQUAL "macos")
+    set(DUALSCREEN_MIN_OS "11.0")
+else()
+    set(DUALSCREEN_MIN_OS "14.0")
+endif()
 if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "" FORCE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${DUALSCREEN_MIN_OS}" CACHE STRING "" FORCE)
 endif()
 
 # The console artwork, turned into source so it travels inside the binary. The
@@ -67,7 +114,6 @@ dualscreen_embed_asset(rodin.otf kRodinOtf BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 
 include(${DUALSCREEN_ROOT}/cmake/companion_sources.cmake)
-
 include(${DUALSCREEN_ROOT}/cmake/build_stamp.cmake)
 
 set(DUALSCREEN_APP_NAME "Dualscreen Companion")
@@ -87,13 +133,60 @@ dualscreen_stamp_build("${DUALSCREEN_ROOT}/src/util/build_stamp.cpp")
 
 # --- SDL2 -------------------------------------------------------------------
 #
-# Homebrew's SDL2 ships CMake config files, so this finds it with nothing said.
-# SDL2main is not optional here the way it is on Linux: on Apple platforms
-# SDL.h renames main to SDL_main, and SDL2main is what provides the real one
-# and sets up the Cocoa application object behind it. Without it the link fails
-# on a missing _main, which reads as something far stranger than it is.
-find_package(SDL2 REQUIRED)
-target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2 SDL2::SDL2main)
+# On a Mac, Homebrew's ships CMake config files and this finds it with nothing
+# said. On iOS and tvOS there is no Homebrew and no system copy, so SDL is
+# built here as a subproject -- from a checkout if one is pointed at, and
+# otherwise fetched.
+#
+# SDL2main is not optional on any Apple platform the way it is on Linux: SDL.h
+# renames main to SDL_main, and SDL2main provides the real one and stands up
+# the Cocoa or UIKit application object behind it. Without it the link fails on
+# a missing _main, which reads as something far stranger than it is.
+set(DUALSCREEN_SDL2_SOURCE_DIR "" CACHE PATH
+    "A local SDL2 checkout to build against, instead of fetching one (iOS/tvOS)")
+set(DUALSCREEN_SDL2_TAG "release-2.30.9" CACHE STRING
+    "The SDL2 tag to fetch when no checkout is given (iOS/tvOS)")
+
+if(DUALSCREEN_EMBEDDED)
+    # Static, because a bundle for a device cannot go looking for a dylib on a
+    # machine it is not installed on.
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "" FORCE)
+    if(DUALSCREEN_SDL2_SOURCE_DIR)
+        message(STATUS "SDL2: building ${DUALSCREEN_SDL2_SOURCE_DIR}")
+        add_subdirectory("${DUALSCREEN_SDL2_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/sdl2" EXCLUDE_FROM_ALL)
+    else()
+        message(STATUS "SDL2: fetching ${DUALSCREEN_SDL2_TAG} (set "
+                       "DUALSCREEN_SDL2_SOURCE_DIR to build a checkout instead)")
+        include(FetchContent)
+        FetchContent_Declare(SDL2
+            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+            GIT_TAG "${DUALSCREEN_SDL2_TAG}"
+            GIT_SHALLOW TRUE)
+        FetchContent_MakeAvailable(SDL2)
+    endif()
+    # Which target name exists depends on how SDL was configured; asking is
+    # cheaper than assuming, and assuming wrong is a link error about a target
+    # that was never built.
+    if(TARGET SDL2::SDL2-static)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2-static)
+    elseif(TARGET SDL2-static)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2-static)
+    elseif(TARGET SDL2::SDL2)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2)
+    else()
+        message(FATAL_ERROR "SDL2 was built but exported no target this knows.")
+    endif()
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2main)
+    elseif(TARGET SDL2main)
+        target_link_libraries(dualscreen_companion PRIVATE SDL2main)
+    endif()
+else()
+    find_package(SDL2 REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2 SDL2::SDL2main)
+endif()
 
 find_package(ZLIB REQUIRED)
 target_link_libraries(dualscreen_companion PRIVATE ZLIB::ZLIB)
@@ -101,33 +194,80 @@ target_link_libraries(dualscreen_companion PRIVATE ZLIB::ZLIB)
 find_package(Threads REQUIRED)
 target_link_libraries(dualscreen_companion PRIVATE Threads::Threads)
 
-# OpenGL, which macOS deprecated and still ships. gl_loader.cpp reaches every
-# entry point through SDL_GL_GetProcAddress, so this is the framework and
-# nothing more.
-find_library(OPENGL_FRAMEWORK OpenGL REQUIRED)
-target_link_libraries(dualscreen_companion PRIVATE ${OPENGL_FRAMEWORK})
+# --- OpenGL -----------------------------------------------------------------
+#
+# gl_loader.cpp reaches every entry point through SDL_GL_GetProcAddress, so
+# this is the framework and nothing more. Which framework is the whole of the
+# difference: macOS has desktop GL and no ES, iOS and tvOS have ES and no
+# desktop GL. See GlFamily in render/gl_window.hpp, where the same split
+# decides which context to ask for -- and test_gl_window, which checks it from
+# a machine that is none of the three.
+if(DUALSCREEN_EMBEDDED)
+    find_library(OPENGLES_FRAMEWORK OpenGLES REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE ${OPENGLES_FRAMEWORK})
+else()
+    find_library(OPENGL_FRAMEWORK OpenGL REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE ${OPENGL_FRAMEWORK})
+endif()
 
 # --- the video codec --------------------------------------------------------
 #
 # Optional, exactly as it is everywhere else: a DS or 3DS screen carries fine
 # as changed tiles without it. A Wii U's does not, in practice -- see the
-# bandwidth measurements in docs/research-notes.md -- so a Mac meant for Wii U
-# sessions wants this.
+# bandwidth measurements in docs/research-notes.md -- so a device meant for
+# Wii U sessions wants this.
 #
-# `brew install ffmpeg` is the whole of it, and Homebrew's build has
-# VideoToolbox in it, which is the hardware decoder on every Apple machine.
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
-    pkg_check_modules(FFMPEG IMPORTED_TARGET libavcodec libavutil libswscale)
+# On a Mac that is `brew install ffmpeg`, and Homebrew's build has VideoToolbox
+# in it. On iOS and tvOS there is no such thing: FFmpeg has to be cross-built
+# for the device and handed over, which is why this defaults to off there
+# rather than failing a build over a library nobody has yet. Point
+# DUALSCREEN_FFMPEG_DIR at a prefix holding include/ and lib/ for those.
+set(DUALSCREEN_FFMPEG_DIR "" CACHE PATH
+    "A prefix with FFmpeg's include/ and lib/, cross-built for the device (iOS/tvOS)")
+
+set(DUALSCREEN_HAVE_CODEC OFF)
+if(DUALSCREEN_EMBEDDED)
+    if(DUALSCREEN_FFMPEG_DIR)
+        set(DUALSCREEN_HAVE_CODEC ON)
+        target_include_directories(dualscreen_companion PRIVATE "${DUALSCREEN_FFMPEG_DIR}/include")
+        foreach(library avcodec avutil swscale swresample)
+            find_library(FFMPEG_${library}_LIB ${library}
+                         PATHS "${DUALSCREEN_FFMPEG_DIR}/lib" NO_DEFAULT_PATH)
+            if(FFMPEG_${library}_LIB)
+                target_link_libraries(dualscreen_companion PRIVATE ${FFMPEG_${library}_LIB})
+            elseif(NOT library STREQUAL "swresample")
+                message(FATAL_ERROR
+                    "DUALSCREEN_FFMPEG_DIR is set but lib${library} is not in "
+                    "${DUALSCREEN_FFMPEG_DIR}/lib")
+            endif()
+        endforeach()
+        message(STATUS "video codec: ${DUALSCREEN_FFMPEG_DIR}, decoding through VideoToolbox")
+    else()
+        message(STATUS "video codec: building without one -- a DS or 3DS screen "
+                       "carries as tiles, a Wii U's barely does (see "
+                       "DUALSCREEN_FFMPEG_DIR)")
+    endif()
+else()
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(FFMPEG IMPORTED_TARGET libavcodec libavutil libswscale)
+    endif()
+    if(FFMPEG_FOUND)
+        set(DUALSCREEN_HAVE_CODEC ON)
+        message(STATUS "video codec: libavcodec ${FFMPEG_libavcodec_VERSION}, decoding through VideoToolbox")
+        target_link_libraries(dualscreen_companion PRIVATE PkgConfig::FFMPEG)
+    else()
+        message(STATUS "video codec: not found, building without one (brew install ffmpeg)")
+    endif()
 endif()
-if(FFMPEG_FOUND)
-    message(STATUS "video codec: libavcodec ${FFMPEG_libavcodec_VERSION}, decoding through VideoToolbox")
-    target_link_libraries(dualscreen_companion PRIVATE PkgConfig::FFMPEG)
+
+if(DUALSCREEN_HAVE_CODEC)
     target_compile_definitions(dualscreen_companion PRIVATE DS_HAVE_VIDEO_CODEC=1)
     # Homebrew's libavcodec is a dylib and brings its own framework
-    # dependencies, so these are only needed when somebody points this at a
-    # static FFmpeg they built themselves -- where the VideoToolbox hwaccel's
-    # symbols are in the .a and its frameworks are not. Harmless either way.
+    # dependencies, so on a Mac these are only needed when somebody points this
+    # at a static FFmpeg they built themselves. On a device every FFmpeg is
+    # that, so there they are not optional at all: the VideoToolbox hwaccel's
+    # symbols are in the .a and its frameworks are not.
     foreach(framework VideoToolbox CoreMedia CoreVideo CoreFoundation)
         find_library(${framework}_FRAMEWORK ${framework})
         if(${framework}_FRAMEWORK)
@@ -135,84 +275,132 @@ if(FFMPEG_FOUND)
         endif()
     endforeach()
 else()
-    message(STATUS "video codec: not found, building without one (brew install ffmpeg)")
     target_compile_definitions(dualscreen_companion PRIVATE DS_HAVE_VIDEO_CODEC=0)
 endif()
 
 # --- the bundle -------------------------------------------------------------
-#
-# An icon, built from the artwork already in the repository rather than
-# committed again as a second copy of the same picture. iconutil and sips are
-# part of macOS, so this needs nothing installed -- but it is not worth failing
-# a build over, so a missing tool means a bundle with the generic icon on it.
-set(ICON_NAME "Dualscreen")
-set(ICON_SOURCE "${DUALSCREEN_ROOT}/assets/ds_bezel.png")
-set(ICONSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/${ICON_NAME}.iconset")
-set(ICNS_FILE "${CMAKE_CURRENT_BINARY_DIR}/${ICON_NAME}.icns")
-find_program(SIPS_TOOL sips)
-find_program(ICONUTIL_TOOL iconutil)
-if(SIPS_TOOL AND ICONUTIL_TOOL AND EXISTS "${ICON_SOURCE}")
-    add_custom_command(
-        OUTPUT "${ICNS_FILE}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${ICONSET_DIR}"
-        # The sizes iconutil insists on. A square crop of a picture that is not
-        # square is what sips -z does here, which is the right shape even if it
-        # is not yet the right picture -- see apple/README.md.
-        COMMAND ${SIPS_TOOL} -z 16 16     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_16x16.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 32 32     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_16x16@2x.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 32 32     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_32x32.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 64 64     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_32x32@2x.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 128 128   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_128x128.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 256 256   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_128x128@2x.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 256 256   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_256x256.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 512 512   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_256x256@2x.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 512 512   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_512x512.png" > /dev/null
-        COMMAND ${SIPS_TOOL} -z 1024 1024 "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_512x512@2x.png" > /dev/null
-        COMMAND ${ICONUTIL_TOOL} -c icns "${ICONSET_DIR}" -o "${ICNS_FILE}"
-        DEPENDS "${ICON_SOURCE}"
-        COMMENT "Building ${ICON_NAME}.icns"
-        VERBATIM)
-    target_sources(dualscreen_companion PRIVATE "${ICNS_FILE}")
-    set_source_files_properties("${ICNS_FILE}" PROPERTIES
-        MACOSX_PACKAGE_LOCATION "Resources")
-    set(DUALSCREEN_ICON_FILE "${ICON_NAME}")
+set(DUALSCREEN_BUNDLE_ID "com.joshbirnholz.dualscreen.companion")
+
+if(DUALSCREEN_PLATFORM STREQUAL "macos")
+    set(DUALSCREEN_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in")
+elseif(DUALSCREEN_PLATFORM STREQUAL "ios")
+    set(DUALSCREEN_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info-iOS.plist.in")
 else()
-    message(STATUS "icon: sips/iconutil not found, building without one")
-    set(DUALSCREEN_ICON_FILE "")
+    set(DUALSCREEN_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info-tvOS.plist.in")
+endif()
+
+# An icon on the Mac, built from the artwork already in the repository rather
+# than committed again as a second copy of the same picture. iconutil and sips
+# are part of macOS, so this needs nothing installed -- but it is not worth
+# failing a build over, so a missing tool means a bundle with the generic icon
+# on it.
+#
+# iOS and tvOS want an asset catalog instead, which is a different shape and a
+# different tool, and a malformed one fails the build rather than degrading to
+# a blank square. See apple/README.md: adding one in Xcode is a two-minute job
+# and is the point at which somebody is looking at the app on a device anyway.
+set(DUALSCREEN_ICON_FILE "")
+if(NOT DUALSCREEN_EMBEDDED)
+    set(ICON_NAME "Dualscreen")
+    set(ICON_SOURCE "${DUALSCREEN_ROOT}/assets/ds_bezel.png")
+    set(ICONSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/${ICON_NAME}.iconset")
+    set(ICNS_FILE "${CMAKE_CURRENT_BINARY_DIR}/${ICON_NAME}.icns")
+    find_program(SIPS_TOOL sips)
+    find_program(ICONUTIL_TOOL iconutil)
+    if(SIPS_TOOL AND ICONUTIL_TOOL AND EXISTS "${ICON_SOURCE}")
+        add_custom_command(
+            OUTPUT "${ICNS_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${ICONSET_DIR}"
+            # The sizes iconutil insists on. A square crop of a picture that is
+            # not square is what sips -z does here, which is the right shape
+            # even if it is not yet the right picture -- see apple/README.md.
+            COMMAND ${SIPS_TOOL} -z 16 16     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_16x16.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 32 32     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_16x16@2x.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 32 32     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_32x32.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 64 64     "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_32x32@2x.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 128 128   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_128x128.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 256 256   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_128x128@2x.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 256 256   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_256x256.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 512 512   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_256x256@2x.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 512 512   "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_512x512.png" > /dev/null
+            COMMAND ${SIPS_TOOL} -z 1024 1024 "${ICON_SOURCE}" --out "${ICONSET_DIR}/icon_512x512@2x.png" > /dev/null
+            COMMAND ${ICONUTIL_TOOL} -c icns "${ICONSET_DIR}" -o "${ICNS_FILE}"
+            DEPENDS "${ICON_SOURCE}"
+            COMMENT "Building ${ICON_NAME}.icns"
+            VERBATIM)
+        target_sources(dualscreen_companion PRIVATE "${ICNS_FILE}")
+        set_source_files_properties("${ICNS_FILE}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources")
+        set(DUALSCREEN_ICON_FILE "${ICON_NAME}")
+    else()
+        message(STATUS "icon: sips/iconutil not found, building without one")
+    endif()
 endif()
 
 set_target_properties(dualscreen_companion PROPERTIES
     OUTPUT_NAME "${DUALSCREEN_APP_NAME}"
     MACOSX_BUNDLE_BUNDLE_NAME "${DUALSCREEN_APP_NAME}"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.joshbirnholz.dualscreen.companion"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "${DUALSCREEN_BUNDLE_ID}"
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
     MACOSX_BUNDLE_ICON_FILE "${DUALSCREEN_ICON_FILE}"
-    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    MACOSX_BUNDLE_INFO_PLIST "${DUALSCREEN_PLIST}"
 )
 
-# Signed, even if only ad-hoc.
-#
-# Not about trust: it is how macOS knows one build of this app from another.
-# The permission to use the local network is remembered against a bundle's
-# identity, and a bundle with no signature has none to remember -- so the grant
-# has nothing to attach to, and a connection to a machine on the same network
-# comes back EHOSTUNREACH, which prints as "No route to host" and sends you to
-# look at your router. See explain_connect_error() in transport.cpp, which
-# catches that sentence on the way out.
-#
-# An ad-hoc signature changes with every build, so macOS may ask again after a
-# rebuild. That is worth it against not being asked at all.
-find_program(CODESIGN_TOOL codesign)
-if(CODESIGN_TOOL)
-    add_custom_command(TARGET dualscreen_companion POST_BUILD
-        COMMAND ${CODESIGN_TOOL} --force --sign -
-                "$<TARGET_BUNDLE_DIR:dualscreen_companion>"
-        COMMENT "Signing the bundle (ad-hoc)"
-        VERBATIM)
+if(DUALSCREEN_EMBEDDED)
+    # Xcode signs a device build, and it needs the identifier on the target as
+    # well as in the plist -- the plist is what ends up in the bundle, this is
+    # what the signing step reads. A team is not set here: it belongs to
+    # whoever is building, and is given on the configure line or picked in
+    # Xcode's own settings.
+    #
+    #   -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=XXXXXXXXXX
+    #
+    # Without one, a simulator build still works; a build for a real device
+    # will not sign.
+    #
+    # One binary for iPhone and iPad -- device family 1 and 2. There is no
+    # separate iPad product and no separate layout: the app already sizes
+    # itself from the panel it is given, which is the same thing it does when a
+    # Switch is undocked. An Apple TV is family 3 and is its own build, because
+    # it is its own platform and not a size of this one.
+    #
+    # Set plainly rather than through a generator expression: the commas in
+    # "1,2" are argument separators to $<IF:>, so the obvious one-liner
+    # silently produces a device family of "1".
+    if(DUALSCREEN_PLATFORM STREQUAL "tvos")
+        set(DUALSCREEN_DEVICE_FAMILY "3")
+    else()
+        set(DUALSCREEN_DEVICE_FAMILY "1,2")
+    endif()
+    set_target_properties(dualscreen_companion PROPERTIES
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${DUALSCREEN_BUNDLE_ID}"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "${DUALSCREEN_DEVICE_FAMILY}")
 else()
-    message(STATUS "codesign not found; the bundle will be unsigned and macOS "
-                   "may refuse it the local network")
+    # Signed, even if only ad-hoc.
+    #
+    # Not about trust: it is how macOS knows one build of this app from
+    # another. The permission to use the local network is remembered against a
+    # bundle's identity, and a bundle with no signature has none to remember --
+    # so the grant has nothing to attach to, and a connection to a machine on
+    # the same network comes back EHOSTUNREACH, which prints as "No route to
+    # host" and sends you to look at your router. See explain_connect_error()
+    # in transport.cpp, which catches that sentence on the way out.
+    #
+    # An ad-hoc signature changes with every build, so macOS may ask again
+    # after a rebuild. That is worth it against not being asked at all.
+    find_program(CODESIGN_TOOL codesign)
+    if(CODESIGN_TOOL)
+        add_custom_command(TARGET dualscreen_companion POST_BUILD
+            COMMAND ${CODESIGN_TOOL} --force --sign -
+                    "$<TARGET_BUNDLE_DIR:dualscreen_companion>"
+            COMMENT "Signing the bundle (ad-hoc)"
+            VERBATIM)
+    else()
+        message(STATUS "codesign not found; the bundle will be unsigned and macOS "
+                       "may refuse it the local network")
+    endif()
 endif()
 
 # What was just written, and what is in it.
@@ -224,5 +412,5 @@ endif()
 # start the app to find out.
 add_custom_command(TARGET dualscreen_companion POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo
-            "Built $<TARGET_BUNDLE_DIR:dualscreen_companion> -- ${DUALSCREEN_BUILD_STAMP}"
+            "Built $<TARGET_BUNDLE_DIR:dualscreen_companion> for ${DUALSCREEN_PLATFORM} -- ${DUALSCREEN_BUILD_STAMP}"
     VERBATIM)

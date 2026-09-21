@@ -1,5 +1,9 @@
 #include "config/paths.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -289,7 +293,11 @@ bool list_directory(const std::string& directory,
 
 PathStyle native_path_style() {
 #if defined(__APPLE__)
+#if TARGET_OS_TV
+    return PathStyle::AppleCaches;
+#else
     return PathStyle::AppleLibrary;
+#endif
 #else
     return PathStyle::Xdg;
 #endif
@@ -298,6 +306,16 @@ PathStyle native_path_style() {
 PathConvention path_convention(PathStyle style, const std::string& home,
                                const std::function<std::string(const char*)>& environment) {
     PathConvention convention;
+    if (style == PathStyle::AppleCaches) {
+        // Everything in the one place the system will let an Apple TV keep a
+        // file at all, including the log -- Library/Logs is not writable here
+        // and there is no Console to read it with anyway. See PathStyle.
+        const std::string caches = path_join(path_join(home, "Library"), "Caches");
+        convention.config_root = caches;
+        convention.data_root = caches;
+        convention.log_root = caches;
+        return convention;
+    }
     if (style == PathStyle::AppleLibrary) {
         // Where a Mac application is expected to put things, and where a
         // person looking for them will look. Application Support for what the

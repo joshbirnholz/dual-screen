@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+	<key>CFBundleName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleDisplayName</key>
+	<string>Dualscreen</string>
+	<key>CFBundleIdentifier</key>
+	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+	<key>CFBundleVersion</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+	<key>MinimumOSVersion</key>
+	<string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.games</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- A television has one orientation and no status bar, so neither of the
+	     iOS keys for those appears here. What tvOS wants instead is to know
+	     this is a game: it is what puts the app in the right place and what
+	     decides that a connected controller belongs to it. -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+
+	<!-- A game controller is how this is played, and saying so is what makes
+	     tvOS hand one over rather than treating every press as navigation.
+	     The Siri Remote counts as one – its touch surface reports as a
+	     d-pad – which is what lets an Apple TV with nothing else attached
+	     still work its way through a menu.
+
+	     Not marked as *required*: an Apple TV being the top screen of a DS
+	     game, with the playing done on the host, needs no input at all. An app
+	     that demanded a controller for that would be refusing to do the one
+	     thing it is for. -->
+	<key>GCSupportedGameControllers</key>
+	<array>
+		<dict>
+			<key>ProfileName</key>
+			<string>ExtendedGamepad</string>
+		</dict>
+		<dict>
+			<key>ProfileName</key>
+			<string>MicroGamepad</string>
+		</dict>
+	</array>
+	<key>GCSupportsControllerUserInteraction</key>
+	<true/>
+
+	<!-- The same sentence, and the same warning, as the iOS build: finding a
+	     machine on the network *is* this app. See Info-iOS.plist.in. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Dualscreen finds the computer on your network that is running a game, so this Apple TV can be a screen for it.</string>
+</dict>
+</plist>

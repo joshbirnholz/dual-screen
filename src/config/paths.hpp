@@ -37,7 +37,27 @@ enum class PathStyle {
     // no environment variable in sight -- macOS has no XDG convention and a
     // Mac application writing to ~/.config is a Mac application somebody has
     // to explain.
+    //
+    // iOS shares this. The home directory is the app's own sandbox container
+    // rather than a person's, but the shape inside it is the same and
+    // Application Support means the same thing: what the app owns, kept, and
+    // backed up.
     AppleLibrary,
+    // tvOS, which is the one Apple platform with nowhere permanent to write.
+    //
+    // There is no Application Support and no Documents on an Apple TV. An app
+    // gets Library/Caches, which the system may empty whenever it wants the
+    // space back, and tmp, which is worse. Apple's own answer for anything
+    // that must survive is iCloud key-value storage, which is a megabyte of
+    // preferences and not a place for files.
+    //
+    // So this writes to Caches and accepts what that means: settings can go
+    // away between sessions, and an Apple TV that has forgotten its settings
+    // comes back with the defaults. For a companion that is a small loss --
+    // it finds hosts by looking rather than by remembering, and there are no
+    // saves on this side of the link, because the game is running on the
+    // other machine.
+    AppleCaches,
 };
 
 // This build's own, which is the only one resolve() below will use.

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+	<key>CFBundleName</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleDisplayName</key>
+	<string>Dualscreen</string>
+	<key>CFBundleIdentifier</key>
+	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+	<key>CFBundleVersion</key>
+	<string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+	<key>MinimumOSVersion</key>
+	<string>${CMAKE_OSX_DEPLOYMENT_TARGET}</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.games</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- An empty dict is a launch screen, and iOS 14 and later accept it in
+	     place of a storyboard file. It is not decoration: an app with neither
+	     is treated as one written before the iPhone X and is handed a window
+	     the size of an iPhone 4, letterboxed. On an app whose whole job is
+	     showing another machine's screen exactly, being given a quarter of the
+	     display and black bars is not a cosmetic problem – it is the app not
+	     working, in a way that looks like a rendering bug. -->
+	<key>UILaunchScreen</key>
+	<dict/>
+
+	<!-- Every orientation, on both. The picture is laid out from the panel it
+	     is given rather than from an assumption about which way round the
+	     device is – the same arithmetic that fits a Switch's screen when it
+	     comes out of its dock – so turning a phone over is a resize this
+	     already handles. A DS's two screens stacked want a tall display as
+	     much as a Wii U's one screen wants a wide one. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- There is nothing to read here and the bar is over the picture. -->
+	<key>UIStatusBarHidden</key>
+	<true/>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+
+	<!-- Every device that can run iOS 14 has OpenGL ES 3.0, so this is a
+	     statement of fact rather than a restriction – but it is the fact the
+	     App Store filters on, and an app that cannot get a GL context is an
+	     app that shows nothing at all. -->
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>opengles-3</string>
+	</array>
+
+	<!-- iOS asks the person before letting an app talk to anything on the
+	     local network, and this is the sentence they are shown while deciding.
+	     It is the whole of what this app does: find a computer on the same
+	     network that is running a game, and be a screen for it. Refused, it
+	     works exactly as well as a television with the aerial out.
+
+	     The refusal does not look like a refusal, either. Discovery keeps
+	     working – receiving a broadcast somebody else sent is not something
+	     an app has to be allowed to do – so a host appears in the list and
+	     then will not connect, as EHOSTUNREACH, which prints as "No route to
+	     host" and sends you to look at your router. explain_connect_error()
+	     in transport.cpp catches that sentence on the way out. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Dualscreen finds the computer on your network that is running a game, so this device can be a second screen for it.</string>
+</dict>
+</plist>
