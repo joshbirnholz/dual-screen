@@ -145,6 +145,53 @@ Four things that are not optional, in the order they bite:
 shares the Mac's network stack and the Mac's grants. Discovery working in the
 simulator says nothing about whether it works on a phone.
 
+#### When the build dies in ccache
+
+Not this project's fault, and worth recognising quickly because it stops the
+build dead on every file at once:
+
+```
+dyld[35796]: Library not loaded: /opt/homebrew/opt/fmt/lib/libfmt.11.dylib
+  Referenced from: /opt/homebrew/Cellar/ccache/4.11.3_1/bin/ccache
+```
+
+Homebrew upgraded `fmt` and did not rebuild `ccache` against it, so ccache
+cannot start. SDL turns ccache on whenever it finds one (`SDL_CCACHE`), so
+every compile goes through a binary that will not run. Either:
+
+```sh
+brew reinstall ccache          # the fix
+```
+
+or, to get moving without touching Homebrew, tell SDL not to use it:
+
+```sh
+cmake -S apple -B build-ios-ninja -G Ninja ... -DSDL_CCACHE=OFF
+```
+
+#### Running on a simulator without the Xcode generator
+
+The Xcode generator is not the only way to get an app onto a simulator, which
+matters because it is the part most likely to be broken by a new Xcode. A
+Ninja build produces a real `.app`, and a simulator does not require signing:
+
+```sh
+cmake -S apple -B build-ios-ninja -G Ninja \
+      -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+      -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build build-ios-ninja
+
+open -a Simulator
+xcrun simctl install booted "build-ios-ninja/Dualscreen Companion.app"
+xcrun simctl launch --console booted com.joshbirnholz.dualscreen.companion
+```
+
+`--console` puts the app's output in the terminal, which is where the lines
+about the GL context and the video decoder come out.
+
+What this does not give you is a debugger or on-device deployment. For those
+the Xcode generator is still the route.
+
 #### When configure says SDL needs threads
 
 The most misleading failure this build has, so it is written down. It looks
@@ -186,7 +233,14 @@ tvOS, which makes the probes compile without linking. If you still see it:
    ```sh
    grep -n -A40 'stdio.h' build-ios-sim/CMakeFiles/CMakeConfigureLog.yaml | head -60
    ```
-2. **Check your CMake against your Xcode, and both against SDL.** This is a
+2. **Try Ninja before believing anything about the code.** Measured on CMake
+   4.4.3 with Xcode 27: the same CMakeLists, the same SDL and the same flags
+   configure cleanly under `-G Ninja` and fail every single check under
+   `-G Xcode`. When only the generator differs and one of them works, the
+   generator is what is broken — CMake's Xcode generator lags new Xcode
+   releases, and Xcode moves first.
+
+3. **Check your CMake against your Xcode, and both against SDL.** This is a
    three-way version problem and any pair of them can be the one that is
    wrong. Xcode moves faster than CMake, and CMake 4 is stricter about old
    projects than anything before it — SDL 2.30 predates it. The build now
@@ -203,7 +257,7 @@ tvOS, which makes the probes compile without linking. If you still see it:
 
    Any SDL2 tag works; `git ls-remote --tags https://github.com/libsdl-org/SDL.git 'release-2.3*'`
    lists what there is.
-3. **Sidestep the Xcode generator.** Ninja cross-compiles to iOS perfectly well
+4. **Sidestep the Xcode generator.** Ninja cross-compiles to iOS perfectly well
    and does not use `xcodebuild` for its probes, so it answers "does this
    compile at all" without any of the above:
 
@@ -582,10 +636,32 @@ for that session.
 
 ### iOS, iPadOS and tvOS
 
-**Nothing has been compiled, and no device has run any of this.** There is no
-Xcode on a Linux machine, so the build for these two platforms has never been
-executed once — not to completion, not to the first error. Read the list below
-as "these are the things that were got right on purpose", not as "these work".
+**No device has run any of this.** But some of it has now been through a
+compiler, which is more than was true when it was written, so this section is
+worth reading in three parts rather than one.
+
+**What a real Mac has now compiled** (macOS 27, Xcode 27, CMake 4.4.3):
+
+- `videotoolbox_decoder.cpp` and `h264_bitstream.cpp` build clean as part of
+  the macOS companion. Every CoreMedia and VideoToolbox call in them was
+  written from documentation and had never been near a compiler; the frameworks
+  link and the bundle signs. That does not mean the decoder *decodes* — see
+  below — but the API shapes are right.
+
+**What configured for iOS**, under the Ninja generator:
+
+- The whole of `apple/CMakeLists.txt` for `CMAKE_SYSTEM_NAME=iOS`. SDL2 builds
+  as a subproject and reports `Platform: iOS` with OpenGL ES on and Cocoa off;
+  `zlib` resolves inside the iPhoneSimulator SDK; threads resolve; the codec
+  line reads `VideoToolbox only, which is all this needs`.
+- The same configure fails every feature check under `-G Xcode` on that
+  machine, which localises it to CMake's Xcode generator rather than to
+  anything here. See the troubleshooting above.
+
+**What has still never happened:** no iOS or tvOS binary has been linked, no
+app has been installed anywhere, and nothing has drawn a frame. Read the list
+below as "these are the things that were got right on purpose", not as "these
+work".
 
 What *is* checked, by tests that run on every build:
 
@@ -617,12 +693,13 @@ What *is* checked, by tests that run on every build:
 
 What is reasoned from documentation and **not** checked anywhere:
 
-- **That the VideoToolbox decoder decodes anything.** Every CoreMedia and
-  VideoToolbox call in `videotoolbox_decoder.cpp` is written from the
-  documentation and has never been compiled, let alone run. The bitstream it is
-  fed is tested; what it does with it is not. This is the single largest
-  untested thing here, and it is also the thing to try first, because the Mac
-  can run it.
+- **That the VideoToolbox decoder decodes anything.** It compiles on a Mac
+  now, which rules out the whole class of mistake where a call has the wrong
+  arguments — but compiling is not decoding. Whether the session opens, whether
+  the format description is right, whether a frame comes back and whether it
+  looks correct are all still open. The bitstream it is fed is tested; what it
+  does with it is not. This remains the largest untested thing here, and the
+  Mac is the cheapest place to settle it.
 - That `apple/build-all.sh` runs. Its shell parses and the workspace it writes
   is well-formed XML, which is all that can be checked from here; whether the
   three configures inside it succeed is the same open question as configuring
