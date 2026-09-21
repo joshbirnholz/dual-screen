@@ -61,16 +61,25 @@ private:
     std::unique_ptr<VideoToolboxDecoder> apple_;
 
     AVCodecContext* context_ = nullptr;
-    AVFrame* frame_ = nullptr;
-    AVFrame* software_frame_ = nullptr;
-    AVPacket* packet_ = nullptr;
-    SwsContext* scaler_ = nullptr;
     bool want_planar_ = false;
-    AVBufferRef* hw_device_ = nullptr;
     std::string backend_;
-    int scaler_width_ = 0;
-    int scaler_height_ = 0;
-    int scaler_format_ = -1;
+
+    // The rest of the FFmpeg half's state, which a build without FFmpeg still
+    // carries and never touches. [[maybe_unused]] rather than #if, because the
+    // macro is a compile definition and a header that changed shape with it
+    // would quietly hand two translation units two different classes.
+    //
+    // A few bytes of nothing in a decoder that is holding video frames is not
+    // worth that, and the attribute is the honest description anyway: these
+    // are used in some builds and not others.
+    [[maybe_unused]] AVFrame* frame_ = nullptr;
+    [[maybe_unused]] AVFrame* software_frame_ = nullptr;
+    [[maybe_unused]] AVPacket* packet_ = nullptr;
+    [[maybe_unused]] SwsContext* scaler_ = nullptr;
+    [[maybe_unused]] AVBufferRef* hw_device_ = nullptr;
+    [[maybe_unused]] int scaler_width_ = 0;
+    [[maybe_unused]] int scaler_height_ = 0;
+    [[maybe_unused]] int scaler_format_ = -1;
 };
 
 }  // namespace ds::video
