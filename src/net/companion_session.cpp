@@ -859,7 +859,12 @@ void CompanionSession::poll(uint64_t now_ms) {
             // either way, but a stall here is one no amount of cover could
             // have covered -- the queue stands still exactly as long as the
             // loop does. Buying delay for it is paying twice for one pause.
+            // And not at a cadence this device cannot pace at all: at 120
+            // frames a second the deadline is 4ms and this loop's quickest
+            // pass is 9, so every frame is late by construction and the cover
+            // bought for it covers nothing. See lateness_is_worth_covering().
             if (this_pass_measures_the_link_ && next_due_ms_ != 0 &&
+                lateness_is_worth_covering(period, typical_poll_gap_ms_) &&
                 now_ms > next_due_ms_ + period / 2 && last_arrival_ms_ != 0 &&
                 now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
                 ++stats_starved_;
@@ -1537,6 +1542,15 @@ uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining
     constexpr uint64_t kDrainPercent = 8;
     const uint64_t drained = step * (100 - kDrainPercent) / 100;
     return drained > 0 ? drained : 1;
+}
+
+bool lateness_is_worth_covering(uint64_t period_ms, uint64_t quickest_poll_gap_ms) {
+    if (quickest_poll_gap_ms == 0) {
+        return true;
+    }
+    // Half a period is the deadline the stall test uses, so half a period is
+    // what the loop has to be able to resolve for a miss to mean anything.
+    return quickest_poll_gap_ms <= period_ms / 2;
 }
 
 uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms) {

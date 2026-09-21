@@ -2075,6 +2075,33 @@ void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
     CHECK(video_hold_allowance_ms(19.0, period, 44) < video_hold_allowance_ms(19.0, period, 66));
 }
 
+// Cover is only worth buying for lateness the link caused.
+//
+// The case this was written for, measured on a Mac drawing a DS game: 120
+// frames a second arriving, so a period of 8ms and a "late" deadline of 4ms,
+// against a loop whose quickest pass all session was 9ms. The loop could not
+// resolve the deadline even at its best, so every miss was its own -- and the
+// stream bought 34ms of cover against a link whose worst one-in-twenty arrival
+// was 11ms.
+void test_a_clock_finer_than_the_loop_buys_no_cover() {
+    // The measured case: 8ms period, 9ms quickest pass. Nothing to be bought.
+    CHECK(!lateness_is_worth_covering(8, 9));
+    // And it is the deadline that decides it, not the period: at a 16ms period
+    // the deadline is 8ms, which a 9ms loop still cannot resolve.
+    CHECK(!lateness_is_worth_covering(16, 9));
+    // A 30fps stream on the same device has 16ms of deadline against a 9ms
+    // pass, so a late frame there really is the link's and is worth covering.
+    CHECK(lateness_is_worth_covering(33, 9));
+    CHECK(lateness_is_worth_covering(33, 16));
+    // Exactly on the line counts, since the loop can just resolve it.
+    CHECK(lateness_is_worth_covering(20, 10));
+    CHECK(!lateness_is_worth_covering(20, 11));
+    // Nothing measured yet is not a reason to stop counting -- a session that
+    // has only just started has no quickest pass to compare against.
+    CHECK(lateness_is_worth_covering(8, 0));
+    CHECK(lateness_is_worth_covering(33, 0));
+}
+
 // The setting that decides how much of that trade a player wants made for
 // them. Everything above is the Balanced end, which is what the app did before
 // the setting existed; these are the other two.
@@ -2636,6 +2663,7 @@ int main() {
     test_the_buffer_pays_for_the_body_and_not_the_tail();
     test_cover_is_earned_by_running_dry_and_given_back_when_calm();
     test_the_hold_setting_moves_both_ends_of_the_trade();
+    test_a_clock_finer_than_the_loop_buys_no_cover();
     test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();

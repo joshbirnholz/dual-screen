@@ -270,6 +270,25 @@ uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms,
 uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
 uint64_t video_hold_extra_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
 
+// Whether a frame shown late, at this cadence on this device, says anything
+// about the link -- and so whether it is worth buying cover for.
+//
+// A frame counts as late when it is shown more than half a period after it was
+// due. That is a sound test only while this device's own loop comes round
+// often enough to hit such a deadline: if the quickest pass it manages is
+// longer than half a period, it can miss by simply not running, and no amount
+// of cover fixes a clock finer-grained than the loop reading it.
+//
+// Measured, a Mac drawing a DS game: 120 frames a second arriving, so a period
+// of 8ms and a deadline of 4ms, against a loop whose *quickest* pass was 9ms.
+// Every miss there was the loop's. It bought 34ms of cover against a link
+// whose worst one-in-twenty arrival was 11ms, and the picture waited all of it
+// for nothing.
+//
+// A quickest gap of zero means nothing has been measured yet, which is not a
+// reason to stop counting.
+bool lateness_is_worth_covering(uint64_t period_ms, uint64_t quickest_poll_gap_ms);
+
 // How far to advance the pacing clock after showing `shown` frames.
 //
 // Normally exactly one period per frame, which is what keeps the cadence even.
