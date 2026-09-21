@@ -150,13 +150,33 @@ configure_one() {
     cmake --build "${dir}" --config RelWithDebInfo
 }
 
+# Where a build put its bundle. Ninja is one configuration and puts it in the
+# build directory; Xcode is several and puts each in a directory of its own.
+# Looked for rather than worked out, because --run has to find whichever the
+# last build made and the generator is not always the one this run was given.
+find_bundle() {
+    local platform="$1"
+    local dir="${out}/${platform}"
+    local candidate
+    for candidate in "${dir}/Dualscreen Companion.app" \
+                     "${dir}/RelWithDebInfo/Dualscreen Companion.app" \
+                     "${dir}/Debug/Dualscreen Companion.app" \
+                     "${dir}/Release/Dualscreen Companion.app"; do
+        if [[ -d "${candidate}" ]]; then
+            printf '%s' "${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Install and launch on whichever simulator is booted. A simulator app needs no
 # signature, which is why this works without a developer account at all.
 launch_on_simulator() {
     local platform="$1"
-    local bundle="${out}/${platform}/Dualscreen Companion.app"
-    if [[ ! -d "${bundle}" ]]; then
-        echo "no ${bundle} to install -- was ${platform} built?" >&2
+    local bundle
+    if ! bundle="$(find_bundle "${platform}")"; then
+        echo "no Dualscreen Companion.app under ${out}/${platform} -- was ${platform} built?" >&2
         return 1
     fi
     if ! xcrun simctl list devices booted | grep -q "(Booted)"; then
