@@ -640,13 +640,22 @@ for that session.
 compiler, which is more than was true when it was written, so this section is
 worth reading in three parts rather than one.
 
-**What a real Mac has now compiled** (macOS 27, Xcode 27, CMake 4.4.3):
+**What a real Mac has now run** (macOS 27, Xcode 27, CMake 4.4.3, an M2):
 
-- `videotoolbox_decoder.cpp` and `h264_bitstream.cpp` build clean as part of
-  the macOS companion. Every CoreMedia and VideoToolbox call in them was
-  written from documentation and had never been near a compiler; the frameworks
-  link and the bundle signs. That does not mean the decoder *decodes* — see
-  below — but the API shapes are right.
+- `videotoolbox_decoder.cpp` and `h264_bitstream.cpp` compile clean, the
+  frameworks link and the bundle signs. Every CoreMedia and VideoToolbox call
+  in them was written from documentation and had never been near a compiler.
+- **And it decodes.** `video decoder: VideoToolbox, no FFmpeg in the path`,
+  across two sessions against a Steam Deck — a DS game and a Wii U one — for
+  just over two minutes: **zero frames lost**, decode 3ms a frame at the
+  median and 6ms at its worst, no keyframe storms, no errors. The session
+  opens, the format description built from the parameter sets is right, frames
+  come back, and the picture looks correct — which also says the full-range
+  pixel format was the right choice, since video range would have shown up as
+  washed-out colour rather than as a failure.
+
+  This is the thing that could not be checked from Linux at all, and it is the
+  same decoder iOS and tvOS will run.
 
 **What configured for iOS**, under the Ninja generator:
 
@@ -693,13 +702,10 @@ What *is* checked, by tests that run on every build:
 
 What is reasoned from documentation and **not** checked anywhere:
 
-- **That the VideoToolbox decoder decodes anything.** It compiles on a Mac
-  now, which rules out the whole class of mistake where a call has the wrong
-  arguments — but compiling is not decoding. Whether the session opens, whether
-  the format description is right, whether a frame comes back and whether it
-  looks correct are all still open. The bitstream it is fed is tested; what it
-  does with it is not. This remains the largest untested thing here, and the
-  Mac is the cheapest place to settle it.
+- That the VideoToolbox decoder behaves on a *device*. It is proven on a Mac
+  now, which is the same code — but an iPhone and an Apple TV have their own
+  decoders, their own thermal limits and, on tvOS, no touch. Nothing about
+  what it does at 1080p on a phone is known.
 - That `apple/build-all.sh` runs. Its shell parses and the workspace it writes
   is well-formed XML, which is all that can be checked from here; whether the
   three configures inside it succeed is the same open question as configuring
