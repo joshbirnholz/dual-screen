@@ -2213,8 +2213,6 @@ void test_the_buffer_pays_for_the_body_and_not_the_tail() {
 // link whose round trip averaged 20-30ms, pinning the buffer at its ceiling
 // and holding every frame about 70ms.
 void test_this_devices_own_stall_is_not_the_links_fault() {
-    constexpr uint64_t period = 16;  // a 60fps stream, as these actually run
-
     // The baseline is this device's own cadence, not the stream's. A Mac
     // companion comes round about every 14ms while showing a 33fps stream, so
     // measuring against the stream's period tolerated a 100ms pass -- seven
