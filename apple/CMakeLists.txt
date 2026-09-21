@@ -225,6 +225,22 @@ endif()
 set(DUALSCREEN_FFMPEG_DIR "" CACHE PATH
     "A prefix with FFmpeg's include/ and lib/, cross-built for the device (iOS/tvOS)")
 
+# --- Apple's own decoder ----------------------------------------------------
+#
+# VideoToolbox, linked always and on every Apple platform, because it is no
+# longer optional: videotoolbox_decoder.cpp decodes H.264 through it directly,
+# with no FFmpeg anywhere in the path. That is what gives an iPhone or an Apple
+# TV H.264 at all -- there is no Homebrew for a phone -- and it is what those
+# platforms use even when FFmpeg is present.
+#
+# It was already doing the decoding before this: FFmpeg's h264 decoder with a
+# VideoToolbox device attached is a wrapper around exactly these frameworks.
+# What has gone is the wrapper.
+foreach(framework VideoToolbox CoreMedia CoreVideo CoreFoundation)
+    find_library(${framework}_FRAMEWORK ${framework} REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE ${${framework}_FRAMEWORK})
+endforeach()
+
 set(DUALSCREEN_HAVE_CODEC OFF)
 if(DUALSCREEN_EMBEDDED)
     if(DUALSCREEN_FFMPEG_DIR)
@@ -243,9 +259,8 @@ if(DUALSCREEN_EMBEDDED)
         endforeach()
         message(STATUS "video codec: ${DUALSCREEN_FFMPEG_DIR}, decoding through VideoToolbox")
     else()
-        message(STATUS "video codec: building without one -- a DS or 3DS screen "
-                       "carries as tiles, a Wii U's barely does (see "
-                       "DUALSCREEN_FFMPEG_DIR)")
+        message(STATUS "video codec: VideoToolbox only, which is all this needs "
+                       "-- H.264 decodes through Apple's own decoder")
     endif()
 else()
     find_package(PkgConfig QUIET)
@@ -261,19 +276,12 @@ else()
     endif()
 endif()
 
+# FFmpeg is now only what encodes, and what decodes anything that is not
+# H.264. The frameworks its VideoToolbox hwaccel needs are already linked
+# above, which is convenient: on a device every FFmpeg is a static one, and a
+# static hwaccel's symbols are in the .a while its frameworks are not.
 if(DUALSCREEN_HAVE_CODEC)
     target_compile_definitions(dualscreen_companion PRIVATE DS_HAVE_VIDEO_CODEC=1)
-    # Homebrew's libavcodec is a dylib and brings its own framework
-    # dependencies, so on a Mac these are only needed when somebody points this
-    # at a static FFmpeg they built themselves. On a device every FFmpeg is
-    # that, so there they are not optional at all: the VideoToolbox hwaccel's
-    # symbols are in the .a and its frameworks are not.
-    foreach(framework VideoToolbox CoreMedia CoreVideo CoreFoundation)
-        find_library(${framework}_FRAMEWORK ${framework})
-        if(${framework}_FRAMEWORK)
-            target_link_libraries(dualscreen_companion PRIVATE ${${framework}_FRAMEWORK})
-        endif()
-    endforeach()
 else()
     target_compile_definitions(dualscreen_companion PRIVATE DS_HAVE_VIDEO_CODEC=0)
 endif()

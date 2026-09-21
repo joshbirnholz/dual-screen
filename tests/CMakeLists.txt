@@ -69,6 +69,7 @@ target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
 dualscreen_add_test(test_layout)
 dualscreen_add_test(test_video_codec)
+dualscreen_add_test(test_h264_bitstream)
 dualscreen_add_test(test_external_link)
 dualscreen_add_test(test_text)
 dualscreen_add_test(test_launcher)
@@ -89,6 +90,17 @@ add_test(NAME switch_motion_typecheck
         -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
         "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS}"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
+# And the configuration iOS and tvOS actually ship: no FFmpeg, VideoToolbox
+# doing the decoding. Linux always finds FFmpeg, so that half of the fork is
+# dead code to every build here and would rot unwatched.
+add_test(NAME no_codec_typecheck
+    COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=${CMAKE_CXX_COMPILER}
+        "-DSOURCES=${CMAKE_SOURCE_DIR}/src/video/video_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/videotoolbox_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/h264_bitstream.cpp;${CMAKE_SOURCE_DIR}/src/net/companion_session.cpp;${CMAKE_SOURCE_DIR}/companion/source/main.cpp"
+        -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
+        "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party;${CMAKE_SOURCE_DIR}/companion/source;${NLOHMANN_JSON_INCLUDE_DIR};${nlohmann_json_SOURCE_DIR}/include"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_no_codec_typecheck.cmake)
+
 dualscreen_add_test(test_net)
 dualscreen_add_test(test_session)
 # Discovery, session and media all live on fixed ports (kDiscoveryPort and the

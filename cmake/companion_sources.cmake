@@ -16,6 +16,8 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/audio/audio_output.cpp
     src/config/paths.cpp
     src/video/color_convert.cpp
+    src/video/h264_bitstream.cpp
+    src/video/videotoolbox_decoder.cpp
     src/video/video_decoder.cpp
     src/video/video_encoder.cpp
     src/core/system.cpp

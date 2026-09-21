@@ -69,9 +69,7 @@ AVHWDeviceType hw_device_for(const std::string& backend) {
 
 }  // namespace
 
-VideoDecoder::~VideoDecoder() { close(); }
-
-void VideoDecoder::close() {
+void VideoDecoder::close_ffmpeg() {
     if (scaler_ != nullptr) {
         sws_freeContext(scaler_);
         scaler_ = nullptr;
@@ -87,7 +85,7 @@ void VideoDecoder::close() {
     scaler_format_ = -1;
 }
 
-bool VideoDecoder::open(const DecoderConfig& config, std::string* error) {
+bool VideoDecoder::open_ffmpeg(const DecoderConfig& config, std::string* error) {
     quieten_ffmpeg();
     close();
     std::string last;
@@ -270,10 +268,10 @@ bool VideoDecoder::to_rgb(AVFrame* frame, DecodedFrame& out, std::string* error)
     return true;
 }
 
-bool VideoDecoder::decode(const uint8_t* data,
-                          std::size_t size,
-                          DecodedFrame& out,
-                          std::string* error) {
+bool VideoDecoder::decode_ffmpeg(const uint8_t* data,
+                                 std::size_t size,
+                                 DecodedFrame& out,
+                                 std::string* error) {
     out.width = 0;
     out.height = 0;
     if (context_ == nullptr) {
@@ -324,10 +322,9 @@ bool VideoDecoder::decode(const uint8_t* data,
 
 namespace ds::video {
 
-VideoDecoder::~VideoDecoder() = default;
-void VideoDecoder::close() {}
+void VideoDecoder::close_ffmpeg() {}
 
-bool VideoDecoder::open(const DecoderConfig&, std::string* error) {
+bool VideoDecoder::open_ffmpeg(const DecoderConfig&, std::string* error) {
     if (error != nullptr) *error = "this build has no video decoder";
     return false;
 }
@@ -336,7 +333,7 @@ bool VideoDecoder::open_backend(const std::string&, std::string*) { return false
 
 bool VideoDecoder::to_rgb(AVFrame*, DecodedFrame&, std::string*) { return false; }
 
-bool VideoDecoder::decode(const uint8_t*, std::size_t, DecodedFrame& out, std::string* error) {
+bool VideoDecoder::decode_ffmpeg(const uint8_t*, std::size_t, DecodedFrame& out, std::string* error) {
     out.width = 0;
     out.height = 0;
     if (error != nullptr) *error = "this build has no video decoder";
@@ -346,3 +343,61 @@ bool VideoDecoder::decode(const uint8_t*, std::size_t, DecodedFrame& out, std::s
 }  // namespace ds::video
 
 #endif
+
+// The public half, which is the same on every platform: try Apple's own
+// decoder first where there is one, and FFmpeg otherwise.
+//
+// Written once here rather than twice above because iOS and tvOS are built
+// with DS_HAVE_VIDEO_CODEC=0 -- there is no Homebrew for a phone -- and
+// VideoToolbox has to work in exactly that build. It is the build it was
+// written for.
+namespace ds::video {
+
+VideoDecoder::~VideoDecoder() { close(); }
+
+bool VideoDecoder::is_open() const {
+    return context_ != nullptr || (apple_ != nullptr && apple_->is_open());
+}
+
+bool VideoDecoder::open(const DecoderConfig& config, std::string* error) {
+    close();
+    // Only when the caller asked for it. The backend list is where a platform
+    // says what it has (see DecoderConfig), and honouring it here keeps a test
+    // able to ask for the software decoder on a Mac.
+    bool wants_videotoolbox = false;
+    for (const std::string& name : config.backends) {
+        if (name.find("videotoolbox") != std::string::npos) {
+            wants_videotoolbox = true;
+            break;
+        }
+    }
+    if (wants_videotoolbox && VideoToolboxDecoder::available()) {
+        auto apple = std::make_unique<VideoToolboxDecoder>();
+        std::string apple_error;
+        if (apple->open(&apple_error)) {
+            apple_ = std::move(apple);
+            backend_ = "videotoolbox";
+            return true;
+        }
+        // Not fatal. A Mac with FFmpeg can still go the long way round, and
+        // saying which way it went is the whole of what the log needs to show.
+        log_info("video decoder: VideoToolbox would not open (" + apple_error +
+                 "), falling back");
+    }
+    return open_ffmpeg(config, error);
+}
+
+void VideoDecoder::close() {
+    apple_.reset();
+    close_ffmpeg();
+}
+
+bool VideoDecoder::decode(const uint8_t* data, std::size_t size, DecodedFrame& out,
+                          std::string* error) {
+    if (apple_ != nullptr) {
+        return apple_->decode(data, size, out, error);
+    }
+    return decode_ffmpeg(data, size, out, error);
+}
+
+}  // namespace ds::video

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "video/video_codec.hpp"
+#include "video/videotoolbox_decoder.hpp"
 
 struct AVCodecContext;
 struct AVFrame;
@@ -25,7 +27,7 @@ public:
 
     bool open(const DecoderConfig& config, std::string* error);
     void close();
-    bool is_open() const { return context_ != nullptr; }
+    bool is_open() const;
     const std::string& backend() const { return backend_; }
 
     // Feeds one packet and takes whatever comes out. `out` is left invalid when
@@ -44,8 +46,19 @@ public:
     void set_planar_output_wanted(bool wanted) { want_planar_ = wanted; }
 
 private:
+    // The FFmpeg half. Private because open()/decode()/close() above choose
+    // between this and Apple's own decoder, which on iOS and tvOS is the only
+    // one there is -- those builds have no FFmpeg at all.
+    bool open_ffmpeg(const DecoderConfig& config, std::string* error);
+    bool decode_ffmpeg(const uint8_t* data, std::size_t size, DecodedFrame& out,
+                       std::string* error);
+    void close_ffmpeg();
+
     bool open_backend(const std::string& name, std::string* error);
     bool to_rgb(AVFrame* frame, DecodedFrame& out, std::string* error);
+
+    // Set only where VideoToolbox is both present and asked for.
+    std::unique_ptr<VideoToolboxDecoder> apple_;
 
     AVCodecContext* context_ = nullptr;
     AVFrame* frame_ = nullptr;

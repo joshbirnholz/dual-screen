@@ -10,7 +10,7 @@ Four products, three platforms, one source list:
 | | | |
 | --- | --- | --- |
 | **macOS** | desktop OpenGL, Homebrew's SDL2 and FFmpeg | run on a real Mac |
-| **iOS** | OpenGL ES, SDL2 built here, touch | **not yet built on a Mac** |
+| **iOS** | OpenGL ES, SDL2 built here, touch, VideoToolbox | **not yet built on a Mac** |
 | **iPadOS** | the iOS build exactly — one binary, one bundle | **not yet built on a Mac** |
 | **tvOS** | iOS without the touch screen, and nowhere to keep a file | **not yet built on a Mac** |
 
@@ -89,36 +89,55 @@ subproject. By default it is fetched:
 A checkout is the better answer if you build often — the fetch is a clone per
 build directory.
 
-#### FFmpeg on a device, which is the real caveat
+#### The video codec
 
-On a Mac this is `brew install ffmpeg` and Homebrew's build has VideoToolbox in
-it. **There is no equivalent for iOS or tvOS.** FFmpeg has to be cross-compiled
-for the device, which is a job in itself, so the build defaults to going
-without one rather than failing over a library nobody has yet.
+**H.264 decodes through VideoToolbox, with no FFmpeg in the path.** That is
+Apple's own decoder, and it is what was doing the work all along: FFmpeg's
+`h264` decoder with a VideoToolbox device attached is a wrapper around exactly
+those frameworks. What FFmpeg genuinely supplied was bitstream plumbing —
+splitting NAL units, lifting the parameter sets out, re-framing the rest — and
+that is now `src/video/h264_bitstream.cpp`, a few hundred lines of arithmetic
+over a byte array which is tested on Linux against this app's own encoder.
 
-What that costs is not nothing:
+So an iPhone or an Apple TV gets H.264 with nothing installed and nothing
+cross-compiled, which is what matters: a Wii U's GamePad screen costs roughly
+seventeen times the bandwidth as tiles (see `docs/research-notes.md`), so
+without H.264 those devices would be DS and 3DS companions only.
 
-- **A DS or 3DS screen is fine.** It carries as changed tiles, which is what
-  the Switch companion does today.
-- **A Wii U's GamePad screen is not.** Tiles measure at roughly seventeen times
-  the bandwidth of H.264 for that screen — see `docs/research-notes.md`. On
-  wifi it is not really usable.
-
-So an iPhone or Apple TV built this way is a DS and 3DS companion. For Wii U,
-point the build at a cross-built FFmpeg:
+FFmpeg is still optional and still wanted on a Mac, where it is
+`brew install ffmpeg`. It is no longer what decodes H.264 there either — the
+VideoToolbox path is preferred on every Apple platform — but it is what encodes,
+which a Mac being a *host* needs. On a device you can still point the build at
+a cross-built one:
 
 ```sh
 -DDUALSCREEN_FFMPEG_DIR=/path/to/ffmpeg-ios    # expects include/ and lib/
 ```
 
-The frameworks VideoToolbox needs are linked whenever a codec is found, which
-matters more here than on a Mac: every FFmpeg on a device is a static one, and
-a static hwaccel's symbols are in the `.a` while its frameworks are not.
+There is nothing it will add to decoding.
 
-There is a better answer than either, which is to decode through VideoToolbox
-directly and drop the FFmpeg dependency on Apple platforms entirely. It is a
-few hundred lines of Objective-C++ and it is not written, deliberately: it
-would be on the critical path of every frame and it cannot be tested from here.
+##### The copy that is still there
+
+The win this does **not** yet take: VideoToolbox hands back a `CVPixelBuffer`
+the GPU can already see, and the decoder then copies its two planes into system
+memory so the renderer can upload them as textures. Handing that buffer
+straight to a texture instead is zero copies, and it is the real performance
+change.
+
+It is a separate piece of work because the two platforms need different things:
+
+- **iOS and tvOS** are clean. `CVOpenGLESTextureCacheCreateTextureFromImage`
+  gives an ordinary `GL_TEXTURE_2D` per plane, which drops straight into the
+  NV12 two-texture path the renderer already has.
+- **macOS** is not. IOSurface-backed GL textures there are
+  `GL_TEXTURE_RECTANGLE`, which needs a `sampler2DRect` variant of the shader
+  and unnormalised coordinates. That is real work in the core renderer, on the
+  one Apple platform that currently works.
+
+The buffers are already allocated GL-compatible (`kCVPixelBufferOpenGLESCompatibilityKey`
+and the IOSurface properties are set in `videotoolbox_decoder.cpp`), because a
+buffer allocated without that cannot be used this way later and the flag costs
+nothing now.
 
 ### Rebuilding
 
@@ -318,12 +337,23 @@ The handful of places the shared code knows it is on an Apple platform:
   place an Apple TV lets an app write at all. `PathConvention` is a value
   rather than a set of conditionals precisely so this can be checked from a
   machine that is not a Mac, and `test_config` checks all three.
-- **`src/video/video_codec.hpp`** and **`src/video/video_decoder.cpp`** —
-  VideoToolbox. It behaves like VAAPI rather than like MediaCodec: a device
-  context attached to the ordinary `h264` decoder, not a decoder of its own.
-  `h264_videotoolbox` *does* exist as an **encoder**, which is the trap —
-  asking for it by name on the decode side finds nothing and reads like a
-  build with no hardware decoding in it. `test_video_codec` pins the mapping.
+- **`src/video/videotoolbox_decoder.cpp`** and
+  **`src/video/h264_bitstream.cpp`** — H.264 through Apple's decoder with no
+  FFmpeg in the path at all. The first is the session; the second is the
+  bitstream work FFmpeg used to do, and is plain arithmetic over a byte array,
+  so `test_h264_bitstream` checks it on Linux against this app's own encoder's
+  output. `no_codec_typecheck` compiles the whole companion the way a device
+  builds it — `DS_HAVE_VIDEO_CODEC=0` — which is otherwise dead code to every
+  build in this repository.
+
+- **`src/video/video_codec.hpp`** and **`src/video/video_decoder.cpp`** — the
+  FFmpeg route to the same place, still there for a Mac and still used for
+  anything that is not H.264. It behaves like VAAPI rather than like
+  MediaCodec: a device context attached to the ordinary `h264` decoder, not a
+  decoder of its own. `h264_videotoolbox` *does* exist as an **encoder**, which
+  is the trap — asking for it by name on the decode side finds nothing and
+  reads like a build with no hardware decoding in it. `test_video_codec` pins
+  the mapping.
 - **`src/net/transport.cpp`** — `MSG_NOSIGNAL` does not exist on Darwin;
   `SO_NOSIGPIPE` on the socket is the same thing done in a different place.
   Naming the flag would not have been a behaviour difference, it would have
@@ -417,6 +447,17 @@ as "these are the things that were got right on purpose", not as "these work".
 
 What *is* checked, by tests that run on every build:
 
+- **`test_h264_bitstream`** — the NAL splitting, parameter-set extraction and
+  length-prefixing a VideoToolbox session is fed, run over frames from this
+  app's own encoder. This is the half of the native decoder with the bugs in
+  it; the session wiring around it is thin. Both halves of it were
+  mutation-checked: a wrong-endian length prefix and a missing zero-trim each
+  make it fail.
+- **`no_codec_typecheck`** — that the companion compiles with
+  `DS_HAVE_VIDEO_CODEC=0`, which is how a device builds it. Linux always finds
+  FFmpeg, so that branch is compiled by nothing else here. Confirmed to fail
+  when that branch is broken while the ordinary build stays green.
+
 - **`apple_plists`** — all three property lists. Every placeholder is one the
   build actually substitutes; no XML comment contains `--` (which is not
   well-formed, and rejects the whole file); `NSLocalNetworkUsageDescription`
@@ -434,6 +475,12 @@ What *is* checked, by tests that run on every build:
 
 What is reasoned from documentation and **not** checked anywhere:
 
+- **That the VideoToolbox decoder decodes anything.** Every CoreMedia and
+  VideoToolbox call in `videotoolbox_decoder.cpp` is written from the
+  documentation and has never been compiled, let alone run. The bitstream it is
+  fed is tested; what it does with it is not. This is the single largest
+  untested thing here, and it is also the thing to try first, because the Mac
+  can run it.
 - That SDL2 builds clean as a subproject for both platforms at the pinned tag,
   and that the target names this looks for are the ones it exports.
 - That the frameworks linked are the right set and the complete set. The
@@ -461,6 +508,10 @@ Roughly in the order they are likely to bite:
    rather than letterboxed.
 5. The log says `created a OpenGL ES 3.0 context` — if it says anything about
    desktop GL, `GlFamily` is being answered wrongly.
-6. On a real device on the same wifi: discovery finds the host, and the local
+6. The log says `video decoder: VideoToolbox, no FFmpeg in the path`, and a
+   picture actually appears. **Try this on the Mac first** — it is the same
+   code there and the Mac is the Apple device that already works, so it is the
+   cheapest place to find out whether the decoder is right.
+7. On a real device on the same wifi: discovery finds the host, and the local
    network prompt appears. The simulator shares the Mac's network and its
    permissions, so it will not exercise this.
