@@ -171,6 +171,21 @@ if(DUALSCREEN_EMBEDDED)
         set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     endif()
 
+    # SDL 2.30 predates CMake 4, and CMake 4 is stricter about that than any
+    # release before it: a project declaring an old cmake_minimum_required gets
+    # policies it was never written against, and the first sign of it is
+    # feature checks that all fail for no stated reason. This is the escape
+    # hatch CMake documents for exactly that -- it says "treat this old project
+    # as though it asked for 3.10" -- and it applies to the fetched subproject
+    # rather than to anything here.
+    #
+    # Overridable, because the right long-term answer is a newer SDL rather
+    # than a compatibility flag, and somebody trying one wants this out of the
+    # way.
+    if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+        set(CMAKE_POLICY_VERSION_MINIMUM "3.10")
+    endif()
+
     # Static, because a bundle for a device cannot go looking for a dylib on a
     # machine it is not installed on.
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -214,8 +229,24 @@ endif()
 find_package(ZLIB REQUIRED)
 target_link_libraries(dualscreen_companion PRIVATE ZLIB::ZLIB)
 
-find_package(Threads REQUIRED)
-target_link_libraries(dualscreen_companion PRIVATE Threads::Threads)
+# Threads, and not REQUIRED on a device.
+#
+# find_package(Threads) answers by compiling and linking a test program, which
+# is the same thing that fails when cross-compiling for iOS -- so requiring it
+# turns a detection quirk into a configure error, on a platform where the
+# answer is known anyway: pthreads are in libSystem on every Apple OS and there
+# is nothing to link.
+if(DUALSCREEN_EMBEDDED)
+    find_package(Threads QUIET)
+    if(TARGET Threads::Threads)
+        target_link_libraries(dualscreen_companion PRIVATE Threads::Threads)
+    else()
+        message(STATUS "threads: in libSystem, nothing to link")
+    endif()
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(dualscreen_companion PRIVATE Threads::Threads)
+endif()
 
 # --- OpenGL -----------------------------------------------------------------
 #

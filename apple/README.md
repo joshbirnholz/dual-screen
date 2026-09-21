@@ -178,12 +178,31 @@ treats as fatal, which happens to be threads.
 The build now sets `CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY` for iOS and
 tvOS, which makes the probes compile without linking. If you still see it:
 
-1. **Read the real error, not the summary.** It is in
-   `build-ios-sim/CMakeFiles/CMakeError.log`, or run the failing
-   `xcodebuild` line by hand from the try-compile directory it names.
-2. **Check your CMake against your Xcode.** A new Xcode with an older CMake
-   breaks the Xcode generator in exactly this way, and Xcode moves faster than
-   CMake does. `cmake --version` and `xcodebuild -version`.
+1. **Read the real error, not the summary.** CMake 3.26 and later put it in
+   `build-ios-sim/CMakeFiles/CMakeConfigureLog.yaml` — `CMakeError.log` is
+   from older CMake and will not be there. Search it for the first failing
+   probe and read the compiler command and its output:
+
+   ```sh
+   grep -n -A40 'stdio.h' build-ios-sim/CMakeFiles/CMakeConfigureLog.yaml | head -60
+   ```
+2. **Check your CMake against your Xcode, and both against SDL.** This is a
+   three-way version problem and any pair of them can be the one that is
+   wrong. Xcode moves faster than CMake, and CMake 4 is stricter about old
+   projects than anything before it — SDL 2.30 predates it. The build now
+   passes `CMAKE_POLICY_VERSION_MINIMUM=3.10` to the SDL subproject for that
+   reason, which is a compatibility flag rather than a fix.
+
+   The real fix, if this is what it is, is a newer SDL:
+
+   ```sh
+   cmake -S apple -B build-ios-sim -G Xcode \
+         -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+         -DDUALSCREEN_SDL2_TAG=release-2.32.8
+   ```
+
+   Any SDL2 tag works; `git ls-remote --tags https://github.com/libsdl-org/SDL.git 'release-2.3*'`
+   lists what there is.
 3. **Sidestep the Xcode generator.** Ninja cross-compiles to iOS perfectly well
    and does not use `xcodebuild` for its probes, so it answers "does this
    compile at all" without any of the above:
