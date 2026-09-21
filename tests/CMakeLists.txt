@@ -165,6 +165,11 @@ if(XVFB_RUN_EXECUTABLE)
 
     # A companion leaving from the quick menu, which only two processes and the
     # wire between them can show.
+    #
+    # Needs xdotool as well as Xvfb: the point of the test is a press made
+    # after the companion has gone, and there is no way to make one without it.
+    # SKIP_RETURN_CODE rather than silently passing, so a machine without it
+    # says so instead of reporting a green tick over an untested app.
     add_test(NAME companion_disconnect_headless
         COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_companion_disconnect_test.sh
             ${XVFB_RUN_EXECUTABLE}
@@ -172,7 +177,8 @@ if(XVFB_RUN_EXECUTABLE)
             $<TARGET_FILE:dualscreen-companion>
             ${MOCK_CORE_PATH}
             ${CMAKE_BINARY_DIR}/companion-disconnect)
-    set_tests_properties(companion_disconnect_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
+    set_tests_properties(companion_disconnect_headless PROPERTIES
+        TIMEOUT 300 RUN_SERIAL TRUE SKIP_RETURN_CODE 77)
 
     # The settings screen: opened from the menu with -, drawn only by the host,
     # and still answering the other device's presses.

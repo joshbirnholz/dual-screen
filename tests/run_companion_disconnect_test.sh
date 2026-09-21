@@ -68,7 +68,18 @@ COMPANION_RESULT=$?
 
 # The companion is gone by now. Escape is Cancel, which is how a player leaves
 # the quick menu: if the host answers it, there was a menu there to leave.
-DISPLAY="$HOST_DISPLAY" xdotool search --name Dualscreen key Escape >/dev/null 2>&1
+#
+# Checked first, and loudly. Without xdotool the press below simply does not
+# happen, the menu never comes down, and the check at the end of this file
+# reports that the host "never left the quick menu even when asked to" -- a
+# confident, specific accusation against the application, for a tool that is
+# not installed. That is exactly what it did, and it cost an afternoon.
+if ! command -v xdotool >/dev/null 2>&1; then
+    echo "xdotool is not installed, so the press this test turns on cannot be made." >&2
+    echo "This is a missing tool, not a fault in the app: install xdotool and run again." >&2
+    exit 77
+fi
+DISPLAY="$HOST_DISPLAY" xdotool search --name Dualscreen key Escape
 sleep 2
 
 wait "$HOST_PID"
