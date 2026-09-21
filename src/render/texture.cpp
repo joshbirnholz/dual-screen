@@ -1,7 +1,22 @@
 #include "render/texture.hpp"
 
+// Constants that are core in desktop GL but absent from the OpenGL ES headers,
+// which is what iOS, tvOS and the Switch compile against. Each is the same
+// number everywhere -- GL enum values are fixed by the registry, not by the
+// header that happens to spell them -- so defining them when the header did
+// not is filling a gap rather than guessing.
+//
+// GL_RED and GL_RG are only ever reached on a desktop core profile, where
+// GL_LUMINANCE was removed (see plane_format below). A device never evaluates
+// that branch; it still has to compile it.
 #ifndef GL_RGBA8
 #define GL_RGBA8 0x8058
+#endif
+#ifndef GL_RED
+#define GL_RED 0x1903
+#endif
+#ifndef GL_RG
+#define GL_RG 0x8227
 #endif
 
 #include <algorithm>

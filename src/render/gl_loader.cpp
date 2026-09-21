@@ -1,5 +1,16 @@
 #include "render/gl_loader.hpp"
 
+// Desktop GL 3.2 and later report which profile they are through these two.
+// OpenGL ES has no profiles at all, so its headers do not define them -- and
+// the code below only reads them when the context is not ES, which a device's
+// compiler cannot know while it is still refusing to compile the line.
+#ifndef GL_CONTEXT_PROFILE_MASK
+#define GL_CONTEXT_PROFILE_MASK 0x9126
+#endif
+#ifndef GL_CONTEXT_CORE_PROFILE_BIT
+#define GL_CONTEXT_CORE_PROFILE_BIT 0x00000001
+#endif
+
 #include <SDL.h>
 
 #include <cstdlib>
