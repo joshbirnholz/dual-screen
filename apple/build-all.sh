@@ -27,6 +27,8 @@ root="$(cd "${here}/.." && pwd)"
 out="${root}/build-apple"
 team=""
 device=0
+generator="Ninja"
+run=""
 platforms=()
 
 usage() {
@@ -35,19 +37,31 @@ usage: apple/build-all.sh [options] [macos] [ios] [tvos]
 
   Named platforms, or all three if none are named.
 
+  --xcode           generate Xcode projects and a workspace, instead of
+                    building with Ninja. Needed for a debugger and for
+                    deploying to real hardware -- and the thing most likely to
+                    be broken by a new Xcode, so it is not the default.
+  --run <platform>  after building, install and launch on a booted simulator
+                    (ios or tvos). Needs a simulator running already:
+                    open -a Simulator
   --device          build iOS/tvOS for real hardware rather than a simulator
-                    (needs --team, or a team set in Xcode)
+                    (needs --team, and --xcode to deploy)
   --team <id>       the Apple development team to sign with
-  --out <dir>       where to put the projects (default: build-apple/)
+  --out <dir>       where to put the builds (default: build-apple/)
   -h, --help        this
 
-  Afterwards:  open build-apple/Dualscreen.xcworkspace
+  Ninja by default, because it is what works: measured on CMake 4.4.3 with
+  Xcode 27, the same CMakeLists configures cleanly under Ninja and fails every
+  feature check under the Xcode generator. A Ninja build still produces a real
+  .app, and a simulator needs no signature -- see --run.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device) device=1; shift ;;
+        --xcode) generator="Xcode"; shift ;;
+        --run) run="${2:-}"; shift 2 ;;
         --team) team="${2:-}"; shift 2 ;;
         --out) out="${2:-}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -57,7 +71,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#platforms[@]} -eq 0 ]]; then
-    platforms=(macos ios tvos)
+    if [[ -n "${run}" ]]; then
+        # Asking to run one platform is asking to build that one, not all of
+        # them and then run one.
+        platforms=("${run}")
+    else
+        platforms=(macos ios tvos)
+    fi
+fi
+
+if [[ ${device} -eq 1 && "${generator}" != "Xcode" ]]; then
+    echo "note: --device builds for real hardware, which has to be signed and" >&2
+    echo "      deployed through Xcode. Add --xcode, or drop --device and use" >&2
+    echo "      a simulator." >&2
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -70,7 +96,7 @@ mkdir -p "${out}"
 configure_one() {
     local platform="$1"
     local dir="${out}/${platform}"
-    local -a flags=(-S "${here}" -B "${dir}" -G Xcode)
+    local -a flags=(-S "${here}" -B "${dir}" -G "${generator}")
 
     case "${platform}" in
         macos)
@@ -78,6 +104,11 @@ configure_one() {
             ;;
         ios)
             flags+=(-DCMAKE_SYSTEM_NAME=iOS)
+            # Ninja builds one architecture and has no notion of picking one
+            # per destination, so it has to be told which.
+            if [[ "${generator}" != "Xcode" ]]; then
+                flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
+            fi
             # Written out rather than as `cond && flags+=(...)`: under `set -e`
             # a false condition there makes the list return non-zero, which is
             # enough to end the script -- silently, and only when building for
@@ -88,6 +119,9 @@ configure_one() {
             ;;
         tvos)
             flags+=(-DCMAKE_SYSTEM_NAME=tvOS)
+            if [[ "${generator}" != "Xcode" ]]; then
+                flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
+            fi
             if [[ ${device} -eq 0 ]]; then
                 flags+=(-DCMAKE_OSX_SYSROOT=appletvsimulator)
             fi
@@ -97,15 +131,48 @@ configure_one() {
         flags+=("-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=${team}")
     fi
 
-    echo "=== configuring ${platform}"
+    echo "=== configuring ${platform} (${generator})"
     cmake "${flags[@]}"
     echo "=== building ${platform}"
     cmake --build "${dir}" --config RelWithDebInfo
 }
 
+# Install and launch on whichever simulator is booted. A simulator app needs no
+# signature, which is why this works without a developer account at all.
+launch_on_simulator() {
+    local platform="$1"
+    local bundle="${out}/${platform}/Dualscreen Companion.app"
+    if [[ ! -d "${bundle}" ]]; then
+        echo "no ${bundle} to install -- was ${platform} built?" >&2
+        return 1
+    fi
+    if ! xcrun simctl list devices booted | grep -q "(Booted)"; then
+        echo "no simulator is booted. Start one first:  open -a Simulator" >&2
+        return 1
+    fi
+    echo "=== installing ${platform} on the booted simulator"
+    xcrun simctl install booted "${bundle}"
+    echo "=== launching (ctrl-c to stop; the app's log follows)"
+    xcrun simctl launch --console booted com.joshbirnholz.dualscreen.companion
+}
+
 for platform in "${platforms[@]}"; do
     configure_one "${platform}"
 done
+
+if [[ -n "${run}" ]]; then
+    launch_on_simulator "${run}"
+    exit $?
+fi
+
+# The workspace is an Xcode thing, so there is only one when there are Xcode
+# projects to put in it.
+if [[ "${generator}" != "Xcode" ]]; then
+    echo
+    echo "Built: ${platforms[*]}  (in ${out})"
+    echo "Run:   apple/build-all.sh --run ios      # with a simulator open"
+    exit 0
+fi
 
 # One window with every platform's scheme in it, which is the part that
 # actually feels like one app. A workspace is a list of projects and nothing
