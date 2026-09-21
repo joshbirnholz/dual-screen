@@ -2,6 +2,12 @@
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#define DS_UIKIT_SCENES 1
+// Defined in apple/ios_scene_lifecycle.m. Objective-C, and one function, so
+// there is no header worth making for it.
+extern "C" void ds_attach_sdl_window_to_scene(SDL_Window* window);
+#endif
 #endif
 
 #include <cstdlib>
@@ -168,6 +174,12 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
             log_warn(std::string("no window with ") + attempt.description + ": " + last_error);
             continue;
         }
+#if defined(DS_UIKIT_SCENES)
+        // A UIWindow that belongs to no scene is a window on no display, and
+        // SDL makes its windows the pre-scene way. See
+        // apple/ios_scene_lifecycle.m, which is where the rest of this lives.
+        ds_attach_sdl_window_to_scene(window);
+#endif
         gl_context = SDL_GL_CreateContext(window);
         if (gl_context == nullptr) {
             last_error = SDL_GetError();

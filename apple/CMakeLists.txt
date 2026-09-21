@@ -127,9 +127,19 @@ include(${DUALSCREEN_ROOT}/cmake/build_stamp.cmake)
 
 set(DUALSCREEN_APP_NAME "Dualscreen Companion")
 
+# UIKit's scene life cycle, which SDL2 never adopted and apps built against
+# the iOS 26 SDK are killed at launch for lacking. See the file itself; macOS
+# has no UIScene and wants none of it.
+set(DUALSCREEN_PLATFORM_SOURCES "")
+if(NOT DUALSCREEN_PLATFORM STREQUAL "macos")
+    list(APPEND DUALSCREEN_PLATFORM_SOURCES
+         "${CMAKE_CURRENT_SOURCE_DIR}/ios_scene_lifecycle.m")
+endif()
+
 add_executable(dualscreen_companion MACOSX_BUNDLE
     ${BEZEL_SOURCES}
     ${DUALSCREEN_COMPANION_SOURCES}
+    ${DUALSCREEN_PLATFORM_SOURCES}
 )
 
 target_include_directories(dualscreen_companion PRIVATE

@@ -62,5 +62,34 @@
 	     machine on the network *is* this app. See Info-iOS.plist.in. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Dualscreen finds the computer on your network that is running a game, so this Apple TV can be a screen for it.</string>
+
+	<!-- UIKit's scene life cycle. An app built against the iOS 26 SDK or later
+	     is killed at launch without it, and lowering the deployment target is
+	     no escape: the rule is about the SDK the binary was built with, not
+	     the system it runs on.
+
+	     SDL2 never adopted scenes and never will – that landed in SDL3 – so
+	     the delegate named here is this app's own, and it is implemented in
+	     apple/ios_scene_lifecycle.m along with the reason each piece exists.
+	     This half is the declaration; the runtime also checks that the live
+	     application delegate answers the scene-session hook, which is the
+	     other half and cannot be done from a plist. -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Dualscreen</string>
+					<key>UISceneDelegateClassName</key>
+					<string>DualscreenSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 </dict>
 </plist>
