@@ -46,7 +46,46 @@ cmake --build build-macos
 open "build-macos/Dualscreen Companion.app"
 ```
 
-### iOS and iPadOS
+### iOS, iPadOS and tvOS
+
+**There is no `.xcodeproj` in this repository, and there is not meant to be.**
+CMake generates one. The configure step below writes
+`build-ios/dualscreen_companion.xcodeproj`, and that is a real Xcode project
+you can open, run and debug in the ordinary way — it is just not a file anybody
+edits or commits.
+
+The reason is the source list. Every client this app has — desktop, Switch,
+Android, and all four Apple products — compiles the same files, read from
+`cmake/companion_sources.cmake`, because the whole point of the companion is
+that it is the app's own code rather than a port of it. A hand-maintained Xcode
+project is a second list of those files, and a second list is a list that drifts
+— a file added to the client and forgotten in one build is exactly how the two
+ends start quietly behaving differently. So the project is generated from the
+one list, and regenerating it is a two-second job.
+
+**Start with a simulator.** It needs no developer account, no device and no
+signing, and it is the quickest way to find out whether any of this works:
+
+```sh
+# iPhone / iPad simulator
+cmake -S apple -B build-ios-sim -G Xcode \
+      -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator
+cmake --build build-ios-sim --config RelWithDebInfo
+
+# Apple TV simulator
+cmake -S apple -B build-tvos-sim -G Xcode \
+      -DCMAKE_SYSTEM_NAME=tvOS -DCMAKE_OSX_SYSROOT=appletvsimulator
+cmake --build build-tvos-sim --config RelWithDebInfo
+```
+
+Then open the generated project and hit Run:
+
+```sh
+open build-ios-sim/dualscreen_companion.xcodeproj
+```
+
+**For a real device**, drop the sysroot — `CMAKE_SYSTEM_NAME=iOS` defaults to
+the device SDK — and supply a team:
 
 ```sh
 cmake -S apple -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS \
@@ -54,27 +93,23 @@ cmake -S apple -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS \
 cmake --build build-ios --config RelWithDebInfo
 ```
 
-### tvOS
+Four things that are not optional, in the order they bite:
 
-```sh
-cmake -S apple -B build-tvos -G Xcode -DCMAKE_SYSTEM_NAME=tvOS \
-      -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=XXXXXXXXXX
-cmake --build build-tvos --config RelWithDebInfo
-```
+- **`CMAKE_SYSTEM_NAME`** is not guessed. Left out, this is a Mac build, and it
+  fails late — in the linker, over a framework that is not there.
+- **`-G Xcode`.** Signing, device deployment and the simulator all go through
+  Xcode's own machinery, and the Makefile generator has none of it.
+- **`CMAKE_OSX_SYSROOT`** for a simulator. Without it you get a device build,
+  which will not run in the simulator and will not sign without a team — and
+  the error talks about code signing rather than about the SDK, which sends you
+  looking in the wrong place.
+- **A development team** for a device, which is whoever is building and so is
+  not in the repository. It can be set in Xcode's own target settings instead
+  of on the command line.
 
-`CMAKE_SYSTEM_NAME` is not optional and is not guessed. Left out, the build is
-a Mac build, and it fails late — in the linker, over a framework that is not
-there.
-
-The **Xcode generator** is not optional either for these two. Signing, device
-deployment and the simulator all go through Xcode's own machinery, and the
-Makefile generator has none of it. Open `build-ios/dualscreen_companion.xcodeproj`
-to run on a device or a simulator.
-
-The **development team** is whoever is building, so it is not in the
-repository. Without one a simulator build still works; a build for a real
-device will not sign. It can also be set in Xcode rather than on the command
-line.
+**The simulator will not exercise the local network permission**, because it
+shares the Mac's network stack and the Mac's grants. Discovery working in the
+simulator says nothing about whether it works on a phone.
 
 #### SDL2 on a device
 
@@ -501,7 +536,9 @@ What is reasoned from documentation and **not** checked anywhere:
 
 Roughly in the order they are likely to bite:
 
-1. It configures at all — `cmake -S apple -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS`.
+1. It configures at all. Use a **simulator** build for this — no team, no
+   device, no signing:
+   `cmake -S apple -B build-ios-sim -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator`
 2. SDL2 fetches and builds for the platform.
 3. It links. This is where a missing framework shows up.
 4. It launches in the simulator and draws the launcher at the full screen size
