@@ -152,13 +152,24 @@ struct VideoToolboxDecoder::Impl {
         CFMutableDictionaryRef specification = CFDictionaryCreateMutable(
             kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
             &kCFTypeDictionaryValueCallBacks);
-        // Ask for the hardware rather than accept whichever. Not required:
-        // refusing to fall back to software would mean no picture at all on a
-        // device whose decoder is busy.
+        // Ask for the hardware rather than accept whichever -- on a Mac, and
+        // only on a Mac.
+        //
+        // A Mac has a software H.264 decoder to fall back to, so there is a
+        // choice to express here. Asked rather than demanded, because refusing
+        // the fallback would mean no picture at all on a machine whose decoder
+        // is busy.
+        //
+        // iOS and tvOS have no such choice to express: VideoToolbox there is
+        // the hardware and nothing else. The key is available to them as of
+        // 17, which is what this deploys to, but available is not the same as
+        // meaningful.
+#if TARGET_OS_OSX
         CFDictionarySetValue(
             specification,
             kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder,
             kCFBooleanTrue);
+#endif
 
         VTDecompressionOutputCallbackRecord callback {};
         callback.decompressionOutputCallback = &Impl::on_decoded;
