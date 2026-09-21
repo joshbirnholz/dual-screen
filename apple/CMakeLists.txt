@@ -148,6 +148,29 @@ set(DUALSCREEN_SDL2_TAG "release-2.30.9" CACHE STRING
     "The SDL2 tag to fetch when no checkout is given (iOS/tvOS)")
 
 if(DUALSCREEN_EMBEDDED)
+    # Feature checks must not try to *link*, or every one of them fails.
+    #
+    # check_symbol_exists() and friends build a tiny program and, by default,
+    # link it into an executable. Cross-compiling to iOS or tvOS that means
+    # producing a real app binary, which Xcode will not do without a signing
+    # identity and a device architecture it is happy with -- so the probe
+    # fails, and a failed probe reads as "this platform does not have it".
+    #
+    # The failure is spectacular rather than subtle, and misleading in exactly
+    # the way that costs an hour: SDL's configure reported no stdio.h, no
+    # memcpy, no M_PI and no arm64, then stopped on the first check it treats
+    # as fatal -- "Threads are needed by many SDL subsystems" -- which is the
+    # one line anybody reads. Threads were never the problem. Nothing compiled
+    # at all.
+    #
+    # STATIC_LIBRARY makes the probes compile without linking, which is what
+    # CMake documents for cross-compiling and is enough to answer every
+    # question SDL is actually asking. Not forced: somebody debugging this
+    # wants to be able to put it back.
+    if(NOT DEFINED CMAKE_TRY_COMPILE_TARGET_TYPE)
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    endif()
+
     # Static, because a bundle for a device cannot go looking for a dylib on a
     # machine it is not installed on.
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)

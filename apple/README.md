@@ -145,6 +145,60 @@ Four things that are not optional, in the order they bite:
 shares the Mac's network stack and the Mac's grants. Discovery working in the
 simulator says nothing about whether it works on a phone.
 
+#### When configure says SDL needs threads
+
+The most misleading failure this build has, so it is written down. It looks
+like this:
+
+```
+-- Looking for stdio.h - not found
+-- Looking for memcpy - not found
+-- Looking for M_PI - not found
+-- Performing Test CHECK_CPU_ARCHITECTURE_ARM64 - Failed
+-- Performing Test HAVE_PTHREADS - Failed
+CMake Error at .../cmake/macros.cmake:36 (message):
+  *** ERROR: Threads are needed by many SDL subsystems and may not be disabled
+```
+
+**Threads are not the problem, and neither is `stdio.h`.** Every one of those
+checks failed, including several that cannot possibly be false on a Mac. What
+failed is the probe itself — one real error, buried a hundred lines up:
+
+```
+CMake Error: Generator: build tool execution failed, command was:
+/usr/bin/xcodebuild -project CMAKE_TRY_COMPILE.xcodeproj build ...
+```
+
+`check_symbol_exists()` builds a tiny program and links it into an executable.
+Cross-compiling to iOS that means a real app binary, which Xcode will not
+produce without a signing identity — so every probe fails, and a failed probe
+reads as "this platform does not have it". SDL then stops at the first one it
+treats as fatal, which happens to be threads.
+
+The build now sets `CMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY` for iOS and
+tvOS, which makes the probes compile without linking. If you still see it:
+
+1. **Read the real error, not the summary.** It is in
+   `build-ios-sim/CMakeFiles/CMakeError.log`, or run the failing
+   `xcodebuild` line by hand from the try-compile directory it names.
+2. **Check your CMake against your Xcode.** A new Xcode with an older CMake
+   breaks the Xcode generator in exactly this way, and Xcode moves faster than
+   CMake does. `cmake --version` and `xcodebuild -version`.
+3. **Sidestep the Xcode generator.** Ninja cross-compiles to iOS perfectly well
+   and does not use `xcodebuild` for its probes, so it answers "does this
+   compile at all" without any of the above:
+
+   ```sh
+   cmake -S apple -B build-ios-ninja -G Ninja \
+         -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator \
+         -DCMAKE_OSX_ARCHITECTURES=arm64
+   cmake --build build-ios-ninja
+   ```
+
+   What it will not give you is a project to run and debug from, which is what
+   the Xcode generator is for. Use it to prove the code compiles, then go back
+   to Xcode for the rest.
+
 #### SDL2 on a device
 
 There is no Homebrew for iOS and no system copy, so SDL is built here as a
