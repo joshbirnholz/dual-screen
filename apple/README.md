@@ -477,10 +477,11 @@ See **FFmpeg on a device** above for what that costs, which is the same on all
 three platforms and much easier to fix on this one.
 
 `zlib` and `OpenGL` come with macOS. The deployment target is 11.0 there and
-15.0 on iOS and tvOS; override either with `-DCMAKE_OSX_DEPLOYMENT_TARGET=`,
-though on the two devices 15 is a floor from both sides: below 14 means
-writing a launch storyboard (see `Info-iOS.plist.in`), and Xcode 27 refuses to
-deploy below 15 at all.
+17.0 on iOS and tvOS; override either with `-DCMAKE_OSX_DEPLOYMENT_TARGET=`.
+On the two devices 17 is a choice, not a floor -- Xcode 27 will go down to 15
+-- made because this app decodes video, and two more years of VideoToolbox is
+worth more to it than two more years of devices. Going below 14 would also
+mean writing a launch storyboard (see `Info-iOS.plist.in`).
 
 For a universal binary:
 

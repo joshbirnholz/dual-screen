@@ -76,24 +76,22 @@ get_filename_component(DUALSCREEN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE
 #
 # macOS 11 is the first release on Apple silicon.
 #
-# iOS and tvOS want two things at once, and 15 is where they meet. The floor
-# from this app's side is 14, where UILaunchScreen replaced the launch
-# storyboard -- without one of the two an app is handed a window the size of an
-# iPhone 4 and letterboxed, which on an app whose whole job is showing another
-# machine's screen is not a cosmetic problem, and a dict is cheaper than a
-# storyboard. The floor from the toolchain's side is 15, because Xcode 27 will
-# not deploy below it:
+# iOS and tvOS are 17, which is a choice rather than a floor: Xcode 27 will
+# deploy as low as 15, and the one thing this app needs from the OS itself --
+# UILaunchScreen, without which an app is handed a window the size of an
+# iPhone 4 and letterboxed -- has been there since 14. 17 is chosen because
+# picking up two more years of VideoToolbox is worth more to an app that
+# decodes video than two more years of devices are, and because it is the
+# oldest release still getting Apple's security fixes. It buys, among other
+# things, being able to simply ask for the hardware decoder rather than work
+# around not being able to (see videotoolbox_decoder.cpp).
 #
-#   The iOS Simulator deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to
-#   14.0, but the range of supported deployment target versions is 15.0 to 27.0
-#
-# So 15, which satisfies both and costs nothing: UILaunchScreen works there
-# just as well. Raising it again is Apple's decision to make, not this file's,
-# which is why it is one number rather than a rule.
+# All three are one number rather than a rule, because raising them is a
+# decision to be made, not one to drift into.
 if(DUALSCREEN_PLATFORM STREQUAL "macos")
     set(DUALSCREEN_MIN_OS "11.0")
 else()
-    set(DUALSCREEN_MIN_OS "15.0")
+    set(DUALSCREEN_MIN_OS "17.0")
 endif()
 if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "${DUALSCREEN_MIN_OS}" CACHE STRING "" FORCE)
