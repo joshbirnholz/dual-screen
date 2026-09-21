@@ -219,7 +219,12 @@ void test_real_encoder_output_parses_and_converts() {
         // does not emit a run of identical skip frames.
         picture[static_cast<std::size_t>(index) * 37 % picture.size()] = 0xff000000u;
         EncodedFrame encoded;
-        if (!encoder.encode(picture.data(), config.width * 4, encoded, &error) ||
+        // Pixels per row, not bytes: encode() takes stride_pixels. Passing
+        // width * 4 here read three rows past the end of the picture on every
+        // row, which crashed about six runs in ten and passed under both gdb
+        // and ASan -- an out-of-bounds read only faults when the allocation
+        // happens to end near a page that is not mapped.
+        if (!encoder.encode(picture.data(), config.width, encoded, &error) ||
             encoded.bytes.empty()) {
             continue;
         }
