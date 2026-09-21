@@ -84,6 +84,40 @@ Then open the generated project and hit Run:
 open build-ios-sim/dualscreen_companion.xcodeproj
 ```
 
+#### All of them at once
+
+`apple/build-all.sh` configures and builds every platform and puts the
+generated projects in one Xcode workspace, which is the part that actually
+feels like one app:
+
+```sh
+apple/build-all.sh                    # all three, simulators for iOS and tvOS
+apple/build-all.sh ios tvos           # only the two named
+apple/build-all.sh --device --team XXXXXXXXXX
+open build-apple/Dualscreen.xcworkspace
+```
+
+One window, three schemes, pick a destination and run. A workspace is a list of
+projects and nothing else — no build settings, so there is nothing in it to
+drift.
+
+**It is three projects, not one, and that is CMake's limit rather than a
+choice.** CMake bakes the platform into a project at configure time:
+`CMAKE_SYSTEM_NAME` is one value for one project, so three platforms mean three
+configures. Xcode itself can do better — its own multiplatform template makes a
+*single* target whose `SUPPORTED_PLATFORMS` covers several destinations — and
+CMake cannot express that at all. Hand-writing the Xcode project to get it
+would mean a second copy of the source list that every other client reads from
+one place, which is the thing this build is arranged to avoid. Three projects
+and one workspace is the better trade.
+
+What is genuinely one app is the thing that matters for shipping: **all four
+products already share one bundle identifier**, which is exactly what Apple's
+Universal Purchase wants. One product, one App Store page, one purchase, with
+separate binaries underneath — which is how every multiplatform Apple app
+works, including Apple's own. There is no fourth build to add for iPadOS; it is
+the iOS one.
+
 **For a real device**, drop the sysroot — `CMAKE_SYSTEM_NAME=iOS` defaults to
 the device SDK — and supply a team:
 
@@ -516,6 +550,10 @@ What is reasoned from documentation and **not** checked anywhere:
   fed is tested; what it does with it is not. This is the single largest
   untested thing here, and it is also the thing to try first, because the Mac
   can run it.
+- That `apple/build-all.sh` runs. Its shell parses and the workspace it writes
+  is well-formed XML, which is all that can be checked from here; whether the
+  three configures inside it succeed is the same open question as configuring
+  them one at a time.
 - That SDL2 builds clean as a subproject for both platforms at the pinned tag,
   and that the target names this looks for are the ones it exports.
 - That the frameworks linked are the right set and the complete set. The
