@@ -2,6 +2,25 @@
 
 #include <SDL_opengl.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+// SDL_opengl.h is empty on iOS and tvOS, and deliberately so: it declares
+// desktop GL, and those platforms have none. Including it there leaves every
+// GL type undefined, and what the compiler then says is "Unknown type name
+// 'GLint'" about thirty times -- which reads as a broken header rather than as
+// the wrong one.
+//
+// The ES2 headers carry all twelve types this file names (GLint, GLsizei,
+// GLenum, GLclampf, GLbitfield, GLboolean, GLchar, GLfloat, GLintptr,
+// GLsizeiptr, GLubyte, GLuint), which is all that is wanted here: every entry
+// point below is a function pointer resolved through SDL at runtime, so this
+// needs the types and none of the declarations. An ES 3.0 context is served
+// perfectly well by ES 2.0's typedefs.
+#include <SDL_opengles2.h>
+#endif
+#endif
+
 #include <string>
 
 // Every GL entry point is resolved through SDL at runtime and lives in
