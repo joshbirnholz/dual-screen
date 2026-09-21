@@ -99,10 +99,6 @@ extern "C" {
 namespace ds::sw {
 namespace {
 
-constexpr SDL_Color kTextColour{0xf2, 0xf5, 0xf8, 0xff};
-constexpr SDL_Color kDimColour{0x8a, 0x94, 0xa0, 0xff};
-constexpr SDL_Color kFocusColour{0x6e, 0xc0, 0xff, 0xff};
-
 struct Options {
     // Which screen to be. Given on the command line, this device joins the
     // first host offering it without anybody choosing -- the same as the
