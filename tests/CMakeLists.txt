@@ -101,6 +101,30 @@ add_test(NAME no_codec_typecheck
         "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party;${CMAKE_SOURCE_DIR}/companion/source;${NLOHMANN_JSON_INCLUDE_DIR};${nlohmann_json_SOURCE_DIR}/include"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_no_codec_typecheck.cmake)
 
+# And the GL a device has, which is OpenGL ES and not the desktop GL every
+# build here links against. Registered only where the ES headers exist, since
+# nothing else in this repository needs them.
+find_path(DUALSCREEN_GLES2_INCLUDE GLES2/gl2.h)
+if(DUALSCREEN_GLES2_INCLUDE)
+    set(DUALSCREEN_RENDER_SOURCES "")
+    foreach(name IN ITEMS bezel_art button_glyphs compositor font gl_loader
+                          gl_window menu_backdrop png_image quad_renderer
+                          text_renderer texture)
+        list(APPEND DUALSCREEN_RENDER_SOURCES
+             "${CMAKE_SOURCE_DIR}/src/render/${name}.cpp")
+    endforeach()
+    add_test(NAME gles_typecheck
+        COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=${CMAKE_CXX_COMPILER}
+            "-DSOURCES=${DUALSCREEN_RENDER_SOURCES}"
+            -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/gles_stub
+            -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
+            "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_gles_typecheck.cmake)
+else()
+    message(STATUS "no GLES2 headers here, so the device-GL typecheck is not registered")
+endif()
+
 dualscreen_add_test(test_net)
 dualscreen_add_test(test_session)
 # Discovery, session and media all live on fixed ports (kDiscoveryPort and the
