@@ -26,6 +26,13 @@ cmake_policy(SET CMP0057 NEW)
 if(NOT DEFINED PLIST_DIR)
     message(FATAL_ERROR "PLIST_DIR is required")
 endif()
+# Where the expanded copies go for xmllint to read. Named rather than defaulted
+# to the working directory, which is how three of them ended up in the
+# repository root the first time this was run by hand.
+if(NOT DEFINED SCRATCH_DIR)
+    set(SCRATCH_DIR "${CMAKE_CURRENT_BINARY_DIR}/apple-plists")
+endif()
+file(MAKE_DIRECTORY "${SCRATCH_DIR}")
 
 # SEND_ERROR rather than FATAL_ERROR: every plist is checked and every problem
 # reported, then the script exits non-zero at the end. Stopping at the first
@@ -128,7 +135,7 @@ foreach(entry "Info.plist.in;macos" "Info-iOS.plist.in;ios" "Info-tvOS.plist.in;
         foreach(variable ${known})
             string(REPLACE "\${${variable}}" "placeholder" expanded "${expanded}")
         endforeach()
-        set(scratch "${CMAKE_CURRENT_BINARY_DIR}/${name}.expanded.plist")
+        set(scratch "${SCRATCH_DIR}/${name}.expanded.plist")
         file(WRITE "${scratch}" "${expanded}")
         execute_process(COMMAND "${XMLLINT_TOOL}" --noout "${scratch}"
                         RESULT_VARIABLE parsed ERROR_VARIABLE parse_error)

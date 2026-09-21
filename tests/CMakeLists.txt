@@ -61,7 +61,7 @@ add_test(NAME external_link_stands_alone
 add_test(NAME apple_plists
     COMMAND ${CMAKE_COMMAND}
         -DPLIST_DIR=${CMAKE_SOURCE_DIR}/apple
-        -DCMAKE_CURRENT_BINARY_DIR=${CMAKE_BINARY_DIR}/apple-plists
+        -DSCRATCH_DIR=${CMAKE_BINARY_DIR}/apple-plists
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_apple_plist_test.cmake)
 
 add_executable(check_screenshot check_screenshot.cpp)
