@@ -178,7 +178,20 @@ set(DUALSCREEN_SDL2_TAG "release-2.30.9" CACHE STRING
 if(DUALSCREEN_EMBEDDED AND DUALSCREEN_SDL2_PREFIX)
     message(STATUS "SDL2: using the build at ${DUALSCREEN_SDL2_PREFIX}")
     list(APPEND CMAKE_PREFIX_PATH "${DUALSCREEN_SDL2_PREFIX}")
-    find_package(SDL2 CONFIG REQUIRED)
+    # CMAKE_FIND_ROOT_PATH_BOTH, or this is never found.
+    #
+    # Setting CMAKE_SYSTEM_NAME puts CMake into cross-compiling mode, and in
+    # that mode every search is re-rooted into the sysroot:
+    # CMAKE_FIND_ROOT_PATH_MODE_PACKAGE defaults to ONLY for iOS and tvOS, so
+    # find_package looks inside iPhoneSimulator.sdk and nowhere else --
+    # CMAKE_PREFIX_PATH included. An SDL built and installed anywhere outside
+    # that SDK is invisible, and the error says only that no SDL2Config.cmake
+    # could be found, which reads as "you did not install it" rather than "I
+    # did not look where you put it".
+    #
+    # BOTH rather than NO_CMAKE_FIND_ROOT_PATH: the sysroot is still searched
+    # first, and only then the paths given here.
+    find_package(SDL2 CONFIG REQUIRED CMAKE_FIND_ROOT_PATH_BOTH)
     if(TARGET SDL2::SDL2-static)
         target_link_libraries(dualscreen_companion PRIVATE SDL2::SDL2-static)
     elseif(TARGET SDL2::SDL2)
@@ -345,8 +358,14 @@ if(DUALSCREEN_EMBEDDED)
         set(DUALSCREEN_HAVE_CODEC ON)
         target_include_directories(dualscreen_companion PRIVATE "${DUALSCREEN_FFMPEG_DIR}/include")
         foreach(library avcodec avutil swscale swresample)
+            # CMAKE_FIND_ROOT_PATH_BOTH for the same reason SDL2 needs it
+            # above: a cross-compiling find_library only looks inside the
+            # sysroot, and NO_DEFAULT_PATH does not exempt an explicit PATHS
+            # from being re-rooted. Without this a cross-built FFmpeg handed
+            # over here would never be found either.
             find_library(FFMPEG_${library}_LIB ${library}
-                         PATHS "${DUALSCREEN_FFMPEG_DIR}/lib" NO_DEFAULT_PATH)
+                         PATHS "${DUALSCREEN_FFMPEG_DIR}/lib" NO_DEFAULT_PATH
+                         CMAKE_FIND_ROOT_PATH_BOTH)
             if(FFMPEG_${library}_LIB)
                 target_link_libraries(dualscreen_companion PRIVATE ${FFMPEG_${library}_LIB})
             elseif(NOT library STREQUAL "swresample")
