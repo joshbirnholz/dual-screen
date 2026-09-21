@@ -14,6 +14,14 @@
 # This proves the configuration compiles. It proves nothing about whether
 # VideoToolbox works, which needs Apple hardware -- see apple/README.md.
 #
+# Warnings are errors here, and the compiler is clang when there is one, for
+# the same reason the test exists: the only build that compiles this half is
+# Xcode's, and Xcode is clang. A warning that only this configuration
+# produces -- eight unused private fields, three colours with no readers --
+# otherwise reaches a person looking at a device build, which is the slowest
+# possible place to find out. Clang is preferred rather than required, so a
+# machine with only GCC still gets the compiles-at-all half.
+#
 # Invoked by CTest with -DCOMPILER, -DSOURCES, -DSRC_DIR, -DEXTRA_INCLUDES.
 
 # SOURCES arrives as a CMake list (semicolon-separated), so it is already one
@@ -26,9 +34,17 @@ foreach(dir IN LISTS EXTRA_INCLUDES)
     endif()
 endforeach()
 
+find_program(NO_CODEC_CLANG NAMES clang++)
+if(NO_CODEC_CLANG)
+    set(COMPILER "${NO_CODEC_CLANG}")
+    set(WHICH "clang, the way Xcode would")
+else()
+    set(WHICH "${COMPILER}, with no clang here to use instead")
+endif()
+
 foreach(source IN LISTS SOURCE_LIST)
     execute_process(
-        COMMAND "${COMPILER}" -fsyntax-only -std=c++17 -Wall -Wextra
+        COMMAND "${COMPILER}" -fsyntax-only -std=c++17 -Wall -Wextra -Werror
                 -DDS_HAVE_VIDEO_CODEC=0
                 ${INCLUDE_FLAGS} "${source}"
         RESULT_VARIABLE result
@@ -36,9 +52,11 @@ foreach(source IN LISTS SOURCE_LIST)
         ERROR_VARIABLE errors)
     if(NOT result EQUAL 0)
         message(FATAL_ERROR
-            "${source} does not compile without FFmpeg, which is how iOS and tvOS "
-            "build it:\n${errors}${output}")
+            "${source} does not build cleanly without FFmpeg, which is how iOS "
+            "and tvOS build it:\n${errors}${output}")
     endif()
 endforeach()
 
-message(STATUS "the companion compiles with no FFmpeg, the way a device builds it")
+message(STATUS
+    "the companion compiles warning-free with no FFmpeg, the way a device "
+    "builds it -- using ${WHICH}")
