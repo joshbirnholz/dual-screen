@@ -19,6 +19,7 @@
 
 #include <vector>
 
+#include "input/input_manager.hpp"
 #include "ui/control_guide.hpp"
 
 using namespace ds;
@@ -156,6 +157,31 @@ void test_the_style_follows_what_is_in_your_hands() {
     CHECK(prompt_style_for(/*television=*/true, 0, 0) == PromptStyle::Remote);
 }
 
+// The name is the whole test, and it is the name a real Apple TV gave:
+//
+//     controller connected: Remote (SDL type: unknown, a pad)
+//
+// The version before this asked SDL whether the controller had an X button.
+// It said yes, so every Apple TV got pad glyphs and the prompts this is all
+// for never went away.
+void test_a_siri_remote_is_recognised_by_what_sdl_calls_it() {
+    CHECK(controller_is_a_remote("Remote"));
+    // Whatever case, and with something around it, since the exact string is
+    // Apple's to change and has no promise attached to it.
+    CHECK(controller_is_a_remote("Apple TV Remote"));
+    CHECK(controller_is_a_remote("Siri remote"));
+
+    // The pads this has actually been used with stay pads.
+    CHECK(!controller_is_a_remote("Xbox Wireless Controller"));
+    CHECK(!controller_is_a_remote("DualSense Wireless Controller"));
+    CHECK(!controller_is_a_remote("Nintendo Switch Pro Controller"));
+    CHECK(!controller_is_a_remote("Steam Deck"));
+    CHECK(!controller_is_a_remote(""));
+    // SDL returns null for a controller it has no name for, which is not a
+    // reason to treat it as a remote.
+    CHECK(!controller_is_a_remote(nullptr));
+}
+
 void test_the_hint_style_is_asked_rather_than_assumed() {
     const PromptStyle was = prompt_style();
     set_prompt_style(PromptStyle::Touch);
@@ -181,6 +207,7 @@ int main() {
     test_a_confirm_with_nothing_to_tap_stays();
     test_a_confirmation_dialog_keeps_both_answers();
     test_the_style_follows_what_is_in_your_hands();
+    test_a_siri_remote_is_recognised_by_what_sdl_calls_it();
     test_the_hint_style_is_asked_rather_than_assumed();
     return test::finish("touch-hints");
 }

@@ -88,11 +88,12 @@ bool touch_hints();
 //   controllers     how many SDL is reporting at all
 //   full_gamepads   how many of those have a full face-button cluster
 //
-// A Siri Remote is a controller as far as SDL is concerned -- three buttons
-// and a touch surface -- so counting controllers cannot tell it from a pad.
-// Counting the ones with an X button can: every real gamepad has one and the
-// remote has none. Pair a pad with the Apple TV and the glyphs come back,
-// which is the point: the hints are about what you are holding.
+// A Siri Remote is a controller as far as SDL is concerned, so counting
+// controllers cannot tell it from a pad; what separates them is SDL's name for
+// it, which is "Remote" -- see controller_is_a_remote(), and the measurement
+// in its comment that replaced a capability test that did not work. Pair a pad
+// with the Apple TV and the glyphs come back, which is the point: the hints
+// are about what you are holding.
 PromptStyle prompt_style_for(bool television, int controllers, int full_gamepads);
 
 // Which prompt a point is on, ButtonGlyph::Count when none. The prompts are

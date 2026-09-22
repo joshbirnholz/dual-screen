@@ -310,8 +310,22 @@ bool MotionReader::read_device_sensors() {
     //
     // Asked every time rather than cached: it changes when the device is
     // turned over, and it is a property read, not a computation.
-    reading = motion_turned_to_display(
-        reading, static_cast<DisplayTurn>(ds_ios_display_turn()));
+    const int turn = ds_ios_display_turn();
+    reading = motion_turned_to_display(reading, static_cast<DisplayTurn>(turn));
+    // Said when it changes, because a reading of this device's motion cannot
+    // be interpreted without it. Holding this device against one that is
+    // already right and moving the two as one measures the conversion that is
+    // wrong (see MotionComparison) -- but what it measures is that conversion
+    // *composed with this turn*, and without knowing which turn was in force
+    // there is no dividing the one out of the other. Once per change: turning
+    // a phone over is a thing a person does, not a thing that happens every
+    // frame.
+    if (turn != said_display_turn_) {
+        said_display_turn_ = turn;
+        log_info(std::string("motion: this device is being held ") +
+                 display_turn_name(static_cast<DisplayTurn>(turn)) +
+                 ", and its readings are turned to match");
+    }
 #endif
     state_ = reading;
     return true;

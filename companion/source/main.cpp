@@ -485,6 +485,15 @@ void Client::open_launcher() {
     // before looking for a row to select.
     launcher_.set_plus_quits(true);
 #endif
+#if defined(DS_APPLE_HANDHELD) || defined(DS_APPLE_TELEVISION)
+    // An Apple app is left with the Home gesture or the app switcher, never
+    // from inside -- Apple's guidelines say not to quit programmatically, and
+    // a row that closes the window is the wrong shape for a platform where
+    // the system decides when an app stops. On an Apple TV it is worse than
+    // useless: pressing it drops the player back to the home screen with
+    // nothing to say why.
+    launcher_.set_offers_quit(false);
+#endif
     launcher_.open(/*runs_games=*/false);
 }
 
@@ -773,6 +782,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 begin_search(ScreenId::Bottom);
                 break;
             case LauncherChoice::Quit:
+                log_info("leaving: the launcher's Quit row was chosen");
                 running_ = false;
                 break;
             default:
@@ -1000,6 +1010,14 @@ void Client::run() {
                          static_cast<float>(output_height_), session_.screens_geometry(),
                          static_cast<float>(panel_width_), static_cast<float>(panel_height_));
         if (input_.quit_requested()) {
+            // Which of the ways out this was, because they want opposite
+            // fixes and the exit looks identical from the log otherwise. On
+            // an Apple TV the app exited "while navigating the main menu" and
+            // there was no telling whether something in here had asked to
+            // stop or whether tvOS had closed the app over our heads -- an
+            // unhandled Menu press at the top level does exactly that.
+            log_info("leaving: something asked this app to quit (SDL_QUIT, or a key that means "
+                     "leave)");
             running_ = false;
         }
         // Which kind of prompt to draw, asked every frame because a pad can

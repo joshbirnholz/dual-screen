@@ -130,6 +130,11 @@ private:
     // Whether a controller claiming sensors it does not fill in has already
     // been mentioned. Once is a diagnosis; every frame is noise.
     bool said_silent_controller_ = false;
+    // Which way this device was last being held, so the log says when that
+    // changed. Only iOS and iPadOS turn, and only there is it read -- see
+    // read_device_sensors(). int rather than DisplayTurn so that the one
+    // unset value is distinct from all four real ones.
+    int said_display_turn_ = -1;
     // Switch only: watches how this console's rotation reading relates to
     // its acceleration one and says so in the log. A check on the measured
     // conversion rather than the source of it -- see MotionFitter for why it

@@ -46,6 +46,17 @@ public:
     void set_plus_quits(bool quits) { plus_quits_ = quits; }
     bool plus_quits() const { return plus_quits_; }
 
+    // Whether leaving the app is something this screen offers at all.
+    //
+    // False on iOS, iPadOS and tvOS, where an app is left with the Home
+    // gesture or the app switcher and never from inside. Apple's guidelines
+    // say not to quit programmatically, and a player who has just used Quit
+    // is left looking at a screen that vanished for no visible reason -- on
+    // an Apple TV, at a home screen they did not ask for. Read before open(),
+    // which is where the rows are decided.
+    void set_offers_quit(bool offers) { offers_quit_ = offers; }
+    bool offers_quit() const { return offers_quit_; }
+
     // What the control guide at the foot of the screen says, in the order it
     // says it. Exposed rather than built where it is drawn so the order is
     // something that can be checked.
@@ -83,6 +94,7 @@ private:
     std::vector<LauncherChoice> rows_;
     bool runs_games_ = true;
     bool plus_quits_ = false;
+    bool offers_quit_ = true;
     std::vector<GuideHit> guide_hits_;
 
 public:

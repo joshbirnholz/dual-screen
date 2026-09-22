@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <vector>
 
 #include "test_support.hpp"
@@ -62,6 +63,74 @@ void test_quit_leads_the_control_guide() {
               "Select stopped being offered once Quit moved in front of it");
 }
 
+// Every row this launcher will let you land on, found by walking down it.
+// Behavioural on purpose: a row that is built and not reachable, or reachable
+// and not built, are both wrong and only one of them shows up in a list.
+std::vector<LauncherChoice> rows_you_can_reach(LauncherScreen& launcher) {
+    std::vector<LauncherChoice> found;
+    for (int step = 0; step < 16; ++step) {
+        LauncherScreen probe;
+        probe.set_plus_quits(launcher.plus_quits());
+        probe.set_offers_quit(launcher.offers_quit());
+        probe.open(/*runs_games=*/false);
+        for (int down = 0; down < step; ++down) {
+            probe.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+        const LauncherChoice choice =
+            probe.update({UiAction::Confirm}, {}, kWidth, kHeight).choice;
+        if (std::find(found.begin(), found.end(), choice) == found.end()) {
+            found.push_back(choice);
+        }
+    }
+    return found;
+}
+
+bool offers(const std::vector<LauncherChoice>& rows, LauncherChoice choice) {
+    return std::find(rows.begin(), rows.end(), choice) != rows.end();
+}
+
+// An Apple app is left with the Home gesture or the app switcher, never from
+// inside. A Quit row there closes the window for no reason the player can see
+// -- on an Apple TV, dropping them at a home screen they did not ask for.
+void test_leaving_is_not_offered_where_the_system_does_it() {
+    LauncherScreen ordinary;
+    ordinary.open(/*runs_games=*/false);
+    const std::vector<LauncherChoice> with_quit = rows_you_can_reach(ordinary);
+    CHECK_MSG(offers(with_quit, LauncherChoice::Quit),
+              "the launcher stopped offering a way out where there should be one");
+    CHECK_MSG(offers(with_quit, LauncherChoice::ConnectAsBottomScreen),
+              "walking the rows did not reach the ones that are always there");
+
+    LauncherScreen apple;
+    apple.set_offers_quit(false);
+    apple.open(/*runs_games=*/false);
+    const std::vector<LauncherChoice> rows = rows_you_can_reach(apple);
+    CHECK_MSG(!offers(rows, LauncherChoice::Quit),
+              "Quit was still reachable on a platform that leaves apps to the system");
+    // And what is left is still there. A row removed by making the list
+    // shorter is one thing; one removed by breaking the walk is another.
+    CHECK_MSG(offers(rows, LauncherChoice::ConnectAsTopScreen) &&
+                  offers(rows, LauncherChoice::ConnectAsBottomScreen),
+              "removing Quit took the rest of the launcher with it");
+}
+
+// Not through a keyboard either. An iPad with a keyboard attached is still an
+// iPad, and F10 is not a licence to close it.
+void test_no_key_leaves_where_leaving_is_not_offered() {
+    LauncherScreen apple;
+    apple.set_offers_quit(false);
+    apple.open(/*runs_games=*/false);
+    CHECK_MSG(apple.update({UiAction::Quit}, {}, kWidth, kHeight).choice != LauncherChoice::Quit,
+              "a keypress quit an app that does not offer quitting");
+
+    // And plus does not sneak past it either, on the off chance both are set.
+    LauncherScreen both;
+    both.set_plus_quits(true);
+    both.set_offers_quit(false);
+    both.open(/*runs_games=*/false);
+    CHECK_MSG(!plus_leaves(both), "plus quit an app that does not offer quitting");
+}
+
 // The connection list names devices, not addresses. An address means nothing to
 // the player choosing between two consoles in the same room, and it is a detail
 // of their network sitting on a screen.
@@ -88,6 +157,8 @@ int main() {
     test_plus_only_quits_where_the_platform_says_so();
     test_the_other_face_buttons_do_nothing_here();
     test_quit_leads_the_control_guide();
+    test_leaving_is_not_offered_where_the_system_does_it();
+    test_no_key_leaves_where_leaving_is_not_offered();
     test_the_connection_list_does_not_show_addresses();
     return test::finish("launcher");
 }

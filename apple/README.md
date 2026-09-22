@@ -39,8 +39,11 @@ for depends on what the device has.
   Siri Remote they leave out select and back, since clicking the pad and
   pressing back are the two things nobody needs told; pair a real controller
   and the full row of glyphs comes back. SDL reports the remote *as* a
-  controller, so the two are told apart by whether it has an X button — see
-  `prompt_style_for` in `src/ui/control_guide.hpp`. The confirmation dialogs
+  controller, so the two are told apart by SDL's name for it, which on a real
+  Apple TV is `Remote` — see `controller_is_a_remote` in
+  `src/input/input_manager.hpp`, and the measurement in its comment that
+  replaced a capability test that looked obvious and did not work. The
+  confirmation dialogs
   keep both of their answers whatever is in your hands, because there the two
   prompts are the only labels on the choice.
 

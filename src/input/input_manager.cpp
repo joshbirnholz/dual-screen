@@ -1,6 +1,7 @@
 #include "input/input_manager.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 
@@ -92,11 +93,16 @@ void InputManager::open_controller(int device_index) {
     // diagnose remotely: this one line says what SDL thinks the pad is, which
     // decides how its face buttons are reported.
     const char* name = SDL_GameControllerName(controller);
-    const bool full_pad =
-        SDL_GameControllerHasButton(controller, SDL_CONTROLLER_BUTTON_X) == SDL_TRUE;
+    // The button and axis counts are the joystick's own, underneath whatever
+    // mapping SDL built on top. They are here because the question "is this a
+    // pad or a television remote" has already been answered wrongly once from
+    // the mapping, and the next time it needs answering this log will have the
+    // numbers in it rather than needing another trip to the hardware.
     log_info(std::string("controller connected: ") + (name != nullptr ? name : "unknown") +
              " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) + ", " +
-             (full_pad ? "a pad" : "no X button, so a remote rather than a pad") + ")");
+             std::to_string(SDL_JoystickNumButtons(joystick)) + " buttons, " +
+             std::to_string(SDL_JoystickNumAxes(joystick)) + " axes, taken for " +
+             (controller_is_a_remote(name) ? "a television remote" : "a pad") + ")");
 
     char* mapping = SDL_GameControllerMapping(controller);
     if (mapping != nullptr) {
@@ -112,12 +118,22 @@ void InputManager::open_controller(int device_index) {
     }
 }
 
+bool controller_is_a_remote(const char* sdl_name) {
+    if (sdl_name == nullptr) {
+        return false;
+    }
+    std::string lowered(sdl_name);
+    for (char& c : lowered) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return lowered.find("remote") != std::string::npos;
+}
+
 int InputManager::connected_gamepads() const {
     int count = 0;
     for (const auto& [instance_id, controller] : controllers_) {
         (void)instance_id;
-        if (controller != nullptr &&
-            SDL_GameControllerHasButton(controller, SDL_CONTROLLER_BUTTON_X) == SDL_TRUE) {
+        if (controller != nullptr && !controller_is_a_remote(SDL_GameControllerName(controller))) {
             ++count;
         }
     }

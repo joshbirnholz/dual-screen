@@ -81,6 +81,30 @@ inline bool tapped(const PointerEvent& pointer, const PixelRect& rect) {
 }
 
 // Collects SDL input and turns it into DS input plus UI intents.
+// Whether SDL's name for a controller says it is a television remote rather
+// than a pad.
+//
+// Measured on an Apple TV rather than reasoned about, because reasoning about
+// it was wrong once already. The first version of this asked
+// SDL_GameControllerHasButton for an X button, on the argument that every real
+// gamepad has one and the Siri Remote has three buttons and a touch surface.
+// The hardware disagreed:
+//
+//     controller connected: Remote (SDL type: unknown, a pad)
+//
+// SDL answers yes for X, so the capability was no capability at all and every
+// Apple TV got pad glyphs. The name is what actually distinguishes it: Apple
+// reports the Siri Remote's vendor name as "Remote", and SDL passes that
+// through.
+//
+// Matched loosely, and only ever consulted on a television. A pad called
+// something with "remote" in it would be taken for a remote, which on an Apple
+// TV costs two prompts; a remote not called "Remote" would be taken for a pad,
+// which is the state this was in before and is no worse. The joystick's own
+// button and axis counts are in the connection log, for the day one of those
+// is a better answer than this.
+bool controller_is_a_remote(const char* sdl_name);
+
 class InputManager {
 public:
     ~InputManager();
@@ -152,11 +176,9 @@ public:
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
 
-    // How many of those have a full face-button cluster, which is what tells a
-    // pad from a Siri Remote. SDL reports the remote as a controller -- three
-    // buttons and a touch surface -- so connected_controllers() counts it and
-    // cannot tell the difference. An X button can: every real gamepad has one,
-    // the remote has none. See prompt_style_for().
+    // How many of those are a pad rather than a television remote. SDL reports
+    // an Apple TV's Siri Remote as a controller, so connected_controllers()
+    // counts it and cannot tell the difference. See prompt_style_for().
     int connected_gamepads() const;
 
 

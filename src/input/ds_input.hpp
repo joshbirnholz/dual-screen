@@ -108,6 +108,19 @@ enum class DisplayTurn {
 // The far end cannot fix this. It is handed raw sensor readings on purpose --
 // see DsMotionState -- because whatever consumes them has its own fusion, and
 // it has no idea which way up this particular device is being held.
+// Which one, in words, for the log. A measurement of this device's motion
+// cannot be read without knowing which way it was being held while it was
+// taken -- see MotionComparison, and the note in apple/README.md.
+inline const char* display_turn_name(DisplayTurn turn) {
+    switch (turn) {
+        case DisplayTurn::None: return "upright (portrait)";
+        case DisplayTurn::TopToTheRight: return "landscape, its top edge to the right";
+        case DisplayTurn::TopToTheLeft: return "landscape, its top edge to the left";
+        case DisplayTurn::UpsideDown: return "upside down";
+    }
+    return "unknown";
+}
+
 inline DsMotionState motion_turned_to_display(const DsMotionState& reading, DisplayTurn turn) {
     DsMotionState out = reading;
     const auto turned = [turn](float x, float y, float& out_x, float& out_y) {

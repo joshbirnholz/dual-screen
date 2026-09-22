@@ -56,7 +56,9 @@ void LauncherScreen::open(bool runs_games) {
     if (runs_games) {
         rows_.push_back(LauncherChoice::Settings);
     }
-    rows_.push_back(LauncherChoice::Quit);
+    if (offers_quit_) {
+        rows_.push_back(LauncherChoice::Quit);
+    }
 }
 
 LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
@@ -93,12 +95,17 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
             case UiAction::MenuDisconnect:
                 // Plus. Only where the platform's own convention says so; see
                 // set_plus_quits().
-                if (plus_quits_) {
+                if (plus_quits_ && offers_quit_) {
                     result.choice = LauncherChoice::Quit;
                 }
                 break;
             case UiAction::Quit:
-                result.choice = LauncherChoice::Quit;
+                // F10, and whatever else means leave. Ignored where leaving is
+                // not this app's to do: a keyboard attached to an iPad is not
+                // a reason to be able to quit an iPad app from inside it.
+                if (offers_quit_) {
+                    result.choice = LauncherChoice::Quit;
+                }
                 break;
             default:
                 break;
