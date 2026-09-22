@@ -182,6 +182,18 @@ void test_a_siri_remote_is_recognised_by_what_sdl_calls_it() {
     CHECK(!controller_is_a_remote(nullptr));
 }
 
+// A Siri Remote has one button on its face, and clicking it arrives as SDL's
+// south. East -- the default, and every Nintendo pad's convention -- names a
+// button that is not there, so on an Apple TV nothing confirmed and the click
+// read as cancel instead.
+void test_yes_lands_on_the_button_a_remote_actually_has() {
+    CHECK(confirm_button_for_style(PromptStyle::Remote) == ConfirmButton::South);
+    // And nothing else moves: a pad paired with the Apple TV confirms on east
+    // like every other pad, and so does a phone.
+    CHECK(confirm_button_for_style(PromptStyle::Pad) == ConfirmButton::East);
+    CHECK(confirm_button_for_style(PromptStyle::Touch) == ConfirmButton::East);
+}
+
 void test_the_hint_style_is_asked_rather_than_assumed() {
     const PromptStyle was = prompt_style();
     set_prompt_style(PromptStyle::Touch);
@@ -208,6 +220,7 @@ int main() {
     test_a_confirmation_dialog_keeps_both_answers();
     test_the_style_follows_what_is_in_your_hands();
     test_a_siri_remote_is_recognised_by_what_sdl_calls_it();
+    test_yes_lands_on_the_button_a_remote_actually_has();
     test_the_hint_style_is_asked_rather_than_assumed();
     return test::finish("touch-hints");
 }

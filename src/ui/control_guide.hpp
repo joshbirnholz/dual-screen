@@ -96,6 +96,15 @@ bool touch_hints();
 // are about what you are holding.
 PromptStyle prompt_style_for(bool television, int controllers, int full_gamepads);
 
+// And which button means yes, given that.
+//
+// A Siri Remote has one button on its face and its click arrives as SDL's
+// south, so east -- this app's default, and every Nintendo pad's convention --
+// names a button the remote does not have. Pure and here beside the style it
+// follows from, rather than a ternary at the one call site, because getting it
+// wrong is silent: the menu simply stops answering.
+ConfirmButton confirm_button_for_style(PromptStyle style);
+
 // Which prompt a point is on, ButtonGlyph::Count when none. The prompts are
 // laid out from the glyph artwork's own proportions, so only the row that
 // drew itself knows where they went -- hence the hits.

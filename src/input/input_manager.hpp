@@ -254,6 +254,11 @@ private:
     DsInputState ds_state_;
     std::vector<UiAction> ui_actions_;
     std::vector<PointerEvent> pointer_events_;
+    // Which buttons have already been named in the log, one bit each, and
+    // whether menu navigation by stick has been. Once is a mapping; every
+    // press is noise. See SDL_CONTROLLERBUTTONDOWN.
+    uint32_t said_buttons_ = 0;
+    bool said_axis_navigation_ = false;
     bool quit_requested_ = false;
     bool window_size_changed_ = false;
     bool game_input_enabled_ = true;

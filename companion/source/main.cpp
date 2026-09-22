@@ -821,6 +821,27 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             case State::Launcher:
                 break;
             case State::Playing:
+                // On a Siri Remote, back opens the quick menu.
+                //
+                // Nothing else here could. A remote has no L3 and R3 to press
+                // together and no second finger to tap with, so without this
+                // there is no way into the menu on an Apple TV at all -- and
+                // no way to disconnect, or to quit the game, once a session
+                // has started.
+                //
+                // It is also what that button is for. tvOS means it as "out of
+                // whatever I am in", and in a game that is the menu, not the
+                // app. A press this app does not consume is one tvOS acts on
+                // itself, and what tvOS does with it is close the app.
+                //
+                // Pressing it again closes the menu: with the menu up,
+                // handle_menu() takes every action and forwards it to the
+                // host, whose menu answers back the way it does for any other
+                // device.
+                if (prompt_style() == PromptStyle::Remote && action == UiAction::Cancel) {
+                    session_.set_menu_open(true);
+                    break;
+                }
                 switch (action) {
                     case UiAction::ToggleMenu:
                         // Asked for rather than opened here. The host holds the
@@ -1032,8 +1053,21 @@ void Client::run() {
 #else
         constexpr bool kTelevision = false;
 #endif
-        set_prompt_style(prompt_style_for(kTelevision, input_.connected_controllers(),
-                                          input_.connected_gamepads()));
+        const PromptStyle style = prompt_style_for(kTelevision, input_.connected_controllers(),
+                                                   input_.connected_gamepads());
+        set_prompt_style(style);
+        // And which button means yes, which a Siri Remote does not get a say
+        // in: it has one button on its face and the click of it arrives as
+        // SDL's *south*. This app's menus confirm on east by default, so on an
+        // Apple TV clicking selected nothing -- and, because south is the
+        // other half of that pair, what it actually did was cancel. Choosing
+        // south here puts yes on the only button there is.
+        //
+        // Set every frame rather than once, because a pad can be paired with
+        // the Apple TV at any point and then east is right again.
+        const ConfirmButton confirms = confirm_button_for_style(style);
+        input_.set_confirm_button(confirms);
+        set_confirm_button(confirms);
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
         route_guide_taps(actions, pointers);

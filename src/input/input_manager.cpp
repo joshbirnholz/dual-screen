@@ -260,18 +260,43 @@ void InputManager::handle_event(const SDL_Event& event) {
             // to choose -- east by default, south for anyone who grew up on a
             // PlayStation. The other one of the pair is always the other
             // answer, so the two can never both mean the same thing.
+            const char* meaning = "nothing in a menu";
             if (button == confirm_button_for(confirm_button_)) {
                 push_action(UiAction::Confirm);
+                meaning = "yes";
             } else if (button == cancel_button_for(confirm_button_)) {
                 push_action(UiAction::Cancel);
+                meaning = "no / back";
             } else if (button == kMenuQuitButton) {
                 push_action(UiAction::MenuQuit);
+                meaning = "the menu's quit";
             } else if (button == kMenuResetButton) {
                 push_action(UiAction::MenuReset);
+                meaning = "the menu's reset";
             } else if (button == kMenuDisconnectButton) {
                 push_action(UiAction::MenuDisconnect);
+                meaning = "disconnect";
             } else if (button == kMenuSettingsButton) {
                 push_action(UiAction::MenuSettings);
+                meaning = "settings";
+            }
+
+            // And the first press of each button, at a level that reaches the
+            // console rather than only the file.
+            //
+            // The debug line above has been there all along and was no use on
+            // an Apple TV, where there is no command line to turn verbosity on
+            // with and the log file needs Xcode and a container download to
+            // read. What it would have said the first time somebody clicked a
+            // Siri Remote is that the click arrives as south -- which this app
+            // was reading as "no". Once per button is a mapping; every press
+            // is noise.
+            if (button >= 0 && button < 32 &&
+                (said_buttons_ & (1u << static_cast<unsigned>(button))) == 0) {
+                said_buttons_ |= 1u << static_cast<unsigned>(button);
+                log_info(std::string("controller: a press arrived as ") +
+                         (sdl_name != nullptr ? sdl_name : "?") + ", which means " + meaning +
+                         " here");
             }
 
             switch (button) {
@@ -515,6 +540,13 @@ void InputManager::emit_navigation_from_axes() {
     // Edge-triggered, so holding the stick does not scroll the menu away.
     if (up && !axis_up_) push_action(UiAction::Up);
     if (down && !axis_down_) push_action(UiAction::Down);
+    // Said once, for the same reason as the buttons above: on a device with no
+    // command line, "the menu does not move" and "the menu moves and something
+    // else is wrong" are the same report until something says which.
+    if ((up || down) && !said_axis_navigation_) {
+        said_axis_navigation_ = true;
+        log_info("controller: a stick or touch surface is moving the menu");
+    }
     if (left && !axis_left_) push_action(UiAction::Left);
     if (right && !axis_right_) push_action(UiAction::Right);
     axis_up_ = up;

@@ -72,6 +72,12 @@ ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y)
     return ButtonGlyph::Count;
 }
 
+ConfirmButton confirm_button_for_style(PromptStyle style) {
+    // South for a remote, because that is the button it has. East everywhere
+    // else, including on an Apple TV with a pad paired to it.
+    return style == PromptStyle::Remote ? ConfirmButton::South : ConfirmButton::East;
+}
+
 std::vector<GuidePrompt> prompts_worth_drawing(const std::vector<GuidePrompt>& prompts) {
     const PromptStyle style = prompt_style();
     if (style == PromptStyle::Pad) {
