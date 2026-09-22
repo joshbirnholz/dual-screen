@@ -74,6 +74,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // about the next one, which may be sending a quite different picture.
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
+    adapt_readback_micros_ = 0;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
     too_expensive_scale_ = 2.0;
@@ -189,6 +190,7 @@ void CompanionSession::disconnect() {
     // about the next one, which may be sending a quite different picture.
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
+    adapt_readback_micros_ = 0;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
     too_expensive_scale_ = 2.0;
@@ -249,6 +251,7 @@ void CompanionSession::fail(const std::string& reason) {
     // about the next one, which may be sending a quite different picture.
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
+    adapt_readback_micros_ = 0;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
     too_expensive_scale_ = 2.0;
@@ -1287,13 +1290,31 @@ void CompanionSession::send_display_size() {
     send_request(request);
 }
 
-void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t now_ms) {
+void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_ms) {
     if (status_ != Status::Connected || wanted_display_width_ <= 0) {
         return;
     }
+    // The clock read here, not the one poll() was handed.
+    //
+    // poll() is given the time at the top of the loop and decodes on the way
+    // down -- see the decode_next_frame() loop above -- so by the time this
+    // runs, the timestamp is older than the work it is about to divide by.
+    // Every window therefore counted one poll's decoding against an elapsed
+    // time that did not contain it, and a poll that decodes several frames is
+    // a hundred milliseconds of that. It showed: an Apple TV reported "1114ms
+    // of every second", which is not a thing that can happen on one thread.
+    //
+    // Same clock as decode_next_frame() times itself with, so the two are
+    // comparable at all.
+    (void)stale_now_ms;
+    const uint64_t now_ms = monotonic_millis();
     if (adapt_at_ms_ == 0) {
         adapt_at_ms_ = now_ms;
         adapt_decode_ms_ = 0;
+        // And this one, which was left behind when the rest was cleared: a
+        // window that starts with the previous session's microseconds already
+        // in it reports a readback cost that nothing in this window paid.
+        adapt_readback_micros_ = 0;
         return;
     }
     const uint64_t elapsed = now_ms - adapt_at_ms_;
