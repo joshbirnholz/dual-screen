@@ -708,7 +708,11 @@ void InputManager::end_frame(const Layout& layout,
             ds_state_.c_stick_x = held.c_stick_x;
             ds_state_.c_stick_y = held.c_stick_y;
         }
-        if (held_input_gate_.touching()) {
+        // Not where the interface has claimed the pixels -- see
+        // set_ui_reserved_rect(). Checked before the mapping rather than
+        // after, because the mapping's job is to say where in the console's
+        // screen a point is, not whether it should have been asked.
+        if (held_input_gate_.touching() && !ui_reserved_.contains(pointer_x_, pointer_y_)) {
             DsTouchPoint point;
             if (map_output_point_to_ds(layout, output_width, output_height, pointer_x_, pointer_y_,
                                        point, screens, display_width, display_height)) {

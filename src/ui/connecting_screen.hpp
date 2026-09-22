@@ -24,7 +24,8 @@ void render_waiting_screen(QuadRenderer& quads,
                            float output_height,
                            const std::string& heading,
                            const std::vector<std::string>& lines,
-                           const std::vector<GuidePrompt>& prompts);
+                           const std::vector<GuidePrompt>& prompts,
+                           std::vector<GuideHit>* out_hits = nullptr);
 
 // Shown while joining a host, on whichever device is doing the joining.
 //
@@ -44,6 +45,7 @@ void render_connecting_screen(QuadRenderer& quads,
                               float output_height,
                               const std::string& device_name,
                               const std::string& game_title,
-                              const std::string& note = std::string());
+                              const std::string& note = std::string(),
+                              std::vector<GuideHit>* out_hits = nullptr);
 
 }  // namespace ds

@@ -83,6 +83,12 @@ private:
     std::vector<LauncherChoice> rows_;
     bool runs_games_ = true;
     bool plus_quits_ = false;
+    std::vector<GuideHit> guide_hits_;
+
+public:
+    // Where this screen's prompts ended up, for a finger. See
+    // guide_button_at() in control_guide.hpp.
+    const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
 };
 
 // Picks which host to join, from whatever discovery has found.
@@ -131,6 +137,12 @@ private:
     bool open_ = false;
     int focus_ = 0;
     ScreenId wanted_screen_ = ScreenId::Bottom;
+    std::vector<GuideHit> guide_hits_;
+
+public:
+    // Where this screen's prompts ended up, for a finger. See
+    // guide_button_at() in control_guide.hpp.
+    const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
 };
 
 }  // namespace ds

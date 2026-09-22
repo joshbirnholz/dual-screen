@@ -147,6 +147,16 @@ public:
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
 
+    // A rectangle the interface has claimed, which game touches do not reach.
+    //
+    // A device with no pad has to draw its own way out over the streamed
+    // picture, and on a device showing a console's touch screen that picture
+    // is also the thing taking touches. Without this a tap on the way out is
+    // also a tap in the game underneath -- which, on the screen a stylus
+    // belongs to, is a real press at a real coordinate.
+    void set_ui_reserved_rect(const PixelRect& rect) { ui_reserved_ = rect; }
+    void clear_ui_reserved_rect() { ui_reserved_ = PixelRect{}; }
+
     // Rumbles every connected controller, or stops them -- for a companion
     // standing in for a Wii U GamePad, whose one motor this collapses onto
     // whatever this device actually has. On/off rather than a duration: the
@@ -218,6 +228,7 @@ private:
     DsInputState ds_state_;
     std::vector<UiAction> ui_actions_;
     std::vector<PointerEvent> pointer_events_;
+    PixelRect ui_reserved_;
     bool quit_requested_ = false;
     bool window_size_changed_ = false;
     bool game_input_enabled_ = true;

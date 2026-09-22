@@ -13,7 +13,8 @@ void render_waiting_screen(QuadRenderer& quads,
                            float output_height,
                            const std::string& heading,
                            const std::vector<std::string>& lines,
-                           const std::vector<GuidePrompt>& prompts) {
+                           const std::vector<GuidePrompt>& prompts,
+                           std::vector<GuideHit>* out_hits) {
     const UiTheme& theme = ui_theme();
     const float scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(scale);
@@ -48,10 +49,11 @@ void render_waiting_screen(QuadRenderer& quads,
         first = false;
     }
 
+    if (out_hits != nullptr) out_hits->clear();
     if (!prompts.empty()) {
         draw_control_guide(quads, text, glyphs, prompts, centre,
                            output_height - line * 1.5f - control_guide_height(scale * 0.95f),
-                           scale * 0.95f, theme.text);
+                           scale * 0.95f, theme.text, TextAlign::Center, out_hits);
     }
 }
 
@@ -62,7 +64,8 @@ void render_connecting_screen(QuadRenderer& quads,
                               float output_height,
                               const std::string& device_name,
                               const std::string& game_title,
-                              const std::string& note) {
+                              const std::string& note,
+                              std::vector<GuideHit>* out_hits) {
     // Named, because the point of this screen is knowing which of the devices
     // on the list is being waited for.
     std::vector<std::string> lines = {device_name.empty() ? std::string() : "to " + device_name,
@@ -72,7 +75,7 @@ void render_connecting_screen(QuadRenderer& quads,
         lines.push_back(note);
     }
     render_waiting_screen(quads, text, glyphs, output_width, output_height, "Connecting", lines,
-                          {{ButtonGlyph::B, "Stop waiting"}});
+                          {{ButtonGlyph::B, "Stop waiting"}}, out_hits);
 }
 
 }  // namespace ds

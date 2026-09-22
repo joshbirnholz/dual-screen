@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
@@ -25,6 +26,35 @@ struct GuideHit {
     ButtonGlyph glyph = ButtonGlyph::A;
     PixelRect rect;
 };
+
+// Whether the prompts are for a pad or for fingers.
+//
+// Module state rather than an argument threaded through every render call,
+// the same shape as ui_theme(): it is one fact about the machine the app is
+// running on, it is the same for every screen, and it changes only when a
+// controller is plugged in or pulled out.
+//
+// A console glyph is the right thing to draw when there is a pad in the
+// player's hands and exactly the wrong thing otherwise: a phone on its own
+// has no B button, so "B Back" is an instruction that cannot be followed.
+// The prompts stay in the same row, in the same place, at the same size --
+// they just say what a finger can actually do.
+void set_touch_hints(bool touch);
+bool touch_hints();
+
+// Which prompt a point is on, ButtonGlyph::Count when none. The prompts are
+// laid out from the glyph artwork's own proportions, so only the row that
+// drew itself knows where they went -- hence the hits.
+ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y);
+
+// What tapping a prompt should do. False for a glyph no prompt outside a
+// quick menu uses, whose meaning belongs to the menu and is decided there.
+//
+// Here rather than at the one call site so that it can be checked: a prompt
+// whose glyph this does not know is a prompt that draws, invites a finger and
+// then does nothing -- which on a device with no buttons is the difference
+// between an app you can leave and one you cannot.
+bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out);
 
 // Draws the prompts as one row and returns how tall it was. `x` is the row's
 // centre when centred and its right edge when right-aligned. `out_hits`, when

@@ -248,6 +248,12 @@ private:
 
     void handle_actions(const std::vector<UiAction>& actions,
                         const std::vector<PointerEvent>& pointers);
+    // Where the prompts currently on screen are, whichever screen that is.
+    const std::vector<GuideHit>& guide_hits_on_screen() const;
+    // Turns a finger landing on a prompt into the action that prompt names,
+    // and takes that pointer out of the list so the screen underneath does
+    // not also act on it.
+    void route_guide_taps(std::vector<UiAction>& actions, std::vector<PointerEvent>& pointers);
     void handle_menu(const std::vector<UiAction>& actions,
                      const std::vector<PointerEvent>& pointers);
     void open_menu();
@@ -286,6 +292,11 @@ private:
     LayoutPicker picker_{registry_};
     LauncherScreen launcher_;
     HostPickerScreen host_picker_;
+    // Where the prompts of the two screens that are not objects ended up: the
+    // connecting screen is a free function, and the one drawn over a game is
+    // this file's own.
+    std::vector<GuideHit> connecting_hits_;
+    std::vector<GuideHit> playing_hits_;
 
     // The panel size last acted on, so a change is noticed rather than
     // re-announced every frame.
@@ -691,6 +702,52 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
     }
 }
 
+const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
+    static const std::vector<GuideHit> none;
+    switch (state_) {
+        case State::Launcher: return launcher_.guide_hits();
+        case State::Connecting: return connecting_hits_;
+        case State::Browsing:
+        case State::Failed: return host_picker_.guide_hits();
+        // The quick menu draws its own and routes them itself, since a press
+        // there is forwarded to the host rather than acted on here.
+        case State::Playing: return menu_open_ ? none : playing_hits_;
+    }
+    return none;
+}
+
+void Client::route_guide_taps(std::vector<UiAction>& actions,
+                              std::vector<PointerEvent>& pointers) {
+    const std::vector<GuideHit>& hits = guide_hits_on_screen();
+    if (hits.empty()) {
+        return;
+    }
+    std::vector<PointerEvent> survivors;
+    survivors.reserve(pointers.size());
+    for (const PointerEvent& pointer : pointers) {
+        // Only where the finger came down and left on the same prompt, the
+        // same rule the menu's own prompts use -- a press that slid across
+        // one on its way somewhere else is not a press on it.
+        const ButtonGlyph on_guide =
+            pointer.released ? guide_button_at(hits, pointer.x, pointer.y) : ButtonGlyph::Count;
+        if (on_guide == ButtonGlyph::Count ||
+            on_guide != guide_button_at(hits, pointer.press_x, pointer.press_y)) {
+            survivors.push_back(pointer);
+            continue;
+        }
+        // The prompt says what it does; this is that. A prompt drawn for a
+        // finger has no button behind it, so the action is raised here rather
+        // than arriving from a pad.
+        UiAction action = UiAction::Confirm;
+        if (ui_action_for_glyph(on_guide, action)) {
+            actions.push_back(action);
+        }
+        // Swallowed either way: a tap that was aimed at a prompt is not also
+        // a tap on whatever is behind it.
+    }
+    pointers.swap(survivors);
+}
+
 void Client::handle_actions(const std::vector<UiAction>& actions,
                             const std::vector<PointerEvent>& pointers) {
     if (state_ == State::Playing && menu_open_) {
@@ -933,7 +990,13 @@ void Client::run() {
         if (input_.quit_requested()) {
             running_ = false;
         }
-        handle_actions(input_.ui_actions(), input_.pointer_events());
+        // Which kind of prompt to draw, asked every frame because a pad can
+        // be connected or taken away at any point in a session.
+        set_touch_hints(input_.connected_controllers() == 0);
+        std::vector<UiAction> actions = input_.ui_actions();
+        std::vector<PointerEvent> pointers = input_.pointer_events();
+        route_guide_taps(actions, pointers);
+        handle_actions(actions, pointers);
 
         if (state_ == State::Playing && !menu_open_) {
             session_.send_input(input_.ds_state());
@@ -988,7 +1051,8 @@ void Client::draw() {
     }
     if (state_ == State::Connecting) {
         render_connecting_screen(quads_, text_, button_glyphs_, width, height,
-                                 joining_.device_name, joining_.game_title);
+                                 joining_.device_name, joining_.game_title, std::string(),
+                                 &connecting_hits_);
         return;
     }
     if (state_ != State::Playing) {
@@ -1003,6 +1067,31 @@ void Client::draw() {
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
+
+    // The way out, on a device that has no button to be the way out.
+    //
+    // Every other screen in this app has its prompts along the bottom and
+    // nothing has to be drawn over a game -- but the game is where somebody
+    // spends the whole session, and with no pad there is otherwise no way to
+    // reach the menu at all, which means no way to leave. One prompt, in the
+    // corner, and only when there is nothing better to press.
+    //
+    // Not drawn when a pad is connected: the button does it, and a streamed
+    // picture is better with nothing on top of it.
+    playing_hits_.clear();
+    if (!menu_open_ && touch_hints()) {
+        const float scale = UiTheme::base_scale(height) * 0.9f;
+        const float line = TextRenderer::line_height(scale);
+        draw_control_guide(quads_, text_, button_glyphs_, {{ButtonGlyph::Minus, "Menu"}},
+                           width - line, line, scale, ui_theme().text, TextAlign::Right,
+                           &playing_hits_);
+        // And the pixels it sits on stop being the game's. On the screen a
+        // stylus belongs to, a tap here would otherwise be a real press at a
+        // real coordinate as well as a way out.
+        input_.set_ui_reserved_rect(playing_hits_.empty() ? PixelRect{} : playing_hits_[0].rect);
+    } else {
+        input_.clear_ui_reserved_rect();
+    }
 
     if (menu_open_) {
         // Taken between the game and the menu, the same as on the other device:
