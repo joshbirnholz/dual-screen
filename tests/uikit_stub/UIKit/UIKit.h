@@ -11,6 +11,8 @@
 // actually connects, which only a device or a simulator can answer.
 #pragma once
 
+#include <TargetConditionals.h>
+
 typedef signed char BOOL;
 #define YES ((BOOL)1)
 #define NO ((BOOL)0)
@@ -69,22 +71,36 @@ typedef struct {
 @interface UIScene : UIResponder
 @end
 
+// Orientation does not exist on tvOS. Not "is absent" -- the real SDK marks
+// the type and the property explicitly unavailable there, so naming them is a
+// compile error and not a missing symbol at link time. Left out here under the
+// same condition, because a stub that is more generous than the SDK is a stub
+// that passes code the SDK will reject. This one did, once: an orientation
+// reader compiled as tvOS here and failed in Xcode.
+#if !TARGET_OS_TV
 typedef long UIInterfaceOrientation;
 #define UIInterfaceOrientationPortrait ((UIInterfaceOrientation)1)
 #define UIInterfaceOrientationPortraitUpsideDown ((UIInterfaceOrientation)2)
 #define UIInterfaceOrientationLandscapeLeft ((UIInterfaceOrientation)4)
 #define UIInterfaceOrientationLandscapeRight ((UIInterfaceOrientation)3)
+#endif
 
 @interface UIWindowScene : UIScene
+#if !TARGET_OS_TV
 @property (nonatomic, readonly) UIInterfaceOrientation interfaceOrientation;
+#endif
 @end
 
+#if !TARGET_OS_TV
 typedef unsigned long UIInterfaceOrientationMask;
 #define UIInterfaceOrientationMaskAll ((UIInterfaceOrientationMask)0x1E)
 #define UIInterfaceOrientationMaskLandscape ((UIInterfaceOrientationMask)0x18)
+#endif
 
 @interface UIViewController : UIResponder
+#if !TARGET_OS_TV
 - (void)setNeedsUpdateOfSupportedInterfaceOrientations;
+#endif
 @end
 
 @interface UIWindow : UIResponder
@@ -95,8 +111,10 @@ typedef unsigned long UIInterfaceOrientationMask;
 
 @protocol UIApplicationDelegate
 @optional
+#if !TARGET_OS_TV
 - (UIInterfaceOrientationMask)application:(UIApplication *)application
     supportedInterfaceOrientationsForWindow:(UIWindow *)window;
+#endif
 @end
 
 @protocol UISceneDelegate

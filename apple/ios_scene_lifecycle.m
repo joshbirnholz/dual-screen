@@ -196,6 +196,11 @@
 // Returns one of the ds::DisplayTurn values, as an int, because this file is
 // Objective-C and that enum is C++. See motion.cpp, which is the only caller.
 //
+// Not on tvOS, which has no UIInterfaceOrientation at all -- the type and the
+// property are marked unavailable there, not merely absent, so naming them is
+// an error rather than a missing symbol. A television does not turn over, and
+// motion.cpp does not call this there.
+//
 // UIWindowScene.interfaceOrientation, not UIApplication.statusBarOrientation:
 // the latter is what SDL asks, and iOS 27 has made it a no-op that answers
 // zero forever. That is the same API behind the window-size confusion this
@@ -206,6 +211,7 @@
 // *right* -- the opposite of what the name reads like. The values returned
 // here are named for where the top edge actually points, and the mapping is
 // written out once, here, rather than reasoned about again at the other end.
+#if !TARGET_OS_TV
 int ds_ios_display_turn(void)
 {
     for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
@@ -227,6 +233,7 @@ int ds_ios_display_turn(void)
     }
     return 0;
 }
+#endif  // !TARGET_OS_TV
 
 // --- giving an SDL window somewhere to be ------------------------------------
 
