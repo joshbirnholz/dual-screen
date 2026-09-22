@@ -63,7 +63,9 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                                output_width - margin * 2.0f,
                                output_height - std::round(output_height * 0.16f)};
 
-    const float rows_top = geometry.panel.y + line * 3.5f;
+    // The heading stays put; everything under it moves with the scroll.
+    const float content_top = geometry.panel.y + line * 3.5f;
+    const float rows_top = content_top - scroll_;
     const float row_height = line * 1.9f;
     for (int index = 0; index < kRowCount; ++index) {
         geometry.rows.push_back(PixelRect{
@@ -73,6 +75,7 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
             row_height,
         });
     }
+    geometry.view_height = geometry.panel.y + geometry.panel.h - content_top;
 
     // The cores get their own block: a heading plus one line per console, so
     // the space it takes follows the list rather than a remembered count.
@@ -81,9 +84,13 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
 
     const float bios_top = core_top + core_height + line * 0.6f;
-    geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w,
-                                    std::max(line * 3.0f,
-                                             geometry.panel.y + geometry.panel.h - bios_top)};
+    const float bios_height = std::max(line * 3.0f, line * (1.6f + 1.1f * static_cast<float>(
+                                                                       std::max<std::size_t>(
+                                                                           bios_.size(), 1))));
+    geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w, bios_height};
+    // Measured from the top of the content rather than from the panel, so it
+    // is the height of the thing being scrolled and not of the window onto it.
+    geometry.content_height = bios_top + bios_height + line * 0.6f - (content_top - scroll_);
     return geometry;
 }
 
@@ -153,6 +160,23 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
     }
 }
 
+void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
+    const std::size_t index = static_cast<std::size_t>(
+        std::max(0, std::min(focus_, kRowCount - 1)));
+    if (index >= geometry.rows.size()) {
+        return;
+    }
+    const PixelRect& row = geometry.rows[index];
+    const float top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 3.5f;
+    const float bottom = geometry.panel.y + geometry.panel.h;
+    if (row.y < top) {
+        scroll_ -= top - row.y;
+    } else if (row.y + row.h > bottom) {
+        scroll_ += row.y + row.h - bottom;
+    }
+    scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
+}
+
 SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions,
                                             const std::vector<PointerEvent>& pointers,
                                             float output_width,
@@ -183,15 +207,23 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::Quit: break;
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
             case UiAction::SwapLayout:    // nothing here is a layout
-            case UiAction::PageUp:
-            case UiAction::PageDown: break;  // nothing here scrolls
+            // There is more here than fits, so these move the view rather
+            // than doing nothing.
+            case UiAction::PageUp: scroll_ -= geometry.view_height * 0.8f; break;
+            case UiAction::PageDown: scroll_ += geometry.view_height * 0.8f; break;
         }
     }
 
+    // The cursor and the view are settled before anything is hit-tested: an
+    // action may have moved either, and a row cannot be tapped where it was.
+    scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
+    scroll_focus_into_view(compute_geometry(output_width, output_height));
+    const Geometry settled = compute_geometry(output_width, output_height);
+
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
-        for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
-            if (tapped(pointer, geometry.rows[index])) {
+        for (std::size_t index = 0; index < settled.rows.size(); ++index) {
+            if (tapped(pointer, settled.rows[index])) {
                 focus_ = static_cast<int>(index);
                 adjust(1, result);
             }
@@ -222,6 +254,13 @@ void SettingsScreen::render(QuadRenderer& quads,
     text.draw(quads, "Settings", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
     text.draw(quads, "Left/Right changes a value.   Paths are edited in settings.json",
               geometry.panel.x, geometry.panel.y + line * 1.8f, scale * 0.9f, theme.text_dim);
+
+    // Everything below the heading scrolls, so everything below the heading is
+    // clipped to the room there is for it. Without this a row pushed past the
+    // bottom carries on being drawn over whatever is under the panel.
+    const float view_top = geometry.panel.y + line * 3.5f;
+    quads.set_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
+                             geometry.panel.y + geometry.panel.h - view_top});
 
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
@@ -302,6 +341,12 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
     }
 
+    // Everything above scrolled and was clipped to the panel. The footnote and
+    // the prompts below it are fixed to the window, so the clip comes off
+    // here -- inside it they would be clipped away with whatever else had
+    // fallen off the bottom.
+    quads.clear_clip();
+
     const std::string footnote =
         "None of these ship with this app - they have to be your own dumps. DS games still boot "
         "without them, using the core's built-in BIOS replacement.";
@@ -320,6 +365,18 @@ void SettingsScreen::render(QuadRenderer& quads,
                        geometry.panel.x + geometry.panel.w,
                        output_height - line * 0.6f - guide_height, scale * 0.9f, theme.text,
                        TextAlign::Right);
+
+    // Something has to say there is more, or a list that stops at the bottom
+    // edge looks like a list that ends there.
+    if (geometry.max_scroll() > 0.5f) {
+        const float bar_x = geometry.panel.x + geometry.panel.w + line * 0.3f;
+        const float view = geometry.panel.y + geometry.panel.h - view_top;
+        const float span = geometry.content_height;
+        const float thumb = std::max(line, view * view / std::max(view, span));
+        const float travel = (view - thumb) * (scroll_ / geometry.max_scroll());
+        quads.draw_capsule(PixelRect{bar_x, view_top + travel, line * 0.22f, thumb},
+                           theme.text_dim);
+    }
 }
 
 }  // namespace ds

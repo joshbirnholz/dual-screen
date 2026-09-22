@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <string>
 #include <vector>
 
@@ -92,9 +94,18 @@ private:
         PixelRect core_panel;
         PixelRect bios_panel;
         float scale = 1.0f;
+        // Everything the panel holds, laid out end to end, against the room
+        // there is to show it in. The difference is how far this can scroll.
+        float content_height = 0.0f;
+        float view_height = 0.0f;
+        float max_scroll() const { return std::max(0.0f, content_height - view_height); }
     };
 
     Geometry compute_geometry(float output_width, float output_height) const;
+    // Moves the view the least it can to bring the focused row fully into it.
+    // Called after anything that moves the cursor, because a cursor you
+    // cannot see is the same as no cursor.
+    void scroll_focus_into_view(const Geometry& geometry);
     void adjust(int direction, SettingsScreenResult& result);
     void refresh_bios();
 
@@ -106,6 +117,15 @@ private:
     std::vector<BiosFileStatus> bios_;
     int focus_ = 0;
     bool open_ = false;
+
+    // How far down the list has been pushed, in pixels. Pixels rather than
+    // rows, because what is below the rows -- the cores, then the BIOS files
+    // -- is not made of rows and would jump past in whole-row steps.
+    float scroll_ = 0.0f;
+    // No drag-scrolling here, deliberately. This screen belongs to the device
+    // running the game -- it is not in the companion's sources at all -- so it
+    // always has a controller or a keyboard and a mouse to work it with. A
+    // touch-only device reaches settings through the machine it is watching.
 };
 
 }  // namespace ds
