@@ -1272,6 +1272,17 @@ void CompanionSession::request_display_size(int width, int height) {
     send_display_size();
 }
 
+double lowest_display_scale(int panel_width) {
+    if (panel_width <= 0) {
+        return kMinDisplayScale;
+    }
+    // The lower of the two bars, so no device loses headroom it had: on a
+    // panel narrower than twice kMinDisplayWidth the fraction is still what
+    // binds, and on anything wider the picture size is.
+    const double by_pixels = static_cast<double>(kMinDisplayWidth) / panel_width;
+    return std::min(kMinDisplayScale, by_pixels);
+}
+
 void CompanionSession::send_display_size() {
     if (wanted_display_width_ <= 0 || wanted_display_height_ <= 0) {
         return;
@@ -1327,12 +1338,13 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
 
-    if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > kMinDisplayScale) {
+    const double floor_scale = lowest_display_scale(wanted_display_width_);
+    if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > floor_scale) {
         // Remembered before stepping down, so the way back up knows where the
         // ceiling is -- see too_expensive_scale_.
         too_expensive_scale_ = std::min(too_expensive_scale_, display_scale_);
         too_expensive_at_ms_ = now_ms;
-        display_scale_ = std::max(kMinDisplayScale, display_scale_ * kDisplayScaleStep);
+        display_scale_ = std::max(floor_scale, display_scale_ * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
         // Which half of it, because the two have different answers. Time in
         // the decoder is the decoder's; time in the readback is this app

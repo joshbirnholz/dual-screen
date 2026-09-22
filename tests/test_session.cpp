@@ -1546,6 +1546,43 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
     }
 }
 
+// The floor the ladder can step down to, which has to mean the same thing on
+// a phone and on a television.
+//
+// Measured on an Apple TV: it walked down to the old floor, sat there spending
+// 940ms of every second turning frames into pictures, and had nowhere further
+// to go -- because half of a 3840-wide panel is 1920, which is the whole size
+// of the picture being sent and exactly what it could not decode.
+void test_the_smallest_picture_is_a_size_rather_than_a_fraction() {
+    using namespace ds::net;
+
+    // A 4K television. The old floor was 1920 across; the new one is a small
+    // picture rather than a large fraction.
+    const double tv = lowest_display_scale(3840);
+    CHECK_MSG(3840 * tv <= 700.0,
+              "a 4K panel could not ask for anything smaller than " +
+                  std::to_string(static_cast<int>(3840 * tv)) + " across");
+    CHECK(tv < kMinDisplayScale);
+
+    // Nothing loses the headroom it had. A phone and a 720p panel can still
+    // halve, which is what they could always do.
+    CHECK(lowest_display_scale(1920) <= kMinDisplayScale);
+    CHECK(lowest_display_scale(1280) <= kMinDisplayScale);
+    // And a panel narrower than two of the smallest pictures is still bound by
+    // the fraction, not raised by the pixels.
+    CHECK(lowest_display_scale(800) == kMinDisplayScale);
+    CHECK(lowest_display_scale(320) == kMinDisplayScale);
+    // A size nobody has yet is not a reason to divide by zero.
+    CHECK(lowest_display_scale(0) == kMinDisplayScale);
+
+    // The floor is a floor: stepping down from it repeatedly stays on it.
+    double scale = 1.0;
+    for (int step = 0; step < 40; ++step) {
+        scale = std::max(tv, scale * kDisplayScaleStep);
+    }
+    CHECK(scale == tv);
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -2670,6 +2707,7 @@ int main() {
     test_a_console_that_reads_motion_asks_for_it_and_gets_it();
     test_a_console_that_ignores_motion_never_asks_for_it();
     test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture();
+    test_the_smallest_picture_is_a_size_rather_than_a_fraction();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

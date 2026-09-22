@@ -74,11 +74,29 @@ inline constexpr uint64_t kMaxKeyframeRequestIntervalMs = 1000;
 inline constexpr uint64_t kAdaptWindowMs = 1000;
 inline constexpr uint64_t kBusyDecodeMsPerSecond = 550;
 inline constexpr uint64_t kEasyDecodeMsPerSecond = 250;
-// How far down it may go, and in what steps. A quarter of the pixels (half in
-// each direction) is as far as this will take a picture: below that the
-// argument for streaming at all starts to go with it.
+// How far down it may go, and in what steps.
+//
+// The floor is a picture size, not a fraction, because a fraction means
+// nothing without knowing what it is a fraction of. Half of a phone's panel is
+// about 960 across; half of an Apple TV's 3840 is 1920 -- the full size of the
+// Wii U picture being sent, and precisely what that device could not decode.
+// It stepped down to the floor, sat there spending 940ms of every second, and
+// had nowhere left to go: the one thing the ladder exists to do, it could not
+// do, because the bottom rung was above the problem.
+//
+// So: never below kMinDisplayWidth across, or half the panel, whichever is the
+// lower bar. Every device can therefore go at least as low as it could before,
+// and a big panel can go a great deal lower. 640 across is a small picture on a
+// television, and a small picture that arrives is worth more than a large one
+// that stutters -- which is the same argument the fraction was making, in the
+// units that decide it.
 inline constexpr double kMinDisplayScale = 0.5;
+inline constexpr int kMinDisplayWidth = 640;
 inline constexpr double kDisplayScaleStep = 0.8;
+
+// The lowest scale allowed on a panel this wide. Pure, so the arithmetic above
+// can be checked against the sizes real devices actually have.
+double lowest_display_scale(int panel_width);
 // How long before a size that was too expensive is worth trying once more.
 // Long, because every attempt that fails costs two resolution changes and two
 // keyframes, and a quiet stretch is not evidence that a busy one will fit.
