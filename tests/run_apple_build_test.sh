@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# Which architectures apple/build-all.sh asks for.
+# What apple/build-all.sh asks cmake for: the architectures, and where the
+# project goes.
+#
+# Both have cost a build on a Mac, and neither is visible from here.
 #
 # An Apple TV build failed at the link, with undefined _main and
 # _OBJC_CLASS_$_SDLUIKitDelegate, after 200 warnings about ignoring every member
@@ -16,7 +19,7 @@
 # uname to get past the Darwin check, lipo to answer for an SDL that is not
 # there, and cmake to record the arguments instead of configuring anything.
 #
-# Usage: run_apple_arch_test.sh <build-all.sh> <work dir>
+# Usage: run_apple_build_test.sh <build-all.sh> <work dir>
 
 set -uo pipefail
 
@@ -41,6 +44,14 @@ STUB
 cat > "$WORK_DIR/bin/cmake" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${ARGS_LOG}"
+# Real cmake makes the directory it is given, and whether two builds can sit
+# side by side is one of the things being checked here.
+prev=""
+for arg in "$@"; do
+    [ "$prev" = "-B" ] && mkdir -p "$arg"
+    prev="$arg"
+done
+exit 0
 STUB
 chmod +x "$WORK_DIR/bin/uname" "$WORK_DIR/bin/lipo" "$WORK_DIR/bin/cmake"
 touch "$WORK_DIR/sdl/lib/libSDL2.a"
@@ -122,8 +133,49 @@ run_build_all macos
 expect_no_flag "a Mac build is left to decide for itself" \
                "-DCMAKE_OSX_ARCHITECTURES"
 
+# A device build and a simulator build are different SDKs, and a project is
+# configured for one of them. Sharing a directory means the second configure
+# lands on the first one's cache, and Xcode's symptom is "Mismatched platform"
+# in the destination picker: a simulator project offering no Apple TV to build
+# for, saying nothing about why.
+LIPO_ARCHS=arm64 run_build_all --xcode --sdl-prefix "$WORK_DIR/sdl" tvos
+expect_flag "a simulator build configures build-apple/tvos" \
+            "-B $WORK_DIR/out/tvos "
+LIPO_ARCHS=arm64 run_build_all --xcode --device --team TEAM \
+                               --sdl-prefix "$WORK_DIR/sdl" tvos
+expect_flag "a device build gets a directory of its own" \
+            "-B $WORK_DIR/out/tvos-device "
+expect_flag "and is signed" "-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=TEAM"
+# No sysroot on a device build: CMAKE_SYSTEM_NAME=tvOS already defaults to the
+# device SDK, and naming the simulator one is how you get the project that
+# cannot see an Apple TV.
+expect_no_flag "and is not pinned to the simulator SDK" \
+               "appletvsimulator"
+
+# The workspace has to point at whichever directories this run made, or opening
+# it gives you the previous build's projects.
+if grep -q "tvos-device/dualscreen_companion.xcodeproj" \
+        "$WORK_DIR/out/Dualscreen.xcworkspace/contents.xcworkspacedata"; then
+    echo "ok - the workspace opens the device project"
+else
+    echo "NOT OK - the workspace should list the device project"
+    sed 's/^/      /' "$WORK_DIR/out/Dualscreen.xcworkspace/contents.xcworkspacedata"
+    failures=$((failures + 1))
+fi
+
+# Both SDKs at once, which is the arrangement the README recommends and the
+# reason the directories are separate at all.
+LIPO_ARCHS=arm64 run_build_all --xcode --sdl-prefix "$WORK_DIR/sdl" tvos
+if [ -d "$WORK_DIR/out/tvos" ] && [ -d "$WORK_DIR/out/tvos-device" ]; then
+    echo "ok - a simulator build and a device build can both exist"
+else
+    echo "NOT OK - one build directory replaced the other"
+    ls "$WORK_DIR/out" | sed 's/^/      /'
+    failures=$((failures + 1))
+fi
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
     exit 1
 fi
-echo "ok - build-all.sh asks for the architectures its SDL has"
+echo "ok - build-all.sh asks for the right architectures, in the right place"

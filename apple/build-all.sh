@@ -134,9 +134,33 @@ sdl_architectures() {
     return 1
 }
 
+# Where a platform's project goes.
+#
+# A device build and a simulator build are different SDKs, and CMake bakes the
+# SDK into a project at configure time the same way it bakes in the platform.
+# Sharing one directory between them means the second configure lands on the
+# first one's cache: at best a reconfigure, at worst a project whose SDKROOT
+# says one thing and whose cache says another. Xcode's symptom for that is
+# "Mismatched platform" in the destination picker -- a simulator project
+# offering no real Apple TV to build for, with nothing on screen to say why.
+#
+# So they get a directory each and can both exist. That is the first of the two
+# answers in apple/README.md under "The device-and-simulator catch", and it
+# applies to the SDL prefix too: one prefix is built for one SDK, so a device
+# build needs a device SDL.
+build_dir() {
+    local platform="$1"
+    if [[ ${device} -eq 1 && "${platform}" != "macos" ]]; then
+        printf '%s/%s-device' "${out}" "${platform}"
+    else
+        printf '%s/%s' "${out}" "${platform}"
+    fi
+}
+
 configure_one() {
     local platform="$1"
-    local dir="${out}/${platform}"
+    local dir
+    dir="$(build_dir "${platform}")"
     local -a flags=(-S "${here}" -B "${dir}" -G "${generator}")
 
     case "${platform}" in
@@ -189,7 +213,19 @@ configure_one() {
         flags+=("-DDUALSCREEN_SDL2_PREFIX=${sdl_prefix}")
     fi
 
-    echo "=== configuring ${platform} (${generator})"
+    # Which SDK, said out loud. A prefix built for the other one fails in the
+    # linker with nothing to point at, so the line above the failure should at
+    # least say what this build was for.
+    if [[ "${platform}" != "macos" ]]; then
+        local which_sdk="a simulator"
+        if [[ ${device} -eq 1 ]]; then which_sdk="real hardware"; fi
+        echo "=== configuring ${platform} for ${which_sdk} (${generator})"
+        if [[ -n "${sdl_prefix}" ]]; then
+            echo "    SDL: ${sdl_prefix} -- which must itself be built for ${which_sdk}"
+        fi
+    else
+        echo "=== configuring ${platform} (${generator})"
+    fi
     cmake "${flags[@]}"
     echo "=== building ${platform}"
     cmake --build "${dir}" --config RelWithDebInfo
@@ -201,7 +237,8 @@ configure_one() {
 # last build made and the generator is not always the one this run was given.
 find_bundle() {
     local platform="$1"
-    local dir="${out}/${platform}"
+    local dir
+    dir="$(build_dir "${platform}")"
     local candidate
     for candidate in "${dir}/Dualscreen Companion.app" \
                      "${dir}/RelWithDebInfo/Dualscreen Companion.app" \
@@ -221,7 +258,7 @@ launch_on_simulator() {
     local platform="$1"
     local bundle
     if ! bundle="$(find_bundle "${platform}")"; then
-        echo "no Dualscreen Companion.app under ${out}/${platform} -- was ${platform} built?" >&2
+        echo "no Dualscreen Companion.app under $(build_dir "${platform}") -- was ${platform} built?" >&2
         return 1
     fi
     if ! xcrun simctl list devices booted | grep -q "(Booted)"; then
@@ -263,7 +300,7 @@ mkdir -p "${workspace}"
     for platform in "${platforms[@]}"; do
         # Relative to the workspace, which sits beside the project directories.
         printf '   <FileRef location = "group:%s/dualscreen_companion.xcodeproj"></FileRef>\n' \
-               "${platform}"
+               "$(basename "$(build_dir "${platform}")")"
     done
     printf '</Workspace>\n'
 } > "${workspace}/contents.xcworkspacedata"

@@ -106,6 +106,40 @@ apple/build-all.sh --device --team XXXXXXXXXX
 open build-apple/Dualscreen.xcworkspace
 ```
 
+**A device build goes in a directory of its own** — `build-apple/tvos-device`
+beside `build-apple/tvos` — because a project is configured for one SDK and
+sharing a directory means the second configure lands on the first one's cache.
+Xcode's symptom for that is **"Mismatched platform"** in the destination
+picker: a simulator project offering no real Apple TV to build for, and nothing
+on screen to say why. The two can now both exist, which is what you want anyway
+— simulator to iterate, device to check the things a simulator cannot.
+
+#### A real Apple TV
+
+Three things, and the first is the one that is easy to miss: the SDL prefix is
+built for one SDK too, so a device build needs a device SDL.
+
+```sh
+# SDL for tvOS itself -- appletvos, not appletvsimulator
+cmake -S ~/src/SDL -B ~/src/sdl-tvos -G Ninja \
+      -DCMAKE_SYSTEM_NAME=tvOS -DCMAKE_OSX_SYSROOT=appletvos \
+      -DCMAKE_OSX_ARCHITECTURES=arm64 \
+      -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF \
+      -DCMAKE_INSTALL_PREFIX=~/src/sdl-tvos-install
+cmake --build ~/src/sdl-tvos --target install
+
+apple/build-all.sh --xcode --device --team XXXXXXXXXX \
+                   --sdl-prefix ~/src/sdl-tvos-install tvos
+open build-apple/tvos-device/dualscreen_companion.xcodeproj
+```
+
+**Pair the Apple TV with Xcode first**, or it never appears as a destination at
+all. It is not plugged in like a phone: on the Apple TV, **Settings → Remotes
+and Devices → Remote App and Devices**, then in Xcode **Window → Devices and
+Simulators**, where the TV shows up on the same network and asks for the code
+on screen. Both have to be on the same network, and that is also the network
+discovery will be running over.
+
 One window, three schemes, pick a destination and run. A workspace is a list of
 projects and nothing else — no build settings, so there is nothing in it to
 drift.
