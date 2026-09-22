@@ -65,6 +65,17 @@ public:
     // A 1px-per-side outline drawn as four solid quads.
     void draw_outline(const PixelRect& rect, const Color& color, float thickness);
 
+    // A capsule: a rectangle with its two short ends rounded into
+    // semicircles. Drawn as a solid middle and two caps cut from a disc,
+    // because this shader has no rounded primitive and a curve sampled from a
+    // texture is both cheaper to add and smoother at the edge than teaching
+    // it one. The disc is built once, on first use.
+    //
+    // The radius is always half the height, which is what makes it a capsule
+    // rather than a rounded rectangle: there is no radius to choose, so two
+    // capsules of different widths always agree.
+    void draw_capsule(const PixelRect& rect, const Color& color);
+
 private:
     // Matches the u_mode the fragment shader switches on. The two planar
     // ones are video frames converted while drawing -- see ChannelOrder.
@@ -106,6 +117,12 @@ private:
     GLint uniform_chroma_ = -1;
     GLint uniform_chroma_v_ = -1;
     GLint uniform_chroma_v_in_alpha_ = -1;
+
+    // The alpha disc the capsule caps are cut from. Built on first use rather
+    // than at start-up: most of what this renderer draws is rectangles, and a
+    // build that never draws a capsule never pays for it.
+    Texture disc_;
+    bool build_disc();
 
     int output_width_ = 0;
     int output_height_ = 0;

@@ -1,7 +1,6 @@
 #include "render/quad_renderer.hpp"
 
 #include <cmath>
-
 #include <vector>
 
 #include "util/log.hpp"
@@ -433,6 +432,59 @@ void QuadRenderer::draw_outline(const PixelRect& rect, const Color& color, float
     draw_solid(PixelRect{rect.x, rect.y + rect.h - t, rect.w, t}, color);
     draw_solid(PixelRect{rect.x, rect.y + t, t, rect.h - 2.0f * t}, color);
     draw_solid(PixelRect{rect.x + rect.w - t, rect.y + t, t, rect.h - 2.0f * t}, color);
+}
+
+// The disc the capsule caps come from: one channel of coverage, opaque
+// inside, fading over the last pixel at the rim so the curve has no stair on
+// it. Drawn at a fraction of this size and filtered down, which is why it is
+// built generously rather than at the size it will be used.
+bool QuadRenderer::build_disc() {
+    if (disc_.valid()) {
+        return true;
+    }
+    constexpr int kSize = 128;
+    const float centre = kSize * 0.5f;
+    std::vector<uint8_t> coverage(static_cast<std::size_t>(kSize) * kSize);
+    for (int y = 0; y < kSize; ++y) {
+        for (int x = 0; x < kSize; ++x) {
+            const float dx = static_cast<float>(x) + 0.5f - centre;
+            const float dy = static_cast<float>(y) + 0.5f - centre;
+            const float inside = centre - std::sqrt(dx * dx + dy * dy);
+            const float alpha = inside <= 0.0f ? 0.0f : (inside >= 1.0f ? 1.0f : inside);
+            coverage[static_cast<std::size_t>(y) * kSize + x] =
+                static_cast<uint8_t>(alpha * 255.0f + 0.5f);
+        }
+    }
+    disc_.upload_alpha8(coverage.data(), kSize, kSize);
+    return disc_.valid();
+}
+
+void QuadRenderer::draw_capsule(const PixelRect& rect, const Color& color) {
+    if (rect.w <= 0.0f || rect.h <= 0.0f) {
+        return;
+    }
+    // Half the height, or half the width when the thing is shorter than it is
+    // tall -- at which point it is a circle and there is no middle left.
+    const float radius = std::min(rect.h, rect.w) * 0.5f;
+    if (!build_disc()) {
+        // No disc, so square ends rather than nothing at all. A prompt that
+        // draws with corners is a cosmetic fault; one that does not draw is a
+        // control nobody can find.
+        draw_solid(rect, color);
+        return;
+    }
+    const float middle = rect.w - radius * 2.0f;
+    if (middle > 0.0f) {
+        draw_solid(PixelRect{rect.x + radius, rect.y, middle, rect.h}, color);
+    }
+    // Each cap is one half of the disc, stretched to the cap's box. The disc
+    // is square and the box is radius by height, which is exactly half of a
+    // square when the radius is half the height -- so the curve arrives
+    // unstretched.
+    draw_alpha_mask(PixelRect{rect.x, rect.y, radius, rect.h}, disc_, color, 0.0f, 0.0f, 0.5f,
+                    1.0f);
+    draw_alpha_mask(PixelRect{rect.x + rect.w - radius, rect.y, radius, rect.h}, disc_, color,
+                    0.5f, 0.0f, 1.0f, 1.0f);
 }
 
 }  // namespace ds

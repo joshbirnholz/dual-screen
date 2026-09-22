@@ -292,11 +292,10 @@ private:
     LayoutPicker picker_{registry_};
     LauncherScreen launcher_;
     HostPickerScreen host_picker_;
-    // Where the prompts of the two screens that are not objects ended up: the
-    // connecting screen is a free function, and the one drawn over a game is
-    // this file's own.
+    // Where the connecting screen's prompts ended up -- it is a free
+    // function rather than an object, so it has nowhere of its own to keep
+    // them.
     std::vector<GuideHit> connecting_hits_;
-    std::vector<GuideHit> playing_hits_;
 
     // The panel size last acted on, so a change is noticed rather than
     // re-announced every frame.
@@ -709,9 +708,12 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
         case State::Connecting: return connecting_hits_;
         case State::Browsing:
         case State::Failed: return host_picker_.guide_hits();
-        // The quick menu draws its own and routes them itself, since a press
-        // there is forwarded to the host rather than acted on here.
-        case State::Playing: return menu_open_ ? none : playing_hits_;
+        // Nothing is drawn over a game. The way in to the menu there is two
+        // fingers at once -- see InputManager -- rather than a button sitting
+        // on top of the picture the whole session. The quick menu itself
+        // draws prompts but routes them itself, since a press there is
+        // forwarded to the host rather than acted on here.
+        case State::Playing: return none;
     }
     return none;
 }
@@ -1067,31 +1069,6 @@ void Client::draw() {
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
-
-    // The way out, on a device that has no button to be the way out.
-    //
-    // Every other screen in this app has its prompts along the bottom and
-    // nothing has to be drawn over a game -- but the game is where somebody
-    // spends the whole session, and with no pad there is otherwise no way to
-    // reach the menu at all, which means no way to leave. One prompt, in the
-    // corner, and only when there is nothing better to press.
-    //
-    // Not drawn when a pad is connected: the button does it, and a streamed
-    // picture is better with nothing on top of it.
-    playing_hits_.clear();
-    if (!menu_open_ && touch_hints()) {
-        const float scale = UiTheme::base_scale(height) * 0.9f;
-        const float line = TextRenderer::line_height(scale);
-        draw_control_guide(quads_, text_, button_glyphs_, {{ButtonGlyph::Minus, "Menu"}},
-                           width - line, line, scale, ui_theme().text, TextAlign::Right,
-                           &playing_hits_);
-        // And the pixels it sits on stop being the game's. On the screen a
-        // stylus belongs to, a tap here would otherwise be a real press at a
-        // real coordinate as well as a way out.
-        input_.set_ui_reserved_rect(playing_hits_.empty() ? PixelRect{} : playing_hits_[0].rect);
-    } else {
-        input_.clear_ui_reserved_rect();
-    }
 
     if (menu_open_) {
         // Taken between the game and the menu, the same as on the other device:

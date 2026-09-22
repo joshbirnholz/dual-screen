@@ -9,6 +9,18 @@
 namespace ds {
 namespace {
 
+// How far either finger may travel and still be a tap, as a fraction of the
+// display -- SDL reports touches normalised, so this is the same gesture on a
+// phone and on a tablet.
+constexpr float kTwoFingerTapSlip = 0.03f;
+// And how long it may last. Long enough not to punish a deliberate press,
+// short enough that two fingers resting on the glass are not it.
+constexpr uint32_t kTwoFingerTapMs = 700;
+
+}  // namespace
+
+namespace {
+
 DsButton ds_button_for_key(SDL_Keycode key, bool& found) {
     found = true;
     switch (key) {
@@ -147,7 +159,7 @@ void InputManager::begin_frame() {
 void InputManager::forget_touches() {
     fingers_.clear();
     has_primary_finger_ = false;
-    second_finger_menu_armed_ = false;
+    two_finger_tap_live_ = false;
     mouse_down_ = false;
     pointer_active_ = false;
 }
@@ -323,15 +335,27 @@ void InputManager::handle_event(const SDL_Event& event) {
                 pointer.press_y = state.press_y;
                 pointer.pressed = true;
                 pointer_events_.push_back(pointer);
-            } else if (fingers_.size() >= 2 && !second_finger_menu_armed_ &&
-                       !game_owns_controls_) {
-                // Two fingers at once is the touch-only escape hatch into the
-                // menu — a device with no buttons still needs a way in. Not on
-                // a console that plays through its touch screen, though: there
-                // a second finger belongs to the game, and the menu would open
-                // in the middle of playing.
-                second_finger_menu_armed_ = true;
-                push_action(UiAction::ToggleMenu);
+            } else if (fingers_.size() == 2) {
+                // Two fingers tapped together is the way into the menu on a
+                // device with no buttons, and it is the only way in there: a
+                // button drawn over the game would sit on the picture for the
+                // whole session.
+                //
+                // Not gated on game_owns_controls_, which covers the stick
+                // clicks a Wii U game reads. No console this streams has a
+                // multi-touch screen -- a DS, a 3DS and a GamePad are all
+                // single-touch, and the wire carries one point -- so a second
+                // finger is never something the game could have wanted.
+                //
+                // Armed here and fired on release, rather than the moment the
+                // second finger lands. A finger resting while the other one
+                // draws is not a tap, and on the screen a stylus belongs to
+                // that is a thing people do.
+                two_finger_tap_live_ = true;
+                two_finger_tap_began_ms_ = SDL_GetTicks();
+            } else if (fingers_.size() > 2) {
+                // Three is not two.
+                two_finger_tap_live_ = false;
             }
             break;
         }
@@ -342,6 +366,14 @@ void InputManager::handle_event(const SDL_Event& event) {
             if (it != fingers_.end()) {
                 it->second.x = event.tfinger.x;
                 it->second.y = event.tfinger.y;
+                // A tap does not travel. Anything that does is a drag, a
+                // pinch or a hand resting on the glass, and none of those
+                // means "open the menu".
+                if (two_finger_tap_live_ &&
+                    (std::abs(it->second.x - it->second.press_x) > kTwoFingerTapSlip ||
+                     std::abs(it->second.y - it->second.press_y) > kTwoFingerTapSlip)) {
+                    two_finger_tap_live_ = false;
+                }
             }
             break;
         }
@@ -363,12 +395,15 @@ void InputManager::handle_event(const SDL_Event& event) {
                 pointer.released = true;
                 pointer_events_.push_back(pointer);
             }
-            // As soon as there are not two down any more, rather than once
-            // every last one has lifted: a finger that stays put -- or one
-            // whose release was lost -- would otherwise mean the gesture only
-            // ever works once.
-            if (fingers_.size() < 2) {
-                second_finger_menu_armed_ = false;
+            // Lifting the first of the two is the tap. Checked as the count
+            // falls below two rather than once every last finger has gone: a
+            // finger that stays put, or one whose release was lost, would
+            // otherwise leave the gesture armed forever.
+            if (two_finger_tap_live_ && fingers_.size() < 2) {
+                two_finger_tap_live_ = false;
+                if (SDL_GetTicks() - two_finger_tap_began_ms_ <= kTwoFingerTapMs) {
+                    push_action(UiAction::ToggleMenu);
+                }
             }
             break;
         }
@@ -712,7 +747,11 @@ void InputManager::end_frame(const Layout& layout,
         // set_ui_reserved_rect(). Checked before the mapping rather than
         // after, because the mapping's job is to say where in the console's
         // screen a point is, not whether it should have been asked.
-        if (held_input_gate_.touching() && !ui_reserved_.contains(pointer_x_, pointer_y_)) {
+        // One finger only. Every console this streams has a single-touch
+        // screen, so a second finger was never going to be a second press --
+        // and while two are down the player is talking to this app, not to
+        // the game.
+        if (held_input_gate_.touching() && fingers_.size() < 2) {
             DsTouchPoint point;
             if (map_output_point_to_ds(layout, output_width, output_height, pointer_x_, pointer_y_,
                                        point, screens, display_width, display_height)) {

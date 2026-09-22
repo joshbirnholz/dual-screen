@@ -1,5 +1,6 @@
 #include "ui/control_guide.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "ui/ui_theme.hpp"
@@ -20,7 +21,10 @@ float glyph_height(float scale) { return TextRenderer::line_height(scale) * kGly
 // height is deliberately not the whole row: the row is tall enough for the
 // arrow that stands above a stick-click glyph, and a chip drawn that tall
 // would look like a different component rather than the same prompt.
-constexpr float kChipPadScale = 0.7f;
+// Wider than a square box wanted. A capsule's rounded ends take room from
+// the label without looking like they have, so the same padding reads tighter
+// than it did with corners.
+constexpr float kChipPadScale = 0.85f;
 constexpr float kChipHeightScale = 1.7f;
 
 float chip_height(float scale) { return TextRenderer::line_height(scale) * kChipHeightScale; }
@@ -104,8 +108,15 @@ float draw_control_guide(QuadRenderer& quads,
             const PixelRect box{pen_x, label_y + TextRenderer::line_height(scale) * 0.5f -
                                            box_height * 0.5f,
                                 width, box_height};
-            quads.draw_solid(box, ui_theme().panel);
-            quads.draw_outline(box, color, menu_border(scale) * 0.5f);
+            // The line and the fill are two capsules, the second drawn inside
+            // the first -- there is no stroked capsule, and an outline built
+            // from four straight quads would cut the corners off the thing it
+            // is meant to be following.
+            const float line = std::max(1.0f, std::round(menu_border(scale) * 0.5f));
+            quads.draw_capsule(box, color);
+            quads.draw_capsule(PixelRect{box.x + line, box.y + line, box.w - line * 2.0f,
+                                         box.h - line * 2.0f},
+                               ui_theme().panel);
             text.draw(quads, prompts[index].action, pen_x + width * 0.5f, label_y, scale, color,
                       TextAlign::Center);
             if (out_hits != nullptr) {
