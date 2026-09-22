@@ -399,8 +399,8 @@ void GameBrowser::render(QuadRenderer& quads,
     // browser once there is not, which "Back" covers either way.
     const float guide_height = control_guide_height(scale * 0.9f);
     draw_control_guide(quads, text, glyphs,
-                       {{ButtonGlyph::A, "Open", /*redundant_on_touch=*/true},
-                        {ButtonGlyph::B, "Back"}},
+                       {{ButtonGlyph::A, "Open", PromptRole::ActsOnSelection},
+                        {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                        (geometry.panel.x + geometry.back_button.x) * 0.5f,
                        geometry.quit_button.y + (geometry.quit_button.h - guide_height) * 0.5f,
                        scale * 0.9f, theme.text);

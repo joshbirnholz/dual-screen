@@ -133,7 +133,7 @@ std::vector<GuidePrompt> LauncherScreen::guide_prompts() const {
         guide.push_back({ButtonGlyph::Plus, "Quit"});
     }
     // The row itself is the button on a touch device, and a bigger one.
-    guide.push_back({ButtonGlyph::A, "Select", /*redundant_on_touch=*/true});
+    guide.push_back({ButtonGlyph::A, "Select", PromptRole::ActsOnSelection});
     return guide;
 }
 
@@ -331,8 +331,8 @@ void HostPickerScreen::render(QuadRenderer& quads,
     }
 
     draw_control_guide(quads, text, glyphs,
-                       {{ButtonGlyph::A, "Connect", /*redundant_on_touch=*/true},
-                        {ButtonGlyph::B, "Back"}},
+                       {{ButtonGlyph::A, "Connect", PromptRole::ActsOnSelection},
+                        {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                        rows.empty() ? output_width * 0.94f : rows[0].x + rows[0].w,
                        output_height - line * 1.2f - control_guide_height(scale * 0.9f),
                        scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);

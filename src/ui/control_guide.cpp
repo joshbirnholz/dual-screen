@@ -30,12 +30,12 @@ constexpr float kChipHeightScale = 1.7f;
 float chip_height(float scale) { return TextRenderer::line_height(scale) * kChipHeightScale; }
 float chip_pad(float scale) { return TextRenderer::line_height(scale) * kChipPadScale; }
 
-bool g_touch_hints = false;
+PromptStyle g_prompt_style = PromptStyle::Pad;
 ConfirmButton g_confirm_button = ConfirmButton::East;
 
 }  // namespace
 
-void set_touch_hints(bool touch) { g_touch_hints = touch; }
+void set_prompt_style(PromptStyle style) { g_prompt_style = style; }
 void set_confirm_button(ConfirmButton choice) { g_confirm_button = choice; }
 ConfirmButton confirm_button() { return g_confirm_button; }
 
@@ -49,7 +49,19 @@ ButtonGlyph glyph_as_drawn(ButtonGlyph glyph) {
     if (glyph == ButtonGlyph::B) return ButtonGlyph::A;
     return glyph;
 }
-bool touch_hints() { return g_touch_hints; }
+PromptStyle prompt_style() { return g_prompt_style; }
+bool touch_hints() { return g_prompt_style == PromptStyle::Touch; }
+
+PromptStyle prompt_style_for(bool television, int controllers, int full_gamepads) {
+    if (television) {
+        // Nothing to tap, so a pad or the remote and no third answer. The
+        // remote is also the answer when SDL reports nothing at all: drawing
+        // pad glyphs for a pad that is not there is the mistake this whole
+        // distinction exists to avoid.
+        return full_gamepads > 0 ? PromptStyle::Pad : PromptStyle::Remote;
+    }
+    return controllers > 0 ? PromptStyle::Pad : PromptStyle::Touch;
+}
 
 ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y) {
     for (const GuideHit& hit : hits) {
@@ -61,13 +73,21 @@ ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y)
 }
 
 std::vector<GuidePrompt> prompts_worth_drawing(const std::vector<GuidePrompt>& prompts) {
-    if (!touch_hints()) {
+    const PromptStyle style = prompt_style();
+    if (style == PromptStyle::Pad) {
         return prompts;
     }
     std::vector<GuidePrompt> kept;
     kept.reserve(prompts.size());
     for (const GuidePrompt& prompt : prompts) {
-        if (!prompt.redundant_on_touch) {
+        // Both drop the prompt for the thing that is already highlighted: a
+        // finger taps it, a remote clicks it. Only the remote drops the way
+        // out, because only the remote has a button for it -- on a phone the
+        // prompt *is* the way out.
+        const bool covered =
+            prompt.role == PromptRole::ActsOnSelection ||
+            (style == PromptStyle::Remote && prompt.role == PromptRole::LeavesScreen);
+        if (!covered) {
             kept.push_back(prompt);
         }
     }

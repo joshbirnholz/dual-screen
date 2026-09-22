@@ -152,6 +152,13 @@ public:
 
     int connected_controllers() const { return static_cast<int>(controllers_.size()); }
 
+    // How many of those have a full face-button cluster, which is what tells a
+    // pad from a Siri Remote. SDL reports the remote as a controller -- three
+    // buttons and a touch surface -- so connected_controllers() counts it and
+    // cannot tell the difference. An X button can: every real gamepad has one,
+    // the remote has none. See prompt_style_for().
+    int connected_gamepads() const;
+
 
     // Rumbles every connected controller, or stops them -- for a companion
     // standing in for a Wii U GamePad, whose one motor this collapses onto

@@ -1005,18 +1005,17 @@ void Client::run() {
         // Which kind of prompt to draw, asked every frame because a pad can
         // be connected or taken away at any point in a session.
         //
-        // Never on a television, whatever is or is not attached. An Apple TV
-        // has nothing to tap, so a prompt drawn for a finger there is a
-        // control nobody can reach -- and a Siri Remote is a controller with
-        // buttons on it, which is what the glyphs are for. Said as a platform
-        // fact rather than asked of SDL, because the remote's touch surface
-        // is a touch device as far as SDL is concerned and would answer the
-        // question the wrong way round.
+        // Whether this is a television is a platform fact rather than a
+        // question for SDL: a Siri Remote's touch surface is a touch device as
+        // far as SDL is concerned, and asking it would answer the wrong way
+        // round. Everything after that is counting -- see prompt_style_for.
 #if defined(DS_APPLE_TELEVISION)
-        set_touch_hints(false);
+        constexpr bool kTelevision = true;
 #else
-        set_touch_hints(input_.connected_controllers() == 0);
+        constexpr bool kTelevision = false;
 #endif
+        set_prompt_style(prompt_style_for(kTelevision, input_.connected_controllers(),
+                                          input_.connected_gamepads()));
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
         route_guide_taps(actions, pointers);

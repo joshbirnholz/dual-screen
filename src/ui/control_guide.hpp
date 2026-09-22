@@ -14,22 +14,35 @@ namespace ds {
 // screen. The button is drawn as the console's own symbol rather than spelled
 // out, so a prompt says the same thing whatever letters the pad in the player's
 // hands happens to have printed on it.
+// Why a prompt is on screen, which is what decides whether a device that has
+// the same action covered some other way still needs it drawn.
+enum class PromptRole {
+    // Names a button that does something nothing else on the screen does:
+    // "+ Quit", "X Reset", or the one "A Continue" on a screen that is
+    // nothing but words. Always drawn. The default, because a prompt that
+    // nobody has thought about is a prompt that has to stay.
+    OwnControl,
+    // Activates whatever is highlighted -- the row in a list, the tile in a
+    // grid, the entry in a browser.
+    //
+    // With a pad it earns its place: something has to say which button opens
+    // the thing under the cursor. With a finger, or with a remote whose click
+    // acts on what is already focused, it is a second way to do what the thing
+    // itself already does, and the worse of the two, since the thing is a
+    // bigger target and is where the eye already is.
+    ActsOnSelection,
+    // Leaves the screen: Back, Resume, up a level.
+    //
+    // A phone has no button for that, so the prompt is the only way out and
+    // has to stay. A Siri Remote has one with a back arrow on it, and nobody
+    // needs telling what it does.
+    LeavesScreen,
+};
+
 struct GuidePrompt {
     ButtonGlyph glyph = ButtonGlyph::A;
     std::string action;
-    // True when the thing this prompt names can simply be tapped: the row in
-    // a list, the tile in a grid, the entry in a browser.
-    //
-    // With a pad it earns its place -- something has to say which button
-    // opens the thing under the cursor. With a finger it is a second way to
-    // do what tapping the thing already does, and the worse of the two, since
-    // the thing itself is a bigger target and is where the eye already is.
-    //
-    // Not every confirm is one of these. A message with nothing in it but
-    // words has no object to tap, and the two halves of a confirmation dialog
-    // are tappable *because* the prompts label them -- take those away and
-    // what is left is an invisible target.
-    bool redundant_on_touch = false;
+    PromptRole role = PromptRole::OwnControl;
 };
 
 // Where one prompt ended up, so a finger can land on it. Filled in while the
@@ -40,20 +53,47 @@ struct GuideHit {
     PixelRect rect;
 };
 
-// Whether the prompts are for a pad or for fingers.
+// What is in the player's hands, as far as the prompts are concerned.
+enum class PromptStyle {
+    // A controller with a face-button cluster. Every prompt, drawn as the
+    // console's own symbol.
+    Pad,
+    // A touchscreen and nothing else. Capsule chips with words in them,
+    // because a phone has no B button and "B Back" is an instruction that
+    // cannot be followed.
+    Touch,
+    // A Siri Remote on an Apple TV. Glyphs, because it does have buttons --
+    // but not for select or for back, which are the two it is most obviously
+    // going to do.
+    Remote,
+};
+
+// Which prompts to draw, and how.
 //
 // Module state rather than an argument threaded through every render call,
 // the same shape as ui_theme(): it is one fact about the machine the app is
 // running on, it is the same for every screen, and it changes only when a
-// controller is plugged in or pulled out.
-//
-// A console glyph is the right thing to draw when there is a pad in the
-// player's hands and exactly the wrong thing otherwise: a phone on its own
-// has no B button, so "B Back" is an instruction that cannot be followed.
-// The prompts stay in the same row, in the same place, at the same size --
-// they just say what a finger can actually do.
-void set_touch_hints(bool touch);
+// controller is plugged in or pulled out. The prompts stay in the same row,
+// in the same place, at the same size -- they just say what the thing in the
+// player's hands can actually do.
+void set_prompt_style(PromptStyle style);
+PromptStyle prompt_style();
 bool touch_hints();
+
+// Which style suits a machine with this attached. Pure, and separate from the
+// state above so that it can be checked without a window:
+//
+//   television      this device is an Apple TV, so there is nothing to tap and
+//                   a remote in the box whatever else is paired
+//   controllers     how many SDL is reporting at all
+//   full_gamepads   how many of those have a full face-button cluster
+//
+// A Siri Remote is a controller as far as SDL is concerned -- three buttons
+// and a touch surface -- so counting controllers cannot tell it from a pad.
+// Counting the ones with an X button can: every real gamepad has one and the
+// remote has none. Pair a pad with the Apple TV and the glyphs come back,
+// which is the point: the hints are about what you are holding.
+PromptStyle prompt_style_for(bool television, int controllers, int full_gamepads);
 
 // Which prompt a point is on, ButtonGlyph::Count when none. The prompts are
 // laid out from the glyph artwork's own proportions, so only the row that

@@ -72,50 +72,102 @@ void test_the_menus_own_prompts_are_left_to_the_menu() {
     CHECK(!ui_action_for_glyph(ButtonGlyph::RightStick, action));
 }
 
+// The row a launcher or a browser draws: one shortcut, one that opens what is
+// highlighted, one that leaves.
+std::vector<GuidePrompt> a_screens_prompts() {
+    return {
+        {ButtonGlyph::Plus, "Quit", PromptRole::OwnControl},
+        {ButtonGlyph::A, "Select", PromptRole::ActsOnSelection},
+        {ButtonGlyph::B, "Back", PromptRole::LeavesScreen},
+    };
+}
+
 // A prompt that names a button for something you can simply tap is a second
 // way to do what tapping already does -- and the worse of the two, since the
 // row or the tile is a bigger target and is where the eye already is.
 void test_a_prompt_for_something_tappable_goes_away_on_touch() {
-    const std::vector<GuidePrompt> prompts = {
-        {ButtonGlyph::Plus, "Quit", false},
-        {ButtonGlyph::A, "Select", true},
-        {ButtonGlyph::B, "Back", false},
-    };
-    const bool was = touch_hints();
+    const PromptStyle was = prompt_style();
 
     // With a pad, something has to say which button opens the thing under the
     // cursor, so all three stay.
-    set_touch_hints(false);
-    CHECK(prompts_worth_drawing(prompts).size() == 3);
+    set_prompt_style(PromptStyle::Pad);
+    CHECK(prompts_worth_drawing(a_screens_prompts()).size() == 3);
 
-    set_touch_hints(true);
-    const std::vector<GuidePrompt> touch = prompts_worth_drawing(prompts);
+    set_prompt_style(PromptStyle::Touch);
+    const std::vector<GuidePrompt> touch = prompts_worth_drawing(a_screens_prompts());
     CHECK(touch.size() == 2);
     CHECK(touch[0].action == "Quit");
     // Back stays: nothing on the screen is "back", so there is no thing to
     // tap instead.
     CHECK(touch[1].action == "Back");
-    set_touch_hints(was);
+    set_prompt_style(was);
+}
+
+// A Siri Remote has a click and a back button, and nobody needs telling what
+// either one does. It does not have a Quit button, so that prompt stays.
+void test_select_and_back_go_away_on_a_remote() {
+    const PromptStyle was = prompt_style();
+    set_prompt_style(PromptStyle::Remote);
+    const std::vector<GuidePrompt> remote = prompts_worth_drawing(a_screens_prompts());
+    CHECK(remote.size() == 1);
+    CHECK(remote[0].action == "Quit");
+    set_prompt_style(was);
 }
 
 // Not every confirm is redundant. A screen that is only words has no object
 // to tap, and the halves of a confirmation dialog are tappable *because* the
 // prompts label them.
 void test_a_confirm_with_nothing_to_tap_stays() {
-    const std::vector<GuidePrompt> prompts = {{ButtonGlyph::A, "Continue", false}};
-    const bool was = touch_hints();
-    set_touch_hints(true);
-    CHECK(prompts_worth_drawing(prompts).size() == 1);
-    set_touch_hints(was);
+    const std::vector<GuidePrompt> prompts = {{ButtonGlyph::A, "Continue"}};
+    const PromptStyle was = prompt_style();
+    for (const PromptStyle style : {PromptStyle::Touch, PromptStyle::Remote}) {
+        set_prompt_style(style);
+        CHECK(prompts_worth_drawing(prompts).size() == 1);
+    }
+    set_prompt_style(was);
+}
+
+// The destructive one. "Are you sure you want to quit? Unsaved progress will
+// be lost" is answered by its two prompts and by nothing else on the screen,
+// so a remote that drops the Back half of it leaves a lone OK under a warning.
+void test_a_confirmation_dialog_keeps_both_answers() {
+    const std::vector<GuidePrompt> dialog = {{ButtonGlyph::A, "OK"}, {ButtonGlyph::B, "Back"}};
+    const PromptStyle was = prompt_style();
+    for (const PromptStyle style : {PromptStyle::Pad, PromptStyle::Touch, PromptStyle::Remote}) {
+        set_prompt_style(style);
+        CHECK(prompts_worth_drawing(dialog).size() == 2);
+    }
+    set_prompt_style(was);
+}
+
+// Which style goes with what is plugged in. The remote is the interesting one:
+// SDL reports it as a controller, so only the gamepad count tells them apart.
+void test_the_style_follows_what_is_in_your_hands() {
+    // A phone or a tablet: a pad if one is attached, fingers otherwise.
+    CHECK(prompt_style_for(/*television=*/false, 0, 0) == PromptStyle::Touch);
+    CHECK(prompt_style_for(/*television=*/false, 1, 1) == PromptStyle::Pad);
+
+    // An Apple TV with only the remote -- which SDL counts as a controller,
+    // and which is exactly why the second count exists.
+    CHECK(prompt_style_for(/*television=*/true, 1, 0) == PromptStyle::Remote);
+    // Pair a pad with it and the glyphs come back.
+    CHECK(prompt_style_for(/*television=*/true, 2, 1) == PromptStyle::Pad);
+    // Nothing at all is still not a touchscreen.
+    CHECK(prompt_style_for(/*television=*/true, 0, 0) == PromptStyle::Remote);
 }
 
 void test_the_hint_style_is_asked_rather_than_assumed() {
-    const bool was = touch_hints();
-    set_touch_hints(true);
+    const PromptStyle was = prompt_style();
+    set_prompt_style(PromptStyle::Touch);
+    CHECK(prompt_style() == PromptStyle::Touch);
     CHECK(touch_hints());
-    set_touch_hints(false);
+    // A remote gets glyphs, not chips: it has buttons, they are just not the
+    // ones a prompt needs to name.
+    set_prompt_style(PromptStyle::Remote);
     CHECK(!touch_hints());
-    set_touch_hints(was);
+    set_prompt_style(PromptStyle::Pad);
+    CHECK(!touch_hints());
+    set_prompt_style(was);
 }
 
 }  // namespace
@@ -125,7 +177,10 @@ int main() {
     test_every_prompt_outside_a_menu_does_something();
     test_the_menus_own_prompts_are_left_to_the_menu();
     test_a_prompt_for_something_tappable_goes_away_on_touch();
+    test_select_and_back_go_away_on_a_remote();
     test_a_confirm_with_nothing_to_tap_stays();
+    test_a_confirmation_dialog_keeps_both_answers();
+    test_the_style_follows_what_is_in_your_hands();
     test_the_hint_style_is_asked_rather_than_assumed();
     return test::finish("touch-hints");
 }

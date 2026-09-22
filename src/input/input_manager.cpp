@@ -92,8 +92,11 @@ void InputManager::open_controller(int device_index) {
     // diagnose remotely: this one line says what SDL thinks the pad is, which
     // decides how its face buttons are reported.
     const char* name = SDL_GameControllerName(controller);
+    const bool full_pad =
+        SDL_GameControllerHasButton(controller, SDL_CONTROLLER_BUTTON_X) == SDL_TRUE;
     log_info(std::string("controller connected: ") + (name != nullptr ? name : "unknown") +
-             " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) + ")");
+             " (SDL type: " + to_string(SDL_GameControllerGetType(controller)) + ", " +
+             (full_pad ? "a pad" : "no X button, so a remote rather than a pad") + ")");
 
     char* mapping = SDL_GameControllerMapping(controller);
     if (mapping != nullptr) {
@@ -107,6 +110,18 @@ void InputManager::open_controller(int device_index) {
         log_info("now tracking " + std::to_string(controllers_.size()) +
                  " controllers; duplicate presses are merged");
     }
+}
+
+int InputManager::connected_gamepads() const {
+    int count = 0;
+    for (const auto& [instance_id, controller] : controllers_) {
+        (void)instance_id;
+        if (controller != nullptr &&
+            SDL_GameControllerHasButton(controller, SDL_CONTROLLER_BUTTON_X) == SDL_TRUE) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 void InputManager::close_controller(SDL_JoystickID instance_id) {

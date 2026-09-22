@@ -396,7 +396,7 @@ void SettingsScreen::render(QuadRenderer& quads,
                               (footnote_lines + 1.0f),
                       footnote_width, footnote_scale, theme.text_dim, TextAlign::Center);
 
-    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Back"}},
+    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                        geometry.panel.x + geometry.panel.w,
                        output_height - line * 0.6f - guide_height, scale * 0.9f, theme.text,
                        TextAlign::Right);

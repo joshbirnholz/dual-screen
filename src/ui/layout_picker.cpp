@@ -763,8 +763,8 @@ void LayoutPicker::render(QuadRenderer& quads,
         // Everything else this menu can do lives in the list above, reached
         // by A -- there is nothing left for a face-button shortcut to name.
         // A tile is tapped directly, so this names a button nobody has.
-        guide.push_back({ButtonGlyph::A, "OK", /*redundant_on_touch=*/true});
-        guide.push_back({ButtonGlyph::B, "Resume"});
+        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::B, "Resume", PromptRole::LeavesScreen});
     } else {
         // Leftmost, and always: it is the one prompt here that is about the
         // machine rather than about the game, so it sits apart from the rest.
@@ -776,8 +776,8 @@ void LayoutPicker::render(QuadRenderer& quads,
             guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
         }
         // A tile is tapped directly, so this names a button nobody has.
-        guide.push_back({ButtonGlyph::A, "OK", /*redundant_on_touch=*/true});
-        guide.push_back({ButtonGlyph::B, "Resume"});
+        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::B, "Resume", PromptRole::LeavesScreen});
         guide.push_back({ButtonGlyph::X, "Quit"});
         if (state_.reset_available) {
             guide.push_back({ButtonGlyph::Y, "Reset"});
@@ -802,6 +802,10 @@ void LayoutPicker::render(QuadRenderer& quads,
                           confirm.dialog.y + line * 1.2f, confirm.dialog.w - line * 2.0f,
                           scale * 1.15f, theme.background, TextAlign::Center);
 
+        // Both halves keep the default role, and must. Everywhere else Back
+        // is the way out of a screen and a remote has a button for it; here
+        // the two prompts *are* the two answers, and dropping one would leave
+        // "Unsaved progress will be lost" above a lone OK.
         draw_control_guide(quads, text, glyphs,
                            {{ButtonGlyph::A, "OK"}, {ButtonGlyph::B, "Back"}},
                            confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
