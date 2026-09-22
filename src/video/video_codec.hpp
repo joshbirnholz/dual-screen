@@ -149,6 +149,16 @@ struct DecodedFrame {
     int stride[3] = {0, 0, 0};
     int width = 0;
     int height = 0;
+    // How long this frame took to copy out of the decoder's own memory, in
+    // microseconds, for the decoders that have to. Zero where the question
+    // does not arise.
+    //
+    // Separated from decoding because on an Apple device they are not the
+    // same cost and not fixed the same way: a hardware decoder hands back a
+    // buffer the GPU already holds, and reading it on the CPU is the
+    // expensive part. One number for both cannot tell you which you are
+    // paying for -- see adapt_to_what_this_device_can_decode().
+    int readback_micros = 0;
 
     bool valid() const {
         if (width <= 0 || height <= 0) return false;

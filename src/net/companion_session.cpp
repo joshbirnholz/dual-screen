@@ -1301,8 +1301,10 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t now_ms) {
         return;
     }
     const uint64_t per_second = adapt_decode_ms_ * 1000 / elapsed;
+    const uint64_t readback_per_second = adapt_readback_micros_ / 1000 * 1000 / elapsed;
     adapt_at_ms_ = now_ms;
     adapt_decode_ms_ = 0;
+    adapt_readback_micros_ = 0;
 
     if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > kMinDisplayScale) {
         // Remembered before stepping down, so the way back up knows where the
@@ -1311,8 +1313,14 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t now_ms) {
         too_expensive_at_ms_ = now_ms;
         display_scale_ = std::max(kMinDisplayScale, display_scale_ * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
+        // Which half of it, because the two have different answers. Time in
+        // the decoder is the decoder's; time in the readback is this app
+        // copying a picture out of memory the GPU already has, and that is a
+        // copy that does not have to happen at all.
         log_info("this device is spending " + std::to_string(per_second) +
-                 "ms of every second turning frames into pictures, which is more than it can "
+                 "ms of every second turning frames into pictures (" +
+                 std::to_string(readback_per_second) +
+                 "ms of it copying them out of the decoder), which is more than it can "
                  "keep up with; asking for " +
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
                  "% of its display size instead");
@@ -1702,6 +1710,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     // A picture came out, so whatever went wrong before it is behind us --
     // see the run counted above, which only means anything unbroken.
     ((frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_) = 0;
+    adapt_readback_micros_ += static_cast<uint64_t>(decoded.readback_micros);
     target.video = true;
     target.layout = decoded.layout;
     target.pixels = std::move(decoded.pixels);

@@ -813,6 +813,12 @@ private:
     // Decode time accumulated since the last time that decision was made, and
     // when that was.
     uint64_t adapt_decode_ms_ = 0;
+    // The share of the above that was not decoding at all, but copying the
+    // finished picture out of the decoder's memory. See DecodedFrame::
+    // readback_micros: on an Apple device those are different costs with
+    // different answers, and the log has to be able to say which one is
+    // eating the second.
+    uint64_t adapt_readback_micros_ = 0;
     uint64_t adapt_at_ms_ = 0;
     // Consecutive windows with room to spare, so stepping back up needs a
     // sustained case rather than one quiet moment.

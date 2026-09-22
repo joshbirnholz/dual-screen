@@ -6,6 +6,7 @@
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
 
+#include <chrono>
 #include <cstring>
 #include <vector>
 
@@ -294,6 +295,7 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
     // above -- so the next change hands it straight to a texture and touches
     // none of these bytes. See apple/README.md.
     CVPixelBufferRef picture = impl.latest;
+    const auto readback_began = std::chrono::steady_clock::now();
     if (CVPixelBufferLockBaseAddress(picture, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
         if (error != nullptr) *error = "the decoded frame would not lock";
         return false;
@@ -310,11 +312,19 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
             continue;
         }
         out.stride[plane] = static_cast<int>(stride);
-        out.plane[plane].resize(stride * rows);
-        std::memcpy(out.plane[plane].data(), source, stride * rows);
+        // assign() rather than resize() and memcpy(). resize() on an empty
+        // vector value-initialises every byte, and every one of those bytes
+        // is then overwritten -- at 1920x1080 that is 3MB of zeroes written
+        // per frame for nothing. assign() from a pointer pair allocates once
+        // and copies once.
+        out.plane[plane].assign(source, source + stride * rows);
     }
     CVPixelBufferUnlockBaseAddress(picture, kCVPixelBufferLock_ReadOnly);
     impl.release_latest();
+    out.readback_micros = static_cast<int>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - readback_began)
+            .count());
     return true;
 }
 
