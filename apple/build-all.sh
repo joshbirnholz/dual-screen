@@ -100,6 +100,40 @@ fi
 
 mkdir -p "${out}"
 
+# The architectures a prebuilt SDL actually contains.
+#
+# This is the difference between a build that links and one that does not. Under
+# the Xcode generator nothing here sets ARCHS, on the theory that Xcode picks an
+# architecture per destination -- which it does, when a person builds with a
+# destination selected. This script has none: it drives xcodebuild through
+# `cmake --build`, so ONLY_ACTIVE_ARCH has no active architecture to resolve and
+# Xcode says so and builds every architecture the SDK supports. For a simulator
+# SDK that is arm64 *and* x86_64, while the SDL built by the command in
+# apple/README.md is arm64 alone. The arm64 slice links; the x86_64 slice finds
+# no SDL in the archive, ignores all 200 of its members one warning at a time,
+# and fails on undefined _main and _OBJC_CLASS_$_SDLUIKitDelegate -- which reads
+# as a mistake in the scene life cycle file rather than as an architecture that
+# was never going to work.
+#
+# So ask the library. lipo reports what is in an archive, and building for
+# exactly those architectures is right whichever way SDL was built: arm64 on
+# Apple silicon, x86_64 on an Intel Mac, both if someone made a fat one.
+sdl_architectures() {
+    local prefix="$1"
+    local lib archs
+    for lib in "${prefix}/lib/libSDL2.a" "${prefix}/lib/libSDL2.dylib"; do
+        if [[ -e "${lib}" ]] && archs="$(lipo -archs "${lib}" 2>/dev/null)"; then
+            # Semicolons, because CMAKE_OSX_ARCHITECTURES is a CMake list and
+            # lipo separates with spaces. "x86_64 arm64" passed through as
+            # written is one architecture with a space in its name, and the
+            # error that follows names neither of them.
+            printf '%s' "${archs// /;}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 configure_one() {
     local platform="$1"
     local dir="${out}/${platform}"
@@ -111,11 +145,6 @@ configure_one() {
             ;;
         ios)
             flags+=(-DCMAKE_SYSTEM_NAME=iOS)
-            # Ninja builds one architecture and has no notion of picking one
-            # per destination, so it has to be told which.
-            if [[ "${generator}" != "Xcode" ]]; then
-                flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
-            fi
             # Written out rather than as `cond && flags+=(...)`: under `set -e`
             # a false condition there makes the list return non-zero, which is
             # enough to end the script -- silently, and only when building for
@@ -126,14 +155,30 @@ configure_one() {
             ;;
         tvos)
             flags+=(-DCMAKE_SYSTEM_NAME=tvOS)
-            if [[ "${generator}" != "Xcode" ]]; then
-                flags+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
-            fi
             if [[ ${device} -eq 0 ]]; then
                 flags+=(-DCMAKE_OSX_SYSROOT=appletvsimulator)
             fi
             ;;
     esac
+
+    # Which architectures to build, for both generators and either way of
+    # building. Ninja produces one architecture and has to be told which;
+    # xcodebuild without a destination produces all of them and has to be told
+    # not to. The prebuilt SDL answers both -- see sdl_architectures.
+    if [[ "${platform}" != "macos" ]]; then
+        local archs=""
+        if [[ -n "${sdl_prefix}" ]]; then
+            archs="$(sdl_architectures "${sdl_prefix}" || true)"
+            if [[ -z "${archs}" ]]; then
+                echo "note: no SDL2 library under ${sdl_prefix}/lib to read an" >&2
+                echo "      architecture from; building arm64." >&2
+            fi
+        fi
+        # arm64 when there is nothing to ask: every Apple device is arm64, and
+        # so is every simulator on an Apple silicon Mac.
+        flags+=("-DCMAKE_OSX_ARCHITECTURES=${archs:-arm64}")
+    fi
+
     if [[ -n "${team}" ]]; then
         flags+=("-DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM=${team}")
     fi

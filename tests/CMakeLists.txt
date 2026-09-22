@@ -64,6 +64,15 @@ add_test(NAME apple_plists
         -DSCRATCH_DIR=${CMAKE_BINARY_DIR}/apple-plists
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_apple_plist_test.cmake)
 
+# The architectures apple/build-all.sh asks an Apple build for. An Apple TV
+# build linked against nothing and blamed the scene life cycle file, because
+# xcodebuild with no destination builds every architecture and the SDL had one.
+# Stubs stand in for uname, lipo and cmake -- see the script.
+add_test(NAME apple_architectures
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_apple_arch_test.sh
+        ${CMAKE_SOURCE_DIR}/apple/build-all.sh
+        ${CMAKE_BINARY_DIR}/apple-architectures)
+
 add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 

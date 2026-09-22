@@ -337,6 +337,21 @@ Two ways round it, and as an iOS developer you will know which you prefer:
   not been tried on a Mac from here. It is the better answer and is worth
   doing.
 
+##### The architecture catch
+
+The same `libSDL2.a` is built for one set of architectures, and a simulator SDK
+supports two. `build-all.sh` runs `cmake --build`, which drives `xcodebuild`
+with no destination, so `ONLY_ACTIVE_ARCH` has nothing to resolve and Xcode
+builds **every** architecture the SDK has — including the one your SDL does not.
+That link fails a long way from its cause: two hundred warnings about ignoring
+members of `libSDL2.a`, and then undefined `_main` and
+`_OBJC_CLASS_$_SDLUIKitDelegate`, which reads as a mistake in the source.
+
+So the script asks `lipo` what the prefix contains and builds for exactly that.
+Nothing to do, except to know why `CMAKE_OSX_ARCHITECTURES` appears in the
+configure line even under the Xcode generator. `tests/run_apple_arch_test.sh`
+holds it in place.
+
 ##### If the Xcode generator still fails
 
 Then it is CMake's Xcode support against your Xcode, and nothing here can fix
