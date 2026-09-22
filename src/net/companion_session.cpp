@@ -75,6 +75,9 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_frames_ = 0;
+    adapt_cost_before_step_ms_ = 0.0;
+    adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
     too_expensive_scale_ = 2.0;
@@ -191,6 +194,9 @@ void CompanionSession::disconnect() {
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_frames_ = 0;
+    adapt_cost_before_step_ms_ = 0.0;
+    adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
     too_expensive_scale_ = 2.0;
@@ -252,6 +258,9 @@ void CompanionSession::fail(const std::string& reason) {
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_frames_ = 0;
+    adapt_cost_before_step_ms_ = 0.0;
+    adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
     too_expensive_scale_ = 2.0;
@@ -1272,6 +1281,13 @@ void CompanionSession::request_display_size(int width, int height) {
     send_display_size();
 }
 
+bool shrinking_is_worth_it(double before_ms, double after_ms) {
+    if (!(before_ms > 0.0)) {
+        return true;  // nothing to compare against yet: try it and find out
+    }
+    return after_ms <= before_ms * 0.9;
+}
+
 double lowest_display_scale(int panel_width) {
     if (panel_width <= 0) {
         return kMinDisplayScale;
@@ -1326,6 +1342,7 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         // window that starts with the previous session's microseconds already
         // in it reports a readback cost that nothing in this window paid.
         adapt_readback_micros_ = 0;
+        adapt_frames_ = 0;
         return;
     }
     const uint64_t elapsed = now_ms - adapt_at_ms_;
@@ -1334,27 +1351,64 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     }
     const uint64_t per_second = adapt_decode_ms_ * 1000 / elapsed;
     const uint64_t readback_per_second = adapt_readback_micros_ / 1000 * 1000 / elapsed;
+    // The same second, per picture. This is the number that says whether the
+    // picture size decides anything: per second saturates on a device that is
+    // the bottleneck, because the smaller the frames the more of them arrive.
+    const uint64_t frames = adapt_frames_;
+    const double cost_per_frame_ms =
+        frames > 0 ? static_cast<double>(adapt_decode_ms_) / static_cast<double>(frames) : 0.0;
+    const double readback_per_frame_ms =
+        frames > 0 ? static_cast<double>(adapt_readback_micros_) / 1000.0 /
+                         static_cast<double>(frames)
+                   : 0.0;
     adapt_at_ms_ = now_ms;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_frames_ = 0;
+
+    // Did the last step down actually buy anything? Asked before deciding to
+    // take another one, and only once there is a step to judge.
+    if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0) {
+        adapt_size_decides_cost_ =
+            shrinking_is_worth_it(adapt_cost_before_step_ms_, cost_per_frame_ms);
+        if (!adapt_size_decides_cost_ && !said_size_does_not_decide_) {
+            said_size_does_not_decide_ = true;
+            log_info("a smaller picture did not make this device any quicker (" +
+                     std::to_string(static_cast<int>(adapt_cost_before_step_ms_ + 0.5)) +
+                     "ms a frame before, " +
+                     std::to_string(static_cast<int>(cost_per_frame_ms + 0.5)) +
+                     "ms after), so what it costs is not the size of the picture but the "
+                     "handling of each one; holding the size it has rather than spending "
+                     "more of it for nothing");
+        }
+        adapt_cost_before_step_ms_ = 0.0;
+    }
 
     const double floor_scale = lowest_display_scale(wanted_display_width_);
-    if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > floor_scale) {
+    if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > floor_scale &&
+        adapt_size_decides_cost_) {
         // Remembered before stepping down, so the way back up knows where the
         // ceiling is -- see too_expensive_scale_.
         too_expensive_scale_ = std::min(too_expensive_scale_, display_scale_);
         too_expensive_at_ms_ = now_ms;
+        // And remembered so the next window can say whether this was worth it.
+        adapt_cost_before_step_ms_ = cost_per_frame_ms;
         display_scale_ = std::max(floor_scale, display_scale_ * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
         // Which half of it, because the two have different answers. Time in
         // the decoder is the decoder's; time in the readback is this app
         // copying a picture out of memory the GPU already has, and that is a
-        // copy that does not have to happen at all.
+        // copy that does not have to happen at all. Per frame as well as per
+        // second, because only one of the two can be compared across a step.
         log_info("this device is spending " + std::to_string(per_second) +
                  "ms of every second turning frames into pictures (" +
                  std::to_string(readback_per_second) +
                  "ms of it copying them out of the decoder), which is more than it can "
-                 "keep up with; asking for " +
+                 "keep up with; " +
+                 std::to_string(frames) + " pictures, " +
+                 std::to_string(static_cast<int>(cost_per_frame_ms + 0.5)) + "ms each (" +
+                 std::to_string(static_cast<int>(readback_per_frame_ms + 0.5)) +
+                 "ms copying); asking for " +
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
                  "% of its display size instead");
         send_display_size();
@@ -1744,6 +1798,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     // see the run counted above, which only means anything unbroken.
     ((frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_) = 0;
     adapt_readback_micros_ += static_cast<uint64_t>(decoded.readback_micros);
+    ++adapt_frames_;
     target.video = true;
     target.layout = decoded.layout;
     target.pixels = std::move(decoded.pixels);

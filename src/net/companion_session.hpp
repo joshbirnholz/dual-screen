@@ -97,6 +97,27 @@ inline constexpr double kDisplayScaleStep = 0.8;
 // The lowest scale allowed on a panel this wide. Pure, so the arithmetic above
 // can be checked against the sizes real devices actually have.
 double lowest_display_scale(int panel_width);
+
+// Whether asking for a smaller picture is worth doing again, given what the
+// last step down actually bought.
+//
+// The ladder assumes the work is proportional to the pixel count -- it says so
+// at kBusyDecodeMsPerSecond, and on every device this was built against it was
+// true. On an Apple TV it is not: measured across four rungs, 3.8 times fewer
+// pixels bought 1.17 times less work. The cost there is per frame and nearly
+// fixed -- a synchronous hardware decode and a lock on the decoder's own
+// buffer, neither of which cares how big the picture is.
+//
+// A ladder that cannot tell the difference walks all the way to its floor,
+// degrading the picture the whole way, and arrives no faster than it started.
+// So: one step down is always worth trying, and a second only if the first
+// one moved the number.
+//
+// `before_ms` and `after_ms` are milliseconds per frame, either side of one
+// step. A tenth is the bar -- well under what proportionality would predict
+// for a step that removes a third of the pixels, and well above measurement
+// noise.
+bool shrinking_is_worth_it(double before_ms, double after_ms);
 // How long before a size that was too expensive is worth trying once more.
 // Long, because every attempt that fails costs two resolution changes and two
 // keyframes, and a quiet stretch is not evidence that a busy one will fit.
@@ -837,6 +858,18 @@ private:
     // different answers, and the log has to be able to say which one is
     // eating the second.
     uint64_t adapt_readback_micros_ = 0;
+    // How many pictures that time was spent on, so the window can be read per
+    // frame as well as per second. Per second saturates -- a device that is
+    // the bottleneck spends all of it whatever the picture size, because the
+    // smaller the frames the more of them get through -- and a number that is
+    // always the same cannot say whether anything helped. Per frame can.
+    uint64_t adapt_frames_ = 0;
+    // The cost per frame when this device last asked for a smaller picture,
+    // and whether shrinking it turned out to matter at all. See
+    // shrinking_is_worth_it().
+    double adapt_cost_before_step_ms_ = 0.0;
+    bool adapt_size_decides_cost_ = true;
+    bool said_size_does_not_decide_ = false;
     uint64_t adapt_at_ms_ = 0;
     // Consecutive windows with room to spare, so stepping back up needs a
     // sustained case rather than one quiet moment.

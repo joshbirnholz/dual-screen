@@ -1583,6 +1583,40 @@ void test_the_smallest_picture_is_a_size_rather_than_a_fraction() {
     CHECK(scale == tv);
 }
 
+// Whether stepping down again is worth it, which the ladder never used to ask.
+//
+// Its premise is that the work is proportional to the pixel count. On an Apple
+// TV it is not: measured across four rungs, 3.8 times fewer pixels bought 1.17
+// times less work, because the cost there is per frame -- a synchronous
+// hardware decode and a lock on the decoder's buffer, neither of which cares
+// how big the picture is. Without this the ladder walks to its floor,
+// degrading the picture the whole way, and arrives no quicker.
+void test_a_step_that_bought_nothing_is_not_taken_twice() {
+    using namespace ds::net;
+
+    // The first step has nothing to compare against, so it is always tried.
+    CHECK(shrinking_is_worth_it(0.0, 27.0));
+
+    // A device where the picture size does decide the cost: a third off the
+    // pixels, a third off the time. Keep going.
+    CHECK(shrinking_is_worth_it(30.0, 20.0));
+
+    // The Apple TV, one rung at a time. Its log reported only per-second
+    // totals, which is why the line now carries the per-frame cost too --
+    // these are those totals standing in for a frame count that did not
+    // change much between neighbouring windows.
+    CHECK(!shrinking_is_worth_it(938.0, 930.0));  // 51% -> 41%: 0.9% quicker
+    CHECK(!shrinking_is_worth_it(930.0, 896.0));  // 41% -> 33%: 3.7% quicker
+    // The judgement is made on the first step, so the ladder stops there
+    // rather than walking to the floor as it did.
+
+    // A step that made things worse is not a reason to take another.
+    CHECK(!shrinking_is_worth_it(20.0, 25.0));
+    // Exactly a tenth better counts, a hair under does not.
+    CHECK(shrinking_is_worth_it(10.0, 9.0));
+    CHECK(!shrinking_is_worth_it(10.0, 9.5));
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -2708,6 +2742,7 @@ int main() {
     test_a_console_that_ignores_motion_never_asks_for_it();
     test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture();
     test_the_smallest_picture_is_a_size_rather_than_a_fraction();
+    test_a_step_that_bought_nothing_is_not_taken_twice();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();
