@@ -629,10 +629,16 @@ void test_a_tap_reported_twice_still_knows_where_it_started() {
     input.shutdown();
 }
 
-// Two fingers at once is the only way into the menu on a device with no
-// buttons, so it has to keep working -- not once per session, and not until the
-// window loses focus mid-touch, which on a handheld is what opening the system
-// overlay does.
+// Two fingers tapped together is the only way into the menu on a device with
+// no buttons, so it has to keep working -- not once per session, and not until
+// the window loses focus mid-touch, which on a handheld is what opening the
+// system overlay does.
+//
+// It fires on the release, not on the landing. A hand resting on the glass
+// while the other one draws is not a tap, and on the screen a stylus belongs
+// to that is a thing people do. tests/test_touch_gesture.cpp covers the shape
+// of the gesture itself; what is here is that it survives the things that
+// used to break it.
 void test_two_fingers_open_the_menu_more_than_once() {
     InputManager input;
     input.initialize(Settings());
@@ -660,13 +666,18 @@ void test_two_fingers_open_the_menu_more_than_once() {
         return opened_the_menu();
     };
 
-    CHECK_MSG(frame({finger(SDL_FINGERDOWN, 1, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 2, 0.6f, 0.5f)}),
-              "two fingers did not open the menu");
+    // Landing is not the gesture.
+    CHECK_MSG(
+        !frame({finger(SDL_FINGERDOWN, 1, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 2, 0.6f, 0.5f)}),
+        "the menu opened the moment a second finger landed, so a hand resting on the screen "
+        "opens it");
+    CHECK_MSG(frame({finger(SDL_FINGERUP, 2, 0.6f, 0.5f)}),
+              "lifting the two fingers did not open the menu");
 
-    // The second lifts, the first stays put -- a thumb resting on the screen.
-    // The gesture has to be available again without lifting everything.
-    frame({finger(SDL_FINGERUP, 2, 0.6f, 0.5f)});
-    CHECK_MSG(frame({finger(SDL_FINGERDOWN, 3, 0.6f, 0.5f)}),
+    // The first stays put -- a thumb resting on the screen. The gesture has to
+    // be available again without lifting everything.
+    frame({finger(SDL_FINGERDOWN, 3, 0.6f, 0.5f)});
+    CHECK_MSG(frame({finger(SDL_FINGERUP, 3, 0.6f, 0.5f)}),
               "two fingers opened the menu once and then never again while one stayed down");
 
     // The window is taken away mid-touch and the releases go elsewhere. What was
@@ -675,18 +686,23 @@ void test_two_fingers_open_the_menu_more_than_once() {
     lost.type = SDL_WINDOWEVENT;
     lost.window.event = SDL_WINDOWEVENT_FOCUS_LOST;
     frame({lost});
-    CHECK_MSG(frame({finger(SDL_FINGERDOWN, 4, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 5, 0.6f, 0.5f)}),
+    frame({finger(SDL_FINGERDOWN, 4, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 5, 0.6f, 0.5f)});
+    CHECK_MSG(frame({finger(SDL_FINGERUP, 5, 0.6f, 0.5f)}),
               "the fingers left behind by a lost window were still counted, so the gesture never "
               "worked again");
 
-    // And not at all on a console played through its touch screen: there a
-    // second finger belongs to the game, and this would put a menu over it
-    // mid-play. The keyboard is the way in there.
-    frame({finger(SDL_FINGERUP, 4, 0.3f, 0.5f), finger(SDL_FINGERUP, 5, 0.6f, 0.5f)});
+    // And on a console played through its touch screen too, which it used to
+    // refuse. No console this streams has a multi-touch screen -- a DS, a 3DS
+    // and a GamePad are all single-touch, and the wire carries one point -- so
+    // a second finger was never a press the game could have read. Refusing it
+    // there left a device with no buttons no way into the menu at all, which
+    // is to say no way to leave a session.
+    frame({finger(SDL_FINGERUP, 4, 0.3f, 0.5f)});
     input.set_game_owns_controls(true);
-    CHECK_MSG(!frame({finger(SDL_FINGERDOWN, 6, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 7, 0.6f, 0.5f)}),
-              "a second finger opened the menu on a console whose game plays through the touch "
-              "screen, so the menu lands on top of whatever was being played");
+    frame({finger(SDL_FINGERDOWN, 6, 0.3f, 0.5f), finger(SDL_FINGERDOWN, 7, 0.6f, 0.5f)});
+    CHECK_MSG(frame({finger(SDL_FINGERUP, 7, 0.6f, 0.5f)}),
+              "two fingers did not open the menu on a console whose game reads every control, "
+              "leaving a device with no buttons no way out of the session");
 
     input.shutdown();
 }
