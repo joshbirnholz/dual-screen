@@ -225,11 +225,13 @@ void InputManager::handle_event(const SDL_Event& event) {
                       (sdl_name != nullptr ? sdl_name : "?") + " (" +
                       std::to_string(static_cast<int>(button)) + ")");
 
-            // Menus confirm on the east button and go back on the south one --
-            // the same positions the game treats as DS A and B.
-            if (button == kMenuConfirmButton) {
+            // Which of the two lower face buttons means yes is the player's
+            // to choose -- east by default, south for anyone who grew up on a
+            // PlayStation. The other one of the pair is always the other
+            // answer, so the two can never both mean the same thing.
+            if (button == confirm_button_for(confirm_button_)) {
                 push_action(UiAction::Confirm);
-            } else if (button == kMenuCancelButton) {
+            } else if (button == cancel_button_for(confirm_button_)) {
                 push_action(UiAction::Cancel);
             } else if (button == kMenuQuitButton) {
                 push_action(UiAction::MenuQuit);

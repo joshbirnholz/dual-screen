@@ -52,6 +52,22 @@ void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus
 
 void SettingsScreen::refresh_bios() { bios_ = check_bios_files(settings_.system_dir); }
 
+namespace {
+
+// What the confirming button is called, in the style the prompts are drawn
+// in. The setting is a position; this is what that position is printed as,
+// and it is the only thing anybody actually reads.
+std::string confirm_button_name(PadGlyphStyle style, ConfirmButton choice) {
+    const bool south = choice == ConfirmButton::South;
+    switch (style) {
+        case PadGlyphStyle::PlayStation: return south ? "Cross" : "Circle";
+        case PadGlyphStyle::Xbox: return south ? "A" : "B";
+        default: return south ? "B" : "A";
+    }
+}
+
+}  // namespace
+
 SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                                                           float output_height) const {
     Geometry geometry;
@@ -147,6 +163,13 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
+        case Row::ConfirmButtonRow:
+            // Two values, so either direction is the other one.
+            settings_.confirm_button = settings_.confirm_button == ConfirmButton::East
+                                           ? ConfirmButton::South
+                                           : ConfirmButton::East;
+            result.settings_changed = true;
+            break;
         case Row::VideoHold:
             settings_.video_hold = video::next_video_hold(settings_.video_hold);
             result.settings_changed = true;
@@ -281,6 +304,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Left stick click, where there is a microphone",
          to_string(settings_.left_stick_press)},
         {"Button prompts", to_string(settings_.pad_glyphs)},
+        {"Confirm with", confirm_button_name(settings_.pad_glyphs, settings_.confirm_button)},
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",

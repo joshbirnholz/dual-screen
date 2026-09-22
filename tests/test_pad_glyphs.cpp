@@ -12,7 +12,9 @@
 #include <set>
 #include <string>
 
+#include "config/settings.hpp"
 #include "render/button_glyphs.hpp"
+#include "ui/control_guide.hpp"
 
 using namespace ds;
 
@@ -100,6 +102,67 @@ void test_a_style_survives_the_round_trip_through_settings_json() {
     CHECK(kept == PadGlyphStyle::Xbox);
 }
 
+// Choosing which button means yes changes the picture and nothing else.
+//
+// The pair is what moves: a prompt that means "confirm" is drawn as the east
+// button by default and as the south one when that is what was chosen. What
+// must not move is what the prompt *means*, because a finger lands on the
+// prompt and the prompt is still the confirm prompt.
+void test_choosing_south_swaps_the_picture_and_not_the_meaning() {
+    const ConfirmButton was = confirm_button();
+
+    set_confirm_button(ConfirmButton::East);
+    CHECK(glyph_as_drawn(ButtonGlyph::A) == ButtonGlyph::A);
+    CHECK(glyph_as_drawn(ButtonGlyph::B) == ButtonGlyph::B);
+
+    set_confirm_button(ConfirmButton::South);
+    CHECK(glyph_as_drawn(ButtonGlyph::A) == ButtonGlyph::B);
+    CHECK(glyph_as_drawn(ButtonGlyph::B) == ButtonGlyph::A);
+
+    // The meaning is untouched: the confirm prompt still confirms.
+    UiAction action = UiAction::Cancel;
+    CHECK(ui_action_for_glyph(ButtonGlyph::A, action) && action == UiAction::Confirm);
+    CHECK(ui_action_for_glyph(ButtonGlyph::B, action) && action == UiAction::Cancel);
+
+    // And nothing else in the row moves with it.
+    for (const ButtonGlyph other : {ButtonGlyph::X, ButtonGlyph::Y, ButtonGlyph::Plus,
+                                    ButtonGlyph::Minus, ButtonGlyph::LeftStick,
+                                    ButtonGlyph::RightStick}) {
+        CHECK(glyph_as_drawn(other) == other);
+    }
+    set_confirm_button(was);
+}
+
+// The two buttons are always the two lower face buttons and always different,
+// whichever way round they are put.
+void test_the_pair_is_always_two_different_buttons() {
+    for (int index = 0; index < static_cast<int>(ConfirmButton::Count); ++index) {
+        const ConfirmButton choice = static_cast<ConfirmButton>(index);
+        CHECK(confirm_button_for(choice) != cancel_button_for(choice));
+        CHECK(confirm_glyph_for(choice) != cancel_glyph_for(choice));
+        // Swapped, not replaced: the two halves are each other's opposite.
+        CHECK(confirm_button_for(choice) == cancel_button_for(
+                  choice == ConfirmButton::East ? ConfirmButton::South : ConfirmButton::East));
+    }
+    // East is the default and is what this app has always done.
+    CHECK(confirm_button_for(ConfirmButton::East) == SDL_CONTROLLER_BUTTON_B);
+    CHECK(cancel_button_for(ConfirmButton::East) == SDL_CONTROLLER_BUTTON_A);
+    CHECK(Settings().confirm_button == ConfirmButton::East);
+    CHECK(Settings().pad_glyphs == PadGlyphStyle::Nintendo);
+}
+
+void test_the_choice_survives_settings_json() {
+    for (int index = 0; index < static_cast<int>(ConfirmButton::Count); ++index) {
+        const ConfirmButton choice = static_cast<ConfirmButton>(index);
+        ConfirmButton back = ConfirmButton::East;
+        CHECK(confirm_button_from_string(to_string(choice), back));
+        CHECK(back == choice);
+    }
+    ConfirmButton kept = ConfirmButton::South;
+    CHECK(!confirm_button_from_string("Northwest", kept));
+    CHECK(kept == ConfirmButton::South);
+}
+
 }  // namespace
 
 int main() {
@@ -110,5 +173,8 @@ int main() {
     test_the_stick_clicks_never_change();
     test_every_cell_is_in_the_sheet();
     test_a_style_survives_the_round_trip_through_settings_json();
+    test_choosing_south_swaps_the_picture_and_not_the_meaning();
+    test_the_pair_is_always_two_different_buttons();
+    test_the_choice_survives_settings_json();
     return test::finish("pad-glyphs");
 }

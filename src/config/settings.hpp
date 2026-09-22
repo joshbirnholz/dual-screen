@@ -157,6 +157,10 @@ struct Settings {
     // -- see ButtonGlyph -- and this decides only what is printed on them.
     PadGlyphStyle pad_glyphs = PadGlyphStyle::Nintendo;
 
+    // Which of the two lower face buttons means yes. East by default, which a
+    // Nintendo pad prints A on and which is what this app has always done.
+    ConfirmButton confirm_button = ConfirmButton::East;
+
     // How long a companion may hold a decoded frame back to even out an
     // uneven link -- see VideoHold. Defaults to what this app did before the
     // setting existed; the other two ends are there because the right answer

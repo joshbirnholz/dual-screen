@@ -31,10 +31,24 @@ float chip_height(float scale) { return TextRenderer::line_height(scale) * kChip
 float chip_pad(float scale) { return TextRenderer::line_height(scale) * kChipPadScale; }
 
 bool g_touch_hints = false;
+ConfirmButton g_confirm_button = ConfirmButton::East;
 
 }  // namespace
 
 void set_touch_hints(bool touch) { g_touch_hints = touch; }
+void set_confirm_button(ConfirmButton choice) { g_confirm_button = choice; }
+ConfirmButton confirm_button() { return g_confirm_button; }
+
+ButtonGlyph glyph_as_drawn(ButtonGlyph glyph) {
+    if (g_confirm_button != ConfirmButton::South) {
+        return glyph;
+    }
+    // Only the pair, and only the picture: the prompt still means what it
+    // meant, so a tap on it still does what it said.
+    if (glyph == ButtonGlyph::A) return ButtonGlyph::B;
+    if (glyph == ButtonGlyph::B) return ButtonGlyph::A;
+    return glyph;
+}
 bool touch_hints() { return g_touch_hints; }
 
 ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y) {
@@ -58,6 +72,16 @@ std::vector<GuidePrompt> prompts_worth_drawing(const std::vector<GuidePrompt>& p
         }
     }
     return kept;
+}
+
+// ButtonGlyph::A is the east button and ButtonGlyph::B the south one -- the
+// names are Nintendo's letters, the meaning is the position.
+ButtonGlyph confirm_glyph_for(ConfirmButton choice) {
+    return choice == ConfirmButton::South ? ButtonGlyph::B : ButtonGlyph::A;
+}
+
+ButtonGlyph cancel_glyph_for(ConfirmButton choice) {
+    return choice == ConfirmButton::South ? ButtonGlyph::A : ButtonGlyph::B;
 }
 
 bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out) {
@@ -139,7 +163,7 @@ float draw_control_guide(QuadRenderer& quads,
                 out_hits->push_back(GuideHit{prompts[index].glyph, box});
             }
         } else {
-            glyphs.draw(quads, prompts[index].glyph, pen_x, y, height, color);
+            glyphs.draw(quads, glyph_as_drawn(prompts[index].glyph), pen_x, y, height, color);
             text.draw(quads, prompts[index].action, pen_x + glyph_width + gap, label_y, scale,
                       color);
             if (out_hits != nullptr) {

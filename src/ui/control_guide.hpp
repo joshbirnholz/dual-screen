@@ -69,6 +69,27 @@ ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y)
 // between an app you can leave and one you cannot.
 bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out);
 
+// Which prompt to draw for yes and for no, given which button was chosen to
+// mean yes. Here rather than beside the buttons themselves: what a button
+// does is input's business, what is drawn for it is this layer's.
+ButtonGlyph confirm_glyph_for(ConfirmButton choice);
+ButtonGlyph cancel_glyph_for(ConfirmButton choice);
+
+// Which button means yes, for everything drawn from here on. Module state
+// like the hint style above, and for the same reason: one choice for the
+// whole app, and every prompt in it would otherwise have to carry it.
+//
+// A prompt says ButtonGlyph::A when it means "confirm", because that is the
+// east button and east confirms by default. Choosing south swaps what is
+// *drawn* for the pair and nothing else -- the prompt still means confirm,
+// so a finger landing on it still confirms.
+void set_confirm_button(ConfirmButton choice);
+ConfirmButton confirm_button();
+
+// What a prompt is drawn as, once that choice is applied. The identity for
+// everything that is not one of the two.
+ButtonGlyph glyph_as_drawn(ButtonGlyph glyph);
+
 // The prompts worth drawing, given how this device is being used. With a pad,
 // all of them; with a finger, all but the ones whose thing can be tapped.
 //

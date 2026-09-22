@@ -81,6 +81,7 @@ private:
         ScreenCodecWiiU,
         LeftStickPress,
         PadGlyphs,
+        ConfirmButtonRow,
         VideoHold,
         Vsync,
         WiiUScreenAlone,

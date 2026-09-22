@@ -1,8 +1,8 @@
 #pragma once
 
-#include <SDL.h>
-
 #include <string>
+
+#include <SDL.h>
 
 #include "input/ds_input.hpp"
 
@@ -30,6 +30,26 @@ constexpr const char* kFaceButtonsByPosition = "0";
 // startup; a test asserts what it leaves behind, because one of these is not
 // the kind of thing whose absence shows up anywhere but on hardware.
 void apply_controller_hints();
+
+// Which of the two lower face buttons means yes.
+//
+// East by default, which is what a Nintendo pad prints A on and what this app
+// has always done. South is the other convention -- it is what a PlayStation
+// prints the cross on, and what most people who grew up on one reach for.
+//
+// A position, not a letter, because the letter depends on the pad and the
+// artwork depends on a separate setting: see PadGlyphStyle. The two together
+// are what let a prompt say "circle" and mean it.
+enum class ConfirmButton { East, South, Count };
+
+const char* to_string(ConfirmButton button);
+bool confirm_button_from_string(const std::string& text, ConfirmButton& out);
+
+// Which SDL button confirms and which cancels, given that choice. Always the
+// two lower face buttons and always different from each other.
+SDL_GameControllerButton confirm_button_for(ConfirmButton choice);
+SDL_GameControllerButton cancel_button_for(ConfirmButton choice);
+
 
 // Menus: east confirms, south goes back.
 constexpr SDL_GameControllerButton kMenuConfirmButton = SDL_CONTROLLER_BUTTON_B;  // east

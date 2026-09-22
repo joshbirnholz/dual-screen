@@ -51,6 +51,38 @@ bool ds_button_for_controller_button(SDL_GameControllerButton button, DsButton& 
     }
 }
 
+const char* to_string(ConfirmButton button) {
+    switch (button) {
+        case ConfirmButton::East: return "East";
+        case ConfirmButton::South: return "South";
+        case ConfirmButton::Count: break;
+    }
+    return "East";
+}
+
+bool confirm_button_from_string(const std::string& text, ConfirmButton& out) {
+    for (int index = 0; index < static_cast<int>(ConfirmButton::Count); ++index) {
+        const ConfirmButton choice = static_cast<ConfirmButton>(index);
+        if (text == to_string(choice)) {
+            out = choice;
+            return true;
+        }
+    }
+    return false;
+}
+
+// SDL is asked to report face buttons by position, so BUTTON_B is the east
+// one and BUTTON_A the south one on every pad -- see kFaceButtonsByPosition.
+// These two names are the only place in this app where that is relied on
+// rather than merely true.
+SDL_GameControllerButton confirm_button_for(ConfirmButton choice) {
+    return choice == ConfirmButton::South ? SDL_CONTROLLER_BUTTON_A : SDL_CONTROLLER_BUTTON_B;
+}
+
+SDL_GameControllerButton cancel_button_for(ConfirmButton choice) {
+    return choice == ConfirmButton::South ? SDL_CONTROLLER_BUTTON_B : SDL_CONTROLLER_BUTTON_A;
+}
+
 PadLetterLayout pad_letter_layout(SDL_GameControllerType type) {
     switch (type) {
         case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:

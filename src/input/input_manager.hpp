@@ -127,6 +127,11 @@ public:
     void set_game_owns_controls(bool owns) { game_owns_controls_ = owns; }
     bool game_owns_controls() const { return game_owns_controls_; }
 
+    // Which face button means yes. See ConfirmButton; changing it swaps the
+    // pair, never leaves both meaning the same thing.
+    void set_confirm_button(ConfirmButton choice) { confirm_button_ = choice; }
+    ConfirmButton confirm_button() const { return confirm_button_; }
+
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
     // Whether L3 is the console's microphone rather than one of this app's own
     // shortcuts. See SystemProfile::has_microphone, and left_stick_is_mic_ for
@@ -203,6 +208,7 @@ private:
     Settings settings_;
     bool stick_is_dpad_ = true;
     bool game_owns_controls_ = false;
+    ConfirmButton confirm_button_ = ConfirmButton::East;
     // L3 reaches the game as the microphone instead of swapping layouts here.
     //
     // A DS has almost no spare buttons, and by the time this app has taken the

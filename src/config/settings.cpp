@@ -128,6 +128,9 @@ Settings Settings::load(const AppPaths& paths) {
     pad_glyph_style_from_string(
         get_or<std::string>(document, "pad_glyphs", to_string(settings.pad_glyphs)),
         settings.pad_glyphs);
+    confirm_button_from_string(
+        get_or<std::string>(document, "confirm_button", to_string(settings.confirm_button)),
+        settings.confirm_button);
     settings.video_hold = video::video_hold_from_key(
         get_or<std::string>(document, "video_hold", video::video_hold_key(settings.video_hold)),
         settings.video_hold);
@@ -172,6 +175,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["default_right_stick_mode"] = right_stick_mode_key(default_right_stick_mode);
     document["left_stick_press"] = left_stick_press_key(left_stick_press);
     document["pad_glyphs"] = to_string(pad_glyphs);
+    document["confirm_button"] = to_string(confirm_button);
     document["video_hold"] = video::video_hold_key(video_hold);
     document["wii_u_screen_alone"] = screen_alone_key(wii_u_screen_alone);
     document["audio_target"] = audio_target_key(audio_target);
