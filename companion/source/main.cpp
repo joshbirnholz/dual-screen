@@ -102,6 +102,10 @@ extern "C" {
 // A phone or a tablet: something that can be turned over, unlike an Apple TV.
 #define DS_APPLE_HANDHELD 1
 #endif
+#if TARGET_OS_TV
+// A television: no touch screen, and a remote that is a controller.
+#define DS_APPLE_TELEVISION 1
+#endif
 #endif
 
 namespace ds::sw {
@@ -994,7 +998,19 @@ void Client::run() {
         }
         // Which kind of prompt to draw, asked every frame because a pad can
         // be connected or taken away at any point in a session.
+        //
+        // Never on a television, whatever is or is not attached. An Apple TV
+        // has nothing to tap, so a prompt drawn for a finger there is a
+        // control nobody can reach -- and a Siri Remote is a controller with
+        // buttons on it, which is what the glyphs are for. Said as a platform
+        // fact rather than asked of SDL, because the remote's touch surface
+        // is a touch device as far as SDL is concerned and would answer the
+        // question the wrong way round.
+#if defined(DS_APPLE_TELEVISION)
+        set_touch_hints(false);
+#else
         set_touch_hints(input_.connected_controllers() == 0);
+#endif
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
         route_guide_taps(actions, pointers);
