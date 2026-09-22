@@ -1801,7 +1801,21 @@ uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms, unsigned starved
     // quiet link rather than a quiet moment. Asymmetric on purpose: buying
     // cover costs delay once, and giving it back too eagerly costs a stall
     // every time the link twitches.
-    constexpr unsigned kCalmSecondsBeforeGivingBack = 10;
+    //
+    // Three seconds, not ten. Ten is not a wait, it is a streak, and a streak
+    // is not something a real link supplies: measured on an Apple TV, a rough
+    // patch bought 73ms of cover, the stream went back to 30 frames a second
+    // with nothing dropped and a 35ms round trip -- and the cover sat at 73ms
+    // for the rest of the session, because a single bad second every dozen or
+    // so put the count back to zero before it ever reached ten. Cover that can
+    // only be bought is not cover, it is a ratchet.
+    //
+    // Three is a judgement rather than a measurement: long enough that one
+    // quiet second is not mistaken for a quiet link, short enough to be
+    // reached on a link that twitches now and then, which is every real one.
+    // The rate is unchanged, so giving back 73ms still takes nine seconds of
+    // calm -- it is the streak that was wrong, not the pace.
+    constexpr unsigned kCalmSecondsBeforeGivingBack = 3;
     if (calm_seconds >= kCalmSecondsBeforeGivingBack && current_ms > 0) {
         return current_ms - std::min(current_ms, step);
     }

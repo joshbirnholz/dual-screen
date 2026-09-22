@@ -2176,11 +2176,11 @@ void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
     // for, a link that still runs dry will not be fixed by waiting longer.
     CHECK_EQ(hold_extra_ms(period * 2, period, 5, 0), period * 2);
 
-    // Given back only after a long calm, and a step at a time, so a link that
+    // Given back only after a calm spell, and a step at a time, so a link that
     // needed the cover does not lose all of it on one quiet stretch.
-    CHECK_EQ(hold_extra_ms(period, period, 0, 9), period);
-    CHECK_EQ(hold_extra_ms(period, period, 0, 10), period - period / 4);
-    CHECK_EQ(hold_extra_ms(0, period, 0, 10), static_cast<uint64_t>(0));
+    CHECK_EQ(hold_extra_ms(period, period, 0, 2), period);
+    CHECK_EQ(hold_extra_ms(period, period, 0, 3), period - period / 4);
+    CHECK_EQ(hold_extra_ms(0, period, 0, 3), static_cast<uint64_t>(0));
 
     // What it is worth on the link that prompted it: the body asks for one
     // period, which does not reach a frame 76ms late; the earned cover does,
@@ -2188,6 +2188,51 @@ void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
     CHECK(video_hold_allowance_ms(19.0, period, 0) < 76u);
     CHECK(video_hold_allowance_ms(19.0, period, 44) >= 76u);
     CHECK(video_hold_allowance_ms(19.0, period, 44) < video_hold_allowance_ms(19.0, period, 66));
+}
+
+// Cover that can only be bought is not cover, it is a ratchet.
+//
+// Measured on an Apple TV: a rough patch bought 73ms, the stream went back to
+// 30 frames a second with nothing dropped and a 35ms round trip, and the cover
+// sat at 73ms for the rest of the session. The give-back needed ten
+// *consecutive* calm seconds, and one bad second every dozen or so put the
+// count back to zero before it ever got there. Ten is not a wait, it is a
+// streak, and a real link does not supply streaks.
+void test_cover_comes_back_on_a_link_that_twitches_now_and_then() {
+    constexpr uint64_t period = 33;
+
+    // Earn it the way that Apple TV did.
+    uint64_t cover = 0;
+    for (int second = 0; second < 12; ++second) {
+        cover = hold_extra_ms(cover, period, 2, 0);
+    }
+    CHECK(cover >= 60);
+    const uint64_t earned = cover;
+
+    // Now a link that is calm most of the time and twitches every eighth
+    // second. Under the old streak this never gave a penny back.
+    unsigned calm = 0;
+    for (int second = 0; second < 80; ++second) {
+        const unsigned starved = (second % 8 == 7) ? 1u : 0u;
+        cover = hold_extra_ms(cover, period, starved, calm);
+        calm = (starved == 0) ? calm + 1 : 0;
+    }
+    CHECK_MSG(cover < earned,
+              "cover never came back on a link that was calm seven seconds in eight");
+    // Down to a single step, which is the right answer rather than zero: a
+    // link that stalls once every eight seconds does want a little cover, and
+    // one step is what one stall a cycle earns. What it must not do is keep
+    // the 66ms it bought during the rough patch.
+    CHECK_MSG(cover <= period / 4,
+              "cover was still " + std::to_string(cover) + "ms after eighty mostly-calm seconds");
+
+    // And a link that really is bad still keeps what it bought: the twitch is
+    // what must not ratchet, not a genuine stall.
+    uint64_t bad = 0;
+    for (int second = 0; second < 40; ++second) {
+        bad = hold_extra_ms(bad, period, 3, 0);
+    }
+    CHECK_EQ(bad, period * 2);
 }
 
 // Cover is only worth buying for lateness the link caused.
@@ -2775,6 +2820,7 @@ int main() {
     test_this_devices_own_stall_is_not_the_links_fault();
     test_the_buffer_pays_for_the_body_and_not_the_tail();
     test_cover_is_earned_by_running_dry_and_given_back_when_calm();
+    test_cover_comes_back_on_a_link_that_twitches_now_and_then();
     test_the_hold_setting_moves_both_ends_of_the_trade();
     test_a_clock_finer_than_the_loop_buys_no_cover();
     test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time();
