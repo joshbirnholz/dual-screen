@@ -75,6 +75,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_cost_before_step_ms_ = 0.0;
     adapt_size_decides_cost_ = true;
@@ -194,6 +195,7 @@ void CompanionSession::disconnect() {
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_cost_before_step_ms_ = 0.0;
     adapt_size_decides_cost_ = true;
@@ -258,6 +260,7 @@ void CompanionSession::fail(const std::string& reason) {
     display_scale_ = 1.0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_cost_before_step_ms_ = 0.0;
     adapt_size_decides_cost_ = true;
@@ -1342,6 +1345,7 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         // window that starts with the previous session's microseconds already
         // in it reports a readback cost that nothing in this window paid.
         adapt_readback_micros_ = 0;
+        adapt_lock_micros_ = 0;
         adapt_frames_ = 0;
         return;
     }
@@ -1361,9 +1365,14 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         frames > 0 ? static_cast<double>(adapt_readback_micros_) / 1000.0 /
                          static_cast<double>(frames)
                    : 0.0;
+    const double lock_per_frame_ms =
+        frames > 0
+            ? static_cast<double>(adapt_lock_micros_) / 1000.0 / static_cast<double>(frames)
+            : 0.0;
     adapt_at_ms_ = now_ms;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
+    adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
 
     // Did the last step down actually buy anything? Asked before deciding to
@@ -1408,7 +1417,9 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
                  std::to_string(frames) + " pictures, " +
                  std::to_string(static_cast<int>(cost_per_frame_ms + 0.5)) + "ms each (" +
                  std::to_string(static_cast<int>(readback_per_frame_ms + 0.5)) +
-                 "ms copying); asking for " +
+                 "ms copying, of which " +
+                 std::to_string(static_cast<int>(lock_per_frame_ms + 0.5)) +
+                 "ms waiting for the decoder to let go); asking for " +
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
                  "% of its display size instead");
         send_display_size();
@@ -1798,6 +1809,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     // see the run counted above, which only means anything unbroken.
     ((frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_) = 0;
     adapt_readback_micros_ += static_cast<uint64_t>(decoded.readback_micros);
+    adapt_lock_micros_ += static_cast<uint64_t>(decoded.lock_micros);
     ++adapt_frames_;
     target.video = true;
     target.layout = decoded.layout;

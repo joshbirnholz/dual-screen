@@ -858,6 +858,9 @@ private:
     // different answers, and the log has to be able to say which one is
     // eating the second.
     uint64_t adapt_readback_micros_ = 0;
+    // The share of the readback that was the lock -- see DecodedFrame::
+    // lock_micros.
+    uint64_t adapt_lock_micros_ = 0;
     // How many pictures that time was spent on, so the window can be read per
     // frame as well as per second. Per second saturates -- a device that is
     // the bottleneck spends all of it whatever the picture size, because the

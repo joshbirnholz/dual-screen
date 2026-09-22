@@ -62,6 +62,7 @@ struct VideoToolboxDecoder::Impl {
     OSStatus latest_status = noErr;
     std::vector<uint8_t> avcc;
     bool open = false;
+    bool said_format = false;
 
     ~Impl() { tear_down(); }
 
@@ -191,7 +192,37 @@ struct VideoToolboxDecoder::Impl {
         // Latency over throughput, which is the whole point of this app. A
         // decoder left to its own devices may buffer to keep a steady rate.
         VTSessionSetProperty(session, kVTDecompressionPropertyKey_RealTime, kCFBooleanTrue);
-        log_info("video decoder: VideoToolbox, no FFmpeg in the path");
+
+        // And what was actually opened, because 26ms a frame for 1080p on an
+        // A15 is not what its hardware decoder does, and there are two ways
+        // to get a number like that without anything looking wrong:
+        //
+        //  - the decoder is not the hardware at all. VideoToolbox will fall
+        //    back silently, and a silent fallback reads exactly like a slow
+        //    machine.
+        //  - the decoder is the hardware but is converting on the way out.
+        //    This asks for full-range NV12 on purpose (see the attributes
+        //    above); if the stream is video range, or if the hardware hands
+        //    back video range regardless, something has to convert every
+        //    frame, and that something is not free.
+        //
+        // Both are one query each, and neither can be guessed at from a
+        // machine that has no VideoToolbox on it.
+        CFBooleanRef hardware = nullptr;
+        const bool asked =
+            VTSessionCopyProperty(
+                session, kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
+                kCFAllocatorDefault, &hardware) == noErr &&
+            hardware != nullptr;
+        std::string how = "VideoToolbox, no FFmpeg in the path";
+        if (asked) {
+            how += CFBooleanGetValue(hardware) ? ", using the hardware decoder"
+                                               : ", NOT using the hardware decoder";
+            CFRelease(hardware);
+        } else {
+            how += ", which would not say whether it is the hardware";
+        }
+        log_info("video decoder: " + how);
         return true;
     }
 };
@@ -295,11 +326,32 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
     // above -- so the next change hands it straight to a texture and touches
     // none of these bytes. See apple/README.md.
     CVPixelBufferRef picture = impl.latest;
+    // Said once: what came back, against what was asked for. A decoder that
+    // hands back a different format from the one requested is converting every
+    // frame to do it.
+    if (!impl.said_format) {
+        impl.said_format = true;
+        const OSType got = CVPixelBufferGetPixelFormatType(picture);
+        const OSType wanted = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+        char got_name[5] = {static_cast<char>((got >> 24) & 0xff), static_cast<char>((got >> 16) & 0xff),
+                            static_cast<char>((got >> 8) & 0xff), static_cast<char>(got & 0xff), 0};
+        log_info(std::string("video decoder: frames arrive as '") + got_name + "', which is " +
+                 (got == wanted ? "the format asked for"
+                                : "NOT the full-range NV12 asked for -- something is converting "
+                                  "every frame"));
+    }
     const auto readback_began = std::chrono::steady_clock::now();
+    const auto lock_began = readback_began;
     if (CVPixelBufferLockBaseAddress(picture, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
         if (error != nullptr) *error = "the decoded frame would not lock";
         return false;
     }
+    // How much of the "copying out" is the lock rather than the bytes. The
+    // lock is where a CPU waits for a decoder that has not finished, and that
+    // is a different problem from memory being slow to read.
+    out.lock_micros = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                           std::chrono::steady_clock::now() - lock_began)
+                                           .count());
     out.layout = DecodedLayout::Nv12;
     out.width = static_cast<int>(CVPixelBufferGetWidth(picture));
     out.height = static_cast<int>(CVPixelBufferGetHeight(picture));

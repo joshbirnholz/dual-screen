@@ -160,6 +160,14 @@ struct DecodedFrame {
     // paying for -- see adapt_to_what_this_device_can_decode().
     int readback_micros = 0;
 
+    // And how much of that was spent taking the lock rather than moving bytes.
+    //
+    // A lock on a decoder's own buffer is where the CPU waits for a decoder
+    // that has not finished with it, which is a wait; the rest is memory being
+    // read, which is bandwidth. One number for both says 23ms a frame and
+    // cannot say whether the answer is to stop copying or to stop waiting.
+    int lock_micros = 0;
+
     bool valid() const {
         if (width <= 0 || height <= 0) return false;
         return layout == DecodedLayout::Xrgb8888 ? !pixels.empty() : !plane[0].empty();
