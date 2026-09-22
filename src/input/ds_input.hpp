@@ -84,6 +84,61 @@ struct DsMotionState {
     bool operator!=(const DsMotionState& other) const { return !(*this == other); }
 };
 
+// Which way up what is on the screen is, relative to the way the device is
+// built. Named for where the device's top edge is pointing, because every
+// other way of naming this is ambiguous: Apple's own LandscapeLeft means the
+// home button is on the left and so the top edge points right, which is the
+// opposite of what the name suggests to most people reading it.
+enum class DisplayTurn {
+    None,           // portrait on a phone: the display is the way it is built
+    TopToTheRight,  // landscape, the device's top edge pointing right
+    TopToTheLeft,   // landscape, the device's top edge pointing left
+    UpsideDown,
+};
+
+// Turns a reading taken in the device's own frame into the frame of what the
+// person is looking at.
+//
+// A phone's sensors report in the frame the phone was built in and never move
+// with the picture -- SDL says so plainly: "the axis data is not changed when
+// the device is rotated". So an app locked to landscape, which this one is on
+// iOS, gets readings a quarter turn away from the screen its player is
+// holding, and aiming comes out sideways.
+//
+// The far end cannot fix this. It is handed raw sensor readings on purpose --
+// see DsMotionState -- because whatever consumes them has its own fusion, and
+// it has no idea which way up this particular device is being held.
+inline DsMotionState motion_turned_to_display(const DsMotionState& reading, DisplayTurn turn) {
+    DsMotionState out = reading;
+    const auto turned = [turn](float x, float y, float& out_x, float& out_y) {
+        switch (turn) {
+            case DisplayTurn::None:
+                out_x = x;
+                out_y = y;
+                break;
+            case DisplayTurn::TopToTheRight:
+                out_x = y;
+                out_y = -x;
+                break;
+            case DisplayTurn::TopToTheLeft:
+                out_x = -y;
+                out_y = x;
+                break;
+            case DisplayTurn::UpsideDown:
+                out_x = -x;
+                out_y = -y;
+                break;
+        }
+    };
+    // Rotation about the axis coming out of the screen, which is the one axis
+    // turning the device in its own plane leaves alone. A gyroscope reading
+    // turns the same way an accelerometer one does: both are three components
+    // in the same frame, and the frame is what moved.
+    turned(reading.accel_x, reading.accel_y, out.accel_x, out.accel_y);
+    turned(reading.gyro_x, reading.gyro_y, out.gyro_x, out.gyro_y);
+    return out;
+}
+
 // One frame's worth of DS input. Touch is always in DS screen space
 // (256x192), never in window or layout space — mapping happens before this
 // struct is filled in, which is what lets a future network-delivered companion

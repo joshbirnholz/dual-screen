@@ -1,5 +1,16 @@
 #include "input/motion.hpp"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE && !TARGET_OS_TV
+#define DS_APPLE_HANDHELD 1
+// Defined in apple/ios_scene_lifecycle.m. Returns a ds::DisplayTurn as an int
+// -- that file is Objective-C and cannot name the enum. An Apple TV does not
+// turn over, so it does not have this.
+extern "C" int ds_ios_display_turn(void);
+#endif
+#endif
+
 #include "input/switch_motion.hpp"
 
 #include <algorithm>
@@ -279,12 +290,30 @@ bool MotionReader::read_device_sensors() {
         return false;
     }
     source_ = "this device's own sensors";
-    state_.gyro_x = gyro[0];
-    state_.gyro_y = gyro[1];
-    state_.gyro_z = gyro[2];
-    state_.accel_x = accel[0];
-    state_.accel_y = accel[1];
-    state_.accel_z = accel[2];
+    DsMotionState reading = state_;
+    reading.gyro_x = gyro[0];
+    reading.gyro_y = gyro[1];
+    reading.gyro_z = gyro[2];
+    reading.accel_x = accel[0];
+    reading.accel_y = accel[1];
+    reading.accel_z = accel[2];
+#if defined(DS_APPLE_HANDHELD)
+    // A phone's sensors report in the frame the phone was built in and never
+    // move with the picture -- SDL says so outright: "the axis data is not
+    // changed when the device is rotated". This app is locked to landscape,
+    // so without this every reading arrives a quarter turn away from the
+    // screen the player is actually holding, and aiming comes out sideways.
+    //
+    // Only this branch. A controller's sensors are in the controller's own
+    // frame and the controller is not what turned; the far end is handed raw
+    // readings on purpose and has no idea which way up this device is.
+    //
+    // Asked every time rather than cached: it changes when the device is
+    // turned over, and it is a property read, not a computation.
+    reading = motion_turned_to_display(
+        reading, static_cast<DisplayTurn>(ds_ios_display_turn()));
+#endif
+    state_ = reading;
     return true;
 }
 

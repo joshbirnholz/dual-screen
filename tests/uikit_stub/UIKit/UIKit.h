@@ -69,7 +69,14 @@ typedef struct {
 @interface UIScene : UIResponder
 @end
 
+typedef long UIInterfaceOrientation;
+#define UIInterfaceOrientationPortrait ((UIInterfaceOrientation)1)
+#define UIInterfaceOrientationPortraitUpsideDown ((UIInterfaceOrientation)2)
+#define UIInterfaceOrientationLandscapeLeft ((UIInterfaceOrientation)4)
+#define UIInterfaceOrientationLandscapeRight ((UIInterfaceOrientation)3)
+
 @interface UIWindowScene : UIScene
+@property (nonatomic, readonly) UIInterfaceOrientation interfaceOrientation;
 @end
 
 typedef unsigned long UIInterfaceOrientationMask;

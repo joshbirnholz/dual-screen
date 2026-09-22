@@ -14,6 +14,7 @@
 #include <cmath>
 #include <vector>
 
+#include "input/ds_input.hpp"
 #include "input/switch_motion.hpp"
 
 using namespace ds;
@@ -341,6 +342,99 @@ void test_a_few_seconds_of_ordinary_handling_is_enough() {
     CHECK(std::abs(fitter.fit().scale / revolutions - 1.0f) < 0.05f);
 }
 
+// --- and the quarter turn a phone's own screen needs ------------------------
+//
+// A phone's sensors report in the frame the phone was built in and do not
+// move with the picture. This app is locked to landscape on iOS, so every
+// reading arrives a quarter turn away from the screen the player is holding.
+//
+// The property worth testing is the one that has to hold: however the device
+// is turned in its own plane, a device lying still must look the same in the
+// frame of what is on its screen. Gravity is down the screen, and that is
+// true whichever way up the thing is being held.
+
+const float kG = 9.80665f;
+
+DsMotionState at_rest(float x, float y, float z) {
+    DsMotionState reading;
+    reading.present = true;
+    reading.accel_x = x;
+    reading.accel_y = y;
+    reading.accel_z = z;
+    return reading;
+}
+
+void test_gravity_looks_the_same_whichever_way_up_it_is_held() {
+    struct Case {
+        const char* what;
+        DisplayTurn turn;
+        DsMotionState reading;
+    };
+    // What each orientation's accelerometer actually reports while the device
+    // sits still, in the device's own built-in frame. Portrait is SDL's
+    // documented resting reading; the others are that vector turned the
+    // opposite way to the screen.
+    const Case cases[] = {
+        {"portrait", DisplayTurn::None, at_rest(0.0f, kG, 0.0f)},
+        // Top edge pointing right means the built-in right edge points at the
+        // floor, so the reading falls on -X.
+        {"top to the right", DisplayTurn::TopToTheRight, at_rest(-kG, 0.0f, 0.0f)},
+        {"top to the left", DisplayTurn::TopToTheLeft, at_rest(kG, 0.0f, 0.0f)},
+        {"upside down", DisplayTurn::UpsideDown, at_rest(0.0f, -kG, 0.0f)},
+    };
+    for (const Case& one : cases) {
+        const DsMotionState shown = motion_turned_to_display(one.reading, one.turn);
+        CHECK_MSG(std::abs(shown.accel_x) < 0.001f, one.what);
+        CHECK_MSG(std::abs(shown.accel_y - kG) < 0.001f, one.what);
+        CHECK_MSG(std::abs(shown.accel_z) < 0.001f, one.what);
+    }
+}
+
+// A turn moves a reading, it does not change how much of it there is, and it
+// leaves everything that is not a direction alone.
+void test_a_turn_keeps_the_reading_it_was_given() {
+    DsMotionState reading = at_rest(0.3f, -0.7f, 0.5f);
+    reading.gyro_x = 1.5f;
+    reading.gyro_y = -0.25f;
+    reading.gyro_z = 2.0f;
+    reading.sampled_us = 123456;
+    const DisplayTurn turns[] = {DisplayTurn::None, DisplayTurn::TopToTheRight,
+                                 DisplayTurn::TopToTheLeft, DisplayTurn::UpsideDown};
+    const float accel_size = std::sqrt(reading.accel_x * reading.accel_x +
+                                       reading.accel_y * reading.accel_y);
+    const float gyro_size =
+        std::sqrt(reading.gyro_x * reading.gyro_x + reading.gyro_y * reading.gyro_y);
+    for (const DisplayTurn turn : turns) {
+        const DsMotionState shown = motion_turned_to_display(reading, turn);
+        CHECK(std::abs(std::sqrt(shown.accel_x * shown.accel_x +
+                                 shown.accel_y * shown.accel_y) - accel_size) < 0.001f);
+        CHECK(std::abs(std::sqrt(shown.gyro_x * shown.gyro_x +
+                                 shown.gyro_y * shown.gyro_y) - gyro_size) < 0.001f);
+        // The axis the turn is about is untouched, and so is everything that
+        // is not a direction at all.
+        CHECK(shown.accel_z == reading.accel_z);
+        CHECK(shown.gyro_z == reading.gyro_z);
+        CHECK(shown.present == reading.present);
+        CHECK(shown.sampled_us == reading.sampled_us);
+    }
+    // And doing nothing really does nothing.
+    CHECK(motion_turned_to_display(reading, DisplayTurn::None) == reading);
+}
+
+// The gyroscope turns with the accelerometer, because what moved is the frame
+// they are both reported in. A device rolling about the axis the player sees
+// as "up the screen" must read on the display's own Y wherever it is held.
+void test_the_gyroscope_turns_with_it() {
+    DsMotionState reading;
+    reading.present = true;
+    reading.gyro_y = 1.0f;  // about the built-in top edge
+    // Held with the top edge to the right, the built-in top edge is the
+    // display's X, so that same rotation now reads on the display's X.
+    const DsMotionState shown = motion_turned_to_display(reading, DisplayTurn::TopToTheRight);
+    CHECK(std::abs(shown.gyro_x - 1.0f) < 0.001f);
+    CHECK(std::abs(shown.gyro_y) < 0.001f);
+}
+
 }  // namespace
 
 int main() {
@@ -353,5 +447,8 @@ int main() {
     test_a_mirrored_accelerometer_is_not_something_this_can_notice();
     test_the_accumulator_holds_off_until_it_has_been_moved_every_way();
     test_a_few_seconds_of_ordinary_handling_is_enough();
+    test_gravity_looks_the_same_whichever_way_up_it_is_held();
+    test_a_turn_keeps_the_reading_it_was_given();
+    test_the_gyroscope_turns_with_it();
     return test::finish("motion-fit");
 }

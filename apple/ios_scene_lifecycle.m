@@ -191,6 +191,43 @@
 
 #pragma clang diagnostic pop
 
+// --- which way up the person is holding it -----------------------------------
+//
+// Returns one of the ds::DisplayTurn values, as an int, because this file is
+// Objective-C and that enum is C++. See motion.cpp, which is the only caller.
+//
+// UIWindowScene.interfaceOrientation, not UIApplication.statusBarOrientation:
+// the latter is what SDL asks, and iOS 27 has made it a no-op that answers
+// zero forever. That is the same API behind the window-size confusion this
+// app locked its orientation to avoid.
+//
+// Apple's names for these are a trap. UIInterfaceOrientationLandscapeLeft
+// means the home button is on the left, so the device's top edge points
+// *right* -- the opposite of what the name reads like. The values returned
+// here are named for where the top edge actually points, and the mapping is
+// written out once, here, rather than reasoned about again at the other end.
+int ds_ios_display_turn(void)
+{
+    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) {
+            continue;
+        }
+        switch (((UIWindowScene *)scene).interfaceOrientation) {
+            case UIInterfaceOrientationPortrait:
+                return 0;  // DisplayTurn::None
+            case UIInterfaceOrientationLandscapeLeft:
+                return 1;  // DisplayTurn::TopToTheRight
+            case UIInterfaceOrientationLandscapeRight:
+                return 2;  // DisplayTurn::TopToTheLeft
+            case UIInterfaceOrientationPortraitUpsideDown:
+                return 3;  // DisplayTurn::UpsideDown
+            default:
+                return 0;
+        }
+    }
+    return 0;
+}
+
 // --- giving an SDL window somewhere to be ------------------------------------
 
 void ds_attach_sdl_window_to_scene(SDL_Window *window)
