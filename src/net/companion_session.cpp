@@ -1316,6 +1316,28 @@ void CompanionSession::send_display_size() {
     // dimension, and it would only round this down again itself.
     const int width = std::max(2, static_cast<int>(wanted_display_width_ * display_scale_) & ~1);
     const int height = std::max(2, static_cast<int>(wanted_display_height_ * display_scale_) & ~1);
+    // Whatever cover was bought is about to stop being about anything.
+    //
+    // extra_hold_ms_ is delay this device bought itself after the picture ran
+    // dry -- see hold_extra_ms(). It is bought a quarter of a frame at a time
+    // and given back only after ten calm seconds, which is the right shape for
+    // a link that twitches and the wrong one for this: every session starts
+    // with the ladder walking down, every rung of that walk starves, and by
+    // the time it settles this device is holding up to two frames of delay
+    // bought against a stream that no longer exists. On a 30fps stream that
+    // is 66ms, on a link whose whole round trip is 40ms, and it takes the best
+    // part of twenty seconds to come back -- longer, because one bad second
+    // anywhere resets the calm count.
+    //
+    // A different picture size is a different stream. The evidence goes with
+    // it.
+    if (extra_hold_ms_ > 0) {
+        log_info("the picture size changed, so the " + std::to_string(extra_hold_ms_) +
+                 "ms of delay bought back after earlier stalls is dropped: it was bought "
+                 "against a stream that no longer exists");
+        extra_hold_ms_ = 0;
+        calm_seconds_ = 0;
+    }
     RequestMessage request;
     request.wants_display_size = true;
     // Clamped rather than rejected: a window can be zero-sized for a moment
@@ -1556,6 +1578,23 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
               "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost, this device's own loop comes round every " +
               std::to_string(typical_poll_gap_ms_) + "ms at its quickest");
+    // And the latency breakdown, at a level the console sees.
+    //
+    // Everything above is a debug line, which on a device with no command line
+    // means a file that needs Xcode and a container download to read -- so the
+    // one question a player actually asks, "why is this behind?", has been the
+    // one thing invisible in every log sent back. These are the three terms
+    // that add up to the answer: what this device is holding on purpose, what
+    // the link costs, and what turning a frame into a picture costs.
+    log_info("latency: holding " +
+             std::to_string(video_hold_allowance_ms(jitter_.estimate(), frame_period(),
+                                                    extra_hold_ms_, video_hold_)) +
+             "ms of buffer (" + std::to_string(extra_hold_ms_) +
+             "ms of it bought back after stalls), " +
+             std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
+             "ms a frame turning them into pictures, and this device's loop comes round every " +
+             std::to_string(typical_poll_gap_ms_) + "ms at its quickest");
+
     // What the buffer is actually being sized against. One number cannot say
     // whether a link is evenly a little late or mostly prompt with a bad tail,
     // and those two want quite different amounts of buffer -- so the curve
