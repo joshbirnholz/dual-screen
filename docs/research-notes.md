@@ -459,6 +459,55 @@ every one recovered, including the scale. That check is what five rounds of
 this problem never had: every previous answer could only be tested by building
 it, shipping it, and asking someone how a game felt.
 
+### An iPhone's axes, and the extra term the Switch did not have
+
+Reported wrong on hardware: motion arrives, and the axes are not right. The
+same instrument settles it — hold the phone against a Steam Deck, screens
+facing the same way, move the two as one, and `MotionComparison` on the host
+prints the conversion that stands between them. Nothing new is needed for that;
+it runs automatically whenever both devices report motion.
+
+**One thing is different from the Switch case, and it has to be accounted for
+or the measurement is uninterpretable.** A phone turns over and a console does
+not. SDL is explicit that "the axis data is not changed when the phone is
+rotated", so `read_device_sensors()` turns every reading by
+`ds_ios_display_turn()` to bring it back in line with the picture the player is
+holding. What the A/B then measures is not the sensor-frame error on its own —
+it is *that error composed with whichever turn was in force at the time*. Two
+runs in the two landscape orientations would measure two different things and
+neither would be the answer.
+
+So the companion now says which way it is being held, once per change:
+
+    motion: this device is being held landscape, its top edge to the right,
+    and its readings are turned to match
+
+With that line and the measurement, the sensor-frame error is the measurement
+with the turn divided out, and the honest check is to run it in **both**
+landscape orientations: if the two runs disagree once the turn is divided out,
+the bug is in the turn rather than in the sensor frame, and that is worth
+knowing before touching either.
+
+The rest of **What comparing two devices cannot tell you** applies unchanged.
+In particular `R = M_a⁻¹ · M_g` — logged as "this device's own two conversions
+disagree by ..." — says whether the acceleration and the rotation disagree with
+*each other*. Identity there with the axes still wrong means both are turned
+the same way and only a known pose breaks the tie; anything else means one of
+the two is out on its own, which is the shape to expect if SDL's CoreMotion
+driver honours the documented convention for the accelerometer and passes the
+gyroscope through as CoreMotion gives it.
+
+Not yet measured. The procedure is:
+
+1. `SteamDeckGyroDSU` running on the Deck, so the host has motion of its own.
+2. The iPhone joined as the bottom screen of a session that asks for motion.
+3. Hold the two together, screens the same way up, and move them as one for a
+   minute — turns about all three axes, not one.
+4. Read the host's **log file**, which gets every level whatever the console is
+   set to: the `motion A/B:` lines, and the companion's log for the line above
+   saying which way it was being held.
+5. Then again, with the phone turned the other way round.
+
 ### What libretro's sensor axes actually mean
 
 Nothing, is the short answer. `retro_sensor_interface` documents the units — g
