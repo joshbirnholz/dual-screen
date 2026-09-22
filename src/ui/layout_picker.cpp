@@ -762,7 +762,8 @@ void LayoutPicker::render(QuadRenderer& quads,
     if (system_ == SystemId::WiiU) {
         // Everything else this menu can do lives in the list above, reached
         // by A -- there is nothing left for a face-button shortcut to name.
-        guide.push_back({ButtonGlyph::A, "OK"});
+        // A tile is tapped directly, so this names a button nobody has.
+        guide.push_back({ButtonGlyph::A, "OK", /*redundant_on_touch=*/true});
         guide.push_back({ButtonGlyph::B, "Resume"});
     } else {
         // Leftmost, and always: it is the one prompt here that is about the
@@ -774,7 +775,8 @@ void LayoutPicker::render(QuadRenderer& quads,
         if (state_.smoothing_available) {
             guide.push_back({ButtonGlyph::RightStick, "Screen Smoothing"});
         }
-        guide.push_back({ButtonGlyph::A, "OK"});
+        // A tile is tapped directly, so this names a button nobody has.
+        guide.push_back({ButtonGlyph::A, "OK", /*redundant_on_touch=*/true});
         guide.push_back({ButtonGlyph::B, "Resume"});
         guide.push_back({ButtonGlyph::X, "Quit"});
         if (state_.reset_available) {

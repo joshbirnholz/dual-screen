@@ -46,6 +46,20 @@ ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y)
     return ButtonGlyph::Count;
 }
 
+std::vector<GuidePrompt> prompts_worth_drawing(const std::vector<GuidePrompt>& prompts) {
+    if (!touch_hints()) {
+        return prompts;
+    }
+    std::vector<GuidePrompt> kept;
+    kept.reserve(prompts.size());
+    for (const GuidePrompt& prompt : prompts) {
+        if (!prompt.redundant_on_touch) {
+            kept.push_back(prompt);
+        }
+    }
+    return kept;
+}
+
 bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out) {
     switch (glyph) {
         case ButtonGlyph::A: out = UiAction::Confirm; return true;
@@ -64,13 +78,14 @@ float control_guide_height(float scale) { return glyph_height(scale); }
 float draw_control_guide(QuadRenderer& quads,
                          TextRenderer& text,
                          const ButtonGlyphSheet& glyphs,
-                         const std::vector<GuidePrompt>& prompts,
+                         const std::vector<GuidePrompt>& all_prompts,
                          float x,
                          float y,
                          float scale,
                          const Color& color,
                          TextAlign align,
                          std::vector<GuideHit>* out_hits) {
+    const std::vector<GuidePrompt> prompts = prompts_worth_drawing(all_prompts);
     const float height = glyph_height(scale);
     const float glyph_width = glyphs.width_for(height);
     const float gap = TextRenderer::line_height(scale) * kGapScale;

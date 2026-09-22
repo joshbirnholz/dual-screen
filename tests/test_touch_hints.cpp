@@ -72,6 +72,43 @@ void test_the_menus_own_prompts_are_left_to_the_menu() {
     CHECK(!ui_action_for_glyph(ButtonGlyph::RightStick, action));
 }
 
+// A prompt that names a button for something you can simply tap is a second
+// way to do what tapping already does -- and the worse of the two, since the
+// row or the tile is a bigger target and is where the eye already is.
+void test_a_prompt_for_something_tappable_goes_away_on_touch() {
+    const std::vector<GuidePrompt> prompts = {
+        {ButtonGlyph::Plus, "Quit", false},
+        {ButtonGlyph::A, "Select", true},
+        {ButtonGlyph::B, "Back", false},
+    };
+    const bool was = touch_hints();
+
+    // With a pad, something has to say which button opens the thing under the
+    // cursor, so all three stay.
+    set_touch_hints(false);
+    CHECK(prompts_worth_drawing(prompts).size() == 3);
+
+    set_touch_hints(true);
+    const std::vector<GuidePrompt> touch = prompts_worth_drawing(prompts);
+    CHECK(touch.size() == 2);
+    CHECK(touch[0].action == "Quit");
+    // Back stays: nothing on the screen is "back", so there is no thing to
+    // tap instead.
+    CHECK(touch[1].action == "Back");
+    set_touch_hints(was);
+}
+
+// Not every confirm is redundant. A screen that is only words has no object
+// to tap, and the halves of a confirmation dialog are tappable *because* the
+// prompts label them.
+void test_a_confirm_with_nothing_to_tap_stays() {
+    const std::vector<GuidePrompt> prompts = {{ButtonGlyph::A, "Continue", false}};
+    const bool was = touch_hints();
+    set_touch_hints(true);
+    CHECK(prompts_worth_drawing(prompts).size() == 1);
+    set_touch_hints(was);
+}
+
 void test_the_hint_style_is_asked_rather_than_assumed() {
     const bool was = touch_hints();
     set_touch_hints(true);
@@ -87,6 +124,8 @@ int main() {
     test_a_finger_finds_the_prompt_it_landed_on();
     test_every_prompt_outside_a_menu_does_something();
     test_the_menus_own_prompts_are_left_to_the_menu();
+    test_a_prompt_for_something_tappable_goes_away_on_touch();
+    test_a_confirm_with_nothing_to_tap_stays();
     test_the_hint_style_is_asked_rather_than_assumed();
     return test::finish("touch-hints");
 }
