@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "render/quad_renderer.hpp"
 #include "render/texture.hpp"
 
@@ -9,7 +11,52 @@ namespace ds {
 // symbols. Always the Nintendo positions -- the A that means "confirm" is the
 // east button whatever the pad in the player's hands calls it -- because the
 // prompt is naming the thing the game names, not the hardware.
+// What a prompt is asking for, named by where the button is rather than by
+// what any one pad prints on it. The names are the Nintendo letters because
+// those were the first ones drawn, and they mean:
+//
+//     A  east      B  south      X  north      Y  west
+//
+// which is the whole of why a style can be chosen at all: the position is
+// fixed and only the printing changes.
 enum class ButtonGlyph { A, B, X, Y, LeftStick, RightStick, Plus, Minus, Count };
+
+// Whose buttons the prompts are drawn as. The choice is the player's, not the
+// pad's: somebody who has used a PlayStation for twenty years reads a circle
+// faster than they read the letter that happens to be under their thumb, and
+// somebody streaming to a phone has no pad under their thumb at all.
+enum class PadGlyphStyle { Nintendo, PlayStation, Xbox, Count };
+
+const char* to_string(PadGlyphStyle style);
+bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out);
+
+// The cells in assets/button_icons.png, in the order they sit in the strip.
+// The first eight are the original hand-drawn artwork; the rest are generated
+// by assets/make_button_icons.py to the geometry measured off them.
+enum class GlyphCell {
+    LetterA,
+    LetterB,
+    LetterX,
+    LetterY,
+    LeftStick,
+    RightStick,
+    Plus,
+    Minus,
+    Cross,
+    Circle,
+    Triangle,
+    Square,
+    // Three horizontal lines: an Xbox Menu button and a PlayStation Options
+    // button are the same icon, so they are the same cell.
+    Bars,
+    View,
+    Create,
+    Count
+};
+
+// Which cell a prompt is drawn from, in a given style. Pure arithmetic over
+// the table above, so it can be checked without a GL context.
+GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph);
 
 // The strip of button artwork, drawn a cell at a time. Every glyph is a black
 // disc with its letter knocked out of it, so the letter picks up whatever is
@@ -44,8 +91,15 @@ public:
               float height,
               const Color& color) const;
 
+    // Which pad's buttons these are drawn as. Held on the sheet rather than
+    // passed to every draw: it is one choice for the whole app, and every
+    // caller would otherwise have to carry it through to say anything.
+    void set_style(PadGlyphStyle style) { style_ = style; }
+    PadGlyphStyle style() const { return style_; }
+
 private:
     Texture texture_;
+    PadGlyphStyle style_ = PadGlyphStyle::Nintendo;
     int cell_width_ = 0;
     int cell_height_ = 0;
 };

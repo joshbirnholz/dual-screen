@@ -137,6 +137,16 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.left_stick_press = next_left_stick_press(settings_.left_stick_press);
             result.settings_changed = true;
             break;
+        case Row::PadGlyphs: {
+            // Three values, so this one steps rather than flips -- and it
+            // steps the way the cursor was pushed.
+            const int count = static_cast<int>(PadGlyphStyle::Count);
+            const int here = static_cast<int>(settings_.pad_glyphs);
+            settings_.pad_glyphs =
+                static_cast<PadGlyphStyle>(((here + direction) % count + count) % count);
+            result.settings_changed = true;
+            break;
+        }
         case Row::VideoHold:
             settings_.video_hold = video::next_video_hold(settings_.video_hold);
             result.settings_changed = true;
@@ -270,6 +280,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
         {"Left stick click, where there is a microphone",
          to_string(settings_.left_stick_press)},
+        {"Button prompts", to_string(settings_.pad_glyphs)},
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",

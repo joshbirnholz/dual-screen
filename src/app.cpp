@@ -1285,6 +1285,9 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
             log_warn("could not save settings.json");
         }
         SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+        // The prompts change under the cursor that changed them, which is the
+        // only way to see what the setting does.
+        button_glyphs.set_style(settings.pad_glyphs);
         // L3's job is one of the things that can have just changed, and the
         // player who changed it is about to press it.
         input.set_microphone_button(left_stick_is_microphone(
@@ -2183,6 +2186,7 @@ int App::run(const AppOptions& options) {
     }
 
     impl.settings = Settings::load(impl.paths);
+    impl.button_glyphs.set_style(impl.settings.pad_glyphs);
     impl.solo_screen = impl.settings.wii_u_screen_alone;
     if (!options.system_dir.empty()) {
         impl.settings.system_dir = expand_user_path(options.system_dir);

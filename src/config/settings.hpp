@@ -6,6 +6,7 @@
 #include "config/paths.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
+#include "render/button_glyphs.hpp"
 #include "input/cursor_visibility.hpp"
 #include "layout/layout.hpp"
 #include "video/video_codec.hpp"
@@ -147,6 +148,14 @@ struct Settings {
     // in the quick menu while blowing has no other way in at all; a player who
     // would rather keep the shortcut says so here. See LeftStickPress.
     LeftStickPress left_stick_press = LeftStickPress::Microphone;
+
+    // Whose buttons the on-screen prompts are drawn as. Nintendo by default,
+    // which is the artwork this app started with and the console most of what
+    // it streams came from.
+    //
+    // This changes nothing about what a button does. The positions are fixed
+    // -- see ButtonGlyph -- and this decides only what is printed on them.
+    PadGlyphStyle pad_glyphs = PadGlyphStyle::Nintendo;
 
     // How long a companion may hold a decoded frame back to even out an
     // uneven link -- see VideoHold. Defaults to what this app did before the

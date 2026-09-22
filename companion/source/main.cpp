@@ -851,6 +851,12 @@ bool Client::load_gl_resources(std::string* error) {
         if (error != nullptr) *error = "the renderer would not start: " + reason;
         return false;
     }
+    // The prompts stay in the default style here. Choosing one lives on the
+    // settings screen, and that screen belongs to the machine running the
+    // game -- this app has no settings of its own to read, and giving it
+    // settings.json to read would pull a JSON library into a build that is
+    // otherwise deliberately lean. A companion wanting its own choice needs
+    // its own settings screen, which is a bigger thing than this.
     // Not fatal: the Standard layout still puts the screens where the console
     // puts them, it just has nothing drawn behind them.
     if (bezel_art_.load(&reason)) {
