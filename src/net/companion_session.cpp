@@ -78,6 +78,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_cost_before_step_ms_ = 0.0;
+    adapt_width_before_step_ = 0;
+    adapt_last_width_ = 0;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -198,6 +200,8 @@ void CompanionSession::disconnect() {
     adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_cost_before_step_ms_ = 0.0;
+    adapt_width_before_step_ = 0;
+    adapt_last_width_ = 0;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -263,6 +267,8 @@ void CompanionSession::fail(const std::string& reason) {
     adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_cost_before_step_ms_ = 0.0;
+    adapt_width_before_step_ = 0;
+    adapt_last_width_ = 0;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -1376,8 +1382,19 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     adapt_frames_ = 0;
 
     // Did the last step down actually buy anything? Asked before deciding to
-    // take another one, and only once there is a step to judge.
-    if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0) {
+    // take another one, and only once there is a step to judge -- and only
+    // once that step actually made the picture smaller. A request the host was
+    // already below changes nothing, and comparing a picture with itself
+    // proves nothing about size.
+    const bool picture_actually_shrank =
+        adapt_width_before_step_ > 0 && adapt_last_width_ > 0 &&
+        adapt_last_width_ < adapt_width_before_step_;
+    if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0 &&
+        !picture_actually_shrank) {
+        // The ask did not bite yet. Nothing to learn from it; keep going.
+        adapt_cost_before_step_ms_ = 0.0;
+        adapt_width_before_step_ = 0;
+    } else if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0) {
         adapt_size_decides_cost_ =
             shrinking_is_worth_it(adapt_cost_before_step_ms_, cost_per_frame_ms);
         if (!adapt_size_decides_cost_ && !said_size_does_not_decide_) {
@@ -1391,6 +1408,7 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
                      "more of it for nothing");
         }
         adapt_cost_before_step_ms_ = 0.0;
+        adapt_width_before_step_ = 0;
     }
 
     const double floor_scale = lowest_display_scale(wanted_display_width_);
@@ -1400,8 +1418,11 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         // ceiling is -- see too_expensive_scale_.
         too_expensive_scale_ = std::min(too_expensive_scale_, display_scale_);
         too_expensive_at_ms_ = now_ms;
-        // And remembered so the next window can say whether this was worth it.
+        // And remembered so the next window can say whether this was worth it
+        // -- the width as well as the cost, because a step that does not make
+        // the picture any smaller says nothing about whether size matters.
         adapt_cost_before_step_ms_ = cost_per_frame_ms;
+        adapt_width_before_step_ = adapt_last_width_;
         display_scale_ = std::max(floor_scale, display_scale_ * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
         // Which half of it, because the two have different answers. Time in
@@ -1810,6 +1831,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     ((frame.screen == ScreenId::Top) ? decode_failures_top_ : decode_failures_bottom_) = 0;
     adapt_readback_micros_ += static_cast<uint64_t>(decoded.readback_micros);
     adapt_lock_micros_ += static_cast<uint64_t>(decoded.lock_micros);
+    adapt_last_width_ = decoded.width;
     ++adapt_frames_;
     target.video = true;
     target.layout = decoded.layout;

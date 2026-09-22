@@ -1610,6 +1610,16 @@ void test_a_step_that_bought_nothing_is_not_taken_twice() {
     // The judgement is made on the first step, so the ladder stops there
     // rather than walking to the floor as it did.
 
+    // But only when the step made the picture smaller. On a 4K panel the
+    // first rungs are 3072 and 2456 wide and a Wii U game draws 1920, so the
+    // host sends the same 1920 either way: the step asked for less and
+    // changed nothing. Judging that as "size does not matter" froze an Apple
+    // TV at the one size it could not manage -- 19 frames a second and a
+    // 350ms round trip, where letting the ladder run had reached 30 frames a
+    // second and 34ms. The width the pictures actually arrive at is what the
+    // comparison has to be made against, and that is checked in
+    // adapt_to_what_this_device_can_decode() rather than here.
+
     // A step that made things worse is not a reason to take another.
     CHECK(!shrinking_is_worth_it(20.0, 25.0));
     // Exactly a tenth better counts, a hair under does not.

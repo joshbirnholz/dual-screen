@@ -871,6 +871,20 @@ private:
     // and whether shrinking it turned out to matter at all. See
     // shrinking_is_worth_it().
     double adapt_cost_before_step_ms_ = 0.0;
+    // And how wide the pictures actually were at the time.
+    //
+    // Asking for a smaller picture is not the same as getting one. The host
+    // sends what the game draws, capped by what was asked for -- so on a 4K
+    // panel the first rungs are 3072 and 2456 wide, both of them larger than
+    // the 1920 a Wii U game draws, and a step between them changes nothing at
+    // all. Judging "did shrinking help" across a step like that compares a
+    // picture with itself, finds no improvement, and concludes that size does
+    // not matter -- which is exactly what happened, and it froze a device at
+    // the one size it could not manage.
+    int adapt_width_before_step_ = 0;
+    // The width of the last picture decoded in this window, which is what the
+    // request above has to be judged against.
+    int adapt_last_width_ = 0;
     bool adapt_size_decides_cost_ = true;
     bool said_size_does_not_decide_ = false;
     uint64_t adapt_at_ms_ = 0;
