@@ -891,7 +891,8 @@ void CompanionSession::poll(uint64_t now_ms) {
             // bought for it covers nothing. See lateness_is_worth_covering().
             if (this_pass_measures_the_link_ && next_due_ms_ != 0 &&
                 lateness_is_worth_covering(period, typical_poll_gap_ms_) &&
-                now_ms > next_due_ms_ + period / 2 && last_arrival_ms_ != 0 &&
+                now_ms > next_due_ms_ + lateness_that_counts_ms(period, typical_poll_gap_ms_) &&
+                last_arrival_ms_ != 0 &&
                 now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
                 ++stats_starved_;
             }
@@ -1719,9 +1720,31 @@ bool lateness_is_worth_covering(uint64_t period_ms, uint64_t quickest_poll_gap_m
     if (quickest_poll_gap_ms == 0) {
         return true;
     }
-    // Half a period is the deadline the stall test uses, so half a period is
-    // what the loop has to be able to resolve for a miss to mean anything.
+    // Half a period is the deadline the stall test starts from, so half a
+    // period is what the loop has to be able to resolve for a miss to mean
+    // anything at all. Being able to resolve it is not the same as being able
+    // to see it on time, though -- see lateness_that_counts_ms().
     return quickest_poll_gap_ms <= period_ms / 2;
+}
+
+uint64_t lateness_that_counts_ms(uint64_t period_ms, uint64_t quickest_poll_gap_ms) {
+    // Half a period, plus however long this device takes to come round and
+    // look.
+    //
+    // Without the second term a device counts its own sampling rate as the
+    // link stalling. On a 30fps stream half a period is 16ms and an Apple TV's
+    // loop comes round every 14 to 16 -- so a frame that arrived exactly on
+    // time is *seen* a tick later and read as late, over and over. Measured:
+    // the hold swung between 33ms and 140ms for a whole session, buying cover
+    // for stalls that were never there, decaying, and buying it again. A
+    // sawtooth a hundred milliseconds deep, on a link running 30 frames a
+    // second with nothing dropped.
+    //
+    // A picture is late when it is late by more than this device could
+    // possibly have noticed. Anything inside that is arithmetic about when the
+    // loop happened to run, and no amount of buffer fixes when the loop
+    // happened to run.
+    return period_ms / 2 + quickest_poll_gap_ms;
 }
 
 uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms) {

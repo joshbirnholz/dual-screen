@@ -1553,6 +1553,40 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
 // 940ms of every second turning frames into pictures, and had nowhere further
 // to go -- because half of a 3840-wide panel is 1920, which is the whole size
 // of the picture being sent and exactly what it could not decode.
+// A picture is late when it is late by more than this device could have
+// noticed, not when it is late by half a frame.
+//
+// Measured on an Apple TV: a 30fps stream, nothing dropped, a 40ms round trip
+// -- and the hold swinging between 33ms and 140ms for the whole session. Half
+// a period there is 16ms and that device's loop comes round every 14 to 16, so
+// a frame that arrived exactly on time was seen a tick later and counted as a
+// stall. Cover bought, latency added, cover decayed, stall counted again: a
+// sawtooth a hundred milliseconds deep with no stall underneath it.
+void test_a_device_does_not_count_its_own_loop_as_the_link_stalling() {
+    using namespace ds::net;
+
+    // 30fps, and a loop that comes round about as often as the old deadline.
+    // The lateness that counts has to be beyond what that loop can see.
+    const uint64_t period = 33;
+    CHECK(lateness_that_counts_ms(period, 15) > 15);
+    CHECK(lateness_that_counts_ms(period, 15) == period / 2 + 15);
+
+    // A loop quick enough to see the deadline is still held to it: nothing is
+    // given away on a device that can keep up.
+    CHECK(lateness_that_counts_ms(period, 1) == period / 2 + 1);
+    CHECK(lateness_that_counts_ms(period, 0) == period / 2);
+
+    // At 60fps the period halves and so does the deadline, but the loop's own
+    // granularity is whatever it is and still has to be allowed for.
+    CHECK(lateness_that_counts_ms(16, 15) > 15);
+
+    // And it never falls below the old deadline, which would make a device
+    // fussier than it was rather than less fussy.
+    for (const uint64_t gap : {uint64_t{0}, uint64_t{1}, uint64_t{8}, uint64_t{15}}) {
+        CHECK(lateness_that_counts_ms(period, gap) >= period / 2);
+    }
+}
+
 void test_the_smallest_picture_is_a_size_rather_than_a_fraction() {
     using namespace ds::net;
 
@@ -2751,6 +2785,7 @@ int main() {
     test_a_console_that_reads_motion_asks_for_it_and_gets_it();
     test_a_console_that_ignores_motion_never_asks_for_it();
     test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture();
+    test_a_device_does_not_count_its_own_loop_as_the_link_stalling();
     test_the_smallest_picture_is_a_size_rather_than_a_fraction();
     test_a_step_that_bought_nothing_is_not_taken_twice();
     test_host_can_disconnect_the_companion();

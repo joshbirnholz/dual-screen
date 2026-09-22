@@ -306,6 +306,10 @@ uint64_t hold_extra_ms(uint64_t current_ms, uint64_t period_ms,
 // pacing without smoothing. The other two differ only in how much a stalling
 // link is allowed to buy, because the measured part was never the problem:
 // it is the earned cover that reached 52ms in practice.
+// How late a picture has to be before it counts as the link stalling rather
+// than as this device having looked a moment later. See the definition.
+uint64_t lateness_that_counts_ms(uint64_t period_ms, uint64_t quickest_poll_gap_ms);
+
 uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
 uint64_t video_hold_extra_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
 
