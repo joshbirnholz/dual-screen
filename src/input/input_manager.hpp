@@ -53,6 +53,15 @@ enum class UiAction {
     // Menu-only for the same reason again -- and it is the settings of the
     // device running the game, wherever the press came from.
     MenuSettings,
+    // Escape, while a game is being played: opens the quick menu, the same as
+    // F1 or Tab. SteamOS has a system shortcut that sends Escape, which makes
+    // it the key easiest to reach from a pad with no keyboard in sight.
+    //
+    // Its own action rather than a second ToggleMenu, because everywhere else
+    // Escape already means back -- it raises Cancel alongside this -- and a
+    // menu that took it as "toggle" would close itself when asked to go back
+    // one step. Only the screens that play a game listen for this one.
+    OpenMenu,
 };
 
 // A touch/click that landed somewhere in the window, in output pixels. The UI

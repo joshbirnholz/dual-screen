@@ -234,6 +234,8 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::MenuDisconnect:
             // Already here, which is the whole of what it asks for.
             case UiAction::MenuSettings: break;
+            // Escape also raises Cancel, which is what it means here.
+            case UiAction::OpenMenu: break;
             case UiAction::Quit: break;
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
             case UiAction::SwapLayout:    // nothing here is a layout

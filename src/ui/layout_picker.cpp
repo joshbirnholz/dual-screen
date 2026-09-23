@@ -573,6 +573,9 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             // is a tile away already, and jumping the selection out from under
             // the focus would be the opposite of a menu.
             case UiAction::SwapLayout: break;
+            // Escape's second meaning, for screens with a game on them; here
+            // its first one -- Cancel, just above -- already closes the menu.
+            case UiAction::OpenMenu: break;
             case UiAction::PageUp:
             case UiAction::PageDown: break;  // nothing here scrolls
         }

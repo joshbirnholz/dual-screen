@@ -869,6 +869,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                     break;
                 }
                 switch (action) {
+                    case UiAction::OpenMenu:
                     case UiAction::ToggleMenu:
                         // Asked for rather than opened here. The host holds the
                         // one menu; this device puts it up when told to, which

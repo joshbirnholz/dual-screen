@@ -1918,7 +1918,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             // host's game from here on.
             input.set_game_input_enabled(true);
             for (const UiAction action : actions) {
-                if (action == UiAction::ToggleMenu) {
+                if (action == UiAction::ToggleMenu || action == UiAction::OpenMenu) {
                     // Asked for rather than opened. The host holds the one
                     // menu; this device puts it up when told, which is what
                     // keeps the two screens showing the same thing.
@@ -2018,7 +2018,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 
         case State::Playing: {
             for (const UiAction action : actions) {
-                if (action == UiAction::ToggleMenu) {
+                if (action == UiAction::ToggleMenu || action == UiAction::OpenMenu) {
                     set_menu_open(true);
                     if (source) {
                         source->flush_save_ram(false);

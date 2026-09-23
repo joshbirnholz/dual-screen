@@ -255,6 +255,8 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             // Settings is reached from the main menu and from a game's own
             // menu; a file browser is neither.
             case UiAction::MenuSettings: break;
+            // Escape also raises Cancel, which is what it means here.
+            case UiAction::OpenMenu: break;
             case UiAction::Quit:
                 result.quit_requested = true;
                 break;

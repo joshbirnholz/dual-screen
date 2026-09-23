@@ -330,7 +330,12 @@ void InputManager::handle_event(const SDL_Event& event) {
             log_debug(std::string("key down: ") + SDL_GetKeyName(event.key.keysym.sym));
 
             switch (event.key.keysym.sym) {
+                // Back, everywhere -- and, while a game is being played, the
+                // way into the quick menu too. See UiAction::OpenMenu.
                 case SDLK_ESCAPE:
+                    push_action(UiAction::Cancel);
+                    push_action(UiAction::OpenMenu);
+                    break;
                 case SDLK_BACKSPACE: push_action(UiAction::Cancel); break;
                 // F1 is the menu key. No controller button opens the menu:
                 // bind F1 in Steam Input instead, which is the only way that
