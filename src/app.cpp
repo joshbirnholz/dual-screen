@@ -3,6 +3,7 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -46,6 +47,7 @@
 #include "util/child_process.hpp"
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
+#include "util/shutdown_watchdog.hpp"
 
 namespace ds {
 namespace {
@@ -54,6 +56,10 @@ namespace {
 // process was stopped), not that we ran slow. The frame clock is restarted and
 // the stale audio queue thrown away rather than played out.
 constexpr double kSuspendGapSeconds = 1.0;
+// How long leaving may take before it is abandoned -- see ShutdownWatchdog.
+// Well past the three seconds an emulator is given to close its own windows
+// before it is ended, so a slow but working exit is never cut short.
+constexpr std::chrono::milliseconds kShutdownDeadline{10000};
 
 // How often the cartridge save is checked for changes and written out. A
 // handheld gets put to sleep and powered off without warning, so waiting for a
@@ -3196,29 +3202,46 @@ int App::run(const AppOptions& options) {
         }
     }
 
-    if (impl.host_session) {
-        impl.host_session->stop();
-        impl.host_session.reset();
-    }
-    if (impl.companion_session) {
-        impl.companion_session->disconnect();
-        impl.companion_session.reset();
-    }
-
+    // What is worth keeping goes first, before any step below that waits on
+    // something else: this game's layout, and a core's save -- which is
+    // written when the core closes. See ShutdownWatchdog for why the order
+    // matters.
     impl.persist_game_config();
-    impl.audio.close();
     if (impl.source) {
         impl.source->close();
         impl.source.reset();
     }
+
+    // Everything after this is a call into something that may not answer.
+    // Each step is named in the log as it starts, and if they have not all
+    // finished within kShutdownDeadline the process ends without them.
+    ShutdownWatchdog watchdog(kShutdownDeadline);
+    if (impl.host_session) {
+        watchdog.at("saying goodbye to the other device");
+        impl.host_session->stop();
+        impl.host_session.reset();
+    }
+    if (impl.companion_session) {
+        watchdog.at("leaving the other device's session");
+        impl.companion_session->disconnect();
+        impl.companion_session.reset();
+    }
+    watchdog.at("closing the audio device");
+    impl.audio.close();
     // Before the window goes away rather than with everything else at the end:
     // the emulator has a window of its own, and the tidy order to close two is
     // the one the player would have chosen.
+    if (impl.external_program.running()) {
+        watchdog.at("stopping the emulator this app started");
+    }
     impl.external_program.stop();
     impl.external_source.reset();
+    watchdog.at("letting go of the controllers");
     impl.input.shutdown();
+    watchdog.at("closing the window");
     impl.destroy_window();
     SDL_Quit();
+    watchdog.finish();
     log_info("dualscreen exiting normally");
     close_log_file();
     return 0;
