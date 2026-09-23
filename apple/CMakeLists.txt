@@ -401,6 +401,10 @@ if(DUALSCREEN_EMBEDDED)
 else()
     find_package(PkgConfig QUIET)
     if(PkgConfig_FOUND)
+        # Asked afresh on every configure -- see the same line in the
+        # top-level CMakeLists.txt. `brew upgrade` deletes the old version's
+        # Cellar directory, and a cached answer would go on naming it.
+        unset(__pkg_config_checked_FFMPEG CACHE)
         pkg_check_modules(FFMPEG IMPORTED_TARGET libavcodec libavutil libswscale)
     endif()
     if(FFMPEG_FOUND)

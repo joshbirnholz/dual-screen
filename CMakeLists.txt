@@ -31,6 +31,12 @@ find_package(ZLIB REQUIRED)
 # it is built with GPL pieces, and that is the piece that would do it.
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
+    # Asked afresh on every configure. pkg_check_modules keeps its answer in
+    # the cache and does not ask again, so once Homebrew (or any package
+    # manager) upgrades FFmpeg the cache still names the old version's
+    # directories -- deleted by the upgrade -- and the build fails on paths
+    # that no longer exist. pkg-config is quick; a stale answer is not.
+    unset(__pkg_config_checked_FFMPEG CACHE)
     pkg_check_modules(FFMPEG IMPORTED_TARGET libavcodec libavutil libswscale)
 endif()
 if(FFMPEG_FOUND)
