@@ -24,10 +24,13 @@ That is the whole of it.
 - Stays awake while it is connected. The screen neither dims nor sleeps, so
   a Switch put down for a while is still there when it is picked up. It is
   allowed to sleep again once the session ends.
-- Reports each controller attached to it separately, with its name, so on a
+- Reports each controller attached to it separately, so on a
   Wii U the host can make them different players (see **Players** in the main
-  README). When the host has Settings or Controllers open, the Switch says so
-  and its buttons work that screen.
+  README). Each is named by what it is and which Switch player slot it is in,
+  which is the number its own player lights show: "Pro Controller, Switch
+  player 2", "Left Joy-Con, Switch player 3", "Handheld controls". When the
+  host has Settings or Controllers open, the Switch says so and its buttons
+  work that screen.
 
 Everything the two devices have to agree on — the layout, smoothing, the gap,
 handedness, which device makes the sound — belongs to the host. This end asks

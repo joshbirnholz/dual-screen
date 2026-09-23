@@ -124,6 +124,30 @@ void switch_vibrate(SDL_JoystickID id, bool on) {
     hidSendVibrationValues(handles, values, handles_wanted);
 }
 
+// What is in a slot, in words a player recognises, and which slot -- the
+// player number the controller's own lights show. SDL calls every one of
+// them "Switch Controller", which tells two apart not at all.
+std::string switch_pad_description(SDL_JoystickID id) {
+    const HidNpadIdType npad = npad_for(id);
+    const u32 styles = hidGetNpadStyleSet(npad);
+    if (npad == HidNpadIdType_Handheld) {
+        return "Handheld controls";
+    }
+    const char* kind = "Controller";
+    if (styles & HidNpadStyleTag_NpadFullKey) kind = "Pro Controller";
+    else if (styles & HidNpadStyleTag_NpadJoyDual) kind = "Joy-Con pair";
+    else if (styles & HidNpadStyleTag_NpadJoyLeft) kind = "Left Joy-Con";
+    else if (styles & HidNpadStyleTag_NpadJoyRight) kind = "Right Joy-Con";
+    else if (styles & HidNpadStyleTag_NpadGc) kind = "GameCube controller";
+    else if (styles & HidNpadStyleTag_NpadLucia) kind = "SNES controller";
+    else if (styles & HidNpadStyleTag_NpadLagon) kind = "N64 controller";
+    else if (styles & HidNpadStyleTag_NpadLager) kind = "Genesis controller";
+    else if (styles & (HidNpadStyleTag_NpadLark | HidNpadStyleTag_NpadHandheldLark)) {
+        kind = "NES controller";
+    } else if (styles & HidNpadStyleTag_NpadPalma) kind = "Poke Ball Plus";
+    return std::string(kind) + ", Switch player " + std::to_string(id + 1);
+}
+
 }  // namespace
 #endif
 
@@ -323,8 +347,12 @@ std::vector<PadReading> InputManager::pad_readings() const {
     for (const auto& [id, controller] : ordered) {
         PadReading reading;
         reading.id = id;
+#ifdef __SWITCH__
+        reading.name = switch_pad_description(id);
+#else
         const char* name = SDL_GameControllerName(controller);
         reading.name = name != nullptr ? name : "";
+#endif
         if (game_input_enabled_) {
             reading.held = gated(held_state_of(controller));
             // Its own motion, where it has its own sensors switched on. Both
