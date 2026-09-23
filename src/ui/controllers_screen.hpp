@@ -77,8 +77,12 @@ private:
         float content_height = 0.0f;
     };
 
-    Geometry compute_geometry(float output_width, float output_height, int row_count) const;
-    void scroll_focus_into_view(float output_width, float output_height, int row_count);
+    // `gap_before` is the first row of Not used, which is set a little apart
+    // from the controllers in play; -1 for none.
+    Geometry compute_geometry(float output_width, float output_height, int row_count,
+                              int gap_before) const;
+    void scroll_focus_into_view(float output_width, float output_height, int row_count,
+                                int gap_before);
 
     int focus_ = 0;
     bool open_ = false;

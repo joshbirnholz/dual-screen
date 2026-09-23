@@ -173,7 +173,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::ScreenGap: break;
         // Plain names, not "Label: value" pairs like the rest above -- these
         // are actions, not settings with a current value to show.
-        case Footer::OpenControllers: return "Controllers";
+        case Footer::OpenControllers: return "Controller Order";
         case Footer::OpenSettings: return "Settings";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: return "Quit";

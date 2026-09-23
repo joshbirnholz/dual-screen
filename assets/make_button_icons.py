@@ -15,6 +15,13 @@ to the geometry measured off those eight:
     disc centre (23.5, 40.0), radius 24
     symbols span 27px and are stroked 5px
 
+After those come four positional cells, one per face button: four dots
+with the one to press filled in, for a pad whose letters cannot be trusted
+to mean the same corner as the prompt's. They are drawn from
+assets/positional/switch_buttons_*_outline.png -- white on transparent, so
+only their alpha is taken, the same as every other cell -- scaled to the
+disc every other button fills.
+
 Run from the repository root:  python3 assets/make_button_icons.py
 """
 
@@ -31,6 +38,11 @@ SS = 4               # supersampling, for the antialiased rim
 
 # Cells 8 onward, in order. See glyph_cell() in button_glyphs.cpp.
 GENERATED = ["cross", "circle", "triangle", "square", "bars", "view", "create"]
+
+# And after those, the positional cells, in GlyphCell order: east, south,
+# north, west -- the order of ButtonGlyph A, B, X, Y.
+POSITIONAL = ["right", "down", "up", "left"]
+POSITIONAL_SOURCE = "assets/positional/switch_buttons_{}_outline.png"
 
 
 def read_png(path):
@@ -64,6 +76,92 @@ def read_png(path):
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
         out += line; prev = line
     return w, h, bytes(out)
+
+
+def read_palette_png_alpha(path):
+    """The alpha of an indexed PNG (colour type 3, any bit depth), per pixel."""
+    data = open(path, "rb").read()
+    pos, idat, w, h, depth, trns = 8, b"", 0, 0, 8, b""
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        kind = data[pos + 4:pos + 8]
+        body = data[pos + 8:pos + 8 + length]
+        if kind == b"IHDR":
+            w, h, depth, colour = struct.unpack(">IIBB", body[:10])
+            if colour != 3:
+                sys.exit(f"{path}: expected an indexed PNG")
+        elif kind == b"tRNS":
+            trns = body
+        elif kind == b"IDAT":
+            idat += body
+        pos += 12 + length
+    stride = (w * depth + 7) // 8
+    raw, prev, p, alpha = zlib.decompress(idat), bytearray(stride), 0, []
+    for _ in range(h):
+        filt, p = raw[p], p + 1
+        line = bytearray(raw[p:p + stride]); p += stride
+        for i in range(stride):
+            a = line[i - 1] if i >= 1 else 0
+            b = prev[i]
+            c = prev[i - 1] if i >= 1 else 0
+            if filt == 1: line[i] = (line[i] + a) & 255
+            elif filt == 2: line[i] = (line[i] + b) & 255
+            elif filt == 3: line[i] = (line[i] + ((a + b) >> 1)) & 255
+            elif filt == 4:
+                q = a + b - c
+                pa, pb, pc = abs(q - a), abs(q - b), abs(q - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        prev = line
+        per = 8 // depth
+        row = []
+        for x in range(w):
+            byte = line[x // per]
+            index = (byte >> (8 - depth * (x % per + 1))) & ((1 << depth) - 1)
+            row.append(trns[index] if index < len(trns) else 255)
+        alpha.append(row)
+    return w, h, alpha
+
+
+def render_positional(direction):
+    """One positional cell: the source's alpha, fitted to the button's disc."""
+    sw, sh, alpha = read_palette_png_alpha(POSITIONAL_SOURCE.format(direction))
+
+    def sample(sx, sy):
+        # Bilinear, clamped, in source pixels.
+        sx, sy = sx - 0.5, sy - 0.5
+        x0, y0 = math.floor(sx), math.floor(sy)
+        fx, fy = sx - x0, sy - y0
+        def at(x, y):
+            return alpha[min(max(y, 0), sh - 1)][min(max(x, 0), sw - 1)]
+        top = at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx
+        bottom = at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx
+        return top * (1 - fy) + bottom * fy
+
+    # The dots' own extent, not the image's: the source leaves a margin
+    # around them, and a prompt drawn at text size has none to spare. The
+    # extent is square -- the four dots make a diamond -- so fitting it to the
+    # disc's square keeps the dots round.
+    xs = [x for y in range(sh) for x in range(sw) if alpha[y][x] > 0]
+    ys = [y for y in range(sh) for x in range(sw) if alpha[y][x] > 0]
+    ex0, ex1, ey0, ey1 = min(xs), max(xs) + 1, min(ys), max(ys) + 1
+    # A little room kept round them all the same, so the smoothing a prompt
+    # is drawn with never reaches into the next cell of the strip.
+    extent = max(ex1 - ex0, ey1 - ey0) * 1.08
+    ecx, ecy = (ex0 + ex1) / 2.0, (ey0 + ey1) / 2.0
+
+    cell = bytearray(CELL_W * CELL_H * 4)
+    left, top, size = CX - R, CY - R, 2 * R
+    for py in range(CELL_H):
+        for px in range(CELL_W):
+            total = 0.0
+            for sy in range(SS):
+                for sx in range(SS):
+                    u = (px + (sx + 0.5) / SS - left) / size - 0.5
+                    v = (py + (sy + 0.5) / SS - top) / size - 0.5
+                    if -0.5 <= u < 0.5 and -0.5 <= v < 0.5:
+                        total += sample(ecx + u * extent, ecy + v * extent)
+            cell[(py * CELL_W + px) * 4 + 3] = round(total / (SS * SS))
+    return bytes(cell)
 
 
 def write_png(path, w, h, rgba):
@@ -151,20 +249,20 @@ def main():
     if h != CELL_H:
         sys.exit(f"{source} is {h}px tall, expected {CELL_H}")
     kept = 8  # the hand-drawn Nintendo cells
-    total = kept + len(GENERATED)
+    total = kept + len(GENERATED) + len(POSITIONAL)
     out = bytearray(total * CELL_W * CELL_H * 4)
     for y in range(CELL_H):
         src = (y * w + 0) * 4
         dst = (y * total * CELL_W) * 4
         out[dst:dst + kept * CELL_W * 4] = rgba[src:src + kept * CELL_W * 4]
-    for index, name in enumerate(GENERATED):
-        cell = render(name)
+    cells = [render(name) for name in GENERATED] + [render_positional(d) for d in POSITIONAL]
+    for index, cell in enumerate(cells):
         column = kept + index
         for y in range(CELL_H):
             dst = (y * total * CELL_W + column * CELL_W) * 4
             out[dst:dst + CELL_W * 4] = cell[y * CELL_W * 4:(y + 1) * CELL_W * 4]
     write_png(source, total * CELL_W, CELL_H, bytes(out))
-    print(f"{source}: {kept} kept + {len(GENERATED)} generated = {total} cells, "
+    print(f"{source}: {kept} kept + {len(GENERATED) + len(POSITIONAL)} generated = {total} cells, "
           f"{total * CELL_W}x{CELL_H}")
 
 

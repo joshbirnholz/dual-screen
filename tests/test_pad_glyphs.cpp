@@ -50,6 +50,18 @@ void test_playstation_is_shapes() {
     CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::Y) == GlyphCell::Square);
 }
 
+// Positional names each button by where it is, and nothing else: the dots
+// for its own corner, and the Nintendo symbols for the buttons that have no
+// corner.
+void test_positional_prompts_are_the_four_corners() {
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::A) == GlyphCell::DotsEast);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::B) == GlyphCell::DotsSouth);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::X) == GlyphCell::DotsNorth);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Y) == GlyphCell::DotsWest);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Plus) == GlyphCell::Plus);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Minus) == GlyphCell::Minus);
+}
+
 // Four face buttons, four different symbols, in every style. A table that
 // sent two positions to one cell would draw two prompts the same and make a
 // menu unreadable rather than merely wrong.
@@ -166,6 +178,7 @@ void test_the_choice_survives_settings_json() {
 }  // namespace
 
 int main() {
+    test_positional_prompts_are_the_four_corners();
     test_nintendo_is_the_artwork_this_started_with();
     test_xbox_is_the_same_letters_in_the_other_corners();
     test_playstation_is_shapes();

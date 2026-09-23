@@ -12,6 +12,7 @@ const char* to_string(PadGlyphStyle style) {
         case PadGlyphStyle::Nintendo: return "Nintendo";
         case PadGlyphStyle::PlayStation: return "PlayStation";
         case PadGlyphStyle::Xbox: return "Xbox";
+        case PadGlyphStyle::Positional: return "Positional";
         case PadGlyphStyle::Count: break;
     }
     return "Nintendo";
@@ -34,6 +35,7 @@ bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out) {
 //   Nintendo   A           B           X           Y
 //   Xbox       B           A           Y           X
 //   Sony       circle      cross       triangle    square
+//   Positional four dots, the one in that corner filled in
 //
 // Xbox needs no new letters, only the two middle columns swapped over: a
 // Nintendo pad and an Xbox pad print the same four letters in different
@@ -46,24 +48,28 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
             switch (style) {
                 case PadGlyphStyle::PlayStation: return GlyphCell::Circle;
                 case PadGlyphStyle::Xbox: return GlyphCell::LetterB;
+                case PadGlyphStyle::Positional: return GlyphCell::DotsEast;
                 default: return GlyphCell::LetterA;
             }
         case ButtonGlyph::B:  // south
             switch (style) {
                 case PadGlyphStyle::PlayStation: return GlyphCell::Cross;
                 case PadGlyphStyle::Xbox: return GlyphCell::LetterA;
+                case PadGlyphStyle::Positional: return GlyphCell::DotsSouth;
                 default: return GlyphCell::LetterB;
             }
         case ButtonGlyph::X:  // north
             switch (style) {
                 case PadGlyphStyle::PlayStation: return GlyphCell::Triangle;
                 case PadGlyphStyle::Xbox: return GlyphCell::LetterY;
+                case PadGlyphStyle::Positional: return GlyphCell::DotsNorth;
                 default: return GlyphCell::LetterX;
             }
         case ButtonGlyph::Y:  // west
             switch (style) {
                 case PadGlyphStyle::PlayStation: return GlyphCell::Square;
                 case PadGlyphStyle::Xbox: return GlyphCell::LetterX;
+                case PadGlyphStyle::Positional: return GlyphCell::DotsWest;
                 default: return GlyphCell::LetterY;
             }
         case ButtonGlyph::Plus:  // start

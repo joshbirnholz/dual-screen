@@ -13,6 +13,15 @@ namespace {
 // The row after the line: done.
 constexpr int kExtraRows = 1;
 
+// Where Not used begins, which is where the gap goes; -1 when nothing is
+// unused.
+int first_unused_row(const std::vector<LineupRow>& rows) {
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (rows[index].slot.kind == PadSlot::Kind::NotUsed) return static_cast<int>(index);
+    }
+    return -1;
+}
+
 }  // namespace
 
 void ControllersScreen::open() {
@@ -24,7 +33,8 @@ void ControllersScreen::open() {
 
 ControllersScreen::Geometry ControllersScreen::compute_geometry(float output_width,
                                                                 float output_height,
-                                                                int row_count) const {
+                                                                int row_count,
+                                                                int gap_before) const {
     Geometry geometry;
     geometry.scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(geometry.scale);
@@ -36,18 +46,20 @@ ControllersScreen::Geometry ControllersScreen::compute_geometry(float output_wid
     geometry.view_bottom = geometry.panel.y + geometry.panel.h - line * 2.2f;
     const float row_height = line * 1.9f;
     const float step = row_height + line * 0.3f;
+    const float gap = line * 1.2f;
     for (int index = 0; index < row_count; ++index) {
+        const float before = (gap_before >= 0 && index >= gap_before) ? gap : 0.0f;
         geometry.rows.push_back(
-            PixelRect{geometry.panel.x, geometry.view_top - scroll_ + index * step,
+            PixelRect{geometry.panel.x, geometry.view_top - scroll_ + index * step + before,
                       geometry.panel.w, row_height});
     }
-    geometry.content_height = row_count * step;
+    geometry.content_height = row_count * step + (gap_before >= 0 ? gap : 0.0f);
     return geometry;
 }
 
 void ControllersScreen::scroll_focus_into_view(float output_width, float output_height,
-                                               int row_count) {
-    const Geometry geometry = compute_geometry(output_width, output_height, row_count);
+                                               int row_count, int gap_before) {
+    const Geometry geometry = compute_geometry(output_width, output_height, row_count, gap_before);
     const float view = geometry.view_bottom - geometry.view_top;
     const float max_scroll = std::max(0.0f, geometry.content_height - view);
     const PixelRect& focused = geometry.rows[static_cast<std::size_t>(focus_)];
@@ -174,8 +186,9 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
         }
     }
 
-    scroll_focus_into_view(output_width, output_height, row_count());
-    const Geometry geometry = compute_geometry(output_width, output_height, row_count());
+    scroll_focus_into_view(output_width, output_height, row_count(), first_unused_row(rows));
+    const Geometry geometry =
+        compute_geometry(output_width, output_height, row_count(), first_unused_row(rows));
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
@@ -221,12 +234,14 @@ void ControllersScreen::render(QuadRenderer& quads,
     const PadLineup lineup = line_up_pads(pads, order, gamepad_here);
     const std::vector<LineupRow> rows = lineup_rows(lineup);
     const int row_count = static_cast<int>(rows.size()) + kExtraRows;
-    const Geometry geometry = compute_geometry(output_width, output_height, row_count);
+    const Geometry geometry =
+        compute_geometry(output_width, output_height, row_count, first_unused_row(rows));
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
 
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
-    text.draw(quads, "Controllers", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
+    text.draw(quads, "Controller Order", geometry.panel.x, geometry.panel.y, scale * 1.6f,
+              theme.text);
 
     quads.set_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
                              geometry.view_bottom - geometry.view_top});
@@ -291,7 +306,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         guide.push_back({ButtonGlyph::A, "Put Down", PromptRole::ActsOnSelection});
     } else {
         guide.push_back({ButtonGlyph::X, "Identify"});
-        guide.push_back({ButtonGlyph::A, "Move", PromptRole::ActsOnSelection});
+        guide.push_back({ButtonGlyph::A, "Reorder", PromptRole::ActsOnSelection});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     }
     const float guide_height = control_guide_height(scale * 0.9f);

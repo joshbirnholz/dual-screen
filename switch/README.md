@@ -32,7 +32,7 @@ That is the whole of it.
   player lights show. A controller in player 1's slot and the handheld
   controls are two controllers, although SDL reads them as one. The Switch
   also tells the host which model it is, so the host calls it "Switch Lite"
-  rather than "companion". When the host has Settings or Controllers open,
+  rather than "companion". When the host has Settings or Controller Order open,
   the Switch says so and its buttons work that screen.
 
 Everything the two devices have to agree on — the layout, smoothing, the gap,

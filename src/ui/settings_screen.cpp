@@ -62,6 +62,7 @@ std::string confirm_button_name(PadGlyphStyle style, ConfirmButton choice) {
     switch (style) {
         case PadGlyphStyle::PlayStation: return south ? "Cross" : "Circle";
         case PadGlyphStyle::Xbox: return south ? "A" : "B";
+        case PadGlyphStyle::Positional: return south ? "Bottom button" : "Right button";
         default: return south ? "B" : "A";
     }
 }

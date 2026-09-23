@@ -206,7 +206,7 @@ Three things are different about a Wii U session:
 
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
-  "Playing on Cemu" notice: **Controllers**, **Settings**, **Disconnect** and
+  "Playing on Cemu" notice: **Controller Order**, **Settings**, **Disconnect** and
   **Quit**. It answers only while its window has the focus, so a press meant
   for the game never picks Quit. There is no Resume: the game never paused,
   and going back to it is switching back to Cemu's window.
@@ -292,7 +292,7 @@ change what this device is called there. The name is only shown: a virtual pad's
 when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
-**Controllers**, in the quick menu, rearranges the line the way SteamOS's own
+**Controller Order**, in the quick menu, rearranges the line the way SteamOS's own
 Controller Order screen does. Press confirm to pick a controller up, move it
 up or down, and press confirm again to put it down. Moving one up from Player 1
 makes it the GamePad; moving one down past the last player puts it in **Not
@@ -917,6 +917,7 @@ Full options:
 | Turn the pointer off entirely | **Pointer** in the layout menu |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
+| Change how button prompts are drawn | **Button prompts** in Settings: Nintendo letters, PlayStation symbols, Xbox letters, or **Positional** -- four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
 
 ### If it quits immediately in Game Mode
 
