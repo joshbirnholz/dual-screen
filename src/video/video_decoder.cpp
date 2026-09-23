@@ -2,6 +2,7 @@
 
 #include "util/log.hpp"
 
+#include <chrono>
 #include <cstring>
 
 #if DS_HAVE_VIDEO_CODEC
@@ -186,7 +187,15 @@ bool VideoDecoder::to_rgb(AVFrame* frame, DecodedFrame& out, std::string* error)
     AVFrame* source = frame;
     if (frame->hw_frames_ctx != nullptr) {
         av_frame_unref(software_frame_);
+        // Timed on its own, as VideoToolbox's is: on an Apple TV the copy out
+        // of the decoder's memory turned out to be half of everything a
+        // picture cost, and a decode time that includes it cannot say so.
+        const auto transfer_began = std::chrono::steady_clock::now();
         const int rc = av_hwframe_transfer_data(software_frame_, frame, 0);
+        out.readback_micros = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - transfer_began)
+                .count());
         if (rc < 0) {
             if (error != nullptr) *error = "the frame would not come back off the device: " +
                                            av_error(rc);

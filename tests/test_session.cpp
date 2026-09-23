@@ -1798,6 +1798,29 @@ void test_a_picture_the_host_sent_late_buys_no_cover() {
     CHECK_MSG(both.find("5 sent late by the host") != std::string::npos, both);
 }
 
+// A second in which the host held pictures back is not room to spare.
+//
+// Measured on a Switch: the host, finding it behind, sent 21 of every 60
+// pictures. 21 pictures at 9ms is under a fifth of a second of work, so the
+// ladder read it as room and asked for 854x480 again -- which it had just
+// stepped down from, and which made the stall it was in last longer. Four
+// times in one session.
+void test_a_stream_the_host_held_back_is_not_room_to_spare() {
+    using namespace ds::net;
+
+    // That second: 60 serials, 21 pictures.
+    CHECK(host_held_pictures_back(60, 21));
+    // A whole stream, and one with the odd picture dropped in passing.
+    CHECK(!host_held_pictures_back(60, 60));
+    CHECK(!host_held_pictures_back(60, 58));
+    // A tenth missing is where it starts to count.
+    CHECK(host_held_pictures_back(60, 53));
+    // Nothing moved: a paused game or a still screen, not a held-back one.
+    CHECK(!host_held_pictures_back(0, 0));
+    // A 30fps game is its own full rate, and is not mistaken for half of 60.
+    CHECK(!host_held_pictures_back(30, 30));
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -2975,6 +2998,7 @@ int main() {
     test_the_ladder_steps_from_what_arrives();
     test_a_step_is_judged_on_the_size_it_asked_for();
     test_a_picture_the_host_sent_late_buys_no_cover();
+    test_a_stream_the_host_held_back_is_not_room_to_spare();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

@@ -155,6 +155,21 @@ double scale_the_picture_arrived_at(int width, int height, int box_width, int bo
 // picture_shrank_enough_to_judge(), in both directions.
 bool picture_size_changed_enough(int before_width, int after_width);
 
+// Whether the host held pictures back during a window: its serials moved on
+// by `serials_advanced` while only `arrived` pictures got here. A host that has
+// stopped sending to a device that has fallen behind skips the serials it
+// drops, so the gap is exactly the pictures that never came.
+//
+// A second like that is not a second with room to spare, however little it
+// cost: it was cheap because most of the pictures were never sent. Read as
+// room, it walked a Switch back up to a size it had just been shown it could
+// not manage -- in the middle of the very stall that had made it cheap, which
+// made the stall last longer.
+//
+// A tenth missing is the bar. The odd picture dropped in passing is not the
+// host holding a stream back.
+bool host_held_pictures_back(uint64_t serials_advanced, uint64_t arrived);
+
 // How long a step waits for pictures of its new size before it is judged
 // anyway. Long enough for the host to rebuild its encoder and send a
 // keyframe; a step that has not landed by then is one the host did not take.
@@ -994,11 +1009,16 @@ private:
     // window starts again once the first picture of the new size is in,
     // after that picture, which also carries the cost of a new decoder and a
     // keyframe that no later picture pays.
+    // The newest serial when this window began, and how many pictures have
+    // arrived since -- see host_held_pictures_back().
+    uint64_t adapt_serial_at_start_ = 0;
+    uint64_t adapt_arrivals_ = 0;
     int adapt_awaiting_from_width_ = 0;
     uint64_t adapt_awaiting_since_ms_ = 0;
     bool adapt_restart_window_ = false;
     bool adapt_size_decides_cost_ = true;
     bool said_size_does_not_decide_ = false;
+    bool said_held_back_is_not_room_ = false;
     uint64_t adapt_at_ms_ = 0;
     // Consecutive windows with room to spare, so stepping back up needs a
     // sustained case rather than one quiet moment.

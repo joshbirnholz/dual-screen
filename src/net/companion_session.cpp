@@ -85,6 +85,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     adapt_awaiting_from_width_ = 0;
     adapt_awaiting_since_ms_ = 0;
     adapt_restart_window_ = false;
+    adapt_serial_at_start_ = 0;
+    adapt_arrivals_ = 0;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -212,6 +214,8 @@ void CompanionSession::disconnect() {
     adapt_awaiting_from_width_ = 0;
     adapt_awaiting_since_ms_ = 0;
     adapt_restart_window_ = false;
+    adapt_serial_at_start_ = 0;
+    adapt_arrivals_ = 0;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -284,6 +288,8 @@ void CompanionSession::fail(const std::string& reason) {
     adapt_awaiting_from_width_ = 0;
     adapt_awaiting_since_ms_ = 0;
     adapt_restart_window_ = false;
+    adapt_serial_at_start_ = 0;
+    adapt_arrivals_ = 0;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -650,6 +656,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         }
         last_arrival_ms_ = now;
         received_serial_ = frame.serial;
+        ++adapt_arrivals_;
         complete_at_.push_back(Arrival{frame.serial, now, link_delay_ms});
         // A frame that is never shown (a serial dropped for being behind)
         // would otherwise leave its entry here for ever.
@@ -1349,6 +1356,13 @@ double scale_the_picture_arrived_at(int width, int height, int box_width, int bo
                     static_cast<double>(height) / box_height);
 }
 
+bool host_held_pictures_back(uint64_t serials_advanced, uint64_t arrived) {
+    if (serials_advanced == 0) {
+        return false;
+    }
+    return arrived * 10 < serials_advanced * 9;
+}
+
 bool picture_size_changed_enough(int before_width, int after_width) {
     return picture_shrank_enough_to_judge(before_width, after_width) ||
            picture_shrank_enough_to_judge(after_width, before_width);
@@ -1432,6 +1446,8 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         adapt_readback_micros_ = 0;
         adapt_lock_micros_ = 0;
         adapt_frames_ = 0;
+        adapt_serial_at_start_ = received_serial_;
+        adapt_arrivals_ = 0;
         return;
     }
     // A step whose pictures have not arrived yet has nothing to be judged by
@@ -1464,6 +1480,14 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
             ? static_cast<double>(adapt_lock_micros_) / 1000.0 / static_cast<double>(frames)
             : 0.0;
     const double arrived_scale = adapt_arrived_scale_;
+    const uint64_t serials_advanced = (adapt_serial_at_start_ != 0 &&
+                                       received_serial_ > adapt_serial_at_start_)
+                                          ? received_serial_ - adapt_serial_at_start_
+                                          : 0;
+    const bool held_back = host_held_pictures_back(serials_advanced, adapt_arrivals_);
+    const uint64_t arrivals = adapt_arrivals_;
+    adapt_serial_at_start_ = received_serial_;
+    adapt_arrivals_ = 0;
     adapt_at_ms_ = now_ms;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
@@ -1545,6 +1569,20 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
                  "% of its display size instead");
         send_display_size();
+        return;
+    }
+    if (per_second <= kEasyDecodeMsPerSecond && display_scale_ < 1.0 && held_back) {
+        // Cheap because most of the stream never came -- see
+        // host_held_pictures_back(). Not evidence of anything, and it breaks
+        // a run of evidence that was building.
+        adapt_easy_windows_ = 0;
+        if (!said_held_back_is_not_room_) {
+            said_held_back_is_not_room_ = true;
+            log_info("not asking for a larger picture: this second looked easy only because the "
+                     "host held pictures back (" +
+                     std::to_string(arrivals) + " of " + std::to_string(serials_advanced) +
+                     " arrived)");
+        }
         return;
     }
     if (per_second <= kEasyDecodeMsPerSecond && display_scale_ < 1.0) {
@@ -2106,6 +2144,8 @@ bool CompanionSession::decode_next_frame() {
     if (adapt_restart_window_) {
         adapt_restart_window_ = false;
         adapt_at_ms_ = finished_ms;
+        adapt_serial_at_start_ = received_serial_;
+        adapt_arrivals_ = 0;
         adapt_decode_ms_ = 0;
         adapt_readback_micros_ = 0;
         adapt_lock_micros_ = 0;

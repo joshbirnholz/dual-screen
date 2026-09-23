@@ -218,6 +218,26 @@ bool write_screenshot(int width, int height, const std::string& path) {
     return true;
 }
 
+// When each part of one pass of the loop finished, on the same clock, so a
+// pass that took too long can say where the time went.
+//
+// A Switch playing Nintendo Land went seconds at a time drawing nothing at
+// all -- passes of a second or more, while decoding was 13ms a picture -- and
+// the log could only say that it had happened, not whether it was input,
+// receiving, drawing or waiting to present. Each of those has a different fix.
+struct PassTimes {
+    uint64_t began = 0;
+    uint64_t events_done = 0;
+    uint64_t poll_done = 0;
+    uint64_t draw_began = 0;
+    uint64_t draw_done = 0;
+    uint64_t swap_done = 0;
+};
+
+// Long enough to be a picture visibly stopping -- three frames at 60 -- and
+// not so long that the passes worth knowing about go unsaid.
+constexpr uint64_t kSlowPassMs = 50;
+
 class Client {
 public:
     explicit Client(const Options& options) : options_(options) {}
@@ -264,6 +284,12 @@ private:
     LayoutPickerState menu_state_from_host() const;
     void close_menu();
     void draw();
+    // Says where a pass that took kSlowPassMs or more went. At most once a
+    // second, with a count of the ones in between, so a device that is slow
+    // for a stretch does not also spend the stretch writing to its card.
+    void report_slow_pass(const PassTimes& pass);
+    uint64_t slow_pass_said_at_ = 0;
+    unsigned slow_passes_unsaid_ = 0;
     // Builds every GL object this program owns. Called at start-up, and again
     // whenever the context may have been taken away and given back.
     bool load_gl_resources(std::string* error);
@@ -914,6 +940,9 @@ void Client::run() {
         }
 #endif
         const uint64_t now = net::monotonic_millis();
+        // Where a slow pass went -- see report_slow_pass().
+        PassTimes pass;
+        pass.began = now;
 
         input_.begin_frame();
         SDL_Event event;
@@ -940,8 +969,10 @@ void Client::run() {
         }
         refresh_output_size();
         follow_panel_size();
+        pass.events_done = net::monotonic_millis();
 
         session_.poll(now);
+        pass.poll_done = net::monotonic_millis();
 
         switch (state_) {
             case State::Launcher:
@@ -1095,14 +1126,18 @@ void Client::run() {
         // polled, so a glance at something else and back does not cost the
         // connection.
         if (foreground_) {
+            pass.draw_began = net::monotonic_millis();
             draw();
+            pass.draw_done = net::monotonic_millis();
             if (options_.screenshot_at_seconds > 0.0 && !screenshot_taken &&
                 !options_.screenshot_path.empty() && alive >= options_.screenshot_at_seconds) {
                 screenshot_taken =
                     write_screenshot(output_width_, output_height_, options_.screenshot_path);
             }
             SDL_GL_SwapWindow(gl_.window);
+            pass.swap_done = net::monotonic_millis();
             session_.note_frame_drawn();
+            report_slow_pass(pass);
         } else {
             SDL_Delay(16);
         }
@@ -1110,6 +1145,32 @@ void Client::run() {
             running_ = false;
         }
     }
+}
+
+void Client::report_slow_pass(const PassTimes& pass) {
+    if (pass.swap_done < pass.began || pass.swap_done - pass.began < kSlowPassMs) {
+        return;
+    }
+    if (slow_pass_said_at_ != 0 && pass.swap_done - slow_pass_said_at_ < 1000) {
+        ++slow_passes_unsaid_;
+        return;
+    }
+    const auto span = [](uint64_t from, uint64_t to) {
+        return std::to_string(to >= from ? to - from : 0) + "ms";
+    };
+    std::string line = "a pass took " + span(pass.began, pass.swap_done) + ": " +
+                       span(pass.began, pass.events_done) + " reading input, " +
+                       span(pass.events_done, pass.poll_done) + " receiving and decoding, " +
+                       span(pass.poll_done, pass.draw_began) + " working out what to show, " +
+                       span(pass.draw_began, pass.draw_done) + " drawing, " +
+                       span(pass.draw_done, pass.swap_done) + " presenting";
+    if (slow_passes_unsaid_ > 0) {
+        line += " (and " + std::to_string(slow_passes_unsaid_) +
+                " more slow passes since the last one said)";
+    }
+    log_info(line);
+    slow_pass_said_at_ = pass.swap_done;
+    slow_passes_unsaid_ = 0;
 }
 
 void Client::draw() {
