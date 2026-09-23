@@ -612,6 +612,22 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             kKeyframeRequestIntervalMs;
     }
 
+    // A picture that only says what changed since the one before it, with the
+    // one before it lost, is not shown. H.264 carries on decoding such a
+    // picture without complaint and produces exactly what was seen on a
+    // Switch over a bad stretch of wifi: the last good frame smeared and
+    // broken up by changes made to one it never had, until the keyframe
+    // asked for above arrived. The last good picture stays up instead --
+    // a tenth of a second held, usually, rather than a tenth of a second of
+    // rubbish -- and the picture resumes clean from the keyframe. Still
+    // acked below, so the host keeps sending.
+    //
+    // Only video: a tile picture is built against a baseline the host
+    // rebases on acks, and is whole in itself as far as this end goes.
+    const bool awaiting_keyframe =
+        slot.encoding == FrameEncoding::H264 && !header.keyframe &&
+        ((slot.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_);
+
     FrameMessage frame;
     frame.screen = slot.screen;
     frame.serial = slot.serial;
@@ -663,6 +679,10 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         while (complete_at_.size() > 240) {
             complete_at_.pop_front();
         }
+    }
+    if (awaiting_keyframe) {
+        ++stats_frames_skipped_;
+        return;
     }
     pending_frames_.push_back(std::move(frame));
 }
@@ -1763,7 +1783,9 @@ void CompanionSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_starved_) + " times this second (jitter " +
               std::to_string(static_cast<uint64_t>(jitter_.estimate() + 0.5)) + "ms), decode " +
               std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
-              "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost, this device's own loop comes round every " +
+              "ms avg, " + std::to_string(stats_frames_lost_) + " frames lost, " +
+              std::to_string(stats_frames_skipped_) +
+              " passed over waiting for a keyframe, this device's own loop comes round every " +
               std::to_string(typical_poll_gap_ms_) + "ms at its quickest");
     // And the latency breakdown, at a level the console sees.
     //
@@ -1810,6 +1832,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_decode_total_ms_ = 0;
     stats_decodes_ = 0;
     stats_frames_lost_ = 0;
+    stats_frames_skipped_ = 0;
 }
 
 // How long each frame should be on screen: what the host is producing at,

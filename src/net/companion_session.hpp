@@ -751,6 +751,9 @@ private:
     // losing anything, which is what the host's long keyframe interval is
     // betting on.
     unsigned stats_frames_lost_ = 0;
+    // Pictures passed over while a keyframe was awaited -- see
+    // handle_frame_fragment().
+    unsigned stats_frames_skipped_ = 0;
     // Decodes that have failed in a row for each screen, cleared by the first
     // picture that comes out -- see kMaxConsecutiveDecodeFailures.
     unsigned decode_failures_top_ = 0;

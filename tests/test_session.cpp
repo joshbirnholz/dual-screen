@@ -2769,6 +2769,11 @@ void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
     }
     const unsigned asked_before = host.keyframes_asked_for_test();
 
+    // Everything already on its way shown first, so what the screen holds
+    // from here is only what arrives after the loss.
+    spin(host, companion, [&] { return companion.buffered_frames() == 0; }, 1000);
+    const uint64_t shown_at_loss = companion.newest_frame_serial_for_test();
+
     companion.lose_a_frame_for_test(ScreenId::Bottom);
     CHECK_MSG(spin(host, companion,
                    [&] { return host.keyframes_asked_for_test() > asked_before; }, 2000),
@@ -2777,13 +2782,32 @@ void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
     // And the answer actually lands: the companion stops waiting only when a
     // picture that stands on its own arrives, not when it has finished asking.
     // The picture has to keep changing for the host to have anything to send.
+    //
+    // And nothing is shown until it does. A picture built on the one that was
+    // lost is exactly the corruption this exists to keep off the screen, so
+    // the last good picture stays up instead.
+    bool shown_while_waiting = false;
     CHECK_MSG(spin(host, companion,
                    [&] {
                        host.publish_screens(screen_pixels(top), screen_pixels(bottom), ++serial);
-                       return !companion.waiting_for_keyframe_for_test(ScreenId::Bottom);
+                       const bool waiting = companion.waiting_for_keyframe_for_test(ScreenId::Bottom);
+                       if (waiting && companion.newest_frame_serial_for_test() != shown_at_loss) {
+                           shown_while_waiting = true;
+                       }
+                       return !waiting;
                    },
                    4000),
               "the keyframe the companion asked for never arrived");
+    CHECK_MSG(!shown_while_waiting,
+              "a picture built on the lost frame was shown while waiting for the keyframe");
+    // The picture moves on again from the keyframe.
+    CHECK_MSG(spin(host, companion,
+                   [&] {
+                       host.publish_screens(screen_pixels(top), screen_pixels(bottom), ++serial);
+                       return companion.newest_frame_serial_for_test() > shown_at_loss;
+                   },
+                   2000),
+              "the picture never moved on after the keyframe arrived");
 }
 
 // A Wii U game reading the GamePad's gyroscope needs the companion's, since
