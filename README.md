@@ -276,6 +276,11 @@ player, and none share the GamePad. By default:
 - Every other controller is the next player: this device's first, in order,
   then the companion's.
 
+Steam keeps spare virtual controllers, and one stays behind after its
+controller disconnects. SDL lists those as plain "Steam Virtual Gamepad" with
+nothing behind them. They are left out, and a slot reappears as soon as a
+controller is behind it again.
+
 Keyboards are not in the line at all. Map a keyboard in Cemu directly, with
 Cemu's own **Keyboard** API, if a game wants one.
 

@@ -7,6 +7,10 @@
 
 #include "util/log.hpp"
 
+#if defined(__linux__) && !SDL_VERSION_ATLEAST(2, 30, 0)
+#include <dlfcn.h>
+#endif
+
 #ifdef __SWITCH__
 #include <switch.h>
 
@@ -235,13 +239,63 @@ int switch_pad_slot(SDL_JoystickID id) {
 }  // namespace
 #endif
 
+#ifndef __SWITCH__
+namespace {
+
+// SDL's Steam Input handle for a pad: which physical controller Steam has
+// behind one of its virtual ones, or 0 for none. Asked for by name at run
+// time where the SDL this was built against predates it -- the SteamOS build
+// compiles against Debian 12's SDL 2.26, and runs against SteamOS's own,
+// which has it.
+using SteamHandleFn = Uint64 (*)(SDL_GameController*);
+
+SteamHandleFn steam_handle_fn() {
+#if SDL_VERSION_ATLEAST(2, 30, 0)
+    return &SDL_GameControllerGetSteamHandle;
+#elif defined(__linux__)
+    static const SteamHandleFn fn = reinterpret_cast<SteamHandleFn>(
+        dlsym(RTLD_DEFAULT, "SDL_GameControllerGetSteamHandle"));
+    return fn;
+#else
+    return nullptr;
+#endif
+}
+
+// One of the virtual pads Steam Input presents in place of the real ones.
+bool is_steam_virtual_pad(SDL_GameController* controller) {
+    return SDL_GameControllerGetVendor(controller) == 0x28de &&
+           SDL_GameControllerGetProduct(controller) == 0x11ff;
+}
+
+}  // namespace
+#endif
+
 bool InputManager::pad_connected(SDL_JoystickID id) const {
 #ifdef __SWITCH__
     // An empty slot has no style at all.
     return ((id >= 0 && id < 8) || id == kSwitchHandheldId) &&
            hidGetNpadStyleSet(npad_for(id)) != 0;
 #else
-    (void)id;
+    // Steam keeps a virtual pad for a slot whose controller has gone -- and
+    // sometimes one or two spare -- and SDL lists every one, named plain
+    // "Steam Virtual Gamepad" because there is nothing behind it to name it
+    // after. Such a slot has no Steam handle. But nothing has a handle when
+    // Steam has not told SDL about its pads at all (the app started outside
+    // Steam), so a slot is only taken for empty when another of Steam's
+    // pads here does have one.
+    const auto it = controllers_.find(id);
+    if (it == controllers_.end() || it->second == nullptr) {
+        return false;
+    }
+    const SteamHandleFn handle_of = steam_handle_fn();
+    if (handle_of == nullptr || !is_steam_virtual_pad(it->second) || handle_of(it->second) != 0) {
+        return true;
+    }
+    for (const auto& [other_id, other] : controllers_) {
+        if (other != nullptr && is_steam_virtual_pad(other) && handle_of(other) != 0) {
+            return false;
+        }
+    }
     return true;
 #endif
 }
