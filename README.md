@@ -197,17 +197,17 @@ Three things are different about a Wii U session:
   you have set up in Cemu. That is how to play the many games that never ask
   for the pad, with a controller already configured for them.
 
-- **The GamePad belongs to one device.** Whichever device is showing the
-  GamePad screen is the only one whose controls reach it. With a companion
-  joined as the GamePad, none of this device's controllers press its buttons.
-  They are left to the game's other players, which Cemu reads directly as Pro
-  Controllers or the like. A DS or a 3DS is different: two people share one
-  console there, so both devices' controls are merged.
+- **The GamePad belongs to one device, and every other controller is a
+  player.** By default the device showing the GamePad screen gives the GamePad
+  its first controller and its keyboard. Every other controller on either
+  device is Player 1, Player 2 and so on, in order. See **Players** below. A DS
+  or a 3DS is different: two people share one console there, so both devices'
+  controls are merged.
 
 - **None of the controller shortcuts exist.** A Wii U game reads every control
   the console has, including both stick presses, so nothing is taken from the
-  pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1** or **Tab**,
-  smoothing is **F2**, and Steam Input can be pointed at any of them. Which is
+  pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1**, **Tab**
+  or **Escape**, smoothing is **F2**, and Steam Input can be pointed at any of them. Which is
   also why every button on the pad, and both triggers as ZL and ZR, go straight
   through to the game — including from the second device, whose touches arrive
   as touches on the GamePad's own screen.
@@ -229,20 +229,16 @@ as a controller called **DualScreen GamePad**, under an API called
 pad. It is listed whether or not a session is running, so a game's controls can
 be set up in advance.
 
-One controller, whichever way you are playing: on two devices it carries the
-companion's pad, and on one it carries whatever is plugged into or built into
-the machine running the shell. Set it up once and both work.
+One controller, whichever way you are playing: on two devices it carries
+whatever the device showing the GamePad screen is holding, and on one it
+carries this device's first controller. Set it up once and both work.
 
 That makes it an ordinary Cemu controller in every way that matters. Wii U games
 want wildly different control schemes, and this is where they get them: buttons,
 both sticks, stick deadzones and motion all go through Cemu's normal mapping and
-its per-game profiles. A pad plugged into the machine running Cemu keeps working
-alongside it, mapped to whatever you like — and if you would rather aim with
-that pad's gyro than the companion's, map that instead.
+its per-game profiles.
 
-Rumble follows the same rule, and only the controller assigned to the GamePad
-gets it: assign the companion and the companion buzzes; assign a pad plugged
-into the machine running Cemu and that one does instead.
+Rumble goes to whichever controllers are the GamePad, on either device.
 
 Adding it applies a default mapping straight through — A to A, and so on — and
 switches its motion and rumble on, so a fresh setup plays correctly with nothing
@@ -251,6 +247,41 @@ further configured. Every part of that is yours to change afterwards.
 Touch is the exception, and is not in the mapping: the companion's touchscreen
 drives the GamePad's directly, because a point on a screen is not a control a
 button mapping can name.
+
+### Players
+
+Every other controller reaches Cemu the same way, as **DualScreen Player 1** to
+**DualScreen Player 8** under the same **DualScreen** API. Map them in Cemu
+once, as Pro Controllers, Classic Controllers or Wii Remotes, and a default
+mapping is applied. Which physical controller sits behind each player is
+decided here, not in Cemu, so the mapping stays put while the controllers
+change.
+
+Controllers on both devices count. By default:
+
+- The device showing the GamePad screen gives the GamePad its first
+  controller and its keyboard. A keyboard on the other device is not used.
+- Every other controller is the next player: this device's first, in order,
+  then the companion's.
+- Past eight players, a controller is not used.
+
+Controllers are numbered in each device's own order, which under Steam Input
+is Steam's. Rearranging them in Steam rearranges them here. They are never
+known by name: the name Steam gives a virtual pad is fixed when it appears, and
+after controllers come, go and are reordered it can describe a different
+controller from the one behind it.
+
+**Settings → Controllers** changes any of that for the rest of the session. It
+works mid-game, from the menu. Each controller gets a row, "Controller 2, this
+device", and Left and Right step it through GamePad, Player 1 to 8 and Not used.
+Press a button on a controller and its row lights up, which is how to tell them
+apart. **Back to the defaults** forgets every choice. Nothing is remembered once
+the app closes, because a controller's place in the order is only as good as
+the session it was counted in.
+
+A player's rumble goes to the controllers behind it, on whichever device they
+are on. A companion older than this needs updating to have its controllers
+counted one by one. Until then it counts as one controller.
 
 ### Motion
 
@@ -302,7 +333,11 @@ Only on a console that reads it. A DS session never switches a sensor on at
 all, which on a handheld is a gyroscope not running for an hour for nothing.
 
 Cemu reads it through the same **DualScreen GamePad** controller as everything
-else (see above), with motion switched on for it by default.
+else (see above), with motion switched on for it by default. A player's motion
+comes from the controllers behind it, where they have sensors SDL can read.
+That means a controller plugged into the companion, since SDL reads the
+companion's own pads directly. Under Steam Input, this device's controllers
+have none (see below).
 
 `motion: the host reads it; 1 of 1 connected controllers report it` in the log
 is the line that says it is working. **`0 of 1` on a Steam Deck almost always
@@ -735,7 +770,7 @@ Full options:
 | Open/close the layout menu | **L3 + R3**, **F1**, or a **two-finger tap** |
 | Smooth or sharpen the screens | **R3** alone (or **F2**), in a game or in any menu |
 | Swap the two focus layouts | **L3** alone (or **F3**), while a game is on screen |
-| | *DS and 3DS only. A Wii U game reads both sticks pressed and plays through its touch screen, so none of the three shortcuts above are taken from it — not L3, not R3, not the pair, and not the two-finger tap. There the menu is **F1** or **Tab** alone, which Steam Input can be pointed at, and **F3** swaps which screen a lone device is showing.* |
+| | *DS and 3DS only. A Wii U game reads both sticks pressed and plays through its touch screen, so none of the three shortcuts above are taken from it — not L3, not R3, not the pair, and not the two-finger tap. There the menu is **F1**, **Tab** or **Escape** alone, which Steam Input can be pointed at, and **F3** swaps which screen a lone device is showing.* |
 | Open Settings, from inside that menu | **−** (or **F4**), on every console — it is a menu shortcut rather than one taken from the game. The settings are whichever device is running the game, whoever asked; with two connected, the other one says to look over here and its buttons still work the screen |
 | Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |
 | Move with the C-Stick | the right stick, in the handful of 3DS games built for a Circle Pad Pro or New 3DS |

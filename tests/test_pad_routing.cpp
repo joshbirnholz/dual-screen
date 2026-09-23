@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "input/pad_routing.hpp"
+#include "ui/controllers_screen.hpp"
 
 namespace {
 
@@ -157,9 +158,67 @@ void test_each_slot_gets_its_own_pads_presses() {
     CHECK(ds::pads_in_slot(slots, PadSlot::player_number(0)).size() == 2);
 }
 
+// The Controllers screen, worked with a pad: each press moves the focused
+// controller on one slot, and what it chose holds while the rest fill in.
+void test_the_controllers_screen_steps_a_pad_through_the_slots() {
+    const std::vector<KnownPad> pads = {pad(true, 0, 10), pad(true, 1, 11), keyboard(true)};
+    std::map<std::string, std::string> choices;
+    ds::ControllersScreen screen;
+    screen.open();
+    const auto press = [&](ds::UiAction action) {
+        return screen.update({action}, {}, 1280.0f, 800.0f, pads, true, choices);
+    };
+
+    // Controller 1 is the GamePad by default; one step on is Player 1, and
+    // the GamePad, which still needs holding, falls to the next controller on
+    // this device nobody has chosen for anything: Controller 2.
+    ds::ControllersScreenResult result = press(ds::UiAction::Right);
+    CHECK(result.choices_changed);
+    CHECK(choices["this:1"] == "player1");
+    std::vector<PadSlot> slots = ds::assign_pads(pads, choices, true);
+    CHECK(slots[0] == PadSlot::player_number(0));
+    CHECK(slots[1] == PadSlot::gamepad());
+    CHECK(slots[2] == PadSlot::gamepad());  // the keys stay with the device
+
+    // Back the other way is the GamePad again, and one further round is Not
+    // used -- the list wraps.
+    press(ds::UiAction::Left);
+    CHECK(choices["this:1"] == "gamepad");
+    press(ds::UiAction::Left);
+    CHECK(choices["this:1"] == "unused");
+
+    // The row after the controllers puts everything back to the order.
+    press(ds::UiAction::Down);
+    press(ds::UiAction::Down);
+    press(ds::UiAction::Down);
+    CHECK(screen.focus() == 3);
+    result = press(ds::UiAction::Confirm);
+    CHECK(result.choices_changed);
+    CHECK(choices.empty());
+
+    // And Back leaves.
+    result = press(ds::UiAction::Cancel);
+    CHECK(result.close_requested);
+    CHECK(!screen.is_open());
+}
+
+void test_a_pad_is_in_use_while_pressed_or_pushed() {
+    ds::DsInputState held;
+    CHECK(!ds::pad_in_use(held));
+    held.circle_x = 2000;  // drift
+    CHECK(!ds::pad_in_use(held));
+    held.circle_x = -20000;
+    CHECK(ds::pad_in_use(held));
+    held.circle_x = 0;
+    held.set(ds::DsButton::B, true);
+    CHECK(ds::pad_in_use(held));
+}
+
 }  // namespace
 
 int main() {
+    test_the_controllers_screen_steps_a_pad_through_the_slots();
+    test_a_pad_is_in_use_while_pressed_or_pushed();
     test_slots_are_written_and_named_as_people_read_them();
     test_defaults_come_straight_from_the_order();
     test_the_device_holding_the_gamepad_gives_it_its_first_controller_and_keys();

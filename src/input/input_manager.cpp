@@ -185,7 +185,7 @@ DsInputState InputManager::gated(DsInputState held) const {
     return held;
 }
 
-std::vector<PadReading> InputManager::pad_readings() const {
+std::vector<PadReading> InputManager::pad_readings(bool for_display) const {
     // In the order the pads' own player numbers put them, which under Steam
     // Input is Steam's slot order -- the order a player arranges in Steam and
     // expects to see as Controller 1, 2, 3. A pad without one comes after, in
@@ -205,7 +205,9 @@ std::vector<PadReading> InputManager::pad_readings() const {
     for (const auto& [id, controller] : ordered) {
         PadReading reading;
         reading.id = id;
-        if (game_input_enabled_) {
+        if (for_display) {
+            reading.held = held_state_of(controller);
+        } else if (game_input_enabled_) {
             reading.held = gated(held_state_of(controller));
             // Its own motion, where it has its own sensors switched on. Both
             // or neither, for the reason MotionReader gives.
@@ -235,7 +237,9 @@ std::vector<PadReading> InputManager::pad_readings() const {
     PadReading keys;
     keys.id = -1;
     keys.keyboard = true;
-    if (game_input_enabled_) {
+    if (for_display) {
+        keys.held = keyboard_held_state();
+    } else if (game_input_enabled_) {
         keys.held = gated(keyboard_held_state());
     }
     readings.push_back(keys);

@@ -42,6 +42,7 @@
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "ui/connecting_screen.hpp"
+#include "ui/controllers_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/message_screen.hpp"
@@ -305,6 +306,8 @@ struct App::Impl {
     ChildProcess external_program;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
+    // Opened from Settings, and drawn over it -- see ControllersScreen.
+    ControllersScreen controllers_screen;
     std::unique_ptr<GameBrowser> browser;
     std::unique_ptr<LauncherScreen> launcher;
     std::unique_ptr<HostPickerScreen> host_picker;
@@ -528,7 +531,16 @@ struct App::Impl {
     bool gamepad_is_here() const;
     // Every controller on both devices, in order: this device's, then the
     // companion's. A companion too old to list its pads is one pad.
-    std::vector<KnownPad> gather_pads(bool companion_here) const;
+    // `for_display` reads this device's pads even while a menu has game
+    // input switched off, for the Controllers screen.
+    std::vector<KnownPad> gather_pads(bool companion_here, bool for_display = false) const;
+    // Whether a companion is joined, and whether this device then counts as
+    // holding the GamePad -- see route_wii_u_pads().
+    bool companion_joined() const { return host_session && host_session->has_companion(); }
+    bool holds_gamepad() const { return !companion_joined() || gamepad_is_here(); }
+    // Hands presses to the Controllers screen, and says what changed.
+    void update_controllers_screen(const std::vector<UiAction>& actions,
+                                   const std::vector<PointerEvent>& pointers);
     // Assigns the pads, hands each player's to the game, and returns the
     // GamePad's -- with the touch screen and the motion of whichever device is
     // showing the GamePad's screen.
@@ -947,10 +959,10 @@ bool App::Impl::gamepad_is_here() const {
     return here == ScreenId::Bottom;
 }
 
-std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
+std::vector<KnownPad> App::Impl::gather_pads(bool companion_here, bool for_display) const {
     std::vector<KnownPad> pads;
     int position = 0;
-    for (const PadReading& reading : input.pad_readings()) {
+    for (const PadReading& reading : input.pad_readings(for_display)) {
         KnownPad pad;
         pad.on_this_device = true;
         pad.id = static_cast<uint32_t>(reading.id);
@@ -991,7 +1003,7 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
     // Nothing connected counts as holding the GamePad even when this device
     // is being the television: most Wii U games cannot be started without
     // one, and the Controllers screen can move it anywhere else.
-    const bool gamepad_here = !companion_here || gamepad_is_here();
+    const bool gamepad_here = holds_gamepad();
     known_pads = gather_pads(companion_here);
     pad_slots = assign_pads(known_pads, pad_choices, gamepad_here);
 
@@ -1066,6 +1078,22 @@ void App::Impl::apply_pad_rumble() {
 void App::Impl::stop_pad_rumble() {
     for (bool& motor : slot_rumble) motor = false;
     apply_pad_rumble();
+}
+
+void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
+                                          const std::vector<PointerEvent>& pointers) {
+    const ControllersScreenResult result = controllers_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height),
+        gather_pads(companion_joined(), /*for_display=*/true), holds_gamepad(), pad_choices);
+    if (result.choices_changed) {
+        std::string said;
+        for (const auto& [key, slot] : pad_choices) {
+            if (!said.empty()) said += ", ";
+            said += key + " " + slot;
+        }
+        log_info("controllers chosen: " + (said.empty() ? std::string("none, back to the order")
+                                                        : said));
+    }
 }
 
 bool App::Impl::paired() const {
@@ -1501,12 +1529,17 @@ void App::Impl::open_settings() {
         picker->close();
     }
     settings_screen->open(settings, resolve_core_statuses(options, settings));
+    controllers_screen.close();
     state = State::Settings;
     input.set_game_input_enabled(false);
     log_info("the settings screen is up");
 }
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
+    if (result.open_controllers) {
+        controllers_screen.open();
+        log_info("the controllers screen is up");
+    }
     if (result.settings_changed) {
         settings = settings_screen->settings();
         if (!settings.save(paths)) {
@@ -2031,6 +2064,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     break;
                 case LauncherChoice::Settings:
                     settings_screen->open(settings, resolve_core_statuses(options, settings));
+                    controllers_screen.close();
                     state = State::Settings;
                     break;
                 case LauncherChoice::Quit:
@@ -2179,6 +2213,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
 
         case State::Settings: {
+            if (controllers_screen.is_open()) {
+                update_controllers_screen(actions, pointers);
+                break;
+            }
             apply_settings_result(
                 settings_screen->update(actions, pointers, static_cast<float>(output_width),
                                         static_cast<float>(output_height)));
@@ -2351,6 +2389,11 @@ void App::Impl::render() {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
+    } else if (state == State::Settings && controllers_screen.is_open()) {
+        controllers_screen.render(quads, text, button_glyphs, width, height,
+                                  gather_pads(companion_joined(), /*for_display=*/true),
+                                  holds_gamepad(), pad_choices,
+                                  system_profile(system).pad_belongs_to_its_screen);
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
@@ -2967,6 +3010,10 @@ int App::run(const AppOptions& options) {
                 }
                 if (!press.has_action) continue;
                 const UiAction action = ui_action_for(press.action);
+                if (for_settings && impl.controllers_screen.is_open()) {
+                    impl.update_controllers_screen({action}, {});
+                    continue;
+                }
                 if (for_settings) {
                     // Not a screen the other device draws, but still one it can
                     // work -- see MenuAction::Settings. The presses come over

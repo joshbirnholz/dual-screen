@@ -31,6 +31,9 @@ std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir);
 struct SettingsScreenResult {
     bool close_requested = false;
     bool settings_changed = false;
+    // The Controllers row was chosen; the shell opens that screen over this
+    // one, since only the shell can see the pads.
+    bool open_controllers = false;
 };
 
 // Shows where the app is looking for the core and the BIOS files, and lets the
@@ -85,6 +88,7 @@ private:
         VideoHold,
         Vsync,
         WiiUScreenAlone,
+        Controllers,
         Back,
         Count
     };

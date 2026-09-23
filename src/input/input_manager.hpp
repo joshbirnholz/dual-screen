@@ -217,11 +217,12 @@ public:
     // just do nothing.
     void set_rumble(bool active);
 
-    // Each connected pad on its own, in the order SDL lists them -- which
-    // under Steam Input is the order Steam lists them -- then the keyboard,
-    // on a device that has one. Nothing held while game input is switched
-    // off, the same as ds_state(): a menu is up.
-    std::vector<PadReading> pad_readings() const;
+    // Each connected pad on its own, in order of the pads' player numbers --
+    // which under Steam Input is Steam's slot order -- then the keyboard, on
+    // a device that has one. Nothing held while game input is switched off,
+    // the same as ds_state(): a menu is up. `for_display` reads them anyway,
+    // ungated, for a screen that shows which pad is being pressed.
+    std::vector<PadReading> pad_readings(bool for_display = false) const;
 
     // Rumbles one pad, or stops it: a player's motor, routed to whichever pad
     // is that player. Kept going until told to stop -- see set_rumble() for
