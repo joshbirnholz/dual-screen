@@ -325,9 +325,17 @@ struct App::Impl {
     bool solo_screen_swapped = false;
     bool said_solo_screen = false;
     // Works solo_screen out again from the setting, the display, and any flip.
-    // Every frame, since a Deck can be docked at any moment and asking SDL for
-    // a display's size costs nothing.
+    // Once a second from the loop -- a Deck can be docked at any moment, and a
+    // second is soon enough to notice -- and at once whenever the setting or
+    // F3 changes it.
+    //
+    // Not every frame. SDL may answer from what it already knows, but where
+    // it asks the display server instead, under Game Mode that server is
+    // gamescope, which Steam's own interface runs on too -- and sixty
+    // questions a second is not load worth putting there for an answer that
+    // changes when somebody docks the thing.
     void update_solo_screen();
+    uint64_t solo_screen_checked_at_ = 0;
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
     std::string external_socket_path;
@@ -2462,7 +2470,13 @@ int App::run(const AppOptions& options) {
         }
 
         impl.last_delta_seconds = elapsed;
-        impl.update_solo_screen();
+        {
+            const uint64_t ticks = SDL_GetTicks64();
+            if (impl.solo_screen_checked_at_ == 0 || ticks - impl.solo_screen_checked_at_ >= 1000) {
+                impl.solo_screen_checked_at_ = ticks;
+                impl.update_solo_screen();
+            }
+        }
         // Read from the setting every frame rather than pushed in when it
         // changes. An "apply this setting" step is a step that can be forgotten,
         // and forgetting it made every pointer mode behave as the default.
