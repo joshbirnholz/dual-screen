@@ -118,6 +118,23 @@ double lowest_display_scale(int panel_width);
 // for a step that removes a third of the pixels, and well above measurement
 // noise.
 bool shrinking_is_worth_it(double before_ms, double after_ms);
+
+// Whether a step actually made the picture enough smaller to learn anything
+// from.
+//
+// "Smaller at all" is not enough, and assuming it was cost an Apple TV a whole
+// game. The ladder asks for a fraction of the panel and the host sends what the
+// game draws, capped by the ask -- so on a 3840-wide panel a Wii U game drawing
+// 1280 sees the first four rungs (3072, 2457, 1958, 1574) change nothing, and
+// the fifth (1267) shrink it by one percent. A picture one percent narrower
+// cannot be expected to cost ten percent less, so judging that step said "size
+// does not matter" and froze the stream at 26ms a frame. On a 60fps game that
+// is a second and a half of work per second, which is exactly as playable as
+// it sounds.
+//
+// A tenth narrower is the bar. The ladder's own step is a fifth, so a real rung
+// clears it easily and rounding to even numbers does not.
+bool picture_shrank_enough_to_judge(int before_width, int after_width);
 // How long before a size that was too expensive is worth trying once more.
 // Long, because every attempt that fails costs two resolution changes and two
 // keyframes, and a quiet stretch is not evidence that a busy one will fit.

@@ -1291,6 +1291,13 @@ void CompanionSession::request_display_size(int width, int height) {
     send_display_size();
 }
 
+bool picture_shrank_enough_to_judge(int before_width, int after_width) {
+    if (before_width <= 0 || after_width <= 0) {
+        return false;
+    }
+    return static_cast<double>(after_width) <= static_cast<double>(before_width) * 0.9;
+}
+
 bool shrinking_is_worth_it(double before_ms, double after_ms) {
     if (!(before_ms > 0.0)) {
         return true;  // nothing to compare against yet: try it and find out
@@ -1410,8 +1417,7 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     // already below changes nothing, and comparing a picture with itself
     // proves nothing about size.
     const bool picture_actually_shrank =
-        adapt_width_before_step_ > 0 && adapt_last_width_ > 0 &&
-        adapt_last_width_ < adapt_width_before_step_;
+        picture_shrank_enough_to_judge(adapt_width_before_step_, adapt_last_width_);
     if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0 &&
         !picture_actually_shrank) {
         // The ask did not bite yet. Nothing to learn from it; keep going.

@@ -1661,6 +1661,42 @@ void test_a_step_that_bought_nothing_is_not_taken_twice() {
     CHECK(!shrinking_is_worth_it(10.0, 9.5));
 }
 
+// Only a step that really made the picture smaller can say whether size
+// matters.
+//
+// Nintendo Land draws 1280 wide. On a 3840 panel the rungs ask for 3072, 2457,
+// 1958 and 1574, all above it, so the host sent 1280 each time -- and then
+// 1267, one percent narrower. Judged as a real step, the cost barely moved
+// (27ms to 26ms), "size does not matter" was concluded, and a 60fps game was
+// left at 26ms a frame: a second and a half of work per second, unplayable.
+// Wind Waker's rungs were real (1920, 1568, 1248, 992) and reached 12ms.
+void test_a_sliver_narrower_is_not_a_step() {
+    using namespace ds::net;
+
+    // The step that froze Nintendo Land.
+    CHECK(!picture_shrank_enough_to_judge(1280, 1267));
+    // The step that would have come next, and would have told the truth.
+    CHECK(picture_shrank_enough_to_judge(1267, 998));
+
+    // Wind Waker's rungs, every one of them a real step.
+    CHECK(picture_shrank_enough_to_judge(1920, 1568));
+    CHECK(picture_shrank_enough_to_judge(1568, 1248));
+    CHECK(picture_shrank_enough_to_judge(1248, 992));
+
+    // A rung of the ladder's own size always clears the bar, so nothing that
+    // is genuinely a step is ever passed over.
+    for (const int width : {640, 1000, 1280, 1920, 3840}) {
+        const int stepped = static_cast<int>(width * kDisplayScaleStep) & ~1;
+        CHECK(picture_shrank_enough_to_judge(width, stepped));
+    }
+
+    // Nothing to compare is not a shrink, and neither is growing.
+    CHECK(!picture_shrank_enough_to_judge(0, 1280));
+    CHECK(!picture_shrank_enough_to_judge(1280, 0));
+    CHECK(!picture_shrank_enough_to_judge(1280, 1280));
+    CHECK(!picture_shrank_enough_to_judge(992, 1248));
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -2834,6 +2870,7 @@ int main() {
     test_a_device_does_not_count_its_own_loop_as_the_link_stalling();
     test_the_smallest_picture_is_a_size_rather_than_a_fraction();
     test_a_step_that_bought_nothing_is_not_taken_twice();
+    test_a_sliver_narrower_is_not_a_step();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();
