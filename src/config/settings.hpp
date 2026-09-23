@@ -13,19 +13,55 @@
 
 namespace ds {
 
-// Whether this machine is something held in two hands.
+// What a device playing a Wii U on its own is: the television, the GamePad,
+// or whichever its display says it is being used as.
 //
-// Not a guess from the display's size, which would call a small window on a
-// desk a handheld. A Switch and a phone are one by construction; a PC is
-// asked, through the one name it publishes that says what it physically is.
-// Anything unrecognised is not a handheld, because being wrong that way costs
-// a setting somebody changes once, and being wrong the other way means a
-// desktop quietly deciding it is a GamePad.
-bool device_is_handheld();
+// Auto is the default, and the reason is a Steam Deck: in the hand it is a
+// GamePad, and docked to a television it is the television. Its own panel is
+// 1280x800 and nothing it is docked to is, so the display's size is the one
+// thing that tells the two apart without being asked -- and it is asked again
+// whenever the display changes, so docking mid-game moves Cemu from one
+// screen to the other.
+enum class WiiUScreenAlone { Auto, Television, GamePad };
 
-// What Settings::wii_u_screen_alone starts at. A thing held in two hands is a
-// GamePad; a thing on a desk with a television attached is a television.
-ScreenId default_wii_u_screen_alone();
+inline WiiUScreenAlone next_wii_u_screen_alone(WiiUScreenAlone screen) {
+    switch (screen) {
+        case WiiUScreenAlone::Auto: return WiiUScreenAlone::Television;
+        case WiiUScreenAlone::Television: return WiiUScreenAlone::GamePad;
+        case WiiUScreenAlone::GamePad: break;
+    }
+    return WiiUScreenAlone::Auto;
+}
+
+inline const char* to_string(WiiUScreenAlone screen) {
+    switch (screen) {
+        case WiiUScreenAlone::Auto: return "Auto";
+        case WiiUScreenAlone::Television: return "Television";
+        case WiiUScreenAlone::GamePad: return "GamePad";
+    }
+    return "Auto";
+}
+
+// The display a Steam Deck has built in, which Auto reads as "held in two
+// hands". Either way up, since a panel mounted sideways is reported both ways
+// depending on who is asking.
+inline bool display_is_a_steam_decks_own(int width, int height) {
+    return (width == 1280 && height == 800) || (width == 800 && height == 1280);
+}
+
+// Which screen that means, on a display of this size. A size of zero -- no
+// display to ask yet -- is not a Deck's panel, so Auto starts as the
+// television until it knows better.
+inline ScreenId resolve_wii_u_screen_alone(WiiUScreenAlone screen, int display_width,
+                                           int display_height) {
+    switch (screen) {
+        case WiiUScreenAlone::Television: return ScreenId::Top;
+        case WiiUScreenAlone::GamePad: return ScreenId::Bottom;
+        case WiiUScreenAlone::Auto: break;
+    }
+    return display_is_a_steam_decks_own(display_width, display_height) ? ScreenId::Bottom
+                                                                        : ScreenId::Top;
+}
 
 // App-level defaults, stored in ~/.config/dualscreen/settings.json.
 struct Settings {
@@ -209,11 +245,8 @@ struct Settings {
     // is no question to answer: the companion says which screen it is holding
     // and this device is the other one.
     //
-    // What a fresh install starts at is default_wii_u_screen_alone(), applied
-    // by load() rather than here: this struct is also built by the companion
-    // client, which does not compile the settings file reader at all and has
-    // no use for the answer.
-    ScreenId wii_u_screen_alone = ScreenId::Top;
+    // Auto unless somebody chose otherwise -- see WiiUScreenAlone.
+    WiiUScreenAlone wii_u_screen_alone = WiiUScreenAlone::Auto;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

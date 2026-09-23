@@ -313,6 +313,15 @@ struct App::Impl {
     // whenever that setting changes; F3 flips it for the rest of a session
     // without writing anything down.
     ScreenId solo_screen = ScreenId::Top;
+    // Whether F3 has flipped it for this session. Kept apart from the setting
+    // rather than written over solo_screen, because on Auto that is worked
+    // out again whenever the display changes, and a flip has to survive it.
+    bool solo_screen_swapped = false;
+    bool said_solo_screen = false;
+    // Works solo_screen out again from the setting, the display, and any flip.
+    // Every frame, since a Deck can be docked at any moment and asking SDL for
+    // a display's size costs nothing.
+    void update_solo_screen();
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
     std::string external_socket_path;
@@ -832,6 +841,46 @@ SystemScreens App::Impl::screens_geometry() const {
     return system_profile(system).screens;
 }
 
+void App::Impl::update_solo_screen() {
+    int display_width = 0;
+    int display_height = 0;
+    if (window != nullptr) {
+        const int display = SDL_GetWindowDisplayIndex(window);
+        SDL_DisplayMode mode{};
+        if (display >= 0 && SDL_GetCurrentDisplayMode(display, &mode) == 0) {
+            display_width = mode.w;
+            display_height = mode.h;
+        }
+    }
+    ScreenId screen =
+        resolve_wii_u_screen_alone(settings.wii_u_screen_alone, display_width, display_height);
+    if (solo_screen_swapped) {
+        screen = (screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
+    }
+    // Said on every change and on the first answer, with the reason, since
+    // "why is my docked Deck showing the GamePad" has exactly one place to be
+    // answered from.
+    if (said_solo_screen && screen == solo_screen) {
+        return;
+    }
+    said_solo_screen = true;
+    solo_screen = screen;
+    std::string why;
+    if (solo_screen_swapped) {
+        why = "flipped for this session";
+    } else if (settings.wii_u_screen_alone == WiiUScreenAlone::Auto) {
+        why = "Auto, on a " + std::to_string(display_width) + "x" +
+              std::to_string(display_height) + " display, which " +
+              (display_is_a_steam_decks_own(display_width, display_height)
+                   ? "is a Steam Deck's own panel"
+                   : "is not a Steam Deck's own panel");
+    } else {
+        why = "as set";
+    }
+    log_info(std::string("alone, this device is a Wii U's ") +
+             (screen == ScreenId::Bottom ? "GamePad" : "television") + " (" + why + ")");
+}
+
 bool App::Impl::is_companion() const {
     return companion_session &&
            companion_session->status() == net::CompanionSession::Status::Connected;
@@ -1301,7 +1350,8 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         // Takes effect at once rather than at the next launch: this is the
         // kind of thing somebody changes to see what it does, and the poll
         // loop below picks the new value up on its next pass.
-        solo_screen = settings.wii_u_screen_alone;
+        solo_screen_swapped = false;
+        update_solo_screen();
         // Likewise immediate, and the one setting somebody is most likely to
         // change while watching the thing it changes.
         if (companion_session) {
@@ -1732,9 +1782,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 // being shown, one on each device.
                 if (system_profile(system).solo_screens == SoloScreens::One) {
                     if (!paired()) {
-                        solo_screen =
-                            (solo_screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
-                        log_info(std::string("showing the ") + to_string(solo_screen) + " screen");
+                        solo_screen_swapped = !solo_screen_swapped;
+                        update_solo_screen();
                     }
                 } else {
                     request_layout(active_layout().swap_layout_id);
@@ -2195,7 +2244,6 @@ int App::run(const AppOptions& options) {
     impl.button_glyphs.set_style(impl.settings.pad_glyphs);
     impl.input.set_confirm_button(impl.settings.confirm_button);
     set_confirm_button(impl.settings.confirm_button);
-    impl.solo_screen = impl.settings.wii_u_screen_alone;
     if (!options.system_dir.empty()) {
         impl.settings.system_dir = expand_user_path(options.system_dir);
     }
@@ -2408,6 +2456,7 @@ int App::run(const AppOptions& options) {
         }
 
         impl.last_delta_seconds = elapsed;
+        impl.update_solo_screen();
         // Read from the setting every frame rather than pushed in when it
         // changes. An "apply this setting" step is a step that can be forgotten,
         // and forgetting it made every pointer mode behave as the default.

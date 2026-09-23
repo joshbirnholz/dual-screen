@@ -179,10 +179,7 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         case Row::WiiUScreenAlone:
-            // Two values, so either direction is the other one.
-            settings_.wii_u_screen_alone = (settings_.wii_u_screen_alone == ScreenId::Top)
-                                               ? ScreenId::Bottom
-                                               : ScreenId::Top;
+            settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
             result.settings_changed = true;
             break;
         case Row::Back:
@@ -308,7 +305,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",
-         settings_.wii_u_screen_alone == ScreenId::Bottom ? "GamePad" : "Television"},
+         to_string(settings_.wii_u_screen_alone)},
         {"Back", ""},
     };
 

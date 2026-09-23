@@ -174,6 +174,17 @@ Three things are different about a Wii U session:
   than whatever it was last left on. **F3** swaps it for the rest of a session
   without writing anything down.
 
+  That setting is **Auto** by default. On a Steam Deck's own 1280x800 panel
+  the device is the GamePad; on any other display it is the television. So a
+  Deck in the hand is the GamePad and the same Deck on a dock is the
+  television. The display is checked again whenever it changes, so docking
+  mid-game moves Cemu to the other screen. **Television** and **GamePad** pin
+  it to one. The log says which it picked and why:
+
+  ```
+  alone, this device is a Wii U's television (Auto, on a 1920x1080 display, which is not a Steam Deck's own panel)
+  ```
+
   Motion in the GamePad role comes from whatever this device reads its own
   sensors through, which on a Steam Deck in Game Mode means
   [SteamDeckGyroDSU](https://github.com/kmicki/SteamDeckGyroDSU) — Steam Input
@@ -181,15 +192,17 @@ Three things are different about a Wii U session:
   **Motion** below. If nothing answers, the log says so:
   `motion: nothing has answered at 127.0.0.1:26760 …`.
 
-  A handheld starts as the **GamePad** and everything else as the **Television**,
-  which is what each is: a Steam Deck held in two hands is the thing a game
-  expects to be tilted, gyroscope and all, and playing that way needs no second
-  device at all. A desktop is the television, and the GamePad is then whatever
-  you have set up in Cemu — which is how to play the many games that never ask
-  for the pad with a controller already configured for them. A Steam Deck names
-  itself to the system as a Jupiter or a Galileo and is recognised by that; a
-  machine that is a handheld and is not recognised as one just needs the setting
-  changed once.
+  On a desktop, Auto means the television, and the GamePad is then whatever
+  you have set up in Cemu. That is how to play the many games that never ask
+  for the pad, with a controller already configured for them.
+
+- **The GamePad belongs to one device.** Whichever device is showing the
+  GamePad screen is the only one whose controls reach it. With a companion
+  joined as the GamePad, none of this device's controllers press its buttons.
+  They are left to the game's other players, which Cemu reads directly as Pro
+  Controllers or the like. A DS or a 3DS is different: two people share one
+  console there, so both devices' controls are merged.
+
 - **None of the controller shortcuts exist.** A Wii U game reads every control
   the console has, including both stick presses, so nothing is taken from the
   pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1** or **Tab**,
@@ -868,12 +881,14 @@ V1 does not script `shortcuts.vdf` for you.
   "stick_deadzone": 0.35,
   "trigger_deadzone": 0.3,
   "vsync": true,
-  "wii_u_screen_alone": "gamepad"
+  "wii_u_alone": "auto"
 }
 ```
 
-`wii_u_screen_alone` is `"gamepad"` or `"tv"`, and starts as whichever this
-machine physically is -- see **Wii U games** above. Paths are edited here
+`wii_u_alone` is `"auto"`, `"tv"` or `"gamepad"`, and starts as `"auto"`.
+See **Wii U games** above. It replaces `wii_u_screen_alone`, which is no
+longer read: every file that has it was written with the old version's guess
+from the machine's shape, whether or not anybody had chosen it. Paths are edited here
 rather than in the app: an on-screen keyboard is not something V1 builds. The Settings screen cycles between BIOS folders that
 actually exist and reports what it finds in them.
 

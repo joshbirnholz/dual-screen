@@ -365,12 +365,9 @@ void test_settings_round_trip() {
     defaults.screen_codec_ds = video::ScreenCodec::H264;
     defaults.screen_codec_3ds = video::ScreenCodec::H264;
     defaults.screen_codec_wii_u = video::ScreenCodec::Tiles;
-    // Set to the opposite of whatever this machine's shape suggests, so the
-    // round trip is checking storage rather than agreeing with the default by
-    // accident on whichever machine the test runs on.
-    defaults.wii_u_screen_alone =
-        (default_wii_u_screen_alone() == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
-    const ScreenId chosen_alone = defaults.wii_u_screen_alone;
+    // Away from Auto, the default, so the round trip is checking storage.
+    defaults.wii_u_screen_alone = WiiUScreenAlone::GamePad;
+    const WiiUScreenAlone chosen_alone = defaults.wii_u_screen_alone;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -462,32 +459,53 @@ void test_settings_round_trip() {
     CHECK(audio_reaches(AudioTarget::BottomScreen, ScreenId::Bottom));
 }
 
-// Which screen a lone device starts as follows what the machine physically
-// is, not a fixed answer. Checked as the rule rather than as this machine's
-// answer, since the test runs on whatever it runs on: the point is that a
-// thing held in two hands is a GamePad and everything else is a television.
-void test_a_lone_device_starts_as_what_it_physically_is() {
-    const ScreenId expected = device_is_handheld() ? ScreenId::Bottom : ScreenId::Top;
-    CHECK_MSG(default_wii_u_screen_alone() == expected,
-              "a device on its own did not start as the screen its shape says it is");
-    // And a settings file with nothing to say about it leaves that standing,
-    // rather than pinning every machine to the same answer.
+// Alone, a Wii U's device is the GamePad on a Steam Deck's own panel and the
+// television anywhere else, unless somebody chose -- so a Deck in the hand is
+// the GamePad and the same Deck on a dock is the television.
+void test_a_lone_device_is_the_gamepad_in_the_hand_and_the_television_on_a_dock() {
+    CHECK(Settings().wii_u_screen_alone == WiiUScreenAlone::Auto);
+
+    // In the hand, either way up.
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Auto, 1280, 800) == ScreenId::Bottom);
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Auto, 800, 1280) == ScreenId::Bottom);
+    // Docked, whatever it is docked to.
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Auto, 1920, 1080) == ScreenId::Top);
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Auto, 3840, 2160) == ScreenId::Top);
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Auto, 1280, 720) == ScreenId::Top);
+    // Nothing to ask yet is not a Deck.
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Auto, 0, 0) == ScreenId::Top);
+    // A choice is a choice, whatever the display.
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::GamePad, 1920, 1080) == ScreenId::Bottom);
+    CHECK(resolve_wii_u_screen_alone(WiiUScreenAlone::Television, 1280, 800) == ScreenId::Top);
+
+    // The row goes round all three.
+    CHECK(next_wii_u_screen_alone(WiiUScreenAlone::Auto) == WiiUScreenAlone::Television);
+    CHECK(next_wii_u_screen_alone(WiiUScreenAlone::Television) == WiiUScreenAlone::GamePad);
+    CHECK(next_wii_u_screen_alone(WiiUScreenAlone::GamePad) == WiiUScreenAlone::Auto);
+
     const std::string sandbox = make_sandbox();
     setenv("XDG_CONFIG_HOME", path_join(sandbox, "config").c_str(), 1);
     setenv("XDG_DATA_HOME", path_join(sandbox, "data").c_str(), 1);
     const AppPaths paths = AppPaths::resolve();
+    // A file with nothing to say about it, or something unreadable, is Auto.
     {
         std::ofstream file(paths.settings_file);
         file << "{}";
     }
-    CHECK(Settings::load(paths).wii_u_screen_alone == expected);
-    // As does one that says something unreadable, which is the same case as
-    // far as a person who has to live with the result is concerned.
+    CHECK(Settings::load(paths).wii_u_screen_alone == WiiUScreenAlone::Auto);
     {
         std::ofstream file(paths.settings_file);
-        file << "{\"wii_u_screen_alone\": \"sideways\"}";
+        file << "{\"wii_u_alone\": \"sideways\"}";
     }
-    CHECK(Settings::load(paths).wii_u_screen_alone == expected);
+    CHECK(Settings::load(paths).wii_u_screen_alone == WiiUScreenAlone::Auto);
+    // And one from before Auto existed is not read: what it holds was the old
+    // version's guess from the machine's shape, written down whether or not
+    // anybody chose it, and it would keep a Deck the GamePad on the dock.
+    {
+        std::ofstream file(paths.settings_file);
+        file << "{\"wii_u_screen_alone\": \"gamepad\"}";
+    }
+    CHECK(Settings::load(paths).wii_u_screen_alone == WiiUScreenAlone::Auto);
 }
 
 void test_command_line() {
@@ -536,7 +554,7 @@ int main() {
     test_game_config_preserves_unknown_keys();
     test_game_config_survives_a_corrupt_file();
     test_settings_round_trip();
-    test_a_lone_device_starts_as_what_it_physically_is();
+    test_a_lone_device_is_the_gamepad_in_the_hand_and_the_television_on_a_dock();
     test_command_line();
     return test::finish("config");
 }

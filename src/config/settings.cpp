@@ -32,23 +32,27 @@ T get_or(const json& object, const char* key, const T& fallback) {
 
 namespace {
 
-// The two spellings of Settings::wii_u_screen_alone in a settings file. Not
-// "top" and "bottom": those are this app's names for a console's two screens
-// in general, and for a Wii U they are a television across the room and a pad
-// in your hands. A person editing this file by hand should see the words that
+// The spellings of Settings::wii_u_screen_alone in a settings file. Not "top"
+// and "bottom": those are this app's names for a console's two screens in
+// general, and for a Wii U they are a television across the room and a pad in
+// your hands. A person editing this file by hand should see the words that
 // mean something about a Wii U.
-const char* screen_alone_key(ScreenId screen) {
-    return screen == ScreenId::Bottom ? "gamepad" : "tv";
+const char* screen_alone_key(WiiUScreenAlone screen) {
+    switch (screen) {
+        case WiiUScreenAlone::Auto: return "auto";
+        case WiiUScreenAlone::Television: return "tv";
+        case WiiUScreenAlone::GamePad: return "gamepad";
+    }
+    return "auto";
 }
 
-ScreenId screen_alone_from_key(const std::string& key) {
-    if (key == "gamepad") return ScreenId::Bottom;
-    if (key == "tv") return ScreenId::Top;
+WiiUScreenAlone screen_alone_from_key(const std::string& key) {
+    if (key == "gamepad") return WiiUScreenAlone::GamePad;
+    if (key == "tv") return WiiUScreenAlone::Television;
     // Anything else, including a file written by a version that never had
-    // this, falls back to what this machine's shape suggests rather than to a
-    // fixed answer -- a handheld that once wrote something unreadable is
-    // still a handheld.
-    return default_wii_u_screen_alone();
+    // this, is Auto: the one answer that is right for a Deck in the hand and
+    // a Deck on a dock alike.
+    return WiiUScreenAlone::Auto;
 }
 
 std::string default_device_name() {
@@ -65,9 +69,6 @@ Settings Settings::load(const AppPaths& paths) {
     Settings settings;
     settings.system_dir = paths.default_system_dir;
     settings.device_name = default_device_name();
-    // Before the file is read, so a file that says nothing about it -- an old
-    // one, or a fresh install -- leaves this machine's own shape standing.
-    settings.wii_u_screen_alone = default_wii_u_screen_alone();
 
     std::ifstream file(paths.settings_file);
     if (!file.is_open()) {
@@ -138,8 +139,14 @@ Settings Settings::load(const AppPaths& paths) {
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
     settings.handedness = handedness_from_key(
         get_or<std::string>(document, "handedness", handedness_key(settings.handedness)));
+    // Under a new name, and the old one is not read. Every file the old name
+    // is in was written by a version that stored what it had guessed from
+    // the machine's shape whether or not anybody chose it, so what is there
+    // is almost always a guess rather than a choice -- and carrying it over
+    // would keep a Deck pinned to GamePad on the dock, the one case Auto
+    // exists for.
     settings.wii_u_screen_alone = screen_alone_from_key(get_or<std::string>(
-        document, "wii_u_screen_alone", screen_alone_key(settings.wii_u_screen_alone)));
+        document, "wii_u_alone", screen_alone_key(settings.wii_u_screen_alone)));
     settings.cursor_mode = cursor_mode_from_key(
         get_or<std::string>(document, "cursor_mode", cursor_mode_key(settings.cursor_mode)));
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
@@ -177,7 +184,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["pad_glyphs"] = to_string(pad_glyphs);
     document["confirm_button"] = to_string(confirm_button);
     document["video_hold"] = video::video_hold_key(video_hold);
-    document["wii_u_screen_alone"] = screen_alone_key(wii_u_screen_alone);
+    document["wii_u_alone"] = screen_alone_key(wii_u_screen_alone);
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
     document["handedness"] = handedness_key(handedness);
@@ -203,50 +210,6 @@ bool Settings::save(const AppPaths& paths) const {
         return false;
     }
     return true;
-}
-
-bool device_is_handheld() {
-#if defined(__SWITCH__) || defined(__ANDROID__)
-    // Nothing to ask. These only exist as things held in two hands.
-    return true;
-#elif defined(__linux__)
-    // What the firmware says the machine is, which is the only thing on a PC
-    // that describes the object rather than its software. A Steam Deck names
-    // itself here -- "Jupiter" is the LCD, "Galileo" the OLED -- and so do
-    // the Windows handhelds a Linux build might find itself on. Read once:
-    // this cannot change while the program runs.
-    static const bool handheld = [] {
-        std::ifstream product("/sys/devices/virtual/dmi/id/product_name");
-        std::string name;
-        if (!product || !std::getline(product, name)) {
-            return false;
-        }
-        while (!name.empty() && (name.back() == '\n' || name.back() == '\r' || name.back() == ' ')) {
-            name.pop_back();
-        }
-        // Matched whole rather than by substring: these are the entire value
-        // of that field on the machines in question, and a substring match on
-        // a word this short would catch a desktop that happens to be called
-        // something similar.
-        for (const char* known : {"Jupiter", "Galileo", "ROG Ally", "ROG Ally X",
-                                  "AIR", "AIR Plus", "ONEXPLAYER", "Win600"}) {
-            if (name == known) {
-                log_info("this machine reports itself as a " + name + ", so it is a handheld");
-                return true;
-            }
-        }
-        return false;
-    }();
-    return handheld;
-#else
-    return false;
-#endif
-}
-
-ScreenId default_wii_u_screen_alone() {
-    // A thing in two hands is the thing a Wii U game expects to be held: the
-    // GamePad, gyroscope and all. A desktop is the other one.
-    return device_is_handheld() ? ScreenId::Bottom : ScreenId::Top;
 }
 
 std::vector<std::string> core_search_paths(SystemId system) {
