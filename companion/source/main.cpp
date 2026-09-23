@@ -1051,9 +1051,22 @@ void Client::run() {
                            ? 0.0
                            : static_cast<double>(now - cursor_updated_ms_) / 1000.0);
         cursor_updated_ms_ = now;
-        if (cursor_.visible() != cursor_shown_) {
-            cursor_shown_ = cursor_.visible();
-            SDL_ShowCursor(cursor_shown_ ? SDL_ENABLE : SDL_DISABLE);
+        // Asked of SDL each frame rather than remembered here: anything else
+        // that hides the pointer -- the window being made, the system taking
+        // the app into or out of full screen -- would otherwise leave it
+        // hidden while this still thought it was showing.
+        const bool want_shown = cursor_.visible();
+        const bool is_shown = SDL_ShowCursor(SDL_QUERY) == SDL_ENABLE;
+        if (want_shown != is_shown) {
+            SDL_ShowCursor(want_shown ? SDL_ENABLE : SDL_DISABLE);
+        }
+        if (want_shown != cursor_shown_) {
+            cursor_shown_ = want_shown;
+            log_info(std::string("pointer: ") + (want_shown ? "shown" : "hidden") + " (" +
+                      (cursor_.mode() == CursorMode::Shown
+                           ? (want_shown ? "the mouse moved" : "the mouse has been still")
+                           : "the Pointer setting is off") +
+                      ")");
         }
         refresh_output_size();
         follow_panel_size();
