@@ -89,7 +89,7 @@ CPPFILES    := main.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp \
-               log.cpp \
+               build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
 
 INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY)
@@ -228,13 +228,40 @@ export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 export APP_ICON := $(CURDIR)/$(ICON)
 export NROFLAGS := --icon=$(APP_ICON) --nacp=$(OUTPUT).nacp
 
+# Which build this is, in the first lines of the log, in the same shape
+# cmake/build_stamp.cmake gives every other build, so a Switch log and
+# a Deck log can be checked against each other for whether both ends were
+# rebuilt. Taken here, once, rather than in the sub-make, which re-reads this
+# file from $(BUILD).
+DS_GIT_HASH := $(shell git -C $(CURDIR)/.. rev-parse --short HEAD 2>/dev/null)
+ifeq ($(strip $(DS_GIT_HASH)),)
+DS_GIT_HASH := no git here
+else ifneq ($(strip $(shell git -C $(CURDIR)/.. status --porcelain --untracked-files=no 2>/dev/null)),)
+DS_GIT_HASH := $(DS_GIT_HASH) with local changes
+endif
+DS_BUILD_STAMP := $(DS_GIT_HASH), built $(shell date -u '+%Y-%m-%d %H:%M') UTC
+
 .PHONY: all clean
 
-all: $(BUILD) assets
+all: $(BUILD) assets stamp
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):
 	@mkdir -p $@
+
+# Through a header rather than a -D on the command line: devkitPro's compile
+# rule re-quotes its flags for compile_commands.json, and a string with spaces
+# in it does not survive that. Replaced only when the words change, so a build
+# that changed nothing does not relink for the sake of the stamp.
+.PHONY: stamp
+stamp: | $(BUILD)
+	@printf '#define DS_BUILD_STAMP "%s"\n' '$(DS_BUILD_STAMP)' > $(BUILD)/ds_build_stamp.h.new
+	@if cmp -s $(BUILD)/ds_build_stamp.h.new $(BUILD)/ds_build_stamp.h; then \
+	    rm -f $(BUILD)/ds_build_stamp.h.new; \
+	else \
+	    mv $(BUILD)/ds_build_stamp.h.new $(BUILD)/ds_build_stamp.h; \
+	    echo 'build stamp: $(DS_BUILD_STAMP)'; \
+	fi
 
 .PHONY: assets
 assets: $(addprefix $(GENERATED)/,$(EMBEDDED_SOURCES))
@@ -272,6 +299,10 @@ all: $(OUTPUT).nro
 
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
 $(OUTPUT).elf: $(OFILES)
+
+# The one file that reads the stamp, and the only one it is given to.
+build_stamp.o: $(DEPSDIR)/ds_build_stamp.h
+build_stamp.o: CXXFLAGS += -include $(DEPSDIR)/ds_build_stamp.h
 
 -include $(DEPENDS)
 

@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
-#include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -597,6 +596,15 @@ void mark_as_interactive_media(int descriptor) {
     if (descriptor < 0) {
         return;
     }
+// IP_TOS comes from <netinet/in.h>, not <netinet/ip.h>. The latter holds the
+// IPTOS_* names for the byte's values, which this does not use -- and libnx
+// does not ship it, so including it stopped the Switch build outright.
+//
+// Where it has always been there, its absence is a mistake and not a platform
+// fact, and the #if below would otherwise turn the marking off without a word.
+#if !defined(IP_TOS) && (defined(__linux__) || defined(__APPLE__))
+#error "IP_TOS should come from <netinet/in.h> here; wifi would treat the stream as a file copy"
+#endif
 #if defined(IP_TOS)
     // DSCP 46 (Expedited Forwarding) in the upper six bits: 46 << 2 == 0xb8.
     // The same value Moonlight uses.

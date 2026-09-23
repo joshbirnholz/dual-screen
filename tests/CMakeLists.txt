@@ -100,6 +100,26 @@ add_test(NAME switch_motion_typecheck
         -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
         "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS}"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
+# The Switch's networking, against the headers a Switch has. transport.cpp is
+# compiled for every client and grew an include libnx does not ship, which the
+# check above could never have seen: it compiles against this machine's own
+# headers, and this machine has them all. tests/switch_stub now also holds
+# stand-ins for the headers a Switch lacks, which fail when included.
+add_test(NAME switch_network_typecheck
+    COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=${CMAKE_CXX_COMPILER}
+        -DSOURCES=${CMAKE_SOURCE_DIR}/src/net/transport.cpp
+        -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/switch_stub
+        -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
+        "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS}"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
+# And whether switch/Makefile still lists everything the companion is built
+# from. See the script for the two times it did not.
+add_test(NAME switch_makefile_sources
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCES_CMAKE=${CMAKE_SOURCE_DIR}/cmake/companion_sources.cmake
+        -DSWITCH_MAKEFILE=${CMAKE_SOURCE_DIR}/switch/Makefile
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_sources_test.cmake)
 # And the configuration iOS and tvOS actually ship: no FFmpeg, VideoToolbox
 # doing the decoding. Linux always finds FFmpeg, so that half of the fork is
 # dead code to every build here and would rot unwatched.
