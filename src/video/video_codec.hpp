@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -168,11 +169,38 @@ struct DecodedFrame {
     // cannot say whether the answer is to stop copying or to stop waiting.
     int lock_micros = 0;
 
+    // The decoder's own picture, left where it is, instead of `plane`: an
+    // Nv12 frame whose bytes were never copied anywhere. On an iPhone or an
+    // Apple TV this is a retained CVPixelBufferRef, which the renderer turns
+    // into two textures without touching a byte -- see
+    // Texture::adopt_native_nv12(). Released when the last holder lets go.
+    //
+    // Why it exists: an Apple TV read those bytes back at about 110MB/s, which
+    // is 27ms for one 1080p frame and half of everything it spent per
+    // picture. Memory a hardware decoder writes is not memory a CPU reads
+    // quickly, and the only fast way to read it is not to.
+    //
+    // Anything that does want bytes gets them from copy_native_planes().
+    std::shared_ptr<void> native;
+
     bool valid() const {
         if (width <= 0 || height <= 0) return false;
-        return layout == DecodedLayout::Xrgb8888 ? !pixels.empty() : !plane[0].empty();
+        if (layout == DecodedLayout::Xrgb8888) return !pixels.empty();
+        return !plane[0].empty() || native != nullptr;
     }
 };
+
+// Whether a decoder may hand frames back as DecodedFrame::native. True where
+// the renderer can draw them (iOS and tvOS) until it says otherwise: a
+// renderer that fails to make textures from them turns this off, and every
+// frame after that is copied out the old way instead. False everywhere else.
+bool native_frames_usable();
+void set_native_frames_usable(bool usable);
+
+// The planes of a native frame, copied into `out` the old way -- for anything
+// that wants bytes rather than a texture. False, with `out` untouched, for a
+// frame that has no native picture or on a build that has none at all.
+bool copy_native_planes(const std::shared_ptr<void>& native, DecodedFrame& out);
 
 // The byte order of the pixels VideoEncoder::encode() is handed. Most screens
 // come from a libretro core's software framebuffer, XRGB8888 -- BGRA in

@@ -453,28 +453,36 @@ a cross-built one:
 
 There is nothing it will add to decoding.
 
-##### The copy that is still there
+##### The copy, and where it has gone
 
-The win this does **not** yet take: VideoToolbox hands back a `CVPixelBuffer`
-the GPU can already see, and the decoder then copies its two planes into system
-memory so the renderer can upload them as textures. Handing that buffer
-straight to a texture instead is zero copies, and it is the real performance
-change.
+VideoToolbox hands back a `CVPixelBuffer` the GPU can already see. On iOS and
+tvOS that buffer is now drawn from where it is. `CVOpenGLESTextureCacheCreateTextureFromImage`
+maps each of its two planes into an ordinary `GL_TEXTURE_2D`, which fits
+straight into the NV12 two-texture path the renderer already had. Nothing is
+copied and nothing is uploaded. See `DecodedFrame::native` and
+`Texture::adopt_native_nv12()`.
 
-It is a separate piece of work because the two platforms need different things:
+The copy was the larger half of the cost. An Apple TV read the decoder's
+memory back at about 110MB/s: 27ms for one 1080p frame, and 7ms at 998x560.
+Memory a hardware decoder writes is not memory a CPU reads quickly.
 
-- **iOS and tvOS** are clean. `CVOpenGLESTextureCacheCreateTextureFromImage`
-  gives an ordinary `GL_TEXTURE_2D` per plane, which drops straight into the
-  NV12 two-texture path the renderer already has.
-- **macOS** is not. IOSurface-backed GL textures there are
-  `GL_TEXTURE_RECTANGLE`, which needs a `sampler2DRect` variant of the shader
-  and unnormalised coordinates. That is real work in the core renderer, on the
-  one Apple platform that currently works.
+The log says which path is in use, once per session:
 
-The buffers are already allocated GL-compatible (`kCVPixelBufferOpenGLESCompatibilityKey`
-and the IOSurface properties are set in `videotoolbox_decoder.cpp`), because a
-buffer allocated without that cannot be used this way later and the flag costs
-nothing now.
+```
+video decoder: handing pictures to the GPU where they are, with no copy
+```
+
+If the texture cache refuses, the log says so. After three refusals in a row,
+the decoder goes back to copying for the rest of the run, so a device that
+cannot map pictures still shows them.
+
+**macOS still copies.** IOSurface-backed GL textures there are
+`GL_TEXTURE_RECTANGLE`, which needs a `sampler2DRect` variant of the shader
+and unnormalised coordinates. A Mac also reads memory back far faster than an
+Apple TV does.
+
+The Apple-only code is compiled on Linux too, against the declarations in
+`tests/apple_stub`. See `apple_typecheck` in `tests/CMakeLists.txt`.
 
 ### Rebuilding
 

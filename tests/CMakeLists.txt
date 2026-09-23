@@ -151,6 +151,17 @@ if(DUALSCREEN_GLES2_INCLUDE)
             -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
             "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_gles_typecheck.cmake)
+    # And the Apple halves, which nothing but Xcode compiled before. The ES
+    # headers are needed here too: the texture cache is an OpenGL ES API.
+    add_test(NAME apple_typecheck
+        COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=${CMAKE_CXX_COMPILER}
+            "-DSOURCES=${CMAKE_SOURCE_DIR}/src/video/videotoolbox_decoder.cpp;${CMAKE_SOURCE_DIR}/src/render/texture.cpp"
+            -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/apple_stub
+            -DGLES_STUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/gles_stub
+            -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
+            "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_apple_typecheck.cmake)
 else()
     message(STATUS "no GLES2 headers here, so the device-GL typecheck is not registered")
 endif()

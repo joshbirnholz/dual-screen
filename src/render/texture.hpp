@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
 #include "render/gl_loader.hpp"
 
@@ -94,6 +95,23 @@ public:
     void upload_yuv420p(const uint8_t* luma, int luma_stride, const uint8_t* u, int u_stride,
                         const uint8_t* v, int v_stride, int width, int height);
 
+    // A decoded picture the GPU already holds -- DecodedFrame::native, a
+    // CVPixelBuffer on an iPhone or an Apple TV -- drawn from where it is, as
+    // the same two planes upload_nv12() would have made. Nothing is copied
+    // and nothing is uploaded; the texture keeps the picture alive until it
+    // is handed another one.
+    //
+    // False, with the texture as it was, where this cannot be done: every
+    // other platform, and a device whose texture cache refused. The caller
+    // then copies the planes out and uploads them the ordinary way.
+    bool adopt_native_nv12(const std::shared_ptr<void>& picture, int width, int height);
+
+    // Whether this texture's chroma carries V in .a (GL_LUMINANCE_ALPHA) or
+    // .g (GL_RG). Per texture rather than per context, because a texture the
+    // decoder's memory was mapped into may not have been given the format an
+    // upload would have chosen -- see adopt_native_nv12().
+    bool chroma_v_in_alpha() const { return chroma_v_in_alpha_; }
+
     // The chroma planes of a planar screen, for the renderer to bind
     // alongside this one. Zero on a texture that is not planar.
     GLuint chroma_id() const { return chroma_[0]; }
@@ -126,6 +144,9 @@ private:
                       GLenum format, const uint8_t* source, int source_stride, int width,
                       int height);
     void destroy_chroma();
+    // Lets go of an adopted picture and the texture names that came with it,
+    // which belong to the texture cache and are never deleted here.
+    void release_native();
 
     GLuint id_ = 0;
     int width_ = 0;
@@ -144,6 +165,11 @@ private:
     int chroma_width_[2] = {0, 0};
     int chroma_height_[2] = {0, 0};
     GLenum chroma_format_[2] = {0, 0};
+    bool chroma_v_in_alpha_ = true;
+    // Set while id_ and chroma_[0] are an adopted picture's rather than this
+    // texture's own. Holds the picture and the cache's two textures, and
+    // releases all three when it goes.
+    std::shared_ptr<void> native_;
 };
 
 }  // namespace ds

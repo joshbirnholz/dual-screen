@@ -135,6 +135,30 @@ bool shrinking_is_worth_it(double before_ms, double after_ms);
 // A tenth narrower is the bar. The ladder's own step is a fifth, so a real rung
 // clears it easily and rounding to even numbers does not.
 bool picture_shrank_enough_to_judge(int before_width, int after_width);
+
+// What fraction of a `box_width` x `box_height` display a picture that
+// arrived at `width` x `height` actually fills: the larger of the two ratios,
+// since the host fits the picture inside the box without stretching it, so the
+// side that binds is the one that tells. Zero when any of the four is not a
+// size.
+//
+// Where the ladder steps from. It used to step from what it had asked for, and
+// the host never sends more than the game draws -- so on an Apple TV's
+// 3840-wide panel, a Wii U game drawing 1920 took three rungs (3072, 2457,
+// 1966) to reach a single pixel of difference, each of them a second of
+// frames at 58ms apiece. Stepping from what arrives makes the first rung the
+// first one that does anything.
+double scale_the_picture_arrived_at(int width, int height, int box_width, int box_height);
+
+// Whether a picture changed size enough, either way, to be the one a step
+// asked for rather than rounding. The same tenth as
+// picture_shrank_enough_to_judge(), in both directions.
+bool picture_size_changed_enough(int before_width, int after_width);
+
+// How long a step waits for pictures of its new size before it is judged
+// anyway. Long enough for the host to rebuild its encoder and send a
+// keyframe; a step that has not landed by then is one the host did not take.
+inline constexpr uint64_t kAwaitNewSizeMs = 3000;
 // How long before a size that was too expensive is worth trying once more.
 // Long, because every attempt that fails costs two resolution changes and two
 // keyframes, and a quiet stretch is not evidence that a busy one will fit.
@@ -212,6 +236,9 @@ public:
     void add(double transit_ms);
     double estimate() const { return estimate_; }
     VideoTransitShape shape() const;
+    // How much longer than the quietest transit in the window `transit_ms`
+    // is. Negative when the window is empty and there is nothing to compare.
+    double above_quietest(double transit_ms) const;
 
 private:
     // How much of the spread the buffer is sized to absorb.
@@ -348,6 +375,28 @@ uint64_t video_hold_extra_ceiling_ms(video::VideoHold hold, uint64_t period_ms);
 // A quickest gap of zero means nothing has been measured yet, which is not a
 // reason to stop counting.
 bool lateness_is_worth_covering(uint64_t period_ms, uint64_t quickest_poll_gap_ms);
+
+// Whether a picture shown late was held up on its way here, rather than sent
+// late in the first place -- and so whether holding more back would have
+// covered it.
+//
+// `link_delay_ms` is how much longer than the quietest transit in the window
+// this picture took to arrive (negative when unknown, which is taken as the
+// link's: that is what this counted before it could tell). Half a period is
+// the bar: the lateness that counts is half a period past due, and a picture
+// the link delayed by less than that was mostly late for some other reason.
+//
+// Buffering covers a link. It does nothing for a game that drew a frame
+// slowly, and cannot: the picture is shown the moment it exists either way,
+// and the only thing cover adds is the same delay to every picture after it.
+// Wind Waker on a Steam Deck ran the cover to its ceiling -- 66ms on top of
+// the rest -- for eight seconds at a stretch, twice a minute, and a player
+// felt every one of them in the controls.
+bool lateness_was_the_links(double link_delay_ms, uint64_t period_ms);
+
+// The tail of the once-a-second latency line: how many pictures were shown
+// late, and which end each was late at. Empty when none were.
+std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_late);
 
 // How far to advance the pacing clock after showing `shown` frames.
 //
@@ -683,6 +732,11 @@ private:
     // picture that comes out -- see kMaxConsecutiveDecodeFailures.
     unsigned decode_failures_top_ = 0;
     unsigned decode_failures_bottom_ = 0;
+    // Pictures in a row the renderer could not draw from the decoder's own
+    // memory -- see screens(). At kNativeTextureFailuresToGiveUp the decoder
+    // is told to copy them out instead, for the rest of the run.
+    unsigned native_texture_failures_ = 0;
+    static constexpr unsigned kNativeTextureFailuresToGiveUp = 3;
     void send_request(RequestMessage request);
     void fail(const std::string& reason);
     // One attempt at reaching joining_. Leaves the session Connecting either
@@ -792,6 +846,12 @@ private:
     // the only running-dry a player can see -- see where this is counted for
     // why "the queue was empty" is not the same thing at all.
     unsigned stats_starved_ = 0;
+    // Pictures shown just as late, that got here as promptly as any: the host
+    // sent them late. The game drew slowly, or the host did. No cover this end
+    // could hold would have shown them sooner -- a picture cannot be buffered
+    // before it exists -- so these buy none. Counted so the log can say which
+    // end the stalls are at.
+    unsigned stats_late_from_host_ = 0;
     unsigned calm_seconds_ = 0;
     uint64_t last_poll_ms_ = 0;
     // The quickest pass this device has managed lately, which is this loop
@@ -839,7 +899,19 @@ private:
     // than reasoned about. That wait is the one part of the end-to-end delay
     // this end chooses rather than inherits, which makes it the first thing
     // worth knowing the real size of -- see report_stream().
-    std::deque<std::pair<uint64_t, uint64_t>> complete_at_;
+    //
+    // With how far behind the quietest transit in the window each one got
+    // here, which is how much of its lateness the link is to blame for --
+    // see lateness_was_the_links(). Negative when there was nothing to
+    // measure it against.
+    struct Arrival {
+        uint64_t serial = 0;
+        uint64_t at_ms = 0;
+        double link_delay_ms = -1.0;
+    };
+    std::deque<Arrival> complete_at_;
+    // The same, for the picture decode_next_frame() most recently showed.
+    double shown_link_delay_ms_ = -1.0;
     uint64_t stats_wait_total_ms_ = 0;
     uint64_t stats_wait_worst_ms_ = 0;
     unsigned stats_waits_ = 0;
@@ -906,6 +978,25 @@ private:
     // The width of the last picture decoded in this window, which is what the
     // request above has to be judged against.
     int adapt_last_width_ = 0;
+    int adapt_last_height_ = 0;
+    // The largest share of the display any picture in this window filled --
+    // see scale_the_picture_arrived_at(). The rung the next step goes from.
+    double adapt_arrived_scale_ = 0.0;
+    // The width a step was asked from, while its pictures have not arrived
+    // yet, and when it was asked. Nothing is judged in between.
+    //
+    // A window that straddles a step judges a mixture: some pictures at the
+    // old size, some at the new, a cost per picture that belongs to neither,
+    // and a verdict on the new size made mostly from the old one. That walked
+    // an Apple TV two rungs below where it could keep up -- 29ms a picture at
+    // 998 wide was three at 1574 and the rest at 998, which by then cost 13
+    // -- and it only found its way back up half a minute later. So the
+    // window starts again once the first picture of the new size is in,
+    // after that picture, which also carries the cost of a new decoder and a
+    // keyframe that no later picture pays.
+    int adapt_awaiting_from_width_ = 0;
+    uint64_t adapt_awaiting_since_ms_ = 0;
+    bool adapt_restart_window_ = false;
     bool adapt_size_decides_cost_ = true;
     bool said_size_does_not_decide_ = false;
     uint64_t adapt_at_ms_ = 0;
@@ -966,6 +1057,9 @@ private:
         // The planes of a planar frame, each with its own row length in bytes.
         std::vector<uint8_t> plane[3];
         int plane_stride[3] = {0, 0, 0};
+        // Or, instead of `plane`, the decoder's own picture, left where it is
+        // -- see DecodedFrame::native. What an iPhone or an Apple TV gets.
+        std::shared_ptr<void> native;
         // The frame as it travels and as tiles are patched onto it. Canonical:
         // a tiled payload is a difference from this, so it has to survive from
         // one frame to the next.
@@ -988,7 +1082,8 @@ private:
         // it arrived in.
         bool has_frame() const {
             if (!video) return !rgb565.empty();
-            return layout == video::DecodedLayout::Xrgb8888 ? !pixels.empty() : !plane[0].empty();
+            if (layout == video::DecodedLayout::Xrgb8888) return !pixels.empty();
+            return !plane[0].empty() || native != nullptr;
         }
     };
     ScreenBuffer top_;

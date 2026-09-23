@@ -1697,6 +1697,107 @@ void test_a_sliver_narrower_is_not_a_step() {
     CHECK(!picture_shrank_enough_to_judge(992, 1248));
 }
 
+// The ladder steps from the size that is arriving, not the size it asked for.
+//
+// An Apple TV's panel is 3840 wide and Wind Waker draws 1920. Stepping from
+// the ask, the first three rungs (3072, 2457, 1966) were all above what the
+// game draws, so the host sent 1920 through all three -- three seconds of
+// pictures at 58ms apiece before the first rung that did anything.
+void test_the_ladder_steps_from_what_arrives() {
+    using namespace ds::net;
+
+    // Wind Waker on the 4K panel: half of it, whatever was asked for.
+    CHECK(scale_the_picture_arrived_at(1920, 1080, 3840, 2160) == 0.5);
+    // So the first step is one the host has to take.
+    const int first_rung = static_cast<int>(3840 * 0.5 * kDisplayScaleStep) & ~1;
+    CHECK_MSG(first_rung < 1920, "the first step from what arrives is still above what arrives");
+    // Where stepping from the ask started, for contrast.
+    CHECK(static_cast<int>(3840 * 1.0 * kDisplayScaleStep) > 1920);
+
+    // Nintendo Land draws 1280: a third of the panel.
+    CHECK(std::abs(scale_the_picture_arrived_at(1280, 720, 3840, 2160) - 1.0 / 3.0) < 1e-9);
+
+    // A 4:3 picture fitted to a 16:9 box fills it top to bottom, and that is
+    // the side that says how much of the box it is using. Taking the width
+    // would read a picture already at full size as a quarter short of it,
+    // and step a whole extra rung down for nothing.
+    CHECK(scale_the_picture_arrived_at(2880, 2160, 3840, 2160) == 1.0);
+
+    // A picture the box is binding is at the ask, less the host's rounding
+    // to 16 -- which the ladder must not mistake for a smaller picture.
+    CHECK(scale_the_picture_arrived_at(992, 558, 998, 560) > 0.99);
+
+    // Nothing to go on is not a size.
+    CHECK(scale_the_picture_arrived_at(0, 1080, 3840, 2160) == 0.0);
+    CHECK(scale_the_picture_arrived_at(1920, 1080, 0, 2160) == 0.0);
+}
+
+// A step is judged on its own pictures, and only once they are arriving.
+//
+// The window after a step used to hold a mixture: a few pictures still at the
+// old size, then the new ones. 29ms a picture at 998 wide was really three at
+// 1574 and the rest at 13ms, and the ladder stepped down again on the strength
+// of it -- to a size well below the one that worked.
+void test_a_step_is_judged_on_the_size_it_asked_for() {
+    using namespace ds::net;
+
+    // Down and up are both the size a step asked for.
+    CHECK(picture_size_changed_enough(1920, 1536));
+    CHECK(picture_size_changed_enough(992, 1248));
+    // Rounding is neither.
+    CHECK(!picture_size_changed_enough(998, 992));
+    CHECK(!picture_size_changed_enough(992, 998));
+    CHECK(!picture_size_changed_enough(1280, 1280));
+    // And nothing to compare is not a change.
+    CHECK(!picture_size_changed_enough(0, 1280));
+
+    // Long enough for a host to rebuild its encoder and send a keyframe, and
+    // short enough that a step the host never took is not waited on for ever.
+    CHECK(kAwaitNewSizeMs >= 1000);
+    CHECK(kAwaitNewSizeMs <= 5000);
+}
+
+// Cover is bought for the link, not for the game.
+//
+// A picture the game drew late arrives as promptly as any other, just later,
+// and no buffer on this end could have shown it any sooner: it did not exist.
+// Buying cover for it only adds the same delay to every picture after it --
+// which is what Wind Waker did, running the cover to its ceiling for eight
+// seconds at a stretch.
+void test_a_picture_the_host_sent_late_buys_no_cover() {
+    using namespace ds::net;
+
+    const uint64_t period = 33;
+    // Held up on the way: the link's, and worth covering.
+    CHECK(lateness_was_the_links(40.0, period));
+    CHECK(lateness_was_the_links(17.0, period));
+    // Got here as quickly as ever: late because it was sent late.
+    CHECK(!lateness_was_the_links(0.0, period));
+    CHECK(!lateness_was_the_links(5.0, period));
+    CHECK(!lateness_was_the_links(15.0, period));
+    // Nothing to measure it by: counted as it always was.
+    CHECK(lateness_was_the_links(-1.0, period));
+
+    // How far behind the quietest arrival a transit is, which is where that
+    // number comes from. The offset between the two clocks is in every
+    // transit and cancels.
+    VideoJitter jitter;
+    CHECK(jitter.above_quietest(500.0) < 0.0);
+    for (const double transit : {1000.0, 1004.0, 1002.0, 1010.0}) {
+        jitter.add(transit);
+    }
+    CHECK(jitter.above_quietest(1000.0) == 0.0);
+    CHECK(jitter.above_quietest(1040.0) == 40.0);
+    // Quicker than any in the window is not negative -- negative is "unknown".
+    CHECK(jitter.above_quietest(990.0) == 0.0);
+
+    // And the log says which end the late pictures were at, or nothing.
+    CHECK(late_pictures_summary(0, 0).empty());
+    const std::string both = late_pictures_summary(2, 5);
+    CHECK_MSG(both.find("2 held up on the way") != std::string::npos, both);
+    CHECK_MSG(both.find("5 sent late by the host") != std::string::npos, both);
+}
+
 void test_host_can_disconnect_the_companion() {
     HostSession host;
     HostSession::Config config;
@@ -2871,6 +2972,9 @@ int main() {
     test_the_smallest_picture_is_a_size_rather_than_a_fraction();
     test_a_step_that_bought_nothing_is_not_taken_twice();
     test_a_sliver_narrower_is_not_a_step();
+    test_the_ladder_steps_from_what_arrives();
+    test_a_step_is_judged_on_the_size_it_asked_for();
+    test_a_picture_the_host_sent_late_buys_no_cover();
     test_host_can_disconnect_the_companion();
     test_the_codec_can_change_without_reconnecting();
     test_video_is_capped_to_the_companions_display_size();

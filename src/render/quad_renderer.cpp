@@ -346,7 +346,7 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
             gl::ActiveTexture(GL_TEXTURE1);
             gl::BindTexture(GL_TEXTURE_2D, texture->chroma_id());
             gl::Uniform1i(uniform_chroma_, 1);
-            gl::Uniform1i(uniform_chroma_v_in_alpha_, nv12_chroma_v_in_alpha() ? 1 : 0);
+            gl::Uniform1i(uniform_chroma_v_in_alpha_, texture->chroma_v_in_alpha() ? 1 : 0);
             if (texture->channel_order() == ChannelOrder::Yuv420p) {
                 gl::ActiveTexture(GL_TEXTURE2);
                 gl::BindTexture(GL_TEXTURE_2D, texture->chroma_v_id());

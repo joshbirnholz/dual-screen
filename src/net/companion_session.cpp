@@ -80,6 +80,11 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     adapt_cost_before_step_ms_ = 0.0;
     adapt_width_before_step_ = 0;
     adapt_last_width_ = 0;
+    adapt_last_height_ = 0;
+    adapt_arrived_scale_ = 0.0;
+    adapt_awaiting_from_width_ = 0;
+    adapt_awaiting_since_ms_ = 0;
+    adapt_restart_window_ = false;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -202,6 +207,11 @@ void CompanionSession::disconnect() {
     adapt_cost_before_step_ms_ = 0.0;
     adapt_width_before_step_ = 0;
     adapt_last_width_ = 0;
+    adapt_last_height_ = 0;
+    adapt_arrived_scale_ = 0.0;
+    adapt_awaiting_from_width_ = 0;
+    adapt_awaiting_since_ms_ = 0;
+    adapt_restart_window_ = false;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -269,6 +279,11 @@ void CompanionSession::fail(const std::string& reason) {
     adapt_cost_before_step_ms_ = 0.0;
     adapt_width_before_step_ = 0;
     adapt_last_width_ = 0;
+    adapt_last_height_ = 0;
+    adapt_arrived_scale_ = 0.0;
+    adapt_awaiting_from_width_ = 0;
+    adapt_awaiting_since_ms_ = 0;
+    adapt_restart_window_ = false;
     adapt_size_decides_cost_ = true;
     adapt_at_ms_ = 0;
     adapt_easy_windows_ = 0;
@@ -616,9 +631,12 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         // right across the wrap, which a wider subtraction would get wrong
         // once every 49 days.
         const uint32_t sent = sent_at_ms;
+        double link_delay_ms = -1.0;
         if (sent != 0 && this_pass_measures_the_link_) {
             const uint32_t arrived = static_cast<uint32_t>(now);
-            jitter_.add(static_cast<double>(static_cast<int32_t>(arrived - sent)));
+            const double transit = static_cast<double>(static_cast<int32_t>(arrived - sent));
+            jitter_.add(transit);
+            link_delay_ms = jitter_.above_quietest(transit);
         }
         if (last_arrival_ms_ != 0 && now > last_arrival_ms_) {
             const double gap = static_cast<double>(now - last_arrival_ms_);
@@ -632,7 +650,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         }
         last_arrival_ms_ = now;
         received_serial_ = frame.serial;
-        complete_at_.emplace_back(frame.serial, now);
+        complete_at_.push_back(Arrival{frame.serial, now, link_delay_ms});
         // A frame that is never shown (a serial dropped for being behind)
         // would otherwise leave its entry here for ever.
         while (complete_at_.size() > 240) {
@@ -865,7 +883,7 @@ void CompanionSession::poll(uint64_t now_ms) {
         const uint64_t allowance =
             video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_ms_, video_hold_);
         const bool draining =
-            !complete_at_.empty() && now_ms > complete_at_.front().second + allowance;
+            !complete_at_.empty() && now_ms > complete_at_.front().at_ms + allowance;
         std::size_t shown = 0;
         for (; shown < budget && decode_next_frame(); ++shown) {
         }
@@ -894,7 +912,12 @@ void CompanionSession::poll(uint64_t now_ms) {
                 now_ms > next_due_ms_ + lateness_that_counts_ms(period, typical_poll_gap_ms_) &&
                 last_arrival_ms_ != 0 &&
                 now_ms - last_arrival_ms_ <= kStreamIsLiveMs) {
-                ++stats_starved_;
+                // And only for what the link did. See lateness_was_the_links().
+                if (lateness_was_the_links(shown_link_delay_ms_, period)) {
+                    ++stats_starved_;
+                } else {
+                    ++stats_late_from_host_;
+                }
             }
             // Advanced from when it was due, not from now, so the pace does
             // not drift slower by however late each pass happened to run. A
@@ -1122,7 +1145,16 @@ const std::vector<uint32_t>& CompanionSession::ScreenBuffer::expanded() const {
     // once per frame rather than on every ask.
     if (video) {
         if (!ever_expanded || expanded_serial != serial) {
-            expand_planar_yuv(layout, plane, plane_stride, width, height, pixels);
+            // A picture still in the decoder's memory is copied out first --
+            // the slow read the renderer never does, for a caller that wants
+            // pixels anyway.
+            video::DecodedFrame copied;
+            if (plane[0].empty() && video::copy_native_planes(native, copied)) {
+                expand_planar_yuv(copied.layout, copied.plane, copied.stride, width, height,
+                                  pixels);
+            } else {
+                expand_planar_yuv(layout, plane, plane_stride, width, height, pixels);
+            }
             expanded_serial = serial;
             ever_expanded = true;
         }
@@ -1163,7 +1195,11 @@ CompanionSession::ScreenBytes CompanionSession::screen_rgb565(ScreenId screen) c
 }
 
 bool CompanionSession::has_screen(ScreenId screen) const {
-    return screen_pixels(screen).valid();
+    // Asked of the buffer rather than by expanding it: turning a video frame
+    // into pixels on the CPU is a pass over every one of them, to answer a
+    // yes or no.
+    const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
+    return buffer.has_frame() && buffer.width > 0 && buffer.height > 0;
 }
 
 uint64_t CompanionSession::received_serial(ScreenId screen) const {
@@ -1305,6 +1341,19 @@ bool shrinking_is_worth_it(double before_ms, double after_ms) {
     return after_ms <= before_ms * 0.9;
 }
 
+double scale_the_picture_arrived_at(int width, int height, int box_width, int box_height) {
+    if (width <= 0 || height <= 0 || box_width <= 0 || box_height <= 0) {
+        return 0.0;
+    }
+    return std::max(static_cast<double>(width) / box_width,
+                    static_cast<double>(height) / box_height);
+}
+
+bool picture_size_changed_enough(int before_width, int after_width) {
+    return picture_shrank_enough_to_judge(before_width, after_width) ||
+           picture_shrank_enough_to_judge(after_width, before_width);
+}
+
 double lowest_display_scale(int panel_width) {
     if (panel_width <= 0) {
         return kMinDisplayScale;
@@ -1385,6 +1434,15 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         adapt_frames_ = 0;
         return;
     }
+    // A step whose pictures have not arrived yet has nothing to be judged by
+    // -- see adapt_awaiting_from_width_. The window starts again when they
+    // do; one that never comes is judged as it stands.
+    if (adapt_awaiting_from_width_ > 0) {
+        if (now_ms - adapt_awaiting_since_ms_ < kAwaitNewSizeMs) {
+            return;
+        }
+        adapt_awaiting_from_width_ = 0;
+    }
     const uint64_t elapsed = now_ms - adapt_at_ms_;
     if (elapsed < kAdaptWindowMs) {
         return;
@@ -1405,11 +1463,13 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         frames > 0
             ? static_cast<double>(adapt_lock_micros_) / 1000.0 / static_cast<double>(frames)
             : 0.0;
+    const double arrived_scale = adapt_arrived_scale_;
     adapt_at_ms_ = now_ms;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
     adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
+    adapt_arrived_scale_ = 0.0;
 
     // Did the last step down actually buy anything? Asked before deciding to
     // take another one, and only once there is a step to judge -- and only
@@ -1443,17 +1503,24 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     const double floor_scale = lowest_display_scale(wanted_display_width_);
     if (per_second >= kBusyDecodeMsPerSecond && display_scale_ > floor_scale &&
         adapt_size_decides_cost_) {
+        // From the size the pictures are actually arriving at, when that is
+        // less than what was asked for -- see scale_the_picture_arrived_at().
+        const bool stepping_from_arrived = arrived_scale > 0.0 && arrived_scale < display_scale_;
+        const double from = stepping_from_arrived ? arrived_scale : display_scale_;
         // Remembered before stepping down, so the way back up knows where the
-        // ceiling is -- see too_expensive_scale_.
-        too_expensive_scale_ = std::min(too_expensive_scale_, display_scale_);
+        // ceiling is -- see too_expensive_scale_. The size that was measured,
+        // not the size that was asked for and never sent.
+        too_expensive_scale_ = std::min(too_expensive_scale_, from);
         too_expensive_at_ms_ = now_ms;
         // And remembered so the next window can say whether this was worth it
         // -- the width as well as the cost, because a step that does not make
         // the picture any smaller says nothing about whether size matters.
         adapt_cost_before_step_ms_ = cost_per_frame_ms;
         adapt_width_before_step_ = adapt_last_width_;
-        display_scale_ = std::max(floor_scale, display_scale_ * kDisplayScaleStep);
+        display_scale_ = std::max(floor_scale, from * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
+        adapt_awaiting_from_width_ = adapt_last_width_;
+        adapt_awaiting_since_ms_ = now_ms;
         // Which half of it, because the two have different answers. Time in
         // the decoder is the decoder's; time in the readback is this app
         // copying a picture out of memory the GPU already has, and that is a
@@ -1469,7 +1536,12 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
                  std::to_string(static_cast<int>(readback_per_frame_ms + 0.5)) +
                  "ms copying, of which " +
                  std::to_string(static_cast<int>(lock_per_frame_ms + 0.5)) +
-                 "ms waiting for the decoder to let go); asking for " +
+                 "ms waiting for the decoder to let go); " +
+                 (stepping_from_arrived
+                      ? "the pictures were arriving at " +
+                            std::to_string(static_cast<int>(from * 100.0 + 0.5)) +
+                            "% of it, so asking for "
+                      : std::string("asking for ")) +
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
                  "% of its display size instead");
         send_display_size();
@@ -1497,6 +1569,8 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         }
         adapt_easy_windows_ = 0;
         display_scale_ = larger;
+        adapt_awaiting_from_width_ = adapt_last_width_;
+        adapt_awaiting_since_ms_ = now_ms;
         log_info("this device has room to spare (" + std::to_string(per_second) +
                  "ms of every second); asking for " +
                  std::to_string(static_cast<int>(display_scale_ * 100.0 + 0.5)) +
@@ -1534,7 +1608,31 @@ const ScreenTextures& CompanionSession::screens() {
             // channel first would be a whole pass over the frame and twice the
             // bytes to the GPU, for a picture that is 5-6-5 either way; a video
             // frame is already eight, and going back would only lose.
-            if (buffer->video && buffer->layout == video::DecodedLayout::Nv12) {
+            if (buffer->video && buffer->layout == video::DecodedLayout::Nv12 &&
+                buffer->native != nullptr) {
+                // Drawn from the decoder's own memory, with nothing copied --
+                // see DecodedFrame::native.
+                if (buffer->texture.adopt_native_nv12(buffer->native, buffer->width,
+                                                      buffer->height)) {
+                    native_texture_failures_ = 0;
+                } else {
+                    // The old way for this picture, and after a few of these
+                    // for every picture: a device that cannot map one cannot
+                    // map the next, and asking it to every frame only adds a
+                    // failure to the copy it ends up making anyway.
+                    if (++native_texture_failures_ == kNativeTextureFailuresToGiveUp) {
+                        video::set_native_frames_usable(false);
+                        log_warn("video: pictures could not be drawn from the decoder's memory, "
+                                 "so from now on they are copied out of it instead");
+                    }
+                    video::DecodedFrame copied;
+                    if (video::copy_native_planes(buffer->native, copied)) {
+                        buffer->texture.upload_nv12(copied.plane[0].data(), copied.stride[0],
+                                                    copied.plane[1].data(), copied.stride[1],
+                                                    buffer->width, buffer->height);
+                    }
+                }
+            } else if (buffer->video && buffer->layout == video::DecodedLayout::Nv12) {
                 // Straight to the GPU in the planes the decoder produced --
                 // the conversion to colour happens in the shader, which is the
                 // whole point of asking for them. See DecodedLayout.
@@ -1559,6 +1657,17 @@ const ScreenTextures& CompanionSession::screens() {
     textures_.top = top_.texture.valid() ? &top_.texture : nullptr;
     textures_.bottom = bottom_.texture.valid() ? &bottom_.texture : nullptr;
     return textures_;
+}
+
+std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_late) {
+    if (held_up_on_the_way == 0 && sent_late == 0) {
+        return std::string();
+    }
+    std::string summary = "; pictures late this second: ";
+    summary += std::to_string(held_up_on_the_way) + " held up on the way here";
+    summary += ", " + std::to_string(sent_late) +
+               " sent late by the host (no buffer covers those, so none is bought for them)";
+    return summary;
 }
 
 void CompanionSession::report_stream(uint64_t now_ms) {
@@ -1600,7 +1709,8 @@ void CompanionSession::report_stream(uint64_t now_ms) {
              "ms of it bought back after stalls), " +
              std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
              "ms a frame turning them into pictures, and this device's loop comes round every " +
-             std::to_string(typical_poll_gap_ms_) + "ms at its quickest");
+             std::to_string(typical_poll_gap_ms_) + "ms at its quickest" +
+             late_pictures_summary(stats_starved_, stats_late_from_host_));
 
     // What the buffer is actually being sized against. One number cannot say
     // whether a link is evenly a little late or mostly prompt with a bad tail,
@@ -1619,6 +1729,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
         hold_extra_ms(extra_hold_ms_, frame_period(), stats_starved_, calm_seconds_, video_hold_);
     calm_seconds_ = (stats_starved_ == 0) ? calm_seconds_ + 1 : 0;
     stats_starved_ = 0;
+    stats_late_from_host_ = 0;
     stats_at_ms_ = now_ms;
     stats_decoded_ = 0;
     stats_drawn_ = 0;
@@ -1664,6 +1775,13 @@ double transit_quantile_above_quietest(const std::vector<double>& recent, double
                      sorted.end());
     const double quietest = *std::min_element(recent.begin(), recent.end());
     return std::max(0.0, sorted[index] - quietest);
+}
+
+double VideoJitter::above_quietest(double transit_ms) const {
+    if (recent_.empty()) {
+        return -1.0;
+    }
+    return std::max(0.0, transit_ms - *std::min_element(recent_.begin(), recent_.end()));
 }
 
 void VideoJitter::add(double transit_ms) {
@@ -1731,6 +1849,13 @@ bool lateness_is_worth_covering(uint64_t period_ms, uint64_t quickest_poll_gap_m
     // anything at all. Being able to resolve it is not the same as being able
     // to see it on time, though -- see lateness_that_counts_ms().
     return quickest_poll_gap_ms <= period_ms / 2;
+}
+
+bool lateness_was_the_links(double link_delay_ms, uint64_t period_ms) {
+    if (link_delay_ms < 0.0) {
+        return true;
+    }
+    return link_delay_ms >= static_cast<double>(period_ms) / 2.0;
 }
 
 uint64_t lateness_that_counts_ms(uint64_t period_ms, uint64_t quickest_poll_gap_ms) {
@@ -1850,6 +1975,8 @@ void CompanionSession::apply_frame(const FrameMessage& frame) {
             return;
         }
         target.video = false;
+        // Nor keep hold of a decoder's picture this screen has stopped showing.
+        target.native.reset();
         target.width = frame.width;
         target.height = frame.height;
     }
@@ -1914,6 +2041,18 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     adapt_readback_micros_ += static_cast<uint64_t>(decoded.readback_micros);
     adapt_lock_micros_ += static_cast<uint64_t>(decoded.lock_micros);
     adapt_last_width_ = decoded.width;
+    adapt_last_height_ = decoded.height;
+    adapt_arrived_scale_ =
+        std::max(adapt_arrived_scale_,
+                 scale_the_picture_arrived_at(decoded.width, decoded.height,
+                                              wanted_display_width_, wanted_display_height_));
+    // The first picture of the size a step asked for: the window starts
+    // again once this one is counted -- see adapt_awaiting_from_width_.
+    if (adapt_awaiting_from_width_ > 0 &&
+        picture_size_changed_enough(adapt_awaiting_from_width_, decoded.width)) {
+        adapt_awaiting_from_width_ = 0;
+        adapt_restart_window_ = true;
+    }
     ++adapt_frames_;
     target.video = true;
     target.layout = decoded.layout;
@@ -1922,6 +2061,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
         target.plane[index] = std::move(decoded.plane[index]);
         target.plane_stride[index] = decoded.stride[index];
     }
+    target.native = std::move(decoded.native);
     target.width = decoded.width;
     target.height = decoded.height;
     // Whatever the tile codec left here is not this picture, and keeping it
@@ -1938,12 +2078,14 @@ bool CompanionSession::decode_next_frame() {
     }
     const uint64_t serial = pending_frames_.front().serial;
     const uint64_t started_ms = monotonic_millis();
-    while (!complete_at_.empty() && complete_at_.front().first < serial) {
+    while (!complete_at_.empty() && complete_at_.front().serial < serial) {
         complete_at_.pop_front();  // never shown; nothing to measure
     }
-    if (!complete_at_.empty() && complete_at_.front().first == serial) {
+    shown_link_delay_ms_ = -1.0;
+    if (!complete_at_.empty() && complete_at_.front().serial == serial) {
         const uint64_t waited =
-            started_ms > complete_at_.front().second ? started_ms - complete_at_.front().second : 0;
+            started_ms > complete_at_.front().at_ms ? started_ms - complete_at_.front().at_ms : 0;
+        shown_link_delay_ms_ = complete_at_.front().link_delay_ms;
         stats_wait_total_ms_ += waited;
         stats_wait_worst_ms_ = std::max(stats_wait_worst_ms_, waited);
         ++stats_waits_;
@@ -1961,6 +2103,18 @@ bool CompanionSession::decode_next_frame() {
     // numbers cleared out from under it by the once-a-second stream report.
     adapt_decode_ms_ += cost;
     ++stats_decodes_;
+    if (adapt_restart_window_) {
+        adapt_restart_window_ = false;
+        adapt_at_ms_ = finished_ms;
+        adapt_decode_ms_ = 0;
+        adapt_readback_micros_ = 0;
+        adapt_lock_micros_ = 0;
+        adapt_frames_ = 0;
+        // What this picture filled is still true of the stream, and is what
+        // the next step would go from.
+        adapt_arrived_scale_ = scale_the_picture_arrived_at(
+            adapt_last_width_, adapt_last_height_, wanted_display_width_, wanted_display_height_);
+    }
     return true;
 }
 

@@ -24,6 +24,29 @@
 #include <cstring>
 #include <vector>
 
+// Drawing a decoded picture from where the decoder left it -- see
+// adopt_native_nv12(). iOS and tvOS only: CoreVideo's OpenGL ES texture cache
+// is theirs, and a Mac's equivalent hands back rectangle textures the shader
+// does not sample. DS_TYPECHECK_APPLE is the test that compiles this half on a
+// machine with no Apple SDK, against the declarations in tests/apple_stub.
+#if defined(__APPLE__) || defined(DS_TYPECHECK_APPLE)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#define DS_NATIVE_VIDEO_TEXTURES 1
+#endif
+#endif
+
+#if DS_NATIVE_VIDEO_TEXTURES
+// The OpenGL ES half of CoreVideo is marked deprecated along with OpenGL ES
+// itself, which this whole renderer is built on; being told so on every call
+// is noise.
+#define COREVIDEO_SILENCE_GL_DEPRECATION 1
+#include <CoreVideo/CoreVideo.h>
+#include <SDL_video.h>
+
+#include "util/log.hpp"
+#endif
+
 namespace ds {
 
 Texture::~Texture() { destroy(); }
@@ -34,7 +57,9 @@ Texture::Texture(Texture&& other) noexcept
       height_(other.height_),
       channel_order_(other.channel_order_),
       linear_(other.linear_),
-      filter_dirty_(other.filter_dirty_) {
+      filter_dirty_(other.filter_dirty_),
+      chroma_v_in_alpha_(other.chroma_v_in_alpha_),
+      native_(std::move(other.native_)) {
     for (int index = 0; index < 2; ++index) {
         chroma_[index] = other.chroma_[index];
         chroma_width_[index] = other.chroma_width_[index];
@@ -56,6 +81,8 @@ Texture& Texture::operator=(Texture&& other) noexcept {
         channel_order_ = other.channel_order_;
         linear_ = other.linear_;
         filter_dirty_ = other.filter_dirty_;
+        chroma_v_in_alpha_ = other.chroma_v_in_alpha_;
+        native_ = std::move(other.native_);
         for (int index = 0; index < 2; ++index) {
             chroma_[index] = other.chroma_[index];
             chroma_width_[index] = other.chroma_width_[index];
@@ -70,7 +97,30 @@ Texture& Texture::operator=(Texture&& other) noexcept {
     return *this;
 }
 
+void Texture::release_native() {
+    // The names are the cache's, and go back to it when native_ lets go of
+    // the textures that own them. Deleting them here as well would be a
+    // double free of somebody else's texture.
+    native_.reset();
+    id_ = 0;
+    width_ = 0;
+    height_ = 0;
+    format_ = 0;
+    for (int index = 0; index < 2; ++index) {
+        chroma_[index] = 0;
+        chroma_width_[index] = 0;
+        chroma_height_[index] = 0;
+        chroma_format_[index] = 0;
+    }
+}
+
 void Texture::destroy_chroma() {
+    // An adopted picture's chroma is not this texture's to delete, and its
+    // luma goes with it: the two are one picture.
+    if (native_ != nullptr) {
+        release_native();
+        return;
+    }
     for (int index = 0; index < 2; ++index) {
         if (chroma_[index] != 0 && gl::DeleteTextures != nullptr) {
             gl::DeleteTextures(1, &chroma_[index]);
@@ -83,6 +133,9 @@ void Texture::destroy_chroma() {
 }
 
 void Texture::destroy() {
+    if (native_ != nullptr) {
+        release_native();
+    }
     if (id_ != 0 && gl::DeleteTextures != nullptr) {
         gl::DeleteTextures(1, &id_);
     }
@@ -206,7 +259,144 @@ void Texture::upload_nv12(const uint8_t* luma, int luma_stride, const uint8_t* c
     upload_plane(chroma_[0], chroma_width_[0], chroma_height_[0], chroma_format_[0],
                  plane_format(2), chroma, chroma_stride, (width + 1) / 2, (height + 1) / 2);
     channel_order_ = ChannelOrder::Nv12;
+    chroma_v_in_alpha_ = nv12_chroma_v_in_alpha();
 }
+
+#if DS_NATIVE_VIDEO_TEXTURES
+namespace {
+
+// One per GL context, made the first time a picture needs it. The context is
+// SDL's, and on iOS and tvOS what SDL hands back as one is the EAGLContext
+// itself -- which is what the cache has to be made against.
+struct NativeTextureCache {
+    void* context = nullptr;
+    CVOpenGLESTextureCacheRef cache = nullptr;
+};
+
+NativeTextureCache& native_texture_cache() {
+    static NativeTextureCache cache;
+    return cache;
+}
+
+CVOpenGLESTextureCacheRef cache_for_current_context() {
+    NativeTextureCache& state = native_texture_cache();
+    void* context = SDL_GL_GetCurrentContext();
+    if (context == nullptr) {
+        return nullptr;
+    }
+    if (state.cache != nullptr && state.context == context) {
+        return state.cache;
+    }
+    if (state.cache != nullptr) {
+        CFRelease(state.cache);
+        state.cache = nullptr;
+        state.context = nullptr;
+    }
+    const CVReturn made =
+        CVOpenGLESTextureCacheCreate(kCFAllocatorDefault, nullptr, context, nullptr, &state.cache);
+    if (made != kCVReturnSuccess || state.cache == nullptr) {
+        log_warn("video: this device would not make a texture cache (" + std::to_string(made) +
+                 "), so decoded pictures are copied out instead");
+        state.cache = nullptr;
+        return nullptr;
+    }
+    state.context = context;
+    return state.cache;
+}
+
+// What an adopted picture keeps alive: the picture itself, and the two
+// textures the cache mapped its planes into. Released together, the textures
+// first, when the screen moves on to its next picture.
+struct AdoptedPicture {
+    std::shared_ptr<void> picture;
+    CVOpenGLESTextureRef luma = nullptr;
+    CVOpenGLESTextureRef chroma = nullptr;
+
+    AdoptedPicture() = default;
+    AdoptedPicture(const AdoptedPicture&) = delete;
+    AdoptedPicture& operator=(const AdoptedPicture&) = delete;
+    ~AdoptedPicture() {
+        if (luma != nullptr) CFRelease(luma);
+        if (chroma != nullptr) CFRelease(chroma);
+    }
+};
+
+CVOpenGLESTextureRef map_plane(CVOpenGLESTextureCacheRef cache, CVPixelBufferRef picture,
+                               std::size_t plane, GLenum format) {
+    const GLsizei width = static_cast<GLsizei>(CVPixelBufferGetWidthOfPlane(picture, plane));
+    const GLsizei height = static_cast<GLsizei>(CVPixelBufferGetHeightOfPlane(picture, plane));
+    CVOpenGLESTextureRef texture = nullptr;
+    const CVReturn made = CVOpenGLESTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, cache, picture, nullptr, GL_TEXTURE_2D, static_cast<GLint>(format),
+        width, height, format, GL_UNSIGNED_BYTE, plane, &texture);
+    return made == kCVReturnSuccess ? texture : nullptr;
+}
+
+}  // namespace
+
+bool Texture::adopt_native_nv12(const std::shared_ptr<void>& picture, int width, int height) {
+    if (picture == nullptr || width <= 0 || height <= 0 || gl::BindTexture == nullptr) {
+        return false;
+    }
+    CVOpenGLESTextureCacheRef cache = cache_for_current_context();
+    if (cache == nullptr) {
+        return false;
+    }
+    // Textures the last pictures were mapped into, handed back now that
+    // nothing holds them. Without this the cache keeps every one it ever made.
+    CVOpenGLESTextureCacheFlush(cache, 0);
+
+    auto adopted = std::make_shared<AdoptedPicture>();
+    adopted->picture = picture;
+    auto* buffer = static_cast<CVPixelBufferRef>(picture.get());
+    // The formats an upload would have used first, so the shader is told the
+    // same thing either way; the core-profile spellings if the cache will not
+    // take those. Which one the chroma ended up in is recorded per texture --
+    // see chroma_v_in_alpha().
+    bool v_in_alpha = true;
+    adopted->luma = map_plane(cache, buffer, 0, GL_LUMINANCE);
+    adopted->chroma = map_plane(cache, buffer, 1, GL_LUMINANCE_ALPHA);
+    if (adopted->luma == nullptr || adopted->chroma == nullptr) {
+        adopted = std::make_shared<AdoptedPicture>();
+        adopted->picture = picture;
+        adopted->luma = map_plane(cache, buffer, 0, GL_RED);
+        adopted->chroma = map_plane(cache, buffer, 1, GL_RG);
+        v_in_alpha = false;
+    }
+    if (adopted->luma == nullptr || adopted->chroma == nullptr) {
+        return false;
+    }
+
+    // Only now, with the new picture in hand: a texture of this one's own
+    // storage is deleted, and an earlier adopted picture goes back to the
+    // cache.
+    destroy();
+    for (CVOpenGLESTextureRef plane : {adopted->luma, adopted->chroma}) {
+        gl::BindTexture(CVOpenGLESTextureGetTarget(plane), CVOpenGLESTextureGetName(plane));
+        // As upload_plane() sets them. The luma's own filter is the screen's
+        // choice and is set again when it is drawn.
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    gl::BindTexture(GL_TEXTURE_2D, 0);
+    id_ = CVOpenGLESTextureGetName(adopted->luma);
+    chroma_[0] = CVOpenGLESTextureGetName(adopted->chroma);
+    width_ = width;
+    height_ = height;
+    format_ = v_in_alpha ? GL_LUMINANCE : GL_RED;
+    chroma_width_[0] = (width + 1) / 2;
+    chroma_height_[0] = (height + 1) / 2;
+    chroma_format_[0] = v_in_alpha ? GL_LUMINANCE_ALPHA : GL_RG;
+    chroma_v_in_alpha_ = v_in_alpha;
+    channel_order_ = ChannelOrder::Nv12;
+    native_ = std::move(adopted);
+    return true;
+}
+#else
+bool Texture::adopt_native_nv12(const std::shared_ptr<void>&, int, int) { return false; }
+#endif
 
 void Texture::upload_yuv420p(const uint8_t* luma, int luma_stride, const uint8_t* u, int u_stride,
                              const uint8_t* v, int v_stride, int width, int height) {
@@ -227,6 +417,10 @@ bool Texture::ensure_created() {
     // never draws -- rather than calling through a null function pointer.
     if (gl::GenTextures == nullptr) {
         return false;
+    }
+    // An adopted picture's names are not this texture's to upload into.
+    if (native_ != nullptr) {
+        release_native();
     }
     if (id_ == 0) {
         gl::GenTextures(1, &id_);

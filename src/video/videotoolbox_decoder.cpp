@@ -1,11 +1,12 @@
 #include "video/videotoolbox_decoder.hpp"
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(DS_TYPECHECK_APPLE)
 
 #include <CoreMedia/CoreMedia.h>
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <vector>
@@ -50,7 +51,84 @@ void set_number(CFMutableDictionaryRef dictionary, CFStringRef key, int32_t valu
     CFRelease(number);
 }
 
+// Where it is decided whether frames stay where the decoder put them. Only
+// iOS and tvOS have a renderer that can draw them from there -- a Mac's
+// IOSurface textures are GL_TEXTURE_RECTANGLE, which the shader does not
+// sample (see apple/README.md) -- and only until that renderer says it cannot.
+#if TARGET_OS_IPHONE
+std::atomic<bool> g_native_frames_usable{true};
+#else
+std::atomic<bool> g_native_frames_usable{false};
+#endif
+
+// The planes of a decoded picture, copied out into `out`.
+//
+// The slow way, and on an iPhone or an Apple TV the reason there is a fast
+// one: see DecodedFrame::native. Still the way on a Mac, and the way back for
+// anything that wants bytes.
+bool copy_planes(CVPixelBufferRef picture, DecodedFrame& out, std::string* error) {
+    const auto readback_began = std::chrono::steady_clock::now();
+    const auto lock_began = readback_began;
+    if (CVPixelBufferLockBaseAddress(picture, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
+        if (error != nullptr) *error = "the decoded frame would not lock";
+        return false;
+    }
+    // How much of the "copying out" is the lock rather than the bytes. The
+    // lock is where a CPU waits for a decoder that has not finished, and that
+    // is a different problem from memory being slow to read.
+    out.lock_micros = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                           std::chrono::steady_clock::now() - lock_began)
+                                           .count());
+    out.layout = DecodedLayout::Nv12;
+    out.width = static_cast<int>(CVPixelBufferGetWidth(picture));
+    out.height = static_cast<int>(CVPixelBufferGetHeight(picture));
+    for (int plane = 0; plane < 2; ++plane) {
+        const auto* source =
+            static_cast<const uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(picture, plane));
+        const std::size_t stride = CVPixelBufferGetBytesPerRowOfPlane(picture, plane);
+        const std::size_t rows = CVPixelBufferGetHeightOfPlane(picture, plane);
+        if (source == nullptr || stride == 0 || rows == 0) {
+            continue;
+        }
+        out.stride[plane] = static_cast<int>(stride);
+        // assign() rather than resize() and memcpy(). resize() on an empty
+        // vector value-initialises every byte, and every one of those bytes
+        // is then overwritten -- at 1920x1080 that is 3MB of zeroes written
+        // per frame for nothing. assign() from a pointer pair allocates once
+        // and copies once.
+        out.plane[plane].assign(source, source + stride * rows);
+    }
+    CVPixelBufferUnlockBaseAddress(picture, kCVPixelBufferLock_ReadOnly);
+    out.readback_micros = static_cast<int>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - readback_began)
+            .count());
+    return true;
+}
+
 }  // namespace
+
+bool native_frames_usable() { return g_native_frames_usable.load(); }
+
+void set_native_frames_usable(bool usable) {
+#if TARGET_OS_IPHONE
+    g_native_frames_usable.store(usable);
+#else
+    (void)usable;  // nothing here can draw one, whatever anybody says
+#endif
+}
+
+bool copy_native_planes(const std::shared_ptr<void>& native, DecodedFrame& out) {
+    if (native == nullptr) {
+        return false;
+    }
+    DecodedFrame copied;
+    if (!copy_planes(static_cast<CVPixelBufferRef>(native.get()), copied, nullptr)) {
+        return false;
+    }
+    out = std::move(copied);
+    return true;
+}
 
 struct VideoToolboxDecoder::Impl {
     ParameterSets sets;
@@ -63,6 +141,7 @@ struct VideoToolboxDecoder::Impl {
     std::vector<uint8_t> avcc;
     bool open = false;
     bool said_format = false;
+    bool said_native = false;
 
     ~Impl() { tear_down(); }
 
@@ -134,9 +213,9 @@ struct VideoToolboxDecoder::Impl {
         set_number(attributes, kCVPixelBufferPixelFormatTypeKey,
                    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
         // So the buffer can become a texture without a trip through system
-        // memory. Nothing here uses that yet -- the planes are still copied
-        // below -- but a buffer allocated without it cannot be used that way
-        // later, and the flag costs nothing now.
+        // memory, which on iOS and tvOS is exactly what happens to it -- see
+        // DecodedFrame::native. A buffer allocated without it cannot be used
+        // that way at all.
 #if TARGET_OS_IPHONE
         CFDictionarySetValue(attributes, kCVPixelBufferOpenGLESCompatibilityKey, kCFBooleanTrue);
 #else
@@ -317,14 +396,9 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
         return true;  // nothing yet, which is not a failure
     }
 
-    // Out as NV12 planes, which is what the renderer wants: the conversion to
-    // RGB happens in the fragment shader, and on a handheld that is the
+    // Out as NV12, which is what the renderer wants: the conversion to RGB
+    // happens in the fragment shader, and on a handheld that is the
     // difference between 22ms a frame and about 4.
-    //
-    // This copy is the one the whole exercise is meant to remove. The buffer
-    // is already where the GPU can see it -- it was allocated GL-compatible
-    // above -- so the next change hands it straight to a texture and touches
-    // none of these bytes. See apple/README.md.
     CVPixelBufferRef picture = impl.latest;
     // Said once: what came back, against what was asked for. A decoder that
     // hands back a different format from the one requested is converting every
@@ -340,44 +414,27 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
                                 : "NOT the full-range NV12 asked for -- something is converting "
                                   "every frame"));
     }
-    const auto readback_began = std::chrono::steady_clock::now();
-    const auto lock_began = readback_began;
-    if (CVPixelBufferLockBaseAddress(picture, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
-        if (error != nullptr) *error = "the decoded frame would not lock";
-        return false;
-    }
-    // How much of the "copying out" is the lock rather than the bytes. The
-    // lock is where a CPU waits for a decoder that has not finished, and that
-    // is a different problem from memory being slow to read.
-    out.lock_micros = static_cast<int>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                           std::chrono::steady_clock::now() - lock_began)
-                                           .count());
-    out.layout = DecodedLayout::Nv12;
-    out.width = static_cast<int>(CVPixelBufferGetWidth(picture));
-    out.height = static_cast<int>(CVPixelBufferGetHeight(picture));
-    for (int plane = 0; plane < 2; ++plane) {
-        const auto* source =
-            static_cast<const uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(picture, plane));
-        const std::size_t stride = CVPixelBufferGetBytesPerRowOfPlane(picture, plane);
-        const std::size_t rows = CVPixelBufferGetHeightOfPlane(picture, plane);
-        if (source == nullptr || stride == 0 || rows == 0) {
-            continue;
+    // Left where it is, where the renderer can draw it from there -- see
+    // DecodedFrame::native. The reference moves to the frame, so this
+    // decoder's next picture is a different buffer from its pool rather than
+    // this one written over while it is on screen.
+    if (native_frames_usable()) {
+        if (!impl.said_native) {
+            impl.said_native = true;
+            log_info("video decoder: handing pictures to the GPU where they are, with no copy");
         }
-        out.stride[plane] = static_cast<int>(stride);
-        // assign() rather than resize() and memcpy(). resize() on an empty
-        // vector value-initialises every byte, and every one of those bytes
-        // is then overwritten -- at 1920x1080 that is 3MB of zeroes written
-        // per frame for nothing. assign() from a pointer pair allocates once
-        // and copies once.
-        out.plane[plane].assign(source, source + stride * rows);
+        out.layout = DecodedLayout::Nv12;
+        out.width = static_cast<int>(CVPixelBufferGetWidth(picture));
+        out.height = static_cast<int>(CVPixelBufferGetHeight(picture));
+        out.native = std::shared_ptr<void>(picture, [](void* buffer) {
+            CVPixelBufferRelease(static_cast<CVPixelBufferRef>(buffer));
+        });
+        impl.latest = nullptr;  // owned by the frame now
+        return true;
     }
-    CVPixelBufferUnlockBaseAddress(picture, kCVPixelBufferLock_ReadOnly);
+    const bool copied = copy_planes(picture, out, error);
     impl.release_latest();
-    out.readback_micros = static_cast<int>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - readback_began)
-            .count());
-    return true;
+    return copied;
 }
 
 }  // namespace ds::video
@@ -385,6 +442,11 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
 #else  // not Apple
 
 namespace ds::video {
+
+// No decoder here hands back anything but bytes.
+bool native_frames_usable() { return false; }
+void set_native_frames_usable(bool) {}
+bool copy_native_planes(const std::shared_ptr<void>&, DecodedFrame&) { return false; }
 
 struct VideoToolboxDecoder::Impl {};
 

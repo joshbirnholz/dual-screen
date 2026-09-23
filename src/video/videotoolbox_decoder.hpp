@@ -23,11 +23,11 @@ namespace ds::video {
 //   * iOS and tvOS get H.264 at all. There is no Homebrew for a phone, so
 //     FFmpeg there means cross-compiling it, and without H.264 a Wii U's
 //     GamePad screen costs about seventeen times the bandwidth as tiles.
-//   * The copy goes away, eventually. VideoToolbox hands back a CVPixelBuffer
-//     that the GPU can already see; FFmpeg's path pulls it into system memory
-//     with av_hwframe_transfer_data and this app then copies the planes again.
-//     Handing that buffer straight to a texture is the real win, and it is a
-//     second change rather than this one -- see apple/README.md.
+//   * The copy goes away. VideoToolbox hands back a CVPixelBuffer that the
+//     GPU can already see; FFmpeg's path pulls it into system memory with
+//     av_hwframe_transfer_data and this app then copies the planes again. On
+//     iOS and tvOS the buffer is handed straight to a texture instead -- see
+//     DecodedFrame::native -- and on a Mac it is still copied, once.
 //
 // Off an Apple platform every one of these is a stub and available() is false,
 // so callers need no conditionals.
