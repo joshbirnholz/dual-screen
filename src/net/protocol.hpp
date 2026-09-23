@@ -336,29 +336,30 @@ struct RumbleMessage {
 // what a rumble names it by; `held` is its buttons, both sticks and, when it
 // has its own sensors, its motion.
 //
-// No name. A pad is known by where it comes in the order the companion lists
-// them -- which under Steam Input is Steam's own order, the one a player can
-// change -- and a name that Steam may no longer have matched to the pad it
-// describes would only be something to believe wrongly.
+// Its name travels with it, but only to be shown: a pad is known by its id,
+// never by a name Steam may no longer have matched to the pad it describes.
 struct ReportedPad {
-    // The id a companion's keyboard is reported under: its keys, listed so
-    // they can go somewhere, and never one of the controllers. Kept clear of
-    // RumbleMessage::kWholeDevice, which a rumble for it would otherwise be.
+    // The id an earlier build of this companion reported its keyboard under.
+    // Keyboards are not reported any more -- on a Wii U the keys are Cemu's
+    // to map -- and a host skips one from a companion that still does.
     static constexpr uint32_t kKeyboard = 0xFFFFFFFEu;
     uint32_t id = 0;
     DsInputState held;
+    // What the companion's SDL calls it, cut to kMaxReportedPadName bytes.
+    // Empty from a companion that does not say.
+    std::string name;
 };
 
 // This device's pads as a companion reports them -- see InputMessage::pads.
-// `id` -1 is the keyboard, as InputManager lists it.
 template <typename Readings>
 std::vector<ReportedPad> reported_pads(const Readings& readings) {
     std::vector<ReportedPad> pads;
     pads.reserve(readings.size());
     for (const auto& reading : readings) {
         ReportedPad pad;
-        pad.id = reading.keyboard ? ReportedPad::kKeyboard : static_cast<uint32_t>(reading.id);
+        pad.id = static_cast<uint32_t>(reading.id);
         pad.held = reading.held;
+        pad.name = reading.name;
         pads.push_back(pad);
     }
     return pads;
@@ -440,6 +441,8 @@ bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
 // The most pads one companion may report. Far more than anyone plugs into one
 // device; a bound so a malformed message cannot ask for a million.
 inline constexpr std::size_t kMaxReportedPads = 16;
+// The longest name a reported pad carries; longer ones are cut.
+inline constexpr std::size_t kMaxReportedPadName = 48;
 bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out);
 
 // Pulls one complete message off the front of `buffer`, erasing it. Returns

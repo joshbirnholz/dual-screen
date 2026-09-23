@@ -262,7 +262,17 @@ AppOptions parse_command_line(int argc, char** argv) {
 // ---------------------------------------------------------------------------
 
 struct App::Impl {
-    enum class State { Playing, Menu, Settings, Message, Browser, Launcher, HostPicker, Companion };
+    enum class State {
+        Playing,
+        Menu,
+        Settings,
+        Controllers,
+        Message,
+        Browser,
+        Launcher,
+        HostPicker,
+        Companion
+    };
 
     AppOptions options;
     AppPaths paths;
@@ -391,10 +401,10 @@ struct App::Impl {
     bool said_pad_owner = false;
     PadOwner last_pad_owner = PadOwner::ThisDevice;
     // On a Wii U, which pad is the GamePad and which is each player -- see
-    // pad_routing.hpp. `pad_choices` is what the Controllers screen was told
-    // this session, by pad_key(); nothing is written down, because a pad's
-    // place in the order is only as good as the session it was counted in.
-    std::map<std::string, std::string> pad_choices;
+    // pad_routing.hpp. `pad_order` is the line as the Controllers screen left
+    // it this session; nothing is written down, because a pad is only known
+    // for as long as it stays connected.
+    PadOrder pad_order;
     // Every pad as of the last frame, and where each went, in the same order.
     std::vector<KnownPad> known_pads;
     std::vector<PadSlot> pad_slots;
@@ -402,9 +412,19 @@ struct App::Impl {
     std::string said_pad_slots;
     // Whether the game has each motor on: the GamePad's, then Player 1 to 8.
     bool slot_rumble[1 + kPadPlayers] = {};
-    // The pads whose motors this app has turned on, by pad_key(), so that one
+    // The pads whose motors this app has turned on, by pad_identity(), so that one
     // leaving a rumbling slot -- or the slot going quiet -- is turned off.
     std::map<std::string, KnownPad> rumbling_pads;
+    // A pad buzzing so the player can tell which one it is, and until when --
+    // see ControllersScreenResult::identify.
+    std::optional<KnownPad> identifying_pad;
+    uint32_t identify_until_ms = 0;
+    // Where the Controllers screen was opened from, which is where closing it
+    // goes back to.
+    State controllers_came_from = State::Playing;
+    // Whether the Wii U list shown in place of "Playing on Cemu" has had the
+    // window's focus, as last logged -- see LayoutPickerState::embedded.
+    bool embedded_menu_focused = false;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -531,16 +551,27 @@ struct App::Impl {
     bool gamepad_is_here() const;
     // Every controller on both devices, in order: this device's, then the
     // companion's. A companion too old to list its pads is one pad.
-    // `for_display` reads this device's pads even while a menu has game
-    // input switched off, for the Controllers screen.
-    std::vector<KnownPad> gather_pads(bool companion_here, bool for_display = false) const;
+    std::vector<KnownPad> gather_pads(bool companion_here) const;
     // Whether a companion is joined, and whether this device then counts as
     // holding the GamePad -- see route_wii_u_pads().
     bool companion_joined() const { return host_session && host_session->has_companion(); }
     bool holds_gamepad() const { return !companion_joined() || gamepad_is_here(); }
-    // Hands presses to the Controllers screen, and says what changed.
+    // The Controllers screen: put up over whatever this device is showing,
+    // handed presses, and put away again back to where it was opened from.
+    void open_controllers();
+    void close_controllers();
     void update_controllers_screen(const std::vector<UiAction>& actions,
                                    const std::vector<PointerEvent>& pointers);
+    // Buzzes one pad for a moment, and stops it again once the moment is up.
+    void identify_pad(const KnownPad& pad);
+    void tick_identify();
+    // Where the pads stand this frame, as the Controllers screen has them.
+    std::vector<PadSlot> current_pad_slots(const std::vector<KnownPad>& pads) const {
+        return slots_of(pads, line_up_pads(pads, pad_order, holds_gamepad()));
+    }
+    // Whether the Wii U list is shown in place of "Playing on Cemu" -- see
+    // LayoutPickerState::embedded.
+    bool shows_embedded_menu() const;
     // Assigns the pads, hands each player's to the game, and returns the
     // GamePad's -- with the touch screen and the motion of whichever device is
     // showing the GamePad's screen.
@@ -552,8 +583,10 @@ struct App::Impl {
     void stop_pad_rumble();
     // True while two devices are in a session, whichever end this is.
     bool paired() const;
-    // Opens the layout menu with the state it should be showing.
-    void open_picker();
+    // Opens the layout menu with the state it should be showing. `embedded`
+    // shows it in place of "Playing on Cemu" instead -- see
+    // LayoutPickerState::embedded.
+    void open_picker(bool embedded = false);
     // What to do about whatever the menu just decided. Called for a press made
     // here and for one forwarded from the other device alike: there is one
     // menu, so there is one place that answers it.
@@ -959,15 +992,15 @@ bool App::Impl::gamepad_is_here() const {
     return here == ScreenId::Bottom;
 }
 
-std::vector<KnownPad> App::Impl::gather_pads(bool companion_here, bool for_display) const {
+std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
     std::vector<KnownPad> pads;
     int position = 0;
-    for (const PadReading& reading : input.pad_readings(for_display)) {
+    for (const PadReading& reading : input.pad_readings()) {
         KnownPad pad;
         pad.on_this_device = true;
         pad.id = static_cast<uint32_t>(reading.id);
-        pad.keyboard = reading.keyboard;
-        pad.position = reading.keyboard ? 0 : position++;
+        pad.position = position++;
+        pad.name = reading.name;
         pad.held = reading.held;
         pads.push_back(pad);
     }
@@ -987,11 +1020,13 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here, bool for_displ
     }
     position = 0;
     for (const net::ReportedPad& reported : host_session->companion_pads()) {
+        // Keys are Cemu's to map; see pad_routing.hpp.
+        if (reported.id == net::ReportedPad::kKeyboard) continue;
         KnownPad pad;
         pad.on_this_device = false;
         pad.id = reported.id;
-        pad.keyboard = reported.id == net::ReportedPad::kKeyboard;
-        pad.position = pad.keyboard ? 0 : position++;
+        pad.position = position++;
+        pad.name = reported.name;
         pad.held = reported.held;
         pads.push_back(pad);
     }
@@ -1005,12 +1040,14 @@ DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInput
     // one, and the Controllers screen can move it anywhere else.
     const bool gamepad_here = holds_gamepad();
     known_pads = gather_pads(companion_here);
-    pad_slots = assign_pads(known_pads, pad_choices, gamepad_here);
+    pad_slots = current_pad_slots(known_pads);
 
     std::string said;
     for (std::size_t index = 0; index < known_pads.size(); ++index) {
+        const KnownPad& known = known_pads[index];
         if (!said.empty()) said += ", ";
-        said += pad_key(known_pads[index]) + " " + pad_slot_name(pad_slots[index]);
+        said += pad_slot_name(pad_slots[index]) + " " + pad_identity(known) + " (" +
+                pad_label(known) + (known.name.empty() ? "" : ", " + known.name) + ")";
     }
     if (said != said_pad_slots) {
         said_pad_slots = said;
@@ -1051,9 +1088,9 @@ void App::Impl::apply_pad_rumble() {
     for (std::size_t index = 0; index < known_pads.size() && index < pad_slots.size(); ++index) {
         const KnownPad& pad = known_pads[index];
         const PadSlot slot = pad_slots[index];
-        if (pad.keyboard || slot.kind == PadSlot::Kind::NotUsed) continue;
+        if (slot.kind == PadSlot::Kind::NotUsed) continue;
         const int motor = slot.kind == PadSlot::Kind::GamePad ? 0 : 1 + slot.player;
-        if (slot_rumble[motor]) wanted.emplace(pad_key(pad), pad);
+        if (slot_rumble[motor]) wanted.emplace(pad_identity(pad), pad);
     }
     const auto set = [this](const KnownPad& pad, bool active) {
         if (pad.on_this_device) {
@@ -1080,20 +1117,90 @@ void App::Impl::stop_pad_rumble() {
     apply_pad_rumble();
 }
 
+void App::Impl::open_controllers() {
+    controllers_came_from = state;
+    if (picker) {
+        // The same as Settings: one menu on screen at a time.
+        picker->close();
+    }
+    controllers_screen.open();
+    state = State::Controllers;
+    input.set_game_input_enabled(false);
+    log_info("the controllers screen is up");
+}
+
+void App::Impl::close_controllers() {
+    controllers_screen.close();
+    log_info("the controllers screen is down");
+    if (controllers_came_from == State::Menu && local_game()) {
+        set_menu_open(true);
+    } else if (local_game()) {
+        state = State::Playing;
+        input.set_game_input_enabled(true);
+    } else {
+        open_launcher();
+    }
+}
+
 void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
                                           const std::vector<PointerEvent>& pointers) {
+    const std::vector<KnownPad> pads = gather_pads(companion_joined());
     const ControllersScreenResult result = controllers_screen.update(
         actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height),
-        gather_pads(companion_joined(), /*for_display=*/true), holds_gamepad(), pad_choices);
-    if (result.choices_changed) {
-        std::string said;
-        for (const auto& [key, slot] : pad_choices) {
-            if (!said.empty()) said += ", ";
-            said += key + " " + slot;
-        }
-        log_info("controllers chosen: " + (said.empty() ? std::string("none, back to the order")
-                                                        : said));
+        pads, holds_gamepad(), pad_order);
+    if (result.order_changed) {
+        log_info(pad_order.chosen ? "controllers: the order was changed"
+                                  : "controllers: back to each device's own order");
     }
+    if (result.identify >= 0 && static_cast<std::size_t>(result.identify) < pads.size()) {
+        identify_pad(pads[static_cast<std::size_t>(result.identify)]);
+    }
+    if (result.close_requested) {
+        close_controllers();
+    }
+}
+
+void App::Impl::identify_pad(const KnownPad& pad) {
+    // One at a time: a second press moves the buzz to the pad it asked about.
+    if (identifying_pad && pad_identity(*identifying_pad) != pad_identity(pad)) {
+        identify_until_ms = 0;
+        tick_identify();
+    }
+    log_info("controllers: rumbling " + pad_identity(pad) + " so it can be found");
+    identifying_pad = pad;
+    identify_until_ms = SDL_GetTicks() + 600;
+    if (pad.on_this_device) {
+        input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), true);
+    } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
+        host_session->publish_rumble(true);
+    } else if (host_session) {
+        host_session->publish_pad_rumble(pad.id, true);
+    }
+}
+
+void App::Impl::tick_identify() {
+    if (!identifying_pad || SDL_GetTicks() < identify_until_ms) {
+        return;
+    }
+    const KnownPad pad = *identifying_pad;
+    identifying_pad.reset();
+    // Left alone if the game has its motor on meanwhile: that is not ours to
+    // stop.
+    if (rumbling_pads.count(pad_identity(pad)) != 0) {
+        return;
+    }
+    if (pad.on_this_device) {
+        input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), false);
+    } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
+        host_session->publish_rumble(false);
+    } else if (host_session) {
+        host_session->publish_pad_rumble(pad.id, false);
+    }
+}
+
+bool App::Impl::shows_embedded_menu() const {
+    return state == State::Playing && system == SystemId::WiiU && !is_companion() &&
+           external_source && external_source->running() && picker;
 }
 
 bool App::Impl::paired() const {
@@ -1208,6 +1315,10 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 } else {
                     running = false;
                 }
+            } else if (result.controllers_requested) {
+                // The host's own screen, the same as Settings below: only it
+                // can see every controller on both devices.
+                open_controllers();
             } else if (result.settings_requested) {
                 // The settings belong to the device running the game, whichever
                 // pad asked: half of what they show is where this machine's
@@ -1221,8 +1332,13 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
 }
 
-void App::Impl::open_picker() {
+void App::Impl::open_picker(bool embedded) {
     LayoutPickerState picker_state;
+    picker_state.embedded = embedded;
+    if (embedded) {
+        picker_state.subtitle = "Playing on " + system_profile(system).core_description +
+                                ". Switch back to its window to play.";
+    }
     picker_state.layout_id = active_layout_id;
     picker_state.session_active = paired();
     picker_state.bilinear_filtering = bilinear_filtering;
@@ -1529,17 +1645,12 @@ void App::Impl::open_settings() {
         picker->close();
     }
     settings_screen->open(settings, resolve_core_statuses(options, settings));
-    controllers_screen.close();
     state = State::Settings;
     input.set_game_input_enabled(false);
     log_info("the settings screen is up");
 }
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
-    if (result.open_controllers) {
-        controllers_screen.open();
-        log_info("the controllers screen is up");
-    }
     if (result.settings_changed) {
         settings = settings_screen->settings();
         if (!settings.save(paths)) {
@@ -1572,6 +1683,11 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
             // session looks like now rather than from what it looked like then
             // -- a companion may have arrived or left while this screen was up.
             set_menu_open(true);
+        } else if (settings_came_from == State::Playing && local_game()) {
+            // Opened from the list a Wii U host shows while Cemu plays: back
+            // to it, with the game never having stopped.
+            state = State::Playing;
+            input.set_game_input_enabled(true);
         } else {
             open_launcher();
         }
@@ -2064,7 +2180,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     break;
                 case LauncherChoice::Settings:
                     settings_screen->open(settings, resolve_core_statuses(options, settings));
-                    controllers_screen.close();
                     state = State::Settings;
                     break;
                 case LauncherChoice::Quit:
@@ -2212,11 +2327,12 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
+        case State::Controllers: {
+            update_controllers_screen(actions, pointers);
+            break;
+        }
+
         case State::Settings: {
-            if (controllers_screen.is_open()) {
-                update_controllers_screen(actions, pointers);
-                break;
-            }
             apply_settings_result(
                 settings_screen->update(actions, pointers, static_cast<float>(output_width),
                                         static_cast<float>(output_height)));
@@ -2224,6 +2340,35 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
         }
 
         case State::Playing: {
+            if (shows_embedded_menu()) {
+                // The Wii U list is already on screen in place of the menu,
+                // so there is nothing for the menu keys to open. It answers
+                // only while this window has the focus: the pads keep
+                // reporting while Cemu's window is in front, and a press
+                // meant for the game must not also pick Quit here.
+                if (!picker->embedded()) {
+                    open_picker(/*embedded=*/true);
+                }
+                const bool focused =
+                    window != nullptr &&
+                    (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+                if (focused != embedded_menu_focused) {
+                    embedded_menu_focused = focused;
+                    log_info(focused ? "this window has the focus; the list beside the game answers"
+                                     : "this window lost the focus; the list beside the game is "
+                                       "left alone");
+                }
+                if (focused) {
+                    apply_menu_result(picker->update(actions, pointers,
+                                                     static_cast<float>(output_width),
+                                                     static_cast<float>(output_height)));
+                }
+                break;
+            }
+            if (picker && picker->embedded()) {
+                // The game beside it ended or has not arrived.
+                picker->close();
+            }
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu || action == UiAction::OpenMenu) {
                     set_menu_open(true);
@@ -2296,8 +2441,11 @@ void App::Impl::render() {
     // here, and a frozen game would look like a session that had stopped.
     if (state == State::Companion && companion_session &&
         companion_session->host_settings_open()) {
-        render_waiting_screen(quads, text, button_glyphs, width, height, "Settings",
-                              {"Look at the other screen."}, {});
+        // Settings or Controllers: both are the host's own screens, and a
+        // name for either here could be the wrong one.
+        render_waiting_screen(quads, text, button_glyphs, width, height, "On the other screen",
+                              {"A menu is open there.", "This device's buttons still work it."},
+                              {});
         SDL_GL_SwapWindow(window);
         ++frames_rendered;
         companion_session->note_frame_drawn();
@@ -2353,10 +2501,18 @@ void App::Impl::render() {
         // place either of a Wii U's screens appears now, and a connected
         // companion gets whichever one it asked for over the network. See
         // the request_screen() block in the host poll loop.
-        const SystemProfile& profile = system_profile(system);
-        render_waiting_screen(quads, text, button_glyphs, width, height,
-                              "Playing on " + profile.core_description,
-                              {game_title, "F1 or Tab for the menu"}, {});
+        //
+        // What shows instead is the list the quick menu would have, so it is
+        // one step from here rather than two -- see LayoutPickerState::embedded.
+        if (state == State::Playing && picker && picker->embedded()) {
+            quads.begin_frame(output_width, output_height);
+            quads.clear(ui_theme().background);
+            picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
+        } else {
+            const SystemProfile& profile = system_profile(system);
+            render_waiting_screen(quads, text, button_glyphs, width, height,
+                                  "Playing on " + profile.core_description, {game_title}, {});
+        }
     } else if (ScreenSource* drawing = active_source()) {
         const ScreenTextures& textures = drawing->screens();
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
@@ -2372,7 +2528,8 @@ void App::Impl::render() {
     // it either way, and a Settings reached from the Launcher has no game
     // frame to blur at all.
     const bool show_menu_backdrop =
-        state == State::Menu || (state == State::Settings && settings_came_from == State::Menu);
+        state == State::Menu || (state == State::Settings && settings_came_from == State::Menu) ||
+        (state == State::Controllers && controllers_came_from == State::Menu);
     if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is
         // exactly the frame underneath it -- and taken again when that frame
@@ -2389,10 +2546,9 @@ void App::Impl::render() {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
-    } else if (state == State::Settings && controllers_screen.is_open()) {
+    } else if (state == State::Controllers) {
         controllers_screen.render(quads, text, button_glyphs, width, height,
-                                  gather_pads(companion_joined(), /*for_display=*/true),
-                                  holds_gamepad(), pad_choices,
+                                  gather_pads(companion_joined()), holds_gamepad(), pad_order,
                                   system_profile(system).pad_belongs_to_its_screen);
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, button_glyphs, width, height);
@@ -2698,6 +2854,7 @@ int App::run(const AppOptions& options) {
         impl.cursor.set_mode(impl.settings.cursor_mode);
         impl.cursor.update(elapsed);
         impl.input.begin_frame();
+        impl.tick_identify();
 
         // Test hook: hold a touch at a fixed spot by pushing the same events a
         // real device would, so everything downstream is the production path.
@@ -2830,11 +2987,15 @@ int App::run(const AppOptions& options) {
             // A companion arriving or leaving changes what the menu offers --
             // Disconnect, and a sound target worth choosing -- so the row is
             // rebuilt rather than left as it was when the menu opened.
-            if (impl.state == Impl::State::Menu && impl.picker) {
+            if ((impl.state == Impl::State::Menu || impl.state == Impl::State::Playing) &&
+                impl.picker && impl.picker->is_open()) {
                 impl.picker->set_session_active(impl.paired());
             }
             shared.menu_open = impl.state == Impl::State::Menu;
-            shared.settings_open = impl.state == Impl::State::Settings;
+            // The Controllers screen is the host's own too, and the other
+            // device is told to look over here for it the same way.
+            shared.settings_open = impl.state == Impl::State::Settings ||
+                                   impl.state == Impl::State::Controllers;
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
@@ -3003,14 +3164,15 @@ int App::run(const AppOptions& options) {
                 // it is showing neither: a press aimed at a menu that has since
                 // closed is not a press at the game.
                 const bool for_menu = impl.state == Impl::State::Menu && impl.picker;
-                const bool for_settings = impl.state == Impl::State::Settings;
+                const bool for_settings = impl.state == Impl::State::Settings ||
+                                          impl.state == Impl::State::Controllers;
                 if (!for_menu && !for_settings) continue;
                 if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
                 }
                 if (!press.has_action) continue;
                 const UiAction action = ui_action_for(press.action);
-                if (for_settings && impl.controllers_screen.is_open()) {
+                if (impl.state == Impl::State::Controllers) {
                     impl.update_controllers_screen({action}, {});
                     continue;
                 }

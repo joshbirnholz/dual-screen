@@ -85,8 +85,8 @@ DsInputState press_and_read(SDL_GameControllerButton button, bool microphone = f
 }
 
 // Each pad on its own: what one holds is not the other's, and they come in
-// the order they are listed -- Steam's order, under Steam Input -- with the
-// keyboard after them. See input/pad_routing.hpp.
+// the order they are listed -- Steam's order, under Steam Input -- with no
+// keyboard among them. See input/pad_routing.hpp.
 void test_each_pad_is_read_on_its_own_in_order() {
     VirtualPad first;
     VirtualPad second;
@@ -103,19 +103,8 @@ void test_each_pad_is_read_on_its_own_in_order() {
     input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
                     system_profile(SystemId::WiiU).screens);
 
-    const std::vector<PadReading> readings = input.pad_readings();
-    std::vector<PadReading> pads;
-    int keyboards = 0;
-    for (const PadReading& reading : readings) {
-        if (reading.keyboard) {
-            ++keyboards;
-            CHECK_MSG(&reading == &readings.back(), "the keyboard was not listed last");
-        } else {
-            pads.push_back(reading);
-        }
-    }
+    const std::vector<PadReading> pads = input.pad_readings();
     CHECK_EQ(pads.size(), static_cast<std::size_t>(2));
-    CHECK_MSG(keyboards <= 1, "more than one keyboard was listed");
     if (pads.size() == 2) {
         CHECK_MSG(pads[0].id < pads[1].id, "the pads did not come in the order they were listed");
         CHECK_MSG(pads[0].held.buttons == 0, "the first pad was read holding the second's press");
@@ -1052,6 +1041,56 @@ void test_only_the_device_showing_the_gamepad_controls_it() {
     CHECK(shared.motion.gyro_y == 2.0f);
 }
 
+// Holding a direction keeps moving through a menu: one step for the press,
+// nothing more for a moment -- so a single press is a single step -- and then
+// a steady run until it is let go.
+void test_holding_a_direction_keeps_moving() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        CHECK_MSG(false, "could not attach a virtual pad");
+        return;
+    }
+    InputManager input;
+    input.initialize(Settings());
+    int downs = 0;
+    const auto frame = [&]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        for (const UiAction action : input.ui_actions()) {
+            if (action == UiAction::Down) ++downs;
+        }
+    };
+
+    pad.press(SDL_CONTROLLER_BUTTON_DPAD_DOWN, true);
+    const uint32_t pressed = SDL_GetTicks();
+    while (SDL_GetTicks() - pressed < 300) {
+        frame();
+        SDL_Delay(10);
+    }
+    CHECK_MSG(downs == 1, "a press held briefly was more than one step: " + std::to_string(downs));
+    while (SDL_GetTicks() - pressed < 900) {
+        frame();
+        SDL_Delay(10);
+    }
+    CHECK_MSG(downs >= 4, "holding the d-pad did not keep moving: " + std::to_string(downs));
+    pad.press(SDL_CONTROLLER_BUTTON_DPAD_DOWN, false);
+    frame();
+    const int released_at = downs;
+    for (int index = 0; index < 30; ++index) {
+        frame();
+        SDL_Delay(10);
+    }
+    CHECK_MSG(downs == released_at, "letting go did not stop it");
+
+    input.shutdown();
+    pad.detach();
+}
+
 int main() {
     test_only_the_device_showing_the_gamepad_controls_it();
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
@@ -1064,6 +1103,7 @@ int main() {
     }
 
     test_each_pad_is_read_on_its_own_in_order();
+    test_holding_a_direction_keeps_moving();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();

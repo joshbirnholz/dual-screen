@@ -113,9 +113,11 @@ run_session() {
     if [ ! -f "$shot" ]; then
         echo "$name: no screenshot" >&2
         FAILED=1
-    elif ! "$CHECKER" "$shot" "text=0.1,0.35,0.9,0.60"; then
-        echo "$name: the shell showed something other than its own idle screen with nothing "\
-"connected" >&2
+    # What is on screen is the Wii U menu, shown in place of a "Playing on
+    # Cemu" notice -- its rows, Settings and Quit, sit in this band.
+    elif ! "$CHECKER" "$shot" "text=0.1,0.26,0.4,0.40"; then
+        echo "$name: the shell showed something other than its menu beside the game with "\
+"nothing connected" >&2
         FAILED=1
     fi
 }

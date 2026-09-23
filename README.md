@@ -197,17 +197,25 @@ Three things are different about a Wii U session:
   you have set up in Cemu. That is how to play the many games that never ask
   for the pad, with a controller already configured for them.
 
-- **The GamePad belongs to one device, and every other controller is a
+- **The GamePad belongs to one controller, and every other controller is a
   player.** By default the device showing the GamePad screen gives the GamePad
-  its first controller and its keyboard. Every other controller on either
-  device is Player 1, Player 2 and so on, in order. See **Players** below. A DS
-  or a 3DS is different: two people share one console there, so both devices'
-  controls are merged.
+  its first controller. Every other controller on either device is Player 1,
+  Player 2 and so on, in order. See **Players** below. A DS or a 3DS is
+  different: two people share one console there, so both devices' controls are
+  merged.
+
+- **The quick menu is on screen the whole time.** While Cemu's window plays
+  the game, this app's own window shows the Wii U menu in place of a
+  "Playing on Cemu" notice: **Controllers**, **Settings**, **Disconnect** and
+  **Quit**. It answers only while its window has the focus, so a press meant
+  for the game never picks Quit. There is no Resume: the game never paused,
+  and going back to it is switching back to Cemu's window.
 
 - **None of the controller shortcuts exist.** A Wii U game reads every control
   the console has, including both stick presses, so nothing is taken from the
-  pad — no L3, no R3, no chord, no two-finger tap. The menu is **F1**, **Tab**
-  or **Escape**, smoothing is **F2**, and Steam Input can be pointed at any of them. Which is
+  pad — no L3, no R3, no chord, no two-finger tap. The menu is always on
+  screen on the device running the game (see above), and **F1**, **Tab** or
+  **Escape** on a companion; smoothing is **F2**, and Steam Input can be pointed at any of them. Which is
   also why every button on the pad, and both triggers as ZL and ZR, go straight
   through to the game — including from the second device, whose touches arrive
   as touches on the GamePad's own screen.
@@ -257,31 +265,44 @@ mapping is applied. Which physical controller sits behind each player is
 decided here, not in Cemu, so the mapping stays put while the controllers
 change.
 
-Controllers on both devices count. By default:
+Controllers on both devices count, and they stand in one line: the first is
+the GamePad, the next eight are Player 1 to Player 8, and anything after that
+is not used. One controller to each: no two controllers are ever the same
+player, and none share the GamePad. By default:
 
 - The device showing the GamePad screen gives the GamePad its first
-  controller and its keyboard. A keyboard on the other device is not used.
+  controller. A companion with no controller of its own, such as a phone,
+  leaves the GamePad to its touch screen and motion.
 - Every other controller is the next player: this device's first, in order,
   then the companion's.
-- Past eight players, a controller is not used.
 
-Controllers are numbered in each device's own order, which under Steam Input
-is Steam's. Rearranging them in Steam rearranges them here. They are never
-known by name: the name Steam gives a virtual pad is fixed when it appears, and
-after controllers come, go and are reordered it can describe a different
-controller from the one behind it.
+Keyboards are not in the line at all. Map a keyboard in Cemu directly, with
+Cemu's own **Keyboard** API, if a game wants one.
 
-**Settings → Controllers** changes any of that for the rest of the session. It
-works mid-game, from the menu. Each controller gets a row, "Controller 2, this
-device", and Left and Right step it through GamePad, Player 1 to 8 and Not used.
-Press a button on a controller and its row lights up, which is how to tell them
-apart. **Back to the defaults** forgets every choice. Nothing is remembered once
-the app closes, because a controller's place in the order is only as good as
-the session it was counted in.
+Controllers start out in each device's own order, which under Steam Input is
+Steam's. Each is shown with the name Steam gives it, where there is one, next
+to its number and device. The name is only shown: a virtual pad's name is fixed
+when it appears, and after controllers come, go and are reordered it can
+describe a different controller from the one behind it.
 
-A player's rumble goes to the controllers behind it, on whichever device they
-are on. A companion older than this needs updating to have its controllers
-counted one by one. Until then it counts as one controller.
+**Controllers**, in the quick menu, rearranges the line the way SteamOS's own
+Controller Order screen does. Press confirm to pick a controller up, move it
+up or down, and press confirm again to put it down. Moving one up from Player 1
+makes it the GamePad; moving one down past the last player puts it in **Not
+used**. Press the north face button (X on a Nintendo layout) to make the
+highlighted controller rumble, which is how to tell them apart. **Back to the
+defaults** forgets the arrangement. It works mid-game and from either device's
+buttons, and lasts until the app closes: a controller is recognised for as long
+as it stays connected, so one that is unplugged and plugged back in joins the
+end of the line.
+
+A player's rumble goes to its controller, on whichever device it is on. A
+companion older than this needs updating to have its controllers counted one
+by one. Until then it counts as one controller.
+
+Each DualScreen controller's **Settings** button in Cemu offers motion, rumble
+on or off, and a deadzone and range for each stick. On a Wii Remote, the
+default mapping puts 1 on the north face button and 2 on the west one.
 
 ### Motion
 
@@ -778,7 +799,7 @@ Full options:
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
 | Turn the pointer off entirely | **Pointer** in the layout menu |
-| Move around the menus | d-pad or left stick; the east face button confirms, the south one goes back |
+| Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 
 ### If it quits immediately in Game Mode

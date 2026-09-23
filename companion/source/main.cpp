@@ -288,6 +288,12 @@ private:
     // second, with a count of the ones in between, so a device that is slow
     // for a stretch does not also spend the stretch writing to its card.
     void report_slow_pass(const PassTimes& pass);
+    // Keeps the screen on and the device out of sleep for as long as a
+    // session is connected, and lets it go again after. Only a Switch needs
+    // telling: everywhere else SDL_DisableScreenSaver() at start-up already
+    // does it, for the whole run.
+    void keep_awake(bool awake);
+    bool kept_awake_ = false;
     uint64_t slow_pass_said_at_ = 0;
     unsigned slow_passes_unsaid_ = 0;
     // Builds every GL object this program owns. Called at start-up, and again
@@ -803,6 +809,19 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         handle_menu(actions, pointers);
         return;
     }
+    // The host's Settings or Controllers are up. This device is not drawing
+    // them, but the player is still holding a pad here, and it is still
+    // their session -- so the presses go over and get the same answers a
+    // press on the host would.
+    if (state_ == State::Playing && session_.host_settings_open()) {
+        for (const UiAction action : actions) {
+            net::MenuAction wire = net::MenuAction::Confirm;
+            if (menu_action_for(action, wire)) {
+                session_.request_menu_action(wire);
+            }
+        }
+        return;
+    }
 
     if (state_ == State::Launcher) {
         const LauncherResult result =
@@ -936,6 +955,28 @@ bool Client::load_gl_resources(std::string* error) {
     return true;
 }
 
+void Client::keep_awake(bool awake) {
+    if (awake == kept_awake_) {
+        return;
+    }
+    kept_awake_ = awake;
+#ifdef __SWITCH__
+    // A connected Switch put down for a moment is still the other half of a
+    // game in progress. Left alone it dims, then sleeps, and sleeping drops
+    // the connection -- so while a session is up it is told what a video
+    // player tells it: something is playing. That turns off both the dimming
+    // and the auto-sleep, and only until it is told otherwise.
+    const Result result = appletSetMediaPlaybackState(awake);
+    if (R_FAILED(result)) {
+        log_warn("could not " + std::string(awake ? "keep" : "stop keeping") +
+                 " the console awake: " + std::to_string(result));
+        return;
+    }
+#endif
+    log_info(awake ? "a session is connected: keeping the screen on"
+                   : "no session: the screen may sleep again");
+}
+
 void Client::run() {
     const uint64_t started_ms = net::monotonic_millis();
     bool screenshot_taken = false;
@@ -1065,6 +1106,8 @@ void Client::run() {
                 break;
         }
 
+        keep_awake(state_ == State::Playing);
+
         const Layout layout =
             state_ == State::Playing ? session_layout() : registry_.fallback();
         input_.end_frame(layout, static_cast<float>(output_width_),
@@ -1113,7 +1156,7 @@ void Client::run() {
         route_guide_taps(actions, pointers);
         handle_actions(actions, pointers);
 
-        if (state_ == State::Playing && !menu_open_) {
+        if (state_ == State::Playing && !menu_open_ && !session_.host_settings_open()) {
             // Each pad on its own as well, so a Wii U host can make them
             // different players.
             const std::vector<net::ReportedPad> pads = net::reported_pads(input_.pad_readings());
@@ -1157,6 +1200,7 @@ void Client::run() {
             running_ = false;
         }
     }
+    keep_awake(false);
 }
 
 void Client::report_slow_pass(const PassTimes& pass) {
@@ -1208,6 +1252,15 @@ void Client::draw() {
         // it does there. A failure is shown in the same place, as its status.
         host_picker_.render(quads_, text_, button_glyphs_, width, height, session_.hosts(),
                             state_ == State::Failed ? failure_ : session_.status_detail());
+        return;
+    }
+
+    if (session_.host_settings_open()) {
+        // Settings and Controllers are the host's own screens; see
+        // handle_actions() for why the buttons here still work them.
+        render_waiting_screen(quads_, text_, button_glyphs_, width, height, "On the other screen",
+                              {"A menu is open there.", "This device's buttons still work it."},
+                              {});
         return;
     }
 

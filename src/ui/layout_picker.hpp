@@ -50,6 +50,9 @@ struct LayoutPickerResult {
     // that screen up, and it belongs to the device running the game however
     // this was pressed.
     bool settings_requested = false;
+    // The same for the Controllers screen -- a Wii U's, which is the one
+    // console whose controllers are each somebody's.
+    bool controllers_requested = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -103,6 +106,13 @@ struct LayoutPickerState {
     // ToggleFilter in the first place -- so showing the prompt would advertise
     // a control that silently does nothing. See SystemProfile::offers_smoothing.
     bool smoothing_available = true;
+    // Shown in place of the screen a Wii U host would otherwise show while
+    // Cemu's own window plays the game, rather than opened over it: nothing is
+    // paused, so there is nothing to resume and Back does nothing -- going
+    // back to the game is going back to Cemu's window. `subtitle` goes under
+    // the game's title.
+    bool embedded = false;
+    std::string subtitle;
 };
 
 // What a face button asked for and has not yet been allowed to do. Both of
@@ -186,6 +196,7 @@ public:
     bool filtering() const { return state_.bilinear_filtering; }
     AudioTarget audio_target() const { return state_.audio_target; }
     bool is_open() const { return open_; }
+    bool embedded() const { return open_ && state_.embedded; }
     void close() { open_ = false; }
 
     LayoutPickerResult update(const std::vector<UiAction>& actions,
@@ -243,7 +254,7 @@ private:
         // above: there is no layout to pick (see rebuild_tiles()) and nothing
         // else here is a value worth cycling from a footer button -- see
         // rebuild_footer()'s Wii U branch and render()'s.
-        Resume,
+        OpenControllers,
         OpenSettings,
         Disconnect,
         Quit,

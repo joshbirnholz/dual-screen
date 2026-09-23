@@ -182,10 +182,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
             result.settings_changed = true;
             break;
-        case Row::Controllers:
-            // Either direction opens it: it is a screen, not a value.
-            result.open_controllers = true;
-            break;
         case Row::Back:
             result.close_requested = true;
             break;
@@ -312,7 +308,6 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",
          to_string(settings_.wii_u_screen_alone)},
-        {"Controllers", "GamePad and players"},
         {"Back", ""},
     };
 

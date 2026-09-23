@@ -21,6 +21,13 @@ That is the whole of it.
   this device is holding the touch screen.
 - Plays the game's sound, when the host's **Sound** setting says this device is
   one of the ones it comes out of.
+- Stays awake while it is connected. The screen neither dims nor sleeps, so
+  a Switch put down for a while is still there when it is picked up. It is
+  allowed to sleep again once the session ends.
+- Reports each controller attached to it separately, with its name, so on a
+  Wii U the host can make them different players (see **Players** in the main
+  README). When the host has Settings or Controllers open, the Switch says so
+  and its buttons work that screen.
 
 Everything the two devices have to agree on — the layout, smoothing, the gap,
 handedness, which device makes the sound — belongs to the host. This end asks

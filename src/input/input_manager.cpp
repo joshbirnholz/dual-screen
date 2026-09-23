@@ -185,7 +185,7 @@ DsInputState InputManager::gated(DsInputState held) const {
     return held;
 }
 
-std::vector<PadReading> InputManager::pad_readings(bool for_display) const {
+std::vector<PadReading> InputManager::pad_readings() const {
     // In the order the pads' own player numbers put them, which under Steam
     // Input is Steam's slot order -- the order a player arranges in Steam and
     // expects to see as Controller 1, 2, 3. A pad without one comes after, in
@@ -205,9 +205,9 @@ std::vector<PadReading> InputManager::pad_readings(bool for_display) const {
     for (const auto& [id, controller] : ordered) {
         PadReading reading;
         reading.id = id;
-        if (for_display) {
-            reading.held = held_state_of(controller);
-        } else if (game_input_enabled_) {
+        const char* name = SDL_GameControllerName(controller);
+        reading.name = name != nullptr ? name : "";
+        if (game_input_enabled_) {
             reading.held = gated(held_state_of(controller));
             // Its own motion, where it has its own sensors switched on. Both
             // or neither, for the reason MotionReader gives.
@@ -231,19 +231,6 @@ std::vector<PadReading> InputManager::pad_readings(bool for_display) const {
         }
         readings.push_back(std::move(reading));
     }
-    // A console, a phone and a television have no keyboard to speak of, and a
-    // row for one on the Controllers screen would be a row nobody can use.
-#if !defined(__SWITCH__) && !defined(__ANDROID__) && !(defined(__APPLE__) && TARGET_OS_IPHONE)
-    PadReading keys;
-    keys.id = -1;
-    keys.keyboard = true;
-    if (for_display) {
-        keys.held = keyboard_held_state();
-    } else if (game_input_enabled_) {
-        keys.held = gated(keyboard_held_state());
-    }
-    readings.push_back(keys);
-#endif
     return readings;
 }
 
@@ -660,7 +647,8 @@ void InputManager::emit_navigation_from_axes() {
     const bool left = x < -deadzone;
     const bool right = x > deadzone;
 
-    // Edge-triggered, so holding the stick does not scroll the menu away.
+    // A step on the way in; holding it on is repeat_held_directions()'s, at a
+    // pace a list can be read at rather than one step per frame.
     if (up && !axis_up_) push_action(UiAction::Up);
     if (down && !axis_down_) push_action(UiAction::Down);
     // Said once, for the same reason as the buttons above: on a device with no
@@ -676,6 +664,56 @@ void InputManager::emit_navigation_from_axes() {
     axis_down_ = down;
     axis_left_ = left;
     axis_right_ = right;
+
+    // Everything that can be holding a direction down right now, for the
+    // repeat below: the stick, as above, any pad's d-pad, and the arrow keys.
+    bool held[4] = {up, down, left, right};
+    const SDL_GameControllerButton dpad[4] = {
+        SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+        SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT};
+    for (const auto& entry : controllers_) {
+        if (entry.second == nullptr) continue;
+        for (int direction = 0; direction < 4; ++direction) {
+            if (SDL_GameControllerGetButton(entry.second, dpad[direction]) != 0) {
+                held[direction] = true;
+            }
+        }
+    }
+    int key_count = 0;
+    const Uint8* keys = SDL_GetKeyboardState(&key_count);
+    const SDL_Scancode arrows[4] = {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT,
+                                    SDL_SCANCODE_RIGHT};
+    for (int direction = 0; direction < 4; ++direction) {
+        if (keys != nullptr && arrows[direction] < key_count && keys[arrows[direction]] != 0) {
+            held[direction] = true;
+        }
+    }
+    repeat_held_directions(held);
+}
+
+void InputManager::repeat_held_directions(const bool held[4]) {
+    // Long enough that one press is one step for anybody who meant one, short
+    // enough that running down a long list does not feel like waiting.
+    constexpr uint32_t kRepeatDelayMs = 400;
+    constexpr uint32_t kRepeatEveryMs = 90;
+    static const UiAction kActions[4] = {UiAction::Up, UiAction::Down, UiAction::Left,
+                                         UiAction::Right};
+    const uint32_t now = SDL_GetTicks();
+    for (int direction = 0; direction < 4; ++direction) {
+        if (!held[direction]) {
+            direction_held_[direction] = false;
+            continue;
+        }
+        if (!direction_held_[direction]) {
+            direction_held_[direction] = true;
+            direction_next_repeat_[direction] = now + kRepeatDelayMs;
+            continue;
+        }
+        if (static_cast<int32_t>(now - direction_next_repeat_[direction]) >= 0) {
+            push_action(kActions[direction]);
+            direction_next_repeat_[direction] = now + kRepeatEveryMs;
+        }
+    }
 }
 
 MenuButtonLabels InputManager::menu_labels() const {

@@ -330,6 +330,14 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
             put_f32(out, pad.held.motion.accel_z);
             put_u32(out, pad.held.motion.sampled_us);
         }
+        // Their names after all of them rather than inside each, so a host
+        // that knows the pads but not their names reads the pads and stops.
+        for (std::size_t index = 0; index < count; ++index) {
+            const std::string& name = message.pads[index].name;
+            const std::size_t length = std::min(name.size(), kMaxReportedPadName);
+            put_u8(out, static_cast<uint8_t>(length));
+            out.insert(out.end(), name.begin(), name.begin() + static_cast<std::ptrdiff_t>(length));
+        }
     }
 }
 
@@ -759,6 +767,18 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
         }
         if (!reader.ok()) return false;
         out.reports_pads = true;
+        // The names, from a companion new enough to send them.
+        if (reader.remaining() >= 1) {
+            for (ReportedPad& pad : out.pads) {
+                uint8_t length = 0;
+                std::vector<uint8_t> bytes;
+                if (!reader.u8(length) || length > kMaxReportedPadName ||
+                    !reader.bytes(bytes, length)) {
+                    return false;
+                }
+                pad.name.assign(bytes.begin(), bytes.end());
+            }
+        }
     }
     return true;
 }

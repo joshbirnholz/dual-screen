@@ -86,7 +86,11 @@ void LayoutPicker::rebuild_footer() {
         // control, unlike everything below: a real GamePad has none of these
         // as face-button shortcuts either, so neither does this one. See
         // update()'s Wii U branch for the controls this deliberately ignores.
-        footer_.push_back(Footer::Resume);
+        //
+        // No Resume: Back does that where the menu is opened over the game,
+        // and where it is shown in place of it -- see LayoutPickerState::
+        // embedded -- the game was never paused and is one window away.
+        footer_.push_back(Footer::OpenControllers);
         footer_.push_back(Footer::OpenSettings);
         if (state_.session_active) {
             footer_.push_back(Footer::Disconnect);
@@ -169,7 +173,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::ScreenGap: break;
         // Plain names, not "Label: value" pairs like the rest above -- these
         // are actions, not settings with a current value to show.
-        case Footer::Resume: return "Resume";
+        case Footer::OpenControllers: return "Controllers";
         case Footer::OpenSettings: return "Settings";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: return "Quit";
@@ -452,8 +456,8 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         // Wii U's plain list -- see rebuild_footer(). Each of these is what
         // the corresponding face-button shortcut already does for a DS or a
         // 3DS above; this is just the one place a Wii U session reaches them.
-        case Footer::Resume:
-            result.close_requested = true;
+        case Footer::OpenControllers:
+            result.controllers_requested = true;
             return true;
         case Footer::OpenSettings:
             result.settings_requested = true;
@@ -534,8 +538,11 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             case UiAction::Left: move_focus(-1, 0, geometry); break;
             case UiAction::Right: move_focus(1, 0, geometry); break;
             case UiAction::Confirm: activate_focus(result); break;
+            // Nothing to close where the menu is the screen itself.
             case UiAction::Cancel:
-            case UiAction::ToggleMenu: result.close_requested = true; break;
+            case UiAction::ToggleMenu:
+                if (!state_.embedded) result.close_requested = true;
+                break;
             // The app's own quit key, which is not a face button and is not
             // asked about twice.
             case UiAction::Quit: result.quit_requested = true; break;
@@ -694,6 +701,10 @@ void LayoutPicker::render(QuadRenderer& quads,
     if (!game_title.empty()) {
         text.draw(quads, game_title, geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
     }
+    if (!state_.subtitle.empty()) {
+        text.draw(quads, state_.subtitle, geometry.panel.x, geometry.panel.y + line * 1.9f,
+                  scale * 0.9f, theme.text_dim);
+    }
 
     for (std::size_t index = 0; index < geometry.tiles.size(); ++index) {
         const PixelRect& tile = geometry.tiles[index];
@@ -767,7 +778,9 @@ void LayoutPicker::render(QuadRenderer& quads,
         // by A -- there is nothing left for a face-button shortcut to name.
         // A tile is tapped directly, so this names a button nobody has.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
-        guide.push_back({ButtonGlyph::B, "Resume", PromptRole::LeavesScreen});
+        if (!state_.embedded) {
+            guide.push_back({ButtonGlyph::B, "Resume", PromptRole::LeavesScreen});
+        }
     } else {
         // Leftmost, and always: it is the one prompt here that is about the
         // machine rather than about the game, so it sits apart from the rest.

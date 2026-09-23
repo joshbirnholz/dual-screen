@@ -457,8 +457,9 @@ void test_the_other_buttons_still_work() {
               "face button");
 }
 
-// A Wii U's quick menu is a plain list -- Resume, Settings, Disconnect (only
-// with a companion attached), Quit -- and nothing else: no layout tiles (see
+// A Wii U's quick menu is a plain list -- Controllers, Settings, Disconnect
+// (only with a companion attached), Quit -- and nothing else, not even Resume,
+// which Back already is: no layout tiles (see
 // test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape), no
 // audio, hands, pointer, right-stick or render-scale buttons, and no
 // face-button shortcuts standing in for any of them. Which screen is shown
@@ -471,7 +472,7 @@ void test_wii_u_menu_is_a_plain_list() {
     for (const bool session_active : {false, true}) {
         state.session_active = session_active;
 
-        int resume = 0, settings = 0, disconnect = 0, quit = 0;
+        int controllers = 0, closed = 0, settings = 0, disconnect = 0, quit = 0;
         int anything_else = 0;
         for (float y = 4.0f; y < kHeight; y += 8.0f) {
             for (float x = 4.0f; x < kWidth; x += 8.0f) {
@@ -479,7 +480,8 @@ void test_wii_u_menu_is_a_plain_list() {
                 picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
                 picker.open(state);
                 const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
-                if (result.close_requested) ++resume;
+                if (result.close_requested) ++closed;
+                if (result.controllers_requested) ++controllers;
                 if (result.settings_requested) ++settings;
                 if (result.disconnect_requested) ++disconnect;
                 if (picker.awaiting_confirmation()) ++quit;
@@ -492,7 +494,8 @@ void test_wii_u_menu_is_a_plain_list() {
                 }
             }
         }
-        CHECK_MSG(resume > 0, "no tap reached Resume on a Wii U's menu");
+        CHECK_MSG(controllers > 0, "no tap reached Controllers on a Wii U's menu");
+        CHECK_MSG(closed == 0, "a Wii U's menu still has a row that only closes it");
         CHECK_MSG(settings > 0, "no tap reached Settings on a Wii U's menu");
         CHECK_MSG(quit > 0, "no tap reached Quit on a Wii U's menu");
         CHECK_MSG(session_active == (disconnect > 0),
@@ -529,6 +532,19 @@ void test_wii_u_menu_is_a_plain_list() {
         }
     }
     CHECK(sound > 0);
+
+    // Shown in place of the waiting screen rather than over a paused game,
+    // Back has nothing to close.
+    state.embedded = true;
+    LayoutPicker embedded(registry);
+    embedded.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    embedded.open(state);
+    CHECK(embedded.embedded());
+    for (const UiAction action : {UiAction::Cancel, UiAction::ToggleMenu}) {
+        CHECK_MSG(!embedded.update({action}, {}, kWidth, kHeight).close_requested,
+                  "Back closed a menu that is the screen itself");
+    }
+    CHECK(embedded.update({UiAction::Confirm}, {}, kWidth, kHeight).controllers_requested);
 }
 
 // The control guide is what actually tells a player what a press does, so the

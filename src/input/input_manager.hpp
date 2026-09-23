@@ -117,13 +117,14 @@ bool controller_is_a_remote(const char* sdl_name);
 // One controller's own state, apart from every other's -- for a console whose
 // controllers each belong to one player. See input/pad_routing.hpp.
 //
-// No name: a pad is known by where it comes in the list, which under Steam
-// Input is Steam's own order -- see KnownPad for why that and not the name.
+// Known by its id, never by its name -- see KnownPad for why. No keyboard:
+// on a Wii U the keys are Cemu's to map directly, and none of this app's
+// controllers carry them.
 struct PadReading {
     SDL_JoystickID id = 0;
-    // The keyboard's keys rather than a pad. Listed last, on a device that has
-    // one, so its keys can be sent somewhere too.
-    bool keyboard = false;
+    // What SDL calls it -- under Steam Input, the name the player gave it in
+    // Steam. For showing only; see KnownPad::name.
+    std::string name;
     // Its presses through the same mapping the merged state uses, and how it
     // is being moved when its own sensors can say (see MotionReader, which
     // switches them on).
@@ -218,11 +219,9 @@ public:
     void set_rumble(bool active);
 
     // Each connected pad on its own, in order of the pads' player numbers --
-    // which under Steam Input is Steam's slot order -- then the keyboard, on
-    // a device that has one. Nothing held while game input is switched off,
-    // the same as ds_state(): a menu is up. `for_display` reads them anyway,
-    // ungated, for a screen that shows which pad is being pressed.
-    std::vector<PadReading> pad_readings(bool for_display = false) const;
+    // which under Steam Input is Steam's slot order. Nothing held while game
+    // input is switched off, the same as ds_state(): a menu is up.
+    std::vector<PadReading> pad_readings() const;
 
     // Rumbles one pad, or stops it: a player's motor, routed to whichever pad
     // is that player. Kept going until told to stop -- see set_rumble() for
@@ -352,6 +351,13 @@ private:
     bool axis_down_ = false;
     bool axis_left_ = false;
     bool axis_right_ = false;
+    // Holding a direction keeps moving: after kRepeatDelayMs, once every
+    // kRepeatEveryMs, from the stick, the d-pad or the arrow keys alike. The
+    // first step is the press itself, raised where the press arrives; these
+    // are the ones after it. Up, down, left, right.
+    uint32_t direction_next_repeat_[4] = {};
+    bool direction_held_[4] = {};
+    void repeat_held_directions(const bool held[4]);
 };
 
 }  // namespace ds

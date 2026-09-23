@@ -341,6 +341,7 @@ void test_a_companions_pads_ride_the_input_as_a_tail() {
     first.held.buttons = 0x81u;
     first.held.circle_x = -32000;
     first.held.c_stick_y = 1234;
+    first.name = "Steam Deck";
     ReportedPad second;
     second.id = 4000000000u;
     second.held.motion.present = true;
@@ -366,8 +367,32 @@ void test_a_companions_pads_ride_the_input_as_a_tail() {
         CHECK(!received.pads[0].held.motion.present);
         CHECK_EQ(received.pads[1].id, 4000000000u);
         CHECK(received.pads[1].held.motion == second.held.motion);
+        CHECK(received.pads[0].name == "Steam Deck");
+        CHECK(received.pads[1].name.empty());
     }
     CHECK_EQ(received.buttons, 3u);
+
+    // A companion from before names travelled: the pads, and nothing after.
+    // The names are a length byte each -- 1 + 10 and 1 here -- after them all.
+    InputMessage unnamed;
+    CHECK(decode_input(payload.data(), payload.size() - 12, unnamed));
+    CHECK(unnamed.reports_pads && unnamed.pads.size() == 2);
+    CHECK(unnamed.pads.size() == 2 && unnamed.pads[0].name.empty() &&
+          unnamed.pads[0].held.buttons == 0x81u);
+
+    // A name longer than the wire allows is cut, not refused.
+    InputMessage long_named;
+    long_named.reports_pads = true;
+    ReportedPad wordy;
+    wordy.name = std::string(200, 'x');
+    long_named.pads = {wordy};
+    buffer.clear();
+    encode_input(long_named, buffer);
+    CHECK(one_message(buffer, type, payload));
+    InputMessage received_long;
+    CHECK(decode_input(payload.data(), payload.size(), received_long));
+    CHECK(received_long.pads.size() == 1 &&
+          received_long.pads[0].name.size() == kMaxReportedPadName);
 
     // A companion with no pads at all still says it reports them -- it simply
     // has none -- which is not the same as an older companion saying nothing.
