@@ -200,7 +200,7 @@ public:
     float pointer_x() const { return pointer_x_; }
     float pointer_y() const { return pointer_y_; }
 
-    int connected_controllers() const { return static_cast<int>(controllers_.size()); }
+    int connected_controllers() const;
 
     // How many of those are a pad rather than a television remote. SDL reports
     // an Apple TV's Siri Remote as a controller, so connected_controllers()
@@ -228,6 +228,12 @@ public:
     // why SDL has to be reminded -- and forgotten if the pad goes away.
     void set_pad_rumble(SDL_JoystickID id, bool active);
 
+    // One short buzz of `ms` on one pad -- or on every pad, for an id of -1
+    // -- that ends by itself: the Controllers screen asking which pad is
+    // which. Never renewed, and left alone on a pad whose motor a game
+    // already has on.
+    void ping_pad(SDL_JoystickID id, uint32_t ms);
+
     // Turns reading this device's own motion on or off -- see MotionReader,
     // and SessionStateMessage::motion_wanted for who decides. Off until
     // something asks, because a gyroscope left running costs battery on
@@ -251,15 +257,27 @@ private:
     DsInputState poll_held_state() const;
     // One pad's share of that, through the same mapping.
     DsInputState held_state_of(SDL_GameController* controller) const;
-    // The keyboard's share.
     // One pad's reading with whatever the held-input gate is holding back
     // taken out -- see HeldInputGate.
     DsInputState gated(DsInputState held) const;
+    // The keyboard's share.
     DsInputState keyboard_held_state() const;
-    // Renews the rumble on every pad set_pad_rumble() left on.
+    // Whether a pad SDL lists is actually there. Always, except on a Switch,
+    // whose SDL lists all eight of the console's controller slots from the
+    // start, filled or not -- see pad_connected() in the .cpp.
+    bool pad_connected(SDL_JoystickID id) const;
+    // Runs one pad's motor for `ms`, or stops it. SDL_GameControllerRumble
+    // everywhere but a Switch, where SDL cannot be trusted with it -- see
+    // the .cpp -- and the console's own vibration calls stand in, with the
+    // length kept here.
+    void drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on, uint32_t ms);
+    // Renews the rumble on every pad set_pad_rumble() left on, and on a
+    // Switch stops any motor whose time is up.
     void refresh_pad_rumble();
     std::map<SDL_JoystickID, bool> pad_rumble_on_;
     uint32_t pad_rumble_refreshed_ms_ = 0;
+    // When each motor driven on a Switch is due to stop; 0 for stopped.
+    std::map<SDL_JoystickID, uint32_t> motor_until_;
     // Updates the live pointer position; returns whether one is down.
     bool update_pointer(float output_width, float output_height);
     void emit_navigation_from_axes();

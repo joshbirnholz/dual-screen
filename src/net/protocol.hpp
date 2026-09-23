@@ -328,6 +328,13 @@ struct RumbleMessage {
     // reported its pads one by one.
     static constexpr uint32_t kWholeDevice = 0xFFFFFFFFu;
     uint32_t pad = kWholeDevice;
+    // Non-zero for a single buzz of this many milliseconds that ends on its
+    // own -- the Controllers screen asking which pad is which -- rather than
+    // a motor switched on until it is switched off. Ended by the device that
+    // buzzes, so it is the same length however late the message arrived; an
+    // "off" sent after it would wait behind whatever else the connection is
+    // carrying, which with a screen streaming is a lot.
+    uint16_t ping_ms = 0;
 };
 
 // One pad plugged into a companion, reported on its own so the host can make

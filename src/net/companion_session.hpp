@@ -588,7 +588,9 @@ public:
     // place. Set before connecting, same as the audio callback above.
     // `pad` is which of this device's pads, by the id it was reported under
     // (see ReportedPad), or RumbleMessage::kWholeDevice for all of them.
-    using RumbleCallback = std::function<void(bool active, uint32_t pad)>;
+    // `ping_ms` non-zero is a single buzz that ends on its own; see
+    // RumbleMessage::ping_ms.
+    using RumbleCallback = std::function<void(bool active, uint32_t pad, uint16_t ping_ms)>;
     void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
 
     // How far the pacing clock may hold a frame back to even out the link --

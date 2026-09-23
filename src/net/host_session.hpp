@@ -248,6 +248,10 @@ public:
     // out, like publish_rumble(). Ignored for a companion that does not report
     // pads, which would read it as the whole device.
     void publish_pad_rumble(uint32_t pad, bool active);
+    // One short buzz of `ms` on one of the companion's pads, which the
+    // companion ends by itself -- see RumbleMessage::ping_ms. Always sent,
+    // and leaves what publish_pad_rumble() last said about the pad alone.
+    void publish_pad_ping(uint32_t pad, uint16_t ms);
 
 private:
     void refresh_beacon();

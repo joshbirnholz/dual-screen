@@ -239,7 +239,7 @@ void CompanionSession::disconnect() {
     // this device buzzing until the next one happens to say so is worse than
     // assuming it did.
     if (rumble_callback_) {
-        rumble_callback_(false, RumbleMessage::kWholeDevice);
+        rumble_callback_(false, RumbleMessage::kWholeDevice, 0);
     }
 }
 
@@ -303,7 +303,7 @@ void CompanionSession::fail(const std::string& reason) {
     status_ = Status::Failed;
     status_detail_ = reason;
     if (rumble_callback_) {
-        rumble_callback_(false, RumbleMessage::kWholeDevice);
+        rumble_callback_(false, RumbleMessage::kWholeDevice, 0);
     }
     log_warn("companion session failed: " + reason);
 }
@@ -392,7 +392,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 return;  // not worth ending a session over
             }
             if (rumble_callback_) {
-                rumble_callback_(rumble.active, rumble.pad);
+                rumble_callback_(rumble.active, rumble.pad, rumble.ping_ms);
             }
             break;
         }

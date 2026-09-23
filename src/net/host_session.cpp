@@ -1190,6 +1190,19 @@ void HostSession::publish_pad_rumble(uint32_t pad, bool active) {
     pad_rumble_sent_[pad] = active;
 }
 
+void HostSession::publish_pad_ping(uint32_t pad, uint16_t ms) {
+    if (!has_companion() || !companion_reports_pads_ || ms == 0) {
+        return;
+    }
+    RumbleMessage message;
+    message.active = true;
+    message.pad = pad;
+    message.ping_ms = ms;
+    std::vector<uint8_t> out;
+    encode_rumble(message, out);
+    companion_.send(out);
+}
+
 // Which frame the bytes an encoder just handed back actually describe.
 //
 // A pipelining encoder returns the packet for an earlier submission than the

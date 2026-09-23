@@ -476,8 +476,11 @@ bool Client::start() {
 
     // The whole device for the GamePad's motor, or one pad for a player's --
     // see RumbleMessage::pad.
-    session_.set_rumble_callback([this](bool active, uint32_t pad) {
-        if (pad == net::RumbleMessage::kWholeDevice) {
+    session_.set_rumble_callback([this](bool active, uint32_t pad, uint16_t ping_ms) {
+        if (ping_ms > 0) {
+            // Which pad is this? A short buzz that ends here, on time.
+            input_.ping_pad(static_cast<SDL_JoystickID>(pad), ping_ms);
+        } else if (pad == net::RumbleMessage::kWholeDevice) {
             input_.set_rumble(active);
         } else {
             input_.set_pad_rumble(static_cast<SDL_JoystickID>(pad), active);

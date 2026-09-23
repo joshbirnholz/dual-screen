@@ -7,6 +7,10 @@
 
 #include "util/log.hpp"
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 namespace ds {
 namespace {
 
@@ -59,16 +63,120 @@ void InputManager::initialize(const Settings& settings) {
     }
 }
 
+#ifdef __SWITCH__
+namespace {
+
+// Which of the console's controller slots an SDL pad is. The Switch port of
+// SDL opens all eight slots at start-up, whether anything is in them or not,
+// with the instance id being the slot: 0 is player 1 together with the
+// handheld controls, and 1 to 7 are players 2 to 8.
+HidNpadIdType npad_for(SDL_JoystickID id) {
+    if (id == 0) {
+        // Handheld controls when they are there -- which on a Switch Lite
+        // they always are -- and player 1's controller otherwise.
+        return hidGetNpadStyleSet(HidNpadIdType_Handheld) != 0 ? HidNpadIdType_Handheld
+                                                                : HidNpadIdType_No1;
+    }
+    return static_cast<HidNpadIdType>(HidNpadIdType_No1 + id);
+}
+
+// Runs or stops one slot's motors through the console itself.
+//
+// Not SDL_GameControllerRumble: the Switch port only sets vibration up for
+// slots 1 to 7, and only for whatever was in them at start-up. Slot 0 --
+// the handheld controls, and player 1 -- never rumbles through it at all,
+// and a controller connected later never does either. So the handles are
+// asked for here, fresh for whatever style the slot holds now.
+//
+// A Switch Lite has no rumble motor, and this does nothing there however it
+// is asked.
+void switch_vibrate(SDL_JoystickID id, bool on) {
+    const HidNpadIdType npad = npad_for(id);
+    const u32 styles = hidGetNpadStyleSet(npad);
+    HidNpadStyleTag style = HidNpadStyleTag_NpadFullKey;
+    s32 handles_wanted = 2;
+    if (styles & HidNpadStyleTag_NpadHandheld) {
+        style = HidNpadStyleTag_NpadHandheld;
+    } else if (styles & HidNpadStyleTag_NpadFullKey) {
+        style = HidNpadStyleTag_NpadFullKey;
+    } else if (styles & HidNpadStyleTag_NpadJoyDual) {
+        style = HidNpadStyleTag_NpadJoyDual;
+    } else if (styles & HidNpadStyleTag_NpadJoyLeft) {
+        style = HidNpadStyleTag_NpadJoyLeft;
+        handles_wanted = 1;
+    } else if (styles & HidNpadStyleTag_NpadJoyRight) {
+        style = HidNpadStyleTag_NpadJoyRight;
+        handles_wanted = 1;
+    } else {
+        return;  // nothing in the slot
+    }
+    HidVibrationDeviceHandle handles[2];
+    if (R_FAILED(hidInitializeVibrationDevices(handles, handles_wanted, npad, style))) {
+        return;
+    }
+    HidVibrationValue values[2];
+    for (HidVibrationValue& value : values) {
+        value.amp_low = on ? 0.6f : 0.0f;
+        value.freq_low = 160.0f;
+        value.amp_high = on ? 0.6f : 0.0f;
+        value.freq_high = 320.0f;
+    }
+    hidSendVibrationValues(handles, values, handles_wanted);
+}
+
+}  // namespace
+#endif
+
+bool InputManager::pad_connected(SDL_JoystickID id) const {
+#ifdef __SWITCH__
+    // An empty slot has no style at all. Slot 0 is filled by either the
+    // handheld controls or player 1's controller.
+    if (id == 0) {
+        return (hidGetNpadStyleSet(HidNpadIdType_Handheld) |
+                hidGetNpadStyleSet(HidNpadIdType_No1)) != 0;
+    }
+    return id > 0 && id < 8 && hidGetNpadStyleSet(npad_for(id)) != 0;
+#else
+    (void)id;
+    return true;
+#endif
+}
+
+int InputManager::connected_controllers() const {
+    int count = 0;
+    for (const auto& [id, controller] : controllers_) {
+        if (controller != nullptr && pad_connected(id)) ++count;
+    }
+    return count;
+}
+
+void InputManager::drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on,
+                               uint32_t ms) {
+#ifdef __SWITCH__
+    (void)controller;
+    switch_vibrate(id, on);
+    motor_until_[id] = on ? SDL_GetTicks() + ms : 0;
+#else
+    (void)id;
+    SDL_GameControllerRumble(controller, on ? 0xffffu : 0u, on ? 0xffffu : 0u, on ? ms : 0u);
+#endif
+}
+
 void InputManager::shutdown() {
     // Before the controllers close: switching a sensor off asks the
     // controller about itself, which a closed one cannot answer.
     motion_.set_enabled(false);
     for (auto& entry : controllers_) {
         if (entry.second != nullptr) {
+            // A motor left running would outlive the app on a Switch, whose
+            // vibration is the console's rather than SDL's to stop.
+            drive_motor(entry.first, entry.second, false, 0);
             SDL_GameControllerClose(entry.second);
         }
     }
     controllers_.clear();
+    pad_rumble_on_.clear();
+    motor_until_.clear();
 }
 
 void InputManager::open_controller(int device_index) {
@@ -132,8 +240,8 @@ bool controller_is_a_remote(const char* sdl_name) {
 int InputManager::connected_gamepads() const {
     int count = 0;
     for (const auto& [instance_id, controller] : controllers_) {
-        (void)instance_id;
-        if (controller != nullptr && !controller_is_a_remote(SDL_GameControllerName(controller))) {
+        if (controller != nullptr && pad_connected(instance_id) &&
+            !controller_is_a_remote(SDL_GameControllerName(controller))) {
             ++count;
         }
     }
@@ -162,11 +270,20 @@ void InputManager::set_rumble(bool active) {
     // of buzzing forever, the same self-healing shape as everything else
     // this link tolerates dropping.
     constexpr uint32_t kRumbleMs = 250;
-    const uint16_t strength = active ? 0xffffu : 0u;
-    const uint32_t duration = active ? kRumbleMs : 0u;
     for (const auto& [instance_id, controller] : controllers_) {
-        if (controller == nullptr) continue;
-        SDL_GameControllerRumble(controller, strength, strength, duration);
+        if (controller == nullptr || !pad_connected(instance_id)) continue;
+        drive_motor(instance_id, controller, active, kRumbleMs);
+    }
+}
+
+void InputManager::ping_pad(SDL_JoystickID id, uint32_t ms) {
+    for (const auto& [instance_id, controller] : controllers_) {
+        if (controller == nullptr || !pad_connected(instance_id)) continue;
+        if (id != -1 && instance_id != id) continue;
+        // A game's rumble already running says more than a ping could, and
+        // cutting it short at the end of the ping would be wrong.
+        if (pad_rumble_on_.count(instance_id) != 0) continue;
+        drive_motor(instance_id, controller, true, ms);
     }
 }
 
@@ -192,7 +309,8 @@ std::vector<PadReading> InputManager::pad_readings() const {
     // the order it arrived.
     std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> ordered;
     for (const auto& [id, controller] : controllers_) {
-        if (controller != nullptr) ordered.emplace_back(id, controller);
+        // Only what is actually plugged in: a Switch lists every slot it has.
+        if (controller != nullptr && pad_connected(id)) ordered.emplace_back(id, controller);
     }
     std::stable_sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
         const int a = SDL_GameControllerGetPlayerIndex(left.second);
@@ -247,11 +365,23 @@ void InputManager::set_pad_rumble(SDL_JoystickID id, bool active) {
     }
     // The same short, renewed rumble set_rumble() uses, and for its reason.
     constexpr uint32_t kRumbleMs = 250;
-    SDL_GameControllerRumble(it->second, active ? 0xffffu : 0u, active ? 0xffffu : 0u,
-                             active ? kRumbleMs : 0u);
+    drive_motor(id, it->second, active, kRumbleMs);
 }
 
 void InputManager::refresh_pad_rumble() {
+    // What SDL would do with a duration, done here for the motors it is not
+    // trusted with -- see drive_motor().
+    if (!motor_until_.empty()) {
+        const uint32_t now = SDL_GetTicks();
+        for (auto& [id, until] : motor_until_) {
+            if (until == 0 || static_cast<int32_t>(now - until) < 0) continue;
+            until = 0;
+            const auto controller = controllers_.find(id);
+            if (controller != controllers_.end() && controller->second != nullptr) {
+                drive_motor(id, controller->second, false, 0);
+            }
+        }
+    }
     if (pad_rumble_on_.empty()) {
         return;
     }
@@ -269,7 +399,7 @@ void InputManager::refresh_pad_rumble() {
             it = pad_rumble_on_.erase(it);
             continue;
         }
-        SDL_GameControllerRumble(controller->second, 0xffffu, 0xffffu, 250);
+        drive_motor(it->first, controller->second, true, 250);
         ++it;
     }
 }

@@ -430,6 +430,9 @@ void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
     // Which pad, as a tail an older companion never reads -- and which it does
     // not need to: it only ever hears about the whole device.
     put_u32(out, message.pad);
+    if (message.ping_ms > 0) {
+        put_u16(out, message.ping_ms);
+    }
     finish_message(out, start, MessageType::Rumble);
 }
 
@@ -440,8 +443,12 @@ bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out) {
     if (!reader.ok()) return false;
     out.active = active != 0;
     out.pad = RumbleMessage::kWholeDevice;
+    out.ping_ms = 0;
     if (reader.remaining() >= 4) {
         reader.u32(out.pad);
+    }
+    if (reader.remaining() >= 2) {
+        reader.u16(out.ping_ms);
     }
     return true;
 }

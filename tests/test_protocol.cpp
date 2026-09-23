@@ -449,6 +449,23 @@ void test_rumble_can_name_one_pad() {
     CHECK(decode_rumble(older, sizeof(older), received_older));
     CHECK(received_older.active);
     CHECK_EQ(received_older.pad, RumbleMessage::kWholeDevice);
+    CHECK_EQ(received_older.ping_ms, 0);
+
+    // A ping carries its own length, so the pad that buzzes ends it itself;
+    // an ordinary rumble carries none and stays on until told otherwise.
+    CHECK_EQ(received.ping_ms, 0);
+    RumbleMessage ping;
+    ping.active = true;
+    ping.pad = 5;
+    ping.ping_ms = 180;
+    buffer.clear();
+    encode_rumble(ping, buffer);
+    CHECK(one_message(buffer, type, payload));
+    RumbleMessage received_ping;
+    CHECK(decode_rumble(payload.data(), payload.size(), received_ping));
+    CHECK(received_ping.active);
+    CHECK_EQ(received_ping.pad, 5u);
+    CHECK_EQ(received_ping.ping_ms, 180);
 }
 
 // Several messages written back to back must come out one at a time, in order,

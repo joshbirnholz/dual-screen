@@ -415,8 +415,8 @@ struct App::Impl {
     // The pads whose motors this app has turned on, by pad_identity(), so that one
     // leaving a rumbling slot -- or the slot going quiet -- is turned off.
     std::map<std::string, KnownPad> rumbling_pads;
-    // A pad buzzing so the player can tell which one it is, and until when --
-    // see ControllersScreenResult::identify.
+    // An older companion buzzing as a whole so the player can tell which it
+    // is, and until when -- see identify_pad(). A newer one ends its own.
     std::optional<KnownPad> identifying_pad;
     uint32_t identify_until_ms = 0;
     // Where the Controllers screen was opened from, which is where closing it
@@ -562,7 +562,7 @@ struct App::Impl {
     void close_controllers();
     void update_controllers_screen(const std::vector<UiAction>& actions,
                                    const std::vector<PointerEvent>& pointers);
-    // Buzzes one pad for a moment, and stops it again once the moment is up.
+    // Buzzes one pad for a moment -- see identify_pad().
     void identify_pad(const KnownPad& pad);
     void tick_identify();
     // Where the pads stand this frame, as the Controllers screen has them.
@@ -1161,40 +1161,33 @@ void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
 }
 
 void App::Impl::identify_pad(const KnownPad& pad) {
-    // One at a time: a second press moves the buzz to the pad it asked about.
-    if (identifying_pad && pad_identity(*identifying_pad) != pad_identity(pad)) {
-        identify_until_ms = 0;
-        tick_identify();
-    }
+    // A quick buzz to say which one it is, and that is all. The device that
+    // owns the pad ends it by itself -- so it is the same short length even
+    // when the message getting there waited behind a streaming screen.
+    constexpr uint16_t kPingMs = 180;
     log_info("controllers: rumbling " + pad_identity(pad) + " so it can be found");
-    identifying_pad = pad;
-    identify_until_ms = SDL_GetTicks() + 600;
     if (pad.on_this_device) {
-        input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), true);
-    } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
+        input.ping_pad(static_cast<SDL_JoystickID>(pad.id), kPingMs);
+    } else if (host_session && pad.id != net::RumbleMessage::kWholeDevice) {
+        host_session->publish_pad_ping(pad.id, kPingMs);
+    } else if (host_session && !identifying_pad) {
+        // A companion too old to end a ping itself: on, then off from here.
+        identifying_pad = pad;
+        identify_until_ms = SDL_GetTicks() + kPingMs;
         host_session->publish_rumble(true);
-    } else if (host_session) {
-        host_session->publish_pad_rumble(pad.id, true);
     }
 }
 
 void App::Impl::tick_identify() {
-    if (!identifying_pad || SDL_GetTicks() < identify_until_ms) {
+    if (!identifying_pad || static_cast<int32_t>(SDL_GetTicks() - identify_until_ms) < 0) {
         return;
     }
-    const KnownPad pad = *identifying_pad;
+    const bool game_has_it = rumbling_pads.count(pad_identity(*identifying_pad)) != 0;
     identifying_pad.reset();
     // Left alone if the game has its motor on meanwhile: that is not ours to
     // stop.
-    if (rumbling_pads.count(pad_identity(pad)) != 0) {
-        return;
-    }
-    if (pad.on_this_device) {
-        input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), false);
-    } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
+    if (host_session && !game_has_it) {
         host_session->publish_rumble(false);
-    } else if (host_session) {
-        host_session->publish_pad_rumble(pad.id, false);
     }
 }
 
@@ -1626,8 +1619,11 @@ void App::Impl::attach_companion_callbacks() {
             }
             audio.push(samples, frames);
         });
-    companion_session->set_rumble_callback([this](bool active, uint32_t pad) {
-        if (pad == net::RumbleMessage::kWholeDevice) {
+    companion_session->set_rumble_callback([this](bool active, uint32_t pad, uint16_t ping_ms) {
+        if (ping_ms > 0) {
+            // Which pad is this? A short buzz that ends here, on time.
+            input.ping_pad(static_cast<SDL_JoystickID>(pad), ping_ms);
+        } else if (pad == net::RumbleMessage::kWholeDevice) {
             input.set_rumble(active);
         } else {
             input.set_pad_rumble(static_cast<SDL_JoystickID>(pad), active);

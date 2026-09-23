@@ -289,8 +289,9 @@ describe a different controller from the one behind it.
 Controller Order screen does. Press confirm to pick a controller up, move it
 up or down, and press confirm again to put it down. Moving one up from Player 1
 makes it the GamePad; moving one down past the last player puts it in **Not
-used**. Press the north face button (X on a Nintendo layout) to make the
-highlighted controller rumble, which is how to tell them apart. **Back to the
+used**. Press the north face button (X on a Nintendo layout) to give the
+highlighted controller one short buzz, which is how to tell them apart. A
+Switch Lite has no rumble motor, so its own controls cannot buzz. **Back to the
 defaults** forgets the arrangement. It works mid-game and from either device's
 buttons, and lasts until the app closes: a controller is recognised for as long
 as it stays connected, so one that is unplugged and plugged back in joins the
