@@ -75,6 +75,7 @@ extern "C" {
 #include "config/settings.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
+#include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
 #include "input/switch_console.hpp"
 #include "layout/layout.hpp"
@@ -309,6 +310,14 @@ private:
     LayoutRegistry registry_;
     net::CompanionSession session_;
     InputManager input_;
+    // The mouse pointer, on a device that has one -- a Mac. The window hides
+    // it when it is made (see GlWindow); this is what brings it back while
+    // the mouse is moving, and hides it again once it has been still, the
+    // same as the desktop app does. It follows the host's Pointer setting --
+    // the one the menu shows -- while a session is up, and is shown otherwise.
+    CursorVisibility cursor_;
+    bool cursor_shown_ = false;
+    uint64_t cursor_updated_ms_ = 0;
     AudioOutput audio_;
     uint32_t audio_rate_ = 0;
     bool disconnect_asked_ = false;
@@ -1026,7 +1035,25 @@ void Client::run() {
                     running_ = false;
                 }
             }
+            // A real mouse brings the pointer back; a finger does not -- SDL
+            // reports touches as mouse events from SDL_TOUCH_MOUSEID.
+            if ((event.type == SDL_MOUSEMOTION && event.motion.which != SDL_TOUCH_MOUSEID) ||
+                (event.type == SDL_MOUSEBUTTONDOWN && event.button.which != SDL_TOUCH_MOUSEID) ||
+                (event.type == SDL_MOUSEWHEEL && event.wheel.which != SDL_TOUCH_MOUSEID)) {
+                cursor_.notice_mouse_activity();
+            }
             input_.handle_event(event);
+        }
+        cursor_.set_mode(state_ != State::Playing || session_.host_cursor_shown()
+                             ? CursorMode::Shown
+                             : CursorMode::Hidden);
+        cursor_.update(cursor_updated_ms_ == 0
+                           ? 0.0
+                           : static_cast<double>(now - cursor_updated_ms_) / 1000.0);
+        cursor_updated_ms_ = now;
+        if (cursor_.visible() != cursor_shown_) {
+            cursor_shown_ = cursor_.visible();
+            SDL_ShowCursor(cursor_shown_ ? SDL_ENABLE : SDL_DISABLE);
         }
         refresh_output_size();
         follow_panel_size();
