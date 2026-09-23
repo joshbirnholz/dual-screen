@@ -208,4 +208,36 @@ public:
     virtual void submit(const DsInputState& state) = 0;
 };
 
+
+// Whose controls reach the console's own pad, when a companion is joined.
+enum class PadOwner {
+    // Both devices', merged: a DS or a 3DS, which two people share.
+    Shared,
+    // This device's alone: it is showing the pad's screen, or nobody else is
+    // here.
+    ThisDevice,
+    // The companion's alone: it is the one showing the pad's screen.
+    Companion,
+};
+
+// Which of those applies. `pad_belongs_to_its_screen` is the console's
+// SystemProfile field of that name; `companion_shows_pad_screen` is whether
+// the companion took the screen the pad belongs to.
+PadOwner console_pad_owner(bool pad_belongs_to_its_screen, bool companion_connected,
+                           bool companion_shows_pad_screen);
+
+// What the console's pad is handed, given this device's controls, the
+// companion's, and who owns the pad.
+//
+// Shared merges them so either player can press anything: buttons are
+// unioned, whichever stick is pushed further wins, a touch from either
+// counts, and the companion's motion wins when it has any, since two
+// orientations cannot be added up into anything. The other two take one
+// device's controls and nothing at all of the other's.
+DsInputState input_for_the_console_pad(const DsInputState& here, const DsInputState& companion,
+                                       PadOwner owner);
+
+// For the log.
+const char* pad_owner_name(PadOwner owner);
+
 }  // namespace ds

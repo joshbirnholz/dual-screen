@@ -360,6 +360,10 @@ struct App::Impl {
     // program -- see where it is set for what its absence from a log means.
     bool said_first_pad = false;
     bool said_first_motion = false;
+    // Whose controls the console's pad was last said to take -- see
+    // console_pad_owner(). Said again whenever it changes.
+    bool said_pad_owner = false;
+    PadOwner last_pad_owner = PadOwner::ThisDevice;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -2919,50 +2923,39 @@ int App::run(const AppOptions& options) {
                                true);
         }
         if (playing != nullptr && game_running) {
-            // The companion's buttons and touches are merged with this device's,
-            // so either player can press anything. This is the InputSink seam
-            // doing exactly what it was left in place for.
-            DsInputState combined = impl.input.ds_state();
-            if (impl.host_session && impl.host_session->has_companion()) {
-                const DsInputState& remote = impl.host_session->companion_input();
-                combined.buttons |= remote.buttons;
-                // Whichever stick is pushed further wins, so a companion's idle
-                // stick does not cancel out the host's, or the other way round.
-                if (std::abs(remote.circle_x) > std::abs(combined.circle_x)) {
-                    combined.circle_x = remote.circle_x;
-                }
-                if (std::abs(remote.circle_y) > std::abs(combined.circle_y)) {
-                    combined.circle_y = remote.circle_y;
-                }
-                if (std::abs(remote.c_stick_x) > std::abs(combined.c_stick_x)) {
-                    combined.c_stick_x = remote.c_stick_x;
-                }
-                if (std::abs(remote.c_stick_y) > std::abs(combined.c_stick_y)) {
-                    combined.c_stick_y = remote.c_stick_y;
-                }
-                if (remote.touching && !combined.touching) {
-                    combined.touching = true;
-                    combined.touch_x = remote.touch_x;
-                    combined.touch_y = remote.touch_y;
-                }
-                // Motion is the one thing that is not merged. Two devices'
-                // buttons can be pressed at once and the union is sensible;
-                // two devices' orientations cannot be added up into
-                // anything. The companion's wins outright when it has one,
-                // because the companion is the device standing in for the
-                // GamePad -- it is the thing being tilted at the screen.
-                if (remote.motion.present) {
-                    combined.motion = remote.motion;
-                }
-                // And, while both devices report it, hold the two up against
-                // each other. This is the host, so both readings are in hand
-                // at the same instant with nothing to line up afterwards --
-                // which is what makes a device that is already right usable as
-                // an instrument for one that is not. See MotionComparison.
-                if (impl.input.motion().present && remote.motion.present) {
-                    impl.motion_comparison.add(impl.input.motion(), remote.motion);
-                    impl.motion_comparison.report(SDL_GetTicks());
-                }
+            // Whose controls the console's pad takes. On a DS or a 3DS, both
+            // devices', merged, so either player can press anything -- the
+            // InputSink seam doing exactly what it was left in place for. On a
+            // Wii U, only the device showing the GamePad: every other player
+            // has a controller of their own, which Cemu reads directly, and
+            // merging this device's pads in made every one of them press the
+            // GamePad's buttons too. See pad_belongs_to_its_screen.
+            const bool companion_here =
+                impl.host_session && impl.host_session->has_companion();
+            const PadOwner owner = console_pad_owner(
+                system_profile(impl.system).pad_belongs_to_its_screen, companion_here,
+                companion_here && impl.host_session->companion_screen() == ScreenId::Bottom);
+            if (!impl.said_pad_owner || owner != impl.last_pad_owner) {
+                impl.said_pad_owner = true;
+                impl.last_pad_owner = owner;
+                log_info(std::string("the console's pad takes its controls from ") +
+                         pad_owner_name(owner) +
+                         (owner == PadOwner::Companion
+                              ? ", which is showing its screen; this device's controllers are "
+                                "left to the game's other players"
+                              : ""));
+            }
+            const DsInputState remote =
+                companion_here ? impl.host_session->companion_input() : DsInputState();
+            DsInputState combined = input_for_the_console_pad(impl.input.ds_state(), remote, owner);
+            // While both devices report motion, hold the two up against each
+            // other. This is the host, so both readings are in hand at the
+            // same instant with nothing to line up afterwards -- which is what
+            // makes a device that is already right usable as an instrument for
+            // one that is not. See MotionComparison.
+            if (companion_here && impl.input.motion().present && remote.motion.present) {
+                impl.motion_comparison.add(impl.input.motion(), remote.motion);
+                impl.motion_comparison.report(SDL_GetTicks());
             }
             if (impl.source) {
                 impl.source->input_sink().submit(combined);

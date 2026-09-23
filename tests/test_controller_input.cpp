@@ -19,6 +19,7 @@
 #include "config/settings.hpp"
 #include "core/libretro_screen_source.hpp"
 #include "input/controller_mapping.hpp"
+#include "input/ds_input.hpp"
 #include "input/input_manager.hpp"
 #include "input/motion.hpp"
 #include "core/system.hpp"
@@ -934,7 +935,74 @@ void test_a_pad_is_read_even_while_another_window_is_in_front() {
 
 }  // namespace
 
+// A Wii U's GamePad is one player's controller, and it belongs to whichever
+// device is showing its screen.
+//
+// Found on a Steam Deck showing the television with a Switch joined as the
+// GamePad: every controller on the Deck, set up in Cemu as a Pro Controller,
+// was also pressing the GamePad's buttons -- because the host merged its own
+// pads into the GamePad as it does for a DS, which two people share.
+void test_only_the_device_showing_the_gamepad_controls_it() {
+    using namespace ds;
+
+    const SystemProfile& wii_u = system_profile(SystemId::WiiU);
+    CHECK(wii_u.pad_belongs_to_its_screen);
+    CHECK(!system_profile(SystemId::Ds).pad_belongs_to_its_screen);
+    CHECK(!system_profile(SystemId::ThreeDs).pad_belongs_to_its_screen);
+
+    DsInputState deck;
+    deck.set(DsButton::A, true);
+    deck.circle_x = 20000;
+    deck.touching = true;
+    deck.touch_x = 10;
+    deck.touch_y = 20;
+    deck.motion.present = true;
+    deck.motion.gyro_x = 1.0f;
+    DsInputState switch_pad;
+    switch_pad.set(DsButton::B, true);
+    switch_pad.circle_y = -12000;
+    switch_pad.motion.present = true;
+    switch_pad.motion.gyro_y = 2.0f;
+
+    // The Switch took the GamePad's screen: its controls and nothing else.
+    const PadOwner companion_gamepad =
+        console_pad_owner(wii_u.pad_belongs_to_its_screen, true, true);
+    CHECK(companion_gamepad == PadOwner::Companion);
+    const DsInputState to_gamepad = input_for_the_console_pad(deck, switch_pad, companion_gamepad);
+    CHECK_MSG(!to_gamepad.pressed(DsButton::A), "the host's button reached the companion's GamePad");
+    CHECK(to_gamepad.pressed(DsButton::B));
+    CHECK_MSG(to_gamepad.circle_x == 0, "the host's stick reached the companion's GamePad");
+    CHECK(to_gamepad.circle_y == -12000);
+    CHECK_MSG(!to_gamepad.touching, "the host's touch reached the companion's GamePad");
+    CHECK(to_gamepad.motion.gyro_y == 2.0f && to_gamepad.motion.gyro_x == 0.0f);
+
+    // The other way round: the companion is the television and this device
+    // holds the GamePad. Still one device, and now it is this one.
+    const PadOwner host_gamepad = console_pad_owner(wii_u.pad_belongs_to_its_screen, true, false);
+    CHECK(host_gamepad == PadOwner::ThisDevice);
+    const DsInputState held_here = input_for_the_console_pad(deck, switch_pad, host_gamepad);
+    CHECK(held_here.pressed(DsButton::A));
+    CHECK(!held_here.pressed(DsButton::B));
+    CHECK(held_here.circle_y == 0);
+    CHECK(held_here.motion.gyro_x == 1.0f);
+
+    // Nobody joined: this device's, whatever the console.
+    CHECK(console_pad_owner(true, false, false) == PadOwner::ThisDevice);
+    CHECK(console_pad_owner(false, false, false) == PadOwner::ThisDevice);
+
+    // A DS is shared, and stays merged: either player presses anything.
+    const PadOwner ds_pad = console_pad_owner(false, true, true);
+    CHECK(ds_pad == PadOwner::Shared);
+    const DsInputState shared = input_for_the_console_pad(deck, switch_pad, ds_pad);
+    CHECK(shared.pressed(DsButton::A) && shared.pressed(DsButton::B));
+    CHECK(shared.circle_x == 20000 && shared.circle_y == -12000);
+    CHECK(shared.touching && shared.touch_x == 10);
+    // The companion's motion wins when it has one, as before.
+    CHECK(shared.motion.gyro_y == 2.0f);
+}
+
 int main() {
+    test_only_the_device_showing_the_gamepad_controls_it();
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
     test_rotation_is_accelerations_conversion_turned_around();
     test_a_pad_is_read_even_while_another_window_is_in_front();

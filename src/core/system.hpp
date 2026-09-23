@@ -115,6 +115,17 @@ struct SystemProfile {
     // at all (SessionStateMessage::motion_wanted). A gyro left running costs
     // battery on a handheld, so a console with no use for one never starts it.
     bool uses_motion = false;
+    // Whether the console's pad belongs to one device -- the one showing the
+    // bottom screen -- rather than being shared between the two.
+    //
+    // A DS or a 3DS is one console with one set of controls, and two people
+    // sharing it want either device's buttons to press them. A Wii U is not
+    // like that: the GamePad is one player's controller, and every other
+    // player has one of their own, which Cemu reads for itself. Merging the
+    // host's pads into the GamePad there meant every Pro Controller on the
+    // Steam Deck was also pressing the GamePad's buttons, underneath the
+    // player actually holding it.
+    bool pad_belongs_to_its_screen = false;
     // Whether this console has a microphone a game can ask to be blown into.
     //
     // A DS does, and a handful of games will not let you past a room without

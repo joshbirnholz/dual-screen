@@ -155,6 +155,9 @@ SystemProfile make_wii_u() {
     // A GamePad has a gyroscope and an accelerometer, and a great many Wii U
     // games steer, aim or look around with them -- see uses_motion.
     profile.uses_motion = true;
+    // One player's controller, not the console's -- see
+    // pad_belongs_to_its_screen.
+    profile.pad_belongs_to_its_screen = true;
     // The television is the game; the GamePad is a second view of it. So one
     // device on its own shows one screen rather than both squeezed together.
     profile.solo_screens = SoloScreens::One;
