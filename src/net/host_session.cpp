@@ -156,6 +156,16 @@ constexpr double kRoundTripDecayPerAck = 0.99;
 // already tolerates while still recovering -- kVideoRetryCooldownMs below
 // is the other constant already picked at this same rough scale.
 constexpr uint64_t kAckStallMs = 3000;
+// But three seconds is only right before this link has shown what it is.
+// Once it has, a frame this many round trips overdue is not late, it is gone:
+// measured on a Switch over wifi, a one-second dropout -- audio lost too, so
+// nothing either end could have done about it -- froze the picture for
+// three, because every frame in flight when the dropout began was lost with
+// it and the wait for their acks ran its full course after the link was back.
+// Six round trips of a 45ms link is 270ms, lifted to the floor below so a
+// device that simply had a slow moment is not mistaken for a lost one.
+constexpr double kAckStallRoundTrips = 6.0;
+constexpr uint64_t kMinAckStallMs = 400;
 
 // Audio needs no backlog limit of its own any more. The old one existed
 // because a fat queued video frame sitting ahead of it in the same TCP
@@ -332,6 +342,15 @@ double media_pacing_bytes_per_ms(uint32_t declared_kbps, double produced_bytes_p
     const double base =
         produced_bytes_per_ms > 0.0 ? produced_bytes_per_ms : declared_bytes_per_ms;
     return std::max(base, kFloorBytesPerMs) * kPacingHeadroomMultiplier;
+}
+
+uint64_t ack_stall_ms(double round_trip_ms, bool measured) {
+    if (!measured || !(round_trip_ms > 0.0)) {
+        return kAckStallMs;
+    }
+    const double scaled = round_trip_ms * kAckStallRoundTrips;
+    return static_cast<uint64_t>(std::max(static_cast<double>(kMinAckStallMs),
+                                          std::min(scaled, static_cast<double>(kAckStallMs))));
 }
 
 std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms) {
@@ -1639,8 +1658,10 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // outstanding long enough that the ack which would release it is
         // never coming -- see kAckStallMs's own comment for why that is a
         // real, reproduced failure and not just a hypothetical one.
-        const bool stalled = !frame_sent_at_.empty() &&
-                             monotonic_millis() - frame_sent_at_.front().second >= kAckStallMs;
+        const bool stalled =
+            !frame_sent_at_.empty() &&
+            monotonic_millis() - frame_sent_at_.front().second >=
+                ack_stall_ms(round_trip_high_ms_, acked_serial_ > 0);
         if (!stalled) {
             return;
         }
@@ -1652,6 +1673,10 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // were never actually confirmed. Clearing them outright and forcing
         // a fresh full send instead is the tile equivalent of the keyframe
         // resend_screens_ already forces for video, below.
+        log_info("no ack for " +
+                 std::to_string(monotonic_millis() - frame_sent_at_.front().second) + "ms (" +
+                 std::to_string(frame_sent_at_.size()) +
+                 " frames in flight); taking them for lost and starting again from a keyframe");
         acked_serial_ = sent_serial_;
         frame_sent_at_.clear();
         previous_top_.clear();

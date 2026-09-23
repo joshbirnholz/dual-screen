@@ -1525,11 +1525,13 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
     CHECK_MSG(host.companion_frames_behind_for_test() > 0,
               "the host was not actually backlogged before the stall -- this test needs it to be");
 
-    // Past kAckStallMs (host_session.cpp) with no ack having arrived in
-    // between -- real time, since the stall check reads the clock directly
-    // rather than through poll()'s own now_ms parameter, the same way
-    // video_retry_at_ms_ elsewhere in this file already does.
-    std::this_thread::sleep_for(std::chrono::milliseconds(3200));
+    // Past ack_stall_ms() with no ack having arrived in between -- which for
+    // a link that has been keeping up, as this one was, is a few of its round
+    // trips, lifted to the 400ms floor on loopback. Real time, since the
+    // stall check reads the clock directly rather than through poll()'s own
+    // now_ms parameter, the same way video_retry_at_ms_ elsewhere in this
+    // file already does.
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
     const uint64_t queued_before_recovery = host.queued_bytes_for_test();
     const uint64_t recovery_serial = serial + 1;
@@ -2163,6 +2165,23 @@ void test_the_pacer_follows_what_is_really_produced() {
 
 // The window is a bandwidth-delay product, and the point of computing it
 // rather than picking it is that the delay is not a constant.
+// A frame is taken for lost after a few of this link's own round trips, not
+// after a fixed three seconds -- which, after a one-second wifi dropout, was
+// two more seconds of frozen picture than the dropout itself.
+void test_a_lost_frame_is_given_up_on_in_round_trips() {
+    // Nothing measured yet: the full, cautious wait.
+    CHECK_EQ(ack_stall_ms(0.0, false), uint64_t{3000});
+    CHECK_EQ(ack_stall_ms(45.0, false), uint64_t{3000});
+    // A 45ms link: well under a second, but never below the floor that keeps
+    // a device's slow moment from reading as a loss.
+    CHECK(ack_stall_ms(45.0, true) < uint64_t{1000});
+    CHECK(ack_stall_ms(45.0, true) >= uint64_t{400});
+    CHECK_EQ(ack_stall_ms(10.0, true), uint64_t{400});
+    // A slow link waits longer, and never longer than before.
+    CHECK(ack_stall_ms(200.0, true) > ack_stall_ms(45.0, true));
+    CHECK_EQ(ack_stall_ms(5000.0, true), uint64_t{3000});
+}
+
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     constexpr double at_60fps = 16.7;
 
@@ -2975,6 +2994,7 @@ int main() {
     test_the_bitrate_is_a_budget_for_the_link();
     test_the_pacer_follows_what_is_really_produced();
     test_the_in_flight_window_covers_the_delay_this_link_shows();
+    test_a_lost_frame_is_given_up_on_in_round_trips();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

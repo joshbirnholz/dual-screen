@@ -38,6 +38,12 @@ bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, i
 // having fewer frames in it. See kMinFramesInFlight and its neighbours.
 std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms);
 
+// How long the oldest unacked frame may wait before it is taken for lost --
+// see kAckStallMs. `round_trip_ms` is the link's high-water round trip, and
+// `measured` whether it has one yet: until the companion has acked a frame
+// at all there is nothing to scale by, and the full, cautious wait applies.
+uint64_t ack_stall_ms(double round_trip_ms, bool measured);
+
 // How fast the media pacer may hand fragments to the socket, in bytes per
 // millisecond, given what the encoders were asked for and what they are really
 // producing. See the definition: those are not the same number.
