@@ -26,8 +26,9 @@ struct ControllersScreenResult {
 // button, move it up and down, put it down again. The first place is the
 // GamePad.
 //
-// To tell which row is which, press the north face button: the controller on
-// the focused row rumbles.
+// To tell which row is which, press either upper face button -- X or Y, which
+// sit the other way round on a Nintendo pad from an Xbox one -- and the
+// controller on the focused row gives a short buzz.
 class ControllersScreen {
 public:
     void open();
@@ -50,8 +51,8 @@ public:
                                    bool gamepad_here,
                                    PadOrder& order);
 
-    // `wii_u` is whether the game is one this applies to, which is said on
-    // screen when it is not rather than hiding the screen.
+    // `this_device` and `other_device` are what each row says its pad is
+    // plugged into.
     void render(QuadRenderer& quads,
                 TextRenderer& text,
                 const ButtonGlyphSheet& glyphs,
@@ -60,7 +61,8 @@ public:
                 const std::vector<KnownPad>& pads,
                 bool gamepad_here,
                 const PadOrder& order,
-                bool wii_u);
+                const std::string& this_device,
+                const std::string& other_device);
 
     int focus() const { return focus_; }
     bool holding() const { return holding_; }

@@ -120,11 +120,22 @@ bool controller_is_a_remote(const char* sdl_name);
 // Known by its id, never by its name -- see KnownPad for why. No keyboard:
 // on a Wii U the keys are Cemu's to map directly, and none of this app's
 // controllers carry them.
+// One pad's controls, read raw in SDL's terms: every button SDL has a name
+// for, and every axis. What held_state_from() maps into the console's -- the
+// same whether they came off SDL or, on a Switch, off the console itself.
+struct RawPadState {
+    bool buttons[SDL_CONTROLLER_BUTTON_MAX] = {};
+    int16_t axes[SDL_CONTROLLER_AXIS_MAX] = {};
+};
+
 struct PadReading {
     SDL_JoystickID id = 0;
     // What SDL calls it -- under Steam Input, the name the player gave it in
     // Steam. For showing only; see KnownPad::name.
     std::string name;
+    // Its player slot on this device, from 0, or -1 for none -- see
+    // KnownPad::slot.
+    int slot = -1;
     // Its presses through the same mapping the merged state uses, and how it
     // is being moved when its own sensors can say (see MotionReader, which
     // switches them on).
@@ -257,6 +268,9 @@ private:
     DsInputState poll_held_state() const;
     // One pad's share of that, through the same mapping.
     DsInputState held_state_of(SDL_GameController* controller) const;
+    // The same mapping, from controls already read.
+    DsInputState held_state_from(const RawPadState& raw) const;
+    static RawPadState raw_state_of(SDL_GameController* controller);
     // One pad's reading with whatever the held-input gate is holding back
     // taken out -- see HeldInputGate.
     DsInputState gated(DsInputState held) const;
@@ -266,6 +280,11 @@ private:
     // whose SDL lists all eight of the console's controller slots from the
     // start, filled or not -- see pad_connected() in the .cpp.
     bool pad_connected(SDL_JoystickID id) const;
+    // Every pad actually plugged in, with the SDL pad that answers for it --
+    // on a Switch, the handheld controls too, which SDL has none of its own
+    // for. See kSwitchHandheldId in the .cpp.
+    std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> connected_pads() const;
+    SDL_GameController* pad_controller(SDL_JoystickID id) const;
     // Runs one pad's motor for `ms`, or stops it. SDL_GameControllerRumble
     // everywhere but a Switch, where SDL cannot be trusted with it -- see
     // the .cpp -- and the console's own vibration calls stand in, with the
@@ -278,6 +297,8 @@ private:
     uint32_t pad_rumble_refreshed_ms_ = 0;
     // When each motor driven on a Switch is due to stop; 0 for stopped.
     std::map<SDL_JoystickID, uint32_t> motor_until_;
+    // Pads already said to be unable to rumble, so it is said once each.
+    std::map<SDL_JoystickID, bool> said_no_rumble_;
     // Updates the live pointer position; returns whether one is down.
     bool update_pointer(float output_width, float output_height);
     void emit_navigation_from_axes();

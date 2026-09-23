@@ -1001,6 +1001,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.id = static_cast<uint32_t>(reading.id);
         pad.position = position++;
         pad.name = reading.name;
+        pad.slot = reading.slot;
         pad.held = reading.held;
         pads.push_back(pad);
     }
@@ -1027,6 +1028,7 @@ std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
         pad.id = reported.id;
         pad.position = position++;
         pad.name = reported.name;
+        pad.slot = reported.slot;
         pad.held = reported.held;
         pads.push_back(pad);
     }
@@ -1164,7 +1166,7 @@ void App::Impl::identify_pad(const KnownPad& pad) {
     // A quick buzz to say which one it is, and that is all. The device that
     // owns the pad ends it by itself -- so it is the same short length even
     // when the message getting there waited behind a streaming screen.
-    constexpr uint16_t kPingMs = 180;
+    constexpr uint16_t kPingMs = 300;
     log_info("controllers: rumbling " + pad_identity(pad) + " so it can be found");
     if (pad.on_this_device) {
         input.ping_pad(static_cast<SDL_JoystickID>(pad.id), kPingMs);
@@ -2545,7 +2547,9 @@ void App::Impl::render() {
     } else if (state == State::Controllers) {
         controllers_screen.render(quads, text, button_glyphs, width, height,
                                   gather_pads(companion_joined()), holds_gamepad(), pad_order,
-                                  system_profile(system).pad_belongs_to_its_screen);
+                                  settings.device_name,
+                                  companion_joined() ? host_session->companion_name()
+                                                     : std::string("other device"));
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {

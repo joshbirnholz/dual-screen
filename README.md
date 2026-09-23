@@ -280,8 +280,10 @@ Keyboards are not in the line at all. Map a keyboard in Cemu directly, with
 Cemu's own **Keyboard** API, if a game wants one.
 
 Controllers start out in each device's own order, which under Steam Input is
-Steam's. Each is shown with the name Steam gives it, where there is one, next
-to its number and device. The name is only shown: a virtual pad's name is fixed
+Steam's. Each is shown with the name Steam gives it, where there is one, and
+which device it is on and which player slot that device has it in, such as
+"steamdeck P2" or "Switch Lite P1". Set `device_name` in settings.json to
+change what this device is called there. The name is only shown: a virtual pad's name is fixed
 when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
@@ -289,10 +291,10 @@ describe a different controller from the one behind it.
 Controller Order screen does. Press confirm to pick a controller up, move it
 up or down, and press confirm again to put it down. Moving one up from Player 1
 makes it the GamePad; moving one down past the last player puts it in **Not
-used**. Press the north face button (X on a Nintendo layout) to give the
-highlighted controller one short buzz, which is how to tell them apart. A
-Switch Lite has no rumble motor, so its own controls cannot buzz. **Back to the
-defaults** forgets the arrangement. It works mid-game and from either device's
+used**. Press **X** or **Y** (Identify) to give the highlighted controller
+one short buzz, which is how to tell them apart. Either works, because which of
+them a pad calls X depends on the pad. A Switch Lite has no rumble motor, so
+its own controls cannot buzz. It works mid-game and from either device's
 buttons, and lasts until the app closes: a controller is recognised for as long
 as it stays connected, so one that is unplugged and plugged back in joins the
 end of the line.

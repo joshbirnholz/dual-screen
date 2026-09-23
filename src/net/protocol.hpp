@@ -355,6 +355,8 @@ struct ReportedPad {
     // What the companion's SDL calls it, cut to kMaxReportedPadName bytes.
     // Empty from a companion that does not say.
     std::string name;
+    // Its player slot on the companion, from 0, or -1 -- see KnownPad::slot.
+    int slot = -1;
 };
 
 // This device's pads as a companion reports them -- see InputMessage::pads.
@@ -367,6 +369,7 @@ std::vector<ReportedPad> reported_pads(const Readings& readings) {
         pad.id = static_cast<uint32_t>(reading.id);
         pad.held = reading.held;
         pad.name = reading.name;
+        pad.slot = reading.slot;
         pads.push_back(pad);
     }
     return pads;

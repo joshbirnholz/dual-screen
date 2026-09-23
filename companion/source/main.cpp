@@ -76,6 +76,7 @@ extern "C" {
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/input_manager.hpp"
+#include "input/switch_console.hpp"
 #include "layout/layout.hpp"
 #include "layout/layout_registry.hpp"
 #include "net/companion_session.hpp"
@@ -545,8 +546,15 @@ void Client::begin_search(ScreenId wanted) {
     close_menu();
     host_picker_.open(wanted);
 
+    // What the host calls this device, on its Controllers screen among other
+    // places. A Switch says which Switch rather than nothing, which the host
+    // would otherwise show as "companion".
+    std::string name = options_.device_name;
+#ifdef __SWITCH__
+    if (name.empty()) name = switch_console_name();
+#endif
     std::string error;
-    if (!session_.begin_search(options_.device_name, wanted, &error)) {
+    if (!session_.begin_search(name, wanted, &error)) {
         state_ = State::Failed;
         failure_ = error;
         log_error("cannot look for hosts: " + error);

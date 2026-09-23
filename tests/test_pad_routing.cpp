@@ -215,8 +215,11 @@ void test_the_controllers_screen_moves_a_pad_like_steam_does() {
         return screen.update({action}, {}, 1280.0f, 800.0f, pads, true, order);
     };
 
-    // North on the GamePad's row buzzes Controller 1.
+    // Either upper face button on the GamePad's row buzzes Controller 1:
+    // which one a pad calls X depends on the pad.
     ds::ControllersScreenResult result = press(ds::UiAction::MenuQuit);
+    CHECK_EQ(result.identify, 0);
+    result = press(ds::UiAction::MenuReset);
     CHECK_EQ(result.identify, 0);
 
     // Down to Player 2 (Controller 3), pick it up, carry it to the top.
@@ -244,16 +247,19 @@ void test_the_controllers_screen_moves_a_pad_like_steam_does() {
     result = press(ds::UiAction::Cancel);
     CHECK(!screen.holding() && !result.close_requested && screen.is_open());
 
-    // The row after the line puts everything back to the order.
+    // The row after the line is Done, and nothing is to be found on it.
     press(ds::UiAction::Down);
     press(ds::UiAction::Down);
     press(ds::UiAction::Down);
     CHECK_EQ(screen.focus(), 3);
+    CHECK_EQ(press(ds::UiAction::MenuQuit).identify, -1);
     result = press(ds::UiAction::Confirm);
-    CHECK(result.order_changed);
-    CHECK(!order.chosen);
+    CHECK(result.close_requested);
+    CHECK(order.chosen);
+    CHECK(!screen.is_open());
 
-    // And Back leaves.
+    // And Back leaves too.
+    screen.open();
     result = press(ds::UiAction::Cancel);
     CHECK(result.close_requested);
     CHECK(!screen.is_open());

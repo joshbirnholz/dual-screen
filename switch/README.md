@@ -26,11 +26,14 @@ That is the whole of it.
   allowed to sleep again once the session ends.
 - Reports each controller attached to it separately, so on a
   Wii U the host can make them different players (see **Players** in the main
-  README). Each is named by what it is and which Switch player slot it is in,
-  which is the number its own player lights show: "Pro Controller, Switch
-  player 2", "Left Joy-Con, Switch player 3", "Handheld controls". When the
-  host has Settings or Controllers open, the Switch says so and its buttons
-  work that screen.
+  README). Each is named by what it is -- "Pro Controller", "Left Joy-Con",
+  "Switch Lite" for a Lite's own controls, "Joy-Con (attached)" for another
+  Switch's -- and reports which player slot it is in, the number its own
+  player lights show. A controller in player 1's slot and the handheld
+  controls are two controllers, although SDL reads them as one. The Switch
+  also tells the host which model it is, so the host calls it "Switch Lite"
+  rather than "companion". When the host has Settings or Controllers open,
+  the Switch says so and its buttons work that screen.
 
 Everything the two devices have to agree on — the layout, smoothing, the gap,
 handedness, which device makes the sound — belongs to the host. This end asks

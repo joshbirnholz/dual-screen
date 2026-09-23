@@ -10,8 +10,8 @@ namespace ds {
 
 namespace {
 
-// The two rows after the line: back to the defaults, and done.
-constexpr int kExtraRows = 2;
+// The row after the line: done.
+constexpr int kExtraRows = 1;
 
 }  // namespace
 
@@ -32,7 +32,7 @@ ControllersScreen::Geometry ControllersScreen::compute_geometry(float output_wid
     geometry.panel = PixelRect{margin, std::round(output_height * 0.08f),
                                output_width - margin * 2.0f,
                                output_height - std::round(output_height * 0.16f)};
-    geometry.view_top = geometry.panel.y + line * 4.6f;
+    geometry.view_top = geometry.panel.y + line * 2.6f;
     geometry.view_bottom = geometry.panel.y + geometry.panel.h - line * 2.2f;
     const float row_height = line * 1.9f;
     const float step = row_height + line * 0.3f;
@@ -119,11 +119,6 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
                 holding_ = true;
                 held_ = pad_identity(pads[static_cast<std::size_t>(pad)]);
             }
-        } else if (focus_ == line_rows) {
-            if (order.chosen) {
-                order = PadOrder();
-                result.order_changed = true;
-            }
         } else {
             result.close_requested = true;
         }
@@ -156,15 +151,19 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
                     result.close_requested = true;
                 }
                 break;
-            // The north face button: which controller is this?
+            // Either upper face button: which controller is this? Both,
+            // because X and Y swap places between a Nintendo pad and an Xbox
+            // one, and which of them a pad reports as which depends on the
+            // pad and on Steam -- the button the prompt names is the one
+            // somebody presses, wherever it sits.
             case UiAction::MenuQuit:
+            case UiAction::MenuReset:
                 if (pad_at(focus_) >= 0) result.identify = pad_at(focus_);
                 break;
             // Escape also raises Cancel, which is what it means here.
             case UiAction::OpenMenu:
             case UiAction::Left:
             case UiAction::Right:
-            case UiAction::MenuReset:
             case UiAction::MenuDisconnect:
             case UiAction::MenuSettings:
             case UiAction::Quit:
@@ -213,7 +212,8 @@ void ControllersScreen::render(QuadRenderer& quads,
                                const std::vector<KnownPad>& pads,
                                bool gamepad_here,
                                const PadOrder& order,
-                               bool wii_u) {
+                               const std::string& this_device,
+                               const std::string& other_device) {
     if (!open_) {
         return;
     }
@@ -227,16 +227,6 @@ void ControllersScreen::render(QuadRenderer& quads,
 
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
     text.draw(quads, "Controllers", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
-    text.draw(quads,
-              wii_u ? "The first is the GamePad, then Player 1 to Player 8. Kept until this app "
-                      "closes."
-                    : "These only apply to Wii U games. DS and 3DS games take every controller.",
-              geometry.panel.x, geometry.panel.y + line * 1.8f, scale * 0.9f,
-              wii_u ? theme.text_dim : theme.warning);
-    text.draw(quads,
-              holding_ ? "Up and down to move it, then confirm to put it down."
-                       : "Confirm picks a controller up to move it. North makes it rumble.",
-              geometry.panel.x, geometry.panel.y + line * 2.9f, scale * 0.8f, theme.text_dim);
 
     quads.set_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
                              geometry.view_bottom - geometry.view_top});
@@ -251,8 +241,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         const int line_rows = static_cast<int>(rows.size());
         if (index >= line_rows) {
             draw_menu_row(quads, row, focused, scale);
-            text.draw(quads, index == line_rows ? "Back to the defaults" : "Done", row.x + pad,
-                      baseline, scale, menu_row_text(focused));
+            text.draw(quads, "Done", row.x + pad, baseline, scale, menu_row_text(focused));
             continue;
         }
 
@@ -279,16 +268,17 @@ void ControllersScreen::render(QuadRenderer& quads,
         }
         const KnownPad& known = pads[static_cast<std::size_t>(entry.pad)];
         // Steam's name for it where there is one, which is the one the player
-        // gave it -- and its number and device beside it either way, because
-        // the number is the part that is never out of date.
-        const std::string where =
-            pad_label(known) + (known.on_this_device ? ", this device" : ", other device");
-        const std::string title = known.name.empty() ? where : known.name;
+        // gave it -- and beside it, always, which device it is plugged into
+        // and which player slot that device has it in: "Steam Deck P2", the
+        // number its own lights show where it has any.
+        const std::string title = known.name.empty() ? pad_label(known) : known.name;
         text.draw(quads, title, name_x, baseline, scale, ink);
-        if (!known.name.empty()) {
-            text.draw(quads, where, row.x + row.w - pad, baseline, scale * 0.8f, dim,
-                      TextAlign::Right);
+        std::string where = known.on_this_device ? this_device : other_device;
+        if (known.slot >= 0) {
+            where += "  P" + std::to_string(known.slot + 1);
         }
+        text.draw(quads, where, row.x + row.w - pad, baseline, scale * 0.8f, dim,
+                  TextAlign::Right);
     }
     quads.clear_clip();
     if (pads.empty()) {
@@ -300,7 +290,7 @@ void ControllersScreen::render(QuadRenderer& quads,
     if (holding_) {
         guide.push_back({ButtonGlyph::A, "Put Down", PromptRole::ActsOnSelection});
     } else {
-        guide.push_back({ButtonGlyph::X, "Rumble"});
+        guide.push_back({ButtonGlyph::X, "Identify"});
         guide.push_back({ButtonGlyph::A, "Move", PromptRole::ActsOnSelection});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     }

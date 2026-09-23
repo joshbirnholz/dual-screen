@@ -1054,6 +1054,7 @@ bool same_pads(const std::vector<ReportedPad>& a, const std::vector<ReportedPad>
         const DsInputState& x = a[index].held;
         const DsInputState& y = b[index].held;
         if (a[index].id != b[index].id || a[index].name != b[index].name ||
+            a[index].slot != b[index].slot ||
             x.buttons != y.buttons || x.circle_x != y.circle_x ||
             x.circle_y != y.circle_y || x.c_stick_x != y.c_stick_x ||
             x.c_stick_y != y.c_stick_y || x.motion != y.motion) {

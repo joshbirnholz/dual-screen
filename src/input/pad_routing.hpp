@@ -72,6 +72,11 @@ struct KnownPad {
     // Shown beside the number and nothing more: never used to recognise a
     // pad, because it can be stale (see above). Empty where there is none.
     std::string name;
+    // Which player slot its own device has it in, from 0 -- Steam's slot
+    // under Steam Input, the console's on a Switch, the number the pad's own
+    // lights show where it has them. -1 where there is none, as for a
+    // Switch's handheld controls. Shown only, like the name.
+    int slot = -1;
     // What it is holding right now: buttons and both sticks, and how it is
     // being moved if it can say.
     DsInputState held;

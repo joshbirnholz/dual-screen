@@ -9,6 +9,8 @@
 
 #ifdef __SWITCH__
 #include <switch.h>
+
+#include "input/switch_console.hpp"
 #endif
 
 namespace ds {
@@ -66,18 +68,92 @@ void InputManager::initialize(const Settings& settings) {
 #ifdef __SWITCH__
 namespace {
 
-// Which of the console's controller slots an SDL pad is. The Switch port of
-// SDL opens all eight slots at start-up, whether anything is in them or not,
-// with the instance id being the slot: 0 is player 1 together with the
-// handheld controls, and 1 to 7 are players 2 to 8.
+// Which of the console's controller slots a pad is. The Switch port of SDL
+// opens all eight slots at start-up, whether anything is in them or not,
+// with the instance id being the slot -- except that its first one is player
+// 1 and the handheld controls together, merged. Here they are two: 0 is
+// player 1 alone, and the handheld controls are kSwitchHandheldId, an id SDL
+// never hands out. A Pro Controller paired to a Switch Lite is player 1, and
+// merged with the Lite's own controls it could never be anybody but whoever
+// was holding the Lite.
+constexpr SDL_JoystickID kSwitchHandheldId = 8;
+
 HidNpadIdType npad_for(SDL_JoystickID id) {
-    if (id == 0) {
-        // Handheld controls when they are there -- which on a Switch Lite
-        // they always are -- and player 1's controller otherwise.
-        return hidGetNpadStyleSet(HidNpadIdType_Handheld) != 0 ? HidNpadIdType_Handheld
-                                                                : HidNpadIdType_No1;
+    if (id == kSwitchHandheldId) {
+        return HidNpadIdType_Handheld;
     }
     return static_cast<HidNpadIdType>(HidNpadIdType_No1 + id);
+}
+
+// The two SDL merges, read apart, straight off the console.
+struct SplitPads {
+    PadState player_one;
+    PadState handheld;
+};
+
+SplitPads& split_pads() {
+    static SplitPads pads = [] {
+        SplitPads made{};
+        padInitialize(&made.player_one, HidNpadIdType_No1);
+        padInitialize(&made.handheld, HidNpadIdType_Handheld);
+        return made;
+    }();
+    return pads;
+}
+
+// The Switch port's joystick buttons, in its own order -- what SDL's mapping
+// for the pad numbers its buttons by.
+constexpr u64 kJoystickButtons[] = {
+    HidNpadButton_A,          HidNpadButton_B,          HidNpadButton_X,
+    HidNpadButton_Y,          HidNpadButton_StickL,     HidNpadButton_StickR,
+    HidNpadButton_L,          HidNpadButton_R,          HidNpadButton_ZL,
+    HidNpadButton_ZR,         HidNpadButton_Plus,       HidNpadButton_Minus,
+    HidNpadButton_Left,       HidNpadButton_Up,         HidNpadButton_Right,
+    HidNpadButton_Down,       HidNpadButton_StickLLeft, HidNpadButton_StickLUp,
+    HidNpadButton_StickLRight, HidNpadButton_StickLDown, HidNpadButton_StickRLeft,
+    HidNpadButton_StickRUp,   HidNpadButton_StickRRight, HidNpadButton_StickRDown,
+    HidNpadButton_LeftSL,     HidNpadButton_LeftSR,     HidNpadButton_RightSL,
+    HidNpadButton_RightSR,
+};
+
+int16_t clamp_axis(int value) {
+    return static_cast<int16_t>(std::max(-32767, std::min(32767, value)));
+}
+
+// One of the split pads, as SDL would have read it: the console's buttons
+// and sticks put through the same binding SDL uses for its pad `like`, so
+// that the mapping after this cannot tell the difference.
+RawPadState split_raw_state(const PadState& pad, SDL_GameController* like) {
+    const u64 held = padGetButtons(&pad);
+    const HidAnalogStickState left = padGetStickPos(&pad, 0);
+    const HidAnalogStickState right = padGetStickPos(&pad, 1);
+    // The Switch port's axes: y turned to point down, as SDL's do.
+    const int16_t joystick_axes[4] = {clamp_axis(left.x), clamp_axis(-left.y),
+                                      clamp_axis(right.x), clamp_axis(-right.y)};
+    const auto joystick_button = [&](int index) {
+        return index >= 0 && index < static_cast<int>(sizeof(kJoystickButtons) / sizeof(u64)) &&
+               (held & kJoystickButtons[index]) != 0;
+    };
+
+    RawPadState raw;
+    for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
+        const SDL_GameControllerButtonBind bind =
+            SDL_GameControllerGetBindForButton(like, static_cast<SDL_GameControllerButton>(index));
+        if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON) {
+            raw.buttons[index] = joystick_button(bind.value.button);
+        }
+    }
+    for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
+        const SDL_GameControllerButtonBind bind =
+            SDL_GameControllerGetBindForAxis(like, static_cast<SDL_GameControllerAxis>(index));
+        if (bind.bindType == SDL_CONTROLLER_BINDTYPE_AXIS && bind.value.axis >= 0 &&
+            bind.value.axis < 4) {
+            raw.axes[index] = joystick_axes[bind.value.axis];
+        } else if (bind.bindType == SDL_CONTROLLER_BINDTYPE_BUTTON) {
+            raw.axes[index] = joystick_button(bind.value.button) ? 32767 : 0;
+        }
+    }
+    return raw;
 }
 
 // Runs or stops one slot's motors through the console itself.
@@ -124,14 +200,16 @@ void switch_vibrate(SDL_JoystickID id, bool on) {
     hidSendVibrationValues(handles, values, handles_wanted);
 }
 
-// What is in a slot, in words a player recognises, and which slot -- the
-// player number the controller's own lights show. SDL calls every one of
-// them "Switch Controller", which tells two apart not at all.
+// What is in a slot, in words a player recognises. SDL calls every one of
+// them "Switch Controller", which tells two apart not at all. Which slot it
+// is travels separately -- see switch_pad_slot().
 std::string switch_pad_description(SDL_JoystickID id) {
     const HidNpadIdType npad = npad_for(id);
     const u32 styles = hidGetNpadStyleSet(npad);
     if (npad == HidNpadIdType_Handheld) {
-        return "Handheld controls";
+        // A Lite's controls are the console; anything else's are two Joy-Con
+        // slid onto it.
+        return switch_is_lite() ? "Switch Lite" : "Joy-Con (attached)";
     }
     const char* kind = "Controller";
     if (styles & HidNpadStyleTag_NpadFullKey) kind = "Pro Controller";
@@ -145,7 +223,13 @@ std::string switch_pad_description(SDL_JoystickID id) {
     else if (styles & (HidNpadStyleTag_NpadLark | HidNpadStyleTag_NpadHandheldLark)) {
         kind = "NES controller";
     } else if (styles & HidNpadStyleTag_NpadPalma) kind = "Poke Ball Plus";
-    return std::string(kind) + ", Switch player " + std::to_string(id + 1);
+    return kind;
+}
+
+// The player slot the console has it in, which is the number its own
+// lights show -- none for the handheld controls, which have no lights.
+int switch_pad_slot(SDL_JoystickID id) {
+    return npad_for(id) == HidNpadIdType_Handheld ? -1 : static_cast<int>(id);
 }
 
 }  // namespace
@@ -153,25 +237,43 @@ std::string switch_pad_description(SDL_JoystickID id) {
 
 bool InputManager::pad_connected(SDL_JoystickID id) const {
 #ifdef __SWITCH__
-    // An empty slot has no style at all. Slot 0 is filled by either the
-    // handheld controls or player 1's controller.
-    if (id == 0) {
-        return (hidGetNpadStyleSet(HidNpadIdType_Handheld) |
-                hidGetNpadStyleSet(HidNpadIdType_No1)) != 0;
-    }
-    return id > 0 && id < 8 && hidGetNpadStyleSet(npad_for(id)) != 0;
+    // An empty slot has no style at all.
+    return ((id >= 0 && id < 8) || id == kSwitchHandheldId) &&
+           hidGetNpadStyleSet(npad_for(id)) != 0;
 #else
     (void)id;
     return true;
 #endif
 }
 
-int InputManager::connected_controllers() const {
-    int count = 0;
-    for (const auto& [id, controller] : controllers_) {
-        if (controller != nullptr && pad_connected(id)) ++count;
+std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> InputManager::connected_pads() const {
+    std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> pads;
+#ifdef __SWITCH__
+    // The handheld controls first: on a Switch Lite, the console itself, and
+    // held by whoever is holding the screen. It has no SDL pad of its own --
+    // see kSwitchHandheldId -- so SDL's first stands in wherever one is asked
+    // for, for its mapping.
+    const auto first = controllers_.find(0);
+    if (first != controllers_.end() && first->second != nullptr &&
+        pad_connected(kSwitchHandheldId)) {
+        pads.emplace_back(kSwitchHandheldId, first->second);
     }
-    return count;
+#endif
+    for (const auto& [id, controller] : controllers_) {
+        if (controller != nullptr && pad_connected(id)) pads.emplace_back(id, controller);
+    }
+    return pads;
+}
+
+SDL_GameController* InputManager::pad_controller(SDL_JoystickID id) const {
+    for (const auto& [pad, controller] : connected_pads()) {
+        if (pad == id) return controller;
+    }
+    return nullptr;
+}
+
+int InputManager::connected_controllers() const {
+    return static_cast<int>(connected_pads().size());
 }
 
 void InputManager::drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on,
@@ -181,8 +283,14 @@ void InputManager::drive_motor(SDL_JoystickID id, SDL_GameController* controller
     switch_vibrate(id, on);
     motor_until_[id] = on ? SDL_GetTicks() + ms : 0;
 #else
-    (void)id;
-    SDL_GameControllerRumble(controller, on ? 0xffffu : 0u, on ? 0xffffu : 0u, on ? ms : 0u);
+    if (SDL_GameControllerRumble(controller, on ? 0xffffu : 0u, on ? 0xffffu : 0u,
+                                 on ? ms : 0u) != 0 &&
+        on && !said_no_rumble_[id]) {
+        said_no_rumble_[id] = true;
+        // Said, because "nothing buzzed" is otherwise indistinguishable from
+        // "the buzz was never asked for".
+        log_info("controller " + std::to_string(id) + " cannot rumble: " + SDL_GetError());
+    }
 #endif
 }
 
@@ -190,11 +298,13 @@ void InputManager::shutdown() {
     // Before the controllers close: switching a sensor off asks the
     // controller about itself, which a closed one cannot answer.
     motion_.set_enabled(false);
+    // A motor left running would outlive the app on a Switch, whose vibration
+    // is the console's rather than SDL's to stop.
+    for (const auto& [id, controller] : connected_pads()) {
+        drive_motor(id, controller, false, 0);
+    }
     for (auto& entry : controllers_) {
         if (entry.second != nullptr) {
-            // A motor left running would outlive the app on a Switch, whose
-            // vibration is the console's rather than SDL's to stop.
-            drive_motor(entry.first, entry.second, false, 0);
             SDL_GameControllerClose(entry.second);
         }
     }
@@ -263,9 +373,9 @@ bool controller_is_a_remote(const char* sdl_name) {
 
 int InputManager::connected_gamepads() const {
     int count = 0;
-    for (const auto& [instance_id, controller] : controllers_) {
-        if (controller != nullptr && pad_connected(instance_id) &&
-            !controller_is_a_remote(SDL_GameControllerName(controller))) {
+    for (const auto& [instance_id, controller] : connected_pads()) {
+        (void)instance_id;
+        if (!controller_is_a_remote(SDL_GameControllerName(controller))) {
             ++count;
         }
     }
@@ -294,15 +404,13 @@ void InputManager::set_rumble(bool active) {
     // of buzzing forever, the same self-healing shape as everything else
     // this link tolerates dropping.
     constexpr uint32_t kRumbleMs = 250;
-    for (const auto& [instance_id, controller] : controllers_) {
-        if (controller == nullptr || !pad_connected(instance_id)) continue;
+    for (const auto& [instance_id, controller] : connected_pads()) {
         drive_motor(instance_id, controller, active, kRumbleMs);
     }
 }
 
 void InputManager::ping_pad(SDL_JoystickID id, uint32_t ms) {
-    for (const auto& [instance_id, controller] : controllers_) {
-        if (controller == nullptr || !pad_connected(instance_id)) continue;
+    for (const auto& [instance_id, controller] : connected_pads()) {
         if (id != -1 && instance_id != id) continue;
         // A game's rumble already running says more than a ping could, and
         // cutting it short at the end of the ping would be wrong.
@@ -331,11 +439,8 @@ std::vector<PadReading> InputManager::pad_readings() const {
     // Input is Steam's slot order -- the order a player arranges in Steam and
     // expects to see as Controller 1, 2, 3. A pad without one comes after, in
     // the order it arrived.
-    std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> ordered;
-    for (const auto& [id, controller] : controllers_) {
-        // Only what is actually plugged in: a Switch lists every slot it has.
-        if (controller != nullptr && pad_connected(id)) ordered.emplace_back(id, controller);
-    }
+    // Only what is actually plugged in: a Switch lists every slot it has.
+    std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> ordered = connected_pads();
     std::stable_sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
         const int a = SDL_GameControllerGetPlayerIndex(left.second);
         const int b = SDL_GameControllerGetPlayerIndex(right.second);
@@ -349,12 +454,27 @@ std::vector<PadReading> InputManager::pad_readings() const {
         reading.id = id;
 #ifdef __SWITCH__
         reading.name = switch_pad_description(id);
+        reading.slot = switch_pad_slot(id);
 #else
         const char* name = SDL_GameControllerName(controller);
         reading.name = name != nullptr ? name : "";
+        // Steam's slot under Steam Input; SDL's own numbering otherwise.
+        reading.slot = SDL_GameControllerGetPlayerIndex(controller);
 #endif
         if (game_input_enabled_) {
+#ifdef __SWITCH__
+            // Player 1 and the handheld controls, which SDL reads as one pad,
+            // read apart -- see kSwitchHandheldId.
+            if (id == 0 || id == kSwitchHandheldId) {
+                const SplitPads& split = split_pads();
+                reading.held = gated(held_state_from(
+                    split_raw_state(id == 0 ? split.player_one : split.handheld, controller)));
+            } else {
+                reading.held = gated(held_state_of(controller));
+            }
+#else
             reading.held = gated(held_state_of(controller));
+#endif
             // Its own motion, where it has its own sensors switched on. Both
             // or neither, for the reason MotionReader gives.
             float gyro[3] = {0.0f, 0.0f, 0.0f};
@@ -381,8 +501,8 @@ std::vector<PadReading> InputManager::pad_readings() const {
 }
 
 void InputManager::set_pad_rumble(SDL_JoystickID id, bool active) {
-    const auto it = controllers_.find(id);
-    if (it == controllers_.end() || it->second == nullptr) {
+    SDL_GameController* controller = pad_controller(id);
+    if (controller == nullptr) {
         pad_rumble_on_.erase(id);
         return;
     }
@@ -393,7 +513,7 @@ void InputManager::set_pad_rumble(SDL_JoystickID id, bool active) {
     }
     // The same short, renewed rumble set_rumble() uses, and for its reason.
     constexpr uint32_t kRumbleMs = 250;
-    drive_motor(id, it->second, active, kRumbleMs);
+    drive_motor(id, controller, active, kRumbleMs);
 }
 
 void InputManager::refresh_pad_rumble() {
@@ -404,9 +524,8 @@ void InputManager::refresh_pad_rumble() {
         for (auto& [id, until] : motor_until_) {
             if (until == 0 || static_cast<int32_t>(now - until) < 0) continue;
             until = 0;
-            const auto controller = controllers_.find(id);
-            if (controller != controllers_.end() && controller->second != nullptr) {
-                drive_motor(id, controller->second, false, 0);
+            if (SDL_GameController* controller = pad_controller(id)) {
+                drive_motor(id, controller, false, 0);
             }
         }
     }
@@ -422,12 +541,12 @@ void InputManager::refresh_pad_rumble() {
     }
     pad_rumble_refreshed_ms_ = now;
     for (auto it = pad_rumble_on_.begin(); it != pad_rumble_on_.end();) {
-        const auto controller = controllers_.find(it->first);
-        if (controller == controllers_.end() || controller->second == nullptr) {
+        SDL_GameController* controller = pad_controller(it->first);
+        if (controller == nullptr) {
             it = pad_rumble_on_.erase(it);
             continue;
         }
-        drive_motor(it->first, controller->second, true, 250);
+        drive_motor(it->first, controller, true, 250);
         ++it;
     }
 }
@@ -447,6 +566,12 @@ void InputManager::begin_frame() {
     ui_actions_.clear();
     pointer_events_.clear();
     window_size_changed_ = false;
+#ifdef __SWITCH__
+    // The two pads SDL merges, read apart this frame -- see split_pads().
+    SplitPads& split = split_pads();
+    padUpdate(&split.player_one);
+    padUpdate(&split.handheld);
+#endif
     refresh_pad_rumble();
 }
 
@@ -892,14 +1017,29 @@ bool InputManager::stick_buttons_held(SDL_GameControllerButton button) const {
     return false;
 }
 
+RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
+    RawPadState raw;
+    for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
+        raw.buttons[index] = SDL_GameControllerGetButton(
+                                 controller, static_cast<SDL_GameControllerButton>(index)) != 0;
+    }
+    for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
+        raw.axes[index] = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(index));
+    }
+    return raw;
+}
+
 DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
+    return held_state_from(raw_state_of(controller));
+}
+
+DsInputState InputManager::held_state_from(const RawPadState& raw) const {
     DsInputState held;
 
     for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
         const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
         DsButton ds_button = DsButton::A;
-        if (ds_button_for_controller_button(button, ds_button) &&
-            SDL_GameControllerGetButton(controller, button) != 0) {
+        if (ds_button_for_controller_button(button, ds_button) && raw.buttons[index]) {
             held.set(ds_button, true);
         }
     }
@@ -909,8 +1049,8 @@ DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
     // made its circle pad unusable -- a core that reads the d-pad sees a
     // direction held down for as long as the stick is off centre, and
     // walking becomes the eight directions the d-pad has.
-    const int16_t raw_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
-    const int16_t raw_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
+    const int16_t raw_x = raw.axes[SDL_CONTROLLER_AXIS_LEFTX];
+    const int16_t raw_y = raw.axes[SDL_CONTROLLER_AXIS_LEFTY];
     const float axis_x = raw_x / 32767.0f;
     const float axis_y = raw_y / 32767.0f;
     const float deadzone = settings_.stick_deadzone;
@@ -929,8 +1069,8 @@ DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
 
     // What the right stick is depends on what the game wants -- a C-Stick,
     // a second circle pad, a d-pad, or nothing. See RightStickMode.
-    const int16_t raw_c_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
-    const int16_t raw_c_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
+    const int16_t raw_c_x = raw.axes[SDL_CONTROLLER_AXIS_RIGHTX];
+    const int16_t raw_c_y = raw.axes[SDL_CONTROLLER_AXIS_RIGHTY];
     switch (right_stick_mode_) {
         case RightStickMode::CStick:
             if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
@@ -956,19 +1096,19 @@ DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
 
     const float trigger_deadzone = settings_.trigger_deadzone;
     const float left_trigger =
-        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
+        raw.axes[SDL_CONTROLLER_AXIS_TRIGGERLEFT] / 32767.0f;
     const float right_trigger =
-        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
+        raw.axes[SDL_CONTROLLER_AXIS_TRIGGERRIGHT] / 32767.0f;
     if (game_owns_controls_) {
         // A console with four shoulder buttons and two sticks that press
         // has somewhere for all of them to go, and the game reads them all.
         // See set_game_owns_controls().
         if (left_trigger > trigger_deadzone) held.set(DsButton::Zl, true);
         if (right_trigger > trigger_deadzone) held.set(DsButton::Zr, true);
-        if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
+        if (raw.buttons[SDL_CONTROLLER_BUTTON_LEFTSTICK]) {
             held.set(DsButton::LeftStick, true);
         }
-        if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0) {
+        if (raw.buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK]) {
             held.set(DsButton::RightStick, true);
         }
     } else {
@@ -981,7 +1121,7 @@ DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
         // Except this one, on a console that has a microphone: it goes to
         // the game as L3, which is where melonDS listens for it.
         if (left_stick_is_mic_ &&
-            SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
+            raw.buttons[SDL_CONTROLLER_BUTTON_LEFTSTICK]) {
             held.set(DsButton::LeftStick, true);
         }
     }

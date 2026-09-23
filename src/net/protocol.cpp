@@ -338,6 +338,12 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
             put_u8(out, static_cast<uint8_t>(length));
             out.insert(out.end(), name.begin(), name.begin() + static_cast<std::ptrdiff_t>(length));
         }
+        // And their slots, one byte each after the names, 0xFF for none --
+        // after, for the same reason the names come after the pads.
+        for (std::size_t index = 0; index < count; ++index) {
+            const int slot = message.pads[index].slot;
+            put_u8(out, slot < 0 || slot > 0xFE ? 0xFFu : static_cast<uint8_t>(slot));
+        }
     }
 }
 
@@ -784,6 +790,14 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
                     return false;
                 }
                 pad.name.assign(bytes.begin(), bytes.end());
+            }
+            // The slots, from a companion new enough to send them.
+            if (reader.remaining() >= out.pads.size()) {
+                for (ReportedPad& pad : out.pads) {
+                    uint8_t slot = 0xFF;
+                    reader.u8(slot);
+                    pad.slot = slot == 0xFF ? -1 : slot;
+                }
             }
         }
     }
