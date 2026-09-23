@@ -177,8 +177,9 @@ Three things are different about a Wii U session:
   That setting is **Auto** by default. On a Steam Deck's own 1280x800 panel
   the device is the GamePad; on any other display it is the television. So a
   Deck in the hand is the GamePad and the same Deck on a dock is the
-  television. The display is checked again whenever it changes, so docking
-  mid-game moves Cemu to the other screen. **Television** and **GamePad** pin
+  television. It is decided when the game starts. A Deck's display does not
+  change size under a running app, so docking takes effect the next time
+  Dualscreen is started. **Television** and **GamePad** pin
   it to one. The log says which it picked and why:
 
   ```

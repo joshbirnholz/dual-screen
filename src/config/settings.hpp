@@ -19,9 +19,9 @@ namespace ds {
 // Auto is the default, and the reason is a Steam Deck: in the hand it is a
 // GamePad, and docked to a television it is the television. Its own panel is
 // 1280x800 and nothing it is docked to is, so the display's size is the one
-// thing that tells the two apart without being asked -- and it is asked again
-// whenever the display changes, so docking mid-game moves Cemu from one
-// screen to the other.
+// thing that tells the two apart without being asked. Asked when a game
+// starts: a Deck's display does not change size under a running app, docked
+// or not, until the app is started again.
 enum class WiiUScreenAlone { Auto, Television, GamePad };
 
 inline WiiUScreenAlone next_wii_u_screen_alone(WiiUScreenAlone screen) {

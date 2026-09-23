@@ -325,17 +325,15 @@ struct App::Impl {
     bool solo_screen_swapped = false;
     bool said_solo_screen = false;
     // Works solo_screen out again from the setting, the display, and any flip.
-    // Once a second from the loop -- a Deck can be docked at any moment, and a
-    // second is soon enough to notice -- and at once whenever the setting or
-    // F3 changes it.
-    //
-    // Not every frame. SDL may answer from what it already knows, but where
-    // it asks the display server instead, under Game Mode that server is
-    // gamescope, which Steam's own interface runs on too -- and sixty
-    // questions a second is not load worth putting there for an answer that
-    // changes when somebody docks the thing.
+    // When a game starts, and whenever the setting or F3 changes it -- not
+    // continuously. A Steam Deck's display does not change size under a
+    // running app, docked or not, until the app is started again, so the
+    // answer at the start of a game is the answer for the whole of it.
     void update_solo_screen();
-    uint64_t solo_screen_checked_at_ = 0;
+    // Set when a game starts; the loop does the check and clears it, which it
+    // can only do once there is a window to ask about -- a game started from
+    // the command line starts before there is one.
+    bool solo_screen_unchecked = true;
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
     std::string external_socket_path;
@@ -866,6 +864,14 @@ void App::Impl::update_solo_screen() {
             display_height = mode.h;
         }
     }
+    // Auto with no display to ask yet has no answer to give, and saying
+    // "television" on the way to the real one would be a line in the log that
+    // was never true. Asked again on the next pass.
+    if (settings.wii_u_screen_alone == WiiUScreenAlone::Auto &&
+        (display_width <= 0 || display_height <= 0)) {
+        return;
+    }
+    solo_screen_unchecked = false;
     ScreenId screen =
         resolve_wii_u_screen_alone(settings.wii_u_screen_alone, display_width, display_height);
     if (solo_screen_swapped) {
@@ -1692,6 +1698,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             }
             render_scale = 1;  // whatever is playing the game owns its resolution
             external_game_arrived = false;
+            solo_screen_unchecked = true;
             log_info(profile.core_description + " can hand its screens over at " + socket_path);
 
             // Started here rather than by the player: in Game Mode there is no
@@ -2470,12 +2477,8 @@ int App::run(const AppOptions& options) {
         }
 
         impl.last_delta_seconds = elapsed;
-        {
-            const uint64_t ticks = SDL_GetTicks64();
-            if (impl.solo_screen_checked_at_ == 0 || ticks - impl.solo_screen_checked_at_ >= 1000) {
-                impl.solo_screen_checked_at_ = ticks;
-                impl.update_solo_screen();
-            }
+        if (impl.solo_screen_unchecked) {
+            impl.update_solo_screen();
         }
         // Read from the setting every frame rather than pushed in when it
         // changes. An "apply this setting" step is a step that can be forgotten,
