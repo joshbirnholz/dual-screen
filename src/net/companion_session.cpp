@@ -239,7 +239,7 @@ void CompanionSession::disconnect() {
     // this device buzzing until the next one happens to say so is worse than
     // assuming it did.
     if (rumble_callback_) {
-        rumble_callback_(false);
+        rumble_callback_(false, RumbleMessage::kWholeDevice);
     }
 }
 
@@ -303,7 +303,7 @@ void CompanionSession::fail(const std::string& reason) {
     status_ = Status::Failed;
     status_detail_ = reason;
     if (rumble_callback_) {
-        rumble_callback_(false);
+        rumble_callback_(false, RumbleMessage::kWholeDevice);
     }
     log_warn("companion session failed: " + reason);
 }
@@ -392,7 +392,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 return;  // not worth ending a session over
             }
             if (rumble_callback_) {
-                rumble_callback_(rumble.active);
+                rumble_callback_(rumble.active, rumble.pad);
             }
             break;
         }
@@ -1046,7 +1046,26 @@ void CompanionSession::ask_for_keyframes(uint64_t now_ms) {
     }
 }
 
-void CompanionSession::send_input(const DsInputState& state) {
+namespace {
+
+bool same_pads(const std::vector<ReportedPad>& a, const std::vector<ReportedPad>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t index = 0; index < a.size(); ++index) {
+        const DsInputState& x = a[index].held;
+        const DsInputState& y = b[index].held;
+        if (a[index].id != b[index].id || x.buttons != y.buttons || x.circle_x != y.circle_x ||
+            x.circle_y != y.circle_y || x.c_stick_x != y.c_stick_x ||
+            x.c_stick_y != y.c_stick_y || x.motion != y.motion) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+void CompanionSession::send_input(const DsInputState& state,
+                                  const std::vector<ReportedPad>* pads) {
     if (status_ != Status::Connected || !stream_.connected()) {
         return;
     }
@@ -1066,7 +1085,9 @@ void CompanionSession::send_input(const DsInputState& state) {
         state.c_stick_x == last_sent_input_.c_stick_x &&
         state.c_stick_y == last_sent_input_.c_stick_y &&
         (!state.touching || (state.touch_x == last_sent_input_.touch_x &&
-                             state.touch_y == last_sent_input_.touch_y))) {
+                             state.touch_y == last_sent_input_.touch_y)) &&
+        (pads != nullptr) == last_sent_reported_pads_ &&
+        (pads == nullptr || same_pads(*pads, last_sent_pads_))) {
         return;
     }
 
@@ -1086,12 +1107,22 @@ void CompanionSession::send_input(const DsInputState& state) {
     if (host_wants_motion_) {
         message.motion = state.motion;
     }
+    if (pads != nullptr) {
+        message.reports_pads = true;
+        message.pads = *pads;
+        // Motion on the same terms as the device's own, above.
+        if (!host_wants_motion_) {
+            for (ReportedPad& pad : message.pads) pad.held.motion = DsMotionState();
+        }
+    }
     std::vector<uint8_t> out;
     encode_media_header(session_token_, MessageType::Input, out);
     encode_input_payload(message, out);
     media_socket_.send_to(host_address_, kMediaPort, out.data(), out.size());
 
     last_sent_input_ = state;
+    last_sent_reported_pads_ = pads != nullptr;
+    last_sent_pads_ = pads != nullptr ? *pads : std::vector<ReportedPad>();
     ever_sent_input_ = true;
 }
 

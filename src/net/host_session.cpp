@@ -563,6 +563,10 @@ void HostSession::drop_companion(const std::string& reason) {
     // nothing to catch it up on until the GamePad's own state next changes.
     rumble_active_ = false;
     have_sent_rumble_ = false;
+    // And its pads were its own.
+    companion_reports_pads_ = false;
+    companion_pads_.clear();
+    pad_rumble_sent_.clear();
     refresh_beacon();
 }
 
@@ -777,6 +781,9 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
             // side of the frame link, in Cemu's own sensor fusion.
             companion_input_.motion = input.motion;
             companion_input_fresh_ = true;
+            // Its pads, each on its own, when it says what they are.
+            companion_reports_pads_ = input.reports_pads;
+            companion_pads_ = std::move(input.pads);
             break;
         }
         case MessageType::FrameAck: {
@@ -1164,6 +1171,23 @@ void HostSession::publish_rumble(bool active) {
     companion_.send(out);
     rumble_active_ = active;
     have_sent_rumble_ = true;
+}
+
+void HostSession::publish_pad_rumble(uint32_t pad, bool active) {
+    if (!has_companion() || !companion_reports_pads_) {
+        return;
+    }
+    const auto sent = pad_rumble_sent_.find(pad);
+    if (sent != pad_rumble_sent_.end() && sent->second == active) {
+        return;
+    }
+    RumbleMessage message;
+    message.active = active;
+    message.pad = pad;
+    std::vector<uint8_t> out;
+    encode_rumble(message, out);
+    companion_.send(out);
+    pad_rumble_sent_[pad] = active;
 }
 
 // Which frame the bytes an encoder just handed back actually describe.

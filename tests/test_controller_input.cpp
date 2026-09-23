@@ -84,6 +84,57 @@ DsInputState press_and_read(SDL_GameControllerButton button, bool microphone = f
     return state;
 }
 
+// Each pad on its own: what one holds is not the other's, and they come in
+// the order they are listed -- Steam's order, under Steam Input -- with the
+// keyboard after them. See input/pad_routing.hpp.
+void test_each_pad_is_read_on_its_own_in_order() {
+    VirtualPad first;
+    VirtualPad second;
+    if (!first.attach() || !second.attach()) {
+        first.detach();
+        second.detach();
+        CHECK_MSG(false, "could not attach two virtual pads");
+        return;
+    }
+    InputManager input;
+    input.initialize(Settings());
+    second.press(SDL_CONTROLLER_BUTTON_A, true);
+    input.begin_frame();
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                    system_profile(SystemId::WiiU).screens);
+
+    const std::vector<PadReading> readings = input.pad_readings();
+    std::vector<PadReading> pads;
+    int keyboards = 0;
+    for (const PadReading& reading : readings) {
+        if (reading.keyboard) {
+            ++keyboards;
+            CHECK_MSG(&reading == &readings.back(), "the keyboard was not listed last");
+        } else {
+            pads.push_back(reading);
+        }
+    }
+    CHECK_EQ(pads.size(), static_cast<std::size_t>(2));
+    CHECK_MSG(keyboards <= 1, "more than one keyboard was listed");
+    if (pads.size() == 2) {
+        CHECK_MSG(pads[0].id < pads[1].id, "the pads did not come in the order they were listed");
+        CHECK_MSG(pads[0].held.buttons == 0, "the first pad was read holding the second's press");
+        CHECK_MSG(pads[1].held.buttons != 0, "the second pad's press was lost");
+    }
+    // And merged, the way every console that shares one pad still reads it.
+    CHECK(input.ds_state().buttons == (pads.size() == 2 ? pads[1].held.buttons : 0u));
+
+    // Nothing held while a menu has game input switched off.
+    input.set_game_input_enabled(false);
+    for (const PadReading& reading : input.pad_readings()) {
+        CHECK_MSG(reading.held.buttons == 0, "a pad reported a press while a menu was up");
+    }
+
+    input.shutdown();
+    second.detach();
+    first.detach();
+}
+
 // Nintendo positional, end to end: south is DS B, east is DS A.
 void test_face_buttons_follow_ds_positions() {
     DsInputState state = press_and_read(SDL_CONTROLLER_BUTTON_A);
@@ -1012,6 +1063,7 @@ int main() {
         return 0;
     }
 
+    test_each_pad_is_read_on_its_own_in_order();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();

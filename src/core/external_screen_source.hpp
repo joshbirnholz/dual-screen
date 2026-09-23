@@ -62,6 +62,13 @@ public:
     // the audio callback above.
     using RumbleCallback = std::function<void(bool active)>;
     void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
+    // The same for each of the players besides the GamePad: which one (0 for
+    // Player 1) and whether its motor is on. Every change is passed on, in
+    // order, so two players' motors never cover for each other.
+    using PlayerRumbleCallback = std::function<void(int player, bool active)>;
+    void set_player_rumble_callback(PlayerRumbleCallback callback) {
+        player_rumble_callback_ = std::move(callback);
+    }
 
     // Only the program playing the game knows what restarting one means.
     void reset() { link_.request_reset(); }
@@ -77,10 +84,15 @@ public:
         link_.request_screen(screen, max_width, max_height, shown);
     }
 
-    // Both players' pads, already merged, on their way to whatever is playing
-    // the game. Translated on the way out: what crosses the link is a
+    // The console's own pad -- the GamePad, on a Wii U -- on its way to
+    // whatever is playing the game. Translated on the way out: what crosses the link is a
     // GamePad's controls rather than this app's own shape. See ExternalInput.
     void submit_input(const DsInputState& state);
+
+    // One of the players besides the GamePad (0 for Player 1): the pads behind
+    // it, merged, and whether any are -- see route_pads(). Sent every frame
+    // like submit_input(); the link only puts changes on the wire.
+    void submit_player_input(int player, bool fed, const DsInputState& state);
 
 private:
     struct Screen {
@@ -105,6 +117,7 @@ private:
     AudioCallback audio_callback_;
     std::vector<int16_t> audio_[2];
     RumbleCallback rumble_callback_;
+    PlayerRumbleCallback player_rumble_callback_;
     bool ended_ = false;
     std::string ended_reason_;
 };

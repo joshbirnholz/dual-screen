@@ -114,6 +114,22 @@ inline bool tapped(const PointerEvent& pointer, const PixelRect& rect) {
 // is a better answer than this.
 bool controller_is_a_remote(const char* sdl_name);
 
+// One controller's own state, apart from every other's -- for a console whose
+// controllers each belong to one player. See input/pad_routing.hpp.
+//
+// No name: a pad is known by where it comes in the list, which under Steam
+// Input is Steam's own order -- see KnownPad for why that and not the name.
+struct PadReading {
+    SDL_JoystickID id = 0;
+    // The keyboard's keys rather than a pad. Listed last, on a device that has
+    // one, so its keys can be sent somewhere too.
+    bool keyboard = false;
+    // Its presses through the same mapping the merged state uses, and how it
+    // is being moved when its own sensors can say (see MotionReader, which
+    // switches them on).
+    DsInputState held;
+};
+
 class InputManager {
 public:
     ~InputManager();
@@ -201,6 +217,17 @@ public:
     // just do nothing.
     void set_rumble(bool active);
 
+    // Each connected pad on its own, in the order SDL lists them -- which
+    // under Steam Input is the order Steam lists them -- then the keyboard,
+    // on a device that has one. Nothing held while game input is switched
+    // off, the same as ds_state(): a menu is up.
+    std::vector<PadReading> pad_readings() const;
+
+    // Rumbles one pad, or stops it: a player's motor, routed to whichever pad
+    // is that player. Kept going until told to stop -- see set_rumble() for
+    // why SDL has to be reminded -- and forgotten if the pad goes away.
+    void set_pad_rumble(SDL_JoystickID id, bool active);
+
     // Turns reading this device's own motion on or off -- see MotionReader,
     // and SessionStateMessage::motion_wanted for who decides. Off until
     // something asks, because a gyroscope left running costs battery on
@@ -222,6 +249,17 @@ private:
     // buttons and the stick together, because they come off the same pads and
     // splitting them is how the circle pad came to be computed and dropped.
     DsInputState poll_held_state() const;
+    // One pad's share of that, through the same mapping.
+    DsInputState held_state_of(SDL_GameController* controller) const;
+    // The keyboard's share.
+    // One pad's reading with whatever the held-input gate is holding back
+    // taken out -- see HeldInputGate.
+    DsInputState gated(DsInputState held) const;
+    DsInputState keyboard_held_state() const;
+    // Renews the rumble on every pad set_pad_rumble() left on.
+    void refresh_pad_rumble();
+    std::map<SDL_JoystickID, bool> pad_rumble_on_;
+    uint32_t pad_rumble_refreshed_ms_ = 0;
     // Updates the live pointer position; returns whether one is down.
     bool update_pointer(float output_width, float output_height);
     void emit_navigation_from_axes();

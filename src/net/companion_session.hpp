@@ -501,7 +501,11 @@ public:
     bool host_cursor_shown() const { return host_cursor_shown_; }
 
     // Sends this device's input to the host. Only what changed goes out.
-    void send_input(const DsInputState& state);
+    // `pads`, when given, is every pad on this device on its own, in this
+    // device's order -- see InputMessage::pads. Without it the host treats
+    // this device as one pad, the way it treats a companion built before pads
+    // were reported.
+    void send_input(const DsInputState& state, const std::vector<ReportedPad>* pads = nullptr);
 
     // Asks the host to change something. The host owns every one of these and
     // broadcasts the result back, so nothing is assumed to have taken effect
@@ -582,7 +586,9 @@ public:
     // Called whenever the host says the Wii U GamePad's motor turned on or
     // off, so this device can rumble whatever controller it has in its
     // place. Set before connecting, same as the audio callback above.
-    using RumbleCallback = std::function<void(bool active)>;
+    // `pad` is which of this device's pads, by the id it was reported under
+    // (see ReportedPad), or RumbleMessage::kWholeDevice for all of them.
+    using RumbleCallback = std::function<void(bool active, uint32_t pad)>;
     void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
 
     // How far the pacing clock may hold a frame back to even out the link --
@@ -1114,6 +1120,8 @@ private:
     video::VideoDecoder video_bottom_;
     ScreenTextures textures_;
 
+    std::vector<ReportedPad> last_sent_pads_;
+    bool last_sent_reported_pads_ = false;
     DsInputState last_sent_input_;
     bool ever_sent_input_ = false;
     AudioCallback audio_callback_;

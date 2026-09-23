@@ -330,6 +330,102 @@ void test_rumble_round_trip() {
     }
 }
 
+// A companion's pads, each on its own, ride the Input datagram as a tail --
+// and neither end built before that existed is confused by the other.
+void test_a_companions_pads_ride_the_input_as_a_tail() {
+    InputMessage sent;
+    sent.buttons = 3;
+    sent.reports_pads = true;
+    ReportedPad first;
+    first.id = 7;
+    first.held.buttons = 0x81u;
+    first.held.circle_x = -32000;
+    first.held.c_stick_y = 1234;
+    ReportedPad second;
+    second.id = 4000000000u;
+    second.held.motion.present = true;
+    second.held.motion.gyro_z = -0.5f;
+    second.held.motion.accel_y = 9.81f;
+    second.held.motion.sampled_us = 42;
+    sent.pads = {first, second};
+
+    std::vector<uint8_t> buffer;
+    encode_input(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    InputMessage received;
+    CHECK(decode_input(payload.data(), payload.size(), received));
+    CHECK(received.reports_pads);
+    CHECK_EQ(received.pads.size(), static_cast<std::size_t>(2));
+    if (received.pads.size() == 2) {
+        CHECK_EQ(received.pads[0].id, 7u);
+        CHECK_EQ(received.pads[0].held.buttons, 0x81u);
+        CHECK_EQ(received.pads[0].held.circle_x, -32000);
+        CHECK_EQ(received.pads[0].held.c_stick_y, 1234);
+        CHECK(!received.pads[0].held.motion.present);
+        CHECK_EQ(received.pads[1].id, 4000000000u);
+        CHECK(received.pads[1].held.motion == second.held.motion);
+    }
+    CHECK_EQ(received.buttons, 3u);
+
+    // A companion with no pads at all still says it reports them -- it simply
+    // has none -- which is not the same as an older companion saying nothing.
+    InputMessage none;
+    none.reports_pads = true;
+    buffer.clear();
+    encode_input(none, buffer);
+    CHECK(one_message(buffer, type, payload));
+    InputMessage received_none;
+    CHECK(decode_input(payload.data(), payload.size(), received_none));
+    CHECK(received_none.reports_pads && received_none.pads.empty());
+
+    // An older companion sends no tail, and is read as reporting nothing.
+    InputMessage older;
+    older.buttons = 9;
+    buffer.clear();
+    encode_input(older, buffer);
+    CHECK(one_message(buffer, type, payload));
+    InputMessage received_older;
+    received_older.reports_pads = true;  // start wrong
+    CHECK(decode_input(payload.data(), payload.size(), received_older));
+    CHECK_MSG(!received_older.reports_pads,
+              "a companion that never sent its pads was read as having none, which would take "
+              "its buttons away from the GamePad");
+    CHECK_EQ(received_older.buttons, 9u);
+
+    // A tail cut short is a bad datagram, not a partial list of pads.
+    buffer.clear();
+    encode_input(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(!decode_input(payload.data(), payload.size() - 3, received));
+}
+
+// Rumble can name a pad now; an older host names none, which means the whole
+// device, as it always did.
+void test_rumble_can_name_one_pad() {
+    RumbleMessage sent;
+    sent.active = true;
+    sent.pad = 12;
+    std::vector<uint8_t> buffer;
+    encode_rumble(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    RumbleMessage received;
+    CHECK(decode_rumble(payload.data(), payload.size(), received));
+    CHECK(received.active);
+    CHECK_EQ(received.pad, 12u);
+
+    // What an older host sends: the one byte.
+    const uint8_t older[] = {1};
+    RumbleMessage received_older;
+    received_older.pad = 3;
+    CHECK(decode_rumble(older, sizeof(older), received_older));
+    CHECK(received_older.active);
+    CHECK_EQ(received_older.pad, RumbleMessage::kWholeDevice);
+}
+
 // Several messages written back to back must come out one at a time, in order,
 // and a partial tail must simply not be returned yet.
 void test_stream_framing() {
@@ -981,6 +1077,8 @@ int main() {
     test_request_round_trip();
     test_input_round_trip();
     test_rumble_round_trip();
+    test_a_companions_pads_ride_the_input_as_a_tail();
+    test_rumble_can_name_one_pad();
     test_stream_framing();
     test_absurd_length_is_fatal();
     test_truncation_is_rejected_everywhere();

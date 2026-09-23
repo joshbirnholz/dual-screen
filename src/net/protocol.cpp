@@ -308,6 +308,29 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
     put_f32(out, message.motion.accel_y);
     put_f32(out, message.motion.accel_z);
     put_u32(out, message.motion.sampled_us);
+    // The pads, as a tail -- see InputMessage::pads. Absent altogether for a
+    // companion that does not report them, which is what an older one sends.
+    if (message.reports_pads) {
+        const std::size_t count = std::min(message.pads.size(), kMaxReportedPads);
+        put_u8(out, static_cast<uint8_t>(count));
+        for (std::size_t index = 0; index < count; ++index) {
+            const ReportedPad& pad = message.pads[index];
+            put_u32(out, pad.id);
+            put_u32(out, pad.held.buttons);
+            put_u16(out, static_cast<uint16_t>(pad.held.circle_x));
+            put_u16(out, static_cast<uint16_t>(pad.held.circle_y));
+            put_u16(out, static_cast<uint16_t>(pad.held.c_stick_x));
+            put_u16(out, static_cast<uint16_t>(pad.held.c_stick_y));
+            put_u8(out, pad.held.motion.present ? 1u : 0u);
+            put_f32(out, pad.held.motion.gyro_x);
+            put_f32(out, pad.held.motion.gyro_y);
+            put_f32(out, pad.held.motion.gyro_z);
+            put_f32(out, pad.held.motion.accel_x);
+            put_f32(out, pad.held.motion.accel_y);
+            put_f32(out, pad.held.motion.accel_z);
+            put_u32(out, pad.held.motion.sampled_us);
+        }
+    }
 }
 
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
@@ -396,6 +419,9 @@ bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_u8(out, message.active ? 1u : 0u);
+    // Which pad, as a tail an older companion never reads -- and which it does
+    // not need to: it only ever hears about the whole device.
+    put_u32(out, message.pad);
     finish_message(out, start, MessageType::Rumble);
 }
 
@@ -405,6 +431,10 @@ bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out) {
     reader.u8(active);
     if (!reader.ok()) return false;
     out.active = active != 0;
+    out.pad = RumbleMessage::kWholeDevice;
+    if (reader.remaining() >= 4) {
+        reader.u32(out.pad);
+    }
     return true;
 }
 
@@ -699,6 +729,37 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
     out.circle_y = static_cast<int16_t>(circle_y);
     out.c_stick_x = static_cast<int16_t>(c_stick_x);
     out.c_stick_y = static_cast<int16_t>(c_stick_y);
+    // The pads' tail, when the companion sent one -- see InputMessage::pads.
+    out.reports_pads = false;
+    out.pads.clear();
+    if (reader.remaining() >= 1) {
+        uint8_t count = 0;
+        reader.u8(count);
+        if (!reader.ok() || count > kMaxReportedPads) return false;
+        out.pads.resize(count);
+        for (ReportedPad& pad : out.pads) {
+            uint16_t sticks[4] = {0, 0, 0, 0};
+            uint8_t pad_motion = 0;
+            reader.u32(pad.id);
+            reader.u32(pad.held.buttons);
+            for (uint16_t& stick : sticks) reader.u16(stick);
+            reader.u8(pad_motion);
+            reader.f32(pad.held.motion.gyro_x);
+            reader.f32(pad.held.motion.gyro_y);
+            reader.f32(pad.held.motion.gyro_z);
+            reader.f32(pad.held.motion.accel_x);
+            reader.f32(pad.held.motion.accel_y);
+            reader.f32(pad.held.motion.accel_z);
+            reader.u32(pad.held.motion.sampled_us);
+            pad.held.circle_x = static_cast<int16_t>(sticks[0]);
+            pad.held.circle_y = static_cast<int16_t>(sticks[1]);
+            pad.held.c_stick_x = static_cast<int16_t>(sticks[2]);
+            pad.held.c_stick_y = static_cast<int16_t>(sticks[3]);
+            pad.held.motion.present = pad_motion != 0;
+        }
+        if (!reader.ok()) return false;
+        out.reports_pads = true;
+    }
     return true;
 }
 

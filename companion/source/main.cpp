@@ -468,7 +468,15 @@ bool Client::start() {
             audio_.push(samples, frames);
         });
 
-    session_.set_rumble_callback([this](bool active) { input_.set_rumble(active); });
+    // The whole device for the GamePad's motor, or one pad for a player's --
+    // see RumbleMessage::pad.
+    session_.set_rumble_callback([this](bool active, uint32_t pad) {
+        if (pad == net::RumbleMessage::kWholeDevice) {
+            input_.set_rumble(active);
+        } else {
+            input_.set_pad_rumble(static_cast<SDL_JoystickID>(pad), active);
+        }
+    });
 
     // Straight in when the command line said which screen to be; otherwise
     // the opening screen asks.
@@ -1106,7 +1114,10 @@ void Client::run() {
         handle_actions(actions, pointers);
 
         if (state_ == State::Playing && !menu_open_) {
-            session_.send_input(input_.ds_state());
+            // Each pad on its own as well, so a Wii U host can make them
+            // different players.
+            const std::vector<net::ReportedPad> pads = net::reported_pads(input_.pad_readings());
+            session_.send_input(input_.ds_state(), &pads);
         }
 
         const double alive = static_cast<double>(now - started_ms) / 1000.0;

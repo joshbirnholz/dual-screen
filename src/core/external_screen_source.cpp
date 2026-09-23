@@ -102,6 +102,13 @@ bool ExternalScreenSource::advance_frame(std::string* error) {
     if (link_.take_rumble(rumble_active) && rumble_callback_) {
         rumble_callback_(rumble_active);
     }
+    int player = 0;
+    bool player_active = false;
+    while (link_.take_player_rumble(player, player_active)) {
+        if (player_rumble_callback_) {
+            player_rumble_callback_(player, player_active);
+        }
+    }
     return true;
 }
 
@@ -149,7 +156,9 @@ bool ExternalScreenSource::read_screen(ScreenId screen, ScreenReadback& out, int
     return true;
 }
 
-void ExternalScreenSource::submit_input(const DsInputState& state) {
+namespace {
+
+ExternalInput to_external_input(const DsInputState& state) {
     // A pair per row: this app's name for a control, and the GamePad's. Written
     // as data so that adding a button is adding a line, and so that nothing is
     // silently left out -- the static_assert below is what says so.
@@ -202,7 +211,19 @@ void ExternalScreenSource::submit_input(const DsInputState& state) {
     // this console is the GamePad's.
     input.touch_x = static_cast<uint16_t>(state.touch_x < 0 ? 0 : state.touch_x);
     input.touch_y = static_cast<uint16_t>(state.touch_y < 0 ? 0 : state.touch_y);
-    link_.send_input(input);
+    return input;
+}
+
+}  // namespace
+
+void ExternalScreenSource::submit_input(const DsInputState& state) {
+    link_.send_input(to_external_input(state));
+}
+
+void ExternalScreenSource::submit_player_input(int player, bool fed, const DsInputState& state) {
+    // A player nothing is feeding is sent at rest as well as unplugged, so a
+    // pad taken away mid-press does not leave its buttons held down.
+    link_.send_player_input(player, fed, fed ? to_external_input(state) : ExternalInput());
 }
 
 double ExternalScreenSource::audio_sample_rate() const {

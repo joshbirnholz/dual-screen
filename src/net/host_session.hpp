@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -236,6 +237,18 @@ public:
     const DsInputState& companion_input() const { return companion_input_; }
     bool companion_input_fresh() const { return companion_input_fresh_; }
 
+    // The companion's pads, each on its own, in its own order -- and whether
+    // it reports them at all, which one built before this existed does not.
+    // See InputMessage::pads.
+    bool companion_reports_pads() const { return companion_reports_pads_; }
+    const std::vector<ReportedPad>& companion_pads() const { return companion_pads_; }
+
+    // Turns one of the companion's pads' motors on or off -- a player's
+    // rumble, sent to whichever pad is that player. Only what changed goes
+    // out, like publish_rumble(). Ignored for a companion that does not report
+    // pads, which would read it as the whole device.
+    void publish_pad_rumble(uint32_t pad, bool active);
+
 private:
     void refresh_beacon();
     void drop_companion(const std::string& reason);
@@ -436,6 +449,10 @@ private:
     bool audio_enabled_ = true;
     bool rumble_active_ = false;
     bool have_sent_rumble_ = false;
+    bool companion_reports_pads_ = false;
+    std::vector<ReportedPad> companion_pads_;
+    // Which of the companion's pads were last told their motor is on.
+    std::map<uint32_t, bool> pad_rumble_sent_;
     // Zero means video is not backed off. Set to a future monotonic_millis()
     // after any reason it does not work, so a transient one (a cold hardware
     // encoder, one bad frame) is not retried and reported 60 times a second

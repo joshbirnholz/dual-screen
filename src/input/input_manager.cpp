@@ -170,6 +170,119 @@ void InputManager::set_rumble(bool active) {
     }
 }
 
+DsInputState InputManager::gated(DsInputState held) const {
+    // The same gate ds_state() goes through, so the press that closed a menu
+    // is no more a player's press than it is the GamePad's.
+    held.buttons &= held_input_gate_.buttons();
+    if (!held_input_gate_.stick_live()) {
+        held.circle_x = 0;
+        held.circle_y = 0;
+    }
+    if (!held_input_gate_.c_stick_live()) {
+        held.c_stick_x = 0;
+        held.c_stick_y = 0;
+    }
+    return held;
+}
+
+std::vector<PadReading> InputManager::pad_readings() const {
+    // In the order the pads' own player numbers put them, which under Steam
+    // Input is Steam's slot order -- the order a player arranges in Steam and
+    // expects to see as Controller 1, 2, 3. A pad without one comes after, in
+    // the order it arrived.
+    std::vector<std::pair<SDL_JoystickID, SDL_GameController*>> ordered;
+    for (const auto& [id, controller] : controllers_) {
+        if (controller != nullptr) ordered.emplace_back(id, controller);
+    }
+    std::stable_sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+        const int a = SDL_GameControllerGetPlayerIndex(left.second);
+        const int b = SDL_GameControllerGetPlayerIndex(right.second);
+        if ((a < 0) != (b < 0)) return b < 0;
+        return a < b;
+    });
+    std::vector<PadReading> readings;
+    readings.reserve(ordered.size() + 1);
+    for (const auto& [id, controller] : ordered) {
+        PadReading reading;
+        reading.id = id;
+        if (game_input_enabled_) {
+            reading.held = gated(held_state_of(controller));
+            // Its own motion, where it has its own sensors switched on. Both
+            // or neither, for the reason MotionReader gives.
+            float gyro[3] = {0.0f, 0.0f, 0.0f};
+            float accel[3] = {0.0f, 0.0f, 0.0f};
+            if (SDL_GameControllerIsSensorEnabled(controller, SDL_SENSOR_GYRO) == SDL_TRUE &&
+                SDL_GameControllerIsSensorEnabled(controller, SDL_SENSOR_ACCEL) == SDL_TRUE &&
+                SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO, gyro, 3) == 0 &&
+                SDL_GameControllerGetSensorData(controller, SDL_SENSOR_ACCEL, accel, 3) == 0 &&
+                (accel[0] != 0.0f || accel[1] != 0.0f || accel[2] != 0.0f)) {
+                DsMotionState& motion = reading.held.motion;
+                motion.present = true;
+                motion.gyro_x = gyro[0];
+                motion.gyro_y = gyro[1];
+                motion.gyro_z = gyro[2];
+                motion.accel_x = accel[0];
+                motion.accel_y = accel[1];
+                motion.accel_z = accel[2];
+                motion.sampled_us = static_cast<uint32_t>(SDL_GetTicks64() * 1000u);
+            }
+        }
+        readings.push_back(std::move(reading));
+    }
+    // A console, a phone and a television have no keyboard to speak of, and a
+    // row for one on the Controllers screen would be a row nobody can use.
+#if !defined(__SWITCH__) && !defined(__ANDROID__) && !(defined(__APPLE__) && TARGET_OS_IPHONE)
+    PadReading keys;
+    keys.id = -1;
+    keys.keyboard = true;
+    if (game_input_enabled_) {
+        keys.held = gated(keyboard_held_state());
+    }
+    readings.push_back(keys);
+#endif
+    return readings;
+}
+
+void InputManager::set_pad_rumble(SDL_JoystickID id, bool active) {
+    const auto it = controllers_.find(id);
+    if (it == controllers_.end() || it->second == nullptr) {
+        pad_rumble_on_.erase(id);
+        return;
+    }
+    if (active) {
+        pad_rumble_on_[id] = true;
+    } else {
+        pad_rumble_on_.erase(id);
+    }
+    // The same short, renewed rumble set_rumble() uses, and for its reason.
+    constexpr uint32_t kRumbleMs = 250;
+    SDL_GameControllerRumble(it->second, active ? 0xffffu : 0u, active ? 0xffffu : 0u,
+                             active ? kRumbleMs : 0u);
+}
+
+void InputManager::refresh_pad_rumble() {
+    if (pad_rumble_on_.empty()) {
+        return;
+    }
+    // Renewed well inside the 250ms each one lasts, so a motor left on stays
+    // on without a gap -- and stops on its own within a quarter second of this
+    // app going away, whatever else happens.
+    const uint32_t now = SDL_GetTicks();
+    if (now - pad_rumble_refreshed_ms_ < 100) {
+        return;
+    }
+    pad_rumble_refreshed_ms_ = now;
+    for (auto it = pad_rumble_on_.begin(); it != pad_rumble_on_.end();) {
+        const auto controller = controllers_.find(it->first);
+        if (controller == controllers_.end() || controller->second == nullptr) {
+            it = pad_rumble_on_.erase(it);
+            continue;
+        }
+        SDL_GameControllerRumble(controller->second, 0xffffu, 0xffffu, 250);
+        ++it;
+    }
+}
+
 void InputManager::set_game_input_enabled(bool enabled) {
     if (enabled && !game_input_enabled_) {
         // Anything already held when the game starts listening again was meant
@@ -185,6 +298,7 @@ void InputManager::begin_frame() {
     ui_actions_.clear();
     pointer_events_.clear();
     window_size_changed_ = false;
+    refresh_pad_rumble();
 }
 
 void InputManager::forget_touches() {
@@ -578,107 +692,119 @@ bool InputManager::stick_buttons_held(SDL_GameControllerButton button) const {
     return false;
 }
 
-DsInputState InputManager::poll_held_state() const {
-    // Polled unconditionally, even while a menu is open: the gate needs the
-    // true physical state to know what to suppress when the game resumes.
+DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
     DsInputState held;
 
-    for (const auto& entry : controllers_) {
-        SDL_GameController* controller = entry.second;
-        if (controller == nullptr) continue;
-
-        for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
-            const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
-            DsButton ds_button = DsButton::A;
-            if (ds_button_for_controller_button(button, ds_button) &&
-                SDL_GameControllerGetButton(controller, button) != 0) {
-                held.set(ds_button, true);
-            }
-        }
-        // The left stick is always the circle pad. Whether it is *also* the
-        // d-pad depends on the console: a DS has no stick, so reaching for one
-        // has to work, but a 3DS has both and pressing both at once is what
-        // made its circle pad unusable -- a core that reads the d-pad sees a
-        // direction held down for as long as the stick is off centre, and
-        // walking becomes the eight directions the d-pad has.
-        const int16_t raw_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
-        const int16_t raw_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
-        const float axis_x = raw_x / 32767.0f;
-        const float axis_y = raw_y / 32767.0f;
-        const float deadzone = settings_.stick_deadzone;
-        const int16_t deadzone_threshold = static_cast<int16_t>(deadzone * 32767.0f);
-        if (stick_is_dpad_) {
-            if (axis_y < -deadzone) held.set(DsButton::Up, true);
-            if (axis_y > deadzone) held.set(DsButton::Down, true);
-            if (axis_x < -deadzone) held.set(DsButton::Left, true);
-            if (axis_x > deadzone) held.set(DsButton::Right, true);
-        }
-
-        // The strongest deflection across every pad wins, so two controllers do
-        // not average each other out into standing still.
-        if (std::abs(raw_x) > std::abs(held.circle_x)) held.circle_x = raw_x;
-        if (std::abs(raw_y) > std::abs(held.circle_y)) held.circle_y = raw_y;
-
-        // What the right stick is depends on what the game wants -- a C-Stick,
-        // a second circle pad, a d-pad, or nothing. See RightStickMode.
-        const int16_t raw_c_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
-        const int16_t raw_c_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
-        switch (right_stick_mode_) {
-            case RightStickMode::CStick:
-                if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
-                if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
-                break;
-            case RightStickMode::CirclePad:
-                // Into the same axes as the left stick, competing on
-                // deflection like a second pad does: two sticks that averaged
-                // each other out would leave a player standing still while
-                // pushing one of them.
-                if (std::abs(raw_c_x) > std::abs(held.circle_x)) held.circle_x = raw_c_x;
-                if (std::abs(raw_c_y) > std::abs(held.circle_y)) held.circle_y = raw_c_y;
-                break;
-            case RightStickMode::DPad:
-                if (raw_c_y < -deadzone_threshold) held.set(DsButton::Up, true);
-                if (raw_c_y > deadzone_threshold) held.set(DsButton::Down, true);
-                if (raw_c_x < -deadzone_threshold) held.set(DsButton::Left, true);
-                if (raw_c_x > deadzone_threshold) held.set(DsButton::Right, true);
-                break;
-            case RightStickMode::Off:
-                break;
-        }
-
-        const float trigger_deadzone = settings_.trigger_deadzone;
-        const float left_trigger =
-            SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
-        const float right_trigger =
-            SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
-        if (game_owns_controls_) {
-            // A console with four shoulder buttons and two sticks that press
-            // has somewhere for all of them to go, and the game reads them all.
-            // See set_game_owns_controls().
-            if (left_trigger > trigger_deadzone) held.set(DsButton::Zl, true);
-            if (right_trigger > trigger_deadzone) held.set(DsButton::Zr, true);
-            if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
-                held.set(DsButton::LeftStick, true);
-            }
-            if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0) {
-                held.set(DsButton::RightStick, true);
-            }
-        } else {
-            // The triggers double as L and R. The DS's shoulder buttons are
-            // digital, but plenty of people reach for the triggers first, and a
-            // pad that has both should honour either. The stick presses are
-            // this app's own shortcuts here, so they are not the game's.
-            if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
-            if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
-            // Except this one, on a console that has a microphone: it goes to
-            // the game as L3, which is where melonDS listens for it.
-            if (left_stick_is_mic_ &&
-                SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
-                held.set(DsButton::LeftStick, true);
-            }
+    for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
+        const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
+        DsButton ds_button = DsButton::A;
+        if (ds_button_for_controller_button(button, ds_button) &&
+            SDL_GameControllerGetButton(controller, button) != 0) {
+            held.set(ds_button, true);
         }
     }
+    // The left stick is always the circle pad. Whether it is *also* the
+    // d-pad depends on the console: a DS has no stick, so reaching for one
+    // has to work, but a 3DS has both and pressing both at once is what
+    // made its circle pad unusable -- a core that reads the d-pad sees a
+    // direction held down for as long as the stick is off centre, and
+    // walking becomes the eight directions the d-pad has.
+    const int16_t raw_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
+    const int16_t raw_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
+    const float axis_x = raw_x / 32767.0f;
+    const float axis_y = raw_y / 32767.0f;
+    const float deadzone = settings_.stick_deadzone;
+    const int16_t deadzone_threshold = static_cast<int16_t>(deadzone * 32767.0f);
+    if (stick_is_dpad_) {
+        if (axis_y < -deadzone) held.set(DsButton::Up, true);
+        if (axis_y > deadzone) held.set(DsButton::Down, true);
+        if (axis_x < -deadzone) held.set(DsButton::Left, true);
+        if (axis_x > deadzone) held.set(DsButton::Right, true);
+    }
 
+    // The strongest deflection across every pad wins, so two controllers do
+    // not average each other out into standing still.
+    if (std::abs(raw_x) > std::abs(held.circle_x)) held.circle_x = raw_x;
+    if (std::abs(raw_y) > std::abs(held.circle_y)) held.circle_y = raw_y;
+
+    // What the right stick is depends on what the game wants -- a C-Stick,
+    // a second circle pad, a d-pad, or nothing. See RightStickMode.
+    const int16_t raw_c_x = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTX);
+    const int16_t raw_c_y = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_RIGHTY);
+    switch (right_stick_mode_) {
+        case RightStickMode::CStick:
+            if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
+            if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
+            break;
+        case RightStickMode::CirclePad:
+            // Into the same axes as the left stick, competing on
+            // deflection like a second pad does: two sticks that averaged
+            // each other out would leave a player standing still while
+            // pushing one of them.
+            if (std::abs(raw_c_x) > std::abs(held.circle_x)) held.circle_x = raw_c_x;
+            if (std::abs(raw_c_y) > std::abs(held.circle_y)) held.circle_y = raw_c_y;
+            break;
+        case RightStickMode::DPad:
+            if (raw_c_y < -deadzone_threshold) held.set(DsButton::Up, true);
+            if (raw_c_y > deadzone_threshold) held.set(DsButton::Down, true);
+            if (raw_c_x < -deadzone_threshold) held.set(DsButton::Left, true);
+            if (raw_c_x > deadzone_threshold) held.set(DsButton::Right, true);
+            break;
+        case RightStickMode::Off:
+            break;
+    }
+
+    const float trigger_deadzone = settings_.trigger_deadzone;
+    const float left_trigger =
+        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) / 32767.0f;
+    const float right_trigger =
+        SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) / 32767.0f;
+    if (game_owns_controls_) {
+        // A console with four shoulder buttons and two sticks that press
+        // has somewhere for all of them to go, and the game reads them all.
+        // See set_game_owns_controls().
+        if (left_trigger > trigger_deadzone) held.set(DsButton::Zl, true);
+        if (right_trigger > trigger_deadzone) held.set(DsButton::Zr, true);
+        if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
+            held.set(DsButton::LeftStick, true);
+        }
+        if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0) {
+            held.set(DsButton::RightStick, true);
+        }
+    } else {
+        // The triggers double as L and R. The DS's shoulder buttons are
+        // digital, but plenty of people reach for the triggers first, and a
+        // pad that has both should honour either. The stick presses are
+        // this app's own shortcuts here, so they are not the game's.
+        if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
+        if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
+        // Except this one, on a console that has a microphone: it goes to
+        // the game as L3, which is where melonDS listens for it.
+        if (left_stick_is_mic_ &&
+            SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSTICK) != 0) {
+            held.set(DsButton::LeftStick, true);
+        }
+    }
+    return held;
+}
+
+namespace {
+
+// One pad's presses added to others': any button on either is pressed, and
+// whichever stick is pushed further wins, so two pads never average each
+// other out into standing still.
+void merge_held(DsInputState& into, const DsInputState& from) {
+    into.buttons |= from.buttons;
+    if (std::abs(from.circle_x) > std::abs(into.circle_x)) into.circle_x = from.circle_x;
+    if (std::abs(from.circle_y) > std::abs(into.circle_y)) into.circle_y = from.circle_y;
+    if (std::abs(from.c_stick_x) > std::abs(into.c_stick_x)) into.c_stick_x = from.c_stick_x;
+    if (std::abs(from.c_stick_y) > std::abs(into.c_stick_y)) into.c_stick_y = from.c_stick_y;
+}
+
+}  // namespace
+
+DsInputState InputManager::keyboard_held_state() const {
+    DsInputState held;
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
     if (keys != nullptr) {
         static const SDL_Keycode kKeys[] = {SDLK_z, SDLK_x, SDLK_a, SDLK_s, SDLK_q, SDLK_w,
@@ -693,6 +819,21 @@ DsInputState InputManager::poll_held_state() const {
         }
     }
 
+    return held;
+}
+
+DsInputState InputManager::poll_held_state() const {
+    // Polled unconditionally, even while a menu is open: the gate needs the
+    // true physical state to know what to suppress when the game resumes.
+    DsInputState held;
+
+    for (const auto& entry : controllers_) {
+        SDL_GameController* controller = entry.second;
+        if (controller == nullptr) continue;
+        merge_held(held, held_state_of(controller));
+    }
+
+    merge_held(held, keyboard_held_state());
     return held;
 }
 

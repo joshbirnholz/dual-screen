@@ -322,7 +322,47 @@ struct BeaconMessage {
 // could reproduce over a network link anyway.
 struct RumbleMessage {
     bool active = false;
+    // Which of the companion's pads, by the id it reported (see ReportedPad),
+    // or kWholeDevice for all of them -- the GamePad's motor on whatever the
+    // companion is, which is what every rumble meant before a companion
+    // reported its pads one by one.
+    static constexpr uint32_t kWholeDevice = 0xFFFFFFFFu;
+    uint32_t pad = kWholeDevice;
 };
+
+// One pad plugged into a companion, reported on its own so the host can make
+// it any controller the game has -- see input/pad_routing.hpp. `id` is the
+// companion's own number for it, stable while it stays plugged in, which is
+// what a rumble names it by; `held` is its buttons, both sticks and, when it
+// has its own sensors, its motion.
+//
+// No name. A pad is known by where it comes in the order the companion lists
+// them -- which under Steam Input is Steam's own order, the one a player can
+// change -- and a name that Steam may no longer have matched to the pad it
+// describes would only be something to believe wrongly.
+struct ReportedPad {
+    // The id a companion's keyboard is reported under: its keys, listed so
+    // they can go somewhere, and never one of the controllers. Kept clear of
+    // RumbleMessage::kWholeDevice, which a rumble for it would otherwise be.
+    static constexpr uint32_t kKeyboard = 0xFFFFFFFEu;
+    uint32_t id = 0;
+    DsInputState held;
+};
+
+// This device's pads as a companion reports them -- see InputMessage::pads.
+// `id` -1 is the keyboard, as InputManager lists it.
+template <typename Readings>
+std::vector<ReportedPad> reported_pads(const Readings& readings) {
+    std::vector<ReportedPad> pads;
+    pads.reserve(readings.size());
+    for (const auto& reading : readings) {
+        ReportedPad pad;
+        pad.id = reading.keyboard ? ReportedPad::kKeyboard : static_cast<uint32_t>(reading.id);
+        pad.held = reading.held;
+        pads.push_back(pad);
+    }
+    return pads;
+}
 
 struct InputMessage {
     uint32_t buttons = 0;
@@ -342,6 +382,15 @@ struct InputMessage {
     // session on a console that has no use for motion costs nothing here and
     // no battery on the device sending it.
     DsMotionState motion;
+    // Every pad plugged into the companion, each on its own, in the
+    // companion's own order. `reports_pads` false means a companion built
+    // before this existed, which sends only the merged state above; the host
+    // then treats that device as one pad.
+    //
+    // A tail after everything above, so a host built before this reads the
+    // fields it knows and never sees the rest.
+    bool reports_pads = false;
+    std::vector<ReportedPad> pads;
 };
 
 // --- encoding ---------------------------------------------------------------
@@ -387,6 +436,10 @@ bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out);
 bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out);
 bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out);
 bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
+
+// The most pads one companion may report. Far more than anyone plugs into one
+// device; a bound so a malformed message cannot ask for a million.
+inline constexpr std::size_t kMaxReportedPads = 16;
 bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out);
 
 // Pulls one complete message off the front of `buffer`, erasing it. Returns

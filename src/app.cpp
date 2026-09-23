@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <utility>
 
@@ -25,6 +26,7 @@
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
 #include "input/input_manager.hpp"
+#include "input/pad_routing.hpp"
 #include "input/retro_keymap.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/bezel_art.hpp"
@@ -385,6 +387,21 @@ struct App::Impl {
     // console_pad_owner(). Said again whenever it changes.
     bool said_pad_owner = false;
     PadOwner last_pad_owner = PadOwner::ThisDevice;
+    // On a Wii U, which pad is the GamePad and which is each player -- see
+    // pad_routing.hpp. `pad_choices` is what the Controllers screen was told
+    // this session, by pad_key(); nothing is written down, because a pad's
+    // place in the order is only as good as the session it was counted in.
+    std::map<std::string, std::string> pad_choices;
+    // Every pad as of the last frame, and where each went, in the same order.
+    std::vector<KnownPad> known_pads;
+    std::vector<PadSlot> pad_slots;
+    // The last assignment written to the log, so it is said once per change.
+    std::string said_pad_slots;
+    // Whether the game has each motor on: the GamePad's, then Player 1 to 8.
+    bool slot_rumble[1 + kPadPlayers] = {};
+    // The pads whose motors this app has turned on, by pad_key(), so that one
+    // leaving a rumbling slot -- or the slot going quiet -- is turned off.
+    std::map<std::string, KnownPad> rumbling_pads;
     // Whether the external producer was connected as of last frame. A
     // companion can connect, and so decide what is wanted, before Cemu ever
     // does -- request_screen() sent in that gap has nowhere to go and is
@@ -509,6 +526,18 @@ struct App::Impl {
     // connected that is whichever screen the companion did not take; alone it
     // is what Settings::wii_u_screen_alone says this device is being.
     bool gamepad_is_here() const;
+    // Every controller on both devices, in order: this device's, then the
+    // companion's. A companion too old to list its pads is one pad.
+    std::vector<KnownPad> gather_pads(bool companion_here) const;
+    // Assigns the pads, hands each player's to the game, and returns the
+    // GamePad's -- with the touch screen and the motion of whichever device is
+    // showing the GamePad's screen.
+    DsInputState route_wii_u_pads(const DsInputState& here, const DsInputState& remote,
+                                  bool companion_here);
+    // Turns each pad's motor on or off to match its slot's.
+    void apply_pad_rumble();
+    // Stops every motor this app turned on for a slot, as when the game ends.
+    void stop_pad_rumble();
     // True while two devices are in a session, whichever end this is.
     bool paired() const;
     // Opens the layout menu with the state it should be showing.
@@ -916,6 +945,127 @@ bool App::Impl::gamepad_is_here() const {
                               ? host_session->host_screen()
                               : solo_screen;
     return here == ScreenId::Bottom;
+}
+
+std::vector<KnownPad> App::Impl::gather_pads(bool companion_here) const {
+    std::vector<KnownPad> pads;
+    int position = 0;
+    for (const PadReading& reading : input.pad_readings()) {
+        KnownPad pad;
+        pad.on_this_device = true;
+        pad.id = static_cast<uint32_t>(reading.id);
+        pad.keyboard = reading.keyboard;
+        pad.position = reading.keyboard ? 0 : position++;
+        pad.held = reading.held;
+        pads.push_back(pad);
+    }
+    if (!companion_here) {
+        return pads;
+    }
+    if (!host_session->companion_reports_pads()) {
+        // Everything it has, as one pad, which is all an older companion can
+        // say -- and a motor for it means every motor it has.
+        KnownPad pad;
+        pad.on_this_device = false;
+        pad.id = net::RumbleMessage::kWholeDevice;
+        pad.held = host_session->companion_input();
+        pad.held.touching = false;
+        pads.push_back(pad);
+        return pads;
+    }
+    position = 0;
+    for (const net::ReportedPad& reported : host_session->companion_pads()) {
+        KnownPad pad;
+        pad.on_this_device = false;
+        pad.id = reported.id;
+        pad.keyboard = reported.id == net::ReportedPad::kKeyboard;
+        pad.position = pad.keyboard ? 0 : position++;
+        pad.held = reported.held;
+        pads.push_back(pad);
+    }
+    return pads;
+}
+
+DsInputState App::Impl::route_wii_u_pads(const DsInputState& here, const DsInputState& remote,
+                                         bool companion_here) {
+    // Nothing connected counts as holding the GamePad even when this device
+    // is being the television: most Wii U games cannot be started without
+    // one, and the Controllers screen can move it anywhere else.
+    const bool gamepad_here = !companion_here || gamepad_is_here();
+    known_pads = gather_pads(companion_here);
+    pad_slots = assign_pads(known_pads, pad_choices, gamepad_here);
+
+    std::string said;
+    for (std::size_t index = 0; index < known_pads.size(); ++index) {
+        if (!said.empty()) said += ", ";
+        said += pad_key(known_pads[index]) + " " + pad_slot_name(pad_slots[index]);
+    }
+    if (said != said_pad_slots) {
+        said_pad_slots = said;
+        log_info("controllers: " + (said.empty() ? std::string("none") : said));
+    }
+
+    const RoutedPads routed = route_pads(known_pads, pad_slots);
+    if (external_source) {
+        for (int player = 0; player < kPadPlayers; ++player) {
+            external_source->submit_player_input(player, routed.player_fed[player],
+                                                 routed.players[player]);
+        }
+    }
+
+    // The GamePad's buttons are its pads'; its screen and how it is held are
+    // the device showing that screen -- unless the pads in its slot are all on
+    // the other device, in which case how the GamePad is held is theirs.
+    const DsInputState& screen_device = gamepad_here ? here : remote;
+    DsInputState gamepad = routed.gamepad;
+    gamepad.touching = screen_device.touching;
+    gamepad.touch_x = screen_device.touch_x;
+    gamepad.touch_y = screen_device.touch_y;
+    bool screen_device_holds_it = false;
+    const std::vector<std::size_t> holding = pads_in_slot(pad_slots, PadSlot::gamepad());
+    for (const std::size_t index : holding) {
+        if (known_pads[index].on_this_device == gamepad_here) screen_device_holds_it = true;
+    }
+    if ((holding.empty() || screen_device_holds_it) && screen_device.motion.present) {
+        gamepad.motion = screen_device.motion;
+    }
+
+    apply_pad_rumble();
+    return gamepad;
+}
+
+void App::Impl::apply_pad_rumble() {
+    std::map<std::string, KnownPad> wanted;
+    for (std::size_t index = 0; index < known_pads.size() && index < pad_slots.size(); ++index) {
+        const KnownPad& pad = known_pads[index];
+        const PadSlot slot = pad_slots[index];
+        if (pad.keyboard || slot.kind == PadSlot::Kind::NotUsed) continue;
+        const int motor = slot.kind == PadSlot::Kind::GamePad ? 0 : 1 + slot.player;
+        if (slot_rumble[motor]) wanted.emplace(pad_key(pad), pad);
+    }
+    const auto set = [this](const KnownPad& pad, bool active) {
+        if (pad.on_this_device) {
+            input.set_pad_rumble(static_cast<SDL_JoystickID>(pad.id), active);
+        } else if (host_session && pad.id == net::RumbleMessage::kWholeDevice) {
+            host_session->publish_rumble(active);
+        } else if (host_session) {
+            host_session->publish_pad_rumble(pad.id, active);
+        }
+    };
+    for (const auto& [key, pad] : rumbling_pads) {
+        const auto still = wanted.find(key);
+        if (still == wanted.end() || still->second.id != pad.id) set(pad, false);
+    }
+    for (const auto& [key, pad] : wanted) {
+        const auto was = rumbling_pads.find(key);
+        if (was == rumbling_pads.end() || was->second.id != pad.id) set(pad, true);
+    }
+    rumbling_pads = std::move(wanted);
+}
+
+void App::Impl::stop_pad_rumble() {
+    for (bool& motor : slot_rumble) motor = false;
+    apply_pad_rumble();
 }
 
 bool App::Impl::paired() const {
@@ -1332,8 +1482,13 @@ void App::Impl::attach_companion_callbacks() {
             }
             audio.push(samples, frames);
         });
-    companion_session->set_rumble_callback(
-        [this](bool active) { input.set_rumble(active); });
+    companion_session->set_rumble_callback([this](bool active, uint32_t pad) {
+        if (pad == net::RumbleMessage::kWholeDevice) {
+            input.set_rumble(active);
+        } else {
+            input.set_pad_rumble(static_cast<SDL_JoystickID>(pad), active);
+        }
+    });
     companion_session->set_video_hold(settings.video_hold);
 }
 
@@ -1480,6 +1635,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
     external_program.stop();
     external_source.reset();
+    // A motor the last game left on has nobody left to turn it off.
+    stop_pad_rumble();
     have_game_config = false;
     game_config = GameConfig();
 
@@ -1677,11 +1834,23 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                 //
                 // Which device that is, is a thing this app already knows --
                 // it is whichever one is showing the GamePad's screen.
-                if (gamepad_is_here()) {
+                //
+                // On a console whose players each hold their own controller,
+                // that is whichever pads are the GamePad -- see
+                // route_wii_u_pads().
+                if (system_profile(system).pad_belongs_to_its_screen) {
+                    slot_rumble[0] = active;
+                    apply_pad_rumble();
+                } else if (gamepad_is_here()) {
                     input.set_rumble(active);
                 } else if (host_session) {
                     host_session->publish_rumble(active);
                 }
+            });
+            external_source->set_player_rumble_callback([this](int player, bool active) {
+                if (player < 0 || player >= kPadPlayers) return;
+                slot_rumble[1 + player] = active;
+                apply_pad_rumble();
             });
 
             const std::string socket_path = options.external_socket.empty()
@@ -2998,28 +3167,34 @@ int App::run(const AppOptions& options) {
             // Whose controls the console's pad takes. On a DS or a 3DS, both
             // devices', merged, so either player can press anything -- the
             // InputSink seam doing exactly what it was left in place for. On a
-            // Wii U, only the device showing the GamePad: every other player
-            // has a controller of their own, which Cemu reads directly, and
-            // merging this device's pads in made every one of them press the
-            // GamePad's buttons too. See pad_belongs_to_its_screen.
+            // Wii U, each pad on either device is either the GamePad or one of
+            // eight players, and Cemu is handed each of those separately:
+            // merging every pad into the GamePad made every player press the
+            // GamePad's buttons too. See pad_belongs_to_its_screen and
+            // pad_routing.hpp.
             const bool companion_here =
                 impl.host_session && impl.host_session->has_companion();
-            const PadOwner owner = console_pad_owner(
-                system_profile(impl.system).pad_belongs_to_its_screen, companion_here,
-                companion_here && impl.host_session->companion_screen() == ScreenId::Bottom);
-            if (!impl.said_pad_owner || owner != impl.last_pad_owner) {
-                impl.said_pad_owner = true;
-                impl.last_pad_owner = owner;
-                log_info(std::string("the console's pad takes its controls from ") +
-                         pad_owner_name(owner) +
-                         (owner == PadOwner::Companion
-                              ? ", which is showing its screen; this device's controllers are "
-                                "left to the game's other players"
-                              : ""));
-            }
             const DsInputState remote =
                 companion_here ? impl.host_session->companion_input() : DsInputState();
-            DsInputState combined = input_for_the_console_pad(impl.input.ds_state(), remote, owner);
+            DsInputState combined;
+            if (system_profile(impl.system).pad_belongs_to_its_screen && impl.external_source) {
+                combined = impl.route_wii_u_pads(impl.input.ds_state(), remote, companion_here);
+            } else {
+                const PadOwner owner = console_pad_owner(
+                    system_profile(impl.system).pad_belongs_to_its_screen, companion_here,
+                    companion_here && impl.host_session->companion_screen() == ScreenId::Bottom);
+                if (!impl.said_pad_owner || owner != impl.last_pad_owner) {
+                    impl.said_pad_owner = true;
+                    impl.last_pad_owner = owner;
+                    log_info(std::string("the console's pad takes its controls from ") +
+                             pad_owner_name(owner) +
+                             (owner == PadOwner::Companion
+                                  ? ", which is showing its screen; this device's controllers "
+                                    "are left to the game's other players"
+                                  : ""));
+                }
+                combined = input_for_the_console_pad(impl.input.ds_state(), remote, owner);
+            }
             // While both devices report motion, hold the two up against each
             // other. This is the host, so both readings are in hand at the
             // same instant with nothing to line up afterwards -- which is what
@@ -3094,7 +3269,11 @@ int App::run(const AppOptions& options) {
                 impl.running = false;
             }
         } else if (impl.companion_session && impl.state == Impl::State::Companion) {
-            impl.companion_session->send_input(impl.input.ds_state());
+            // Every pad on its own too, so the host can make each one any
+            // controller its game has. See InputMessage::pads.
+            const std::vector<net::ReportedPad> pads =
+                net::reported_pads(impl.input.pad_readings());
+            impl.companion_session->send_input(impl.input.ds_state(), &pads);
         }
 
         // Hand the current screens to the companion, if any. The serial only
@@ -3170,6 +3349,13 @@ int App::run(const AppOptions& options) {
                 impl.source->input_sink().submit(DsInputState());
             } else if (impl.external_source) {
                 impl.external_source->submit_input(DsInputState());
+                // The players too, still plugged in -- a pause is not a pad
+                // being taken away.
+                const RoutedPads routed = route_pads(impl.known_pads, impl.pad_slots);
+                for (int player = 0; player < kPadPlayers; ++player) {
+                    impl.external_source->submit_player_input(player, routed.player_fed[player],
+                                                              DsInputState());
+                }
             }
         }
         if (playing != nullptr && !game_running && impl.game_was_running) {
