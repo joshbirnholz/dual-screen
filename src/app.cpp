@@ -2675,6 +2675,15 @@ int App::run(const AppOptions& options) {
     {
         const char* driver = SDL_GetCurrentVideoDriver();
         log_info(std::string("SDL video driver: ") + (driver != nullptr ? driver : "none"));
+        // Which SDL, because what reaches a controller -- rumble especially,
+        // through Steam's virtual pads -- differs between versions, and the
+        // one linked is the system's, not the one this was built against.
+        SDL_version linked;
+        SDL_GetVersion(&linked);
+        log_info("SDL " + std::to_string(linked.major) + "." + std::to_string(linked.minor) + "." +
+                 std::to_string(linked.patch) + " (built against " +
+                 std::to_string(SDL_MAJOR_VERSION) + "." + std::to_string(SDL_MINOR_VERSION) +
+                 "." + std::to_string(SDL_PATCHLEVEL) + ")");
         // Said out loud because a touchscreen the system keeps for itself looks
         // exactly like one the app is ignoring: the two-finger way into the menu
         // needs to be told how many fingers are down, and a screen handed over

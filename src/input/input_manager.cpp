@@ -414,8 +414,24 @@ void InputManager::ping_pad(SDL_JoystickID id, uint32_t ms) {
         if (id != -1 && instance_id != id) continue;
         // A game's rumble already running says more than a ping could, and
         // cutting it short at the end of the ping would be wrong.
-        if (pad_rumble_on_.count(instance_id) != 0) continue;
+        if (pad_rumble_on_.count(instance_id) != 0) {
+            log_info("controller " + std::to_string(instance_id) +
+                     ": not pinged, a game already has its motor running");
+            continue;
+        }
         drive_motor(instance_id, controller, true, ms);
+#ifndef __SWITCH__
+        // What SDL made of it, for a pad that should have buzzed and did not:
+        // whether SDL thinks it can rumble at all, which slot it is in -- a
+        // Steam Input slot, under Steam, whose physical pad Steam decides --
+        // and what SDL called it.
+        const char* name = SDL_GameControllerName(controller);
+        log_info("controller " + std::to_string(instance_id) + " pinged: slot " +
+                 std::to_string(SDL_GameControllerGetPlayerIndex(controller)) + ", " +
+                 (name != nullptr ? name : "unnamed") + ", SDL says it " +
+                 (SDL_GameControllerHasRumble(controller) == SDL_TRUE ? "can" : "cannot") +
+                 " rumble");
+#endif
     }
 }
 
