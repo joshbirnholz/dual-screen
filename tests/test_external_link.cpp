@@ -422,6 +422,99 @@ void test_rumble_crosses_only_on_the_edges() {
     CHECK_MSG(!active, "the motor turning off arrived as on");
 }
 
+// Each of the game's players crosses on its own, apart from the GamePad and
+// from one another, and a player nothing feeds any more arrives as unplugged
+// rather than as a pad with nothing pressed.
+void test_players_cross_apart_from_the_gamepad_and_each_other() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    std::string error;
+    bool reset = false;
+    CHECK(producer.poll(reset, &error));
+    for (int player = 0; player < kExternalPlayers; ++player) {
+        CHECK_MSG(!producer.player_connected(player),
+                  "a player was connected before anything was sent for it");
+    }
+
+    ExternalInput first;
+    first.set(ExternalButton::A, true);
+    first.left_x = -20000;
+    ExternalInput eighth;
+    eighth.set(ExternalButton::Plus, true);
+    link.send_player_input(0, true, first);
+    link.send_player_input(7, true, eighth);
+    // Out of range: ignored rather than written somewhere it does not belong.
+    link.send_player_input(8, true, first);
+    link.send_player_input(-1, true, first);
+
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!(producer.player_connected(0) && producer.player_connected(7)) &&
+           std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(producer.player_connected(0) && producer.player_input(0) == first,
+              "Player 1's pad did not arrive as sent");
+    CHECK_MSG(producer.player_connected(7) && producer.player_input(7) == eighth,
+              "Player 8's pad did not arrive as sent");
+    CHECK_MSG(!producer.player_connected(1), "a player nobody sent turned up connected");
+    CHECK_MSG(!producer.have_input(), "a player's pad arrived as the GamePad's");
+
+    // Unplugged: the next state says nothing feeds Player 1.
+    link.send_player_input(0, false, first);
+    const auto unplugged_by = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (producer.player_connected(0) && std::chrono::steady_clock::now() < unplugged_by) {
+        CHECK(producer.poll(reset, &error));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK_MSG(!producer.player_connected(0), "a player nothing feeds stayed connected");
+    CHECK_MSG(producer.player_input(0) == ExternalInput(),
+              "a player nothing feeds kept the buttons it last had held, which would hold them "
+              "down in the game for good");
+}
+
+// Each player's motor comes back on its own, and two changing at once are two
+// edges, in order -- neither is lost to the other.
+void test_players_rumble_on_their_own_edges() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    if (!bring_up(link, producer)) return;
+
+    producer.send_player_rumble(2, true);
+    producer.send_player_rumble(5, true);
+    producer.send_player_rumble(2, true);  // unchanged: nothing crosses
+    producer.send_player_rumble(2, false);
+
+    std::vector<std::pair<int, bool>> got;
+    std::string error;
+    const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (got.size() < 3 && std::chrono::steady_clock::now() < give_up_at) {
+        CHECK(link.poll(&error));
+        int player = -1;
+        bool active = false;
+        while (link.take_player_rumble(player, active)) {
+            got.emplace_back(player, active);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    for (int poll = 0; poll < 30; ++poll) {
+        CHECK(link.poll(&error));
+        int player = -1;
+        bool active = false;
+        while (link.take_player_rumble(player, active)) {
+            got.emplace_back(player, active);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const std::vector<std::pair<int, bool>> expected{{2, true}, {5, true}, {2, false}};
+    CHECK_MSG(got == expected, "the players' motor edges did not arrive once each, in order (" +
+                                   std::to_string(got.size()) + " arrived)");
+    bool gamepad = false;
+    CHECK_MSG(!link.take_rumble(gamepad), "a player's motor arrived as the GamePad's");
+}
+
 // The ordinary end of a session is the game being closed, and it has to look
 // like that rather than like a stall.
 void test_the_game_closing_ends_the_session() {
@@ -686,6 +779,8 @@ int main() {
     test_the_pad_crosses_and_arrives_whole();
     test_a_second_game_is_told_the_pad_from_the_beginning();
     test_rumble_crosses_only_on_the_edges();
+    test_players_cross_apart_from_the_gamepad_and_each_other();
+    test_players_rumble_on_their_own_edges();
     test_the_game_closing_ends_the_session();
     test_a_screen_too_big_to_carry_is_refused();
     test_a_game_is_told_how_big_the_screen_is_worth_making();
