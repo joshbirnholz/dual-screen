@@ -237,6 +237,7 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
         }
 
         log_info(std::string("created a ") + attempt.description + " context");
+        gl::remember_window_framebuffer();
         SDL_GL_SetSwapInterval(request.vsync ? 1 : 0);
         // No pointer on screen to begin with: an arrow parked over the game is
         // exactly the kind of thing that gives away that this is not a console.

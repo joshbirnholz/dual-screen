@@ -1312,6 +1312,7 @@ void Client::draw() {
     const float width = static_cast<float>(output_width_);
     const float height = static_cast<float>(output_height_);
     gl::log_error_once("something in the last frame was rejected by OpenGL");
+    gl::bind_window_framebuffer();
 
     if (state_ == State::Launcher) {
         // The app's own opening screen, so choosing which screen to be looks

@@ -2711,6 +2711,7 @@ void App::Impl::render() {
     // and nothing says why. Reported once, since a failing draw fails every
     // frame and one line is the useful amount.
     gl::log_error_once("something in the last frame was rejected by OpenGL");
+    gl::bind_window_framebuffer();
 
     if (state == State::Browser) {
         browser->render(quads, text, button_glyphs, width, height);

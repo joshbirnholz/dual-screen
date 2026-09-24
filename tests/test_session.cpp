@@ -3620,6 +3620,21 @@ void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
                    },
                    2000),
               "the picture never moved on after the keyframe arrived");
+
+    // And with the picture standing still -- a paused game, a menu -- the
+    // answer still comes: the same picture again, standing on its own,
+    // rather than nothing until something on screen next moves.
+    host.publish_screens(screen_pixels(top), screen_pixels(bottom), ++serial);
+    spin(host, companion, [&] { return companion.buffered_frames() == 0; }, 1000);
+    companion.lose_a_frame_for_test(ScreenId::Bottom);
+    CHECK_MSG(spin(host, companion,
+                   [&] {
+                       // The same serial every time: nothing new from the game.
+                       host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+                       return !companion.waiting_for_keyframe_for_test(ScreenId::Bottom);
+                   },
+                   3000),
+              "a keyframe asked for while the picture stood still never arrived");
 }
 
 // A Wii U game reading the GamePad's gyroscope needs the companion's, since

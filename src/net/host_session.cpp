@@ -1885,7 +1885,16 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // were lost on the way stayed half-drawn on the companion for as long as
     // the menu was up. Measured: "no ack for 150579ms" on closing a menu that
     // had been open two and a half minutes.
-    if (serial == submitted_serial_ && !resend_screens_ && !give_up_on_stalled_frames()) {
+    //
+    // Nor while the companion is waiting on a picture that stands on its own.
+    // Asked for, the answer went out with the next picture that changed --
+    // and a still one (a paused game, a menu, a scene with nothing moving)
+    // never changes, so the companion held a stale or broken picture until
+    // something on screen happened to move.
+    const bool keyframe_owed = (keyframe_asked_top_ && companion_wants(ScreenId::Top)) ||
+                               (keyframe_asked_bottom_ && companion_wants(ScreenId::Bottom));
+    if (serial == submitted_serial_ && !resend_screens_ && !keyframe_owed &&
+        !give_up_on_stalled_frames()) {
         return;
     }
     // How fast frames are really arriving from the source, which with the

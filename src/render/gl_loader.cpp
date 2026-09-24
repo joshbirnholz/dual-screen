@@ -165,6 +165,34 @@ void log_error_once(const char* label) {
     log_warn(std::string(label) + ": " + error);
 }
 
+#ifndef GL_FRAMEBUFFER_BINDING
+#define GL_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+
+namespace {
+GLuint g_window_framebuffer = 0;
+}  // namespace
+
+void remember_window_framebuffer() {
+    GLint bound = 0;
+    if (GetIntegerv != nullptr) {
+        GetIntegerv(GL_FRAMEBUFFER_BINDING, &bound);
+    }
+    g_window_framebuffer = static_cast<GLuint>(bound > 0 ? bound : 0);
+    if (g_window_framebuffer != 0) {
+        log_info("the window is drawn into framebuffer " + std::to_string(g_window_framebuffer) +
+                 ", not 0");
+    }
+}
+
+void bind_window_framebuffer() {
+    if (BindFramebuffer != nullptr) {
+        BindFramebuffer(GL_FRAMEBUFFER, g_window_framebuffer);
+    }
+}
+
+unsigned window_framebuffer() { return g_window_framebuffer; }
+
 void reset_state_for_core() {
     if (Enable == nullptr) return;
     // OpenGL's defaults, exactly, because that is where a core's own state

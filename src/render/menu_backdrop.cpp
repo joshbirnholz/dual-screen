@@ -10,6 +10,9 @@
 #ifndef GL_READ_FRAMEBUFFER
 #define GL_READ_FRAMEBUFFER 0x8CA8
 #endif
+#ifndef GL_FRAMEBUFFER_BINDING
+#define GL_FRAMEBUFFER_BINDING 0x8CA6
+#endif
 #ifndef GL_DRAW_FRAMEBUFFER
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #endif
@@ -145,6 +148,19 @@ void MenuBackdrop::capture(int output_width, int output_height, std::size_t key)
     height_ = std::max(1, output_height / kShrink);
     pixels_.assign(static_cast<std::size_t>(width_) * height_, 0);
 
+    // Whatever the window is being drawn into, which is where the frame to
+    // copy is and what has to be bound again afterwards. Framebuffer 0 on a
+    // desktop -- but not on an iPhone, iPad or Apple TV, where SDL draws the
+    // window into a framebuffer of its own. Binding 0 back there left every
+    // frame after the menu opened drawn into nothing: the picture froze on
+    // whatever was last shown while the sound carried on, until the app was
+    // restarted.
+    GLint window = 0;
+    if (gl::GetIntegerv != nullptr) {
+        gl::GetIntegerv(GL_FRAMEBUFFER_BINDING, &window);
+    }
+    const GLuint window_framebuffer = static_cast<GLuint>(std::max(0, window));
+
     // Shrunk on the GPU where it can blit, and only the small copy read back.
     // Reading the whole frame and shrinking it here cost a Switch 120 to
     // 150ms every time a menu opened, drawing at 1080p: eight megabytes off
@@ -157,7 +173,7 @@ void MenuBackdrop::capture(int output_width, int output_height, std::size_t key)
         small.allocate_rgba(width_, height_);
         GLuint framebuffer = 0;
         gl::GenFramebuffers(1, &framebuffer);
-        gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        gl::BindFramebuffer(GL_READ_FRAMEBUFFER, window_framebuffer);
         gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
         gl::FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                                  small.id(), 0);
@@ -167,7 +183,7 @@ void MenuBackdrop::capture(int output_width, int output_height, std::size_t key)
         std::vector<uint32_t> shrunk(static_cast<std::size_t>(width_) * height_);
         gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
         gl::ReadPixels(0, 0, width_, height_, GL_RGBA, GL_UNSIGNED_BYTE, shrunk.data());
-        gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+        gl::BindFramebuffer(GL_FRAMEBUFFER, window_framebuffer);
         gl::DeleteFramebuffers(1, &framebuffer);
         // A multisampled window, for one, cannot be blitted from at a
         // different size; that is an error rather than a picture, and the

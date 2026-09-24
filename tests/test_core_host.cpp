@@ -10,6 +10,7 @@
 #include <SDL.h>
 
 #include "render/gl_loader.hpp"
+#include "render/menu_backdrop.hpp"
 #include "render/texture.hpp"
 
 #include <cstdlib>
@@ -499,6 +500,51 @@ void test_a_screen_texture_follows_its_frames_from_one_form_to_another() {
     texture.destroy();
 }
 
+// The menu's blurred backdrop is copied from whatever the window is drawn
+// into, and has to leave that bound. On a desktop that is framebuffer 0; on an
+// iPhone, iPad or Apple TV, SDL draws the window into a framebuffer of its own,
+// and binding 0 back after the copy left every later frame drawn into nothing
+// -- a picture frozen from the moment the menu opened, with the sound going on.
+void test_the_menu_backdrop_leaves_the_windows_framebuffer_bound() {
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        test::skip("no OpenGL 3.3 context available");
+        return;
+    }
+    constexpr int kWidth = 160;
+    constexpr int kHeight = 120;
+    // Standing in for SDL's own on iOS: a framebuffer that is not 0, with the
+    // frame to copy in it.
+    Texture window_colour;
+    window_colour.allocate_rgba(kWidth, kHeight);
+    GLuint window = 0;
+    gl::GenFramebuffers(1, &window);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, window);
+    gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                             window_colour.id(), 0);
+    CHECK(gl::CheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    gl::Viewport(0, 0, kWidth, kHeight);
+    gl::ClearColor(0.9f, 0.2f, 0.1f, 1.0f);
+    gl::Clear(GL_COLOR_BUFFER_BIT);
+    gl::take_error();
+
+    MenuBackdrop backdrop;
+    backdrop.capture(kWidth, kHeight, 1);
+
+    GLint bound = -1;
+    gl::GetIntegerv(GL_FRAMEBUFFER_BINDING, &bound);
+    CHECK_MSG(bound == static_cast<GLint>(window),
+              "the backdrop left framebuffer " + std::to_string(bound) +
+                  " bound, not the window's " + std::to_string(window));
+    CHECK_MSG(gl::take_error().empty(), "copying the backdrop was an OpenGL error");
+    CHECK(backdrop.matches(1));
+
+    gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl::DeleteFramebuffers(1, &window);
+    backdrop.forget();
+    window_colour.destroy();
+}
+
 // The same frontend against a core shaped like a 3DS: two screens of different
 // widths, the narrower one centred under the wider, drawn on the GPU rather
 // than handed over as pixels. Every step from the core option through the
@@ -944,6 +990,7 @@ int main() {
     test_screen_source_reports_a_valid_split();
     test_a_ds_game_takes_a_rumble_pak();
     test_a_screen_texture_follows_its_frames_from_one_form_to_another();
+    test_the_menu_backdrop_leaves_the_windows_framebuffer_bound();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
     test_render_scale_only_changes_the_resolution();

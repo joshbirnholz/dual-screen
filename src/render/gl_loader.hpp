@@ -221,6 +221,16 @@ std::string take_error();
 // failure is silent and fatal to what the player sees.
 void log_error_once(const char* label);
 
+// The framebuffer the window is drawn into. 0 on a desktop; on an iPhone, iPad
+// or Apple TV, one SDL makes for the window, and anything that binds 0 there
+// to mean "the window" is drawing into nothing. Remembered as the context is
+// made -- SDL has it bound by then -- and bound again at the start of every
+// frame, so a stray bind costs at most the one frame instead of freezing the
+// picture for the rest of the run.
+void remember_window_framebuffer();
+void bind_window_framebuffer();
+unsigned window_framebuffer();
+
 // Whether the optional entry points above turned up. A GL 3.3 core profile has
 // both; an ES 2.0 context has neither.
 bool has_blit();
