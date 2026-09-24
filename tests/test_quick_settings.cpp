@@ -268,92 +268,23 @@ int taps_that_toggle_the_gap(const LayoutRegistry& registry, const LayoutPickerS
     return hits;
 }
 
-// The gap button appears while a layout that offers the choice is selected
-// -- Vertical Screens and the two focus layouts -- and nowhere else, on
-// either device.
-void test_the_gap_button_appears_only_where_the_layout_offers_it() {
+// Screen Gap is one choice for every layout that has a gap -- Vertical
+// Screens and the two focus layouts -- so it is under Options whichever layout
+// is in use, on either device: set it from Standard and it waits there for
+// the layouts it applies to.
+void test_the_gap_option_is_always_offered() {
     LayoutRegistry registry;
-
-    for (const char* id : {"vertical", "upper_focus", "touch_focus"}) {
+    for (const char* id : {"vertical", "upper_focus", "touch_focus", "side_by_side", "standard",
+                           "upper_on_tv"}) {
         LayoutPickerState state;
         state.layout_id = id;
         CHECK_MSG(taps_that_toggle_the_gap(registry, state) > 0,
-                  std::string(id) + " should offer the gap button");
-
-        // The companion end of the same session: the same button, because it
-        // is the same menu.
+                  std::string(id) + " should offer Screen Gap");
         LayoutPickerState companion = state;
         companion.session_active = true;
         CHECK_MSG(taps_that_toggle_the_gap(registry, companion) > 0,
-                  std::string(id) + " (companion) should offer the gap button");
+                  std::string(id) + " (companion) should offer Screen Gap");
     }
-
-    // The layouts with no gap to choose: nothing to press. Side-by-Side's gap
-    // is the DS's own hinge rather than a choice -- see
-    // LayoutComposition::gap_toggleable -- and Standard has no gap at all.
-    for (const char* id : {"side_by_side", "standard"}) {
-        LayoutPickerState state;
-        state.layout_id = id;
-        CHECK_MSG(taps_that_toggle_the_gap(registry, state) == 0,
-                  std::string(id) + " should not offer the gap button");
-    }
-}
-
-// Picking a gap layout from inside the open menu has to bring the option with
-// it. A game starts on Standard, which has no gap of its own, so options built
-// once at open() and never rebuilt leave the choice unreachable: pick Vertical
-// Screens, look under Options for Gap, and it is not there until the menu is
-// closed and opened again.
-void test_choosing_a_gap_layout_reveals_the_button() {
-    LayoutRegistry registry;
-    LayoutPickerState opened_on_standard;
-    opened_on_standard.layout_id = "standard";
-
-    // Where the Vertical Screens tile is, found the way a finger finds it
-    // rather than by reaching into the picker's own geometry.
-    PointerEvent vertical_tile;
-    bool found = false;
-    for (float y = 4.0f; y < kHeight && !found; y += 8.0f) {
-        for (float x = 4.0f; x < kWidth && !found; x += 8.0f) {
-            LayoutPicker picker(registry);
-            open_on(picker, opened_on_standard, MenuSection::Layout);
-            picker.update({}, {tap(x, y)}, kWidth, kHeight);
-            if (picker.selected_layout_id() == "vertical") {
-                vertical_tile = tap(x, y);
-                found = true;
-            }
-        }
-    }
-    CHECK_MSG(found, "never found the Vertical Screens tile");
-
-    int hits = 0;
-    for (float y = 4.0f; y < kHeight; y += 8.0f) {
-        for (float x = 4.0f; x < kWidth; x += 8.0f) {
-            LayoutPicker picker(registry);
-            open_on(picker, opened_on_standard, MenuSection::Layout);
-            picker.update({}, {vertical_tile}, kWidth, kHeight);
-            picker.set_focus(LayoutPicker::focus_of(MenuSection::Options));
-            if (picker.update({}, {tap(x, y)}, kWidth, kHeight).screen_gap_toggled) ++hits;
-        }
-    }
-    CHECK_MSG(hits > 0, "no Gap button after picking Vertical Screens from inside the menu");
-
-    // And the other direction, which is how it arrives on a companion: the
-    // host changes the layout under an open menu, and a button belonging to
-    // the layout that just left must not linger.
-    LayoutPickerState opened_on_vertical;
-    opened_on_vertical.layout_id = "vertical";
-    int lingering = 0;
-    for (float y = 4.0f; y < kHeight; y += 8.0f) {
-        for (float x = 4.0f; x < kWidth; x += 8.0f) {
-            LayoutPicker picker(registry);
-            picker.open(opened_on_vertical);
-            picker.set_selected_layout("standard");
-            picker.set_focus(LayoutPicker::focus_of(MenuSection::Options));
-            if (picker.update({}, {tap(x, y)}, kWidth, kHeight).screen_gap_toggled) ++lingering;
-        }
-    }
-    CHECK_EQ(lingering, 0);
 }
 
 // Toggling Gap has to change what the tiles themselves draw, not just what a
@@ -1322,8 +1253,7 @@ int main() {
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
     test_reset_and_smoothing_are_hidden_where_the_console_owns_them();
     test_the_pointer_button_appears_only_where_there_is_a_pointer();
-    test_the_gap_button_appears_only_where_the_layout_offers_it();
-    test_choosing_a_gap_layout_reveals_the_button();
+    test_the_gap_option_is_always_offered();
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
     test_wii_u_menu_is_a_plain_list();

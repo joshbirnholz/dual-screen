@@ -150,14 +150,10 @@ void LayoutPicker::rebuild_footer() {
     // What the right stick does, where the console has one of its own to have
     // an opinion about -- a 3DS.
     if (state_.right_stick_choosable) options_.push_back(Option::RightStick);
-    // Only some layouts' gap is a player's choice -- see
-    // LayoutComposition::gap_toggleable -- so the entry appears only while
-    // one of those is the layout actually selected. Read off the layout itself
-    // rather than passed in, because the selection changes while the menu is
-    // open.
-    if (registry_->resolve(selected_layout_id_).composition.gap_toggleable) {
-        options_.push_back(Option::ScreenGap);
-    }
+    // The gap is one choice for every layout that has one -- Vertical Screens
+    // and the two focus layouts; see LayoutComposition::gap_toggleable -- so
+    // it is offered whichever layout is in use, and waits for those.
+    options_.push_back(Option::ScreenGap);
     // R3 still does this without opening anything; this is where it is seen.
     if (state_.smoothing_available) options_.push_back(Option::Smoothing);
 
@@ -976,20 +972,26 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
                   menu_row_text(focused || selected), TextAlign::Center);
     }
 
-    // The stylus button: the Wii U's own symbol in a square, drawn the way a
-    // layout tile is -- outlined, and filled under the cursor with the symbol
-    // going dark on it -- and mirrored to show which hand the layout in use is
+    // The stylus button: the Wii U's own symbol in a square, outlined like a
+    // layout tile, and mirrored to show which hand the layout in use is
     // for. Not there at all where that layout has no hand to choose.
     const PixelRect& square = geometry.hand_button;
     if (square.w <= 0.0f || !hand_button_usable()) return;
     const bool focused = on_content_ && item_ == tile_count();
     const float border = menu_border(scale);
-    draw_menu_tile(quads, square, focused, false, scale);
+    // Under the cursor its background takes a wash of white and the symbol
+    // stays white on it -- a highlight, not the tiles' full inversion, which
+    // on a symbol this size reads as a different symbol.
+    if (focused) {
+        Color wash = theme.text;
+        wash.a = 0.3f;
+        quads.draw_solid(square, wash);
+    }
+    quads.draw_outline(square, theme.text, border);
     glyphs.draw_stylus_hand(quads,
                             PixelRect{square.x + border, square.y + border,
                                       square.w - border * 2.0f, square.h - border * 2.0f},
-                            focused ? theme.background : theme.text,
-                            handedness_of(selected_layout_id_) == Handedness::Left);
+                            theme.text, handedness_of(selected_layout_id_) == Handedness::Left);
 }
 
 void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
