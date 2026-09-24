@@ -2,9 +2,9 @@
 """Builds assets/inter.ttf, the UI font, from Inter as Fontsource publishes it.
 
     pip install fonttools brotli
-    python3 assets/make_ui_font.py path/to/inter-latin-600-normal.woff
+    python3 assets/make_ui_font.py path/to/inter-latin-500-normal.woff
 
-The input is the Latin subset of Inter SemiBold from the @fontsource/inter
+The input is the Latin subset of Inter Medium from the @fontsource/inter
 package on npm (5.3.0 when this was written): already cut down to ASCII and
 Latin-1, which is everything the shell draws -- see src/render/font.cpp.
 

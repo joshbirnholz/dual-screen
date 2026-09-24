@@ -179,12 +179,11 @@ void LauncherScreen::render(QuadRenderer& quads,
         draw_menu_row(quads, row, focused, scale);
 
         const float pad = line * 0.7f;
-        const bool is_quit = (rows_[index] == LauncherChoice::Quit);
         // Centred on the row, since there is nothing under it any more: the
         // names say what they do without a sentence explaining them.
         text.draw(quads, title_for(rows_[index]), row.x + pad,
                   row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
-                  is_quit && !focused ? theme.danger : menu_row_text(focused));
+                  menu_row_text(focused));
     }
 
     // Live feedback that the search is working, so "connect" is not a leap of

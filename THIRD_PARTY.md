@@ -37,7 +37,7 @@ or the files replaced with ones whose terms are known.
 
 ## `assets/inter.ttf`
 
-The UI font: [Inter](https://rsms.me/inter/) SemiBold by Rasmus Andersson,
+The UI font: [Inter](https://rsms.me/inter/) Medium by Rasmus Andersson,
 version 5.3, taken from the `@fontsource/inter` package's Latin subset and
 embedded into the binary at build time. Licensed under the SIL Open Font
 License 1.1, whose full text travels with it as `assets/inter-OFL.txt`.

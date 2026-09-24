@@ -11,7 +11,7 @@ extern const unsigned long kDsBezelPng_size;
 extern const unsigned char kThreeDsBezelPng[];
 extern const unsigned long kThreeDsBezelPng_size;
 
-// The UI font: Inter SemiBold, under the SIL Open Font License (see
+// The UI font: Inter Medium, under the SIL Open Font License (see
 // assets/inter-OFL.txt), subset to Latin so it costs kilobytes.
 extern const unsigned char kUiFont[];
 extern const unsigned long kUiFont_size;
