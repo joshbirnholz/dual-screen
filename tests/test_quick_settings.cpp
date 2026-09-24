@@ -498,6 +498,28 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(cycled.cursor_mode_changed);
     CHECK(options.on_content());
 
+    // A render scale that restarts the game -- a DS going to or from 1x -- is
+    // asked about first; one that does not is simply changed.
+    for (const bool restarts : {false, true}) {
+        LayoutPickerState scaled = state;
+        scaled.max_render_scale = 4;
+        scaled.render_scale_restarts = restarts;
+        LayoutPicker asked(registry);
+        open_on(asked, scaled, MenuSection::Options);
+        asked.update({UiAction::Right}, {}, kWidth, kHeight);
+        const LayoutPickerResult pressed = asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK_EQ(pressed.render_scale_changed, !restarts);
+        CHECK_EQ(asked.confirmation() == MenuConfirm::RestartForRenderScale, restarts);
+        if (restarts) {
+            // No, and nothing changes; yes, and it does, with the menu still up.
+            CHECK(!asked.update({UiAction::Cancel}, {}, kWidth, kHeight).render_scale_changed);
+            CHECK(!asked.awaiting_confirmation());
+            asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+            CHECK(asked.update({UiAction::Confirm}, {}, kWidth, kHeight).render_scale_changed);
+            CHECK(asked.is_open());
+        }
+    }
+
     // A Rumble Pak, where the core can put one in, and nowhere else.
     for (const bool pak : {false, true}) {
         LayoutPickerState with_pak = state;

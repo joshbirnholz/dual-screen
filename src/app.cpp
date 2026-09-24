@@ -644,6 +644,9 @@ struct App::Impl {
     void adopt_render_scale(int scale);
     // The next scale in the cycle, wrapping at the system's maximum.
     int next_render_scale() const;
+    // Whether going to next_render_scale() reopens the core, which the menu
+    // asks about first -- see LayoutPickerState::render_scale_restarts.
+    bool render_scale_change_restarts() const;
     void adopt_audio_target(AudioTarget target);
     // Sets the hand of the layout in use, and only that layout.
     void adopt_handedness(Handedness hand);
@@ -1476,6 +1479,7 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_max_render_scale()
                        : (local_game() ? system_profile(system).max_render_scale : 1);
     picker_state.screen_gap = screen_gap;
+    picker_state.render_scale_restarts = render_scale_change_restarts();
     picker_state.right_stick_mode = right_stick_mode;
     // Only a console whose right stick can mean more than one thing has a
     // question worth offering -- a 3DS. A DS has no right stick to speak of,
@@ -1517,6 +1521,12 @@ void App::Impl::open_picker(bool embedded) {
     }
 }
 
+bool App::Impl::render_scale_change_restarts() const {
+    return source != nullptr && LibretroCoreScreenSource::renders_on_gpu(system, render_scale) !=
+                                    LibretroCoreScreenSource::renders_on_gpu(system,
+                                                                             next_render_scale());
+}
+
 int App::Impl::next_render_scale() const {
     const int maximum = std::max(1, system_profile(system).max_render_scale);
     return render_scale >= maximum ? 1 : render_scale + 1;
@@ -1553,6 +1563,7 @@ void App::Impl::adopt_render_scale(int scale) {
     }
     if (picker) {
         picker->set_render_scale(render_scale);
+        picker->set_render_scale_restarts(render_scale_change_restarts());
     }
     // A companion is following the host and has no game of its own to remember
     // this against, so it changes what it displays and nothing on disk.

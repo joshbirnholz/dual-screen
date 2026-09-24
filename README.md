@@ -714,8 +714,11 @@ melonDS's software renderer, its most accurate, and one pixel per DS pixel.
 Anything above it is melonDS's OpenGL renderer, which draws the game's 3D at
 that multiple of 256x192; it is the only way melonDS upscales. A core picks its
 renderer only as a game is opened, so going to or from 1x closes melonDS and
-opens it again on the same game, carried across by a save state -- a moment's
-pause, with the menu still up and a companion still connected. Between 2x, 3x
+opens it again on the same game, and the menu asks first: *Changing the render
+scale will restart the game. Unsaved progress will be lost.* It tries to carry
+the game across in a save state, with the menu still up and a companion still
+connected; the log says `the game started again from the beginning` when that
+did not work. Between 2x, 3x
 and 4x it changes as the game runs, as on a 3DS. What goes to a companion is the
 console's own resolution either way.
 

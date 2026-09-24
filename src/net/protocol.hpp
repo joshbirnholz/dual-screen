@@ -283,7 +283,7 @@ struct SessionStateMessage {
     // watch either screen while working the same menu from either pad.
     bool menu_open = false;
     uint8_t menu_focus = 0;
-    // 0 none, 1 reset, 2 quit -- see LayoutPicker::MenuConfirm.
+    // 0 none, 1 reset, 2 quit, and so on -- see MenuConfirm.
     uint8_t menu_confirm = 0;
     // The host's settings screen, which unlike the menu is not mirrored: it is
     // about the machine running the game, and half of what it shows -- where
