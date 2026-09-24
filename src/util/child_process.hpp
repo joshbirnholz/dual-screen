@@ -21,8 +21,10 @@ public:
     // Runs `program` with `arguments`, neither of which is passed through a
     // shell: there is no quoting to get wrong and nothing in a filename can
     // become a command.
+    // `environment` is set in its environment on top of this one's, each
+    // entry "NAME=value".
     bool start(const std::string& program, const std::vector<std::string>& arguments,
-               std::string* error);
+               std::string* error, const std::vector<std::string>& environment = {});
     // True while it is still running. Reaps it if it has already exited, so a
     // program that stops on its own does not stay a zombie for the session.
     bool running();
