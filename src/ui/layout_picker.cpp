@@ -150,6 +150,8 @@ void LayoutPicker::rebuild_footer() {
     // What the right stick does, where the console has one of its own to have
     // an opinion about -- a 3DS.
     if (state_.right_stick_choosable) options_.push_back(Option::RightStick);
+    // What L3 does, where the console has a microphone for it to be.
+    if (state_.left_stick_choosable) options_.push_back(Option::LeftStick);
     // The gap is one choice for every layout that has one -- Vertical Screens
     // and the two focus layouts; see LayoutComposition::gap_toggleable -- so
     // it is offered whichever layout is in use, and waits for those.
@@ -191,33 +193,20 @@ bool LayoutPicker::slot_filled(int slot) const {
            save_slots_[static_cast<std::size_t>(slot)].exists;
 }
 
-int LayoutPicker::natural_item(MenuSection section) const {
-    if (section == MenuSection::Layout) {
-        return std::max(0, tile_index_of(selected_layout_id_));
+int LayoutPicker::layout_columns() const { return tile_count() <= 4 ? 2 : 3; }
+
+int LayoutPicker::content_columns(MenuSection section) const {
+    switch (section) {
+        case MenuSection::Layout: return layout_columns();
+        case MenuSection::CreateSavePoint:
+        case MenuSection::LoadSavePoint: return 2;
+        default: return 1;
     }
-    if (section != MenuSection::CreateSavePoint && section != MenuSection::LoadSavePoint) {
-        return 0;
-    }
-    int newest = -1;
-    int oldest = -1;
-    for (int slot = 0; slot < kSavePointSlots; ++slot) {
-        if (!slot_filled(slot)) {
-            // Saving: the first empty slot loses nothing at all.
-            if (section == MenuSection::CreateSavePoint) return slot;
-            continue;
-        }
-        const int64_t when = save_slots_[static_cast<std::size_t>(slot)].saved_at;
-        if (newest < 0 || when > save_slots_[static_cast<std::size_t>(newest)].saved_at) {
-            newest = slot;
-        }
-        if (oldest < 0 || when < save_slots_[static_cast<std::size_t>(oldest)].saved_at) {
-            oldest = slot;
-        }
-    }
-    return std::max(0, section == MenuSection::LoadSavePoint ? newest : oldest);
 }
 
-int LayoutPicker::layout_columns() const { return tile_count() <= 4 ? 2 : 3; }
+int LayoutPicker::grid_count(MenuSection section) const {
+    return section == MenuSection::Layout ? tile_count() : content_count(section);
+}
 
 bool LayoutPicker::hand_button_usable() const {
     return tile_count() > 0 && layout_has_handedness(registry_->resolve(selected_layout_id_));
@@ -239,6 +228,7 @@ std::string LayoutPicker::option_name(Option option) const {
         case Option::Sound: return "Sound";
         case Option::Cursor: return "Pointer";
         case Option::RightStick: return "Right Stick";
+        case Option::LeftStick: return "Left Stick Click";
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
     }
@@ -258,6 +248,7 @@ std::string LayoutPicker::option_value(Option option) const {
             return "Both";
         case Option::Cursor: return to_string(state_.cursor_mode);
         case Option::RightStick: return to_string(state_.right_stick_mode);
+        case Option::LeftStick: return to_string(state_.left_stick_press);
         case Option::ScreenGap: return state_.screen_gap ? "On" : "Off";
         case Option::Smoothing: return state_.bilinear_filtering ? "On" : "Off";
     }
@@ -379,10 +370,16 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
         }
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint: {
-            const float step = area.h / static_cast<float>(kSavePointSlots);
+            // A square of them, two by two, in reading order.
+            geometry.columns = 2;
+            const int rows = (kSavePointSlots + 1) / 2;
+            const float gutter = std::round(output_width * 0.012f);
+            const float width = (area.w - gutter) / 2.0f;
+            const float height = (area.h - gutter * (rows - 1)) / static_cast<float>(rows);
             for (int slot = 0; slot < kSavePointSlots; ++slot) {
-                geometry.items.push_back(
-                    PixelRect{area.x, area.y + slot * step, area.w, step - line * 0.3f});
+                geometry.items.push_back(PixelRect{area.x + (slot % 2) * (width + gutter),
+                                                   area.y + (slot / 2) * (height + gutter), width,
+                                                   height});
             }
             break;
         }
@@ -412,6 +409,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.max_render_scale != state_.max_render_scale ||
                                  state.cursor_choosable != state_.cursor_choosable ||
                                  state.right_stick_choosable != state_.right_stick_choosable ||
+                                 state.left_stick_choosable != state_.left_stick_choosable ||
                                  state.save_points_available != state_.save_points_available ||
                                  state.reset_available != state_.reset_available ||
                                  state.smoothing_available != state_.smoothing_available;
@@ -539,7 +537,7 @@ void LayoutPicker::activate_section(LayoutPickerResult& result) {
         case MenuSection::Options:
             if (content_count(section_) > 0) {
                 on_content_ = true;
-                item_ = natural_item(section_);
+                item_ = 0;
             }
             break;
         // Back to the game, the same as B on the list.
@@ -584,7 +582,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             }
             return;
         case MenuSection::LoadSavePoint:
-            // An empty slot has nothing to load; it is drawn dimmed to say so.
+            // An empty slot has nothing to load, and says Empty.
             if (slot_filled(item_)) confirm_ = MenuConfirm::LoadSavePoint;
             return;
         case MenuSection::Options:
@@ -597,6 +595,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Sound: result.audio_target_changed = true; break;
                 case Option::Cursor: result.cursor_mode_changed = true; break;
                 case Option::RightStick: result.right_stick_mode_changed = true; break;
+                case Option::LeftStick: result.left_stick_press_changed = true; break;
                 case Option::ScreenGap: result.screen_gap_toggled = true; break;
                 case Option::Smoothing: result.filtering_toggled = true; break;
             }
@@ -622,18 +621,18 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
             const int delta = action == UiAction::Up ? -1 : 1;
             if (!on_content_) {
                 move_section(delta);
-            } else if (section_ == MenuSection::Layout) {
-                // Up and down the grid, stopping at its edges -- except that
-                // down from its bottom row is the stylus button beneath it,
-                // and up from that is the layout nearest it.
-                const int tiles = tile_count();
-                const int next = item_ + delta * layout_columns();
-                if (item_ >= tiles) {
-                    if (delta < 0 && tiles > 0) item_ = tiles - 1;
-                } else if (next >= 0 && next < tiles) {
+            } else if (content_columns(section_) > 1) {
+                // Up and down a grid, stopping at its edges -- except that
+                // down from the layouts' bottom row is the stylus button
+                // beneath it, and up from that is the layout nearest it.
+                const int cells = grid_count(section_);
+                const int next = item_ + delta * content_columns(section_);
+                if (item_ >= cells) {
+                    if (delta < 0 && cells > 0) item_ = cells - 1;
+                } else if (next >= 0 && next < cells) {
                     item_ = next;
-                } else if (delta > 0 && count > tiles) {
-                    item_ = tiles;
+                } else if (delta > 0 && count > cells) {
+                    item_ = cells;
                 }
             } else if (count > 0) {
                 item_ = (item_ + delta + count) % count;
@@ -642,8 +641,8 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         }
         case UiAction::Left:
             // Back to the list from the left-hand edge of whatever is shown.
-            if (on_content_ && section_ == MenuSection::Layout && item_ < tile_count() &&
-                item_ % layout_columns() != 0) {
+            if (on_content_ && item_ < grid_count(section_) &&
+                item_ % content_columns(section_) != 0) {
                 --item_;
             } else {
                 on_content_ = false;
@@ -651,13 +650,14 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
             break;
         case UiAction::Right:
             if (!on_content_) {
+                // Onto the first of them, top left, whichever is in use.
                 if (count > 0) {
                     on_content_ = true;
-                    item_ = natural_item(section_);
+                    item_ = 0;
                 }
-            } else if (section_ == MenuSection::Layout && item_ < tile_count() &&
-                       item_ % layout_columns() != layout_columns() - 1 &&
-                       item_ + 1 < tile_count()) {
+            } else if (item_ < grid_count(section_) &&
+                       item_ % content_columns(section_) != content_columns(section_) - 1 &&
+                       item_ + 1 < grid_count(section_)) {
                 ++item_;
             }
             break;
@@ -1013,64 +1013,70 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
         }
     }
 
-    const bool loading = section_ == MenuSection::LoadSavePoint;
     const float border = menu_border(scale);
-    // Each slot is outlined like a layout tile -- the picture at one end, a
-    // line, then its name and time -- and no wider than those need, so the
-    // boxes read as boxes rather than as stripes across the screen.
-    float text_room = TextRenderer::measure_width("Save state 4", scale * 1.1f);
-    for (int slot = 0; slot < kSavePointSlots; ++slot) {
-        if (!slot_filled(slot)) continue;
-        text_room = std::max(text_room,
-                             TextRenderer::measure_width(
-                                 format_save_time(save_slots_[static_cast<std::size_t>(slot)].saved_at),
-                                 scale * 0.95f));
-    }
-    text_room += line * 2.4f;
     for (int slot = 0; slot < kSavePointSlots && slot < static_cast<int>(geometry.items.size());
          ++slot) {
         const auto index = static_cast<std::size_t>(slot);
-        const PixelRect& row = geometry.items[index];
+        const PixelRect& cell = geometry.items[index];
         const bool focused = on_content_ && slot == item_;
         const bool filled = slot_filled(slot);
+        draw_menu_tile(quads, cell, focused, false, scale);
 
-        // Every picture the same size, whatever its console: a DS pair and a
-        // 3DS pair are near enough the same shape side by side.
-        const float box_height = row.h - border * 2.0f;
-        const float box_width = std::min(row.w * 0.5f, box_height * (8.0f / 3.0f));
-        const PixelRect outline{row.x, row.y, std::min(row.w, box_width + border * 2.0f + text_room),
-                                row.h};
-        draw_menu_tile(quads, outline, focused, false, scale);
-        const PixelRect box{outline.x + border, outline.y + border, box_width, box_height};
+        // The picture takes the tile's height, its two screens one above the
+        // other the way the console holds them; its name and time go beside
+        // it, a line apart.
+        const float name_line = TextRenderer::line_height(scale * 1.1f);
+        const float date_line = TextRenderer::line_height(scale * 0.95f);
+        const PixelRect inside{cell.x + border, cell.y + border, cell.w - border * 2.0f,
+                               cell.h - border * 2.0f};
+        const float box_width = std::min(inside.w * 0.5f, inside.h * 0.82f);
+        const PixelRect box{inside.x, inside.y, box_width, inside.h};
+        quads.draw_solid(box, Color{0.0f, 0.0f, 0.0f, 1.0f});
         if (filled && slot_pictures_[index].valid()) {
             const SavePointThumbnail& picture = save_slots_[index].thumbnail;
             // Fitted into the box without stretching.
             const float fit = std::min(box.w / picture.width, box.h / picture.height);
             const float width = picture.width * fit;
             const float height = picture.height * fit;
-            quads.draw_solid(box, Color{0.0f, 0.0f, 0.0f, 1.0f});
             quads.draw_screen(PixelRect{box.x + (box.w - width) * 0.5f,
                                         box.y + (box.h - height) * 0.5f, width, height},
                               slot_pictures_[index]);
-        } else {
+        } else if (!filled) {
             quads.draw_solid(box, focused ? theme.text_dim : theme.panel);
         }
-        quads.draw_solid(PixelRect{box.x + box.w, outline.y, border, outline.h},
+        quads.draw_solid(PixelRect{box.x + box.w, cell.y, border, cell.h},
                          focused ? theme.background : theme.text);
 
         const Color& ink = focused ? theme.background : theme.text;
         const Color dim = focused ? theme.panel : theme.text_dim;
-        // Nothing to load in an empty slot, which says so by fading.
-        const bool unusable = loading && !filled;
-        const float text_x = box.x + box.w + border + line * 1.0f;
-        const float name_line = TextRenderer::line_height(scale * 1.1f);
-        const float date_line = TextRenderer::line_height(scale * 0.95f);
+        const float text_x = box.x + box.w + border + line * 0.8f;
+        const float text_room = cell.x + cell.w - border - line * 0.6f - text_x;
+        // The time on two lines, date over clock, where one will not fit.
+        std::vector<std::string> when;
+        if (filled) {
+            const std::string stamp = format_save_time(save_slots_[index].saved_at);
+            const std::size_t split = stamp.find(" - ");
+            if (TextRenderer::measure_width(stamp, scale * 0.95f) <= text_room ||
+                split == std::string::npos) {
+                when.push_back(stamp);
+            } else {
+                when.push_back(stamp.substr(0, split));
+                when.push_back(stamp.substr(split + 3));
+            }
+        } else {
+            when.push_back("Empty");
+        }
         const float name_step = name_line + line * 0.35f;
-        const float name_y = row.y + (row.h - name_step - date_line) * 0.5f;
-        text.draw(quads, "Save state " + std::to_string(slot + 1), text_x, name_y, scale * 1.1f,
-                  unusable ? dim : ink);
-        text.draw(quads, filled ? format_save_time(save_slots_[index].saved_at) : std::string("Empty"),
-                  text_x, name_y + name_step, scale * 0.95f, dim);
+        const float date_step = date_line + line * 0.2f;
+        const float block = name_step + date_step * static_cast<float>(when.size());
+        const float name_y = cell.y + (cell.h - block) * 0.5f;
+        text.draw(quads, "Save slot " + std::to_string(slot + 1), text_x, name_y, scale * 1.1f,
+                  ink);
+        for (std::size_t row = 0; row < when.size(); ++row) {
+            text.draw(quads, when[row], text_x,
+                      name_y + name_step + date_step * static_cast<float>(row), scale * 0.95f,
+                      dim);
+        }
     }
 }
 
@@ -1138,7 +1144,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         // Everything this menu can do lives in the list above, reached by A.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
         if (!state_.embedded) {
-            guide.push_back({ButtonGlyph::B, "Resume", PromptRole::LeavesScreen});
+            guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
         }
     } else {
         const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
@@ -1171,7 +1177,9 @@ void LayoutPicker::render(QuadRenderer& quads,
         // machine rather than about the game, so it sits apart from the rest.
         // Everything else the face buttons used to do is in the list now.
         guide.push_back({ButtonGlyph::Minus, "Settings"});
-        guide.push_back({ButtonGlyph::B, on_content_ ? "Back" : "Resume", PromptRole::LeavesScreen});
+        // Back either way: off the right-hand side, or out of the menu. One
+        // word for B wherever the cursor is, rather than one that changes.
+        guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
         // A tile is tapped directly, so this names a button nobody has.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     }

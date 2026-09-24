@@ -1316,6 +1316,10 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     state.max_render_scale = companion_session->host_max_render_scale();
     state.cursor_choosable = companion_session->host_cursor_choosable();
     state.right_stick_choosable = companion_session->host_right_stick_choosable();
+    // This device's own, like the pointer; offered where the console the host
+    // is playing has a microphone, which both devices can tell for themselves.
+    state.left_stick_press = settings.left_stick_press;
+    state.left_stick_choosable = system_profile(companion_session->system()).has_microphone;
     state.save_points_available = companion_session->host_save_points_available();
     state.cursor_mode = companion_session->host_cursor_shown() ? CursorMode::Shown
                                                               : CursorMode::Hidden;
@@ -1378,6 +1382,15 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
             if (result.right_stick_mode_changed) {
                 request_right_stick_mode(next_right_stick_mode(right_stick_mode));
+            }
+            if (result.left_stick_press_changed) {
+                // This device's own, like the pointer below.
+                settings.left_stick_press = next_left_stick_press(settings.left_stick_press);
+                picker->set_left_stick_press(settings.left_stick_press);
+                input.set_microphone_button(left_stick_is_microphone(
+                    system_profile(system).has_microphone, settings.left_stick_press));
+                settings.save(paths);
+                log_info(std::string("left stick click: ") + to_string(settings.left_stick_press));
             }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
@@ -1463,6 +1476,12 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.right_stick_choosable =
         is_companion() ? companion_session->host_right_stick_choosable()
                        : (local_game() && system_profile(system).offers_right_stick_mode);
+    // What L3 does, where there is a microphone for it to be -- see
+    // LeftStickPress. This device's own setting, like the pointer.
+    picker_state.left_stick_press = settings.left_stick_press;
+    picker_state.left_stick_choosable =
+        is_companion() ? system_profile(companion_session->system()).has_microphone
+                       : (local_game() && system_profile(system).has_microphone);
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
     picker_state.cursor_choosable =
@@ -1966,7 +1985,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     } else if (game_title != path_stem(rom_path)) {
         log_info("this game calls itself " + game_title);
     }
-    active_layout_id = settings.default_layout_id;
+    active_layout_id = kNewGameLayoutId;
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
     left_handed_layouts = settings.left_handed_layouts;
@@ -2942,8 +2961,8 @@ int App::run(const AppOptions& options) {
     impl.input.initialize(impl.settings);
     impl.picker.reset(new LayoutPicker(impl.registry));
     impl.apply_system();
-    impl.settings_screen.reset(new SettingsScreen(impl.registry, impl.paths));
-    impl.active_layout_id = impl.settings.default_layout_id;
+    impl.settings_screen.reset(new SettingsScreen(impl.paths));
+    impl.active_layout_id = kNewGameLayoutId;
     // A starting guess for the settings screen. Loading a game replaces it with
     // the core for whichever console that game is for.
     impl.resolved_core_path = resolve_core_path(options, impl.settings, SystemId::Ds);

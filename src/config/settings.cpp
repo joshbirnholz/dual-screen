@@ -84,7 +84,6 @@ Settings Settings::load(const AppPaths& paths) {
         return settings;
     }
 
-    settings.default_layout_id = get_or<std::string>(document, "default_layout_id", settings.default_layout_id);
     settings.device_name = get_or<std::string>(document, "device_name", settings.device_name);
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
@@ -177,7 +176,6 @@ bool Settings::save(const AppPaths& paths) const {
     }
 
     json document;
-    document["default_layout_id"] = default_layout_id;
     document["device_name"] = device_name;
     document["last_browse_dir"] = last_browse_dir;
     document["system_dir"] = system_dir;

@@ -1170,7 +1170,8 @@ bool encode_screen_tiles(const uint32_t* pixels,
                          int stride_pixels,
                          std::vector<uint8_t>& previous,
                          std::vector<uint8_t>& out,
-                         PixelChannelOrder channel_order) {
+                         PixelChannelOrder channel_order,
+                         const std::vector<const std::vector<uint8_t>*>& also_unlike) {
     out.clear();
     if (pixels == nullptr || width <= 0 || height <= 0) {
         return false;
@@ -1203,6 +1204,18 @@ bool encode_screen_tiles(const uint32_t* pixels,
                 const std::size_t offset =
                     (static_cast<std::size_t>(top + row) * width + left) * 2;
                 changed = std::memcmp(&raw[offset], &previous[offset], row_bytes) != 0;
+            }
+            for (const std::vector<uint8_t>* other : also_unlike) {
+                if (changed) break;
+                if (other == nullptr || other->size() != raw.size()) {
+                    changed = true;
+                    break;
+                }
+                for (int row = 0; !changed && row < rows; ++row) {
+                    const std::size_t offset =
+                        (static_cast<std::size_t>(top + row) * width + left) * 2;
+                    changed = std::memcmp(&raw[offset], other->data() + offset, row_bytes) != 0;
+                }
             }
             if (!changed) {
                 continue;

@@ -678,13 +678,22 @@ bool encode_screen_pixels(const uint32_t* pixels,
 // It is the *sent* frame rather than the produced one on purpose: a frame
 // skipped because the link was behind must still be carried into the next one
 // that goes out, or the tiles it held would never arrive at all.
+//
+// `also_unlike` is every other state the recipient might be showing any tile
+// of: frames already sent on top of `previous` whose arrival is not yet
+// confirmed. A tile is sent if it differs from any of them too. Without that,
+// a tile one of those frames changed and this one puts back matches
+// `previous`, is left out -- and stays wrong on the far end for good, once
+// that end confirms this frame and it becomes the next `previous` itself.
+// Unchanged pictures of a moving game left exactly those tiles behind.
 bool encode_screen_tiles(const uint32_t* pixels,
                          int width,
                          int height,
                          int stride_pixels,
                          std::vector<uint8_t>& previous,
                          std::vector<uint8_t>& out,
-                         PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes);
+                         PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes,
+                         const std::vector<const std::vector<uint8_t>*>& also_unlike = {});
 
 // Inflates one whole-frame payload to RGB565, the form it travels in.
 bool decode_screen_rgb565(const std::vector<uint8_t>& payload,

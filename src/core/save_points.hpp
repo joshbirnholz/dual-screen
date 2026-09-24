@@ -20,7 +20,7 @@ class ScreenSource;
 
 inline constexpr int kSavePointSlots = 4;
 
-// Both screens side by side, shrunk: 0x00RRGGBB, tightly packed.
+// Both screens one above the other, shrunk: 0x00RRGGBB, tightly packed.
 struct SavePointThumbnail {
     int width = 0;
     int height = 0;
@@ -65,8 +65,8 @@ bool read_save_point_info(const std::string& path, SavePointInfo& out);
 bool read_save_point_state(const std::string& path, std::vector<uint8_t>& out,
                            std::string* error);
 
-// Both of `source`'s screens as they are now, side by side and `height`
-// pixels tall. Invalid when there is nothing to read.
+// Both of `source`'s screens as they are now, one above the other, each
+// `height` pixels tall. Invalid when there is nothing to read.
 SavePointThumbnail capture_save_point_thumbnail(ScreenSource& source, int height = 96);
 
 // How this device writes a date and a time: which way round the day, month

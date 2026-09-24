@@ -302,16 +302,22 @@ SavePointThumbnail capture_save_point_thumbnail(ScreenSource& source, int height
         }
         shrink_into(screen, height, halves[index], widths[index]);
     }
-    // A dark seam between them, the way the hinge sits on the console.
+    // One above the other, the way the console holds them, with a dark seam
+    // between where the hinge sits. The narrower screen -- a 3DS's bottom one
+    // -- is centred under the wider, as it is on the console.
     const int seam = std::max(1, height / 24);
-    thumbnail.width = widths[0] + seam + widths[1];
-    thumbnail.height = height;
-    thumbnail.pixels.assign(static_cast<std::size_t>(thumbnail.width) * height, 0);
-    for (int y = 0; y < height; ++y) {
-        uint32_t* row = thumbnail.pixels.data() + static_cast<std::size_t>(y) * thumbnail.width;
-        std::copy_n(halves[0].data() + static_cast<std::size_t>(y) * widths[0], widths[0], row);
-        std::copy_n(halves[1].data() + static_cast<std::size_t>(y) * widths[1], widths[1],
-                    row + widths[0] + seam);
+    thumbnail.width = std::max(widths[0], widths[1]);
+    thumbnail.height = height * 2 + seam;
+    thumbnail.pixels.assign(static_cast<std::size_t>(thumbnail.width) * thumbnail.height, 0);
+    for (int half = 0; half < 2; ++half) {
+        const int left = (thumbnail.width - widths[half]) / 2;
+        const int top = half == 0 ? 0 : height + seam;
+        for (int y = 0; y < height; ++y) {
+            std::copy_n(halves[half].data() + static_cast<std::size_t>(y) * widths[half],
+                        widths[half],
+                        thumbnail.pixels.data() +
+                            static_cast<std::size_t>(top + y) * thumbnail.width + left);
+        }
     }
     return thumbnail;
 }

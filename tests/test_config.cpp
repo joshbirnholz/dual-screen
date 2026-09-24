@@ -225,7 +225,6 @@ void test_game_config_round_trip() {
     const AppPaths paths = AppPaths::resolve();
 
     Settings settings;
-    settings.default_layout_id = "side_by_side";
     settings.default_bilinear_filtering = true;
     settings.default_render_scale = 2;
     settings.default_screen_gap = false;
@@ -235,14 +234,15 @@ void test_game_config_round_trip() {
 
     // With no file on disk, the app-level defaults apply.
     GameConfig fresh = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
-    CHECK_STR_EQ(fresh.layout_id, "side_by_side");
+    // Every game starts with its screens one above the other.
+    CHECK_STR_EQ(fresh.layout_id, "vertical");
     CHECK_EQ(fresh.bilinear_filtering, true);
     CHECK_EQ(fresh.render_scale, 2);
     CHECK_EQ(fresh.screen_gap, false);
     CHECK(fresh.right_stick_mode == RightStickMode::CirclePad);
     CHECK_STR_EQ(fresh.rom_sha1, sha1);
 
-    fresh.layout_id = "vertical";
+    fresh.layout_id = "side_by_side";
     // Deliberately the opposite of the default, so a reload that quietly fell
     // back to the default would be visible rather than looking like a pass.
     fresh.bilinear_filtering = false;
@@ -254,7 +254,7 @@ void test_game_config_round_trip() {
 
     // Reloading gives back what was saved, not the defaults.
     const GameConfig reloaded = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
-    CHECK_STR_EQ(reloaded.layout_id, "vertical");
+    CHECK_STR_EQ(reloaded.layout_id, "side_by_side");
     CHECK_EQ(reloaded.bilinear_filtering, false);
     CHECK_EQ(reloaded.render_scale, 3);
     CHECK_EQ(reloaded.screen_gap, true);
@@ -319,9 +319,8 @@ void test_game_config_survives_a_corrupt_file() {
         file << "{ this is not json";
     }
     Settings settings;
-    settings.default_layout_id = "touch_focus";
     const GameConfig config = GameConfig::load_or_default(paths, settings, sha1, "Broken");
-    CHECK_STR_EQ(config.layout_id, "touch_focus");
+    CHECK_STR_EQ(config.layout_id, "vertical");
 
     // A config with no hash has nothing to key a file on and must refuse to save.
     GameConfig unkeyed;
@@ -335,7 +334,6 @@ void test_settings_round_trip() {
     const AppPaths paths = AppPaths::resolve();
 
     Settings defaults = Settings::load(paths);
-    CHECK_STR_EQ(defaults.default_layout_id, "standard");
     CHECK_STR_EQ(defaults.system_dir, paths.default_system_dir);
 
     // A Wii U needs a program to start; the arguments it is started with are
@@ -348,7 +346,6 @@ void test_settings_round_trip() {
     CHECK(defaults.external_arguments_for(SystemId::Ds).empty());
     CHECK(defaults.external_arguments_for(SystemId::ThreeDs).empty());
 
-    defaults.default_layout_id = "side_by_side";
     defaults.last_browse_dir = "/tmp/roms";
     defaults.vsync = false;
     defaults.stick_deadzone = 0.5f;
@@ -376,7 +373,6 @@ void test_settings_round_trip() {
     CHECK(reloaded.left_handed_layouts ==
           std::vector<std::string>({"upper_focus", "side_by_side"}));
     CHECK(!reloaded.legacy_left_handed);
-    CHECK_STR_EQ(reloaded.default_layout_id, "side_by_side");
     CHECK_STR_EQ(reloaded.last_browse_dir, "/tmp/roms");
     CHECK_EQ(reloaded.vsync, false);
     CHECK_NEAR(reloaded.stick_deadzone, 0.5f);
@@ -416,7 +412,6 @@ void test_settings_round_trip() {
         file << "not json at all";
     }
     const Settings recovered = Settings::load(paths);
-    CHECK_STR_EQ(recovered.default_layout_id, "standard");
     CHECK_EQ(recovered.default_bilinear_filtering, false);
     CHECK_EQ(recovered.default_render_scale, 1);
     CHECK_EQ(recovered.default_screen_gap, true);

@@ -8,7 +8,6 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "input/input_manager.hpp"
-#include "layout/layout_registry.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/ui_theme.hpp"
@@ -39,8 +38,7 @@ struct SettingsScreenResult {
 // directories that actually exist, which is what a controller can do usefully.
 class SettingsScreen {
 public:
-    SettingsScreen(const LayoutRegistry& registry, const AppPaths& paths)
-        : registry_(&registry), paths_(paths) {}
+    explicit SettingsScreen(const AppPaths& paths) : paths_(paths) {}
 
     // One entry per system, in the order they should be listed: the console's
     // name and where its core was resolved to (empty when nothing was found).
@@ -75,11 +73,9 @@ private:
     // focusable row that does nothing when pressed is worse than a plain list.
     enum class Row {
         SystemDir,
-        DefaultLayout,
         ScreenCodecDs,
         ScreenCodecThreeDs,
         ScreenCodecWiiU,
-        LeftStickPress,
         PadGlyphs,
         ConfirmButtonRow,
         VideoHold,
@@ -112,7 +108,6 @@ private:
     void adjust(int direction, SettingsScreenResult& result);
     void refresh_bios();
 
-    const LayoutRegistry* registry_;
     AppPaths paths_;
     Settings settings_;
     std::vector<CoreStatus> cores_;

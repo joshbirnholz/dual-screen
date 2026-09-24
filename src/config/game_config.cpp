@@ -61,7 +61,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     GameConfig config;
     config.rom_sha1 = rom_sha1;
     config.display_name = display_name;
-    config.layout_id = settings.default_layout_id;
+    config.layout_id = kNewGameLayoutId;
     config.bilinear_filtering = settings.default_bilinear_filtering;
     config.render_scale = settings.default_render_scale;
     config.screen_gap = settings.default_screen_gap;

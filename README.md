@@ -57,14 +57,15 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots; see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
-| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
+| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking |
 
 The menu opens on Continue. Up and down move through the list, and the
 right-hand side follows. Right or
-A goes across onto it; left from its edge, or B, comes back. B on the list
+A goes across onto it, always onto its first thing, top left; left from its
+edge, or B, comes back. B on the list
 resumes the game. **−** still opens Settings, and the old face-button
 shortcuts (X quit, Y reset, + disconnect, R3 smoothing) still work, though the
 guide no longer shows them. A Wii U game's menu stays a plain list.
@@ -73,6 +74,9 @@ guide no longer shows them. A Wii U game's menu stays a plain list.
 
 These are the Wii U Virtual Console's own Screen Settings, in its order and
 under its names — that list is what this app is trying to be.
+
+A game starts in **Vertical Screens** the first time it is played, and after
+that in whatever it was last played in.
 
 | id | what it shows |
 | --- | --- |
@@ -91,7 +95,10 @@ and the other top-aligned.
 
 The two focus layouts are the same pair of screens with the emphasis reversed,
 and which one you want changes with what the game is doing, so **L3** swaps
-between them while playing — no menu, no pause. It does nothing under any other
+between them while playing — no menu, no pause. On a DS that is one of two
+things L3 can be: **Left Stick Click** under Options in the quick menu chooses
+between that and holding the DS's microphone, for games that ask to be blown
+into. It is each device's own. L3 does nothing under any other
 layout, and like everything else on that menu it is one choice for both devices:
 pressing it on the companion asks the host, the same as picking the layout from
 the menu would. **F3** does the same from a keyboard.
@@ -1087,10 +1094,10 @@ folder.
 ### Save states
 
 The quick menu of a DS or 3DS game has **Create Save State** and **Load Save
-State**. Either shows four slots on the right, like Nintendo Switch Online's
-suspend points, each an outlined box with a picture of both screens and the
-date and time it was made. Going across puts the cursor on the first empty slot
-to save into, or on the newest save to load.
+State**. Either shows four slots on the right, two by two, like Nintendo
+Switch Online's suspend points: each an outlined box with a picture of both
+screens, one above the other, and its name ("Save slot 1") with the date and
+time it was made, or "Empty". Going across puts the cursor on the first slot.
 
 Dates and times are written the way the device showing them writes them:
 `09/24/2026 - 10:38 PM` in the US, `24.09.2026 - 22:38` in Germany,
@@ -1172,7 +1179,6 @@ V1 does not script `shortcuts.vdf` for you.
 
 ```json
 {
-  "default_layout_id": "standard",
   "last_browse_dir": "/home/deck/Emulation/roms/nds",
   "system_dir": "/home/deck/.local/share/dualscreen/system",
   "core_path": "",
@@ -1270,7 +1276,8 @@ ctest --test-dir build --output-on-failure
   the save state confirmations.
 - `test_save_points` — save state files round-trip (state, picture and time),
   a truncated or foreign file is refused rather than handed to the core, and
-  the picture is both screens side by side whichever byte order they came in.
+  the picture is both screens one above the other whichever byte order they
+  came in.
   `test_quick_settings` covers the menu side: the list's order, moving across
   and back, and asking before loading or overwriting and only then.
 - `test_controller_input` — drives an SDL **virtual game controller** through

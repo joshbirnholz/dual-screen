@@ -445,7 +445,7 @@ void test_the_sections_come_in_order() {
 }
 
 // Moving between the list and what it shows: right (or A) goes across, onto
-// the layout in use; left from the grid's edge, or B, comes back; B on the
+// the first layout, top left, whichever is in use; left from the grid's edge, or B, comes back; B on the
 // list closes the menu.
 void test_moving_between_the_list_and_what_it_shows() {
     LayoutRegistry registry;
@@ -458,8 +458,10 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(picker.on_content());
     CHECK(picker.section() == MenuSection::Layout);
 
-    // Onto the layout in use, and back off the grid's left-hand edge.
+    // Onto the first layout, not the one in use, and back off the grid's
+    // left-hand edge.
     const int landed = picker.focus();
+    CHECK_EQ(landed, LayoutPicker::focus_of(MenuSection::Layout, 0));
     for (int step = 0; step < 4; ++step) picker.update({UiAction::Left}, {}, kWidth, kHeight);
     CHECK(!picker.on_content());
 
@@ -490,6 +492,24 @@ void test_moving_between_the_list_and_what_it_shows() {
     const LayoutPickerResult cycled = options.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(cycled.cursor_mode_changed);
     CHECK(options.on_content());
+
+    // What the left stick's click does is there too, where the console has a
+    // microphone for it to be, and nowhere else.
+    for (const bool microphone : {false, true}) {
+        LayoutPickerState with_stick = state;
+        with_stick.left_stick_choosable = microphone;
+        LayoutPicker listed(registry);
+        open_on(listed, with_stick, MenuSection::Options);
+        listed.update({UiAction::Right}, {}, kWidth, kHeight);
+        bool offered = false;
+        for (int row = 0; row < 8; ++row) {
+            if (listed.update({UiAction::Confirm}, {}, kWidth, kHeight).left_stick_press_changed) {
+                offered = true;
+            }
+            listed.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+        CHECK_EQ(offered, microphone);
+    }
 }
 
 // Each layout is its own way round: flipping one leaves every other preview
@@ -585,9 +605,9 @@ void test_loading_a_save_point_asks_first() {
     picker.set_save_slots(some_slots());
     open_on(picker, with_save_points(), MenuSection::LoadSavePoint);
 
-    // Across onto the newest save.
+    // Across onto the first slot, whichever is newest.
     press(picker, UiAction::Confirm);
-    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 2));
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 0));
 
     CHECK_EQ(press(picker, UiAction::Confirm).load_slot, -1);
     CHECK(picker.confirmation() == MenuConfirm::LoadSavePoint);
@@ -596,12 +616,27 @@ void test_loading_a_save_point_asks_first() {
     CHECK(picker.is_open());
 
     press(picker, UiAction::Confirm);
-    CHECK_EQ(press(picker, UiAction::Confirm).load_slot, 2);
+    CHECK_EQ(press(picker, UiAction::Confirm).load_slot, 0);
 
+    // A square of slots, two by two: down is slot 3, right of it slot 4.
     press(picker, UiAction::Down);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 2));
+    press(picker, UiAction::Confirm);
+    CHECK_EQ(press(picker, UiAction::Confirm).load_slot, 2);
+    press(picker, UiAction::Right);
     CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 3));
     CHECK_EQ(press(picker, UiAction::Confirm).load_slot, -1);
     CHECK(!picker.awaiting_confirmation());
+    // Stopping at the edges, and left off the left-hand column is the list.
+    press(picker, UiAction::Down);
+    press(picker, UiAction::Right);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 3));
+    press(picker, UiAction::Up);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 1));
+    press(picker, UiAction::Left);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::LoadSavePoint, 0));
+    press(picker, UiAction::Left);
+    CHECK(!picker.on_content());
 }
 
 // Saving into an empty slot loses nothing and is not asked about; saving over
@@ -612,7 +647,10 @@ void test_saving_asks_only_before_overwriting() {
     picker.set_save_slots(some_slots());
     open_on(picker, with_save_points(), MenuSection::CreateSavePoint);
 
-    // Across onto the first empty slot.
+    // Across onto the first slot, which is not empty here, and right to the
+    // empty one beside it.
+    press(picker, UiAction::Right);
+    CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::CreateSavePoint, 0));
     press(picker, UiAction::Right);
     CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::CreateSavePoint, 1));
     CHECK_EQ(press(picker, UiAction::Confirm).save_slot, 1);
@@ -621,13 +659,13 @@ void test_saving_asks_only_before_overwriting() {
     CHECK(picker.is_open());
     CHECK(picker.on_content());
 
-    press(picker, UiAction::Up);
+    press(picker, UiAction::Left);
     CHECK_EQ(press(picker, UiAction::Confirm).save_slot, -1);
     CHECK(picker.confirmation() == MenuConfirm::OverwriteSavePoint);
     CHECK_EQ(press(picker, UiAction::Confirm).save_slot, 0);
     CHECK(!picker.awaiting_confirmation());
 
-    // Every slot full: the oldest is where the cursor lands.
+    // Every slot full: still the first slot, not the oldest.
     std::vector<SavePointInfo> full = some_slots();
     full[1].exists = true;
     full[1].saved_at = 50;
@@ -637,7 +675,7 @@ void test_saving_asks_only_before_overwriting() {
     filled.set_save_slots(full);
     open_on(filled, with_save_points(), MenuSection::CreateSavePoint);
     press(filled, UiAction::Right);
-    CHECK_EQ(filled.focus(), LayoutPicker::focus_of(MenuSection::CreateSavePoint, 1));
+    CHECK_EQ(filled.focus(), LayoutPicker::focus_of(MenuSection::CreateSavePoint, 0));
 
     // And a finger: a tap on a filled slot asks too.
     int saved_at_once = 0;
@@ -1099,7 +1137,7 @@ void test_tapping_a_control_prompt_presses_its_button() {
             }
         }
     }
-    CHECK_MSG(pressed_resume, "tapping Resume did not close the menu");
+    CHECK_MSG(pressed_resume, "tapping Back on the list did not close the menu");
     CHECK_MSG(asked_for_settings, "tapping Settings did not ask for them");
     CHECK_MSG(!found_other, "the guide still names a button whose entry moved into the list");
 }

@@ -127,16 +127,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
-        case Row::DefaultLayout: {
-            const int count = static_cast<int>(registry_->size());
-            if (count == 0) break;
-            int index = registry_->index_of(settings_.default_layout_id);
-            if (index < 0) index = 0;
-            index = ((index + direction) % count + count) % count;
-            settings_.default_layout_id = registry_->at(static_cast<std::size_t>(index)).id;
-            result.settings_changed = true;
-            break;
-        }
         case Row::ScreenCodecDs:
             settings_.screen_codec_ds = video::next_screen_codec(settings_.screen_codec_ds);
             result.settings_changed = true;
@@ -147,11 +137,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             break;
         case Row::ScreenCodecWiiU:
             settings_.screen_codec_wii_u = video::next_screen_codec(settings_.screen_codec_wii_u);
-            result.settings_changed = true;
-            break;
-        case Row::LeftStickPress:
-            // Two values, so either direction is the other one.
-            settings_.left_stick_press = next_left_stick_press(settings_.left_stick_press);
             result.settings_changed = true;
             break;
         case Row::PadGlyphs: {
@@ -302,12 +287,9 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
-        {"Default layout for new games", registry_->resolve(settings_.default_layout_id).display_name},
         {"Streaming format (DS)", video::to_string(settings_.screen_codec_ds)},
         {"Streaming format (3DS)", video::to_string(settings_.screen_codec_3ds)},
         {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
-        {"Left stick click, where there is a microphone",
-         to_string(settings_.left_stick_press)},
         {"Button prompts", to_string(settings_.pad_glyphs)},
         {"Confirm with", confirm_button_name(settings_.pad_glyphs, settings_.confirm_button)},
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},

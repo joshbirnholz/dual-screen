@@ -63,9 +63,14 @@ inline ScreenId resolve_wii_u_screen_alone(WiiUScreenAlone screen, int display_w
                                                                         : ScreenId::Top;
 }
 
+// The layout a game starts in the first time it is played: its two screens
+// one above the other. Not a setting -- a game remembers whatever it was last
+// played in, and this is only where that starts. A console with no shape for
+// it (a Wii U) falls back to its own; see SystemProfile::default_layout_id.
+inline constexpr const char* kNewGameLayoutId = "vertical";
+
 // App-level defaults, stored in ~/.config/dualscreen/settings.json.
 struct Settings {
-    std::string default_layout_id = "standard";
 
     // How this device identifies itself to the other one. Defaults to the
     // machine's hostname, which is what a player will recognise in a list.

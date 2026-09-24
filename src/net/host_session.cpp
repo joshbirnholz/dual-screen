@@ -1476,9 +1476,18 @@ bool HostSession::encode_one_screen(ScreenId screen,
         // A tile frame stands on its own exactly when it was built without a
         // baseline, which is what an empty `previous` means here.
         frame.keyframe = previous.empty();
+        // Every frame sent since that baseline and not yet confirmed: the
+        // companion may be showing any of their tiles. See also_unlike.
+        std::vector<const std::vector<uint8_t>*> in_flight;
+        if (!previous.empty()) {
+            for (const auto& snapshot :
+                 screen == ScreenId::Top ? tile_snapshots_top_ : tile_snapshots_bottom_) {
+                in_flight.push_back(&snapshot.second);
+            }
+        }
         return encode_screen_tiles(source.pixels, source.width, source.height,
                                    source.stride_pixels, previous, frame.payload,
-                                   source.channel_order);
+                                   source.channel_order, in_flight);
     }
 
     // Video was asked for -- see Settings' per-system streaming format -- so

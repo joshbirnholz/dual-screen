@@ -897,6 +897,47 @@ void test_only_changed_tiles_are_sent() {
     CHECK(expanded == second);
 }
 
+// A tile one unconfirmed frame changed and the next puts back still goes out.
+// The host diffs against the last frame the companion confirmed, so the put-
+// back tile matches that and would be left out -- and when the companion then
+// confirms the later frame, the host takes it to hold that frame exactly,
+// while the tile on its screen is still the one in between. Measured as tiles
+// of fire and sprites left standing on a moving DS game's screen.
+void test_a_tile_put_back_before_its_change_was_confirmed_still_goes_out() {
+    constexpr int width = 256;
+    constexpr int height = 192;
+    const std::vector<uint32_t> at_rest = screen_with_marker_at(width, height, 100);
+    const std::vector<uint32_t> moved = screen_with_marker_at(width, height, 200);
+
+    // Confirmed: the marker at rest.
+    std::vector<uint8_t> confirmed;
+    std::vector<uint8_t> payload;
+    CHECK(encode_screen_tiles(at_rest.data(), width, height, width, confirmed, payload));
+    std::vector<uint8_t> far_end;
+    CHECK(decode_screen_tiles(payload, width, height, far_end));
+
+    // Sent, not yet confirmed: the marker moved.
+    std::vector<uint8_t> in_flight = confirmed;
+    CHECK(encode_screen_tiles(moved.data(), width, height, width, in_flight, payload));
+    CHECK(decode_screen_tiles(payload, width, height, far_end));
+
+    // And back again, diffed against what was confirmed. Against that alone,
+    // nothing moved.
+    std::vector<uint8_t> alone = confirmed;
+    CHECK(encode_screen_tiles(at_rest.data(), width, height, width, alone, payload));
+    std::vector<uint8_t> stale = far_end;
+    CHECK(decode_screen_tiles(payload, width, height, stale));
+    CHECK_MSG(stale != alone, "the case this guards no longer arises, so the test proves nothing");
+
+    // Told what is still in flight, the tiles the move touched go out again,
+    // and the far end holds exactly the frame the host will take it to hold.
+    std::vector<uint8_t> told = confirmed;
+    CHECK(encode_screen_tiles(at_rest.data(), width, height, width, told, payload,
+                              PixelChannelOrder::XrgbBytes, {&in_flight}));
+    CHECK(decode_screen_tiles(payload, width, height, far_end));
+    CHECK_MSG(far_end == told, "a tile put back before its change was confirmed was left behind");
+}
+
 // A screen that changes size starts again from a whole frame rather than
 // patching new tiles onto a buffer of the wrong shape.
 void test_a_resized_screen_starts_over() {
@@ -1259,6 +1300,7 @@ int main() {
     test_pixels_round_trip();
     test_a_frame_carries_its_encoding();
     test_only_changed_tiles_are_sent();
+    test_a_tile_put_back_before_its_change_was_confirmed_still_goes_out();
     test_a_resized_screen_starts_over();
     test_corrupt_tiled_payload_is_rejected();
     test_corrupt_pixel_payload_is_rejected();

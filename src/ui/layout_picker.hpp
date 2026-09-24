@@ -48,6 +48,9 @@ struct LayoutPickerResult {
     bool screen_gap_toggled = false;
     // The right stick's mapping was cycled; same deal again.
     bool right_stick_mode_changed = false;
+    // What the left stick's click does was cycled. This device's own, like
+    // the pointer.
+    bool left_stick_press_changed = false;
     // The settings screen was asked for. Not a value to adopt: the caller puts
     // that screen up, and it belongs to the device running the game however
     // this was pressed.
@@ -108,6 +111,11 @@ struct LayoutPickerState {
     // does not get the button. See RightStickMode.
     RightStickMode right_stick_mode = RightStickMode::CStick;
     bool right_stick_choosable = false;
+    // What clicking the left stick does, and whether that is a question at
+    // all: only a console with a microphone has one to hold. This device's
+    // own, like the pointer. See LeftStickPress.
+    LeftStickPress left_stick_press = LeftStickPress::Microphone;
+    bool left_stick_choosable = false;
     // Whether Reset makes sense to offer. False for a Wii U session: Cemu owns
     // restarting the game, and nothing here can do it for it. See
     // SystemProfile::offers_reset.
@@ -234,6 +242,7 @@ public:
     void set_render_scale(int scale) { state_.render_scale = scale; }
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
+    void set_left_stick_press(LeftStickPress press) { state_.left_stick_press = press; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -319,6 +328,7 @@ private:
         Sound,
         Cursor,
         RightStick,
+        LeftStick,
         ScreenGap,
         Smoothing,
     };
@@ -373,12 +383,15 @@ private:
     // How many things a section shows on the right; 0 for one that does
     // something instead.
     int content_count(MenuSection section) const;
-    // Where the cursor lands on moving into a section's things: the layout in
-    // use, the newest save to load, the slot a save loses least in.
-    int natural_item(MenuSection section) const;
     // The layout grid's width, from the number of layouts alone, so that both
     // devices agree on what Down means however different their screens are.
     int layout_columns() const;
+    // How many across a section's things are laid out: the layout grid's
+    // width, two for the save slots' square, one for a list.
+    int content_columns(MenuSection section) const;
+    // How many of a section's things are in its grid, which Left, Right, Up
+    // and Down move around. The stylus button under the layouts is not.
+    int grid_count(MenuSection section) const;
     // Whether the layout in use has a hand to choose -- see
     // layout_has_handedness(). Hidden, and passed over, where not.
     bool hand_button_usable() const;

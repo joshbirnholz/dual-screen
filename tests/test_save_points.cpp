@@ -183,12 +183,16 @@ void test_thumbnail(ChannelOrder order) {
     FlatScreens screens(400, 320, 240, order);
     const SavePointThumbnail thumbnail = capture_save_point_thumbnail(screens, 96);
     CHECK(thumbnail.valid());
-    CHECK_EQ(thumbnail.height, 96);
-    // 160 + a 4-pixel seam + 128.
-    CHECK_EQ(thumbnail.width, 160 + 4 + 128);
+    // One above the other: 96 + a 4-pixel seam + 96, as wide as the wider.
+    CHECK_EQ(thumbnail.height, 96 + 4 + 96);
+    CHECK_EQ(thumbnail.width, 160);
     CHECK_EQ(thumbnail.pixels[10], 0x00FF0000u);
-    CHECK_EQ(thumbnail.pixels[162], 0u);
-    CHECK_EQ(thumbnail.pixels[static_cast<std::size_t>(95) * thumbnail.width + 200], 0x000000FFu);
+    // The seam.
+    CHECK_EQ(thumbnail.pixels[static_cast<std::size_t>(98) * thumbnail.width + 80], 0u);
+    // The bottom screen, 128 wide, centred under the top: 16 either side.
+    CHECK_EQ(thumbnail.pixels[static_cast<std::size_t>(150) * thumbnail.width + 80], 0x000000FFu);
+    CHECK_EQ(thumbnail.pixels[static_cast<std::size_t>(150) * thumbnail.width + 8], 0u);
+    CHECK_EQ(thumbnail.pixels[static_cast<std::size_t>(150) * thumbnail.width + 20], 0x000000FFu);
 }
 
 void test_time() {
