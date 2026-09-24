@@ -737,6 +737,41 @@ void test_saving_asks_only_before_overwriting() {
     CHECK(asked > 0);
 }
 
+// Saving says so in a popup with one answer, OK -- which A, B or a tap on it
+// all give -- and the menu is back as it was once it is put away.
+void test_a_save_is_announced_in_a_popup() {
+    LayoutRegistry registry;
+    for (const UiAction answer : {UiAction::Confirm, UiAction::Cancel}) {
+        LayoutPicker picker(registry);
+        picker.set_save_slots(some_slots());
+        open_on(picker, with_save_points(), MenuSection::CreateSavePoint);
+        press(picker, UiAction::Right);
+        press(picker, UiAction::Right);
+        CHECK_EQ(press(picker, UiAction::Confirm).save_slot, 1);
+
+        // What the device running the game does once the save is written.
+        picker.set_save_status("Save state saved to slot 2.", false);
+        picker.show_notice();
+        CHECK(picker.confirmation() == MenuConfirm::Notice);
+        // Nothing behind it moves while it is up.
+        press(picker, UiAction::Down);
+        CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::CreateSavePoint, 1));
+
+        const LayoutPickerResult put_away = press(picker, answer);
+        CHECK(!picker.awaiting_confirmation());
+        CHECK_EQ(put_away.save_slot, -1);
+        CHECK(!put_away.close_requested);
+        CHECK(picker.is_open());
+        CHECK_EQ(picker.focus(), LayoutPicker::focus_of(MenuSection::CreateSavePoint, 1));
+    }
+
+    // Nothing to say, nothing put up.
+    LayoutPicker quiet(registry);
+    open_on(quiet, with_save_points(), MenuSection::CreateSavePoint);
+    quiet.show_notice();
+    CHECK(!quiet.awaiting_confirmation());
+}
+
 // No save points where the core cannot make them: neither section, on a tap
 // or a press.
 void test_save_points_only_where_the_core_can_make_them() {
@@ -1325,6 +1360,7 @@ int main() {
     test_moving_between_the_list_and_what_it_shows();
     test_loading_a_save_point_asks_first();
     test_saving_asks_only_before_overwriting();
+    test_a_save_is_announced_in_a_popup();
     test_save_points_only_where_the_core_can_make_them();
     test_the_sections_that_end_something();
     test_the_stylus_button();

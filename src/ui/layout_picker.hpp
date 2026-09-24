@@ -163,6 +163,10 @@ enum class MenuConfirm : uint8_t {
     // A DS going to or from 1x, which reopens the core -- see
     // LayoutPickerState::render_scale_restarts.
     RestartForRenderScale = 5,
+    // Not a question: something to read and put away with OK -- that a save
+    // state was saved, or why one could not be saved or loaded. The words are
+    // the save status; see set_save_status().
+    Notice = 6,
 };
 
 // The list down the left of a DS or 3DS quick menu, the way Nintendo Switch
@@ -237,6 +241,11 @@ public:
         }
     }
     void set_save_status(std::string status, bool failed);
+    // Puts the save status up as a popup with an OK to dismiss it -- see
+    // MenuConfirm::Notice.
+    void show_notice() {
+        if (!save_status_.empty()) confirm_ = MenuConfirm::Notice;
+    }
     MenuConfirm confirmation() const { return confirm_; }
 
     // Everything the menu shows, applied in one go, for the device that is not

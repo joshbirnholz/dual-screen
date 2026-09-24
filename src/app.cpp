@@ -1275,11 +1275,14 @@ void App::Impl::make_save_point(int slot) {
         write_save_point(path, state_bytes, thumbnail, static_cast<int64_t>(std::time(nullptr)),
                          &error)) {
         log_info(name + " saved (" + std::to_string(state_bytes.size()) + " bytes) to " + path);
-        refresh_save_points("Saved to " + name + ".", false);
+        refresh_save_points("Save state saved to slot " + std::to_string(slot + 1) + ".", false);
     } else {
         log_warn(name + " could not be saved: " + error);
         refresh_save_points(error, true);
     }
+    // Said in a popup, put away with OK, rather than a line in the corner
+    // that was easy to miss.
+    if (picker) picker->show_notice();
 }
 
 void App::Impl::load_save_point(int slot) {
@@ -1298,6 +1301,7 @@ void App::Impl::load_save_point(int slot) {
     }
     log_warn(name + " could not be loaded: " + error);
     refresh_save_points(error, true);
+    if (picker) picker->show_notice();
 }
 
 void App::Impl::identify_pad(const KnownPad& pad) {
@@ -3222,7 +3226,19 @@ int App::run(const AppOptions& options) {
     const uint64_t counter_frequency = SDL_GetPerformanceFrequency();
     impl.last_counter = SDL_GetPerformanceCounter();
     const uint64_t started_counter = impl.last_counter;
-    bool simulate_key_sent = false;
+    // --simulate-key's keys, which may be several separated by commas -- a
+    // menu walked through in steps -- each tapped a few frames after the last.
+    std::vector<std::string> simulated_keys;
+    {
+        std::string rest = options.simulate_key;
+        while (!rest.empty()) {
+            const std::size_t comma = rest.find(',');
+            simulated_keys.push_back(rest.substr(0, comma));
+            rest = comma == std::string::npos ? std::string() : rest.substr(comma + 1);
+        }
+    }
+    std::size_t simulated_next = 0;
+    int simulated_at_frame = 0;
 
     while (impl.running) {
         const uint64_t now = SDL_GetPerformanceCounter();
@@ -3298,9 +3314,11 @@ int App::run(const AppOptions& options) {
             open_layout_menu_when_playing || open_save_points_when_playing ||
             open_options_when_playing ||
             (!options.auto_connect_screen.empty() && !impl.is_companion());
-        if (!options.simulate_key.empty() && !simulate_key_sent && impl.frames_rendered >= 2 &&
-            !still_arriving) {
-            const SDL_Keycode key = SDL_GetKeyFromName(options.simulate_key.c_str());
+        if (simulated_next < simulated_keys.size() && impl.frames_rendered >= 2 &&
+            !still_arriving && impl.frames_rendered >= simulated_at_frame) {
+            const std::string& name = simulated_keys[simulated_next++];
+            simulated_at_frame = impl.frames_rendered + 6;
+            const SDL_Keycode key = SDL_GetKeyFromName(name.c_str());
             if (key != SDLK_UNKNOWN) {
                 SDL_Event down {};
                 down.type = SDL_KEYDOWN;
@@ -3312,9 +3330,8 @@ int App::run(const AppOptions& options) {
                 up.key.state = SDL_RELEASED;
                 SDL_PushEvent(&up);
             } else {
-                log_warn("--simulate-key does not name a key SDL knows: " + options.simulate_key);
+                log_warn("--simulate-key does not name a key SDL knows: " + name);
             }
-            simulate_key_sent = true;
         }
 
         SDL_Event event;

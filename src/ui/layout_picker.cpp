@@ -491,17 +491,25 @@ LayoutPicker::ConfirmGeometry LayoutPicker::compute_confirm_geometry(float outpu
     const float line = TextRenderer::line_height(scale);
     const float dialog_width = std::round(output_width * 0.58f);
     // Taller for the one question that runs to three sentences.
-    const float dialog_height =
-        std::round(line * (confirm_ == MenuConfirm::RestartForRenderScale ? 10.0f : 8.0f));
+    const float dialog_height = std::round(
+        line * (confirm_ == MenuConfirm::RestartForRenderScale ? 10.0f
+                : confirm_ == MenuConfirm::Notice              ? 7.0f
+                                                               : 8.0f));
 
     ConfirmGeometry geometry;
     geometry.dialog = PixelRect{std::round((output_width - dialog_width) * 0.5f),
                                 std::round((output_height - dialog_height) * 0.5f), dialog_width,
                                 dialog_height};
     // Two halves of the prompt row, so a finger has somewhere to land on a
-    // device with no buttons to press instead.
+    // device with no buttons to press instead -- or, for a notice, the whole
+    // row, since there is only the one answer.
     const float row_height = line * 2.4f;
     const float row_y = geometry.dialog.y + geometry.dialog.h - row_height - line * 0.4f;
+    if (confirm_ == MenuConfirm::Notice) {
+        geometry.accept = PixelRect{geometry.dialog.x, row_y, geometry.dialog.w, row_height};
+        geometry.dismiss = PixelRect{};
+        return geometry;
+    }
     geometry.accept = PixelRect{geometry.dialog.x, row_y, geometry.dialog.w * 0.5f, row_height};
     geometry.dismiss = PixelRect{geometry.dialog.x + geometry.dialog.w * 0.5f, row_y,
                                  geometry.dialog.w * 0.5f, row_height};
@@ -745,6 +753,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             if (tapped(pointer, confirm.accept)) accepted = true;
             else if (tapped(pointer, confirm.dismiss)) dismissed = true;
         }
+        // A notice has one answer, and B is as good a way to give it as A.
+        if (confirm_ == MenuConfirm::Notice && dismissed) {
+            accepted = true;
+        }
         if (accepted) {
             switch (confirm_) {
                 case MenuConfirm::Reset:
@@ -760,6 +772,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 // Asked, and answered: the menu stays up, on the row, to show
                 // the scale it lands on.
                 case MenuConfirm::RestartForRenderScale: result.render_scale_changed = true; break;
+                case MenuConfirm::Notice:
                 case MenuConfirm::None: break;
             }
             confirm_ = MenuConfirm::None;
@@ -1181,14 +1194,6 @@ void LayoutPicker::render(QuadRenderer& quads,
             case MenuSection::Reset:
             case MenuSection::Quit: break;
         }
-        const bool saving = section_ == MenuSection::CreateSavePoint ||
-                            section_ == MenuSection::LoadSavePoint;
-        if (saving && !save_status_.empty()) {
-            text.draw(quads, save_status_, geometry.panel.x,
-                      geometry.panel.y + geometry.panel.h - control_guide_height(scale * 0.9f) +
-                          line * 0.1f,
-                      scale * 0.95f, save_status_failed_ ? theme.danger : theme.success);
-        }
 
         // Leftmost, and always: it is the one prompt here that is about the
         // machine rather than about the game, so it sits apart from the rest.
@@ -1223,6 +1228,7 @@ void LayoutPicker::render(QuadRenderer& quads,
                 question = "Changing the render scale will restart the game. Unsaved progress will "
                            "be lost. Are you sure you want to restart?";
                 break;
+            case MenuConfirm::Notice: question = save_status_.c_str(); break;
             case MenuConfirm::Quit:
             case MenuConfirm::None: break;
         }
@@ -1234,10 +1240,16 @@ void LayoutPicker::render(QuadRenderer& quads,
         // is the way out of a screen and a remote has a button for it; here
         // the two prompts *are* the two answers, and dropping one would leave
         // the question above a lone OK.
-        draw_control_guide(quads, text, glyphs,
-                           {{ButtonGlyph::A, "OK"}, {ButtonGlyph::B, "Back"}},
-                           confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
-                           scale * 1.05f, theme.background);
+        if (confirm_ == MenuConfirm::Notice) {
+            draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "OK"}},
+                               confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
+                               scale * 1.05f, theme.background);
+        } else {
+            draw_control_guide(quads, text, glyphs,
+                               {{ButtonGlyph::A, "OK"}, {ButtonGlyph::B, "Back"}},
+                               confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
+                               scale * 1.05f, theme.background);
+        }
     }
 }
 

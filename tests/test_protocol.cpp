@@ -186,7 +186,7 @@ void test_save_slots_round_trip() {
                                       0x00AABBCCu, 0x00DDEEFFu, 0x00010203u};
     sent.slots[2].exists = true;
     sent.slots[2].saved_at = 42;
-    sent.status = "Saved to save point 1.";
+    sent.status = "Save state saved to slot 1.";
 
     std::vector<uint8_t> buffer;
     encode_save_slots(sent, buffer);
@@ -205,7 +205,7 @@ void test_save_slots_round_trip() {
     CHECK(!received.slots[1].exists);
     CHECK(received.slots[2].exists);
     CHECK(!received.slots[2].thumbnail.valid());
-    CHECK_STR_EQ(received.status, "Saved to save point 1.");
+    CHECK_STR_EQ(received.status, "Save state saved to slot 1.");
     CHECK(!received.status_failed);
 
     // Cut short: refused rather than half-read.
