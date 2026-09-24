@@ -1,132 +1,114 @@
 #!/usr/bin/env python3
-"""Draws assets/stylus_hand.png: a right hand holding a stylus.
+"""Builds assets/stylus_hand.png: the stylus-hand symbol, lifted from the Wii U.
 
     pip install pillow
-    python3 assets/make_stylus_hand.py
+    python3 assets/make_stylus_hand.py path/to/screenshot [x y radius]
 
-The quick menu's Screen Layout section draws it on the button that says which
-hand holds the stylus, mirrored for a left hand -- the same idea as the Wii U
-Virtual Console's own Screen Settings, drawn afresh here. Like the button
-glyphs it is black artwork whose alpha is all that is used, so the menu can
-tint it for whatever it sits on.
+The symbol is the one the Wii U Virtual Console's Screen Settings draws on the
+button that says which hand holds the stylus. As drawn there it is a left
+hand -- it comes in from the left, the stylus's tip pointing down to the
+right -- because it is what the left-handed layouts show. It is copied out of a 1280x800 capture of that
+screen, where the round button is centred at (639.5, 508.5) with a radius of
+53 -- pass other numbers for another capture.
 
-Drawn at eight times the size and scaled down, which is the whole of the
-anti-aliasing. Each part of the hand is cut out of what is under it by a thin
-margin before it is filled, so the fingers read as fingers against the
-stylus rather than as one blob.
+The button is round there and square here, so the copy is made like this:
+
+- The button is scaled up eight times and each pixel is sorted by brightness
+  into the three things the symbol is made of: the blue-grey background, the
+  white of the hand and the stylus's tip, and the dark navy of the stylus's
+  far end and the back of the hand. Softly, not with a hard cut, so the edges
+  stay smooth. The background is painted back flat: its shading is the round
+  button's, not the symbol's.
+- Only the inside of the circle is read, a little short of its edge: the
+  rim is a light ring with a thin dark shadow inside it, and neither is part
+  of the symbol.
+- The square is the circle's bounding box. Where the symbol ran out through
+  the circle's edge -- the arm on the left, the back of the hand on the right
+  -- it is carried straight on out to the square's edge, as it would have gone
+  had the button been square to begin with.
+- Then the three are painted back in their own colours, clean, and the whole
+  is scaled down to 128 pixels square.
+
+The app uses it as it is for a left hand and mirrored for a right.
 """
 
-import math
 import os
+import sys
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 SIZE = 128
 SCALE = 8
-CANVAS = SIZE * SCALE
-MARGIN = 0.028  # the gap around each part, as a fraction of the icon
+BACKGROUND = (106, 119, 148)
+WHITE = (252, 252, 252)
+NAVY = (70, 78, 107)
 
 
-def point(x, y):
-    return (x * CANVAS, y * CANVAS)
-
-
-def capsule(start, end, radius, steps=24):
-    """A stroke with round ends, from `start` to `end`, as a polygon."""
-    (x0, y0), (x1, y1) = start, end
-    angle = math.atan2(y1 - y0, x1 - x0)
-    outline = []
-    for index in range(steps + 1):
-        a = angle - math.pi / 2 + math.pi * index / steps
-        outline.append(point(x1 + math.cos(a) * radius, y1 + math.sin(a) * radius))
-    for index in range(steps + 1):
-        a = angle + math.pi / 2 + math.pi * index / steps
-        outline.append(point(x0 + math.cos(a) * radius, y0 + math.sin(a) * radius))
-    return outline
-
-
-def ellipse(cx, cy, rx, ry, angle=0.0, steps=64):
-    outline = []
-    for index in range(steps):
-        t = 2 * math.pi * index / steps
-        x, y = math.cos(t) * rx, math.sin(t) * ry
-        outline.append(point(cx + x * math.cos(angle) - y * math.sin(angle),
-                             cy + x * math.sin(angle) + y * math.cos(angle)))
-    return outline
-
-
-def grow(shape_fn, amount):
-    """The same shape, fattened by `amount`: used to cut the gap around it."""
-    return shape_fn(amount)
+def luminance(rgb):
+    r, g, b = rgb[:3]
+    return 0.299 * r + 0.587 * g + 0.114 * b
 
 
 def main():
-    image = Image.new("L", (CANVAS, CANVAS), 0)
-    draw = ImageDraw.Draw(image)
+    if len(sys.argv) not in (2, 5):
+        sys.exit(__doc__)
+    cx, cy, radius = (639.5, 508.5, 53.0) if len(sys.argv) == 2 else map(float, sys.argv[2:5])
+    shot = Image.open(sys.argv[1]).convert("RGB")
 
-    def put(shape_fn):
-        draw.polygon(shape_fn(MARGIN), fill=0)
-        draw.polygon(shape_fn(0.0), fill=255)
+    box = (cx - radius, cy - radius, cx + radius, cy + radius)
+    side = int(round(2 * radius * SCALE))
+    big = shot.transform((side, side), Image.EXTENT, box, Image.BICUBIC)
+    pixels = big.load()
 
-    # Everything is placed along the stylus: `along` from 0 at its tip, at
-    # the bottom left, to 1 at the top right; `across` at right angles to it,
-    # positive on the side the fingers curl round.
-    def at(along, across):
-        return (0.19 + along * 0.66 + across * 0.7071,
-                0.81 - along * 0.66 + across * 0.7071)
+    # The background is not flat -- it is shaded, darkening towards the rim
+    # -- so it spans a band of brightness of its own. White is well above that
+    # band and navy well below it; only what is clearly past its edges counts.
+    def white_of(l):
+        return min(1.0, max(0.0, (l - 150.0) / (235.0 - 150.0)))
 
-    width = 0.042
+    def navy_of(l):
+        return min(1.0, max(0.0, (98.0 - l) / (98.0 - 84.0)))
 
-    def stylus(extra):
-        w = (width + extra) * 0.7071
-        tip, neck, top = at(0.0, 0.0), at(0.14, 0.0), at(0.98, 0.0)
-        return [point(tip[0] - extra, tip[1] + extra),
-                point(neck[0] + w, neck[1] + w),
-                point(top[0] + w, top[1] + w),
-                point(top[0] - w, top[1] - w),
-                point(neck[0] - w, neck[1] - w)]
+    inner = (radius - 8.0) * SCALE
+    centre = side / 2.0
+    white = [[0.0] * side for _ in range(side)]
+    navy = [[0.0] * side for _ in range(side)]
+    for y in range(side):
+        dy = y + 0.5 - centre
+        if abs(dy) >= inner:
+            continue
+        reach = (inner * inner - dy * dy) ** 0.5
+        left = int(centre - reach) + 1
+        right = int(centre + reach) - 1
+        for x in range(left, right + 1):
+            l = luminance(pixels[x, y])
+            white[y][x] = white_of(l)
+            navy[y][x] = navy_of(l)
+        # Out to the square's edges, from the last pixel read on each side.
+        for x in range(0, left):
+            white[y][x] = white[y][left]
+            navy[y][x] = navy[y][left]
+        for x in range(right + 1, side):
+            white[y][x] = white[y][right]
+            navy[y][x] = navy[y][right]
 
-    put(stylus)
+    out = Image.new("RGB", (side, side))
+    painted = out.load()
+    for y in range(side):
+        for x in range(side):
+            w, n = white[y][x], navy[y][x]
+            colour = []
+            for channel in range(3):
+                value = BACKGROUND[channel]
+                value = value + (NAVY[channel] - value) * n
+                value = value + (WHITE[channel] - value) * w
+                colour.append(int(round(value)))
+            painted[x, y] = tuple(colour)
 
-    # The hand, coming in from the top right: one solid fist -- palm and
-    # wrist -- closed round the stylus, the thumb over it on the near side,
-    # and the creases between the curled fingers cut into it. Solid shapes
-    # and a few cuts, rather than every finger drawn, is what still reads as
-    # a hand at the size a button draws it.
-    def fist(extra):
-        return ellipse(*at(0.56, 0.12), 0.25 + extra, 0.205 + extra, angle=-math.pi / 4)
-
-    def arm(extra):
-        return capsule(at(0.62, 0.20), at(1.25, 0.36), 0.18 + extra)
-
-    # Fist and wrist are one shape, so no line is cut between them.
-    draw.polygon(fist(MARGIN), fill=0)
-    draw.polygon(arm(MARGIN), fill=0)
-    draw.polygon(fist(0.0), fill=255)
-    draw.polygon(arm(0.0), fill=255)
-    put(lambda e: capsule(at(0.36, -0.07), at(0.66, -0.12), 0.07 + e))
-
-    def cut(start, end):
-        draw.polygon(capsule(start, end, MARGIN * 0.55), fill=0)
-
-    # The index finger along the stylus, and the two fingers under it.
-    cut(at(0.33, 0.10), at(0.62, 0.12))
-    cut(at(0.40, 0.21), at(0.64, 0.24))
-    cut(at(0.50, 0.31), at(0.68, 0.33))
-
-    # Cut to the round button it sits on, so the wrist runs out through the
-    # button's edge rather than stopping at a straight one.
-    round_mask = Image.new("L", (CANVAS, CANVAS), 0)
-    ImageDraw.Draw(round_mask).ellipse(
-        [CANVAS * 0.02, CANVAS * 0.02, CANVAS * 0.98, CANVAS * 0.98], fill=255)
-    image = Image.composite(image, Image.new("L", (CANVAS, CANVAS), 0), round_mask)
-
-    small = image.resize((SIZE, SIZE), Image.LANCZOS)
-    art = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    art.putalpha(small)
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stylus_hand.png")
-    art.save(out)
-    print(f"wrote {out}")
+    small = out.resize((SIZE, SIZE), Image.LANCZOS)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stylus_hand.png")
+    small.save(path)
+    print(f"wrote {path}")
 
 
 if __name__ == "__main__":

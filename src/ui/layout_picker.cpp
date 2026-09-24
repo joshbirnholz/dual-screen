@@ -970,32 +970,20 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
                   menu_row_text(focused || selected), TextAlign::Center);
     }
 
-    // The stylus button: a hand holding a stylus, mirrored to show which hand
-    // it is. Ringed like the tiles are outlined, filled under the cursor, and
-    // faded where the layout in use has no hand to choose.
-    const PixelRect& circle = geometry.hand_button;
-    if (circle.w <= 0.0f) return;
+    // The stylus button: the Wii U's own symbol in a square, outlined like
+    // the tiles. Pressing it only mirrors the symbol to the other hand -- it
+    // never lights up -- and the cursor on it is a heavier outline. Faded
+    // where the layout in use has no hand to choose.
+    const PixelRect& square = geometry.hand_button;
+    if (square.w <= 0.0f) return;
     const bool usable = hand_button_usable();
     const bool focused = usable && on_content_ && item_ == tile_count();
-    const bool left = state_.handedness == Handedness::Left;
-    if (focused) {
-        quads.draw_capsule(circle, theme.text);
-        glyphs.draw_stylus_hand(quads, circle, theme.background, left);
-    } else if (usable) {
-        const float ring = menu_border(scale);
-        quads.draw_capsule(circle, theme.text);
-        quads.draw_capsule(PixelRect{circle.x + ring, circle.y + ring, circle.w - ring * 2.0f,
-                                     circle.h - ring * 2.0f},
-                           theme.panel_focused);
-        glyphs.draw_stylus_hand(quads, circle, theme.text, left);
-    } else {
-        Color faded = theme.panel;
-        faded.a = 0.6f;
-        Color ink = theme.text_dim;
-        ink.a = 0.45f;
-        quads.draw_capsule(circle, faded);
-        glyphs.draw_stylus_hand(quads, circle, ink, left);
-    }
+    const float border = menu_border(scale);
+    glyphs.draw_stylus_hand(quads, square, state_.handedness == Handedness::Left,
+                            usable ? 1.0f : 0.35f);
+    Color outline = usable ? theme.text : theme.text_dim;
+    if (!usable) outline.a = 0.5f;
+    quads.draw_outline(square, outline, focused ? std::round(border * 2.5f) : border);
 }
 
 void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,

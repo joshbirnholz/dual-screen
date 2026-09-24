@@ -35,6 +35,15 @@ of that. Before this repository is published or a build is distributed, the
 source and licence of these files should be established and written down here —
 or the files replaced with ones whose terms are known.
 
+## `assets/stylus_hand.png`
+
+The symbol the Wii U Virtual Console's Screen Settings shows for which hand
+holds the stylus: Nintendo's artwork, copied out of a screenshot of that
+screen supplied by this project's author and made square by
+`assets/make_stylus_hand.py`, which records exactly how. The same caution as
+the bezel illustrations above applies before anything is published or
+distributed.
+
 ## `assets/inter.ttf`
 
 The UI font: [Inter](https://rsms.me/inter/) Medium by Rasmus Andersson,

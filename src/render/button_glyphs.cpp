@@ -102,17 +102,22 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
         coverage[index] = static_cast<uint8_t>(image.pixels[index] >> 24);
     }
 
-    // The stylus hand, the same way. Only a missing hand on one button if it
-    // cannot be read, so it does not fail the prompts with it.
+    // The stylus hand, as it is and mirrored. As it is, it is a left hand --
+    // it is what the Wii U shows on its left-handed layouts -- so the mirror
+    // image is the right. Only a missing picture on one button if it cannot
+    // be read, so it does not fail the prompts with it.
     DecodedImage hand;
     std::string hand_error;
     if (decode_png(assets::kStylusHandPng, assets::kStylusHandPng_size, hand, &hand_error)) {
-        std::vector<uint8_t> hand_coverage(hand.pixels.size());
-        for (std::size_t index = 0; index < hand.pixels.size(); ++index) {
-            hand_coverage[index] = static_cast<uint8_t>(hand.pixels[index] >> 24);
+        std::vector<uint32_t> mirrored(hand.pixels.size());
+        for (int y = 0; y < hand.height; ++y) {
+            for (int x = 0; x < hand.width; ++x) {
+                mirrored[static_cast<std::size_t>(y) * hand.width + x] =
+                    hand.pixels[static_cast<std::size_t>(y) * hand.width + (hand.width - 1 - x)];
+            }
         }
-        stylus_hand_.upload_alpha8(hand_coverage.data(), hand.width, hand.height);
-        stylus_hand_.set_linear_filtering(true);
+        stylus_left_.upload_xrgb8888(hand.pixels.data(), hand.width, hand.height, hand.width);
+        stylus_right_.upload_xrgb8888(mirrored.data(), hand.width, hand.height, hand.width);
     }
 
     cell_width_ = image.width / static_cast<int>(GlyphCell::Count);
@@ -127,11 +132,10 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
 }
 
 void ButtonGlyphSheet::draw_stylus_hand(QuadRenderer& quads, const PixelRect& rect,
-                                        const Color& color, bool left_handed) const {
-    if (!stylus_hand_.valid()) return;
-    // Mirrored by reading the texture right to left.
-    quads.draw_alpha_mask(rect, stylus_hand_, color, left_handed ? 1.0f : 0.0f, 0.0f,
-                          left_handed ? 0.0f : 1.0f, 1.0f);
+                                        bool left_handed, float opacity) const {
+    const Texture& picture = left_handed ? stylus_left_ : stylus_right_;
+    if (!picture.valid()) return;
+    quads.draw_screen(rect, picture, Color{1.0f, 1.0f, 1.0f, opacity});
 }
 
 float ButtonGlyphSheet::width_for(float height) const {
