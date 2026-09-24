@@ -301,8 +301,8 @@ const char* section_label(MenuSection section) {
     switch (section) {
         case MenuSection::Continue: return "Continue";
         case MenuSection::Layout: return "Screen Layout";
-        case MenuSection::CreateSavePoint: return "Create Save Point";
-        case MenuSection::LoadSavePoint: return "Load Save Point";
+        case MenuSection::CreateSavePoint: return "Create Save State";
+        case MenuSection::LoadSavePoint: return "Load Save State";
         case MenuSection::Options: return "Options";
         case MenuSection::Disconnect: return "Disconnect";
         case MenuSection::Reset: return "Reset Game";
@@ -1000,7 +1000,7 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
         const float date_line = TextRenderer::line_height(scale * 0.95f);
         const float name_step = name_line + line * 0.35f;
         const float name_y = row.y + (row.h - name_step - date_line) * 0.5f;
-        text.draw(quads, "Save point " + std::to_string(slot + 1), text_x, name_y, scale * 1.1f,
+        text.draw(quads, "Save state " + std::to_string(slot + 1), text_x, name_y, scale * 1.1f,
                   unusable ? dim : ink);
         text.draw(quads, filled ? format_save_time(save_slots_[index].saved_at) : std::string("Empty"),
                   text_x, name_y + name_step, scale * 0.95f, dim);
@@ -1124,8 +1124,8 @@ void LayoutPicker::render(QuadRenderer& quads,
             case MenuConfirm::Reset:
                 question = "Are you sure you want to reset?\nUnsaved progress will be lost.";
                 break;
-            case MenuConfirm::LoadSavePoint: question = "Load this save point?"; break;
-            case MenuConfirm::OverwriteSavePoint: question = "Overwrite this save point?"; break;
+            case MenuConfirm::LoadSavePoint: question = "Load this save state?"; break;
+            case MenuConfirm::OverwriteSavePoint: question = "Overwrite this save state?"; break;
             case MenuConfirm::Quit:
             case MenuConfirm::None: break;
         }

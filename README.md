@@ -35,7 +35,7 @@ one running the game.
 - Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
   its path, so moving your ROMs around loses nothing.
 - Writes cartridge saves as `.srm` files, interchangeable with RetroArch's.
-- **Save points** for DS and 3DS games, four per game, from the quick menu —
+- **Save states** for DS and 3DS games, four per game, from the quick menu —
   laid out like Nintendo Switch Online's suspend points.
 - **Two-device play**: one device runs the game and shows a screen; the other
   finds it on the network, shows the other screen, and sends its touches and
@@ -55,8 +55,8 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | --- | --- |
 | **Continue** | back to the game, the same as B on the list |
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it |
-| **Create Save Point** | the four save point slots; see [Save points](#save-points) |
-| **Load Save Point** | the same slots, to go back to one |
+| **Create Save State** | the four save state slots; see [Save states](#save-states) |
+| **Load Save State** | the same slots, to go back to one |
 | **Options** | the settings you might change mid-game, as a list: render scale (3DS), stylus hand, sound (with two devices), pointer, right stick (3DS), screen gap (where the layout has one) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
@@ -1015,25 +1015,27 @@ save behind.
 DSi NAND and firmware saves are the core's own business and live in the system
 folder.
 
-### Save points
+### Save states
 
-The quick menu of a DS or 3DS game has **Create Save Point** and **Load Save
-Point**. Either shows four slots on the right, like Nintendo Switch Online's
+The quick menu of a DS or 3DS game has **Create Save State** and **Load Save
+State**. Either shows four slots on the right, like Nintendo Switch Online's
 suspend points, each with a picture of both screens and the date and time it
 was made. Going across puts the cursor on the first empty slot to save into,
 or on the newest save to load.
 
 - **Create** into an empty slot saves straight away. Saving over a slot that
-  already has something in it asks *Overwrite this save point?* first.
-- **Load** asks *Load this save point?* and then goes straight back into the
+  already has something in it asks *Overwrite this save state?* first.
+- **Load** asks *Load this save state?* and then goes straight back into the
   game, from that moment. Empty slots are dimmed and do nothing.
 
-A save point is the emulator's own save state — the whole console at that
-moment — and is separate from the cartridge save above, which carries on being
+A save state is the emulator's own snapshot of the whole console at that
+moment, and is separate from the cartridge save above, which carries on being
 written as usual. So loading one also puts the cartridge save back to how it
 was then, the same as it would on the console. They are kept beside the
-cartridge save as `<rom name>.savepoint1` to `.savepoint4`, written the same
-all-or-nothing way. A save point made with one version of a core may not load
+cartridge save as `<rom name>.savestate1` to `.savestate4`, written the same
+all-or-nothing way (any from before the rename, `.savepoint1` and so on, are
+renamed the next time the menu opens). They are this app's own format, not
+RetroArch's. A save state made with one version of a core may not load
 in a much newer one; the menu says so if it does not.
 
 The entries only appear when the core running the game can make save states
@@ -1086,7 +1088,7 @@ V1 does not script `shortcuts.vdf` for you.
 ~/.config/dualscreen/gamecontrollerdb.txt   optional controller mapping overrides
 ~/.config/dualscreen/games/<rom-sha1>.json  per-game layout
 ~/.local/share/dualscreen/saves/<rom>.srm   cartridge saves
-~/.local/share/dualscreen/saves/<rom>.savepoint1..4   save points
+~/.local/share/dualscreen/saves/<rom>.savestate1..4   save states
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
 ```
 
@@ -1181,8 +1183,8 @@ ctest --test-dir build --output-on-failure
   than by being told where it is: present on a 3DS game, absent on a DS game,
   and every other option still reporting its own intent and no one else's.
   Also the list's order, moving across to its right-hand side and back, and
-  the save point confirmations.
-- `test_save_points` — save point files round-trip (state, picture and time),
+  the save state confirmations.
+- `test_save_points` — save state files round-trip (state, picture and time),
   a truncated or foreign file is refused rather than handed to the core, and
   the picture is both screens side by side whichever byte order they came in.
   `test_quick_settings` covers the menu side: the list's order, moving across

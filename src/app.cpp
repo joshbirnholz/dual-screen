@@ -1180,6 +1180,7 @@ bool App::Impl::save_points_available() const {
 }
 
 void App::Impl::refresh_save_points(const std::string& status, bool failed) {
+    adopt_old_save_point_names(paths.saves_dir, game_path);
     net::SaveSlotsMessage slots;
     slots.slots.resize(kSavePointSlots);
     for (int slot = 0; slot < kSavePointSlots; ++slot) {
@@ -1208,7 +1209,7 @@ void App::Impl::show_host_save_slots() {
 void App::Impl::make_save_point(int slot) {
     if (!save_points_available()) return;
     const std::string path = save_point_path(paths.saves_dir, game_path, slot);
-    const std::string name = "save point " + std::to_string(slot + 1);
+    const std::string name = "save state " + std::to_string(slot + 1);
     std::vector<uint8_t> state_bytes;
     std::string error;
     // The picture first: it is of the frame the game is paused on, which is
@@ -1228,7 +1229,7 @@ void App::Impl::make_save_point(int slot) {
 void App::Impl::load_save_point(int slot) {
     if (!save_points_available()) return;
     const std::string path = save_point_path(paths.saves_dir, game_path, slot);
-    const std::string name = "save point " + std::to_string(slot + 1);
+    const std::string name = "save state " + std::to_string(slot + 1);
     std::vector<uint8_t> state_bytes;
     std::string error;
     if (read_save_point_state(path, state_bytes, &error) &&

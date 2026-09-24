@@ -179,7 +179,18 @@ void shrink_into(const ScreenReadback& screen, int height, std::vector<uint32_t>
 }  // namespace
 
 std::string save_point_path(const std::string& saves_dir, const std::string& rom_path, int slot) {
-    return path_join(saves_dir, path_stem(rom_path) + ".savepoint" + std::to_string(slot + 1));
+    return path_join(saves_dir, path_stem(rom_path) + ".savestate" + std::to_string(slot + 1));
+}
+
+void adopt_old_save_point_names(const std::string& saves_dir, const std::string& rom_path) {
+    for (int slot = 0; slot < kSavePointSlots; ++slot) {
+        const std::string current = save_point_path(saves_dir, rom_path, slot);
+        const std::string old = path_join(
+            saves_dir, path_stem(rom_path) + ".savepoint" + std::to_string(slot + 1));
+        if (!file_exists(current) && file_exists(old)) {
+            std::rename(old.c_str(), current.c_str());
+        }
+    }
 }
 
 bool write_save_point(const std::string& path,
@@ -211,14 +222,14 @@ bool write_save_point(const std::string& path,
     out.insert(out.end(), picture.begin(), picture.end());
 
     std::vector<uint8_t> packed;
-    if (!compress_bytes(state.data(), state.size(), packed)) return fail("The save point could not be compressed.");
+    if (!compress_bytes(state.data(), state.size(), packed)) return fail("The save state could not be compressed.");
     put_u32(out, static_cast<uint32_t>(state.size()));
     put_u32(out, static_cast<uint32_t>(packed.size()));
     out.insert(out.end(), packed.begin(), packed.end());
 
     std::string why;
     if (!write_file_atomically(path, out.data(), out.size(), &why)) {
-        if (error != nullptr) *error = "The save point could not be written: " + why;
+        if (error != nullptr) *error = "The save state could not be written: " + why;
         return false;
     }
     return true;
@@ -242,22 +253,22 @@ bool read_save_point_state(const std::string& path, std::vector<uint8_t>& out,
         return false;
     };
     Reader reader(path);
-    if (!reader.is_open()) return fail("That save point is not there any more.");
+    if (!reader.is_open()) return fail("That save state is not there any more.");
     SavePointInfo info;
     uint32_t size = 0;
     uint32_t packed_size = 0;
     if (!read_header(reader, info, false) || !reader.u32(size) || !reader.u32(packed_size) ||
         size == 0 || size > kMaxStateBytes || packed_size > kMaxStateBytes) {
-        return fail("That save point is damaged.");
+        return fail("That save state is damaged.");
     }
     std::vector<uint8_t> packed(packed_size);
-    if (!reader.bytes(packed.data(), packed.size())) return fail("That save point is damaged.");
+    if (!reader.bytes(packed.data(), packed.size())) return fail("That save state is damaged.");
     out.resize(size);
     uLongf unpacked = size;
     if (uncompress(out.data(), &unpacked, packed.data(), static_cast<uLong>(packed.size())) != Z_OK ||
         unpacked != size) {
         out.clear();
-        return fail("That save point is damaged.");
+        return fail("That save state is damaged.");
     }
     return true;
 }

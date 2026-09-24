@@ -75,9 +75,32 @@ std::vector<uint8_t> sample_state() {
 
 void test_paths() {
     CHECK_STR_EQ(save_point_path("/saves", "/games/Mario Kart DS.nds", 0),
-                 std::string("/saves/Mario Kart DS.savepoint1"));
+                 std::string("/saves/Mario Kart DS.savestate1"));
     CHECK_STR_EQ(save_point_path("/saves", "/games/Mario Kart DS.nds", 3),
-                 std::string("/saves/Mario Kart DS.savepoint4"));
+                 std::string("/saves/Mario Kart DS.savestate4"));
+}
+
+// Slots written under their first name, .savepoint1, are picked up under
+// the new one -- and a slot that already has a new file keeps it.
+void test_old_names_are_adopted(const std::string& sandbox) {
+    const std::string rom = "/games/Old Game.nds";
+    const std::string old_first = path_join(sandbox, "Old Game.savepoint1");
+    const std::string old_second = path_join(sandbox, "Old Game.savepoint2");
+    std::string error;
+    CHECK(write_save_point(old_first, std::vector<uint8_t>(64, 1), SavePointThumbnail{}, 10,
+                           &error));
+    CHECK(write_save_point(old_second, std::vector<uint8_t>(64, 2), SavePointThumbnail{}, 20,
+                           &error));
+    CHECK(write_save_point(save_point_path(sandbox, rom, 1), std::vector<uint8_t>(64, 3),
+                           SavePointThumbnail{}, 30, &error));
+
+    adopt_old_save_point_names(sandbox, rom);
+    SavePointInfo info;
+    CHECK(read_save_point_info(save_point_path(sandbox, rom, 0), info));
+    CHECK_EQ(info.saved_at, static_cast<int64_t>(10));
+    CHECK(!file_exists(old_first));
+    CHECK(read_save_point_info(save_point_path(sandbox, rom, 1), info));
+    CHECK_EQ(info.saved_at, static_cast<int64_t>(30));
 }
 
 void test_round_trip(const std::string& sandbox) {
@@ -183,6 +206,7 @@ int main() {
     CHECK(!sandbox.empty());
     test_paths();
     test_round_trip(sandbox);
+    test_old_names_are_adopted(sandbox);
     test_damage_refused(sandbox);
     test_thumbnail(ChannelOrder::XrgbBytes);
     test_thumbnail(ChannelOrder::Rgba);

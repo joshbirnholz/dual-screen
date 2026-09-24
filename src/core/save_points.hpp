@@ -8,8 +8,9 @@ namespace ds {
 
 class ScreenSource;
 
-// Save points: the whole running console written down at one moment, to be
-// gone back to later -- what Nintendo Switch Online calls a suspend point.
+// Save points -- "save states" to the player, which is what the menu calls
+// them: the whole running console written down at one moment, to be gone
+// back to later -- what Nintendo Switch Online calls a suspend point.
 // Nothing to do with the game's own save, which lives in the cartridge's
 // .srm beside these and carries on being written the way it always has.
 //
@@ -40,8 +41,13 @@ struct SavePointInfo {
 };
 
 // Where slot `slot` (from 0) for the game at `rom_path` lives:
-// "<saves>/<game>.savepoint1" for the first.
+// "<saves>/<game>.savestate1" for the first.
 std::string save_point_path(const std::string& saves_dir, const std::string& rom_path, int slot);
+
+// Renames a game's slots from the name they were first written under,
+// "<game>.savepoint1", to the one they have now, wherever a slot has only
+// the old one. Harmless to call every time.
+void adopt_old_save_point_names(const std::string& saves_dir, const std::string& rom_path);
 
 // Writes a save point in one go, through a temporary file, so a slot is
 // either the old one or the new one and never half of each.

@@ -455,7 +455,7 @@ bool LibretroCoreScreenSource::supports_save_states() const {
 
 bool LibretroCoreScreenSource::save_state(std::vector<uint8_t>& out, std::string* error) {
     if (!supports_save_states()) {
-        if (error != nullptr) *error = "This emulator cannot make save points.";
+        if (error != nullptr) *error = "This emulator cannot make save states.";
         return false;
     }
     if (!core_->save_state(out)) {
@@ -467,7 +467,7 @@ bool LibretroCoreScreenSource::save_state(std::vector<uint8_t>& out, std::string
 
 bool LibretroCoreScreenSource::load_state(const std::vector<uint8_t>& state, std::string* error) {
     if (!supports_save_states()) {
-        if (error != nullptr) *error = "This emulator cannot load save points.";
+        if (error != nullptr) *error = "This emulator cannot load save states.";
         return false;
     }
     if (!core_->load_state(state)) {
@@ -477,7 +477,7 @@ bool LibretroCoreScreenSource::load_state(const std::vector<uint8_t>& state, std
         }
         return false;
     }
-    log_info("save point loaded (" + std::to_string(state.size()) + " bytes)");
+    log_info("save state loaded (" + std::to_string(state.size()) + " bytes)");
     return true;
 }
 
