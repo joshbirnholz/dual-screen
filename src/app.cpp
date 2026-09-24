@@ -2867,7 +2867,10 @@ int App::run(const AppOptions& options) {
     // And never an on-screen keyboard, whatever asks for one: nothing here is
     // typed into, and on a Steam Deck SDL raises Steam's the moment text input
     // starts. See create_gl_window(), which also turns text input off.
-    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+    // By its string, which is what SDL reads: the name for it arrived in SDL
+    // 2.28's headers, and Debian 12 -- what the SteamOS build is made in --
+    // has 2.26. The SDL it runs against on the Deck is newer and honours it.
+    SDL_SetHint("SDL_ENABLE_SCREEN_KEYBOARD", "0");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         const std::string reason = SDL_GetError();
         log_error("could not start SDL video: " + reason);
