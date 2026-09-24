@@ -443,6 +443,10 @@ struct App::Impl {
     State state = State::Playing;
     bool message_is_fatal = false;
     bool running = true;
+    // Quit was chosen from the companion's side of the menu, so the companion
+    // is told to close its app too when this one says goodbye -- see
+    // HostSession::stop().
+    bool quit_from_companion = false;
     std::string active_layout_id;
     bool bilinear_filtering = false;
     // Which device makes the sound. Only meaningful once two are connected.
@@ -1434,9 +1438,12 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                     // way Disconnect would.
                     companion_session->request_quit();
                     companion_session->disconnect();
-                    open_launcher();
+                    // And this app with it: quitting from here means quitting,
+                    // not going back to the main menu.
+                    running = false;
                 } else {
                     running = false;
+                    quit_from_companion = !pressed_here;
                 }
             } else if (result.controllers_requested) {
                 // The host's own screen, the same as Settings below: only it
@@ -1967,6 +1974,13 @@ void App::Impl::end_companion_session() {
     // this device instead of the game.
     if (picker) {
         picker->close();
+    }
+    // The player quit the game from this device: the host has shut down, and
+    // this app goes with it rather than back to the main menu.
+    if (companion_session->host_quit_for_this_device()) {
+        log_info("the game was quit from this device, so this app is quitting too");
+        running = false;
+        return;
     }
     if (companion_session->status() == net::CompanionSession::Status::Failed) {
         enter_message(MessageKind::Error, "Lost the connection",
@@ -3579,6 +3593,7 @@ int App::run(const AppOptions& options) {
                 // The companion that asked is leaving on its own right after,
                 // not waiting to be told to.
                 impl.running = false;
+                impl.quit_from_companion = true;
             }
             // Only when --video-codec h264 forced video and it does not
             // work: the automatic choice falls back to tiles by itself.
@@ -4042,7 +4057,7 @@ int App::run(const AppOptions& options) {
     ShutdownWatchdog watchdog(kShutdownDeadline);
     if (impl.host_session) {
         watchdog.at("saying goodbye to the other device");
-        impl.host_session->stop();
+        impl.host_session->stop(impl.quit_from_companion);
         impl.host_session.reset();
     }
     if (impl.companion_session) {

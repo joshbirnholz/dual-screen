@@ -707,8 +707,16 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     return audio_target_from_wire(audio, out.audio_target);
 }
 
-void encode_bye(std::vector<uint8_t>& out) {
-    finish_message(out, begin_message(out), MessageType::Bye);
+void encode_bye(std::vector<uint8_t>& out, bool quit_too) {
+    const std::size_t start = begin_message(out);
+    if (quit_too) {
+        put_u8(out, 1);
+    }
+    finish_message(out, start, MessageType::Bye);
+}
+
+bool bye_says_quit_too(const std::vector<uint8_t>& payload) {
+    return !payload.empty() && payload[0] == 1;
 }
 
 void encode_frame_ack_payload(uint64_t serial, std::vector<uint8_t>& out) { put_u64(out, serial); }

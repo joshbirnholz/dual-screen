@@ -542,6 +542,10 @@ public:
     // The host's own settings screen. Not mirrored -- this device is told only
     // that it is up, so it can say where to look and keep sending presses.
     bool host_settings_open() const { return host_settings_open_; }
+    // Whether the session ended because the player quit from this device:
+    // the host said so in its Bye, and this device's app closes too rather
+    // than going back to its main menu. Cleared by the next connect.
+    bool host_quit_for_this_device() const { return host_quit_for_this_device_; }
     int host_menu_focus() const { return host_menu_focus_; }
     uint8_t host_menu_confirm() const { return host_menu_confirm_; }
     int host_max_render_scale() const { return host_max_render_scale_; }
@@ -774,6 +778,7 @@ private:
     // picture from the other codec that throws away the one being built on.
     // The same serial again is let through: it is how the host repairs a lost
     // picture while the game is paused.
+    bool host_quit_for_this_device_ = false;
     uint64_t completed_serial_top_ = 0;
     uint64_t completed_serial_bottom_ = 0;
     // Notices frames that left the host and never got here, from the gap they

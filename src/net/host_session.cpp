@@ -414,10 +414,10 @@ bool HostSession::start(const Config& config, std::string* error) {
     return true;
 }
 
-void HostSession::stop() {
+void HostSession::stop(bool companion_quits_too) {
     if (companion_.open()) {
         std::vector<uint8_t> bye;
-        encode_bye(bye);
+        encode_bye(bye, companion_quits_too);
         companion_.send(bye);
         std::string error;
         std::vector<uint8_t> ignored;

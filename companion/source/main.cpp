@@ -1164,8 +1164,21 @@ void Client::run() {
                     const std::string detail = session_.status_detail();
                     audio_.close();
                     audio_rate_ = 0;
-                    open_launcher();
                     log_info("the session ended: " + detail);
+#if !DS_APPLE_EMBEDDED
+                    // Quit from this device's side of the menu: the game has
+                    // closed on the host, and this app closes with it rather
+                    // than going back to its main menu. Not on an iPhone, iPad
+                    // or Apple TV, where an app does not close itself -- iOS
+                    // and tvOS treat that as a crash -- so it goes back to its
+                    // main menu there, as before.
+                    if (session_.host_quit_for_this_device()) {
+                        log_info("leaving: the game was quit from this device");
+                        running_ = false;
+                        break;
+                    }
+#endif
+                    open_launcher();
                 }
                 break;
             case State::Failed:

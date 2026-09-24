@@ -60,7 +60,7 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
-| **Quit** | closes the game, after asking |
+| **Quit** | closes the game, after asking. Chosen on the companion, it closes the app there too rather than going back to its main menu (except on an iPhone, iPad or Apple TV, where apps do not close themselves) |
 
 The menu opens on Continue the first time, and after that on whichever entry
 it was last closed on. Up and down move through the list, and the right-hand

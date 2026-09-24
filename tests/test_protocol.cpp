@@ -663,6 +663,24 @@ void test_rumble_can_name_one_pad() {
     CHECK_EQ(received_ping.ping_ms, 180);
 }
 
+// A Bye can say the player quit from the companion, so it closes its own app
+// too. An ordinary one says nothing -- and is still empty, so a companion from
+// before this reads either the way it always did.
+void test_a_bye_can_say_quit_too() {
+    for (const bool quit_too : {false, true}) {
+        std::vector<uint8_t> stream;
+        encode_bye(stream, quit_too);
+        MessageType type = MessageType::Ping;
+        std::vector<uint8_t> payload;
+        bool fatal = false;
+        CHECK(take_message(stream, type, payload, fatal));
+        CHECK(!fatal);
+        CHECK(type == MessageType::Bye);
+        CHECK_EQ(bye_says_quit_too(payload), quit_too);
+        if (!quit_too) CHECK(payload.empty());
+    }
+}
+
 // Several messages written back to back must come out one at a time, in order,
 // and a partial tail must simply not be returned yet.
 void test_stream_framing() {
@@ -1350,6 +1368,7 @@ void test_a_gap_in_sent_frames_is_loss() {
 }
 
 int main() {
+    test_a_bye_can_say_quit_too();
     test_hello_round_trip();
     test_welcome_and_session_round_trip();
     test_request_round_trip();

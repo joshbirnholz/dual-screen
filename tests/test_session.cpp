@@ -142,6 +142,50 @@ void test_a_refused_connect_is_really_tried_again() {
     CHECK(!companion.waiting_on_local_network());
 }
 
+// Quit chosen from the companion's side of the menu ends the game on the host
+// and closes the companion's app too, rather than leaving it at its main menu.
+// The host says which kind of ending it is in its goodbye; an ordinary one --
+// the host quitting from its own side -- leaves the companion to carry on.
+void test_a_quit_from_the_companion_closes_it_too() {
+    for (const bool from_companion : {false, true}) {
+        HostSession host;
+        HostSession::Config config;
+        config.device_name = "Quit Host";
+        config.game_title = "Quitting";
+        std::string error;
+        if (!host.start(config, &error)) {
+            std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+            return;
+        }
+        set_shared(host, "upper_on_tv");
+
+        CompanionSession companion;
+        CHECK_MSG(companion.begin_search("Quitter", ScreenId::Bottom, &error), error);
+        if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+            CHECK_MSG(false, "the companion never discovered the host");
+            host.stop();
+            return;
+        }
+        companion.connect_to(companion.hosts().front());
+        if (!paired(host, companion)) {
+            CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+            host.stop();
+            return;
+        }
+        CHECK(!companion.host_quit_for_this_device());
+
+        host.stop(from_companion);
+        const bool ended = spin(host, companion, [&] {
+            return companion.status() != CompanionSession::Status::Connected;
+        });
+        CHECK_MSG(ended, "the companion never noticed the host had gone");
+        CHECK_MSG(companion.host_quit_for_this_device() == from_companion,
+                  from_companion ? "a quit from the companion did not tell it to close too"
+                                 : "an ordinary end told the companion to close");
+        companion.disconnect();
+    }
+}
+
 void test_host_and_companion_pair_up() {
     HostSession host;
     HostSession::Config config;
@@ -3792,6 +3836,7 @@ int main() {
     test_a_lost_frame_is_given_up_on_in_round_trips();
     test_the_codec_is_picked_from_what_the_screen_costs();
     test_a_session_picks_the_codec_by_itself();
+    test_a_quit_from_the_companion_closes_it_too();
     test_switching_codec_mid_game_keeps_the_picture_right();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();

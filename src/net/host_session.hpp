@@ -102,7 +102,9 @@ public:
     };
 
     bool start(const Config& config, std::string* error);
-    void stop();
+    // `companion_quits_too`: the player quit from the companion's side, so the
+    // Bye tells it to close its own app as well -- see encode_bye().
+    void stop(bool companion_quits_too = false);
     bool running() const { return listener_.listening(); }
 
     bool has_companion() const { return companion_.connected() && handshake_done_; }

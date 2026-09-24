@@ -495,7 +495,12 @@ void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
-void encode_bye(std::vector<uint8_t>& out);
+// `quit_too`, from the host: the player quit from the companion, so the
+// companion closes its own app rather than going back to its main menu. One
+// byte, and only when set -- a Bye from before this is empty, and reads as an
+// ordinary end.
+void encode_bye(std::vector<uint8_t>& out, bool quit_too = false);
+bool bye_says_quit_too(const std::vector<uint8_t>& payload);
 void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out);
 // As encode_audio_payload() is to encode_audio() above.
 void encode_frame_ack_payload(uint64_t serial, std::vector<uint8_t>& out);

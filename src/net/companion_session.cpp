@@ -42,6 +42,7 @@ bool CompanionSession::begin_search(const std::string& device_name,
 }
 
 void CompanionSession::connect_to(DiscoveredHost host) {
+    host_quit_for_this_device_ = false;
     stream_.close();
     inbox_.clear();
     said_hello_ = false;
@@ -428,8 +429,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             break;
         }
         case MessageType::Bye:
+            host_quit_for_this_device_ = bye_says_quit_too(payload);
             disconnect();
-            status_detail_ = "the host closed the session";
+            status_detail_ = host_quit_for_this_device_
+                                 ? "the game was quit from this device"
+                                 : "the host closed the session";
             break;
         case MessageType::Ping:
             break;
@@ -864,6 +868,23 @@ void CompanionSession::poll(uint64_t now_ms) {
         if (status_ == Status::Connecting && connect_is_undecided(stream_.connect_error())) {
             owe_another_attempt(error);
             return;
+        }
+        // What arrived ahead of the close is still what the host said last,
+        // and the last thing a host says is its Bye -- straight before closing,
+        // so the two routinely land in the same read. Read past, that made
+        // every host that quit look like a lost connection, and lost what the
+        // Bye says about how the session ended.
+        while (true) {
+            MessageType type = MessageType::Ping;
+            std::vector<uint8_t> payload;
+            bool fatal = false;
+            if (!take_message(inbox_, type, payload, fatal)) {
+                break;
+            }
+            handle_message(type, payload);
+            if (!stream_.open()) {
+                return;  // ended by what it said, not by the close
+            }
         }
         fail(error);
         return;
