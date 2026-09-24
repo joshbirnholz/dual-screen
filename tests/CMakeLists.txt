@@ -184,7 +184,7 @@ else()
 endif()
 
 dualscreen_add_test(test_net)
-dualscreen_add_test(test_session)
+dualscreen_add_test(test_session NEEDS_GL)
 # Discovery, session and media all live on fixed ports (kDiscoveryPort and the
 # two after it), so any two tests that stand a real host up cannot run at the
 # same time -- the second one's bind fails and it reads as a broken test rather

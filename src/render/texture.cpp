@@ -475,7 +475,12 @@ void Texture::upload_four_bytes_a_pixel(const uint32_t* source, int width, int h
     }
 
     gl::PixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    if (width != width_ || height != height_) {
+    // The format too, not just the size: the same screen at the same size can
+    // arrive as 5-6-5 tiles one frame and four bytes a pixel the next, or as
+    // the one-channel luma of a video frame, and four bytes written into the
+    // storage one of those left behind is an error on OpenGL ES and, on
+    // desktop GL, a picture quietly cut down to that storage's channels.
+    if (width != width_ || height != height_ || format_ != GL_RGBA) {
         gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, upload_from);
         width_ = width;
         height_ = height;

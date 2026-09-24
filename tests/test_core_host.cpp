@@ -453,6 +453,52 @@ private:
     bool initialized_ = false;
 };
 
+// A streamed screen keeps one texture while its frames change form under it:
+// 5-6-5 tiles, the planes of a video frame, four bytes a pixel. At the same
+// size each time, which is the case that went wrong -- storage made for one
+// form written in another, cut down to the old form's channels.
+void test_a_screen_texture_follows_its_frames_from_one_form_to_another() {
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        test::skip("no OpenGL 3.3 context available");
+        return;
+    }
+    constexpr int kWidth = 64;
+    constexpr int kHeight = 48;
+    Texture texture;
+
+    // Tiles first: 5-6-5, pure blue.
+    const std::vector<uint16_t> blue(static_cast<std::size_t>(kWidth) * kHeight, 0x001f);
+    texture.upload_rgb565(reinterpret_cast<const uint8_t*>(blue.data()), kWidth, kHeight);
+    uint8_t rgba[4] = {};
+    CHECK(read_texture_pixel(texture, 10, 10, rgba));
+    CHECK_MSG(rgba[0] < 16 && rgba[1] < 16 && rgba[2] > 240, "5-6-5 blue did not arrive blue");
+
+    // Then a video frame's planes, which leave one channel of storage behind.
+    const std::vector<uint8_t> luma(static_cast<std::size_t>(kWidth) * kHeight, 128);
+    const std::vector<uint8_t> chroma(static_cast<std::size_t>(kWidth) * kHeight / 2, 128);
+    texture.upload_nv12(luma.data(), kWidth, chroma.data(), kWidth, kWidth, kHeight);
+    CHECK(texture.channel_order() == ChannelOrder::Nv12);
+
+    // Then four bytes a pixel at the same size: a warm orange, every channel
+    // different, so storage still one channel wide shows at once.
+    const std::vector<uint32_t> orange(static_cast<std::size_t>(kWidth) * kHeight, 0x00f08020u);
+    texture.upload_xrgb8888(orange.data(), kWidth, kHeight, kWidth);
+    CHECK(read_texture_pixel(texture, 10, 10, rgba));
+    // Stored in the byte order it arrived in and swizzled by the shader, so
+    // B,G,R here -- all three, which is the point.
+    CHECK_MSG(rgba[0] == 0x20 && rgba[1] == 0x80 && rgba[2] == 0xf0,
+              "four bytes a pixel after a video frame came out as " + std::to_string(rgba[0]) +
+                  "," + std::to_string(rgba[1]) + "," + std::to_string(rgba[2]));
+
+    // And back to 5-6-5.
+    texture.upload_rgb565(reinterpret_cast<const uint8_t*>(blue.data()), kWidth, kHeight);
+    CHECK(read_texture_pixel(texture, 10, 10, rgba));
+    CHECK_MSG(rgba[0] < 16 && rgba[1] < 16 && rgba[2] > 240,
+              "5-6-5 blue after four bytes a pixel did not arrive blue");
+    texture.destroy();
+}
+
 // The same frontend against a core shaped like a 3DS: two screens of different
 // widths, the narrower one centred under the wider, drawn on the GPU rather
 // than handed over as pixels. Every step from the core option through the
@@ -897,6 +943,7 @@ int main() {
     test_run_ahead_hides_the_games_own_lag();
     test_screen_source_reports_a_valid_split();
     test_a_ds_game_takes_a_rumble_pak();
+    test_a_screen_texture_follows_its_frames_from_one_form_to_another();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
     test_render_scale_only_changes_the_resolution();

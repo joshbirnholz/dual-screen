@@ -1489,8 +1489,16 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     // and the bytes on the wire did not move. See media_pacing_bytes_per_ms()
     // for what the encoder actually did with the number it was given.
 
+    // And on a change of byte order: a screen read back a different way --
+    // off the GPU rather than out of the core's own memory, say, when its size
+    // moves across what a readback does on the CPU -- would otherwise go on
+    // being read as the old order, red and blue swapped across the picture.
+    const video::PixelOrder pixel_order = (source.channel_order == PixelChannelOrder::Rgba)
+                                              ? video::PixelOrder::Rgba
+                                              : video::PixelOrder::Bgra;
     if (!encoder.is_open() || encoder.source_width() != width || encoder.source_height() != height ||
-        encoder.width() != encode_width || encoder.height() != encode_height) {
+        encoder.width() != encode_width || encoder.height() != encode_height ||
+        encoder.pixel_order() != pixel_order) {
         video::EncoderConfig config;
         config.width = encode_width;
         config.height = encode_height;
@@ -1504,9 +1512,7 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         // link) hands its pixels over R,G,B,A rather than this app's usual
         // XRGB8888/BGRA -- see PixelOrder's own comment. Missing this swapped
         // red and blue across the whole picture.
-        config.pixel_order = (source.channel_order == PixelChannelOrder::Rgba)
-                                  ? video::PixelOrder::Rgba
-                                  : video::PixelOrder::Bgra;
+        config.pixel_order = pixel_order;
         std::string open_error;
         if (!encoder.open(config, &open_error)) {
             reason = "no video encoder would open: " + open_error;
@@ -1580,7 +1586,11 @@ bool HostSession::encode_one_screen(ScreenId screen,
                          : !video                                 ? "back to tiles to see what it costs"
                          : for_size ? "it is too big to go as tiles"
                                     : "it is too busy to go as tiles");
-            codec.video_for_weight = video && !for_size;
+            // Only a choice made here, from what tiles measured: a forced one
+            // is not evidence of anything, and holding it for weight would
+            // keep video on for a while after being told to choose again.
+            codec.video_for_weight =
+                video && !for_size && codec_choice_ == CodecChoice::Automatic;
             if (!video) {
                 previous.clear();
             }

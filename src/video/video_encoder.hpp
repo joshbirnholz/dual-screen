@@ -44,6 +44,9 @@ public:
 
     int source_width() const { return source_width_; }
     int source_height() const { return source_height_; }
+    // The byte order open() was told the pixels come in, which the same
+    // caller has to reopen for if it changes -- see EncoderConfig.
+    PixelOrder pixel_order() const { return pixel_order_; }
 
     // XRGB8888 in, at `stride_pixels` per row. `out` is emptied first, so an
     // encoder that produced nothing this frame is `out.empty()` rather than

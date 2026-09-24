@@ -763,6 +763,16 @@ private:
         std::vector<bool> received;
     };
     void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
+    // The newest frame put together whole for each screen. A piece of an older
+    // one arriving after it -- overtaken on the way, which wifi does -- would
+    // otherwise start a new reassembly, be completed and shown after the newer
+    // picture: tiles put back to how they were a frame ago, a video frame fed
+    // to the decoder out of order, or, straight after the codec changed, a
+    // picture from the other codec that throws away the one being built on.
+    // The same serial again is let through: it is how the host repairs a lost
+    // picture while the game is paused.
+    uint64_t completed_serial_top_ = 0;
+    uint64_t completed_serial_bottom_ = 0;
     // Notices frames that left the host and never got here, from the gap they
     // leave in the run of sent_index values for that screen. Returns how many
     // went missing, which is zero for the ordinary case of the next one in the

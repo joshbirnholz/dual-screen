@@ -1,14 +1,18 @@
 // Pairs a real HostSession with a real CompanionSession over loopback: the
 // handshake, the screens the layout says are needed, and input travelling back.
-// No GL context, so the companion's pixel buffers are inspected rather than its
-// textures.
+// Mostly the companion's pixel buffers are inspected rather than its textures;
+// where a GL context can be had, the codec switching test also draws what it
+// is shown, the way the companion's window would.
 
 #include "test_support.hpp"
+
+#include <SDL.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <map>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -16,6 +20,9 @@
 #include "net/companion_session.hpp"
 #include "ui/menu_state.hpp"
 #include "net/host_session.hpp"
+#include "render/gl_loader.hpp"
+#include "render/quad_renderer.hpp"
+#include "render/texture.hpp"
 #include "video/video_codec.hpp"
 
 using namespace ds;
@@ -2533,6 +2540,351 @@ void test_a_session_picks_the_codec_by_itself() {
     host.stop();
 }
 
+// A picture that changes every frame and has colour everywhere: red running
+// across, green running down, a fixed amount of blue -- so red and blue
+// swapped, or chroma read from the wrong plane, is wrong on every pixel -- and
+// a block that moves, so a tile left behind from an older frame, or a video
+// frame decoded against the wrong reference, shows where the block used to be.
+std::vector<uint32_t> moving_picture(int width, int height, int frame, PixelChannelOrder order) {
+    std::vector<uint32_t> pixels(static_cast<std::size_t>(width) * height);
+    const int block = std::max(16, width / 6);
+    const int block_x = (frame * 7) % (width - block);
+    const int block_y = (frame * 5) % (height - block);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint32_t r = static_cast<uint32_t>(x * 255 / (width - 1));
+            uint32_t g = static_cast<uint32_t>(y * 255 / (height - 1));
+            uint32_t b = 48;
+            if (x >= block_x && x < block_x + block && y >= block_y && y < block_y + block) {
+                r = 240;
+                g = 40;
+                b = 200;
+            }
+            pixels[static_cast<std::size_t>(y) * width + x] =
+                order == PixelChannelOrder::Rgba ? (0xff000000u | (b << 16) | (g << 8) | r)
+                                                 : ((r << 16) | (g << 8) | b);
+        }
+    }
+    return pixels;
+}
+
+// How far what the companion shows is from what was sent: the average error
+// per channel, and the share of pixels more than a little off in any channel.
+// Tiles lose only the bottom bits of 5-6-5; video loses more, but evenly, so
+// a picture that is actually wrong -- stale, swapped, smeared -- shows as a
+// share of badly-off pixels that honest compression never produces.
+struct PictureError {
+    double mean = 0.0;
+    double badly_off = 0.0;
+};
+PictureError picture_error(const CompanionSession::ScreenPixels& shown,
+                           const std::vector<uint32_t>& sent, PixelChannelOrder order) {
+    PictureError error;
+    const std::size_t count = static_cast<std::size_t>(shown.width) * shown.height;
+    uint64_t total = 0;
+    std::size_t bad = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        const uint32_t source = sent[index];
+        const int want[3] = {
+            static_cast<int>(order == PixelChannelOrder::Rgba ? source & 0xffu : (source >> 16) & 0xffu),
+            static_cast<int>((source >> 8) & 0xffu),
+            static_cast<int>(order == PixelChannelOrder::Rgba ? (source >> 16) & 0xffu : source & 0xffu)};
+        const int got[3] = {static_cast<int>((shown.pixels[index] >> 16) & 0xffu),
+                            static_cast<int>((shown.pixels[index] >> 8) & 0xffu),
+                            static_cast<int>(shown.pixels[index] & 0xffu)};
+        int worst = 0;
+        for (int channel = 0; channel < 3; ++channel) {
+            const int off = std::abs(got[channel] - want[channel]);
+            total += static_cast<uint64_t>(off);
+            worst = std::max(worst, off);
+        }
+        if (worst > 48) ++bad;
+    }
+    error.mean = static_cast<double>(total) / static_cast<double>(count * 3);
+    error.badly_off = static_cast<double>(bad) / static_cast<double>(count);
+    return error;
+}
+
+// A window and an OpenGL context, where there is a display to make them on
+// (Xvfb in CI). Without one the test that uses it checks pixel buffers only.
+class GlFixture {
+public:
+    bool start() {
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
+        initialized_ = true;
+        SDL_GL_ResetAttributes();
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        window_ = SDL_CreateWindow("test", 0, 0, 64, 64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+        if (window_ == nullptr) return false;
+        context_ = SDL_GL_CreateContext(window_);
+        if (context_ == nullptr) return false;
+        SDL_GL_MakeCurrent(window_, context_);
+        std::string error;
+        return gl::load(false, &error) && gl::at_least(3, 3);
+    }
+
+    ~GlFixture() {
+        if (context_ != nullptr) {
+            gl::unload();
+            SDL_GL_DeleteContext(context_);
+        }
+        if (window_ != nullptr) SDL_DestroyWindow(window_);
+        if (initialized_) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    }
+
+private:
+    SDL_Window* window_ = nullptr;
+    SDL_GLContext context_ = nullptr;
+    bool initialized_ = false;
+};
+
+// Draws a screen texture the way the companion's window does -- the same
+// renderer, the same shader choosing its path from what the texture holds --
+// into a picture its own size, and reads it back as XRGB8888, top row first.
+bool draw_and_read_back(QuadRenderer& renderer, const Texture& screen, int width, int height,
+                        std::vector<uint32_t>& out) {
+    Texture target;
+    target.allocate_rgba(width, height);
+    if (!target.valid()) return false;
+    GLuint framebuffer = 0;
+    gl::GenFramebuffers(1, &framebuffer);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target.id(), 0);
+    const bool complete = gl::CheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if (complete) {
+        gl::Viewport(0, 0, width, height);
+        renderer.begin_frame(width, height);
+        renderer.clear(Color{0.0f, 0.0f, 0.0f, 1.0f});
+        renderer.draw_screen(PixelRect{0.0f, 0.0f, static_cast<float>(width),
+                                       static_cast<float>(height)},
+                             screen, Color{}, ScreenRotation::None, /*smooth=*/false);
+        std::vector<uint8_t> rgba(static_cast<std::size_t>(width) * height * 4);
+        gl::PixelStorei(GL_PACK_ALIGNMENT, 1);
+        gl::ReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        out.assign(static_cast<std::size_t>(width) * height, 0);
+        // GL's rows run bottom to top.
+        for (int y = 0; y < height; ++y) {
+            const uint8_t* row = rgba.data() + static_cast<std::size_t>(height - 1 - y) * width * 4;
+            for (int x = 0; x < width; ++x) {
+                const uint8_t* pixel = row + static_cast<std::size_t>(x) * 4;
+                out[static_cast<std::size_t>(y) * width + x] =
+                    (uint32_t{pixel[0]} << 16) | (uint32_t{pixel[1]} << 8) | pixel[2];
+            }
+        }
+    }
+    gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl::DeleteFramebuffers(1, &framebuffer);
+    return complete;
+}
+
+// The codec changing under a game that is running, both ways, over and over:
+// the host deciding for itself as the screen grows and shrinks, and a forced
+// choice flipped at the same size. Frames stream at 60 a second with several
+// in flight at once, the way a game sends them, and every picture the
+// companion shows is checked against the one sent under that serial -- so a
+// switch that leaves stale tiles behind, decodes against the wrong reference,
+// swaps colours or stops the picture fails here rather than on a Switch.
+void test_switching_codec_mid_game_keeps_the_picture_right() {
+    if (!video::have_ffmpeg()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test PC", ScreenId::Top, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    if (!host.companion_accepts_video()) {
+        test::skip("the far end cannot decode video");
+        companion.disconnect();
+        host.stop();
+        return;
+    }
+
+    // What the window would draw, as well as what the session holds, where
+    // there is a context to draw with: the texture a screen is uploaded into
+    // is kept from one frame to the next, whichever codec each one came in.
+    GlFixture gl_fixture;
+    QuadRenderer renderer;
+    bool drawing = gl_fixture.start();
+    if (drawing) {
+        std::string gl_error;
+        drawing = renderer.initialize(&gl_error);
+        CHECK_MSG(drawing, "the renderer would not start: " + gl_error);
+    } else {
+        std::fprintf(stderr, "no OpenGL 3.3 context here, so pictures are checked but not drawn\n");
+    }
+
+    using Choice = HostSession::CodecChoice;
+    struct Phase {
+        const char* name;
+        Choice choice;
+        int width;
+        int height;
+        PixelChannelOrder order;
+        bool expect_video;
+        // The first frames of the phase lost on the way, so the switch itself
+        // has to survive a lost picture.
+        bool lose_the_switch;
+    };
+    const Phase phases[] = {
+        {"tiles at DS size", Choice::Automatic, 256, 192, PixelChannelOrder::XrgbBytes, false, false},
+        {"up to video for size", Choice::Automatic, 800, 480, PixelChannelOrder::XrgbBytes, true, false},
+        {"still video, read back the other way", Choice::Automatic, 800, 480, PixelChannelOrder::Rgba, true, false},
+        {"back down to tiles", Choice::Automatic, 256, 192, PixelChannelOrder::XrgbBytes, false, false},
+        {"up to video, GPU byte order", Choice::Automatic, 800, 480, PixelChannelOrder::Rgba, true, false},
+        {"down to tiles, GPU byte order", Choice::Automatic, 400, 240, PixelChannelOrder::Rgba, false, false},
+        {"forced to video at the same size", Choice::H264, 400, 240, PixelChannelOrder::Rgba, true, false},
+        {"forced back to tiles at the same size", Choice::Tiles, 400, 240, PixelChannelOrder::Rgba, false, false},
+        {"up to video, switch lost", Choice::Automatic, 800, 480, PixelChannelOrder::XrgbBytes, true, true},
+        {"down to tiles, switch lost", Choice::Automatic, 256, 192, PixelChannelOrder::XrgbBytes, false, true},
+        {"forced to video, switch lost", Choice::H264, 256, 192, PixelChannelOrder::XrgbBytes, true, true},
+        {"automatic again, back to tiles", Choice::Automatic, 256, 192, PixelChannelOrder::XrgbBytes, false, false},
+    };
+
+    struct Sent {
+        std::vector<uint32_t> pixels;
+        PixelChannelOrder order;
+        bool video_expected;
+    };
+    std::map<uint64_t, Sent> sent;
+    uint64_t serial = 1;
+    uint64_t last_checked = 0;
+    int frame = 0;
+    for (const Phase& phase : phases) {
+        host.set_codec_choice(phase.choice);
+        unsigned checked = 0;
+        bool reported = false;
+        const auto check_what_is_shown = [&] {
+            const CompanionSession::ScreenPixels shown = companion.screen_pixels(ScreenId::Top);
+            if (!shown.valid() || shown.serial == last_checked) return;
+            last_checked = shown.serial;
+            const auto it = sent.find(shown.serial);
+            if (it == sent.end()) return;
+            if (static_cast<std::size_t>(shown.width) * shown.height != it->second.pixels.size()) {
+                return;  // one of the sizes either side of the change, not checked
+            }
+            const PictureError off = picture_error(shown, it->second.pixels, it->second.order);
+            const bool tiles = !companion.screen_is_video_for_test(ScreenId::Top);
+            const bool right = tiles ? (off.mean <= 3.0 && off.badly_off == 0.0)
+                                     : (off.mean <= 6.0 && off.badly_off <= 0.02);
+            ++checked;
+            if (!right && !reported) {
+                reported = true;
+                CHECK_MSG(false, std::string(phase.name) + ": frame " +
+                                     std::to_string(shown.serial) + " arrived wrong as " +
+                                     (tiles ? "tiles" : "video") + " (average error " +
+                                     std::to_string(off.mean) + ", " +
+                                     std::to_string(off.badly_off * 100.0) + "% badly off)");
+            }
+            if (!drawing) return;
+            const ScreenTextures& textures = companion.screens();
+            std::vector<uint32_t> drawn;
+            if (textures.top == nullptr ||
+                !draw_and_read_back(renderer, *textures.top, shown.width, shown.height, drawn)) {
+                if (!reported) {
+                    reported = true;
+                    CHECK_MSG(false, std::string(phase.name) + ": frame " +
+                                         std::to_string(shown.serial) + " could not be drawn");
+                }
+                return;
+            }
+            CompanionSession::ScreenPixels on_screen = shown;
+            on_screen.pixels = drawn.data();
+            const PictureError drawn_off =
+                picture_error(on_screen, it->second.pixels, it->second.order);
+            // A little looser than the buffer: drawing converts video to
+            // colour in the shader, with its own rounding.
+            const bool drawn_right = tiles ? (drawn_off.mean <= 3.0 && drawn_off.badly_off == 0.0)
+                                           : (drawn_off.mean <= 7.0 && drawn_off.badly_off <= 0.03);
+            if (!drawn_right && !reported) {
+                reported = true;
+                CHECK_MSG(false, std::string(phase.name) + ": frame " +
+                                     std::to_string(shown.serial) + " was drawn wrong as " +
+                                     (tiles ? "tiles" : "video") + " (average error " +
+                                     std::to_string(drawn_off.mean) + ", " +
+                                     std::to_string(drawn_off.badly_off * 100.0) +
+                                     "% badly off)");
+            }
+        };
+
+        constexpr int kFramesPerPhase = 45;
+        for (int index = 0; index < kFramesPerPhase; ++index, ++frame) {
+            companion.drop_frames_for_test(phase.lose_the_switch && index < 3);
+            Sent entry{moving_picture(phase.width, phase.height, frame, phase.order), phase.order,
+                       phase.expect_video};
+            HostSession::ScreenPixels top;
+            top.pixels = entry.pixels.data();
+            top.width = phase.width;
+            top.height = phase.height;
+            top.stride_pixels = phase.width;
+            top.channel_order = phase.order;
+            sent.emplace(serial, std::move(entry));
+            host.publish_screens(top, HostSession::ScreenPixels(), serial);
+            ++serial;
+            // A sixtieth of a second of both ends running, looking at every
+            // picture that comes up in it.
+            const uint64_t until = monotonic_millis() + 16;
+            while (monotonic_millis() < until) {
+                const uint64_t now = monotonic_millis();
+                host.poll(now);
+                companion.poll(now);
+                check_what_is_shown();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+        companion.drop_frames_for_test(false);
+
+        // The last picture of the phase has to come up: a stream that stopped
+        // after the switch would otherwise pass on the frames it did show.
+        const uint64_t last = serial - 1;
+        const bool caught_up = spin(host, companion, [&] {
+            check_what_is_shown();
+            return companion.screen_pixels(ScreenId::Top).serial == last;
+        });
+        CHECK_MSG(caught_up, std::string(phase.name) + ": the picture stopped at frame " +
+                                 std::to_string(companion.screen_pixels(ScreenId::Top).serial) +
+                                 " of " + std::to_string(last));
+        CHECK_MSG(companion.screen_is_video_for_test(ScreenId::Top) == phase.expect_video,
+                  std::string(phase.name) + ": went as " +
+                      (phase.expect_video ? "tiles" : "video") + " instead");
+        CHECK_MSG(checked >= 20, std::string(phase.name) + ": only " + std::to_string(checked) +
+                                     " pictures came up to check");
+        CHECK_MSG(companion.status() == CompanionSession::Status::Connected,
+                  std::string(phase.name) + ": the session ended: " + companion.status_detail());
+        sent.erase(sent.begin(), sent.lower_bound(last));
+    }
+
+    if (drawing) {
+        companion.forget_screen_textures();
+        renderer.shutdown();
+    }
+    companion.disconnect();
+    host.stop();
+}
+
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     constexpr double at_60fps = 16.7;
 
@@ -3428,6 +3780,7 @@ int main() {
     test_a_lost_frame_is_given_up_on_in_round_trips();
     test_the_codec_is_picked_from_what_the_screen_costs();
     test_a_session_picks_the_codec_by_itself();
+    test_switching_codec_mid_game_keeps_the_picture_right();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

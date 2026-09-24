@@ -66,6 +66,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
+    completed_serial_top_ = 0;
+    completed_serial_bottom_ = 0;
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -200,6 +202,8 @@ void CompanionSession::disconnect() {
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
+    completed_serial_top_ = 0;
+    completed_serial_bottom_ = 0;
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -278,6 +282,8 @@ void CompanionSession::fail(const std::string& reason) {
     // A keyframe wanted by a session that has ended is not one to ask the
     // next host for.
     keyframe_wanted_top_ = false;
+    completed_serial_top_ = 0;
+    completed_serial_bottom_ = 0;
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -558,6 +564,18 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         return;  // not worth ending a session over -- see the class comment
     }
 
+    // Older than a picture this screen already has whole: see
+    // completed_serial_top_. Only a little older, though -- far enough back is
+    // not a straggler but a host that has started counting again, a new game
+    // opened under the same session, and ignoring that would freeze the
+    // picture until the new count caught up with the old one.
+    constexpr uint64_t kStragglerWindow = 16;
+    const uint64_t completed =
+        (header.screen == ScreenId::Top) ? completed_serial_top_ : completed_serial_bottom_;
+    if (header.serial < completed && completed - header.serial <= kStragglerWindow) {
+        return;
+    }
+
     const unsigned missing = note_frames_that_never_arrived(header);
     if (missing > 0) {
         stats_frames_lost_ += missing;
@@ -633,6 +651,8 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     if (slot.received_count < slot.fragment_count) {
         return;
     }
+    ((slot.screen == ScreenId::Top) ? completed_serial_top_ : completed_serial_bottom_) =
+        slot.serial;
     if (header.keyframe) {
         // The answer landed: this picture stands on its own, so whatever was
         // lost before it no longer matters. Cleared here rather than when the
