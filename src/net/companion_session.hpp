@@ -499,6 +499,7 @@ public:
     bool host_cursor_choosable() const { return host_cursor_choosable_; }
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
+    bool host_save_points_available() const { return host_save_points_available_; }
 
     // Sends this device's input to the host. Only what changed goes out.
     // `pads`, when given, is every pad on this device on its own, in this
@@ -834,6 +835,7 @@ private:
     bool host_cursor_choosable_ = false;
     bool host_right_stick_choosable_ = false;
     bool host_cursor_shown_ = true;
+    bool host_save_points_available_ = false;
     bool menu_open_ = false;
     bool said_hello_ = false;
     // The host being joined, kept for as long as the join takes: an attempt

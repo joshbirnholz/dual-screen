@@ -457,6 +457,31 @@ void test_the_other_buttons_still_work() {
               "face button");
 }
 
+// Load and Create Save Point are there when the core can make save points,
+// and each asks for its own side of the screen; without, neither is.
+void test_save_point_entries() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = "vertical";
+    for (const bool available : {false, true}) {
+        state.save_points_available = available;
+        int load = 0;
+        int create = 0;
+        for (float y = 4.0f; y < kHeight; y += 8.0f) {
+            for (float x = 4.0f; x < kWidth; x += 8.0f) {
+                LayoutPicker picker(registry);
+                picker.open(state);
+                const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                if (result.load_save_point_requested) ++load;
+                if (result.create_save_point_requested) ++create;
+                CHECK(!(result.load_save_point_requested && result.create_save_point_requested));
+            }
+        }
+        CHECK_EQ(load > 0, available);
+        CHECK_EQ(create > 0, available);
+    }
+}
+
 // A Wii U's quick menu is a plain list -- Controllers, Settings, Disconnect
 // (only with a companion attached), Quit -- and nothing else, not even Resume,
 // which Back already is: no layout tiles (see
@@ -964,6 +989,7 @@ void test_the_settings_prompt_is_there_and_is_leftmost() {
 }  // namespace
 
 int main() {
+    test_save_point_entries();
     test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape();
     test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();

@@ -211,6 +211,53 @@ void test_reset_restarts_the_core() {
     core.unload();
 }
 
+// Save points go through the core's own save states: what is saved is the
+// whole console, so loading one puts the game back where it was -- here, the
+// mock's frame counter, which it mirrors into its save RAM every frame.
+void test_save_states_round_trip() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    LibretroCore unloaded;
+    CHECK(!unloaded.has_save_states());
+    CHECK_EQ(unloaded.state_size(), static_cast<std::size_t>(0));
+    std::vector<uint8_t> nothing;
+    CHECK(!unloaded.save_state(nothing));
+
+    LibretroCore core;
+    DsInputState input;
+    core.set_input_state(&input);
+    std::string error;
+    CHECK_MSG(core.load(core_path, &error), error);
+    CHECK_MSG(core.load_game(make_fake_rom(), &error), error);
+    CHECK(core.has_save_states());
+    CHECK(core.state_size() > 0);
+
+    auto counter_byte = [&]() { return static_cast<const uint8_t*>(core.save_ram_data())[4]; };
+    core.run_frame();
+    core.run_frame();
+    core.run_frame();
+    std::vector<uint8_t> state;
+    CHECK(core.save_state(state));
+    CHECK_EQ(state.size(), core.state_size());
+
+    core.run_frame();
+    core.run_frame();
+    core.run_frame();
+    CHECK_EQ(static_cast<int>(counter_byte()), 5);
+
+    CHECK(core.load_state(state));
+    core.run_frame();
+    CHECK_MSG(counter_byte() == 3, "loading the state did not put the game back where it was");
+
+    // Something that is not this core's state is refused, not half-applied.
+    std::vector<uint8_t> foreign(state.size(), 0xAB);
+    CHECK(!core.load_state(foreign));
+    CHECK(!core.load_state({}));
+
+    core.unload();
+}
+
 void test_screen_source_reports_a_valid_split() {
     const std::string core_path = mock_core_path();
     if (core_path.empty()) return;
@@ -731,6 +778,7 @@ void test_save_ram_is_skipped_without_a_path() {
 int main() {
     test_core_loads_and_runs();
     test_reset_restarts_the_core();
+    test_save_states_round_trip();
     test_screen_source_reports_a_valid_split();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();

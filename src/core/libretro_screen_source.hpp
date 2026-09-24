@@ -81,6 +81,13 @@ public:
     // cartridge save (and a core showing an error screen) report false.
     bool has_save_ram() const { return !save_shadow_.empty(); }
 
+    // Save states, where the core can make them -- see LibretroCore. The
+    // errors are sentences for the player. supports_save_states() is cheap
+    // enough to ask every frame.
+    bool supports_save_states() const;
+    bool save_state(std::vector<uint8_t>& out, std::string* error);
+    bool load_state(const std::vector<uint8_t>& state, std::string* error);
+
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
     bool read_screen(ScreenId screen,

@@ -99,6 +99,19 @@ void test_welcome_and_session_round_trip() {
     // The host's own settings screen: not mirrored, but the companion has to
     // know it is up to say where to look and to keep sending presses.
     CHECK_EQ(received_state.settings_open, true);
+    CHECK_EQ(received_state.save_points_available, false);
+
+    // Save points, which came later and go last: sent when there are some,
+    // and absent -- from a host older than them -- read as none.
+    state.save_points_available = true;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK_EQ(received_state.save_points_available, true);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK_EQ(received_state.save_points_available, false);
+    CHECK_EQ(received_state.settings_open, true);
 }
 
 // Everything a companion can ask the host for travels in one message, each

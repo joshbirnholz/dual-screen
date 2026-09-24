@@ -53,6 +53,11 @@ struct LayoutPickerResult {
     // The same for the Controllers screen -- a Wii U's, which is the one
     // console whose controllers are each somebody's.
     bool controllers_requested = false;
+    // The Save Points screen was asked for, on the side that loads or the
+    // side that saves. Like Settings, it belongs to the device running the
+    // game.
+    bool load_save_point_requested = false;
+    bool create_save_point_requested = false;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -113,6 +118,10 @@ struct LayoutPickerState {
     // the game's title.
     bool embedded = false;
     std::string subtitle;
+    // Whether the core running the game can make save points at all -- see
+    // LibretroCore::has_save_states(). Never for a Wii U, whose emulator is not
+    // ours to ask.
+    bool save_points_available = false;
 };
 
 // What a face button asked for and has not yet been allowed to do. Both of
@@ -244,6 +253,8 @@ private:
     // present depends on the session, so they are built per-open rather than
     // being a fixed enum.
     enum class Footer {
+        LoadSavePoint,
+        CreateSavePoint,
         RenderScale,
         Hands,
         Sound,

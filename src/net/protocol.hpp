@@ -286,6 +286,10 @@ struct SessionStateMessage {
     // this says otherwise, which on a phone is the difference between a
     // gyro running for a whole session and one that never starts.
     bool motion_wanted = false;
+    // Whether the host's core can make save points, which adds Load and
+    // Create Save Point to the menu. Last, and optional: a host from before
+    // save points sends nothing, which reads as none.
+    bool save_points_available = false;
 };
 
 struct FrameMessage {

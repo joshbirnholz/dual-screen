@@ -169,6 +169,10 @@ struct LibretroCore::Api {
     void (*retro_unload_game)() = nullptr;
     void* (*retro_get_memory_data)(unsigned) = nullptr;
     std::size_t (*retro_get_memory_size)(unsigned) = nullptr;
+    // Optional: save states. See LibretroCore::state_size().
+    std::size_t (*retro_serialize_size)() = nullptr;
+    bool (*retro_serialize)(void*, std::size_t) = nullptr;
+    bool (*retro_unserialize)(const void*, std::size_t) = nullptr;
 };
 
 LibretroCore::LibretroCore() : api_(new Api()) {}
@@ -293,6 +297,15 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
         handle_ = nullptr;
         return false;
     }
+    // Save states are a feature some cores have, not a requirement of loading
+    // one: looked up without failing, and a core without them simply offers
+    // no save points.
+    api_->retro_serialize_size =
+        reinterpret_cast<std::size_t (*)()>(dlsym(handle_, "retro_serialize_size"));
+    api_->retro_serialize =
+        reinterpret_cast<bool (*)(void*, std::size_t)>(dlsym(handle_, "retro_serialize"));
+    api_->retro_unserialize =
+        reinterpret_cast<bool (*)(const void*, std::size_t)>(dlsym(handle_, "retro_unserialize"));
 
     const unsigned api_version = api_->retro_api_version();
     if (api_version != RETRO_API_VERSION) {
@@ -410,6 +423,31 @@ std::size_t LibretroCore::save_ram_size() const {
         return 0;
     }
     return api_->retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+}
+
+bool LibretroCore::has_save_states() const {
+    return handle_ != nullptr && game_loaded_ && api_->retro_serialize_size != nullptr &&
+           api_->retro_serialize != nullptr && api_->retro_unserialize != nullptr;
+}
+
+std::size_t LibretroCore::state_size() const {
+    return has_save_states() ? api_->retro_serialize_size() : 0;
+}
+
+bool LibretroCore::save_state(std::vector<uint8_t>& out) const {
+    const std::size_t size = state_size();
+    if (size == 0) {
+        return false;
+    }
+    out.assign(size, 0);
+    return api_->retro_serialize(out.data(), out.size());
+}
+
+bool LibretroCore::load_state(const std::vector<uint8_t>& state) {
+    if (!has_save_states() || state.empty()) {
+        return false;
+    }
+    return api_->retro_unserialize(state.data(), state.size());
 }
 
 void LibretroCore::refresh_av_info() {

@@ -887,9 +887,25 @@ RETRO_API void* retro_get_memory_data(unsigned type) {
 RETRO_API size_t retro_get_memory_size(unsigned type) {
     return type == RETRO_MEMORY_SAVE_RAM ? kSaveRamSize : 0;
 }
-RETRO_API size_t retro_serialize_size(void) { return 0; }
-RETRO_API bool retro_serialize(void*, size_t) { return false; }
-RETRO_API bool retro_unserialize(const void*, size_t) { return false; }
+// Save states: the whole of this console is its frame counter, behind a tag
+// so a state from anything else is refused the way a real core refuses one.
+constexpr char kStateTag[4] = {'M', 'O', 'C', 'K'};
+RETRO_API size_t retro_serialize_size(void) { return sizeof(kStateTag) + sizeof(g_frame_counter); }
+RETRO_API bool retro_serialize(void* data, size_t size) {
+    if (size < retro_serialize_size()) return false;
+    std::memcpy(data, kStateTag, sizeof(kStateTag));
+    std::memcpy(static_cast<uint8_t*>(data) + sizeof(kStateTag), &g_frame_counter,
+                sizeof(g_frame_counter));
+    return true;
+}
+RETRO_API bool retro_unserialize(const void* data, size_t size) {
+    if (size != retro_serialize_size() || std::memcmp(data, kStateTag, sizeof(kStateTag)) != 0) {
+        return false;
+    }
+    std::memcpy(&g_frame_counter, static_cast<const uint8_t*>(data) + sizeof(kStateTag),
+                sizeof(g_frame_counter));
+    return true;
+}
 RETRO_API void retro_cheat_reset(void) {}
 RETRO_API void retro_cheat_set(unsigned, bool, const char*) {}
 RETRO_API bool retro_load_game_special(unsigned, const struct retro_game_info*, size_t) {

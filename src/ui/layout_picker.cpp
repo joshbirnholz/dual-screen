@@ -101,6 +101,13 @@ void LayoutPicker::rebuild_footer() {
         }
         return;
     }
+    // Save points first: they are what a player opens this menu mid-game for
+    // most often, and the only entries here that are actions rather than
+    // settings.
+    if (state_.save_points_available) {
+        footer_.push_back(Footer::LoadSavePoint);
+        footer_.push_back(Footer::CreateSavePoint);
+    }
     // Smoothing, Reset and Quit are not here any more: each is a face button
     // named in the guide along the bottom. What is left is the row of settings
     // that have a value to cycle, which is what a button with a label on it is
@@ -173,6 +180,8 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::ScreenGap: break;
         // Plain names, not "Label: value" pairs like the rest above -- these
         // are actions, not settings with a current value to show.
+        case Footer::LoadSavePoint: return "Load Save Point";
+        case Footer::CreateSavePoint: return "Create Save Point";
         case Footer::OpenControllers: return "Controller Order";
         case Footer::OpenSettings: return "Settings";
         case Footer::Disconnect: return "Disconnect";
@@ -290,7 +299,8 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.session_active != state_.session_active ||
                                  state.max_render_scale != state_.max_render_scale ||
                                  state.cursor_choosable != state_.cursor_choosable ||
-                                 state.right_stick_choosable != state_.right_stick_choosable;
+                                 state.right_stick_choosable != state_.right_stick_choosable ||
+                                 state.save_points_available != state_.save_points_available;
     state_ = state;
     selected_layout_id_ = state.layout_id;
     if (entries_changed) {
@@ -452,6 +462,12 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::ScreenGap:
             result.screen_gap_toggled = true;
+            return true;
+        case Footer::LoadSavePoint:
+            result.load_save_point_requested = true;
+            return true;
+        case Footer::CreateSavePoint:
+            result.create_save_point_requested = true;
             return true;
         // Wii U's plain list -- see rebuild_footer(). Each of these is what
         // the corresponding face-button shortcut already does for a DS or a

@@ -673,6 +673,7 @@ LayoutPickerState Client::menu_state_from_host() const {
     state.cursor_choosable = session_.host_cursor_choosable();
     state.max_render_scale = session_.host_max_render_scale();
     state.right_stick_choosable = session_.host_right_stick_choosable();
+    state.save_points_available = session_.host_save_points_available();
     state.cursor_mode =
         session_.host_cursor_shown() ? CursorMode::Shown : CursorMode::Hidden;
     // Properties of the console rather than of the session, worked out the

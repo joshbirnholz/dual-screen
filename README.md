@@ -35,6 +35,8 @@ one running the game.
 - Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
   its path, so moving your ROMs around loses nothing.
 - Writes cartridge saves as `.srm` files, interchangeable with RetroArch's.
+- **Save points** for DS and 3DS games, four per game, from the quick menu —
+  laid out like Nintendo Switch Online's suspend points.
 - **Two-device play**: one device runs the game and shows a screen; the other
   finds it on the network, shows the other screen, and sends its touches and
   buttons back.
@@ -990,6 +992,32 @@ save behind.
 DSi NAND and firmware saves are the core's own business and live in the system
 folder.
 
+### Save points
+
+The quick menu of a DS or 3DS game has **Load Save Point** and **Create Save
+Point**. Both open the same screen, laid out like Nintendo Switch Online's
+suspend points: the two actions down the left, and four slots down the right,
+each with a picture of both screens and the date and time it was made. Left
+and right move between the two columns; B backs out one step at a time.
+
+- **Create** into an empty slot saves straight away. Saving over a slot that
+  already has something in it asks *Overwrite this save point?* first.
+- **Load** asks *Load this save point?* and then goes straight back into the
+  game, from that moment. Empty slots are dimmed and do nothing.
+
+A save point is the emulator's own save state — the whole console at that
+moment — and is separate from the cartridge save above, which carries on being
+written as usual. So loading one also puts the cartridge save back to how it
+was then, the same as it would on the console. They are kept beside the
+cartridge save as `<rom name>.savepoint1` to `.savepoint4`, written the same
+all-or-nothing way. A save point made with one version of a core may not load
+in a much newer one; the screen says so if it does not.
+
+The entries only appear when the core running the game can make save states
+(melonDS DS and Citra both offer them). The screen belongs to the device running the
+game, like Settings: a companion's quick menu has the entries too, and its
+screen says to look at the other one while its buttons keep working it.
+
 ### Face buttons
 
 Everything — menus and game alike — uses **Nintendo positional** controls:
@@ -1035,6 +1063,7 @@ V1 does not script `shortcuts.vdf` for you.
 ~/.config/dualscreen/gamecontrollerdb.txt   optional controller mapping overrides
 ~/.config/dualscreen/games/<rom-sha1>.json  per-game layout
 ~/.local/share/dualscreen/saves/<rom>.srm   cartridge saves
+~/.local/share/dualscreen/saves/<rom>.savepoint1..4   save points
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
 ```
 
@@ -1119,7 +1148,8 @@ ctest --test-dir build --output-on-failure
   collapse to one menu action.
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture, the frontend's own validation
-  of what the core accepted, and the cartridge-save round trip. Also checks
+  of what the core accepted, the cartridge-save round trip, and a save state
+  that puts the game back where it was when loaded. Also checks
   that a screen read back for streaming is never sharper than what was
   actually rendered and never softer than the console's own resolution,
   whatever resolution is asked for.
@@ -1128,6 +1158,10 @@ ctest --test-dir build --output-on-failure
   than by being told where it is: present on a 3DS game, absent on a DS game and
   on a companion, and the six buttons beside it still each report their own
   intent now that the row wraps.
+- `test_save_points` — save point files round-trip (state, picture and time),
+  a truncated or foreign file is refused rather than handed to the core, the
+  picture is both screens side by side whichever byte order they came in, and
+  the screen asks before loading or overwriting and only then.
 - `test_controller_input` — drives an SDL **virtual game controller** through
   the whole input path, so the face-button mapping is verified end to end with
   no hardware, and the left stick reaches the circle pad — pressing the d-pad
@@ -1181,7 +1215,7 @@ The mock core means all of this runs with no melonDS core and no commercial ROM.
 
 A Wii U's Reset button reaching Cemu; see `docs/cemu-integration.md`, which has
 confirmed-working video, pad, and both TV and GamePad audio against a real
-session. Save states, cheats, rewind, shaders. More than
+session. Cheats, rewind, shaders. More than
 one companion per host. The companion in `companion/` is built and tested here as a
 desktop program; the Switch build needs a devkitPro toolchain and the Android
 build needs the Android SDK and NDK, so both have to be checked by hand on the

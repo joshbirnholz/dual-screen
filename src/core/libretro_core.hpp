@@ -161,6 +161,21 @@ public:
     void* save_ram_data() const;
     std::size_t save_ram_size() const;
 
+    // The whole running machine, as the core itself writes it out -- a save
+    // state. Optional in libretro: a core that does not export these cannot
+    // have one, and one that reports a size of 0 has none to give right now.
+    // All of these run on the thread that runs frames, which is the only
+    // thread a core is promised to be called on.
+    //
+    // has_save_states() is only whether the core has the functions, and is
+    // cheap enough to ask every frame. state_size() is not: some cores --
+    // Citra's among them -- find their size by writing a whole state out, so
+    // it is asked only when one is actually being made.
+    bool has_save_states() const;
+    std::size_t state_size() const;
+    bool save_state(std::vector<uint8_t>& out) const;
+    bool load_state(const std::vector<uint8_t>& state);
+
     bool is_loaded() const { return handle_ != nullptr; }
     bool game_loaded() const { return game_loaded_; }
     bool wants_shutdown() const { return wants_shutdown_; }

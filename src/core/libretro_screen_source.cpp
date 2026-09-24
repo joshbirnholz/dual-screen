@@ -449,6 +449,38 @@ void LibretroCoreScreenSource::set_render_scale(int scale) {
     log_info("render scale " + std::to_string(render_scale_) + "x");
 }
 
+bool LibretroCoreScreenSource::supports_save_states() const {
+    return core_ && core_->has_save_states();
+}
+
+bool LibretroCoreScreenSource::save_state(std::vector<uint8_t>& out, std::string* error) {
+    if (!supports_save_states()) {
+        if (error != nullptr) *error = "This emulator cannot make save points.";
+        return false;
+    }
+    if (!core_->save_state(out)) {
+        if (error != nullptr) *error = "The emulator could not save the game's state.";
+        return false;
+    }
+    return true;
+}
+
+bool LibretroCoreScreenSource::load_state(const std::vector<uint8_t>& state, std::string* error) {
+    if (!supports_save_states()) {
+        if (error != nullptr) *error = "This emulator cannot load save points.";
+        return false;
+    }
+    if (!core_->load_state(state)) {
+        if (error != nullptr) {
+            *error = "The emulator could not load it. It may be from a different version of the "
+                     "emulator.";
+        }
+        return false;
+    }
+    log_info("save point loaded (" + std::to_string(state.size()) + " bytes)");
+    return true;
+}
+
 void LibretroCoreScreenSource::reset() {
     if (!core_) {
         return;

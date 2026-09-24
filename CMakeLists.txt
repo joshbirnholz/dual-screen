@@ -110,6 +110,7 @@ add_library(dualscreen_core STATIC
     src/core/external_screen_source.cpp
     src/core/libretro_core.cpp
     src/core/libretro_screen_source.cpp
+    src/core/save_points.cpp
     src/core/core_input_sink.cpp
     src/core/system.cpp
     src/input/controller_mapping.cpp
@@ -148,6 +149,7 @@ add_library(dualscreen_core STATIC
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
     src/ui/controllers_screen.cpp
+    src/ui/save_points_screen.cpp
     src/util/build_stamp.cpp
     src/util/child_process.cpp
     src/util/log.cpp
