@@ -484,7 +484,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.right_stick_choosable != shared_.right_stick_choosable ||
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
-        state.save_points_available != shared_.save_points_available) {
+        state.save_points_available != shared_.save_points_available ||
+        state.left_handed_layouts != shared_.left_handed_layouts) {
         shared_ = state;
         session_state_dirty_ = true;
     }
@@ -964,6 +965,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;
+        state.left_handed_layouts = shared_.left_handed_layouts;
         // Not a setting anyone chose -- it is a property of the console being
         // played, so it comes from the profile rather than from shared_. What
         // it does at the other end is switch a gyroscope on, which is why it

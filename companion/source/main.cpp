@@ -679,7 +679,7 @@ LayoutPickerState Client::menu_state_from_host() const {
     state.session_active = true;  // there is always a host at the other end here
     state.bilinear_filtering = session_.host_filtering();
     state.audio_target = session_.host_audio_target();
-    state.handedness = session_.host_handedness();
+    state.left_handed_layouts = session_.host_left_handed_layouts();
     state.render_scale = session_.host_render_scale();
     state.screen_gap = session_.host_screen_gap();
     state.right_stick_mode = session_.host_right_stick_mode();

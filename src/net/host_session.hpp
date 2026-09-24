@@ -132,6 +132,9 @@ public:
         bool right_stick_choosable = false;
         bool cursor_shown = true;
         bool save_points_available = false;
+        // Which layouts are flipped for a left hand; `handedness` is the
+        // layout in use's. See SessionStateMessage::left_handed_layouts.
+        std::vector<std::string> left_handed_layouts;
     };
 
     // Cheap to call every frame; nothing is sent unless something changed.

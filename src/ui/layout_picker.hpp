@@ -90,7 +90,10 @@ struct LayoutPickerState {
     // cannot do anything is worse than an absent one. Same rule as the render
     // scale and the right stick: offered where there is something to choose.
     bool cursor_choosable = true;
-    Handedness handedness = Handedness::Right;
+    // Which layouts are flipped for a left hand, by id: each is chosen on its
+    // own, with the stylus button under the layouts, and each preview is
+    // drawn the way round its own layout is.
+    std::vector<std::string> left_handed_layouts;
     // How many pixels the core renders per console pixel, and the largest this
     // system offers. A maximum of 1 means there is nothing to choose and the
     // button does not appear.
@@ -225,7 +228,9 @@ public:
     void set_filtering(bool bilinear) { state_.bilinear_filtering = bilinear; }
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
-    void set_handedness(Handedness handedness) { state_.handedness = handedness; }
+    void set_left_handed_layouts(std::vector<std::string> layouts) {
+        state_.left_handed_layouts = std::move(layouts);
+    }
     void set_render_scale(int scale) { state_.render_scale = scale; }
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
@@ -247,7 +252,8 @@ public:
     // Standard tile draws, which layouts fit at all, and which one leads the
     // menu -- see rebuild_tiles().
     void set_screens(const SystemScreens& screens, SystemId system = SystemId::Ds);
-    Handedness handedness() const { return state_.handedness; }
+    // Which hand `layout_id` is drawn for.
+    Handedness handedness_of(const std::string& layout_id) const;
     // The host can change the layout under a companion's open menu.
     void set_selected_layout(const std::string& layout_id);
     bool filtering() const { return state_.bilinear_filtering; }
@@ -274,8 +280,8 @@ public:
 
     const std::string& selected_layout_id() const { return selected_layout_id_; }
 
-    // The layout a tile actually draws: `layout` with this device's handedness
-    // and the current gap choice applied, the same as the game itself would
+    // The layout a tile actually draws: `layout` with its own hand and the
+    // current gap choice applied, the same as the game itself would
     // be drawn with. Exposed so a preview -- and a test -- do not have to
     // reimplement the combination; render() uses this for every tile, which is
     // what makes toggling Gap or Hands update the previews immediately.
@@ -374,7 +380,7 @@ private:
     // devices agree on what Down means however different their screens are.
     int layout_columns() const;
     // Whether the layout in use has a hand to choose -- see
-    // layout_has_handedness(). Greyed out, and passed over, where not.
+    // layout_has_handedness(). Hidden, and passed over, where not.
     bool hand_button_usable() const;
     bool slot_filled(int slot) const;
     void activate_section(LayoutPickerResult& result);

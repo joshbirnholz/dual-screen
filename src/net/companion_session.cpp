@@ -371,6 +371,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_filtering_ = state.bilinear_filtering;
             host_audio_target_ = state.audio_target;
             host_handedness_ = state.handedness;
+            host_left_handed_layouts_ = state.left_handed_layouts;
             host_right_stick_mode_ = state.right_stick_mode;
             host_render_scale_ = state.render_scale;
             host_screen_gap_ = state.screen_gap;

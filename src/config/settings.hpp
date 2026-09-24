@@ -211,9 +211,15 @@ struct Settings {
     // Whether this device has a mouse pointer at all.
     CursorMode cursor_mode = CursorMode::Shown;
 
-    // Which hand holds the stylus. Decides which side the small screen sits on
-    // in the layouts that have a side.
-    Handedness handedness = Handedness::Right;
+    // Which layouts are flipped for a left hand, by id. Chosen layout by
+    // layout -- the stylus button under the layouts flips only the one in
+    // use -- so each keeps whichever way round it was left. Every layout not
+    // named here is drawn right-handed, as it is defined.
+    std::vector<std::string> left_handed_layouts;
+    // An older settings.json said "handedness": "left", for every layout at
+    // once, and nothing yet says which layouts: the app turns that into every
+    // layout that has a hand, which is what the player was seeing.
+    bool legacy_left_handed = false;
 
     float stick_deadzone = 0.35f;   // fraction of full stick travel
     float trigger_deadzone = 0.30f;

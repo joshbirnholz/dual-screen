@@ -1,6 +1,7 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -560,6 +561,29 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(options.on_content());
 }
 
+// Each layout is its own way round: flipping one leaves every other preview
+// as it was.
+void test_hands_are_remembered_per_layout() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = "upper_focus";
+    state.left_handed_layouts = {"upper_focus"};
+    LayoutPicker picker(registry);
+    picker.open(state);
+
+    const Layout& upper = *registry.find("upper_focus");
+    const Layout& touch = *registry.find("touch_focus");
+    // Both put their two screens side by side, so mirroring one is running
+    // them the other way along the row.
+    const Layout flipped = picker.resolved_layout_for_preview(upper);
+    const Layout as_defined = picker.resolved_layout_for_preview(touch);
+    CHECK(upper.composition.items.size() == 2 && touch.composition.items.size() == 2);
+    CHECK_MSG(flipped.composition.items[0].screen == upper.composition.items[1].screen,
+              "the left-handed layout's preview was not mirrored");
+    CHECK_MSG(as_defined.composition.items[0].screen == touch.composition.items[0].screen,
+              "a layout nobody flipped was mirrored along with the one that was");
+}
+
 // Slots 1 and 3 filled, 3 the newer.
 std::vector<SavePointInfo> some_slots() {
     std::vector<SavePointInfo> slots(kSavePointSlots);
@@ -1002,14 +1026,15 @@ void test_a_shown_menu_takes_everything_it_is_given() {
     LayoutPickerState from_host = opened;
     from_host.layout_id = "vertical";
     from_host.audio_target = AudioTarget::BottomScreen;
-    from_host.handedness = Handedness::Left;
+    from_host.left_handed_layouts = {"upper_focus"};
     from_host.bilinear_filtering = true;
     const int focus = LayoutPicker::focus_of(MenuSection::Options, 1);
     picker.show(from_host, focus, MenuConfirm::None);
 
     CHECK_STR_EQ(picker.selected_layout_id(), "vertical");
     CHECK(picker.audio_target() == AudioTarget::BottomScreen);
-    CHECK(picker.handedness() == Handedness::Left);
+    CHECK(picker.handedness_of("upper_focus") == Handedness::Left);
+    CHECK(picker.handedness_of("touch_focus") == Handedness::Right);
     CHECK_EQ(picker.filtering(), true);
     CHECK_EQ(picker.focus(), focus);
 
@@ -1290,6 +1315,7 @@ int main() {
     test_save_points_only_where_the_core_can_make_them();
     test_the_sections_that_end_something();
     test_the_stylus_button();
+    test_hands_are_remembered_per_layout();
     test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape();
     test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();

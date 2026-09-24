@@ -109,7 +109,24 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.save_points_available, true);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    // Not left-handed in the list, so no list and the hand below disagree:
+    // from a host that sends one, the list is what counts.
+    CHECK(received_state.left_handed_layouts.empty());
+
+    // Which layouts are flipped, after that, and from a host from before the
+    // list -- the message stopping at the save-state flag -- worked out from
+    // the hand of the layout in use, which is all such a host says.
+    state.left_handed_layouts = {"upper_focus", "side_by_side"};
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(received_state.left_handed_layouts ==
+          std::vector<std::string>({"upper_focus", "side_by_side"}));
+    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12);
+    CHECK(decode_session_state(payload.data(), payload.size() - list_bytes, received_state));
+    CHECK(received_state.left_handed_layouts == std::vector<std::string>({"upper_on_tv"}));
+    CHECK(decode_session_state(payload.data(), payload.size() - list_bytes - 1, received_state));
     CHECK_EQ(received_state.save_points_available, false);
     CHECK_EQ(received_state.settings_open, true);
 }

@@ -842,9 +842,15 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     return result;
 }
 
+Handedness LayoutPicker::handedness_of(const std::string& layout_id) const {
+    const auto& left = state_.left_handed_layouts;
+    return std::find(left.begin(), left.end(), layout_id) != left.end() ? Handedness::Left
+                                                                        : Handedness::Right;
+}
+
 Layout LayoutPicker::resolved_layout_for_preview(const Layout& layout) const {
-    Layout resolved =
-        resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap), state_.handedness);
+    Layout resolved = resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap),
+                                             handedness_of(layout.id));
     resolved.fill_display = fill_display_;
     return resolved;
 }
@@ -970,20 +976,20 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
                   menu_row_text(focused || selected), TextAlign::Center);
     }
 
-    // The stylus button: the Wii U's own symbol in a square, outlined like
-    // the tiles. Pressing it only mirrors the symbol to the other hand -- it
-    // never lights up -- and the cursor on it is a heavier outline. Faded
-    // where the layout in use has no hand to choose.
+    // The stylus button: the Wii U's own symbol in a square, drawn the way a
+    // layout tile is -- outlined, and filled under the cursor with the symbol
+    // going dark on it -- and mirrored to show which hand the layout in use is
+    // for. Not there at all where that layout has no hand to choose.
     const PixelRect& square = geometry.hand_button;
-    if (square.w <= 0.0f) return;
-    const bool usable = hand_button_usable();
-    const bool focused = usable && on_content_ && item_ == tile_count();
+    if (square.w <= 0.0f || !hand_button_usable()) return;
+    const bool focused = on_content_ && item_ == tile_count();
     const float border = menu_border(scale);
-    glyphs.draw_stylus_hand(quads, square, state_.handedness == Handedness::Left,
-                            usable ? 1.0f : 0.35f);
-    Color outline = usable ? theme.text : theme.text_dim;
-    if (!usable) outline.a = 0.5f;
-    quads.draw_outline(square, outline, focused ? std::round(border * 2.5f) : border);
+    draw_menu_tile(quads, square, focused, false, scale);
+    glyphs.draw_stylus_hand(quads,
+                            PixelRect{square.x + border, square.y + border,
+                                      square.w - border * 2.0f, square.h - border * 2.0f},
+                            focused ? theme.background : theme.text,
+                            handedness_of(selected_layout_id_) == Handedness::Left);
 }
 
 void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,

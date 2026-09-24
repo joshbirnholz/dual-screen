@@ -360,6 +360,7 @@ void test_settings_round_trip() {
     defaults.video_hold = video::VideoHold::Responsive;
     defaults.audio_target = AudioTarget::BottomScreen;
     defaults.cursor_mode = CursorMode::Hidden;
+    defaults.left_handed_layouts = {"upper_focus", "side_by_side"};
     // All three set away from their defaults, and not to the same value as
     // each other, so a round trip that mixed them up would be caught.
     defaults.screen_codec_ds = video::ScreenCodec::H264;
@@ -371,6 +372,9 @@ void test_settings_round_trip() {
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
+    CHECK(reloaded.left_handed_layouts ==
+          std::vector<std::string>({"upper_focus", "side_by_side"}));
+    CHECK(!reloaded.legacy_left_handed);
     CHECK_STR_EQ(reloaded.default_layout_id, "side_by_side");
     CHECK_STR_EQ(reloaded.last_browse_dir, "/tmp/roms");
     CHECK_EQ(reloaded.vsync, false);
@@ -462,6 +466,24 @@ void test_settings_round_trip() {
 // Alone, a Wii U's device is the GamePad on a Steam Deck's own panel and the
 // television anywhere else, unless somebody chose -- so a Deck in the hand is
 // the GamePad and the same Deck on a dock is the television.
+// A settings.json from before hands were chosen layout by layout said one hand
+// for all of them. "left" is kept as a request for the app to flip every
+// layout that has a hand; "right", or nothing, is simply none flipped.
+void test_one_left_hand_for_every_layout_is_carried_over() {
+    const std::string sandbox = make_sandbox();
+    setenv("XDG_CONFIG_HOME", path_join(sandbox, "config").c_str(), 1);
+    setenv("XDG_DATA_HOME", path_join(sandbox, "data").c_str(), 1);
+    const AppPaths paths = AppPaths::resolve();
+    CHECK(Settings::load(paths).save(paths));
+
+    for (const char* hand : {"left", "right"}) {
+        std::ofstream(paths.settings_file) << "{ \"handedness\": \"" << hand << "\" }";
+        const Settings old = Settings::load(paths);
+        CHECK_EQ(old.legacy_left_handed, std::string(hand) == "left");
+        CHECK(old.left_handed_layouts.empty());
+    }
+}
+
 void test_a_lone_device_is_the_gamepad_in_the_hand_and_the_television_on_a_dock() {
     CHECK(Settings().wii_u_screen_alone == WiiUScreenAlone::Auto);
 
@@ -545,6 +567,7 @@ void test_command_line() {
 }  // namespace
 
 int main() {
+    test_one_left_hand_for_every_layout_is_carried_over();
     test_sha1_known_vectors();
     test_sha1_file();
     test_paths_resolve_under_xdg();

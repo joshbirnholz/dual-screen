@@ -445,9 +445,18 @@ struct App::Impl {
     // DS/3DS only -- a Wii U's TV and GamePad audio are not a player choice
     // at all, see the External source's own audio callback.
     AudioTarget audio_target = AudioTarget::Both;
-    // Which hand holds the stylus. Shared with the other device, since it
-    // changes what both of them are drawing.
-    Handedness handedness = Handedness::Right;
+    // Which layouts are flipped for a left hand, by id -- each chosen on its
+    // own. Shared with the other device, since it changes what both of them
+    // are drawing.
+    std::vector<std::string> left_handed_layouts;
+    Handedness handedness_of(const std::string& layout_id) const {
+        return std::find(left_handed_layouts.begin(), left_handed_layouts.end(), layout_id) !=
+                       left_handed_layouts.end()
+                   ? Handedness::Left
+                   : Handedness::Right;
+    }
+    // The hand the layout in use is drawn for.
+    Handedness current_handedness() const { return handedness_of(active_layout().id); }
     // How many pixels the core renders per console pixel. Only the host runs a
     // core, but the menu is one menu wherever it is opened from, so this is
     // shared like everything else on it.
@@ -632,7 +641,13 @@ struct App::Impl {
     // The next scale in the cycle, wrapping at the system's maximum.
     int next_render_scale() const;
     void adopt_audio_target(AudioTarget target);
+    // Sets the hand of the layout in use, and only that layout.
     void adopt_handedness(Handedness hand);
+    // The whole list, as the host has it, on a companion.
+    void adopt_left_handed_layouts(const std::vector<std::string>& layouts);
+    // An older settings.json's one hand for every layout, turned into the
+    // list: every layout with a hand, flipped. Once.
+    void adopt_legacy_handedness();
     void adopt_screen_gap(bool include_gap);
     void adopt_right_stick_mode(RightStickMode mode);
     // Whether this device should be making sound right now.
@@ -804,7 +819,8 @@ Layout App::Impl::device_layout() const {
     // what is drawn, and where a touch lands -- has to see the same one. The
     // gap choice does not interact with either, so its order does not matter.
     Layout chosen =
-        resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap), handedness);
+        resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap),
+                               current_handedness());
     // A companion holding the touch screen is a thing being touched, so it
     // fills its panel however many pixels the panel has -- the same as a
     // display small enough to do that already. A host does not, whatever it is
@@ -848,8 +864,8 @@ void App::Impl::companion_target_size(ScreenId screen, int& out_width, int& out_
     // resolved for whichever screen the companion holds rather than this
     // device's. A companion is by definition paired the moment there is a
     // reported size to act on, so there is no unpaired fallback to consider.
-    Layout companion_layout =
-        resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap), handedness);
+    Layout companion_layout = resolve_for_handedness(
+        resolve_gap_choice(active_layout(), screen_gap), current_handedness());
     if (companion_layout.per_device) {
         companion_layout = resolve_for_device(companion_layout, host_session->companion_screen());
     }
@@ -1290,7 +1306,7 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     state.layout_id = companion_session->host_layout_id();
     state.bilinear_filtering = companion_session->host_filtering();
     state.audio_target = companion_session->host_audio_target();
-    state.handedness = companion_session->host_handedness();
+    state.left_handed_layouts = companion_session->host_left_handed_layouts();
     state.render_scale = companion_session->host_render_scale();
     state.screen_gap = companion_session->host_screen_gap();
     state.right_stick_mode = companion_session->host_right_stick_mode();
@@ -1352,7 +1368,7 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 request_audio_target(next_audio_target(audio_target));
             }
             if (result.handedness_changed) {
-                request_handedness(other_hand(handedness));
+                request_handedness(other_hand(current_handedness()));
             }
             if (result.screen_gap_toggled) {
                 request_screen_gap(!screen_gap);
@@ -1428,7 +1444,7 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
-    picker_state.handedness = handedness;
+    picker_state.left_handed_layouts = left_handed_layouts;
     picker_state.render_scale = render_scale;
     // From the console being played, on both devices: a companion is shown the
     // same menu as the host, and `system` follows the host while it is
@@ -1616,20 +1632,54 @@ void App::Impl::request_handedness(Handedness hand) {
 }
 
 void App::Impl::adopt_handedness(Handedness hand) {
-    if (hand == handedness) {
+    const std::string id = active_layout().id;
+    if (hand == handedness_of(id)) {
         return;
     }
-    handedness = hand;
-    if (picker) {
-        picker->set_handedness(handedness);
+    if (hand == Handedness::Left) {
+        left_handed_layouts.push_back(id);
+    } else {
+        left_handed_layouts.erase(
+            std::remove(left_handed_layouts.begin(), left_handed_layouts.end(), id),
+            left_handed_layouts.end());
     }
-    // Which hand you hold a stylus in does not change from game to game, so it
-    // is remembered once rather than per ROM.
+    if (picker) {
+        picker->set_left_handed_layouts(left_handed_layouts);
+    }
+    // Remembered layout by layout, and not per game: which way round you like
+    // a layout does not change from one game to the next.
     if (!is_companion()) {
-        settings.handedness = handedness;
+        settings.left_handed_layouts = left_handed_layouts;
         settings.save(paths);
     }
-    log_info(std::string(is_companion() ? "following the host: " : "") + to_string(handedness));
+    log_info(id + ": " + to_string(hand));
+}
+
+void App::Impl::adopt_left_handed_layouts(const std::vector<std::string>& layouts) {
+    if (layouts == left_handed_layouts) {
+        return;
+    }
+    left_handed_layouts = layouts;
+    if (picker) {
+        picker->set_left_handed_layouts(left_handed_layouts);
+    }
+    log_info(std::string("following the host: ") + to_string(current_handedness()) + " for " +
+             active_layout().id);
+}
+
+void App::Impl::adopt_legacy_handedness() {
+    if (!settings.legacy_left_handed) {
+        return;
+    }
+    settings.legacy_left_handed = false;
+    settings.left_handed_layouts.clear();
+    for (std::size_t index = 0; index < registry.size(); ++index) {
+        if (layout_has_handedness(registry.at(index))) {
+            settings.left_handed_layouts.push_back(registry.at(index).id);
+        }
+    }
+    settings.save(paths);
+    log_info("the one left hand in settings.json is now every layout that has a hand");
 }
 
 void App::Impl::request_audio_target(AudioTarget target) {
@@ -1837,7 +1887,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     bilinear_filtering = settings.default_bilinear_filtering;
     render_scale = settings.default_render_scale;
     audio_target = settings.audio_target;
-    handedness = settings.handedness;
+    left_handed_layouts = settings.left_handed_layouts;
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
     input.set_right_stick_mode(right_stick_mode);
@@ -1913,7 +1963,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     active_layout_id = settings.default_layout_id;
     bilinear_filtering = settings.default_bilinear_filtering;
     audio_target = settings.audio_target;
-    handedness = settings.handedness;
+    left_handed_layouts = settings.left_handed_layouts;
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
 
@@ -2730,6 +2780,7 @@ int App::run(const AppOptions& options) {
     }
 
     impl.settings = Settings::load(impl.paths);
+    impl.adopt_legacy_handedness();
     impl.button_glyphs.set_style(impl.settings.pad_glyphs);
     impl.input.set_confirm_button(impl.settings.confirm_button);
     set_confirm_button(impl.settings.confirm_button);
@@ -2886,7 +2937,7 @@ int App::run(const AppOptions& options) {
             impl.local_screen = wanted;
             impl.bilinear_filtering = impl.settings.default_bilinear_filtering;
             impl.audio_target = impl.settings.audio_target;
-            impl.handedness = impl.settings.handedness;
+            impl.left_handed_layouts = impl.settings.left_handed_layouts;
             impl.screen_gap = impl.settings.default_screen_gap;
             impl.apply_filtering();
             impl.state = Impl::State::Companion;
@@ -3090,7 +3141,8 @@ int App::run(const AppOptions& options) {
             shared.paused = paused_here;
             shared.bilinear_filtering = impl.bilinear_filtering;
             shared.audio_target = impl.audio_target;
-            shared.handedness = impl.handedness;
+            shared.handedness = impl.current_handedness();
+            shared.left_handed_layouts = impl.left_handed_layouts;
             shared.render_scale = impl.render_scale;
             shared.screen_gap = impl.screen_gap;
             shared.right_stick_mode = impl.right_stick_mode;
@@ -3409,7 +3461,7 @@ int App::run(const AppOptions& options) {
                              (impl.bilinear_filtering ? "on" : "off"));
                 }
                 impl.adopt_audio_target(impl.companion_session->host_audio_target());
-                impl.adopt_handedness(impl.companion_session->host_handedness());
+                impl.adopt_left_handed_layouts(impl.companion_session->host_left_handed_layouts());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());
                 // Whether this machine's own gyro is being read at all. Told

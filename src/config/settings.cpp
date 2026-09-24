@@ -137,8 +137,16 @@ Settings Settings::load(const AppPaths& paths) {
         settings.video_hold);
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
-    settings.handedness = handedness_from_key(
-        get_or<std::string>(document, "handedness", handedness_key(settings.handedness)));
+    const auto left_handed = document.find("left_handed_layouts");
+    if (left_handed != document.end() && left_handed->is_array()) {
+        for (const auto& id : *left_handed) {
+            if (id.is_string()) settings.left_handed_layouts.push_back(id.get<std::string>());
+        }
+    } else {
+        settings.legacy_left_handed =
+            handedness_from_key(get_or<std::string>(document, "handedness", "right")) ==
+            Handedness::Left;
+    }
     // Under a new name, and the old one is not read. Every file the old name
     // is in was written by a version that stored what it had guessed from
     // the machine's shape whether or not anybody chose it, so what is there
@@ -187,7 +195,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["wii_u_alone"] = screen_alone_key(wii_u_screen_alone);
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);
-    document["handedness"] = handedness_key(handedness);
+    document["left_handed_layouts"] = left_handed_layouts;
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;

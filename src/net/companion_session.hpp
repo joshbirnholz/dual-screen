@@ -482,6 +482,11 @@ public:
     bool host_filtering() const { return host_filtering_; }
     AudioTarget host_audio_target() const { return host_audio_target_; }
     Handedness host_handedness() const { return host_handedness_; }
+    // Which of the host's layouts are flipped for a left hand, for the menu's
+    // previews; host_handedness() is the one in use.
+    const std::vector<std::string>& host_left_handed_layouts() const {
+        return host_left_handed_layouts_;
+    }
     RightStickMode host_right_stick_mode() const { return host_right_stick_mode_; }
     int host_render_scale() const { return host_render_scale_; }
     bool host_screen_gap() const { return host_screen_gap_; }
@@ -828,6 +833,7 @@ private:
     bool host_filtering_ = false;
     AudioTarget host_audio_target_ = AudioTarget::Both;
     Handedness host_handedness_ = Handedness::Right;
+    std::vector<std::string> host_left_handed_layouts_;
     RightStickMode host_right_stick_mode_ = RightStickMode::CStick;
     int host_render_scale_ = 1;
     bool host_screen_gap_ = true;

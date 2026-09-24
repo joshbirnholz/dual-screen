@@ -17,7 +17,7 @@ The button is round there and square here, so the copy is made like this:
   into the three things the symbol is made of: the blue-grey background, the
   white of the hand and the stylus's tip, and the dark navy of the stylus's
   far end and the back of the hand. Softly, not with a hard cut, so the edges
-  stay smooth. The background is painted back flat: its shading is the round
+  stay smooth. The background is dropped, shading and all: it is the round
   button's, not the symbol's.
 - Only the inside of the circle is read, a little short of its edge: the
   rim is a light ring with a thin dark shadow inside it, and neither is part
@@ -26,8 +26,10 @@ The button is round there and square here, so the copy is made like this:
   the circle's edge -- the arm on the left, the back of the hand on the right
   -- it is carried straight on out to the square's edge, as it would have gone
   had the button been square to begin with.
-- Then the three are painted back in their own colours, clean, and the whole
-  is scaled down to 128 pixels square.
+- Then it is painted back as white on a transparent background -- the white
+  parts solid, the navy ones a fainter white -- and scaled down to 128
+  pixels square. Only its alpha is used: the menu tints it like the button
+  glyphs, so it can go dark on a highlighted button.
 
 The app uses it as it is for a left hand and mirrored for a right.
 """
@@ -39,9 +41,8 @@ from PIL import Image
 
 SIZE = 128
 SCALE = 8
-BACKGROUND = (106, 119, 148)
-WHITE = (252, 252, 252)
-NAVY = (70, 78, 107)
+# How solid the parts that are navy on the Wii U are drawn, as white.
+BACK_OPACITY = 0.4
 
 
 def luminance(rgb):
@@ -92,18 +93,16 @@ def main():
             white[y][x] = white[y][right]
             navy[y][x] = navy[y][right]
 
-    out = Image.new("RGB", (side, side))
+    # White on nothing: the white parts solid, the navy ones -- the far end of
+    # the stylus and the hand behind it -- a fainter white, the way they sit
+    # back on the Wii U. Only the alpha is used; the menu tints it.
+    out = Image.new("RGBA", (side, side), (255, 255, 255, 0))
     painted = out.load()
     for y in range(side):
         for x in range(side):
             w, n = white[y][x], navy[y][x]
-            colour = []
-            for channel in range(3):
-                value = BACKGROUND[channel]
-                value = value + (NAVY[channel] - value) * n
-                value = value + (WHITE[channel] - value) * w
-                colour.append(int(round(value)))
-            painted[x, y] = tuple(colour)
+            alpha = w + (1.0 - w) * n * BACK_OPACITY
+            painted[x, y] = (255, 255, 255, int(round(alpha * 255)))
 
     small = out.resize((SIZE, SIZE), Image.LANCZOS)
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stylus_hand.png")

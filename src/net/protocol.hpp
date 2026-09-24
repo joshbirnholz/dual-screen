@@ -295,6 +295,12 @@ struct SessionStateMessage {
     // Create Save Point to the menu. Last, and optional: a host from before
     // save points sends nothing, which reads as none.
     bool save_points_available = false;
+    // Which layouts are flipped for a left hand, by id -- chosen layout by
+    // layout, and wanted here for the menu's previews of each. `handedness`
+    // above stays the hand of the layout in use, for a companion from before
+    // this, which only ever draws that one. Last, and optional: from an older
+    // host it is worked out from those two -- see decode_session_state().
+    std::vector<std::string> left_handed_layouts;
 };
 
 struct FrameMessage {

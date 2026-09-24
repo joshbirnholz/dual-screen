@@ -274,6 +274,11 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.settings_open ? 1u : 0u);
     put_u8(out, message.motion_wanted ? 1u : 0u);
     put_u8(out, message.save_points_available ? 1u : 0u);
+    const std::size_t flipped = std::min<std::size_t>(message.left_handed_layouts.size(), 255);
+    put_u8(out, static_cast<uint8_t>(flipped));
+    for (std::size_t index = 0; index < flipped; ++index) {
+        put_string(out, message.left_handed_layouts[index]);
+    }
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -755,6 +760,19 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     uint8_t save_points_available = 0;
     if (reader.remaining() > 0) reader.u8(save_points_available);
     out.save_points_available = (save_points_available != 0);
+    out.left_handed_layouts.clear();
+    bool listed = false;
+    if (reader.remaining() > 0) {
+        uint8_t flipped = 0;
+        reader.u8(flipped);
+        for (uint8_t index = 0; index < flipped && reader.ok(); ++index) {
+            std::string id;
+            reader.string(id);
+            out.left_handed_layouts.push_back(id);
+        }
+        if (!reader.ok()) return false;
+        listed = true;
+    }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);
     out.settings_open = (settings_open != 0);
@@ -767,6 +785,11 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     if (!right_stick_mode_from_wire(right_stick, out.right_stick_mode)) return false;
     if (!audio_target_from_wire(audio, out.audio_target)) return false;
     if (!handedness_from_wire(hands, out.handedness)) return false;
+    // A host from before the list: all it says is the hand of the layout in
+    // use, which is all it had.
+    if (!listed && out.handedness == Handedness::Left) {
+        out.left_handed_layouts.push_back(out.layout_id);
+    }
     return screen_from_wire(screen, out.companion_screen);
 }
 

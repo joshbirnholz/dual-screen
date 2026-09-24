@@ -78,8 +78,7 @@ public:
     bool initialize(std::string* error);
     void shutdown() {
         texture_.destroy();
-        stylus_right_.destroy();
-        stylus_left_.destroy();
+        stylus_hand_.destroy();
     }
     bool valid() const { return texture_.valid(); }
 
@@ -113,16 +112,15 @@ public:
     PadGlyphStyle style() const { return style_; }
 
     // The one other symbol the menus draw: the Wii U's hand holding a stylus,
-    // a square picture in its own colours, filling `rect` and mirrored for a
-    // left hand. `opacity` fades it where it cannot be pressed. Kept here with
-    // the buttons because it is handed to the same places.
-    void draw_stylus_hand(QuadRenderer& quads, const PixelRect& rect, bool left_handed,
-                          float opacity = 1.0f) const;
+    // filling `rect` in `color` -- its back parts fainter, as the artwork has
+    // them -- the way round `left_handed` says. Kept here with the buttons
+    // because it is tinted the same way and handed to the same places.
+    void draw_stylus_hand(QuadRenderer& quads, const PixelRect& rect, const Color& color,
+                          bool left_handed) const;
 
 private:
     Texture texture_;
-    Texture stylus_right_;
-    Texture stylus_left_;
+    Texture stylus_hand_;
     PadGlyphStyle style_ = PadGlyphStyle::Nintendo;
     int cell_width_ = 0;
     int cell_height_ = 0;
