@@ -891,8 +891,7 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
         } else if (current) {
             quads.draw_solid(row, theme.panel_focused);
         }
-        Color ink = focused ? theme.background : theme.text;
-        if (section == MenuSection::Quit && !focused) ink = theme.danger;
+        const Color& ink = focused ? theme.background : theme.text;
         text.draw(quads, section_label(section), row.x + row.w - line * 0.8f,
                   row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f, row_scale, ink,
                   TextAlign::Right);
@@ -1065,10 +1064,9 @@ void LayoutPicker::render(QuadRenderer& quads,
             draw_menu_row(quads, row, focused, scale);
 
             const float pad = line * 0.7f;
-            const bool is_quit = (footer_[index] == Footer::Quit);
             text.draw(quads, footer_label(footer_[index]), row.x + pad,
                       row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
-                      is_quit && !focused ? theme.danger : menu_row_text(focused));
+                      menu_row_text(focused));
         }
         // Everything this menu can do lives in the list above, reached by A.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
