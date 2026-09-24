@@ -659,6 +659,8 @@ void test_the_menu_is_one_menu_across_both_devices() {
     shared.max_render_scale = 3;
     shared.cursor_choosable = true;
     shared.right_stick_choosable = true;
+    shared.left_stick_choosable = true;
+    shared.left_stick_press = LeftStickPress::SwapLayout;
     host.set_session_state(shared);
     const bool drawn = spin(host, companion, [&] {
         return companion.host_menu_open() && companion.host_menu_focus() == 4;
@@ -668,6 +670,10 @@ void test_the_menu_is_one_menu_across_both_devices() {
     CHECK_MSG(companion.host_max_render_scale() == 3 && companion.host_cursor_choosable() &&
                   companion.host_right_stick_choosable(),
               "the companion was not told which entries that menu has, so its row could differ");
+    CHECK_MSG(companion.host_left_stick_choosable() &&
+                  companion.host_left_stick_press() == LeftStickPress::SwapLayout,
+              "the companion was not told the menu offers the left stick's click, so its Options "
+              "list would be a row short");
 
     // And a press made over there is answered here, not there.
     RequestMessage pending;
@@ -821,6 +827,14 @@ void test_shared_settings_stay_in_sync() {
     });
     CHECK_MSG(asked_stick, "the right stick request never reached the host");
     CHECK(request.right_stick_mode == RightStickMode::DPad);
+
+    // The left stick's click, the same way: asked of the host, not decided here.
+    companion.request_left_stick_press(LeftStickPress::SwapLayout);
+    const bool asked_left = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_left_stick_press;
+    });
+    CHECK_MSG(asked_left, "the left stick request never reached the host");
+    CHECK(request.left_stick_press == LeftStickPress::SwapLayout);
 
     set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2, false,
                RightStickMode::DPad);

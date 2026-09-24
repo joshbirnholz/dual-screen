@@ -249,6 +249,12 @@ struct RequestMessage {
     // to decide like everything else here.
     bool wants_right_stick_mode = false;
     RightStickMode right_stick_mode = RightStickMode::CStick;
+    // What clicking the left stick does -- see LeftStickPress. The host's to
+    // decide like the right stick, for the same reason: the quick menu that
+    // offers it is one menu, and its entries and what they say have to be the
+    // same on both screens.
+    bool wants_left_stick_press = false;
+    LeftStickPress left_stick_press = LeftStickPress::Microphone;
 };
 
 struct RejectMessage {
@@ -288,6 +294,13 @@ struct SessionStateMessage {
     uint8_t max_render_scale = 1;
     bool cursor_choosable = false;
     bool right_stick_choosable = false;
+    // Whether the menu offers what the left stick's click does -- only where
+    // the console has a microphone for it to be -- and what the host has it
+    // set to, which is what both devices' L3 does while they are connected.
+    // Sent rather than worked out at each end, so the Options list is the
+    // same length on both screens and a cursor means the same row on each.
+    bool left_stick_choosable = false;
+    LeftStickPress left_stick_press = LeftStickPress::Microphone;
     // Whether this device's pointer is shown. Per-device in what it does, but
     // the menu that offers it is one menu, so the label it carries has to come
     // from the same place as everything else on it.

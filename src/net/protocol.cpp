@@ -279,6 +279,10 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     for (std::size_t index = 0; index < flipped; ++index) {
         put_string(out, message.left_handed_layouts[index]);
     }
+    // 0 when the menu does not offer it, otherwise which way it is set.
+    put_u8(out, !message.left_stick_choosable ? 0u
+                : message.left_stick_press == LeftStickPress::Microphone ? 1u
+                                                                         : 2u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -610,6 +614,10 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, static_cast<uint8_t>(message.menu_action));
     put_u8(out, message.wants_menu_focus ? 1u : 0u);
     put_u8(out, message.menu_focus);
+    // 0 for no change, otherwise which way it should be set.
+    put_u8(out, !message.wants_left_stick_press ? 0u
+                : message.left_stick_press == LeftStickPress::Microphone ? 1u
+                                                                         : 2u);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -657,6 +665,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     reader.u8(wants_menu_focus);
     reader.u8(out.menu_focus);
     if (!reader.ok()) return false;
+    out.wants_left_stick_press = false;
+    if (reader.remaining() > 0) {
+        uint8_t left_stick = 0;
+        reader.u8(left_stick);
+        if (left_stick > 2) return false;
+        out.wants_left_stick_press = left_stick != 0;
+        out.left_stick_press =
+            left_stick == 2 ? LeftStickPress::SwapLayout : LeftStickPress::Microphone;
+    }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);
     if (out.wants_menu_action && !menu_action_from_wire(menu_action, out.menu_action)) return false;
@@ -788,6 +805,17 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         }
         if (!reader.ok()) return false;
         listed = true;
+    }
+    // A host from before the left stick was on the menu offers no such entry.
+    out.left_stick_choosable = false;
+    out.left_stick_press = LeftStickPress::Microphone;
+    if (reader.remaining() > 0) {
+        uint8_t left_stick = 0;
+        reader.u8(left_stick);
+        if (left_stick > 2) return false;
+        out.left_stick_choosable = left_stick != 0;
+        out.left_stick_press =
+            left_stick == 2 ? LeftStickPress::SwapLayout : LeftStickPress::Microphone;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

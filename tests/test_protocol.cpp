@@ -123,12 +123,33 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.left_handed_layouts ==
           std::vector<std::string>({"upper_focus", "side_by_side"}));
-    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12);
+    // (The left stick's byte goes after the list, so a host from before the
+    // list stops one byte earlier still.)
+    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 1;
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes, received_state));
     CHECK(received_state.left_handed_layouts == std::vector<std::string>({"upper_on_tv"}));
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes - 1, received_state));
     CHECK_EQ(received_state.save_points_available, false);
     CHECK_EQ(received_state.settings_open, true);
+
+    // What the left stick's click does, last: whether the menu offers it at
+    // all and which way the host has it, so both devices build the same
+    // Options list. A host from before it offers no such entry.
+    CHECK_EQ(received_state.left_stick_choosable, false);
+    for (const LeftStickPress press : {LeftStickPress::Microphone, LeftStickPress::SwapLayout}) {
+        state.left_stick_choosable = true;
+        state.left_stick_press = press;
+        buffer.clear();
+        encode_session_state(state, buffer);
+        CHECK(one_message(buffer, type, payload));
+        CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+        CHECK_EQ(received_state.left_stick_choosable, true);
+        CHECK(received_state.left_stick_press == press);
+        CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+        CHECK_EQ(received_state.left_stick_choosable, false);
+        CHECK(received_state.left_handed_layouts ==
+              std::vector<std::string>({"upper_focus", "side_by_side"}));
+    }
 }
 
 // Everything a companion can ask the host for travels in one message, each
@@ -195,6 +216,8 @@ void test_request_round_trip() {
     sent.screen_gap = false;
     sent.wants_right_stick_mode = true;
     sent.right_stick_mode = RightStickMode::DPad;
+    sent.wants_left_stick_press = true;
+    sent.left_stick_press = LeftStickPress::SwapLayout;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -224,6 +247,13 @@ void test_request_round_trip() {
     CHECK_EQ(received.screen_gap, false);
     CHECK_EQ(received.wants_right_stick_mode, true);
     CHECK(received.right_stick_mode == RightStickMode::DPad);
+    CHECK_EQ(received.wants_left_stick_press, true);
+    CHECK(received.left_stick_press == LeftStickPress::SwapLayout);
+    // From a companion from before it: asks nothing about the left stick.
+    RequestMessage older;
+    CHECK(decode_request(payload.data(), payload.size() - 1, older));
+    CHECK_EQ(older.wants_left_stick_press, false);
+    CHECK_EQ(older.wants_right_stick_mode, true);
 
     // A request that means none of it round-trips as such rather than as an
     // accidental instruction.
@@ -244,6 +274,7 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_quit, false);
     CHECK_EQ(received_quiet.wants_screen_gap, false);
     CHECK_EQ(received_quiet.wants_right_stick_mode, false);
+    CHECK_EQ(received_quiet.wants_left_stick_press, false);
     CHECK_EQ(received_quiet.wants_menu_action, false);
     CHECK_EQ(received_quiet.wants_menu_focus, false);
 
@@ -264,15 +295,20 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 21, 1u,
+        {"audio target", 22, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 19, 1u,
+        {"handedness", 20, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 5, 2u,
+        {"right stick mode", 6, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
+         }},
+        {"left stick click", 1, 2u,
+         [](const RequestMessage& message) {
+             return message.wants_left_stick_press &&
+                    message.left_stick_press == LeftStickPress::SwapLayout;
          }},
     };
 
@@ -312,7 +348,7 @@ void test_request_round_trip() {
     CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
 
     std::vector<uint8_t> impossible(payload);
-    impossible[impossible.size() - 3] = 200;
+    impossible[impossible.size() - 4] = 200;
     RequestMessage refused;
     CHECK_MSG(!decode_request(impossible.data(), impossible.size(), refused),
               "a press no button could have made was accepted");

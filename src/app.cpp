@@ -653,6 +653,14 @@ struct App::Impl {
     void adopt_legacy_handedness();
     void adopt_screen_gap(bool include_gap);
     void adopt_right_stick_mode(RightStickMode mode);
+    // What clicking the left stick does. The host's setting, and while a
+    // companion is connected the one both devices follow: the quick menu
+    // that offers it is one menu, so what it says has to come from one place.
+    LeftStickPress left_stick_press_in_effect() const;
+    void request_left_stick_press(LeftStickPress press);
+    void adopt_left_stick_press(LeftStickPress press);
+    // Puts whatever is in effect into this device's L3 and the menu.
+    void apply_left_stick_press();
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
@@ -788,8 +796,7 @@ void App::Impl::apply_system() {
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
     input.set_game_owns_controls(profile.game_uses_every_control);
-    input.set_microphone_button(
-        left_stick_is_microphone(profile.has_microphone, settings.left_stick_press));
+    apply_left_stick_press();
     // Whether this device's own sensors are read at all.
     //
     // Only when it is the one running the game: a companion is told by the
@@ -1316,10 +1323,8 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
     state.max_render_scale = companion_session->host_max_render_scale();
     state.cursor_choosable = companion_session->host_cursor_choosable();
     state.right_stick_choosable = companion_session->host_right_stick_choosable();
-    // This device's own, like the pointer; offered where the console the host
-    // is playing has a microphone, which both devices can tell for themselves.
-    state.left_stick_press = settings.left_stick_press;
-    state.left_stick_choosable = system_profile(companion_session->system()).has_microphone;
+    state.left_stick_press = companion_session->host_left_stick_press();
+    state.left_stick_choosable = companion_session->host_left_stick_choosable();
     state.save_points_available = companion_session->host_save_points_available();
     state.cursor_mode = companion_session->host_cursor_shown() ? CursorMode::Shown
                                                               : CursorMode::Hidden;
@@ -1384,13 +1389,7 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 request_right_stick_mode(next_right_stick_mode(right_stick_mode));
             }
             if (result.left_stick_press_changed) {
-                // This device's own, like the pointer below.
-                settings.left_stick_press = next_left_stick_press(settings.left_stick_press);
-                picker->set_left_stick_press(settings.left_stick_press);
-                input.set_microphone_button(left_stick_is_microphone(
-                    system_profile(system).has_microphone, settings.left_stick_press));
-                settings.save(paths);
-                log_info(std::string("left stick click: ") + to_string(settings.left_stick_press));
+                request_left_stick_press(next_left_stick_press(left_stick_press_in_effect()));
             }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
@@ -1477,10 +1476,10 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_right_stick_choosable()
                        : (local_game() && system_profile(system).offers_right_stick_mode);
     // What L3 does, where there is a microphone for it to be -- see
-    // LeftStickPress. This device's own setting, like the pointer.
-    picker_state.left_stick_press = settings.left_stick_press;
+    // LeftStickPress. The host's, and told to the companion like the rest.
+    picker_state.left_stick_press = left_stick_press_in_effect();
     picker_state.left_stick_choosable =
-        is_companion() ? system_profile(companion_session->system()).has_microphone
+        is_companion() ? companion_session->host_left_stick_choosable()
                        : (local_game() && system_profile(system).has_microphone);
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
@@ -1561,6 +1560,37 @@ void App::Impl::request_layout(const std::string& layout_id) {
         picker->set_selected_layout(active_layout_id);
     }
     log_info("layout: " + active_layout().display_name);
+}
+
+LeftStickPress App::Impl::left_stick_press_in_effect() const {
+    return is_companion() ? companion_session->host_left_stick_press() : settings.left_stick_press;
+}
+
+void App::Impl::request_left_stick_press(LeftStickPress press) {
+    if (is_companion()) {
+        companion_session->request_left_stick_press(press);
+        return;  // the host decides; it will tell us
+    }
+    adopt_left_stick_press(press);
+}
+
+void App::Impl::adopt_left_stick_press(LeftStickPress press) {
+    if (press == settings.left_stick_press) {
+        return;
+    }
+    settings.left_stick_press = press;
+    settings.save(paths);
+    apply_left_stick_press();
+    log_info(std::string("left stick click: ") + to_string(press));
+}
+
+void App::Impl::apply_left_stick_press() {
+    const LeftStickPress press = left_stick_press_in_effect();
+    input.set_microphone_button(
+        left_stick_is_microphone(system_profile(system).has_microphone, press));
+    if (picker) {
+        picker->set_left_stick_press(press);
+    }
 }
 
 void App::Impl::request_right_stick_mode(RightStickMode mode) {
@@ -3013,12 +3043,16 @@ int App::run(const AppOptions& options) {
     // menu waits for a frame to exist first -- its previews are drawn from the
     // game, and a menu opened before the core has run shows none of it.
     bool open_layout_menu_when_playing = false;
-    // The same for the Save Points screen, whose pictures are of the game.
+    // The same for the Save Points screen, whose pictures are of the game,
+    // and for the Options list with the cursor on its first row.
     bool open_save_points_when_playing = false;
+    bool open_options_when_playing = false;
     if (options.start_screen == "layout" && impl.state == Impl::State::Playing) {
         open_layout_menu_when_playing = true;
     } else if (options.start_screen == "save-points" && impl.state == Impl::State::Playing) {
         open_save_points_when_playing = true;
+    } else if (options.start_screen == "options" && impl.state == Impl::State::Playing) {
+        open_options_when_playing = true;
     } else if (options.start_screen == "settings" && impl.state == Impl::State::Playing) {
         impl.settings_screen->open(impl.settings, resolve_core_statuses(options, impl.settings));
         impl.state = Impl::State::Settings;
@@ -3109,6 +3143,7 @@ int App::run(const AppOptions& options) {
         // not been joined yet, lands somewhere else entirely.
         const bool still_arriving =
             open_layout_menu_when_playing || open_save_points_when_playing ||
+            open_options_when_playing ||
             (!options.auto_connect_screen.empty() && !impl.is_companion());
         if (!options.simulate_key.empty() && !simulate_key_sent && impl.frames_rendered >= 2 &&
             !still_arriving) {
@@ -3239,6 +3274,11 @@ int App::run(const AppOptions& options) {
             shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
                 impl.local_game() && system_profile(impl.system).offers_right_stick_mode;
+            // The same test open_picker() makes, so the host's menu and the
+            // one it tells the companion to build have the same rows.
+            shared.left_stick_choosable =
+                impl.local_game() && system_profile(impl.system).has_microphone;
+            shared.left_stick_press = impl.settings.left_stick_press;
             shared.save_points_available = impl.save_points_available();
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
@@ -3369,6 +3409,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_right_stick_mode) {
                     impl.adopt_right_stick_mode(request.right_stick_mode);
+                }
+                if (request.wants_left_stick_press) {
+                    impl.adopt_left_stick_press(request.left_stick_press);
                 }
                 if (request.wants_reset) {
                     impl.request_reset();
@@ -3544,6 +3587,8 @@ int App::run(const AppOptions& options) {
                 impl.adopt_left_handed_layouts(impl.companion_session->host_left_handed_layouts());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());
+                // L3 does what the host has it doing, on both devices.
+                impl.apply_left_stick_press();
                 // Whether this machine's own gyro is being read at all. Told
                 // rather than worked out from the console, because it is the
                 // host that knows whether there is anything at the far end
@@ -3588,6 +3633,12 @@ int App::run(const AppOptions& options) {
             open_save_points_when_playing = false;
             impl.set_menu_open(true);
             impl.picker->set_focus(LayoutPicker::focus_of(MenuSection::CreateSavePoint));
+        }
+        if (open_options_when_playing && impl.state == Impl::State::Playing &&
+            impl.source && impl.source->core_frame_for_test().valid()) {
+            open_options_when_playing = false;
+            impl.set_menu_open(true);
+            impl.picker->set_focus(LayoutPicker::focus_of(MenuSection::Options, 0));
         }
 
         impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());

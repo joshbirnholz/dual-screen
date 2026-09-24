@@ -486,6 +486,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.max_render_scale != shared_.max_render_scale ||
         state.cursor_choosable != shared_.cursor_choosable ||
         state.right_stick_choosable != shared_.right_stick_choosable ||
+        state.left_stick_choosable != shared_.left_stick_choosable ||
+        state.left_stick_press != shared_.left_stick_press ||
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
         state.save_points_available != shared_.save_points_available ||
@@ -716,6 +718,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request_.wants_right_stick_mode) {
                 request.wants_right_stick_mode = true;
                 request.right_stick_mode = request_.right_stick_mode;
+            }
+            if (have_request_ && !request.wants_left_stick_press &&
+                request_.wants_left_stick_press) {
+                request.wants_left_stick_press = true;
+                request.left_stick_press = request_.left_stick_press;
             }
             if (have_request_ && !request.wants_handedness && request_.wants_handedness) {
                 request.wants_handedness = true;
@@ -999,6 +1006,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.max_render_scale = static_cast<uint8_t>(std::max(1, shared_.max_render_scale));
         state.cursor_choosable = shared_.cursor_choosable;
         state.right_stick_choosable = shared_.right_stick_choosable;
+        state.left_stick_choosable = shared_.left_stick_choosable;
+        state.left_stick_press = shared_.left_stick_press;
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;

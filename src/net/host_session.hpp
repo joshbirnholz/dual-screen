@@ -130,6 +130,9 @@ public:
         int max_render_scale = 1;
         bool cursor_choosable = false;
         bool right_stick_choosable = false;
+        // See SessionStateMessage::left_stick_choosable.
+        bool left_stick_choosable = false;
+        LeftStickPress left_stick_press = LeftStickPress::Microphone;
         bool cursor_shown = true;
         bool save_points_available = false;
         // Which layouts are flipped for a left hand; `handedness` is the

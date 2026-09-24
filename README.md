@@ -98,7 +98,8 @@ and which one you want changes with what the game is doing, so **L3** swaps
 between them while playing — no menu, no pause. On a DS that is one of two
 things L3 can be: **Left Stick Click** under Options in the quick menu chooses
 between that and holding the DS's microphone, for games that ask to be blown
-into. It is each device's own. L3 does nothing under any other
+into. Like everything else on that menu it is the host's, and both devices'
+L3 follow it while they are connected. L3 does nothing under any other
 layout, and like everything else on that menu it is one choice for both devices:
 pressing it on the companion asks the host, the same as picking the layout from
 the menu would. **F3** does the same from a keyboard.
