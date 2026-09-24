@@ -169,7 +169,12 @@ private:
     bool blit_unavailable_reported_ = false;
     bool first_gpu_crop_reported_ = false;
     bool silence_reported_ = false;
+    // Frames the core has run since it last presented a new picture. Counted
+    // where frames are run, not where screens are drawn: a game paused under
+    // a menu is drawn a hundred times over without running once, and that is
+    // not a core that has stopped presenting.
     int quiet_frames_ = 0;
+    uint64_t last_presented_serial_ = 0;
     // Says what the framebuffer was cut into, which is the first thing worth
     // knowing when a core turns out not to be arranged the way we asked.
     void log_split();

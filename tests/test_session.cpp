@@ -1622,6 +1622,138 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
     }
 }
 
+// A frame lost just as the game paused -- the menu opening does both at once
+// -- is resent while it stays paused, not only once the game moves again.
+// Nothing new is published while paused, and noticing a lost frame used to
+// happen only on the way to sending a new one: measured, a companion's menu
+// sat on a half-arrived picture for the two and a half minutes the menu was
+// up, and the host said "no ack for 150579ms" on closing it.
+void test_a_frame_lost_as_the_game_paused_is_sent_again_while_paused() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "vertical", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    const auto publish = [&](uint64_t serial) {
+        bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        host.poll(monotonic_millis());
+    };
+    for (uint64_t serial = 1; serial <= 6; ++serial) {
+        publish(serial);
+        spin(host, companion, [&] { return companion.newest_frame_serial_for_test() == serial; },
+             500);
+    }
+
+    // The last frame before the pause, which the companion never hears of.
+    publish(7);
+    // Paused: the same picture, over and over. Nothing to send yet.
+    const uint64_t queued = host.queued_bytes_for_test();
+    publish(7);
+    CHECK_EQ(host.queued_bytes_for_test(), queued);
+
+    // Still paused, and past the point an ack was coming: sent again.
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+    publish(7);
+    CHECK_MSG(host.queued_bytes_for_test() != queued,
+              "a frame lost as the game paused was not sent again until it moved");
+
+    host.stop();
+}
+
+// Frames lost in a wifi blip are noticed as soon as the companion says it
+// never got them, not only once a timeout runs out. The companion keeps
+// repeating its newest ack while nothing new arrives; one that still does not
+// cover frames sent well before it means they are gone. Measured on a Switch
+// Lite: every blip longer than the host's few-frame window froze the picture
+// for most of half a second after the link was back, waiting on the timeout.
+void test_frames_lost_in_a_blip_are_noticed_before_the_timeout() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test PC";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "vertical", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    std::vector<uint32_t> bottom = flat_screen(0x00801020u);
+    const auto publish = [&](uint64_t serial) {
+        bottom[serial % bottom.size()] = static_cast<uint32_t>(serial * 2654435761u);
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+        host.poll(monotonic_millis());
+        companion.poll(monotonic_millis());
+    };
+    uint64_t serial = 1;
+    for (; serial <= 6; ++serial) {
+        publish(serial);
+        spin(host, companion, [&] { return companion.newest_frame_serial_for_test() == serial; },
+             500);
+    }
+
+    // The blip: nothing reaches the companion, which goes on answering.
+    companion.drop_frames_for_test(true);
+    const uint64_t started = monotonic_millis();
+    uint64_t queued = host.queued_bytes_for_test();
+    bool shut = false;
+    for (int attempt = 0; attempt < 64 && !shut; ++attempt, ++serial) {
+        publish(serial);
+        shut = host.queued_bytes_for_test() == queued;
+        queued = host.queued_bytes_for_test();
+    }
+    CHECK_MSG(shut, "the window never filled, so there is nothing to recover from");
+    companion.drop_frames_for_test(false);
+
+    // Back again. Frames flow within a few repeats of the ack, well inside
+    // the timeout that is the only other way out.
+    bool flowing = false;
+    while (!flowing && monotonic_millis() - started < 350) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        publish(serial++);
+        flowing = host.queued_bytes_for_test() != queued;
+    }
+    CHECK_MSG(flowing, "frames lost in a blip waited out the whole timeout");
+    const uint64_t recovered = serial - 1;
+    CHECK_MSG(spin(host, companion,
+                   [&] { return companion.newest_frame_serial_for_test() == recovered; }, 1000),
+              "the companion never got a whole picture again after the blip");
+
+    host.stop();
+}
+
 // The floor the ladder can step down to, which has to mean the same thing on
 // a phone and on a television.
 //
@@ -3141,6 +3273,8 @@ int main() {
     test_a_companion_that_falls_behind_stops_being_sent_frames();
     test_a_source_faster_than_the_link_is_still_allowed_frames_in_flight();
     test_a_companion_that_stops_acking_entirely_is_recovered_from();
+    test_a_frame_lost_as_the_game_paused_is_sent_again_while_paused();
+    test_frames_lost_in_a_blip_are_noticed_before_the_timeout();
     test_a_steady_link_holds_the_smallest_buffer_it_can();
     test_an_uneven_link_buys_cover_and_gives_it_back();
     test_the_bitrate_is_a_budget_for_the_link();

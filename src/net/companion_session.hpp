@@ -591,6 +591,10 @@ public:
     void lose_a_frame_for_test(ScreenId screen) {
         ((screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
     }
+    // Every frame that arrives while this is set goes nowhere, as if the air
+    // had eaten it -- the one kind of loss a loopback link never has --
+    // while everything else, acks included, carries on.
+    void drop_frames_for_test(bool drop) { dropping_frames_for_test_ = drop; }
     // Whether that screen is still waiting on a picture that stands on its
     // own. Goes back to false when one actually arrives.
     // Stands in for a device slow enough that turning frames into pictures
@@ -963,6 +967,9 @@ private:
     // has been shown instead made the host read this device's own smoothing
     // as a device falling behind, and throttle against it.
     uint64_t acked_serial_ = 0;
+    // When an ack last went out, new or repeated.
+    uint64_t last_ack_ms_ = 0;
+    bool dropping_frames_for_test_ = false;
     uint64_t received_serial_ = 0;
 
     // When the next frame is due on screen, and how far apart frames are

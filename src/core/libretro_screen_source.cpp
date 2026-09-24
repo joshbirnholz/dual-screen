@@ -311,6 +311,12 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
         return false;
     }
     core_->run_frame();
+    if (core_->video_frame().valid() && core_->video_frame().serial != last_presented_serial_) {
+        last_presented_serial_ = core_->video_frame().serial;
+        quiet_frames_ = 0;
+    } else {
+        ++quiet_frames_;
+    }
     // Checked here so the frontend's own check, at the top of the next frame's
     // drawing, is not blamed for something the core did. An emulator leaving an
     // error behind is its own business; the same error attributed to us would
@@ -783,7 +789,7 @@ void LibretroCoreScreenSource::upload_screens() {
         // A picture that never arrives looks exactly like one that arrives and
         // is drawn wrong, so say which it is rather than leaving a black screen
         // to be interpreted.
-        if (!first_gpu_crop_reported_ && !silence_reported_ && ++quiet_frames_ > 120) {
+        if (!first_gpu_crop_reported_ && !silence_reported_ && quiet_frames_ > 120) {
             silence_reported_ = true;
             log_warn(std::string("120 frames in and nothing has been drawn: ") +
                      (!frame.valid() ? "the core has not presented a picture"
@@ -792,7 +798,6 @@ void LibretroCoreScreenSource::upload_screens() {
         }
         return;
     }
-    quiet_frames_ = 0;
 
     if (frame.source == FrameSource::Texture) {
         gl::log_error_once("OpenGL was already unhappy before the screens were cropped");

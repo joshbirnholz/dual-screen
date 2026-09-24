@@ -110,6 +110,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     connect_failure_.clear();
     connect_deadline_ms_ = 0;  // set on the first poll, off the caller's clock
     acked_serial_ = 0;
+    last_ack_ms_ = 0;
     received_serial_ = 0;
     next_due_ms_ = 0;
     next_due_exact_ms_ = 0.0;
@@ -909,6 +910,9 @@ void CompanionSession::poll(uint64_t now_ms) {
             if (session_token_ == 0 || token != session_token_) {
                 return;
             }
+            if (dropping_frames_for_test_ && type == MessageType::Frame) {
+                return;
+            }
             handle_media_datagram(type, payload, payload_size);
         };
         // For measuring only: DUALSCREEN_TEST_LINK=wifi holds each datagram
@@ -1106,9 +1110,18 @@ void CompanionSession::poll(uint64_t now_ms) {
     ask_for_keyframes(now_ms);
     adapt_to_what_this_device_can_decode(now_ms);
 
-    if (status_ == Status::Connected && received_serial_ != acked_serial_) {
+    // And said again every so often while nothing newer has come, which is
+    // how the host learns that frames it sent a while ago are not coming: a
+    // repeat that still does not cover them means they were lost. Without it
+    // the host could only wait out a timeout, and did -- every wifi blip
+    // longer than its small window froze the picture for most of half a
+    // second after the link was back. See HostSession's FrameAck handling.
+    constexpr uint64_t kAckRepeatMs = 50;
+    if (status_ == Status::Connected && received_serial_ != 0 &&
+        (received_serial_ != acked_serial_ || now_ms >= last_ack_ms_ + kAckRepeatMs)) {
         const uint64_t newest = received_serial_;
         acked_serial_ = newest;
+        last_ack_ms_ = now_ms;
         std::vector<uint8_t> ack;
         encode_media_header(session_token_, MessageType::FrameAck, ack);
         encode_frame_ack_payload(newest, ack);

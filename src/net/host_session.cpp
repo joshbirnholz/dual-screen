@@ -166,6 +166,13 @@ constexpr uint64_t kAckStallMs = 3000;
 // device that simply had a slow moment is not mistaken for a lost one.
 constexpr double kAckStallRoundTrips = 6.0;
 constexpr uint64_t kMinAckStallMs = 400;
+// A companion repeats its newest ack while nothing newer arrives. One that
+// still does not cover a frame sent this many round trips before it is a
+// companion saying that frame is not coming -- the link is up, the ack got
+// here, and the frame did not. Three round trips of slack for a device that
+// was slow to look, and never under the floor, however quick the link.
+constexpr double kLostAfterRoundTrips = 3.0;
+constexpr uint64_t kMinLostAfterMs = 100;
 
 // Audio needs no backlog limit of its own any more. The old one existed
 // because a fat queued video frame sitting ahead of it in the same TCP
@@ -539,6 +546,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_display_width_ = 0;
     companion_display_height_ = 0;
     frame_sent_at_.clear();
+    in_flight_frames_lost_ = false;
     resend_screens_ = false;
     sent_serial_ = 0;
     submitted_serial_ = 0;
@@ -884,6 +892,17 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
                                      round_trip_high_ms_ * kRoundTripDecayPerAck);
                     }
                 }
+                // What is still waiting after that, if it has waited well past
+                // when this ack would have covered it, was lost -- see
+                // kLostAfterRoundTrips. Acted on at the next publish, the same
+                // as a timeout, but as soon as the link is back rather than
+                // however long after.
+                const uint64_t lost_after = std::max<uint64_t>(
+                    kMinLostAfterMs,
+                    static_cast<uint64_t>(round_trip_high_ms_ * kLostAfterRoundTrips));
+                if (!frame_sent_at_.empty() && now - frame_sent_at_.front().second >= lost_after) {
+                    in_flight_frames_lost_ = true;
+                }
                 promote_tile_baseline(previous_top_, tile_snapshots_top_, serial);
                 promote_tile_baseline(previous_bottom_, tile_snapshots_bottom_, serial);
             }
@@ -1152,7 +1171,8 @@ void HostSession::report_stream(uint64_t now_ms) {
         return;
     }
     const uint64_t bytes = media_bytes_sent_ - stats_bytes_;
-    const unsigned dropped = stats_produced_ - stats_sent_;
+    // A resend of an unchanged picture is sent without being produced again.
+    const unsigned dropped = stats_produced_ > stats_sent_ ? stats_produced_ - stats_sent_ : 0;
     const uint64_t behind = static_cast<uint64_t>(frame_sent_at_.size());
     log_debug("stream: " + std::to_string(stats_produced_ * 1000 / elapsed) + " produced/s, " +
               std::to_string(stats_sent_ * 1000 / elapsed) + " sent/s, " +
@@ -1691,6 +1711,40 @@ void HostSession::note_frame_ran(uint64_t serial) {
     }
 }
 
+bool HostSession::give_up_on_stalled_frames() {
+    const bool told = in_flight_frames_lost_;
+    in_flight_frames_lost_ = false;
+    const bool stalled = !frame_sent_at_.empty() &&
+                         (told || monotonic_millis() - frame_sent_at_.front().second >=
+                                      ack_stall_ms(round_trip_high_ms_, acked_serial_ > 0));
+    if (!stalled) {
+        return false;
+    }
+    // Recover by treating every outstanding frame as gone rather than
+    // merely late: open the gate as if they had all been acked, but
+    // without promoting the tile baselines those unconfirmed sends were
+    // computed against -- doing that would risk exactly the picture
+    // drift ack-based rebaselining exists to prevent, on baselines that
+    // were never actually confirmed. Clearing them outright and forcing
+    // a fresh full send instead is the tile equivalent of the keyframe
+    // resend_screens_ already forces for video.
+    const std::string waited =
+        std::to_string(monotonic_millis() - frame_sent_at_.front().second) + "ms";
+    const std::string frames = std::to_string(frame_sent_at_.size()) + " frames in flight";
+    log_info(told ? "the companion is answering but never got the last " + frames + " (" +
+                        waited + " old); starting again from a keyframe"
+                  : "no ack for " + waited + " (" + frames +
+                        "); taking them for lost and starting again from a keyframe");
+    acked_serial_ = sent_serial_;
+    frame_sent_at_.clear();
+    previous_top_.clear();
+    previous_bottom_.clear();
+    tile_snapshots_top_.clear();
+    tile_snapshots_bottom_.clear();
+    resend_screens_ = true;
+    return true;
+}
+
 void HostSession::publish_screens(const ScreenPixels& top,
                                   const ScreenPixels& bottom,
                                   uint64_t serial) {
@@ -1702,16 +1756,30 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // sent -- it opened its menu, whose previews show both -- the pixels may
     // never change again while it waits, since a menu pauses the game. So a
     // change in what it needs forces one send of whatever is current.
-    if (serial == submitted_serial_ && !resend_screens_) {
+    //
+    // Unless what was last sent never arrived. A game paused by the menu
+    // produces nothing new, so the gate below -- the only other place a lost
+    // frame is noticed -- is never reached, and a picture whose last pieces
+    // were lost on the way stayed half-drawn on the companion for as long as
+    // the menu was up. Measured: "no ack for 150579ms" on closing a menu that
+    // had been open two and a half minutes.
+    if (serial == submitted_serial_ && !resend_screens_ && !give_up_on_stalled_frames()) {
         return;
     }
-    ++stats_produced_;
     // How fast frames are really arriving from the source, which with the
     // round trip above is the whole of the window's arithmetic. Measured
     // rather than taken from the console's nominal rate: a game that is not
     // holding its frame rate needs a smaller window, not the one 60fps would
     // have called for.
-    {
+    //
+    // Once per frame, not once per call: a frame the window below held back
+    // is offered again on every pass until it goes or is replaced, and
+    // counting each offer read a 60fps game as producing 67 to 80 frames a
+    // second -- inflating "dropped" by the difference, and shrinking the
+    // measured period, which widens the very window that was full.
+    if (serial != last_produced_serial_) {
+        last_produced_serial_ = serial;
+        ++stats_produced_;
         const uint64_t now = monotonic_millis();
         if (last_produced_at_ms_ != 0 && now > last_produced_at_ms_) {
             const double gap = static_cast<double>(now - last_produced_at_ms_);
@@ -1756,32 +1824,9 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // outstanding long enough that the ack which would release it is
         // never coming -- see kAckStallMs's own comment for why that is a
         // real, reproduced failure and not just a hypothetical one.
-        const bool stalled =
-            !frame_sent_at_.empty() &&
-            monotonic_millis() - frame_sent_at_.front().second >=
-                ack_stall_ms(round_trip_high_ms_, acked_serial_ > 0);
-        if (!stalled) {
+        if (!give_up_on_stalled_frames()) {
             return;
         }
-        // Recover by treating every outstanding frame as gone rather than
-        // merely late: open the gate as if they had all been acked, but
-        // without promoting the tile baselines those unconfirmed sends were
-        // computed against -- doing that would risk exactly the picture
-        // drift ack-based rebaselining exists to prevent, on baselines that
-        // were never actually confirmed. Clearing them outright and forcing
-        // a fresh full send instead is the tile equivalent of the keyframe
-        // resend_screens_ already forces for video, below.
-        log_info("no ack for " +
-                 std::to_string(monotonic_millis() - frame_sent_at_.front().second) + "ms (" +
-                 std::to_string(frame_sent_at_.size()) +
-                 " frames in flight); taking them for lost and starting again from a keyframe");
-        acked_serial_ = sent_serial_;
-        frame_sent_at_.clear();
-        previous_top_.clear();
-        previous_bottom_.clear();
-        tile_snapshots_top_.clear();
-        tile_snapshots_bottom_.clear();
-        resend_screens_ = true;
     }
 
     bool sent_anything = false;

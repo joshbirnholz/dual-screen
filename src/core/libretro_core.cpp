@@ -749,17 +749,16 @@ void LibretroCore::register_option(const CoreOptionInfo& info) {
     // the whole feature -- but the option key and the value differ between
     // core versions, and a forced option that guesses wrong is silently
     // ignored unless it is Required. Saying it here means one session's log
-    // settles it instead of a guess.
-    for (const auto& entry : declared_options_) {
-        if (entry.first.find("mic") == std::string::npos) {
-            continue;
-        }
+    // settles it instead of a guess. Only the option just declared: saying
+    // every one seen so far each time another arrived wrote the same two
+    // lines out seventy times over while melonDS DS listed its options.
+    if (info.key.find("mic") != std::string::npos) {
         std::string values;
-        for (const std::string& value : entry.second.allowed_values) {
+        for (const std::string& value : info.allowed_values) {
             if (!values.empty()) values += ", ";
             values += value;
         }
-        log_info("core option '" + entry.first + "' offers: " +
+        log_info("core option '" + info.key + "' offers: " +
                  (values.empty() ? std::string("anything") : values));
     }
 }

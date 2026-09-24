@@ -5,6 +5,15 @@
 
 #include "render/gl_loader.hpp"
 
+// GLES 3.0 names, absent from a GLES 2 header; the blit that uses them is
+// only reached where the driver has one -- see gl::has_blit().
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#endif
+
 namespace ds {
 namespace {
 
@@ -132,12 +141,52 @@ void MenuBackdrop::capture(int output_width, int output_height, std::size_t key)
         return;
     }
 
-    std::vector<uint32_t> frame(static_cast<std::size_t>(output_width) * output_height);
-    gl::ReadPixels(0, 0, output_width, output_height, GL_RGBA, GL_UNSIGNED_BYTE, frame.data());
-
     width_ = std::max(1, output_width / kShrink);
     height_ = std::max(1, output_height / kShrink);
     pixels_.assign(static_cast<std::size_t>(width_) * height_, 0);
+
+    // Shrunk on the GPU where it can blit, and only the small copy read back.
+    // Reading the whole frame and shrinking it here cost a Switch 120 to
+    // 150ms every time a menu opened, drawing at 1080p: eight megabytes off
+    // the card, then two million pixels averaged one at a time. The linear
+    // blit takes fewer samples than the average below does, which nothing
+    // survives the blur that follows to show.
+    if (gl::has_blit() && gl::GenFramebuffers != nullptr) {
+        gl::take_error();
+        Texture small;
+        small.allocate_rgba(width_, height_);
+        GLuint framebuffer = 0;
+        gl::GenFramebuffers(1, &framebuffer);
+        gl::BindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        gl::BindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+        gl::FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                 small.id(), 0);
+        // Flipped on the way, so the rows come back top first.
+        gl::BlitFramebuffer(0, output_height, output_width, 0, 0, 0, width_, height_,
+                            GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        std::vector<uint32_t> shrunk(static_cast<std::size_t>(width_) * height_);
+        gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        gl::ReadPixels(0, 0, width_, height_, GL_RGBA, GL_UNSIGNED_BYTE, shrunk.data());
+        gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+        gl::DeleteFramebuffers(1, &framebuffer);
+        // A multisampled window, for one, cannot be blitted from at a
+        // different size; that is an error rather than a picture, and the
+        // slow way below still works.
+        if (gl::take_error().empty()) {
+            for (std::size_t index = 0; index < shrunk.size(); ++index) {
+                const uint32_t rgba = shrunk[index];
+                pixels_[index] = 0xFF000000u | ((rgba & 0xFFu) << 16) | (rgba & 0xFF00u) |
+                                 ((rgba >> 16) & 0xFFu);
+            }
+            blur_and_darken(pixels_, scratch_, width_, height_, kBlurRadius / kShrink);
+            texture_.upload_xrgb8888(pixels_.data(), width_, height_, width_);
+            texture_.set_linear_filtering(true);
+            return;
+        }
+    }
+
+    std::vector<uint32_t> frame(static_cast<std::size_t>(output_width) * output_height);
+    gl::ReadPixels(0, 0, output_width, output_height, GL_RGBA, GL_UNSIGNED_BYTE, frame.data());
 
     // Read back bottom-up, as OpenGL hands it over, and averaged over the block
     // each small pixel stands for rather than point-sampled: a blur cannot put

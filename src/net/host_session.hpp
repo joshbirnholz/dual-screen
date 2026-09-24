@@ -323,6 +323,14 @@ private:
     // machine yet, but the closest thing either of those has ever had to
     // track and not worth a separate, more precise accounting just for them.
     std::size_t send_frame_fragments(const FrameMessage& frame);
+    // Whether the oldest frame still waiting on an ack has waited so long
+    // that it, and everything sent after it, is taken for lost -- in which
+    // case the baselines are dropped and the next publish sends everything
+    // afresh. See ack_stall_ms().
+    bool give_up_on_stalled_frames();
+    // Set by an ack that arrived and still did not cover a frame sent well
+    // before it -- see kLostAfterRoundTrips. Read, and cleared, by the above.
+    bool in_flight_frames_lost_ = false;
     // How many frames have actually gone out on each screen, wrapping. Only
     // ever incremented by send_frame_fragments(); a companion reads a gap in
     // it as loss, so anything that made it count something that did not leave
@@ -547,6 +555,9 @@ private:
     uint64_t stats_at_ms_ = 0;
     uint64_t stats_bytes_ = 0;
     unsigned stats_produced_ = 0;
+    // The serial last counted into the above, so a frame offered again is
+    // not counted twice.
+    uint64_t last_produced_serial_ = 0;
     unsigned stats_sent_ = 0;
     // The last frame of each screen the companion has actually acknowledged
     // decoding, in RGB565 -- what a new tile diff is computed against. The
