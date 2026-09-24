@@ -47,7 +47,7 @@ endfunction()
 
 dualscreen_embed_asset(ds_bezel.png kDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
-dualscreen_embed_asset(rodin.otf kRodinOtf BEZEL_SOURCES)
+dualscreen_embed_asset(inter.ttf kUiFont BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 
 include(${DUALSCREEN_ROOT}/cmake/companion_sources.cmake)

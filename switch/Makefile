@@ -62,7 +62,7 @@ GENERATED   := generated
 # The assets that travel inside the binary. One list, so what gets generated
 # and what gets compiled cannot drift apart -- a generated file that nothing
 # compiles is an undefined symbol at link time and nothing sooner.
-EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kRodinOtf.cpp kButtonIconsPng.cpp
+EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kUiFont.cpp kButtonIconsPng.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -276,10 +276,10 @@ $(GENERATED)/kButtonIconsPng.cpp: $(CURDIR)/../assets/button_icons.png $(CURDIR)
 	@echo embedding button_icons.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kButtonIconsPng -P $(CURDIR)/../tools/embed_asset.cmake
 
-$(GENERATED)/kRodinOtf.cpp: $(CURDIR)/../assets/rodin.otf $(CURDIR)/../tools/embed_asset.cmake
+$(GENERATED)/kUiFont.cpp: $(CURDIR)/../assets/inter.ttf $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)
-	@echo Embedding assets/rodin.otf
-	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kRodinOtf -P $(CURDIR)/../tools/embed_asset.cmake
+	@echo Embedding assets/inter.ttf
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kUiFont -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kThreeDsBezelPng.cpp: $(CURDIR)/../assets/three_ds_bezel.png $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

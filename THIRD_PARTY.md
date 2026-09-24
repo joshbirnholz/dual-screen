@@ -35,6 +35,16 @@ of that. Before this repository is published or a build is distributed, the
 source and licence of these files should be established and written down here —
 or the files replaced with ones whose terms are known.
 
+## `assets/inter.ttf`
+
+The UI font: [Inter](https://rsms.me/inter/) SemiBold by Rasmus Andersson,
+version 5.3, taken from the `@fontsource/inter` package's Latin subset and
+embedded into the binary at build time. Licensed under the SIL Open Font
+License 1.1, whose full text travels with it as `assets/inter-OFL.txt`.
+`assets/make_ui_font.py` records how the file was made from the published one:
+unwrapped from WOFF, and its kerning moved out of the extension lookups that
+stb_truetype does not read. No glyph is changed.
+
 ## What is deliberately absent
 
 No Nintendo BIOS, firmware, NAND image, ROM, or font is included here, and none

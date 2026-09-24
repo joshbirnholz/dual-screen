@@ -23,7 +23,7 @@ constexpr uint32_t kLatinLast = 255;
 const stbtt_fontinfo* embedded_font() {
     static stbtt_fontinfo info;
     static const bool loaded =
-        stbtt_InitFont(&info, assets::kRodinOtf, stbtt_GetFontOffsetForIndex(assets::kRodinOtf, 0));
+        stbtt_InitFont(&info, assets::kUiFont, stbtt_GetFontOffsetForIndex(assets::kUiFont, 0));
     return loaded ? &info : nullptr;
 }
 
@@ -103,16 +103,28 @@ FontFace FontFace::bake(float em_pixels) {
         return face;
     }
 
-    // Sized by the em rather than by stbtt_ScaleForPixelHeight, which measures
-    // the tallest glyph and so would shrink the text whenever the font happens
-    // to carry a tall accented capital.
-    int ascent = 0;
-    int descent = 0;
-    int gap = 0;
-    stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
-    const float units_per_em = static_cast<float>(ascent - descent);
-    face.scale_ = em_pixels / units_per_em;
-    face.baseline_ = ascent * face.scale_;
+    // Sized by its capitals rather than by its em or its ascent and descent,
+    // which say as much about the room a font leaves for accents -- or for
+    // kanji, in a Japanese family -- as about how big its letters look. Every
+    // menu was laid out around capitals kCapHeight of an em tall, sitting on
+    // a baseline kBaseline of an em down; a font is scaled and set to match,
+    // so changing it changes how the letters look and nothing else.
+    constexpr float kCapHeight = 0.78f;
+    constexpr float kBaseline = 0.88f;
+    int left = 0;
+    int bottom = 0;
+    int right = 0;
+    int cap_height = 0;
+    stbtt_GetCodepointBox(info, 'H', &left, &bottom, &right, &cap_height);
+    if (cap_height <= 0) {
+        int ascent = 0;
+        int descent = 0;
+        int gap = 0;
+        stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
+        cap_height = static_cast<int>((ascent - descent) * kCapHeight);
+    }
+    face.scale_ = em_pixels * kCapHeight / static_cast<float>(cap_height);
+    face.baseline_ = em_pixels * kBaseline;
 
     for (int size = 128; size <= 4096; size *= 2) {
         if (pack_into(size, *info, face.scale_, face.pixels_, face.glyphs_)) {
