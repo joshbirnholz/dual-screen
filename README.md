@@ -57,7 +57,7 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots; see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
-| **Options** | the settings you might change mid-game, as a list: render scale (DS and 3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
+| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking |
@@ -639,19 +639,13 @@ comfortably within wifi. Only screens the current layout actually needs are
 sent, and an unchanged frame is not sent at all.
 
 A 3DS game is served the same way, but it takes more work to get there: Citra
-renders on the GPU, so there is no copy of the frame in memory to send. Every
-screen streams at the console's own resolution — 400x240 and 320x240 —
-regardless of the render scale, which stays a local sharpening on the device
-running the core rather than something a companion also pays for. A render
-scale above 1x means more to read back off the card and pack down for the
-wire, and deflated RGB565 is a general-purpose byte codec, not a video one:
-its cost is proportional to the pixel count a render scale multiplies, and at
-2x or 3x that made for a choppy stream rather than a sharper one. Streaming a
-companion more than the console's own resolution when it can use it — a
-companion's window is usually bigger than 400x240 — is worth doing, but not
-with this encoder; it needs a real hardware video pipeline (encode on the
-GPU, decode on the GPU, an actual codec bitstream) to be worth the bandwidth,
-which is future work.
+renders on the GPU, so there is no copy of the frame in memory to send. At 1x
+the screens stream at the console's own resolution — 400x240 and 320x240 — as
+tiles. At 2x and 3x they are big enough to go as H.264 (see **Which of the two
+a session uses**), and go at the render scale, so a companion gets the sharper
+picture too; deflated RGB565 is a general-purpose byte codec whose cost grows
+with every pixel a render scale multiplies, and at those sizes it made for a
+choppy stream rather than a sharper one.
 
 The send queue's backlog limit follows the same reasoning: it is measured in
 frame-times (roughly three frames' worth of whatever was last actually sent)
@@ -714,24 +708,8 @@ but the menu is one menu reachable from either device: a companion shows the sam
 button, and pressing it asks the host, which changes the core and broadcasts the
 result back. Neither device decides it locally, so the two cannot disagree.
 
-A DS game has it too, from **1x** to **4x**, and starts at 1x. 1x is
-melonDS's software renderer, its most accurate, and one pixel per DS pixel.
-Anything above it is melonDS's OpenGL renderer, which draws the game's 3D at
-that multiple of 256x192; it is the only way melonDS upscales. A core picks its
-renderer only as a game is opened, so going to or from 1x closes melonDS and
-opens it again on the same game, and the menu asks first: *Changing the render
-scale will restart the game. Unsaved progress will be lost.* It tries to carry
-the game across in a save state, with the menu still up and a companion still
-connected; the log says `the game started again from the beginning` when that
-did not work. Between 2x, 3x
-and 4x it changes as the game runs, as on a 3DS. What goes to a companion is the
-console's own resolution either way.
-
-The option this uses is found by looking for it among the ones the core
-declares, not by a name written in here, and every option the core declares is
-written to the log (at debug level) when a game opens. If the log says
-`this core offers no internal resolution to upscale with`, the core in use has
-no such option and upscaling a DS changes nothing.
+A DS game does not have the button at all: melonDS is pinned to its software
+renderer, which draws one pixel per DS pixel and has nothing to multiply.
 
 ## Rumble
 

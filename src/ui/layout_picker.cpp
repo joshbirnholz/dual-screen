@@ -490,11 +490,8 @@ LayoutPicker::ConfirmGeometry LayoutPicker::compute_confirm_geometry(float outpu
     const float scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(scale);
     const float dialog_width = std::round(output_width * 0.58f);
-    // Taller for the one question that runs to three sentences.
-    const float dialog_height = std::round(
-        line * (confirm_ == MenuConfirm::RestartForRenderScale ? 10.0f
-                : confirm_ == MenuConfirm::Notice              ? 7.0f
-                                                               : 8.0f));
+    // Shorter for a notice, which has one answer rather than two.
+    const float dialog_height = std::round(line * (confirm_ == MenuConfirm::Notice ? 7.0f : 8.0f));
 
     ConfirmGeometry geometry;
     geometry.dialog = PixelRect{std::round((output_width - dialog_width) * 0.5f),
@@ -606,13 +603,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             // landed on -- so the menu never shows a value that was not
             // actually applied, and on a companion the host decides.
             switch (options_[static_cast<std::size_t>(item_)]) {
-                case Option::RenderScale:
-                    if (state_.render_scale_restarts) {
-                        confirm_ = MenuConfirm::RestartForRenderScale;
-                    } else {
-                        result.render_scale_changed = true;
-                    }
-                    break;
+                case Option::RenderScale: result.render_scale_changed = true; break;
                 case Option::Sound: result.audio_target_changed = true; break;
                 case Option::Cursor: result.cursor_mode_changed = true; break;
                 case Option::RightStick: result.right_stick_mode_changed = true; break;
@@ -769,9 +760,6 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                     break;
                 case MenuConfirm::LoadSavePoint: result.load_slot = item_; break;
                 case MenuConfirm::OverwriteSavePoint: result.save_slot = item_; break;
-                // Asked, and answered: the menu stays up, on the row, to show
-                // the scale it lands on.
-                case MenuConfirm::RestartForRenderScale: result.render_scale_changed = true; break;
                 case MenuConfirm::Notice:
                 case MenuConfirm::None: break;
             }
@@ -1224,10 +1212,6 @@ void LayoutPicker::render(QuadRenderer& quads,
                 break;
             case MenuConfirm::LoadSavePoint: question = "Load this save state?"; break;
             case MenuConfirm::OverwriteSavePoint: question = "Overwrite this save state?"; break;
-            case MenuConfirm::RestartForRenderScale:
-                question = "Changing the render scale will restart the game. Unsaved progress will "
-                           "be lost. Are you sure you want to restart?";
-                break;
             case MenuConfirm::Notice: question = save_status_.c_str(); break;
             case MenuConfirm::Quit:
             case MenuConfirm::None: break;

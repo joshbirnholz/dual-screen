@@ -422,17 +422,9 @@ const retro_core_option_v2_definition kOptions[] = {
      {{"hold", "Hold"}, {"toggle", "Toggle"}, {"always", "Always"}, {nullptr, nullptr}}, "hold"},
     {"melonds_show_mic_state", "Show microphone state", nullptr, nullptr, nullptr, "screen",
      {{"enabled", "Enabled"}, {"disabled", "Disabled"}, {nullptr, nullptr}}, "enabled"},
-    // The OpenGL renderer's internal resolution and the GBA slot's device.
-    // These two are stand-ins for how a melonDS DS might spell them, not
-    // copied from one: the frontend finds both by what they offer rather
-    // than by name, and these are here to prove that it does.
-    {"melonds_opengl_resolution", "Internal resolution", nullptr, nullptr, nullptr, "video",
-     {{"1", "1x native (256 x 192)"},
-      {"2", "2x native (512 x 384)"},
-      {"3", "3x native (768 x 576)"},
-      {"4", "4x native (1024 x 768)"},
-      {nullptr, nullptr}},
-     "1"},
+    // The GBA slot's device. A stand-in for how a melonDS DS might spell it,
+    // not copied from one: the frontend finds it by what it offers rather
+    // than by name, and this is here to prove that it does.
     {"melonds_slot2_device", "Slot-2 device", nullptr, nullptr, nullptr, "system",
      {{"none", "None"}, {"rumble-pak", "Rumble Pak"}, {"memory-expansion", "Memory Expansion"},
       {nullptr, nullptr}},

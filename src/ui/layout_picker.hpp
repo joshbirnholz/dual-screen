@@ -104,10 +104,6 @@ struct LayoutPickerState {
     // button does not appear.
     int render_scale = 1;
     int max_render_scale = 1;
-    // Whether cycling the render scale from where it is now restarts the
-    // game, and so is asked about first: a DS going to or from 1x, which
-    // moves melonDS between renderers it only picks between as a game opens.
-    bool render_scale_restarts = false;
     // Whether the current layout shows the gap between its screens. Only
     // meaningful -- and only offered -- while a layout that has one is
     // selected, which the picker reads off the registry for itself.
@@ -160,9 +156,9 @@ enum class MenuConfirm : uint8_t {
     Quit = 2,
     LoadSavePoint = 3,
     OverwriteSavePoint = 4,
-    // A DS going to or from 1x, which reopens the core -- see
-    // LayoutPickerState::render_scale_restarts.
-    RestartForRenderScale = 5,
+    // 5 was a question about a DS render scale restarting the game; a DS no
+    // longer has a render scale. Left unused so the numbers on the wire keep
+    // their meaning.
     // Not a question: something to read and put away with OK -- that a save
     // state was saved, or why one could not be saved or loaded. The words are
     // the save status; see set_save_status().
@@ -273,7 +269,6 @@ public:
         state_.left_handed_layouts = std::move(layouts);
     }
     void set_render_scale(int scale) { state_.render_scale = scale; }
-    void set_render_scale_restarts(bool restarts) { state_.render_scale_restarts = restarts; }
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
     void set_left_stick_press(LeftStickPress press) { state_.left_stick_press = press; }

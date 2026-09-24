@@ -646,9 +646,6 @@ struct App::Impl {
     void adopt_render_scale(int scale);
     // The next scale in the cycle, wrapping at the system's maximum.
     int next_render_scale() const;
-    // Whether going to next_render_scale() reopens the core, which the menu
-    // asks about first -- see LayoutPickerState::render_scale_restarts.
-    bool render_scale_change_restarts() const;
     void adopt_audio_target(AudioTarget target);
     // Sets the hand of the layout in use, and only that layout.
     void adopt_handedness(Handedness hand);
@@ -683,13 +680,6 @@ struct App::Impl {
     // worth showing the player if it fails.
     bool open_core(const std::string& rom_path, std::string* error,
                    std::vector<std::string>* details);
-    // The context the game about to be opened needs: its console's, or a 3.3
-    // core profile for a DS rendered on the GPU. See renders_on_gpu().
-    GlContextNeed gl_context_for_game() const;
-    // Closes the core and opens it again on the same game, keeping its place
-    // through a save state -- for a setting the core only takes as a game is
-    // opened, such as a DS going between its software and OpenGL renderers.
-    bool reopen_core_in_place();
     void open_browser();
     void enter_message(MessageKind kind,
                        const std::string& title,
@@ -1482,7 +1472,6 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_max_render_scale()
                        : (local_game() ? system_profile(system).max_render_scale : 1);
     picker_state.screen_gap = screen_gap;
-    picker_state.render_scale_restarts = render_scale_change_restarts();
     picker_state.right_stick_mode = right_stick_mode;
     // Only a console whose right stick can mean more than one thing has a
     // question worth offering -- a 3DS. A DS has no right stick to speak of,
@@ -1524,12 +1513,6 @@ void App::Impl::open_picker(bool embedded) {
     }
 }
 
-bool App::Impl::render_scale_change_restarts() const {
-    return source != nullptr && LibretroCoreScreenSource::renders_on_gpu(system, render_scale) !=
-                                    LibretroCoreScreenSource::renders_on_gpu(system,
-                                                                             next_render_scale());
-}
-
 int App::Impl::next_render_scale() const {
     const int maximum = std::max(1, system_profile(system).max_render_scale);
     return render_scale >= maximum ? 1 : render_scale + 1;
@@ -1548,25 +1531,14 @@ void App::Impl::adopt_render_scale(int scale) {
     if (wanted == render_scale) {
         return;
     }
-    const int was = render_scale;
     render_scale = wanted;
-    if (source && LibretroCoreScreenSource::renders_on_gpu(system, was) !=
-                      LibretroCoreScreenSource::renders_on_gpu(system, wanted)) {
-        // Across the line between a DS's software and OpenGL renderers, which
-        // the core only picks between as a game is opened. Written down first,
-        // so the game opens again at the scale it is going to.
-        if (have_game_config) {
-            persist_game_config();
-        }
-        reopen_core_in_place();
-    } else if (source) {
+    if (source) {
         source->set_render_scale(render_scale);
         // Whatever the core actually accepted, which is what the menu shows.
         render_scale = source->render_scale();
     }
     if (picker) {
         picker->set_render_scale(render_scale);
-        picker->set_render_scale_restarts(render_scale_change_restarts());
     }
     // A companion is following the host and has no game of its own to remember
     // this against, so it changes what it displays and nothing on disk.
@@ -2103,60 +2075,6 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
     return true;
 }
 
-GlContextNeed App::Impl::gl_context_for_game() const {
-    const SystemProfile& profile = system_profile(system);
-    if (profile.frame_origin == FrameOrigin::LibretroCore &&
-        LibretroCoreScreenSource::renders_on_gpu(
-            system, std::clamp(render_scale, 1, std::max(1, profile.max_render_scale)))) {
-        return GlContextNeed::OpenGl33Core;
-    }
-    return profile.gl_context;
-}
-
-bool App::Impl::reopen_core_in_place() {
-    if (!source) {
-        return false;
-    }
-    // Where the game is, carried across as a save state: the core is closed
-    // and opened again, and nothing else is -- the session, the companion, the
-    // audio device and the window all stay, bar the window's GL context when
-    // the new renderer needs a different one.
-    std::vector<uint8_t> state;
-    std::string state_error;
-    const bool kept = source->save_state(state, &state_error);
-    if (!kept) {
-        log_warn("could not keep the game's place across reopening it: " + state_error);
-    }
-    stop_pad_rumble();
-    source->close();
-    source.reset();
-
-    std::string error;
-    if (!ensure_gl_context(gl_context_for_game(), &error)) {
-        // Back down to what the old context can do, rather than no game.
-        log_warn("could not get the display the new renderer needs: " + error);
-        render_scale = 1;
-        persist_game_config();
-    }
-    std::vector<std::string> details;
-    if (!open_core(game_path, &error, &details)) {
-        enter_message(MessageKind::Error, "Could not start the game again", error, details, false);
-        return false;
-    }
-    if (kept && !source->load_state(state, &state_error)) {
-        log_warn("the game started again from the beginning: " + state_error);
-    }
-    // One frame, so there is a picture: a game paused under the menu that
-    // asked for this would otherwise show nothing behind it, and send the
-    // other device nothing, until it was resumed.
-    std::string frame_error;
-    source->advance_frame(&frame_error);
-    frame_accumulator = 0.0;
-    last_counter = SDL_GetPerformanceCounter();
-    log_info("reopened the core at " + std::to_string(render_scale) + "x");
-    return true;
-}
-
 bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // Tear down anything already running, so picking a second game from the
     // browser is the same code path as booting the first.
@@ -2206,10 +2124,6 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
     render_scale = settings.default_render_scale;
-    // Whether this game has been played before, which decides where a DS
-    // game's render scale starts -- see below.
-    const bool remembered =
-        !rom_sha1.empty() && file_exists(GameConfig::file_path(paths, rom_sha1));
     if (rom_sha1.empty()) {
         log_warn("could not hash the ROM; this session's layout will not be remembered");
     } else {
@@ -2237,13 +2151,6 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
     apply_system();
-    // A DS game new to this app starts at 1x, on melonDS's software renderer,
-    // whatever scale 3DS games have been left at: upscaling a DS is a choice
-    // made game by game in the quick menu, not a default carried over from
-    // another console.
-    if (system == SystemId::Ds && !remembered) {
-        render_scale = 1;
-    }
 
     // Resolved once more now the console is known. A layout remembered from a
     // different one, or the global default, may have nowhere to put these
@@ -2270,7 +2177,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // for its context while the game is being opened and refuses to open it at
     // all if the answer is no.
     std::string context_error;
-    if (!ensure_gl_context(gl_context_for_game(), &context_error)) {
+    if (!ensure_gl_context(profile.gl_context, &context_error)) {
         enter_message(MessageKind::Error, "Cannot set up the display for " + profile.name,
                       context_error,
                       {profile.core_description + " renders on the GPU and needs OpenGL 3.3."},

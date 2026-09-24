@@ -116,21 +116,18 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
     companion.session_active = true;
     CHECK(taps_that_cycle_the_scale(registry, companion) > 0);
 
-    // A DS too, now: above 1x melonDS draws through its OpenGL renderer.
-    LayoutPickerState ds = playing;
-    ds.max_render_scale = system_profile(SystemId::Ds).max_render_scale;
-    CHECK(ds.max_render_scale > 1);
-    CHECK(taps_that_cycle_the_scale(registry, ds) > 0);
-
-    // And a console with nothing to scale -- a Wii U, whose emulator owns its
-    // own resolution -- has nothing to press, on either device.
-    LayoutPickerState none = playing;
-    none.max_render_scale = system_profile(SystemId::WiiU).max_render_scale;
-    CHECK_EQ(none.max_render_scale, 1);
-    CHECK_EQ(taps_that_cycle_the_scale(registry, none), 0);
-    LayoutPickerState none_companion = none;
-    none_companion.session_active = true;
-    CHECK_EQ(taps_that_cycle_the_scale(registry, none_companion), 0);
+    // A console with nothing to scale has nothing to press, on either device:
+    // a DS, whose melonDS is pinned to its software renderer, and a Wii U,
+    // whose emulator owns its own resolution.
+    for (const SystemId system : {SystemId::Ds, SystemId::WiiU}) {
+        LayoutPickerState none = playing;
+        none.max_render_scale = system_profile(system).max_render_scale;
+        CHECK_EQ(none.max_render_scale, 1);
+        CHECK_EQ(taps_that_cycle_the_scale(registry, none), 0);
+        LayoutPickerState none_companion = none;
+        none_companion.session_active = true;
+        CHECK_EQ(taps_that_cycle_the_scale(registry, none_companion), 0);
+    }
 }
 
 // Taps every point on a coarse grid over the menu and reports how many of them
@@ -498,26 +495,16 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(cycled.cursor_mode_changed);
     CHECK(options.on_content());
 
-    // A render scale that restarts the game -- a DS going to or from 1x -- is
-    // asked about first; one that does not is simply changed.
-    for (const bool restarts : {false, true}) {
+    // A render scale is changed as soon as it is pressed, with no question.
+    {
         LayoutPickerState scaled = state;
-        scaled.max_render_scale = 4;
-        scaled.render_scale_restarts = restarts;
+        scaled.max_render_scale = 3;
         LayoutPicker asked(registry);
         open_on(asked, scaled, MenuSection::Options);
         asked.update({UiAction::Right}, {}, kWidth, kHeight);
         const LayoutPickerResult pressed = asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
-        CHECK_EQ(pressed.render_scale_changed, !restarts);
-        CHECK_EQ(asked.confirmation() == MenuConfirm::RestartForRenderScale, restarts);
-        if (restarts) {
-            // No, and nothing changes; yes, and it does, with the menu still up.
-            CHECK(!asked.update({UiAction::Cancel}, {}, kWidth, kHeight).render_scale_changed);
-            CHECK(!asked.awaiting_confirmation());
-            asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
-            CHECK(asked.update({UiAction::Confirm}, {}, kWidth, kHeight).render_scale_changed);
-            CHECK(asked.is_open());
-        }
+        CHECK(pressed.render_scale_changed);
+        CHECK(!asked.awaiting_confirmation());
     }
 
     // A Rumble Pak, where the core can put one in, and nowhere else.

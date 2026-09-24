@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -211,7 +210,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOptNumberOfLayouts, "1");   // no layout cycling
             core_->force_option(kOptScreenLayout1, "top-bottom");
             core_->force_option(kOptScreenGap, "0");         // no dead rows between screens
-            // The renderer is set with the resolution -- see apply_render_scale().
+            core_->force_option(kOptRenderMode, "software"); // composited from a CPU framebuffer
             core_->force_option(kOptTouchMode, "touch");     // touch arrives as a libretro pointer
             core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
             // Blow rather than silence, and only while the button is held --
@@ -514,22 +513,8 @@ void LibretroCoreScreenSource::apply_render_scale() {
         case SystemId::WiiU:
             break;
         case SystemId::Ds:
-            // At 1x the software renderer, which is melonDS's most accurate and
-            // draws one pixel per DS pixel. Above it the OpenGL renderer, which
-            // is the only one that upscales: its 3D at the scale asked for,
-            // its 2D at the console's own resolution scaled to match.
-            core_->force_option(kOptRenderMode, render_scale_ > 1 ? "opengl" : "software");
-            if (render_scale_ > 1 && !ds_resolution_key_.empty()) {
-                // Whichever of the core's values is this many times native:
-                // "2" or "2x" or "2x native (512 x 384)", however it says it.
-                const auto it = core_->declared_options().find(ds_resolution_key_);
-                for (const std::string& value : it->second.allowed_values) {
-                    if (std::atoi(value.c_str()) == render_scale_) {
-                        core_->force_option(ds_resolution_key_, value);
-                        break;
-                    }
-                }
-            }
+            // melonDS is pinned to its software renderer, which draws one pixel
+            // per DS pixel and has nothing to multiply.
             break;
         case SystemId::ThreeDs:
             core_->force_option(kOpt3dsResolution, citra_resolution_values(render_scale_));
@@ -537,17 +522,7 @@ void LibretroCoreScreenSource::apply_render_scale() {
     }
 }
 
-bool LibretroCoreScreenSource::renders_on_gpu(SystemId system, int render_scale) {
-    switch (system) {
-        case SystemId::Ds: return render_scale > 1;
-        case SystemId::ThreeDs: return true;  // Citra and Azahar have nothing else
-        case SystemId::WiiU: break;
-    }
-    return false;
-}
-
 void LibretroCoreScreenSource::find_core_options() {
-    ds_resolution_key_.clear();
     rumble_key_.clear();
     const auto lower = [](std::string text) {
         for (char& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -567,13 +542,6 @@ void LibretroCoreScreenSource::find_core_options() {
         return;
     }
     for (const auto& [key, info] : core_->declared_options()) {
-        const std::string name = lower(key);
-        // The OpenGL renderer's internal resolution.
-        if (ds_resolution_key_.empty() && name.find("resolution") != std::string::npos &&
-            (name.find("opengl") != std::string::npos || name.find("gl_") != std::string::npos ||
-             name.find("render") != std::string::npos)) {
-            ds_resolution_key_ = key;
-        }
         // A slot device that can be a Rumble Pak.
         if (rumble_key_.empty()) {
             for (const std::string& value : info.allowed_values) {
@@ -598,10 +566,7 @@ void LibretroCoreScreenSource::find_core_options() {
             }
         }
     }
-    log_info(std::string("this core ") +
-             (ds_resolution_key_.empty() ? "offers no internal resolution to upscale with"
-                                         : "upscales through " + ds_resolution_key_) +
-             ", and " +
+    log_info(std::string("this core offers ") +
              (rumble_key_.empty() ? "no Rumble Pak"
                                   : "a Rumble Pak through " + rumble_key_ + " = " +
                                         rumble_on_value_));

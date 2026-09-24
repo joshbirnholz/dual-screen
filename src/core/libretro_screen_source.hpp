@@ -78,11 +78,6 @@ public:
     // In or out. The core takes it straight away; a game that only looks for
     // one as it boots sees it after Reset Game.
     void set_rumble_pak(bool inserted);
-    // Whether a scale renders on the GPU -- which for a DS is anything above
-    // 1x: melonDS only upscales through its OpenGL renderer, and a core can
-    // only ask for a GL context while a game is being opened. See
-    // App::Impl::adopt_render_scale(), which reopens the core across that line.
-    static bool renders_on_gpu(SystemId system, int render_scale);
     // Changes the core's internal resolution while it runs. The core answers
     // with a new geometry and the split follows it, so nothing else has to be
     // told. A system with no scale to choose ignores this.
@@ -211,7 +206,6 @@ private:
     int render_scale_ = 1;
     // What the loaded core calls the settings found by looking -- see
     // find_core_options(). Empty where the core has no such thing.
-    std::string ds_resolution_key_;
     std::string rumble_key_;
     std::string rumble_on_value_;
     std::string rumble_off_value_;
