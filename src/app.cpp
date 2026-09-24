@@ -2213,21 +2213,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                 for (const std::string& argument : settings.external_arguments_for(system)) {
                     arguments.push_back(fill_placeholders(argument, socket_path, rom_path));
                 }
-                // With no way to raise Steam's on-screen keyboard. Game Mode
-                // hands every program Steam's own input method, and that
-                // input method opens the keyboard the moment a GTK window
-                // takes keyboard focus -- which Cemu's game window does as
-                // the game starts, so the keyboard came up over every Wii U
-                // game. Nothing is typed into Cemu from here: its GamePad and
-                // buttons arrive through the frame link, not as text.
-                const std::vector<std::string> environment = {
-                    "GTK_IM_MODULE=gtk-im-context-simple",
-                    "QT_IM_MODULE=none",
-                    "XMODIFIERS=@im=none",
-                    "SDL_ENABLE_SCREEN_KEYBOARD=0",
-                };
                 std::string start_error;
-                if (external_program.start(program, arguments, &start_error, environment)) {
+                if (external_program.start(program, arguments, &start_error)) {
                     external_program_wanted = true;
                 } else {
                     log_warn("could not start " + program + ": " + start_error);

@@ -37,7 +37,7 @@ bool reap(int pid, bool& out_still_running) {
 ChildProcess::~ChildProcess() { stop(); }
 
 bool ChildProcess::start(const std::string& program, const std::vector<std::string>& arguments,
-                         std::string* error, const std::vector<std::string>& environment) {
+                         std::string* error) {
     stop();
 
     // Built before forking. Everything between fork and exec in the child has
@@ -55,32 +55,6 @@ bool ChildProcess::start(const std::string& program, const std::vector<std::stri
     }
     argv.push_back(nullptr);
 
-    // Its environment: this one's, less anything named in `environment`, then
-    // those. Built here for the same reason argv is, and handed over by
-    // pointing `environ` at it in the child, which is only a store.
-    std::vector<std::string> owned_environment;
-    for (char** entry = ::environ; entry != nullptr && *entry != nullptr; ++entry) {
-        const std::string existing = *entry;
-        const std::string name = existing.substr(0, existing.find('='));
-        bool replaced = false;
-        for (const std::string& override_entry : environment) {
-            if (override_entry.compare(0, name.size() + 1, name + "=") == 0) {
-                replaced = true;
-                break;
-            }
-        }
-        if (!replaced) owned_environment.push_back(existing);
-    }
-    for (const std::string& override_entry : environment) {
-        owned_environment.push_back(override_entry);
-    }
-    std::vector<char*> envp;
-    envp.reserve(owned_environment.size() + 1);
-    for (std::string& entry : owned_environment) {
-        envp.push_back(entry.data());
-    }
-    envp.push_back(nullptr);
-
     const pid_t child = ::fork();
     if (child < 0) {
         if (error != nullptr) *error = std::string("could not start it: ") + std::strerror(errno);
@@ -89,7 +63,6 @@ bool ChildProcess::start(const std::string& program, const std::vector<std::stri
     if (child == 0) {
         // Its own process group, so stopping it stops whatever it started too.
         ::setpgid(0, 0);
-        ::environ = envp.data();
         ::execvp(argv[0], argv.data());
         ::_exit(127);
     }
@@ -145,8 +118,7 @@ namespace ds {
 
 ChildProcess::~ChildProcess() = default;
 
-bool ChildProcess::start(const std::string&, const std::vector<std::string>&, std::string* error,
-                         const std::vector<std::string>&) {
+bool ChildProcess::start(const std::string&, const std::vector<std::string>&, std::string* error) {
     if (error != nullptr) *error = "this platform has no way to start another program";
     return false;
 }

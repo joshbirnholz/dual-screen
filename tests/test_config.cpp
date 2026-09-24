@@ -18,7 +18,6 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
-#include "util/child_process.hpp"
 
 using namespace ds;
 
@@ -564,36 +563,6 @@ void test_command_line() {
 
 }  // namespace
 
-// A program started for a game gets this one's environment with the named
-// entries replaced -- which is how Cemu is kept from raising Steam's on-screen
-// keyboard in Game Mode, where the input method it would otherwise inherit
-// opens the keyboard whenever a window takes focus.
-void test_a_started_program_gets_the_environment_it_was_given() {
-#if defined(__linux__)
-    char pattern[] = "/tmp/dualscreen-env-XXXXXX";
-    const char* directory = mkdtemp(pattern);
-    CHECK(directory != nullptr);
-    if (directory == nullptr) return;
-    const std::string out = std::string(directory) + "/seen";
-    setenv("GTK_IM_MODULE", "Steam", 1);
-    setenv("DUALSCREEN_KEPT", "yes", 1);
-
-    ChildProcess child;
-    std::string error;
-    CHECK_MSG(child.start("/bin/sh",
-                          {"-c", "printf '%s|%s' \"$GTK_IM_MODULE\" \"$DUALSCREEN_KEPT\" > " + out},
-                          &error, {"GTK_IM_MODULE=gtk-im-context-simple"}),
-              error);
-    for (int wait = 0; wait < 200 && child.running(); ++wait) usleep(10000);
-    std::ifstream file(out);
-    std::string seen;
-    std::getline(file, seen);
-    CHECK_STR_EQ(seen, "gtk-im-context-simple|yes");
-    unsetenv("DUALSCREEN_KEPT");
-    unsetenv("GTK_IM_MODULE");
-#endif
-}
-
 int main() {
     test_one_left_hand_for_every_layout_is_carried_over();
     test_sha1_known_vectors();
@@ -607,6 +576,5 @@ int main() {
     test_settings_round_trip();
     test_a_lone_device_is_the_gamepad_in_the_hand_and_the_television_on_a_dock();
     test_command_line();
-    test_a_started_program_gets_the_environment_it_was_given();
     return test::finish("config");
 }
