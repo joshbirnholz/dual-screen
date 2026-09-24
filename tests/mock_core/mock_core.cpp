@@ -325,6 +325,10 @@ int16_t g_reported_circle_y = 0;
 // sixty times a second.
 bool g_asked_for_sensors = false;
 struct retro_sensor_interface g_sensors = {};
+// The rumble interface, and whether it was asked for: a Rumble Pak that is in
+// rumbles while A is held, the way a game would on a hit.
+struct retro_rumble_interface g_rumble = {};
+bool g_asked_for_rumble = false;
 float g_reported_gyro_x = 0.0f;
 float g_reported_accel_y = 0.0f;
 int16_t g_reported_c_stick_x = 0;
@@ -418,6 +422,21 @@ const retro_core_option_v2_definition kOptions[] = {
      {{"hold", "Hold"}, {"toggle", "Toggle"}, {"always", "Always"}, {nullptr, nullptr}}, "hold"},
     {"melonds_show_mic_state", "Show microphone state", nullptr, nullptr, nullptr, "screen",
      {{"enabled", "Enabled"}, {"disabled", "Disabled"}, {nullptr, nullptr}}, "enabled"},
+    // The OpenGL renderer's internal resolution and the GBA slot's device.
+    // These two are stand-ins for how a melonDS DS might spell them, not
+    // copied from one: the frontend finds both by what they offer rather
+    // than by name, and these are here to prove that it does.
+    {"melonds_opengl_resolution", "Internal resolution", nullptr, nullptr, nullptr, "video",
+     {{"1", "1x native (256 x 192)"},
+      {"2", "2x native (512 x 384)"},
+      {"3", "3x native (768 x 576)"},
+      {"4", "4x native (1024 x 768)"},
+      {nullptr, nullptr}},
+     "1"},
+    {"melonds_slot2_device", "Slot-2 device", nullptr, nullptr, nullptr, "system",
+     {{"none", "None"}, {"rumble-pak", "Rumble Pak"}, {"memory-expansion", "Memory Expansion"},
+      {nullptr, nullptr}},
+     "none"},
     {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
 };
 
@@ -664,6 +683,8 @@ RETRO_API void retro_init(void) {
     g_frame_counter = 0;
     g_touch_seen = SeenTouch();
     g_save_was_loaded = false;
+    g_asked_for_rumble = false;
+    g_rumble = {};
 }
 
 RETRO_API void retro_deinit(void) {}
@@ -880,6 +901,19 @@ RETRO_API void retro_run(void) {
         }
     }
 
+    if (!kUsesHwRender && g_environment != nullptr && g_input_state != nullptr) {
+        if (!g_asked_for_rumble) {
+            g_asked_for_rumble = true;
+            if (!g_environment(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &g_rumble)) {
+                g_rumble.set_rumble_state = nullptr;
+            }
+        }
+        if (g_rumble.set_rumble_state != nullptr) {
+            const bool pak = read_variable("melonds_slot2_device") == "rumble-pak";
+            const bool hit = g_input_state(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A) != 0;
+            g_rumble.set_rumble_state(0, RETRO_RUMBLE_STRONG, pak && hit ? 0xFFFF : 0);
+        }
+    }
     draw_top_screen();
     draw_bottom_screen();
     draw_button_indicators();

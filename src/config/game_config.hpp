@@ -30,6 +30,9 @@ struct GameConfig {
     // 3DS game wants is a fact about that game -- see RightStickMode -- and
     // there is nothing in a ROM that says which.
     RightStickMode right_stick_mode = RightStickMode::CStick;
+    // A Rumble Pak in the DS's GBA slot -- out unless asked for, since a game
+    // that finds one may say so, and one that has no use for it gains nothing.
+    bool rumble_pak = false;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

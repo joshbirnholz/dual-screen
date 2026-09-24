@@ -44,6 +44,10 @@ SystemProfile make_ds() {
     profile.rom_extensions = {"nds", "dsi", "ids", "srl"};
     profile.core_filenames = {"melondsds_libretro.so", "melonds_libretro.so"};
     profile.core_description = "melonDS DS";
+    // Through melonDS's OpenGL renderer, which is the only one that upscales;
+    // 1x stays on the software renderer. Four is 1024x768 a screen, already
+    // more than a 1080p television has rows for one screen in.
+    profile.max_render_scale = 4;
     return profile;
 }
 

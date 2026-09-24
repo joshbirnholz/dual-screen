@@ -662,12 +662,29 @@ struct App::Impl {
     void adopt_left_stick_press(LeftStickPress press);
     // Puts whatever is in effect into this device's L3 and the menu.
     void apply_left_stick_press();
+    // A DS game's Rumble Pak: whether one is in, as the host has it, and the
+    // same ask-or-apply pair as everything else the menu shares.
+    bool rumble_pak_in_effect() const;
+    void request_rumble_pak(bool inserted);
+    void adopt_rumble_pak(bool inserted);
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
     bool start_game(const std::string& rom_path, bool fatal_on_failure);
+    // The libretro half of the above: the core, its callbacks and its
+    // settings, for the game at `rom_path` on `system`. `details` gets lines
+    // worth showing the player if it fails.
+    bool open_core(const std::string& rom_path, std::string* error,
+                   std::vector<std::string>* details);
+    // The context the game about to be opened needs: its console's, or a 3.3
+    // core profile for a DS rendered on the GPU. See renders_on_gpu().
+    GlContextNeed gl_context_for_game() const;
+    // Closes the core and opens it again on the same game, keeping its place
+    // through a save state -- for a setting the core only takes as a game is
+    // opened, such as a DS going between its software and OpenGL renderers.
+    bool reopen_core_in_place();
     void open_browser();
     void enter_message(MessageKind kind,
                        const std::string& title,
@@ -719,8 +736,17 @@ bool App::Impl::create_window(GlContextNeed need, std::string* error) {
 }
 
 void App::Impl::destroy_window() {
-    // Before the context that owns it.
+    // Before the context that owns it -- everything here, and the menu's own
+    // pictures, which can be on screen when the window is rebuilt under them.
+    menu_backdrop.forget();
+    if (picker) {
+        picker->release_textures();
+    }
     bezel_art.destroy();
+    // And the button prompts, which rebuild_renderer() loads again: loaded
+    // into textures left over from the old context instead, they came back
+    // as blank white boxes and an OpenGL error.
+    button_glyphs.shutdown();
     compositor.set_bezel_art(nullptr);
     if (picker) {
         picker->set_bezel_art(nullptr);
@@ -1370,6 +1396,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.left_stick_press_changed) {
                 request_left_stick_press(next_left_stick_press(left_stick_press_in_effect()));
             }
+            if (result.rumble_pak_toggled) {
+                request_rumble_pak(!rumble_pak_in_effect());
+            }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
                 // asked of the host -- the other device has its own.
@@ -1460,6 +1489,10 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.left_stick_choosable =
         is_companion() ? companion_session->host_left_stick_choosable()
                        : (local_game() && system_profile(system).has_microphone);
+    // A Rumble Pak, where the core running this game can put one in.
+    picker_state.rumble_pak = rumble_pak_in_effect();
+    picker_state.rumble_choosable = is_companion() ? companion_session->host_rumble_choosable()
+                                                   : (source && source->offers_rumble_pak());
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
     picker_state.cursor_choosable =
@@ -1502,8 +1535,18 @@ void App::Impl::adopt_render_scale(int scale) {
     if (wanted == render_scale) {
         return;
     }
+    const int was = render_scale;
     render_scale = wanted;
-    if (source) {
+    if (source && LibretroCoreScreenSource::renders_on_gpu(system, was) !=
+                      LibretroCoreScreenSource::renders_on_gpu(system, wanted)) {
+        // Across the line between a DS's software and OpenGL renderers, which
+        // the core only picks between as a game is opened. Written down first,
+        // so the game opens again at the scale it is going to.
+        if (have_game_config) {
+            persist_game_config();
+        }
+        reopen_core_in_place();
+    } else if (source) {
         source->set_render_scale(render_scale);
         // Whatever the core actually accepted, which is what the menu shows.
         render_scale = source->render_scale();
@@ -1569,6 +1612,36 @@ void App::Impl::apply_left_stick_press() {
         left_stick_is_microphone(system_profile(system).has_microphone, press));
     if (picker) {
         picker->set_left_stick_press(press);
+    }
+}
+
+bool App::Impl::rumble_pak_in_effect() const {
+    if (is_companion()) return companion_session->host_rumble_pak();
+    return source && source->rumble_pak();
+}
+
+void App::Impl::request_rumble_pak(bool inserted) {
+    if (is_companion()) {
+        companion_session->request_rumble_pak(inserted);
+        return;  // the host decides; it will tell us
+    }
+    adopt_rumble_pak(inserted);
+}
+
+void App::Impl::adopt_rumble_pak(bool inserted) {
+    if (!source || !source->offers_rumble_pak() || inserted == source->rumble_pak()) {
+        return;
+    }
+    source->set_rumble_pak(inserted);
+    if (!inserted) {
+        stop_pad_rumble();
+    }
+    if (picker) {
+        picker->set_rumble_pak(inserted);
+    }
+    if (have_game_config) {
+        game_config.rumble_pak = inserted;
+        persist_game_config();
     }
 }
 
@@ -1954,6 +2027,122 @@ void App::Impl::open_browser() {
     input.set_game_input_enabled(false);
 }
 
+bool App::Impl::open_core(const std::string& rom_path, std::string* error,
+                          std::vector<std::string>* details) {
+    const SystemProfile& profile = system_profile(system);
+    LibretroSourceConfig source_config;
+    source_config.system = system;
+    source_config.core_path = resolved_core_path;
+    source_config.rom_path = rom_path;
+    source_config.system_directory = settings.system_dir;
+    source_config.save_directory = paths.saves_dir;
+    // Named after the ROM rather than its hash, so saves are interchangeable
+    // with RetroArch's and recognisable in a file listing.
+    source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
+    source_config.render_scale = render_scale;
+    source_config.rumble_pak = have_game_config && game_config.rumble_pak;
+
+    source.reset(new LibretroCoreScreenSource());
+    source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
+        if (sound_plays_here()) {
+            audio.push(samples, frames);
+        }
+        // Mirrored to the companion as it is produced, so both devices hear the
+        // same thing at the same time.
+        if (host_session) {
+            host_session->publish_audio(net::AudioStreamId::Shared, samples, frames,
+                                        static_cast<uint32_t>(source->audio_sample_rate()));
+        }
+    });
+    // A DS game's Rumble Pak. Both devices' pads drive a DS, so both feel it:
+    // this one's here, the other's through the session.
+    source->set_rumble_callback([this](bool active) {
+        input.set_rumble(active);
+        if (host_session) {
+            host_session->publish_rumble(active);
+        }
+    });
+
+    if (!source->open(source_config, error)) {
+        if (details != nullptr) {
+            if (resolved_core_path.empty()) {
+                details->push_back("Looked for " + profile.core_filenames.front() +
+                                   " in the RetroArch core folders and /usr/lib/libretro.");
+                details->push_back("Point at it directly with --core, or set \"" +
+                                   std::string(core_path_settings_key(system)) + "\" in " +
+                                   paths.settings_file + ".");
+            } else {
+                details->push_back("Core: " + resolved_core_path);
+            }
+            details->push_back("BIOS folder: " + settings.system_dir);
+        }
+        source.reset();
+        return false;
+    }
+
+    // A scale from an older config, or one this system does not offer, is
+    // clamped by the source; the menu should show what the core was given.
+    render_scale = source->render_scale();
+    if (system == SystemId::Ds) {
+        source->set_run_ahead(settings.run_ahead_ds);
+    }
+    return true;
+}
+
+GlContextNeed App::Impl::gl_context_for_game() const {
+    const SystemProfile& profile = system_profile(system);
+    if (profile.frame_origin == FrameOrigin::LibretroCore &&
+        LibretroCoreScreenSource::renders_on_gpu(
+            system, std::clamp(render_scale, 1, std::max(1, profile.max_render_scale)))) {
+        return GlContextNeed::OpenGl33Core;
+    }
+    return profile.gl_context;
+}
+
+bool App::Impl::reopen_core_in_place() {
+    if (!source) {
+        return false;
+    }
+    // Where the game is, carried across as a save state: the core is closed
+    // and opened again, and nothing else is -- the session, the companion, the
+    // audio device and the window all stay, bar the window's GL context when
+    // the new renderer needs a different one.
+    std::vector<uint8_t> state;
+    std::string state_error;
+    const bool kept = source->save_state(state, &state_error);
+    if (!kept) {
+        log_warn("could not keep the game's place across reopening it: " + state_error);
+    }
+    stop_pad_rumble();
+    source->close();
+    source.reset();
+
+    std::string error;
+    if (!ensure_gl_context(gl_context_for_game(), &error)) {
+        // Back down to what the old context can do, rather than no game.
+        log_warn("could not get the display the new renderer needs: " + error);
+        render_scale = 1;
+        persist_game_config();
+    }
+    std::vector<std::string> details;
+    if (!open_core(game_path, &error, &details)) {
+        enter_message(MessageKind::Error, "Could not start the game again", error, details, false);
+        return false;
+    }
+    if (kept && !source->load_state(state, &state_error)) {
+        log_warn("the game started again from the beginning: " + state_error);
+    }
+    // One frame, so there is a picture: a game paused under the menu that
+    // asked for this would otherwise show nothing behind it, and send the
+    // other device nothing, until it was resumed.
+    std::string frame_error;
+    source->advance_frame(&frame_error);
+    frame_accumulator = 0.0;
+    last_counter = SDL_GetPerformanceCounter();
+    log_info("reopened the core at " + std::to_string(render_scale) + "x");
+    return true;
+}
+
 bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // Tear down anything already running, so picking a second game from the
     // browser is the same code path as booting the first.
@@ -2002,6 +2191,11 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     right_stick_mode = settings.default_right_stick_mode;
 
     const std::string rom_sha1 = Sha1::hash_file(rom_path);
+    render_scale = settings.default_render_scale;
+    // Whether this game has been played before, which decides where a DS
+    // game's render scale starts -- see below.
+    const bool remembered =
+        !rom_sha1.empty() && file_exists(GameConfig::file_path(paths, rom_sha1));
     if (rom_sha1.empty()) {
         log_warn("could not hash the ROM; this session's layout will not be remembered");
     } else {
@@ -2029,6 +2223,13 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
     apply_system();
+    // A DS game new to this app starts at 1x, on melonDS's software renderer,
+    // whatever scale 3DS games have been left at: upscaling a DS is a choice
+    // made game by game in the quick menu, not a default carried over from
+    // another console.
+    if (system == SystemId::Ds && !remembered) {
+        render_scale = 1;
+    }
 
     // Resolved once more now the console is known. A layout remembered from a
     // different one, or the global default, may have nowhere to put these
@@ -2055,7 +2256,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // for its context while the game is being opened and refuses to open it at
     // all if the answer is no.
     std::string context_error;
-    if (!ensure_gl_context(profile.gl_context, &context_error)) {
+    if (!ensure_gl_context(gl_context_for_game(), &context_error)) {
         enter_message(MessageKind::Error, "Cannot set up the display for " + profile.name,
                       context_error,
                       {profile.core_description + " renders on the GPU and needs OpenGL 3.3."},
@@ -2065,59 +2266,13 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
 
     switch (profile.frame_origin) {
         case FrameOrigin::LibretroCore: {
-            LibretroSourceConfig source_config;
-            source_config.system = system;
-            source_config.core_path = resolved_core_path;
-            source_config.rom_path = rom_path;
             game_path = rom_path;
-            source_config.system_directory = settings.system_dir;
-            source_config.save_directory = paths.saves_dir;
-            // Named after the ROM rather than its hash, so saves are
-            // interchangeable with RetroArch's and recognisable in a file
-            // listing.
-            source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
-            source_config.render_scale = render_scale;
-
-            source.reset(new LibretroCoreScreenSource());
-            source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
-                if (sound_plays_here()) {
-                    audio.push(samples, frames);
-                }
-                // Mirrored to the companion as it is produced, so both devices
-                // hear the same thing at the same time.
-                if (host_session) {
-                    host_session->publish_audio(
-                        net::AudioStreamId::Shared, samples, frames,
-                        static_cast<uint32_t>(source->audio_sample_rate()));
-                }
-            });
-
             std::string source_error;
-            if (!source->open(source_config, &source_error)) {
-                std::vector<std::string> details;
-                if (resolved_core_path.empty()) {
-                    details.push_back("Looked for " + profile.core_filenames.front() +
-                                      " in the RetroArch core folders and /usr/lib/libretro.");
-                    details.push_back(
-                        "Point at it directly with --core, or set \"" +
-                        std::string(core_path_settings_key(system)) +
-                        "\" in " + paths.settings_file + ".");
-                } else {
-                    details.push_back("Core: " + resolved_core_path);
-                }
-                details.push_back("BIOS folder: " + settings.system_dir);
-                source.reset();
+            std::vector<std::string> details;
+            if (!open_core(rom_path, &source_error, &details)) {
                 enter_message(MessageKind::Error, "Could not start the game", source_error, details,
                               fatal_on_failure);
                 return false;
-            }
-
-            // A scale from an older config, or one this system does not offer,
-            // is clamped by the source; the menu should show what the core was
-            // given.
-            render_scale = source->render_scale();
-            if (system == SystemId::Ds) {
-                source->set_run_ahead(settings.run_ahead_ds);
             }
             break;
         }
@@ -3266,6 +3421,8 @@ int App::run(const AppOptions& options) {
             shared.left_stick_choosable =
                 impl.local_game() && system_profile(impl.system).has_microphone;
             shared.left_stick_press = impl.settings.left_stick_press;
+            shared.rumble_choosable = impl.source && impl.source->offers_rumble_pak();
+            shared.rumble_pak = impl.source && impl.source->rumble_pak();
             shared.save_points_available = impl.save_points_available();
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
@@ -3399,6 +3556,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_left_stick_press) {
                     impl.adopt_left_stick_press(request.left_stick_press);
+                }
+                if (request.wants_rumble_pak) {
+                    impl.adopt_rumble_pak(request.rumble_pak);
                 }
                 if (request.wants_reset) {
                     impl.request_reset();

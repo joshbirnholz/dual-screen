@@ -116,16 +116,21 @@ void test_the_render_button_appears_where_there_is_a_scale_to_choose() {
     companion.session_active = true;
     CHECK(taps_that_cycle_the_scale(registry, companion) > 0);
 
-    // A DS: melonDS is pinned to its software renderer, so there is nothing to
-    // choose and nothing to press -- on either device.
+    // A DS too, now: above 1x melonDS draws through its OpenGL renderer.
     LayoutPickerState ds = playing;
     ds.max_render_scale = system_profile(SystemId::Ds).max_render_scale;
-    CHECK_EQ(ds.max_render_scale, 1);
-    CHECK_EQ(taps_that_cycle_the_scale(registry, ds), 0);
+    CHECK(ds.max_render_scale > 1);
+    CHECK(taps_that_cycle_the_scale(registry, ds) > 0);
 
-    LayoutPickerState ds_companion = ds;
-    ds_companion.session_active = true;
-    CHECK_EQ(taps_that_cycle_the_scale(registry, ds_companion), 0);
+    // And a console with nothing to scale -- a Wii U, whose emulator owns its
+    // own resolution -- has nothing to press, on either device.
+    LayoutPickerState none = playing;
+    none.max_render_scale = system_profile(SystemId::WiiU).max_render_scale;
+    CHECK_EQ(none.max_render_scale, 1);
+    CHECK_EQ(taps_that_cycle_the_scale(registry, none), 0);
+    LayoutPickerState none_companion = none;
+    none_companion.session_active = true;
+    CHECK_EQ(taps_that_cycle_the_scale(registry, none_companion), 0);
 }
 
 // Taps every point on a coarse grid over the menu and reports how many of them
@@ -492,6 +497,23 @@ void test_moving_between_the_list_and_what_it_shows() {
     const LayoutPickerResult cycled = options.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(cycled.cursor_mode_changed);
     CHECK(options.on_content());
+
+    // A Rumble Pak, where the core can put one in, and nowhere else.
+    for (const bool pak : {false, true}) {
+        LayoutPickerState with_pak = state;
+        with_pak.rumble_choosable = pak;
+        LayoutPicker listed(registry);
+        open_on(listed, with_pak, MenuSection::Options);
+        listed.update({UiAction::Right}, {}, kWidth, kHeight);
+        bool offered = false;
+        for (int row = 0; row < 8; ++row) {
+            if (listed.update({UiAction::Confirm}, {}, kWidth, kHeight).rumble_pak_toggled) {
+                offered = true;
+            }
+            listed.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+        CHECK_EQ(offered, pak);
+    }
 
     // What the left stick's click does is there too, where the console has a
     // microphone for it to be, and nowhere else.

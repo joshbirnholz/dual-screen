@@ -45,6 +45,9 @@ struct LibretroSourceConfig {
     // system offers. Set before the core loads so the first frame is already
     // the right size.
     int render_scale = 1;
+    // A Rumble Pak in the DS's GBA slot, where the core offers one -- see
+    // LibretroCoreScreenSource::offers_rumble_pak().
+    bool rumble_pak = false;
 };
 
 // The V1 ScreenSource: hosts the melonDS DS libretro core, pins it to a single
@@ -62,6 +65,24 @@ public:
     void close();
 
     void set_audio_callback(AudioCallback callback);
+    void set_rumble_callback(LibretroCore::RumbleCallback callback) {
+        core_->set_rumble_callback(std::move(callback));
+    }
+    // Whether the loaded core can put a Rumble Pak in a DS's GBA slot, which
+    // is how a DS game rumbles at all. Found by looking through the options
+    // the core declares for a slot device that is one, rather than by name:
+    // the name is the core's business, and a guess that turned out wrong
+    // would offer a switch that does nothing.
+    bool offers_rumble_pak() const { return !rumble_key_.empty(); }
+    bool rumble_pak() const { return rumble_pak_; }
+    // In or out. The core takes it straight away; a game that only looks for
+    // one as it boots sees it after Reset Game.
+    void set_rumble_pak(bool inserted);
+    // Whether a scale renders on the GPU -- which for a DS is anything above
+    // 1x: melonDS only upscales through its OpenGL renderer, and a core can
+    // only ask for a GL context while a game is being opened. See
+    // App::Impl::adopt_render_scale(), which reopens the core across that line.
+    static bool renders_on_gpu(SystemId system, int render_scale);
     // Changes the core's internal resolution while it runs. The core answers
     // with a new geometry and the split follows it, so nothing else has to be
     // told. A system with no scale to choose ignores this.
@@ -115,6 +136,10 @@ public:
     // The core's raw framebuffer, before the split. Only used by tests, which
     // need to inspect what the core actually drew.
     const CoreVideoFrame& core_frame_for_test() const { return core_->video_frame(); }
+    // What the core has been told for one of its options.
+    std::string core_option_for_test(const std::string& key) const {
+        return core_->option_value(key);
+    }
 
 private:
     void refresh_split_from_frame();
@@ -184,6 +209,14 @@ private:
     CoreInputSink input_sink_;
     SystemId system_ = SystemId::Ds;
     int render_scale_ = 1;
+    // What the loaded core calls the settings found by looking -- see
+    // find_core_options(). Empty where the core has no such thing.
+    std::string ds_resolution_key_;
+    std::string rumble_key_;
+    std::string rumble_on_value_;
+    std::string rumble_off_value_;
+    bool rumble_pak_ = false;
+    void find_core_options();
     ScreenSplit split_;
     Texture top_texture_;
     Texture bottom_texture_;

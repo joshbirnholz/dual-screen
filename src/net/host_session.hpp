@@ -133,6 +133,9 @@ public:
         // See SessionStateMessage::left_stick_choosable.
         bool left_stick_choosable = false;
         LeftStickPress left_stick_press = LeftStickPress::Microphone;
+        // See SessionStateMessage::rumble_choosable.
+        bool rumble_choosable = false;
+        bool rumble_pak = false;
         bool cursor_shown = true;
         bool save_points_available = false;
         // Which layouts are flipped for a left hand; `handedness` is the

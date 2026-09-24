@@ -39,6 +39,12 @@ float sensor_input_thunk(unsigned port, unsigned id) {
     return g_active_core->on_sensor_input(port, id);
 }
 
+bool RETRO_CALLCONV set_rumble_state_thunk(unsigned port, enum retro_rumble_effect effect,
+                                           uint16_t strength) {
+    if (g_active_core == nullptr) return false;
+    return g_active_core->on_set_rumble_state(port, static_cast<unsigned>(effect), strength);
+}
+
 // Handed to a GPU-rendering core so it knows where to draw. libretro calls
 // these with its own calling convention, so they are free functions here
 // rather than members.
@@ -714,6 +720,12 @@ void LibretroCore::unload_game() {
     game_loaded_ = false;
     rom_data_.clear();
     run_ahead_state_.clear();
+    // A motor left running by a game that has gone has nobody to stop it.
+    rumble_strength_[0] = rumble_strength_[1] = 0;
+    if (rumbling_) {
+        rumbling_ = false;
+        if (rumble_callback_) rumble_callback_(false);
+    }
     video_frame_ = CoreVideoFrame();
     video_buffer_.clear();
 }
@@ -1061,6 +1073,17 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
             keyboard_callback_ = callback != nullptr ? callback->callback : nullptr;
             return true;
         }
+        case RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE: {
+            // How melonDS drives a Rumble Pak in the DS's GBA slot. Answered
+            // for every core, since saying no costs a game its rumble and
+            // saying yes costs nothing.
+            auto* rumble = static_cast<struct retro_rumble_interface*>(data);
+            if (rumble == nullptr) {
+                return false;
+            }
+            rumble->set_rumble_state = &set_rumble_state_thunk;
+            return true;
+        }
         case RETRO_ENVIRONMENT_GET_SENSOR_INTERFACE: {
             // How a 3DS core is handed the gyroscope and accelerometer of
             // whatever device is actually being tilted -- which for a session
@@ -1300,6 +1323,26 @@ int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned in
     }
 
     return 0;
+}
+
+bool LibretroCore::on_set_rumble_state(unsigned port, unsigned effect, uint16_t strength) {
+    if (port != 0 || effect > 1) {
+        return false;
+    }
+    // A frame run ahead only to be drawn is not one the player feels -- see
+    // set_run_ahead(). Its motor is the next real frame's business.
+    if (hide_audio_) {
+        return true;
+    }
+    rumble_strength_[effect] = strength;
+    const bool active = rumble_strength_[0] != 0 || rumble_strength_[1] != 0;
+    if (active != rumbling_) {
+        rumbling_ = active;
+        if (rumble_callback_) {
+            rumble_callback_(active);
+        }
+    }
+    return true;
 }
 
 bool LibretroCore::on_set_sensor_state(unsigned port, unsigned action, unsigned rate) {

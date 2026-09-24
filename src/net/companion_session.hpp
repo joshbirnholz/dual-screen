@@ -549,6 +549,8 @@ public:
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
     bool host_left_stick_choosable() const { return host_left_stick_choosable_; }
     LeftStickPress host_left_stick_press() const { return host_left_stick_press_; }
+    bool host_rumble_choosable() const { return host_rumble_choosable_; }
+    bool host_rumble_pak() const { return host_rumble_pak_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
     bool host_save_points_available() const { return host_save_points_available_; }
     // What the host last said is in each save point slot, and a number that
@@ -572,6 +574,7 @@ public:
     void request_handedness(Handedness handedness);
     void request_right_stick_mode(RightStickMode mode);
     void request_left_stick_press(LeftStickPress press);
+    void request_rumble_pak(bool inserted);
     void request_render_scale(int scale);
     // Whether the host reads how this device is being held -- true only on a
     // console that has a use for it, see SystemProfile::uses_motion. What the
@@ -897,6 +900,8 @@ private:
     bool host_right_stick_choosable_ = false;
     bool host_left_stick_choosable_ = false;
     LeftStickPress host_left_stick_press_ = LeftStickPress::Microphone;
+    bool host_rumble_choosable_ = false;
+    bool host_rumble_pak_ = false;
     bool host_cursor_shown_ = true;
     bool host_save_points_available_ = false;
     SaveSlotsMessage host_save_slots_;

@@ -57,7 +57,7 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots; see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
-| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
+| **Options** | the settings you might change mid-game, as a list: render scale (DS and 3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking |
@@ -709,8 +709,34 @@ but the menu is one menu reachable from either device: a companion shows the sam
 button, and pressing it asks the host, which changes the core and broadcasts the
 result back. Neither device decides it locally, so the two cannot disagree.
 
-A DS game does not have the button at all: melonDS is pinned to its software
-renderer, which draws one pixel per DS pixel and has nothing to multiply.
+A DS game has it too, from **1x** to **4x**, and starts at 1x. 1x is
+melonDS's software renderer, its most accurate, and one pixel per DS pixel.
+Anything above it is melonDS's OpenGL renderer, which draws the game's 3D at
+that multiple of 256x192; it is the only way melonDS upscales. A core picks its
+renderer only as a game is opened, so going to or from 1x closes melonDS and
+opens it again on the same game, carried across by a save state -- a moment's
+pause, with the menu still up and a companion still connected. Between 2x, 3x
+and 4x it changes as the game runs, as on a 3DS. What goes to a companion is the
+console's own resolution either way.
+
+The option this uses is found by looking for it among the ones the core
+declares, not by a name written in here, and every option the core declares is
+written to the log (at debug level) when a game opens. If the log says
+`this core offers no internal resolution to upscale with`, the core in use has
+no such option and upscaling a DS changes nothing.
+
+## Rumble
+
+A DS game rumbles through a Rumble Pak in the GBA slot, and **Rumble** under
+Options in the quick menu puts one in or takes it out, per game. Off by
+default: nothing in a DS game says whether it knows what a Rumble Pak is, so it
+is offered for every DS game, and a game that does not use one gains nothing.
+While it is in, the game's rumble reaches every pad on both devices. A game
+that looks for one only as it starts sees it after **Reset Game**.
+
+It is only there when the core can put a Rumble Pak in at all -- found, like
+the resolution, by what the core declares: a slot device one of whose values is
+a Rumble Pak. The log says which it found.
 
 ## Building
 

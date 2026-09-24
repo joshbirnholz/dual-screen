@@ -51,6 +51,8 @@ struct LayoutPickerResult {
     // What the left stick's click does was cycled. This device's own, like
     // the pointer.
     bool left_stick_press_changed = false;
+    // The Rumble Pak was put in or taken out. The game's, like the scale.
+    bool rumble_pak_toggled = false;
     // The settings screen was asked for. Not a value to adopt: the caller puts
     // that screen up, and it belongs to the device running the game however
     // this was pressed.
@@ -116,6 +118,11 @@ struct LayoutPickerState {
     // own, like the pointer. See LeftStickPress.
     LeftStickPress left_stick_press = LeftStickPress::Microphone;
     bool left_stick_choosable = false;
+    // A Rumble Pak in a DS's GBA slot, and whether that is on offer at all:
+    // only where the core running the game can put one there. Nothing says
+    // which DS games use one, so it is offered for every game there.
+    bool rumble_pak = false;
+    bool rumble_choosable = false;
     // Whether Reset makes sense to offer. False for a Wii U session: Cemu owns
     // restarting the game, and nothing here can do it for it. See
     // SystemProfile::offers_reset.
@@ -212,6 +219,16 @@ public:
     // Read off the disk by the device running the game, and handed on to the
     // other one, which has only what it is told.
     void set_save_slots(std::vector<SavePointInfo> slots);
+    // Lets go of the save slots' pictures before the GL context they live in
+    // does, and draws them again the next time they are shown. Needed when
+    // the window is rebuilt under an open menu -- a DS game moving to or from
+    // its OpenGL renderer, from the menu's own Render Scale.
+    void release_textures() {
+        for (std::size_t slot = 0; slot < slot_pictures_.size(); ++slot) {
+            slot_pictures_[slot].destroy();
+            slot_pictures_dirty_[slot] = true;
+        }
+    }
     void set_save_status(std::string status, bool failed);
     MenuConfirm confirmation() const { return confirm_; }
 
@@ -243,6 +260,7 @@ public:
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
     void set_left_stick_press(LeftStickPress press) { state_.left_stick_press = press; }
+    void set_rumble_pak(bool inserted) { state_.rumble_pak = inserted; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -329,6 +347,7 @@ private:
         Cursor,
         RightStick,
         LeftStick,
+        Rumble,
         ScreenGap,
         Smoothing,
     };

@@ -152,6 +152,8 @@ void LayoutPicker::rebuild_footer() {
     if (state_.right_stick_choosable) options_.push_back(Option::RightStick);
     // What L3 does, where the console has a microphone for it to be.
     if (state_.left_stick_choosable) options_.push_back(Option::LeftStick);
+    // A DS's Rumble Pak, where the core can give it one.
+    if (state_.rumble_choosable) options_.push_back(Option::Rumble);
     // The gap is one choice for every layout that has one -- Vertical Screens
     // and the two focus layouts; see LayoutComposition::gap_toggleable -- so
     // it is offered whichever layout is in use, and waits for those.
@@ -229,6 +231,7 @@ std::string LayoutPicker::option_name(Option option) const {
         case Option::Cursor: return "Pointer";
         case Option::RightStick: return "Right Stick";
         case Option::LeftStick: return "Left Stick Click";
+        case Option::Rumble: return "Rumble";
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
     }
@@ -249,6 +252,7 @@ std::string LayoutPicker::option_value(Option option) const {
         case Option::Cursor: return to_string(state_.cursor_mode);
         case Option::RightStick: return to_string(state_.right_stick_mode);
         case Option::LeftStick: return to_string(state_.left_stick_press);
+        case Option::Rumble: return state_.rumble_pak ? "On" : "Off";
         case Option::ScreenGap: return state_.screen_gap ? "On" : "Off";
         case Option::Smoothing: return state_.bilinear_filtering ? "On" : "Off";
     }
@@ -410,6 +414,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.cursor_choosable != state_.cursor_choosable ||
                                  state.right_stick_choosable != state_.right_stick_choosable ||
                                  state.left_stick_choosable != state_.left_stick_choosable ||
+                                 state.rumble_choosable != state_.rumble_choosable ||
                                  state.save_points_available != state_.save_points_available ||
                                  state.reset_available != state_.reset_available ||
                                  state.smoothing_available != state_.smoothing_available;
@@ -596,6 +601,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Cursor: result.cursor_mode_changed = true; break;
                 case Option::RightStick: result.right_stick_mode_changed = true; break;
                 case Option::LeftStick: result.left_stick_press_changed = true; break;
+                case Option::Rumble: result.rumble_pak_toggled = true; break;
                 case Option::ScreenGap: result.screen_gap_toggled = true; break;
                 case Option::Smoothing: result.filtering_toggled = true; break;
             }

@@ -1,6 +1,8 @@
 #include "core/libretro_screen_source.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -165,6 +167,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     system_ = config.system;
     const SystemProfile& profile = system_profile(system_);
     render_scale_ = std::clamp(config.render_scale, 1, profile.max_render_scale);
+    rumble_pak_ = config.rumble_pak;
 
     if (config.core_path.empty()) {
         if (error != nullptr) {
@@ -208,7 +211,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOptNumberOfLayouts, "1");   // no layout cycling
             core_->force_option(kOptScreenLayout1, "top-bottom");
             core_->force_option(kOptScreenGap, "0");         // no dead rows between screens
-            core_->force_option(kOptRenderMode, "software"); // composited from a CPU framebuffer
+            // The renderer is set with the resolution -- see apply_render_scale().
             core_->force_option(kOptTouchMode, "touch");     // touch arrives as a libretro pointer
             core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
             // Blow rather than silence, and only while the button is held --
@@ -242,6 +245,13 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
         return false;
     }
     core_description_ = core_->core_name() + " " + core_->core_version();
+    // What the core declares is known now, and nothing has been read from it
+    // yet: the game loads below.
+    find_core_options();
+    apply_render_scale();
+    if (offers_rumble_pak()) {
+        set_rumble_pak(rumble_pak_);
+    }
 
     for (const std::string& warning : core_->option_warnings()) {
         warnings_.push_back(warning);
@@ -504,13 +514,106 @@ void LibretroCoreScreenSource::apply_render_scale() {
         case SystemId::WiiU:
             break;
         case SystemId::Ds:
-            // melonDS is pinned to its software renderer, which draws one pixel
-            // per DS pixel and has nothing to multiply.
+            // At 1x the software renderer, which is melonDS's most accurate and
+            // draws one pixel per DS pixel. Above it the OpenGL renderer, which
+            // is the only one that upscales: its 3D at the scale asked for,
+            // its 2D at the console's own resolution scaled to match.
+            core_->force_option(kOptRenderMode, render_scale_ > 1 ? "opengl" : "software");
+            if (render_scale_ > 1 && !ds_resolution_key_.empty()) {
+                // Whichever of the core's values is this many times native:
+                // "2" or "2x" or "2x native (512 x 384)", however it says it.
+                const auto it = core_->declared_options().find(ds_resolution_key_);
+                for (const std::string& value : it->second.allowed_values) {
+                    if (std::atoi(value.c_str()) == render_scale_) {
+                        core_->force_option(ds_resolution_key_, value);
+                        break;
+                    }
+                }
+            }
             break;
         case SystemId::ThreeDs:
             core_->force_option(kOpt3dsResolution, citra_resolution_values(render_scale_));
             break;
     }
+}
+
+bool LibretroCoreScreenSource::renders_on_gpu(SystemId system, int render_scale) {
+    switch (system) {
+        case SystemId::Ds: return render_scale > 1;
+        case SystemId::ThreeDs: return true;  // Citra and Azahar have nothing else
+        case SystemId::WiiU: break;
+    }
+    return false;
+}
+
+void LibretroCoreScreenSource::find_core_options() {
+    ds_resolution_key_.clear();
+    rumble_key_.clear();
+    const auto lower = [](std::string text) {
+        for (char& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return text;
+    };
+    // Every one, once, so that a log says exactly what this core can be told
+    // -- which keys, which values -- rather than leaving it to be guessed.
+    for (const auto& [key, info] : core_->declared_options()) {
+        std::string values;
+        for (const std::string& value : info.allowed_values) {
+            if (!values.empty()) values += ", ";
+            values += value;
+        }
+        log_debug("core option " + key + " = " + info.default_value + " of: " + values);
+    }
+    if (system_ != SystemId::Ds) {
+        return;
+    }
+    for (const auto& [key, info] : core_->declared_options()) {
+        const std::string name = lower(key);
+        // The OpenGL renderer's internal resolution.
+        if (ds_resolution_key_.empty() && name.find("resolution") != std::string::npos &&
+            (name.find("opengl") != std::string::npos || name.find("gl_") != std::string::npos ||
+             name.find("render") != std::string::npos)) {
+            ds_resolution_key_ = key;
+        }
+        // A slot device that can be a Rumble Pak.
+        if (rumble_key_.empty()) {
+            for (const std::string& value : info.allowed_values) {
+                if (lower(value).find("rumble") != std::string::npos) {
+                    rumble_key_ = key;
+                    rumble_on_value_ = value;
+                    break;
+                }
+            }
+            if (!rumble_key_.empty()) {
+                // Out is whatever the core starts with, unless that is the
+                // Rumble Pak itself -- then anything that is not one.
+                rumble_off_value_ = info.default_value;
+                if (rumble_off_value_ == rumble_on_value_ || rumble_off_value_.empty()) {
+                    for (const std::string& value : info.allowed_values) {
+                        if (lower(value).find("rumble") == std::string::npos) {
+                            rumble_off_value_ = value;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    log_info(std::string("this core ") +
+             (ds_resolution_key_.empty() ? "offers no internal resolution to upscale with"
+                                         : "upscales through " + ds_resolution_key_) +
+             ", and " +
+             (rumble_key_.empty() ? "no Rumble Pak"
+                                  : "a Rumble Pak through " + rumble_key_ + " = " +
+                                        rumble_on_value_));
+}
+
+void LibretroCoreScreenSource::set_rumble_pak(bool inserted) {
+    rumble_pak_ = inserted;
+    if (rumble_key_.empty()) {
+        return;
+    }
+    core_->force_option(rumble_key_, inserted ? rumble_on_value_ : rumble_off_value_);
+    log_info(std::string("Rumble Pak ") + (inserted ? "in" : "out"));
 }
 
 void LibretroCoreScreenSource::apply_pointer_rect() {

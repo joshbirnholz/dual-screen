@@ -495,6 +495,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.right_stick_choosable != shared_.right_stick_choosable ||
         state.left_stick_choosable != shared_.left_stick_choosable ||
         state.left_stick_press != shared_.left_stick_press ||
+        state.rumble_choosable != shared_.rumble_choosable ||
+        state.rumble_pak != shared_.rumble_pak ||
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
         state.save_points_available != shared_.save_points_available ||
@@ -731,6 +733,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request_.wants_left_stick_press) {
                 request.wants_left_stick_press = true;
                 request.left_stick_press = request_.left_stick_press;
+            }
+            if (have_request_ && !request.wants_rumble_pak && request_.wants_rumble_pak) {
+                request.wants_rumble_pak = true;
+                request.rumble_pak = request_.rumble_pak;
             }
             if (have_request_ && !request.wants_handedness && request_.wants_handedness) {
                 request.wants_handedness = true;
@@ -1027,6 +1033,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.right_stick_choosable = shared_.right_stick_choosable;
         state.left_stick_choosable = shared_.left_stick_choosable;
         state.left_stick_press = shared_.left_stick_press;
+        state.rumble_choosable = shared_.rumble_choosable;
+        state.rumble_pak = shared_.rumble_pak;
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;

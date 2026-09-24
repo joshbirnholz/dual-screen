@@ -123,9 +123,9 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.left_handed_layouts ==
           std::vector<std::string>({"upper_focus", "side_by_side"}));
-    // (The left stick's byte goes after the list, so a host from before the
-    // list stops one byte earlier still.)
-    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 1;
+    // (The left stick's and the Rumble Pak's bytes go after the list, so a
+    // host from before the list stops two bytes earlier still.)
+    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 2;
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes, received_state));
     CHECK(received_state.left_handed_layouts == std::vector<std::string>({"upper_on_tv"}));
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes - 1, received_state));
@@ -145,10 +145,27 @@ void test_welcome_and_session_round_trip() {
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK_EQ(received_state.left_stick_choosable, true);
         CHECK(received_state.left_stick_press == press);
-        CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+        CHECK(decode_session_state(payload.data(), payload.size() - 2, received_state));
         CHECK_EQ(received_state.left_stick_choosable, false);
         CHECK(received_state.left_handed_layouts ==
               std::vector<std::string>({"upper_focus", "side_by_side"}));
+    }
+
+    // A DS game's Rumble Pak, after that: offered or not, and in or out. A
+    // host from before it offers none.
+    CHECK_EQ(received_state.rumble_choosable, false);
+    for (const bool in : {false, true}) {
+        state.rumble_choosable = true;
+        state.rumble_pak = in;
+        buffer.clear();
+        encode_session_state(state, buffer);
+        CHECK(one_message(buffer, type, payload));
+        CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+        CHECK_EQ(received_state.rumble_choosable, true);
+        CHECK_EQ(received_state.rumble_pak, in);
+        CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+        CHECK_EQ(received_state.rumble_choosable, false);
+        CHECK_EQ(received_state.left_stick_choosable, true);
     }
 }
 
@@ -218,6 +235,8 @@ void test_request_round_trip() {
     sent.right_stick_mode = RightStickMode::DPad;
     sent.wants_left_stick_press = true;
     sent.left_stick_press = LeftStickPress::SwapLayout;
+    sent.wants_rumble_pak = true;
+    sent.rumble_pak = true;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -249,9 +268,15 @@ void test_request_round_trip() {
     CHECK(received.right_stick_mode == RightStickMode::DPad);
     CHECK_EQ(received.wants_left_stick_press, true);
     CHECK(received.left_stick_press == LeftStickPress::SwapLayout);
-    // From a companion from before it: asks nothing about the left stick.
+    CHECK_EQ(received.wants_rumble_pak, true);
+    CHECK_EQ(received.rumble_pak, true);
+    // From a companion from before the Rumble Pak: asks nothing about it.
     RequestMessage older;
     CHECK(decode_request(payload.data(), payload.size() - 1, older));
+    CHECK_EQ(older.wants_rumble_pak, false);
+    CHECK_EQ(older.wants_left_stick_press, true);
+    // And from before the left stick: nothing about that either.
+    CHECK(decode_request(payload.data(), payload.size() - 2, older));
     CHECK_EQ(older.wants_left_stick_press, false);
     CHECK_EQ(older.wants_right_stick_mode, true);
 
@@ -275,6 +300,7 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_screen_gap, false);
     CHECK_EQ(received_quiet.wants_right_stick_mode, false);
     CHECK_EQ(received_quiet.wants_left_stick_press, false);
+    CHECK_EQ(received_quiet.wants_rumble_pak, false);
     CHECK_EQ(received_quiet.wants_menu_action, false);
     CHECK_EQ(received_quiet.wants_menu_focus, false);
 
@@ -295,20 +321,24 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 22, 1u,
+        {"audio target", 23, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 20, 1u,
+        {"handedness", 21, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 6, 2u,
+        {"right stick mode", 7, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 1, 2u,
+        {"left stick click", 2, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
+         }},
+        {"rumble pak", 1, 2u,
+         [](const RequestMessage& message) {
+             return message.wants_rumble_pak && message.rumble_pak;
          }},
     };
 
@@ -348,7 +378,7 @@ void test_request_round_trip() {
     CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
 
     std::vector<uint8_t> impossible(payload);
-    impossible[impossible.size() - 4] = 200;
+    impossible[impossible.size() - 5] = 200;
     RequestMessage refused;
     CHECK_MSG(!decode_request(impossible.data(), impossible.size(), refused),
               "a press no button could have made was accepted");

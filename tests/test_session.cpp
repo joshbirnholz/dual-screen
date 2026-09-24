@@ -662,6 +662,8 @@ void test_the_menu_is_one_menu_across_both_devices() {
     shared.right_stick_choosable = true;
     shared.left_stick_choosable = true;
     shared.left_stick_press = LeftStickPress::SwapLayout;
+    shared.rumble_choosable = true;
+    shared.rumble_pak = true;
     host.set_session_state(shared);
     const bool drawn = spin(host, companion, [&] {
         return companion.host_menu_open() && companion.host_menu_focus() == 4;
@@ -681,7 +683,8 @@ void test_the_menu_is_one_menu_across_both_devices() {
     CHECK_MSG(drawn_from.left_stick_choosable &&
                   drawn_from.left_stick_press == LeftStickPress::SwapLayout &&
                   drawn_from.right_stick_choosable && drawn_from.cursor_choosable &&
-                  drawn_from.max_render_scale == 3,
+                  drawn_from.max_render_scale == 3 && drawn_from.rumble_choosable &&
+                  drawn_from.rumble_pak,
               "the menu a companion draws left out an entry the host's menu has");
 
     // And a press made over there is answered here, not there.
@@ -844,6 +847,14 @@ void test_shared_settings_stay_in_sync() {
     });
     CHECK_MSG(asked_left, "the left stick request never reached the host");
     CHECK(request.left_stick_press == LeftStickPress::SwapLayout);
+
+    // And the Rumble Pak.
+    companion.request_rumble_pak(true);
+    const bool asked_pak = spin(host, companion, [&] {
+        return host.take_request(request) && request.wants_rumble_pak;
+    });
+    CHECK_MSG(asked_pak, "the Rumble Pak request never reached the host");
+    CHECK(request.rumble_pak);
 
     set_shared(host, "upper_on_tv", true, AudioTarget::TopScreen, Handedness::Left, 2, false,
                RightStickMode::DPad);

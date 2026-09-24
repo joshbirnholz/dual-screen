@@ -395,6 +395,8 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_right_stick_choosable_ = state.right_stick_choosable;
             host_left_stick_choosable_ = state.left_stick_choosable;
             host_left_stick_press_ = state.left_stick_press;
+            host_rumble_choosable_ = state.rumble_choosable;
+            host_rumble_pak_ = state.rumble_pak;
             host_cursor_shown_ = state.cursor_shown;
             host_save_points_available_ = state.save_points_available;
             granted_screen_ = state.companion_screen;
@@ -1496,6 +1498,13 @@ void CompanionSession::request_left_stick_press(LeftStickPress press) {
     RequestMessage request;
     request.wants_left_stick_press = true;
     request.left_stick_press = press;
+    send_request(request);
+}
+
+void CompanionSession::request_rumble_pak(bool inserted) {
+    RequestMessage request;
+    request.wants_rumble_pak = true;
+    request.rumble_pak = inserted;
     send_request(request);
 }
 

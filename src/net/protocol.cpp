@@ -283,6 +283,8 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, !message.left_stick_choosable ? 0u
                 : message.left_stick_press == LeftStickPress::Microphone ? 1u
                                                                          : 2u);
+    // Likewise: 0 when not offered, 1 out, 2 in.
+    put_u8(out, !message.rumble_choosable ? 0u : message.rumble_pak ? 2u : 1u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -618,6 +620,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, !message.wants_left_stick_press ? 0u
                 : message.left_stick_press == LeftStickPress::Microphone ? 1u
                                                                          : 2u);
+    // 0 for no change, 1 out, 2 in.
+    put_u8(out, !message.wants_rumble_pak ? 0u : message.rumble_pak ? 2u : 1u);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -673,6 +677,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         out.wants_left_stick_press = left_stick != 0;
         out.left_stick_press =
             left_stick == 2 ? LeftStickPress::SwapLayout : LeftStickPress::Microphone;
+    }
+    out.wants_rumble_pak = false;
+    out.rumble_pak = false;
+    if (reader.remaining() > 0) {
+        uint8_t rumble = 0;
+        reader.u8(rumble);
+        if (rumble > 2) return false;
+        out.wants_rumble_pak = rumble != 0;
+        out.rumble_pak = rumble == 2;
     }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);
@@ -816,6 +829,16 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         out.left_stick_choosable = left_stick != 0;
         out.left_stick_press =
             left_stick == 2 ? LeftStickPress::SwapLayout : LeftStickPress::Microphone;
+    }
+    // And one from before the Rumble Pak was: none on offer.
+    out.rumble_choosable = false;
+    out.rumble_pak = false;
+    if (reader.remaining() > 0) {
+        uint8_t rumble = 0;
+        reader.u8(rumble);
+        if (rumble > 2) return false;
+        out.rumble_choosable = rumble != 0;
+        out.rumble_pak = rumble == 2;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

@@ -88,6 +88,11 @@ public:
     void set_system_directory(const std::string& directory);
     void set_save_directory(const std::string& directory);
     void set_audio_callback(AudioCallback callback);
+    // Whether the core wants the controller's motor running -- a DS game with
+    // a Rumble Pak in its GBA slot, chiefly. Called on change, from inside
+    // run_frame(); never for a frame run ahead of the one that counts.
+    using RumbleCallback = std::function<void(bool active)>;
+    void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
     // The state read by the core's input_state callback each frame.
     void set_input_state(const DsInputState* state);
     // Where the touch screen sits inside the core's own output framebuffer and
@@ -305,6 +310,8 @@ public:
     // as plain unsigned here the way the keyboard modifiers above are.
     bool on_set_sensor_state(unsigned port, unsigned action, unsigned rate);
     float on_sensor_input(unsigned port, unsigned id) const;
+    // The rumble interface, likewise: `effect` is a RETRO_RUMBLE_* value.
+    bool on_set_rumble_state(unsigned port, unsigned effect, uint16_t strength);
 
 private:
     bool hw_context_reset_done_ = false;
@@ -324,6 +331,10 @@ private:
     void destroy_hw_context();
 
     AudioCallback audio_callback_;
+    RumbleCallback rumble_callback_;
+    // Each motor's strength as the core last set it, strong then weak.
+    uint16_t rumble_strength_[2] = {0, 0};
+    bool rumbling_ = false;
     const DsInputState* input_state_ = nullptr;
     // Whether the core has asked for either sensor. A core that never asks
     // gets nothing, and one that asks and then stops should stop being given

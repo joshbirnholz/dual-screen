@@ -255,6 +255,9 @@ struct RequestMessage {
     // same on both screens.
     bool wants_left_stick_press = false;
     LeftStickPress left_stick_press = LeftStickPress::Microphone;
+    // A DS game's Rumble Pak, in or out -- the host's to decide, per game.
+    bool wants_rumble_pak = false;
+    bool rumble_pak = false;
 };
 
 struct RejectMessage {
@@ -301,6 +304,10 @@ struct SessionStateMessage {
     // same length on both screens and a cursor means the same row on each.
     bool left_stick_choosable = false;
     LeftStickPress left_stick_press = LeftStickPress::Microphone;
+    // Whether the menu offers a Rumble Pak -- a DS game on a core that can
+    // put one in its GBA slot -- and whether one is in.
+    bool rumble_choosable = false;
+    bool rumble_pak = false;
     // Whether this device's pointer is shown. Per-device in what it does, but
     // the menu that offers it is one menu, so the label it carries has to come
     // from the same place as everything else on it.

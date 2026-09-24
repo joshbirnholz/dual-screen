@@ -329,6 +329,71 @@ void test_run_ahead_hides_the_games_own_lag() {
     unsetenv("MOCK_CORE_GAME_LAG");
 }
 
+// A DS game above 1x is drawn by melonDS's OpenGL renderer at that
+// resolution, and at 1x by its software renderer -- the only way melonDS
+// upscales at all. The resolution option is found by what it is, not by
+// name, and so is the Rumble Pak: a slot device that offers one.
+void test_a_ds_game_upscales_and_takes_a_rumble_pak() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    CHECK(!LibretroCoreScreenSource::renders_on_gpu(SystemId::Ds, 1));
+    CHECK(LibretroCoreScreenSource::renders_on_gpu(SystemId::Ds, 2));
+    CHECK(LibretroCoreScreenSource::renders_on_gpu(SystemId::ThreeDs, 1));
+    CHECK(system_profile(SystemId::Ds).max_render_scale > 1);
+
+    {
+        LibretroCoreScreenSource source;
+        LibretroSourceConfig config;
+        config.core_path = core_path;
+        config.rom_path = make_fake_rom();
+        config.system_directory = "/tmp";
+        config.save_directory = "/tmp";
+        std::string error;
+        CHECK_MSG(source.open(config, &error), error);
+        CHECK_STR_EQ(source.core_option_for_test("melonds_render_mode"), "software");
+        source.close();
+    }
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.core_path = core_path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    config.render_scale = 2;
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    CHECK_EQ(source.render_scale(), 2);
+    CHECK_STR_EQ(source.core_option_for_test("melonds_render_mode"), "opengl");
+    CHECK_STR_EQ(source.core_option_for_test("melonds_opengl_resolution"), "2");
+    // Between two GPU scales the option simply changes.
+    source.set_render_scale(3);
+    CHECK_STR_EQ(source.core_option_for_test("melonds_opengl_resolution"), "3");
+
+    // Out unless asked for, and in when it is: found by its "rumble" value.
+    CHECK(source.offers_rumble_pak());
+    CHECK(!source.rumble_pak());
+    CHECK_STR_EQ(source.core_option_for_test("melonds_slot2_device"), "none");
+
+    std::vector<bool> felt;
+    source.set_rumble_callback([&felt](bool active) { felt.push_back(active); });
+    DsInputState hit;
+    hit.set(DsButton::A, true);
+    source.input_sink().submit(hit);
+    source.advance_frame(&error);
+    CHECK_MSG(felt.empty(), "a game with no Rumble Pak in rumbled anyway");
+
+    source.set_rumble_pak(true);
+    CHECK_STR_EQ(source.core_option_for_test("melonds_slot2_device"), "rumble-pak");
+    source.advance_frame(&error);
+    CHECK_MSG(felt.size() == 1 && felt[0], "a Rumble Pak's motor never reached the frontend");
+    source.input_sink().submit(DsInputState());
+    source.advance_frame(&error);
+    CHECK_MSG(felt.size() == 2 && !felt[1], "the motor was never let go");
+    source.close();
+}
+
 void test_screen_source_reports_a_valid_split() {
     const std::string core_path = mock_core_path();
     if (core_path.empty()) return;
@@ -694,9 +759,10 @@ void test_read_screen_bounds_the_target_size() {
     source.close();
 }
 
-// melonDS is pinned to its software renderer, so there is no scale to set and
-// asking for one changes nothing.
-void test_render_scale_is_ignored_where_there_is_none() {
+// A DS scale is taken, but a picture that still arrives at native size -- a
+// core drawing in software whatever it was told, as the mock does -- is split
+// and read back at native size rather than stretched to the scale asked for.
+void test_a_ds_picture_at_native_size_is_taken_as_it_comes() {
     const std::string core_path = mock_core_path();
     if (core_path.empty()) return;
 
@@ -710,7 +776,7 @@ void test_render_scale_is_ignored_where_there_is_none() {
 
     std::string error;
     CHECK_MSG(source.open(config, &error), error);
-    CHECK_EQ(source.render_scale(), 1);
+    CHECK_EQ(source.render_scale(), 2);
     CHECK_MSG(source.advance_frame(&error), error);
     CHECK_EQ(source.split().top_width, 256);
 
@@ -722,8 +788,9 @@ void test_render_scale_is_ignored_where_there_is_none() {
     CHECK_EQ(top.width, 256);
     CHECK_EQ(top.height, 192);
 
-    source.set_render_scale(3);
-    CHECK_EQ(source.render_scale(), 1);
+    // And never past what the console offers.
+    source.set_render_scale(99);
+    CHECK_EQ(source.render_scale(), system_profile(SystemId::Ds).max_render_scale);
     source.close();
 }
 
@@ -852,11 +919,12 @@ int main() {
     test_save_states_round_trip();
     test_run_ahead_hides_the_games_own_lag();
     test_screen_source_reports_a_valid_split();
+    test_a_ds_game_upscales_and_takes_a_rumble_pak();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
     test_render_scale_only_changes_the_resolution();
     test_read_screen_bounds_the_target_size();
-    test_render_scale_is_ignored_where_there_is_none();
+    test_a_ds_picture_at_native_size_is_taken_as_it_comes();
     test_screen_source_reports_missing_files_clearly();
     test_save_ram_round_trip();
     test_save_ram_is_skipped_without_a_path();
