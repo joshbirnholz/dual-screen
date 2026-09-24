@@ -88,7 +88,7 @@ CPPFILES    := main.cpp \
                video_decoder.cpp video_encoder.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp text_renderer.cpp texture.cpp \
-               connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp \
+               connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
                build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
 

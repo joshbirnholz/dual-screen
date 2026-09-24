@@ -95,6 +95,7 @@ extern "C" {
 #include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/layout_picker.hpp"
+#include "ui/menu_state.hpp"
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
@@ -671,30 +672,9 @@ void Client::refresh_output_size() {
 }
 
 LayoutPickerState Client::menu_state_from_host() const {
-    // Exactly what the host has in it, read off the session it owns -- down to
-    // which entries the row has, so the same cursor position means the same
-    // thing on both screens.
-    LayoutPickerState state;
-    state.layout_id = session_.host_layout_id();
-    state.session_active = true;  // there is always a host at the other end here
-    state.bilinear_filtering = session_.host_filtering();
-    state.audio_target = session_.host_audio_target();
-    state.left_handed_layouts = session_.host_left_handed_layouts();
-    state.render_scale = session_.host_render_scale();
-    state.screen_gap = session_.host_screen_gap();
-    state.right_stick_mode = session_.host_right_stick_mode();
-    state.cursor_choosable = session_.host_cursor_choosable();
-    state.max_render_scale = session_.host_max_render_scale();
-    state.right_stick_choosable = session_.host_right_stick_choosable();
-    state.save_points_available = session_.host_save_points_available();
-    state.cursor_mode =
-        session_.host_cursor_shown() ? CursorMode::Shown : CursorMode::Hidden;
-    // Properties of the console rather than of the session, worked out the
-    // same way the host works them out -- see App::Impl::menu_state_from_host,
-    // whose body this mirrors.
-    state.reset_available = system_profile(session_.system()).offers_reset;
-    state.smoothing_available = system_profile(session_.system()).offers_smoothing;
-    return state;
+    // The same one the desktop app draws from -- see ui/menu_state.hpp for
+    // why there is only one.
+    return ds::menu_state_from_host(session_);
 }
 
 void Client::open_menu() {
@@ -1162,6 +1142,11 @@ void Client::run() {
                     log_info(std::string("following the host: right stick ") +
                              to_string(session_.host_right_stick_mode()));
                 }
+                // And what L3 is: the microphone or the layout swap, as the
+                // host has it -- see LeftStickPress.
+                input_.set_microphone_button(
+                    left_stick_is_microphone(system_profile(session_.system()).has_microphone,
+                                             session_.host_left_stick_press()));
                 if (session_.status() != net::CompanionSession::Status::Connected) {
                     const std::string detail = session_.status_detail();
                     audio_.close();

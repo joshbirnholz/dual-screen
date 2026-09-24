@@ -41,6 +41,7 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/layout_picker.hpp"
+#include "ui/menu_state.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "ui/connecting_screen.hpp"
@@ -1311,29 +1312,7 @@ bool App::Impl::paired() const {
 }
 
 LayoutPickerState App::Impl::menu_state_from_host() const {
-    LayoutPickerState state;
-    state.session_active = true;  // there is a host at the other end of this
-    state.layout_id = companion_session->host_layout_id();
-    state.bilinear_filtering = companion_session->host_filtering();
-    state.audio_target = companion_session->host_audio_target();
-    state.left_handed_layouts = companion_session->host_left_handed_layouts();
-    state.render_scale = companion_session->host_render_scale();
-    state.screen_gap = companion_session->host_screen_gap();
-    state.right_stick_mode = companion_session->host_right_stick_mode();
-    state.max_render_scale = companion_session->host_max_render_scale();
-    state.cursor_choosable = companion_session->host_cursor_choosable();
-    state.right_stick_choosable = companion_session->host_right_stick_choosable();
-    state.left_stick_press = companion_session->host_left_stick_press();
-    state.left_stick_choosable = companion_session->host_left_stick_choosable();
-    state.save_points_available = companion_session->host_save_points_available();
-    state.cursor_mode = companion_session->host_cursor_shown() ? CursorMode::Shown
-                                                              : CursorMode::Hidden;
-    // A property of the console, not of the session -- companion_session
-    // already carries `system()`, so this needs nothing from the host beyond
-    // that.
-    state.reset_available = system_profile(companion_session->system()).offers_reset;
-    state.smoothing_available = system_profile(companion_session->system()).offers_smoothing;
-    return state;
+    return ds::menu_state_from_host(*companion_session);
 }
 
 void App::Impl::set_menu_open(bool open) {

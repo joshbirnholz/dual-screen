@@ -147,6 +147,7 @@ add_library(dualscreen_core STATIC
     src/ui/game_browser.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
+    src/ui/menu_state.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
     src/ui/controllers_screen.cpp

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "net/companion_session.hpp"
+#include "ui/menu_state.hpp"
 #include "net/host_session.hpp"
 #include "video/video_codec.hpp"
 
@@ -674,6 +675,14 @@ void test_the_menu_is_one_menu_across_both_devices() {
                   companion.host_left_stick_press() == LeftStickPress::SwapLayout,
               "the companion was not told the menu offers the left stick's click, so its Options "
               "list would be a row short");
+    // And what every companion builds its menu from -- the desktop app and
+    // the Switch, Apple and Android client alike -- has it too.
+    const LayoutPickerState drawn_from = menu_state_from_host(companion);
+    CHECK_MSG(drawn_from.left_stick_choosable &&
+                  drawn_from.left_stick_press == LeftStickPress::SwapLayout &&
+                  drawn_from.right_stick_choosable && drawn_from.cursor_choosable &&
+                  drawn_from.max_render_scale == 3,
+              "the menu a companion draws left out an entry the host's menu has");
 
     // And a press made over there is answered here, not there.
     RequestMessage pending;

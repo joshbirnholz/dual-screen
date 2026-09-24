@@ -51,6 +51,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/control_guide.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
+    src/ui/menu_state.cpp
     src/util/build_stamp.cpp
     src/util/log.cpp
 )
