@@ -2085,9 +2085,10 @@ void test_host_can_disconnect_the_companion() {
 }
 
 // Changing the codec while a session is live has to take effect on that
-// session, not on the next one. The whole reason the setting exists is to see
-// what the other answer looks like on your own machines, and a setting you have
-// to reconnect to feel is a setting you cannot compare with.
+// session, not on the next one. The host picks tiles or video by itself and
+// changes its mind as the picture changes -- a render scale raised mid-game, a
+// scene that gets busy -- so a change that waited for a reconnect would never
+// happen at all.
 //
 // The hard direction is video back to tiles: a tiled frame is a difference from
 // the last tiled frame, and the frames in between went a different way
@@ -2164,7 +2165,7 @@ void test_the_codec_can_change_without_reconnecting() {
     CHECK_MSG(difference_from(0x00801020u) <= 12, "the first frame arrived wrong");
 
     // Turned on mid-session.
-    host.set_video_wanted(true);
+    host.set_codec_choice(HostSession::CodecChoice::H264);
     CHECK_MSG(send_and_wait(0x0020c040u), "no frame arrived after asking for video");
     CHECK_MSG(companion.screen_is_video_for_test(ScreenId::Bottom),
               "asking for video mid-session did nothing, so it only takes effect on reconnecting");
@@ -2173,7 +2174,7 @@ void test_the_codec_can_change_without_reconnecting() {
     // And off again. This is the one that can go quietly wrong: the tile codec
     // sends only what changed since the last tiled frame, and several video
     // frames have been shown since that one.
-    host.set_video_wanted(false);
+    host.set_codec_choice(HostSession::CodecChoice::Tiles);
     CHECK_MSG(send_and_wait(0x00f0a010u), "no frame arrived after turning video off");
     CHECK_MSG(!companion.screen_is_video_for_test(ScreenId::Bottom),
               "turning video off mid-session did nothing");
@@ -2210,7 +2211,7 @@ void test_video_is_capped_to_the_companions_display_size() {
         return;
     }
     set_shared(host, "upper_on_tv");
-    host.set_video_wanted(true);
+    host.set_codec_choice(HostSession::CodecChoice::H264);
 
     CompanionSession companion;
     CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
@@ -2406,6 +2407,130 @@ void test_a_lost_frame_is_given_up_on_in_round_trips() {
     // A slow link waits longer, and never longer than before.
     CHECK(ack_stall_ms(200.0, true) > ack_stall_ms(45.0, true));
     CHECK_EQ(ack_stall_ms(5000.0, true), uint64_t{3000});
+}
+
+// Which way a screen goes when nobody has forced it. Size decides the obvious
+// cases; how much the tiles actually cost decides the rest.
+void test_the_codec_is_picked_from_what_the_screen_costs() {
+    CodecEvidence ds;
+    ds.width = 256;
+    ds.height = 192;
+    ds.video_possible = true;
+    // A DS screen at native size: tiles, which are lossless and cheap there.
+    CHECK(!screen_goes_as_video(ds));
+
+    // A 3DS top screen at 2x, or a GamePad: video, before a single tile is sent.
+    CodecEvidence big = ds;
+    big.width = 800;
+    big.height = 480;
+    CHECK(screen_goes_as_video(big));
+    big.width = 854;
+    CHECK(screen_goes_as_video(big));
+
+    // A small screen whose tiles have turned out expensive -- a busy 3D scene
+    // at 2x on a 3DS bottom screen -- goes to video too.
+    CodecEvidence busy = ds;
+    busy.tile_kbytes_per_second = kVideoFromTileKBytesPerSecond + 1.0;
+    CHECK(screen_goes_as_video(busy));
+    busy.tile_kbytes_per_second = kVideoFromTileKBytesPerSecond / 2.0;
+    CHECK(!screen_goes_as_video(busy));
+
+    // Once there for weight it stays a while, since the tile rate cannot be
+    // measured while it is on video, and every switch is a whole picture.
+    CodecEvidence held = ds;
+    held.on_video_for_weight = true;
+    held.ms_on_video = kVideoForWeightMs / 2;
+    CHECK(screen_goes_as_video(held));
+    held.ms_on_video = kVideoForWeightMs + 1;
+    CHECK(!screen_goes_as_video(held));
+
+    // Nothing sends video when video cannot be sent: no encoder, a companion
+    // that cannot decode it, or an encoder that just failed.
+    big.video_possible = false;
+    CHECK(!screen_goes_as_video(big));
+    busy.video_possible = false;
+    busy.tile_kbytes_per_second = kVideoFromTileKBytesPerSecond * 10.0;
+    CHECK(!screen_goes_as_video(busy));
+}
+
+// The same choice made by a live session, with no codec forced: a small screen
+// goes as tiles, a large one as video, and back again when it shrinks.
+void test_a_session_picks_the_codec_by_itself() {
+    if (!video::have_ffmpeg()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Test PC", ScreenId::Top, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    if (!host.companion_accepts_video()) {
+        test::skip("the far end cannot decode video");
+        companion.disconnect();
+        host.stop();
+        return;
+    }
+
+    uint64_t serial = 1;
+    const auto send_and_wait = [&](int width, int height, uint32_t colour) {
+        const std::vector<uint32_t> pixels(static_cast<std::size_t>(width) * height, colour);
+        HostSession::ScreenPixels top;
+        top.pixels = pixels.data();
+        top.width = width;
+        top.height = height;
+        top.stride_pixels = width;
+        host.publish_screens(top, HostSession::ScreenPixels(), serial);
+        const bool arrived = spin(host, companion, [&] {
+            return companion.screen_pixels(ScreenId::Top).serial == serial;
+        });
+        ++serial;
+        return arrived;
+    };
+
+    CHECK(!host.sends_video(ScreenId::Top, 256, 192));
+    CHECK(host.sends_video(ScreenId::Top, 800, 480));
+
+    CHECK_MSG(send_and_wait(256, 192, 0x00801020u), "the DS-sized frame never arrived");
+    CHECK_MSG(!companion.screen_is_video_for_test(ScreenId::Top),
+              "a DS-sized screen went as video, where tiles are both smaller and lossless");
+
+    CHECK_MSG(send_and_wait(800, 480, 0x0020c040u), "the large frame never arrived");
+    CHECK_MSG(companion.screen_is_video_for_test(ScreenId::Top),
+              "an 800x480 screen went as tiles");
+
+    CHECK_MSG(send_and_wait(256, 192, 0x00f0a010u), "the frame after shrinking never arrived");
+    CHECK_MSG(!companion.screen_is_video_for_test(ScreenId::Top),
+              "the screen stayed on video after shrinking back to DS size");
+
+    // Forcing still wins over the automatic choice.
+    host.set_codec_choice(HostSession::CodecChoice::H264);
+    CHECK(host.sends_video(ScreenId::Top, 256, 192));
+    host.set_codec_choice(HostSession::CodecChoice::Tiles);
+    CHECK(!host.sends_video(ScreenId::Top, 800, 480));
+
+    companion.disconnect();
+    host.stop();
 }
 
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
@@ -3016,7 +3141,7 @@ void test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting() {
         return;
     }
     set_shared(host, "upper_on_tv");
-    host.set_video_wanted(true);
+    host.set_codec_choice(HostSession::CodecChoice::H264);
 
     CompanionSession companion;
     CHECK_MSG(companion.begin_search("Test Deck", ScreenId::Bottom, &error), error);
@@ -3301,6 +3426,8 @@ int main() {
     test_the_pacer_follows_what_is_really_produced();
     test_the_in_flight_window_covers_the_delay_this_link_shows();
     test_a_lost_frame_is_given_up_on_in_round_trips();
+    test_the_codec_is_picked_from_what_the_screen_costs();
+    test_a_session_picks_the_codec_by_itself();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

@@ -233,21 +233,7 @@ if(XVFB_RUN_EXECUTABLE)
             ${MOCK_CORE_PATH}
             ${CMAKE_BINARY_DIR}/video-stream
             $<TARGET_FILE:check_screenshot>)
-    set_tests_properties(video_stream_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
-        ENVIRONMENT "ASKED_BY=flag")
-
-    # And the same session asked for the other way round. The setting the player
-    # can reach is the one that matters; the flag is for a run that has to
-    # differ from it without editing a file.
-    add_test(NAME video_stream_setting_headless
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/run_video_stream_test.sh
-            ${XVFB_RUN_EXECUTABLE}
-            $<TARGET_FILE:dualscreen>
-            ${MOCK_CORE_PATH}
-            ${CMAKE_BINARY_DIR}/video-stream-setting
-            $<TARGET_FILE:check_screenshot>)
-    set_tests_properties(video_stream_setting_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE
-        ENVIRONMENT "ASKED_BY=setting")
+    set_tests_properties(video_stream_headless PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 
     # A companion leaving from the quick menu, which only two processes and the
     # wire between them can show.

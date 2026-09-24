@@ -359,11 +359,6 @@ void test_settings_round_trip() {
     defaults.audio_target = AudioTarget::BottomScreen;
     defaults.cursor_mode = CursorMode::Hidden;
     defaults.left_handed_layouts = {"upper_focus", "side_by_side"};
-    // All three set away from their defaults, and not to the same value as
-    // each other, so a round trip that mixed them up would be caught.
-    defaults.screen_codec_ds = video::ScreenCodec::H264;
-    defaults.screen_codec_3ds = video::ScreenCodec::H264;
-    defaults.screen_codec_wii_u = video::ScreenCodec::Tiles;
     // Away from Auto, the default, so the round trip is checking storage.
     defaults.wii_u_screen_alone = WiiUScreenAlone::GamePad;
     const WiiUScreenAlone chosen_alone = defaults.wii_u_screen_alone;
@@ -387,12 +382,6 @@ void test_settings_round_trip() {
     CHECK_EQ(reloaded.default_screen_gap, false);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
-    CHECK(reloaded.screen_codec_ds == video::ScreenCodec::H264);
-    CHECK(reloaded.screen_codec_3ds == video::ScreenCodec::H264);
-    CHECK(reloaded.screen_codec_wii_u == video::ScreenCodec::Tiles);
-    CHECK(reloaded.screen_codec_for(SystemId::Ds) == video::ScreenCodec::H264);
-    CHECK(reloaded.screen_codec_for(SystemId::ThreeDs) == video::ScreenCodec::H264);
-    CHECK(reloaded.screen_codec_for(SystemId::WiiU) == video::ScreenCodec::Tiles);
     CHECK_MSG(reloaded.wii_u_screen_alone == chosen_alone,
               "which screen this device is on its own did not survive being written down");
 
@@ -417,9 +406,6 @@ void test_settings_round_trip() {
     CHECK_EQ(recovered.default_screen_gap, true);
     CHECK(recovered.audio_target == AudioTarget::Both);
     CHECK(recovered.cursor_mode == CursorMode::Shown);
-    CHECK(recovered.screen_codec_ds == video::ScreenCodec::Tiles);
-    CHECK(recovered.screen_codec_3ds == video::ScreenCodec::Tiles);
-    CHECK(recovered.screen_codec_wii_u == video::ScreenCodec::H264);
 
     // Text nobody recognises falls back rather than becoming a fourth state.
     CHECK(audio_target_from_key("sideways") == AudioTarget::Both);

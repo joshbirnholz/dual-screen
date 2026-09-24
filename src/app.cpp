@@ -164,9 +164,9 @@ std::string usage_text() {
         "  --external-socket <path>\n"
         "                       Where a console played by another program hands\n"
         "                       its screens over, instead of the usual place\n"
-        "  --video-codec <how>  How to send screens to a second device for this\n"
-        "                       run: tiles or h264. Overrides whichever console\n"
-        "                       is played this run's own streaming format setting\n"
+        "  --video-codec <how>  Send screens to a second device only as tiles or\n"
+        "                       only as h264 this run, instead of choosing per\n"
+        "                       screen by its size and how busy it is\n"
         "  --list-layouts       Print the available layout ids and exit\n"
         "  --verbose            Log core and frontend debug output\n"
         "  --trace-core-gl      Log every OpenGL call a GPU-rendering core makes,\n"
@@ -529,7 +529,9 @@ struct App::Impl {
     // Whether this session should ask for video rather than changed tiles.
     // Three answers folded into one: what this run was told, what the player
     // settled on, and failing both, what the console being played wants.
-    bool wants_video() const;
+    // How screens go to a companion: chosen by the session, screen by screen,
+    // unless --video-codec pinned one -- see HostSession::CodecChoice.
+    net::HostSession::CodecChoice codec_choice() const;
     double local_frames_per_second() const;
     double local_audio_sample_rate() const;
     void adopt_external_timing();
@@ -944,13 +946,10 @@ const ScreenSource* App::Impl::local_game() const {
     return nullptr;
 }
 
-bool App::Impl::wants_video() const {
-    const video::ScreenCodec chosen =
-        options.video_codec_override.empty()
-            ? settings.screen_codec_for(system)
-            : video::screen_codec_from_key(options.video_codec_override,
-                                           settings.screen_codec_for(system));
-    return chosen == video::ScreenCodec::H264;
+net::HostSession::CodecChoice App::Impl::codec_choice() const {
+    if (options.video_codec_override == "tiles") return net::HostSession::CodecChoice::Tiles;
+    if (options.video_codec_override == "h264") return net::HostSession::CodecChoice::H264;
+    return net::HostSession::CodecChoice::Automatic;
 }
 
 double App::Impl::local_frames_per_second() const {
@@ -3403,7 +3402,7 @@ int App::run(const AppOptions& options) {
             // sends is gated here -- a Wii U's TV and GamePad streams check
             // their own targets inside publish_audio itself, since the two
             // can disagree about whether the companion should hear them.
-            impl.host_session->set_video_wanted(impl.wants_video());
+            impl.host_session->set_codec_choice(impl.codec_choice());
             impl.host_session->set_audio_enabled(
                 audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always
@@ -3988,10 +3987,14 @@ int App::run(const AppOptions& options) {
             // actually rendered instead. read_screen() itself still clamps to
             // that: this is a ceiling, not a demand, for a core that is not
             // rendering above native to begin with.
-            const bool full_resolution = impl.wants_video();
             const SystemScreens& native = system_profile(impl.system).screens;
+            const auto full_resolution = [&](ScreenId screen) {
+                const ScreenSize size = screen == ScreenId::Top ? native.top : native.bottom;
+                return impl.host_session->sends_video(screen, size.width * impl.render_scale,
+                                                      size.height * impl.render_scale);
+            };
             if (impl.host_session->companion_wants(ScreenId::Top)) {
-                if (full_resolution) {
+                if (full_resolution(ScreenId::Top)) {
                     playing->read_screen(ScreenId::Top, top, native.top.width * impl.render_scale,
                                          native.top.height * impl.render_scale);
                 } else {
@@ -3999,7 +4002,7 @@ int App::run(const AppOptions& options) {
                 }
             }
             if (impl.host_session->companion_wants(ScreenId::Bottom)) {
-                if (full_resolution) {
+                if (full_resolution(ScreenId::Bottom)) {
                     playing->read_screen(ScreenId::Bottom, bottom,
                                          native.bottom.width * impl.render_scale,
                                          native.bottom.height * impl.render_scale);

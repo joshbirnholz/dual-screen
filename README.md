@@ -252,11 +252,10 @@ Three things are different about a Wii U session:
   also why every button on the pad, and both triggers as ZL and ZR, go straight
   through to the game — including from the second device, whose touches arrive
   as touches on the GamePad's own screen.
-- **Screens go out as H.264 by default, rather than as changed tiles.** A
-  GamePad screen in motion measures at 42.8 Mbit/s as tiles and 2.45 as video —
-  see **What streaming a screen costs** below. If the other device cannot
-  decode it, the session says so rather than falling back; **Streaming format
-  (Wii U)** on the Settings screen switches it to tiles.
+- **Screens go out as H.264, rather than as changed tiles.** A GamePad screen
+  in motion measures at 42.8 Mbit/s as tiles and 2.45 as video — see **What
+  streaming a screen costs** below. The host picks that by itself; if the other
+  device cannot decode video, it sends tiles instead.
 
 Cemu owns everything about the emulation: the resolution it renders at, its own
 controller bindings, its own saves. The shell offers no render scale for a Wii U
@@ -507,20 +506,26 @@ Three things keep it as low as it can go:
   renderer can upload that, which is a whole pass over every frame and half the
   bytes to the GPU that never happen.
 
-**Which of the two a session uses** is a setting per console: **Streaming
-format (DS)**, **Streaming format (3DS)** and **Streaming format (Wii U)** on
-the Settings screen, each Tiles or H.264. DS and 3DS default to tiles, Wii U to
-H.264 — the answer each measures better at, from the numbers above. `--video-codec
-tiles|h264` overrides whichever of those the game being launched would have used,
-for one run, without editing anything.
+**Which of the two a session uses** is decided by the host, per screen, as it
+goes — there is no setting for it:
 
-There is no fallback between the two. Asking for H.264 needs a real answer from
-both ends — an encoder here, a decoder at the far end — and if that answer is
-no, the session says so on screen rather than quietly sending tiles instead: a
-picture that arrived by the other path would say nothing about why the one you
-asked for did not work, which defeats the point of being able to ask for either
-on purpose. A build without FFmpeg, or a companion that cannot decode it, is
-what a video streaming error names.
+- **A screen of 200,000 pixels or more goes as H.264** from its first frame: a
+  Wii U GamePad, or a 3DS top screen at 2x render scale and up. At that size
+  tiles cost many times what video does.
+- **A smaller screen goes as tiles**, which are lossless and, at DS size, cost
+  less than video does — until its tiles are measured at more than 2.5 MB/s
+  (a busy 3D scene on a 3DS screen at a raised render scale). Then it goes to
+  video, and stays there for 20 seconds before the tiles are given another try.
+- **Tiles whenever video is not possible**: a build without FFmpeg, a companion
+  that cannot decode it, or an encoder that just failed (tried again 30
+  seconds later).
+
+Each switch is logged (`the top screen goes as video now: ...`) with the
+reason, and the first frame after one is a whole picture, so the two ends
+never disagree about what is on screen. `--video-codec tiles|h264` forces one
+or the other for a run, for comparing the two on your own machines; forced to
+H.264 with no way to send it, the session says so on screen rather than
+quietly sending tiles.
 
 If a companion still cannot keep up, in order of how much they buy:
 
@@ -871,9 +876,8 @@ sudo pacman -S ffmpeg                                          # Arch
 ```
 
 Without them, CMake prints `video codec: not available, building without one`
-and carries on -- a build like that still runs everything else, but a game
-whose streaming format is set to H.264 shows a video streaming error on
-connect rather than a picture, since there is nothing here to fall back to.
+and carries on -- a build like that sends every screen as tiles, which is fine
+for DS and costly for a Wii U GamePad or a 3DS at a raised render scale.
 
 Useful CMake options: `-DDUALSCREEN_PORTABLE=OFF` (link libstdc++ dynamically),
 `-DDUALSCREEN_BUILD_TESTS=OFF`, `-DDUALSCREEN_WERROR=ON`.

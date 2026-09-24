@@ -208,6 +208,10 @@ constexpr std::size_t kMaxAudioFramesPerPacket =
 // cold GPU encoder or one bad frame costs a few seconds of tiles rather than
 // tiles for the rest of the connection -- see use_video_for().
 constexpr uint64_t kVideoRetryCooldownMs = 3000;
+// How long a screen chosen for video goes back to tiles when video fails --
+// long enough not to try a broken encoder every few seconds, since the tiles
+// in its place are working.
+constexpr uint64_t kVideoFallbackMs = 30000;
 
 // drain_pending_media_sends() paces how fast pending_media_sends_ empties
 // onto the socket by elapsed wall-clock time rather than a flat number of
@@ -438,24 +442,83 @@ void HostSession::stop() {
     companion_wants_quit_ = false;
 }
 
-void HostSession::set_video_wanted(bool wanted) {
-    if (wanted == video_wanted_) {
+void HostSession::set_codec_choice(CodecChoice choice) {
+    if (choice == codec_choice_) {
         return;
     }
-    video_wanted_ = wanted;
-    if (wanted) {
-        // Asked for again. This is called every frame with the same answer, so
-        // reaching here at all means somebody changed their mind -- which is
-        // reason enough to try an encoder that failed before.
-        video_retry_at_ms_ = 0;
-        video_error_reported_ = false;
+    codec_choice_ = choice;
+    // Changed. This is called every frame with the same answer, so reaching
+    // here at all means somebody changed their mind -- which is reason enough
+    // to try an encoder that failed before.
+    video_retry_at_ms_ = 0;
+    video_error_reported_ = false;
+}
+
+bool screen_goes_as_video(const CodecEvidence& evidence) {
+    if (!evidence.video_possible) {
+        return false;
+    }
+    if (static_cast<long long>(evidence.width) * evidence.height >= kVideoFromPixels) {
+        return true;
+    }
+    if (evidence.tile_kbytes_per_second >= kVideoFromTileKBytesPerSecond) {
+        return true;
+    }
+    // Gone to video for being busy: kept there a while rather than measured
+    // again every second, since each switch is a whole picture sent at once.
+    return evidence.on_video_for_weight && evidence.ms_on_video < kVideoForWeightMs;
+}
+
+bool HostSession::video_possible() const {
+    return video::can_encode() && companion_accepts_video_ &&
+           monotonic_millis() >= video_retry_at_ms_;
+}
+
+CodecEvidence HostSession::codec_evidence(ScreenId screen, int width, int height) const {
+    const CodecState& state = screen == ScreenId::Top ? codec_top_ : codec_bottom_;
+    CodecEvidence evidence;
+    evidence.width = width;
+    evidence.height = height;
+    evidence.video_possible = video_possible();
+    evidence.tile_kbytes_per_second = state.video ? 0.0 : state.tile_kbytes_per_second;
+    evidence.on_video_for_weight = state.video && state.video_for_weight;
+    evidence.ms_on_video = state.video ? monotonic_millis() - state.since_ms : 0;
+    return evidence;
+}
+
+bool HostSession::sends_video(ScreenId screen, int width, int height) const {
+    switch (codec_choice_) {
+        case CodecChoice::Tiles: return false;
+        case CodecChoice::H264: return true;
+        case CodecChoice::Automatic: break;
+    }
+    return screen_goes_as_video(codec_evidence(screen, width, height));
+}
+
+void HostSession::switch_codec(ScreenId screen, bool video, const char* why) {
+    CodecState& state = screen == ScreenId::Top ? codec_top_ : codec_bottom_;
+    if (state.video == video) {
         return;
     }
-    // Closed rather than left idle, so that turning it back on opens a fresh
-    // encoder and says so -- which is most of what makes this worth being able
-    // to change without restarting.
-    video_top_.close();
-    video_bottom_.close();
+    state.video = video;
+    state.since_ms = monotonic_millis();
+    state.tile_bytes = 0;
+    state.tile_window_start_ms = state.since_ms;
+    state.tile_kbytes_per_second = 0.0;
+    log_info("the " + std::string(to_string(screen)) + " screen goes as " +
+             (video ? "video" : "tiles") + " now: " + why);
+    if (video) {
+        // Whatever it held from before means nothing to a decoder that has
+        // been reading tiles since; the next frame stands alone.
+        ((screen == ScreenId::Top) ? video_top_ : video_bottom_).request_keyframe();
+        return;
+    }
+    // Back to tiles, which only send what changed since the last tiled frame
+    // the companion confirmed -- and it has been showing video since then. So
+    // no baseline at all: the next one is the whole picture.
+    ((screen == ScreenId::Top) ? video_top_ : video_bottom_).close();
+    (screen == ScreenId::Top ? previous_top_ : previous_bottom_).clear();
+    (screen == ScreenId::Top ? tile_snapshots_top_ : tile_snapshots_bottom_).clear();
 }
 
 void HostSession::set_host_screen(ScreenId screen) {
@@ -542,6 +605,9 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_asked_for_menu_ = false;
     // Nobody is holding a menu open on a device that has gone.
     companion_menu_open_ = false;
+    // The next one starts on tiles, and is judged afresh.
+    codec_top_ = CodecState();
+    codec_bottom_ = CodecState();
     // Whoever connects next says its own size; a stale one from this
     // companion is worse than not knowing, since it might be wrong in either
     // direction.
@@ -1501,7 +1567,26 @@ bool HostSession::encode_one_screen(ScreenId screen,
                                     const ScreenPixels& source,
                                     std::vector<uint8_t>& previous,
                                     FrameMessage& frame) {
-    if (!video_wanted_) {
+    CodecState& codec = screen == ScreenId::Top ? codec_top_ : codec_bottom_;
+    {
+        const bool video = sends_video(screen, source.width, source.height);
+        if (video != codec.video) {
+            const CodecEvidence evidence = codec_evidence(screen, source.width, source.height);
+            const bool for_size =
+                static_cast<long long>(source.width) * source.height >= kVideoFromPixels;
+            switch_codec(screen, video,
+                         codec_choice_ != CodecChoice::Automatic ? "as this run was told to"
+                         : !video && !evidence.video_possible    ? "video cannot be had here"
+                         : !video                                 ? "back to tiles to see what it costs"
+                         : for_size ? "it is too big to go as tiles"
+                                    : "it is too busy to go as tiles");
+            codec.video_for_weight = video && !for_size;
+            if (!video) {
+                previous.clear();
+            }
+        }
+    }
+    if (!codec.video) {
         frame.encoding = FrameEncoding::Rgb565DeflateTiles;
         bool& asked = (screen == ScreenId::Top) ? keyframe_asked_top_ : keyframe_asked_bottom_;
         if (asked) {
@@ -1522,18 +1607,28 @@ bool HostSession::encode_one_screen(ScreenId screen,
                 in_flight.push_back(&snapshot.second);
             }
         }
-        return encode_screen_tiles(source.pixels, source.width, source.height,
-                                   source.stride_pixels, previous, frame.payload,
-                                   source.channel_order, in_flight);
+        const bool encoded = encode_screen_tiles(source.pixels, source.width, source.height,
+                                                 source.stride_pixels, previous, frame.payload,
+                                                 source.channel_order, in_flight);
+        // What tiles are costing this screen, over a second at a time.
+        const uint64_t now = monotonic_millis();
+        if (codec.tile_window_start_ms == 0) codec.tile_window_start_ms = now;
+        codec.tile_bytes += frame.payload.size();
+        if (now - codec.tile_window_start_ms >= 1000) {
+            codec.tile_kbytes_per_second =
+                static_cast<double>(codec.tile_bytes) / static_cast<double>(now - codec.tile_window_start_ms);
+            codec.tile_bytes = 0;
+            codec.tile_window_start_ms = now;
+        }
+        return encoded;
     }
 
-    // Video was asked for -- see Settings' per-system streaming format -- so
-    // nothing past here falls back to tiles: a screen this cannot actually
-    // send as H.264 is a failure the player asked to be told about instead of
-    // having painted over, through take_video_error(). See its own comment
-    // for why silently substituting the other format would defeat the whole
-    // point of choosing one to test.
-    if (monotonic_millis() < video_retry_at_ms_) {
+    // Pinned to video by --video-codec, nothing past here falls back to
+    // tiles: a screen this cannot actually send as H.264 is a failure that run
+    // asked to be told about, through take_video_error(), since substituting
+    // the other format would defeat the point of pinning one. Chosen here
+    // instead, a failure is only a reason to go back to tiles for a while.
+    if (codec_choice_ == CodecChoice::H264 && monotonic_millis() < video_retry_at_ms_) {
         return false;  // still backed off from the last failure -- see below
     }
 
@@ -1544,6 +1639,14 @@ bool HostSession::encode_one_screen(ScreenId screen,
     }
     if (reason.empty()) {
         return false;  // nothing to send this frame, which is not a failure
+    }
+    if (codec_choice_ == CodecChoice::Automatic) {
+        video_retry_at_ms_ = monotonic_millis() + kVideoFallbackMs;
+        log_warn("video would not work for the " + std::string(to_string(screen)) +
+                 " screen (" + reason + "); sending it as tiles instead");
+        switch_codec(screen, false, "video would not work");
+        previous.clear();
+        return encode_one_screen(screen, source, previous, frame);
     }
 
     // A genuine failure. Backed off so it is retried and, if it is still

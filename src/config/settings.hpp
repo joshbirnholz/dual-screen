@@ -140,30 +140,6 @@ struct Settings {
         return none;
     }
 
-    // How screens are sent to a second device, one choice per console: tiles
-    // for a DS or a 3DS, video for a Wii U, which is what the measurements in
-    // docs/research-notes.md say each is worth by default -- changeable
-    // independently per console specifically so one can be tried against the
-    // other on real hardware without disturbing the rest. See ScreenCodec's
-    // own comment for why there is no automatic fallback between them.
-    video::ScreenCodec screen_codec_ds = video::ScreenCodec::Tiles;
-    video::ScreenCodec screen_codec_3ds = video::ScreenCodec::Tiles;
-    video::ScreenCodec screen_codec_wii_u = video::ScreenCodec::H264;
-
-    video::ScreenCodec& screen_codec_for(SystemId system) {
-        switch (system) {
-            case SystemId::Ds: return screen_codec_ds;
-            case SystemId::ThreeDs: return screen_codec_3ds;
-            case SystemId::WiiU: return screen_codec_wii_u;
-        }
-        // Unreached: the switch above answers every SystemId there is, the
-        // same as core_path_for()'s does. A reference has to come from
-        // somewhere if a system is ever added without answering here too.
-        return screen_codec_ds;
-    }
-    video::ScreenCodec screen_codec_for(SystemId system) const {
-        return const_cast<Settings*>(this)->screen_codec_for(system);
-    }
 
     // Starting point for new games; each game remembers its own afterwards.
     bool default_bilinear_filtering = false;

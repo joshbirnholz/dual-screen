@@ -44,6 +44,36 @@ std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_peri
 // at all there is nothing to scale by, and the full, cautious wait applies.
 uint64_t ack_stall_ms(double round_trip_ms, bool measured);
 
+// What decides whether one screen goes as H.264 or as changed tiles.
+struct CodecEvidence {
+    // The size it would be sent at.
+    int width = 0;
+    int height = 0;
+    // Whether video can be sent at all: an encoder here, a decoder there, and
+    // no recent failure of either.
+    bool video_possible = false;
+    // What tiles have been costing for this screen, in kilobytes a second,
+    // while it has been sent as tiles.
+    double tile_kbytes_per_second = 0.0;
+    // Whether it went to video for being expensive as tiles rather than for
+    // its size, and how long ago.
+    bool on_video_for_weight = false;
+    uint64_t ms_on_video = 0;
+};
+// A screen goes as video when it is big -- the Wii U's, or a 3DS read back
+// above its native size -- where the tile encoder is both slow and heavy:
+// measured, a GamePad is 43 Mbit/s as tiles and 2.5 as H.264, and encoding its
+// tiles does not fit in a 60fps frame. It stays as tiles at a DS's or a 3DS's
+// own size, where tiles are small, lossless and add no encoder delay -- unless
+// the picture is so busy that tiles cost more than a home wireless link can be
+// trusted with, in which case it goes as video for a while and is then tried
+// as tiles again. And always as tiles when video cannot be had at all.
+bool screen_goes_as_video(const CodecEvidence& evidence);
+// The thresholds above, for tests.
+constexpr int kVideoFromPixels = 200000;
+constexpr double kVideoFromTileKBytesPerSecond = 2500.0;
+constexpr uint64_t kVideoForWeightMs = 20000;
+
 // How fast the media pacer may hand fragments to the socket, in bytes per
 // millisecond, given what the encoders were asked for and what they are really
 // producing. See the definition: those are not the same number.
@@ -82,11 +112,16 @@ public:
     // needs a decoder at the far end and an encoder at this one.
     bool companion_accepts_video() const { return companion_accepts_video_; }
 
-    // Ask for a compressed video stream where both ends can manage one. Off by
-    // default: every system this runs today has flat-shaded screens that the
-    // tile codec carries in a fraction of the bytes. See
-    // docs/research-notes.md.
-    void set_video_wanted(bool wanted);
+    // How screens are sent. Automatic, the default, is decided here screen by
+    // screen -- see screen_goes_as_video(). The other two pin one format for
+    // a whole run, which is what --video-codec is for: comparing the two on
+    // real hardware, or a test that needs to know which it is getting.
+    enum class CodecChoice { Automatic, Tiles, H264 };
+    void set_codec_choice(CodecChoice choice);
+    // Whether a screen of this size goes as video right now. Asked by the
+    // caller before reading a screen back, since video is worth reading at
+    // everything the core rendered and tiles are sent at native size.
+    bool sends_video(ScreenId screen, int width, int height) const;
     // Whatever the companion did not take.
     ScreenId host_screen() const { return config_.host_screen; }
     // Empty unless the last companion left or was refused, for the host to show.
@@ -514,6 +549,24 @@ private:
     std::vector<ReportedPad> companion_pads_;
     // Which of the companion's pads were last told their motor is on.
     std::map<uint32_t, bool> pad_rumble_sent_;
+    CodecChoice codec_choice_ = CodecChoice::Automatic;
+    // One per screen: which it is going as, since when, and what tiles have
+    // been costing it -- see screen_goes_as_video().
+    struct CodecState {
+        bool video = false;
+        bool video_for_weight = false;
+        uint64_t since_ms = 0;
+        uint64_t tile_bytes = 0;
+        uint64_t tile_window_start_ms = 0;
+        double tile_kbytes_per_second = 0.0;
+    };
+    CodecState codec_top_;
+    CodecState codec_bottom_;
+    CodecEvidence codec_evidence(ScreenId screen, int width, int height) const;
+    bool video_possible() const;
+    // Switches a screen's format, doing what each direction needs: a
+    // keyframe into video, a whole picture back into tiles.
+    void switch_codec(ScreenId screen, bool video, const char* why);
     // Zero means video is not backed off. Set to a future monotonic_millis()
     // after any reason it does not work, so a transient one (a cold hardware
     // encoder, one bad frame) is not retried and reported 60 times a second
@@ -598,7 +651,6 @@ private:
     // Send the current screens once more even if nothing has changed, because
     // what the companion needs has.
     bool resend_screens_ = true;
-    bool video_wanted_ = false;
     bool have_request_ = false;
     RequestMessage request_;
     // Bounded: a companion that somehow floods presses backs up the menu it is

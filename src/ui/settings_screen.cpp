@@ -127,18 +127,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
-        case Row::ScreenCodecDs:
-            settings_.screen_codec_ds = video::next_screen_codec(settings_.screen_codec_ds);
-            result.settings_changed = true;
-            break;
-        case Row::ScreenCodecThreeDs:
-            settings_.screen_codec_3ds = video::next_screen_codec(settings_.screen_codec_3ds);
-            result.settings_changed = true;
-            break;
-        case Row::ScreenCodecWiiU:
-            settings_.screen_codec_wii_u = video::next_screen_codec(settings_.screen_codec_wii_u);
-            result.settings_changed = true;
-            break;
         case Row::PadGlyphs: {
             // Three values, so this one steps rather than flips -- and it
             // steps the way the cursor was pushed.
@@ -287,9 +275,6 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
-        {"Streaming format (DS)", video::to_string(settings_.screen_codec_ds)},
-        {"Streaming format (3DS)", video::to_string(settings_.screen_codec_3ds)},
-        {"Streaming format (Wii U)", video::to_string(settings_.screen_codec_wii_u)},
         {"Button prompts", to_string(settings_.pad_glyphs)},
         {"Confirm with", confirm_button_name(settings_.pad_glyphs, settings_.confirm_button)},
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},

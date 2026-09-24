@@ -13,11 +13,9 @@
 # mock core paints the two screens different colours, so the colour on screen is
 # the frame having survived encode, wire, decode and upload.
 #
-# ASKED_BY says how the host was told to use video: "flag" for --video-codec, or
-# "setting" for the DS game's own "screen_codec_ds" entry in settings.json. The
-# two have to reach the same place -- the flag exists so a run can differ from
-# the setting without editing a file, and a setting nobody could act on would
-# be worse than none.
+# The host picks tiles or video by itself, from how big each screen is and how
+# much it costs to send as tiles. A DS screen from the mock core is far too
+# small for video ever to win, so --video-codec forces it.
 #
 # Usage: run_video_stream_test.sh <xvfb-run> <dualscreen> <mock core> <work dir> <checker>
 
@@ -29,18 +27,11 @@ MOCK_CORE="$3"
 WORK_DIR="$4"
 CHECKER="$5"
 
-ASKED_BY="${ASKED_BY:-flag}"
-
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR/host/config/dualscreen" "$WORK_DIR/companion/config/dualscreen"
 printf 'dualscreen video stream test rom' > "$WORK_DIR/fake.nds"
 
-CODEC_ARGUMENTS=()
-if [ "$ASKED_BY" = "setting" ]; then
-    printf '{"screen_codec_ds": "h264"}' > "$WORK_DIR/host/config/dualscreen/settings.json"
-else
-    CODEC_ARGUMENTS=(--video-codec h264)
-fi
+CODEC_ARGUMENTS=(--video-codec h264)
 
 COMPANION_SHOT="$WORK_DIR/companion.ppm"
 
@@ -143,6 +134,6 @@ else
 fi
 
 if [ "$FAILED" -eq 0 ]; then
-    echo "ok - a session ran with its screens going as video, asked for by $ASKED_BY"
+    echo "ok - a session ran with its screens going as video, forced with --video-codec"
 fi
 exit "$FAILED"

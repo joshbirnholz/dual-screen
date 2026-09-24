@@ -73,9 +73,6 @@ private:
     // focusable row that does nothing when pressed is worse than a plain list.
     enum class Row {
         SystemDir,
-        ScreenCodecDs,
-        ScreenCodecThreeDs,
-        ScreenCodecWiiU,
         PadGlyphs,
         ConfirmButtonRow,
         VideoHold,
