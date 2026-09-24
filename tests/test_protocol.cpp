@@ -504,6 +504,57 @@ void test_a_companions_pads_ride_the_input_as_a_tail() {
     CHECK(!decode_input(payload.data(), payload.size() - 3, received));
 }
 
+// Each input is numbered, after the pads, so the host can say which picture
+// it first reached -- the only way a companion can measure a tap's whole trip
+// -- and so a repeat of the same input, sent again in case the first was lost,
+// is recognised as one.
+void test_an_input_carries_its_number_and_the_host_echoes_it() {
+    InputMessage sent;
+    sent.touching = true;
+    sent.reports_pads = true;
+    sent.has_sequence = true;
+    sent.sequence = 4000000123u;
+    ReportedPad pad;
+    pad.id = 3;
+    pad.name = "Pro";
+    pad.slot = 0;
+    sent.pads = {pad};
+
+    std::vector<uint8_t> buffer;
+    encode_input(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    InputMessage received;
+    CHECK(decode_input(payload.data(), payload.size(), received));
+    CHECK(received.has_sequence);
+    CHECK_EQ(received.sequence, 4000000123u);
+    CHECK(received.touching);
+    CHECK(received.pads.size() == 1 && received.pads[0].name == "Pro" &&
+          received.pads[0].slot == 0);
+
+    // A companion from before inputs were numbered is read as not numbering
+    // them, whatever the message being decoded into said before.
+    InputMessage unnumbered;
+    CHECK(decode_input(payload.data(), payload.size() - 4, unnumbered));
+    CHECK(!unnumbered.has_sequence);
+    CHECK(unnumbered.pads.size() == 1 && unnumbered.pads[0].slot == 0);
+    CHECK(decode_input(payload.data(), payload.size() - 4, received));
+    CHECK_MSG(!received.has_sequence, "a number from an earlier input was left standing");
+
+    // The echo: which input, and the first picture made with it.
+    InputEchoMessage echo;
+    echo.sequence = 77;
+    echo.serial = 0x123456789ull;
+    std::vector<uint8_t> echoed;
+    encode_input_echo_payload(echo, echoed);
+    InputEchoMessage back;
+    CHECK(decode_input_echo_payload(echoed.data(), echoed.size(), back));
+    CHECK_EQ(back.sequence, 77u);
+    CHECK_EQ(back.serial, 0x123456789ull);
+    CHECK(!decode_input_echo_payload(echoed.data(), echoed.size() - 1, back));
+}
+
 // Rumble can name a pad now; an older host names none, which means the whole
 // device, as it always did.
 void test_rumble_can_name_one_pad() {
@@ -1199,6 +1250,7 @@ int main() {
     test_input_round_trip();
     test_rumble_round_trip();
     test_a_companions_pads_ride_the_input_as_a_tail();
+    test_an_input_carries_its_number_and_the_host_echoes_it();
     test_rumble_can_name_one_pad();
     test_stream_framing();
     test_absurd_length_is_fatal();

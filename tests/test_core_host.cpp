@@ -258,6 +258,77 @@ void test_save_states_round_trip() {
     core.unload();
 }
 
+// Run-ahead hides a game's own input lag: the mock, told to behave like a
+// game, draws a touch the frame after it reads it, and running one frame ahead
+// puts it on screen in the frame it was read. Only the frame that counts is
+// heard, and the machine is left where that frame left it.
+void test_run_ahead_hides_the_games_own_lag() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    setenv("MOCK_CORE_GAME_LAG", "1", 1);
+    LibretroCore core;
+    DsInputState input;
+    core.set_input_state(&input);
+    std::size_t audio_frames = 0;
+    core.set_audio_callback([&audio_frames](const int16_t*, std::size_t frames) {
+        audio_frames += frames;
+    });
+    std::string error;
+    CHECK_MSG(core.load(core_path, &error), error);
+    CHECK_MSG(core.load_game(make_fake_rom(), &error), error);
+
+    // The crosshair the mock draws where the touch is.
+    const auto touch_shown = [&core]() {
+        const CoreVideoFrame& frame = core.video_frame();
+        for (unsigned y = frame.height / 2; y < frame.height; ++y) {
+            for (unsigned x = 0; x < frame.width; ++x) {
+                if ((frame.pixels[y * frame.stride_pixels + x] & 0x00ffffffu) == 0x00fff050u) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    core.run_frame();
+    input.touching = true;
+    input.touch_x = 128;
+    input.touch_y = 96;
+    core.run_frame();
+    CHECK_MSG(!touch_shown(), "the mock is meant to lag a frame here, like a game");
+    core.run_frame();
+    CHECK(touch_shown());
+    input.touching = false;
+    core.run_frame();
+    core.run_frame();
+    CHECK(!touch_shown());
+
+    core.set_run_ahead(1);
+    CHECK_EQ(core.run_ahead(), 1u);
+    std::vector<uint8_t> before;
+    CHECK(core.save_state(before));
+    audio_frames = 0;
+    input.touching = true;
+    core.run_frame();
+    CHECK_MSG(touch_shown(), "running a frame ahead did not show the touch in the frame it was read");
+    CHECK_EQ(audio_frames, static_cast<std::size_t>(548));
+
+    // One frame on from where it was -- not two -- which is the same state
+    // running that one frame the ordinary way reaches.
+    std::vector<uint8_t> after;
+    CHECK(core.save_state(after));
+    core.set_run_ahead(0);
+    CHECK(core.load_state(before));
+    core.run_frame();
+    std::vector<uint8_t> ordinary;
+    CHECK(core.save_state(ordinary));
+    CHECK_MSG(after == ordinary, "running ahead left the game somewhere other than one frame on");
+
+    core.unload();
+    unsetenv("MOCK_CORE_GAME_LAG");
+}
+
 void test_screen_source_reports_a_valid_split() {
     const std::string core_path = mock_core_path();
     if (core_path.empty()) return;
@@ -779,6 +850,7 @@ int main() {
     test_core_loads_and_runs();
     test_reset_restarts_the_core();
     test_save_states_round_trip();
+    test_run_ahead_hides_the_games_own_lag();
     test_screen_source_reports_a_valid_split();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();

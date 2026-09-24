@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <thread>
 #include <ctime>
 #include <fstream>
 #include <map>
@@ -234,6 +235,8 @@ AppOptions parse_command_line(int argc, char** argv) {
                 options.simulate_touch_x = std::strtof(value.substr(0, comma).c_str(), nullptr);
                 options.simulate_touch_y = std::strtof(value.substr(comma + 1).c_str(), nullptr);
             }
+        } else if (argument == "--latency-probe") {
+            options.latency_probe = true;
         } else if (argument == "--simulate-key") {
             options.simulate_key = next_argument(argc, argv, index, "--simulate-key", options.parse_error);
         } else if (argument == "--exit-after-seconds") {
@@ -1822,6 +1825,9 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         if (companion_session) {
             companion_session->set_video_hold(settings.video_hold);
         }
+        if (source && system == SystemId::Ds) {
+            source->set_run_ahead(settings.run_ahead_ds);
+        }
     }
     if (result.close_requested) {
         if (settings_came_from == State::Menu && local_game()) {
@@ -2082,6 +2088,9 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             // is clamped by the source; the menu should show what the core was
             // given.
             render_scale = source->render_scale();
+            if (system == SystemId::Ds) {
+                source->set_run_ahead(settings.run_ahead_ds);
+            }
             break;
         }
         case FrameOrigin::External: {
@@ -2532,6 +2541,26 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 
 }
 
+// Swaps, and under DUALSCREEN_TEST_VSYNC_HZ then waits for the next tick of
+// a clock at that rate, the way a display's vertical refresh holds a real
+// swap. A virtual display's swap returns at once, which would let a loop spin
+// free and hide exactly the refresh-locked waits that latency is made of on
+// real hardware. For measuring, and nothing else.
+void swap_and_pace(SDL_Window* window) {
+    SDL_GL_SwapWindow(window);
+    static const double hz = [] {
+        const char* value = std::getenv("DUALSCREEN_TEST_VSYNC_HZ");
+        return value != nullptr ? std::atof(value) : 0.0;
+    }();
+    if (hz <= 0.0) return;
+    using clock = std::chrono::steady_clock;
+    static const clock::time_point start = clock::now();
+    const auto period = std::chrono::duration<double>(1.0 / hz);
+    const double elapsed = std::chrono::duration<double>(clock::now() - start).count();
+    const double ticks = std::floor(elapsed / period.count()) + 1.0;
+    std::this_thread::sleep_until(start + std::chrono::duration_cast<clock::duration>(period * ticks));
+}
+
 void App::Impl::render() {
     const float width = static_cast<float>(output_width);
     const float height = static_cast<float>(output_height);
@@ -2542,7 +2571,7 @@ void App::Impl::render() {
 
     if (state == State::Browser) {
         browser->render(quads, text, button_glyphs, width, height);
-        SDL_GL_SwapWindow(window);
+        swap_and_pace(window);
         ++frames_rendered;
         return;
     }
@@ -2550,14 +2579,14 @@ void App::Impl::render() {
         launcher->render(quads, text, button_glyphs, width, height,
                          companion_session ? static_cast<int>(companion_session->hosts().size())
                                            : 0);
-        SDL_GL_SwapWindow(window);
+        swap_and_pace(window);
         ++frames_rendered;
         return;
     }
     if (state == State::HostPicker) {
         host_picker->render(quads, text, button_glyphs, width, height,
                             companion_session->hosts(), companion_session->status_detail());
-        SDL_GL_SwapWindow(window);
+        swap_and_pace(window);
         ++frames_rendered;
         return;
     }
@@ -2574,7 +2603,7 @@ void App::Impl::render() {
                 : std::string();
         render_connecting_screen(quads, text, button_glyphs, width, height,
                                  joining_host.device_name, joining_host.game_title, note);
-        SDL_GL_SwapWindow(window);
+        swap_and_pace(window);
         ++frames_rendered;
         return;
     }
@@ -2594,7 +2623,7 @@ void App::Impl::render() {
         render_waiting_screen(quads, text, button_glyphs, width, height, "On the other screen",
                               {"A menu is open there.", "This device's buttons still work it."},
                               {});
-        SDL_GL_SwapWindow(window);
+        swap_and_pace(window);
         ++frames_rendered;
         companion_session->note_frame_drawn();
         return;
@@ -2613,7 +2642,7 @@ void App::Impl::render() {
                                        : "to start on " + joining_host.device_name,
                                    "F1 or Tab for the menu"},
                                   {});
-            SDL_GL_SwapWindow(window);
+            swap_and_pace(window);
             ++frames_rendered;
             companion_session->note_frame_drawn();
             return;
@@ -2637,7 +2666,7 @@ void App::Impl::render() {
         render_waiting_screen(quads, text, button_glyphs, width, height,
                               (ours ? "Starting " : "Waiting for ") + profile.core_description,
                               lines, {});
-        SDL_GL_SwapWindow(window);
+        swap_and_pace(window);
         ++frames_rendered;
         return;
     }
@@ -2706,7 +2735,7 @@ void App::Impl::render() {
         message.render(quads, text, button_glyphs, width, height);
     }
 
-    SDL_GL_SwapWindow(window);
+    swap_and_pace(window);
     ++frames_rendered;
     // Only the game path gets here, which is the one whose rate says whether a
     // companion is showing what it is being sent.
@@ -3030,6 +3059,27 @@ int App::run(const AppOptions& options) {
             touch.button.x = static_cast<Sint32>(options.simulate_touch_x * impl.output_width);
             touch.button.y = static_cast<Sint32>(options.simulate_touch_y * impl.output_height);
             impl.input.handle_event(touch);
+        }
+
+        // Test hook: tap, let go, tap somewhere else, about eight times a
+        // second -- see AppOptions::latency_probe.
+        if (options.latency_probe && impl.frames_rendered >= 2) {
+            static uint64_t next_ms = 0;
+            static bool down = false;
+            static bool left = false;
+            const uint64_t now = SDL_GetTicks64();
+            if (now >= next_ms) {
+                next_ms = now + 60;
+                down = !down;
+                if (down) left = !left;
+                SDL_Event touch {};
+                touch.type = down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+                touch.button.button = SDL_BUTTON_LEFT;
+                touch.button.state = down ? SDL_PRESSED : SDL_RELEASED;
+                touch.button.x = static_cast<Sint32>((left ? 0.3f : 0.7f) * impl.output_width);
+                touch.button.y = static_cast<Sint32>(0.5f * impl.output_height);
+                impl.input.handle_event(touch);
+            }
         }
 
         // Test hook: a single tap of one key, so the path from a physical
@@ -3380,6 +3430,17 @@ int App::run(const AppOptions& options) {
             impl.local_screen = impl.host_session->host_screen();
         }
         if (impl.companion_session) {
+            // What was just touched goes to the host before this pass reads
+            // and decodes what the host sent, not after: the host is waiting
+            // on it and the decoding is not, so every millisecond spent here
+            // first is a millisecond later that the tap reaches the game.
+            // Every pad on its own too, so the host can make each one any
+            // controller its game has. See InputMessage::pads.
+            if (impl.state == Impl::State::Companion) {
+                const std::vector<net::ReportedPad> pads =
+                    net::reported_pads(impl.input.pad_readings());
+                impl.companion_session->send_input(impl.input.ds_state(), &pads);
+            }
             impl.companion_session->poll(network_now);
             // Told to the host so it knows how much detail a screen sent here
             // is actually worth -- checked every frame rather than only on a
@@ -3639,6 +3700,11 @@ int App::run(const AppOptions& options) {
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
                 impl.frame_accumulator = 0.0;
             }
+            // What the companion's input has now reached, and a quick tap's
+            // release let go of -- see HostSession::note_frame_ran().
+            if (advanced > 0 && impl.host_session && impl.host_session->has_companion()) {
+                impl.host_session->note_frame_ran(playing->frame_serial());
+            }
             if (impl.source) {
                 impl.save_flush_accumulator += elapsed;
                 if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
@@ -3650,12 +3716,6 @@ int App::run(const AppOptions& options) {
             if (playing->wants_shutdown()) {
                 impl.running = false;
             }
-        } else if (impl.companion_session && impl.state == Impl::State::Companion) {
-            // Every pad on its own too, so the host can make each one any
-            // controller its game has. See InputMessage::pads.
-            const std::vector<net::ReportedPad> pads =
-                net::reported_pads(impl.input.pad_readings());
-            impl.companion_session->send_input(impl.input.ds_state(), &pads);
         }
 
         // Hand the current screens to the companion, if any. The serial only

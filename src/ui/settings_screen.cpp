@@ -175,6 +175,11 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.video_hold = video::next_video_hold(settings_.video_hold);
             result.settings_changed = true;
             break;
+        case Row::RunAheadDs:
+            // Three values, stepped the way the cursor was pushed.
+            settings_.run_ahead_ds = (settings_.run_ahead_ds + (direction < 0 ? 2 : 1)) % 3;
+            result.settings_changed = true;
+            break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -306,6 +311,11 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Button prompts", to_string(settings_.pad_glyphs)},
         {"Confirm with", confirm_button_name(settings_.pad_glyphs, settings_.confirm_button)},
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},
+        {"Run ahead to hide a DS game's lag",
+         settings_.run_ahead_ds == 0
+             ? std::string("Off")
+             : std::to_string(settings_.run_ahead_ds) +
+                   (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
         {"Wait for vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",
          to_string(settings_.wii_u_screen_alone)},

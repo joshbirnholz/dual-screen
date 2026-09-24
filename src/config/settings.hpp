@@ -203,6 +203,13 @@ struct Settings {
     // depends on wifi nobody here can measure.
     video::VideoHold video_hold = video::VideoHold::Balanced;
 
+    // How many frames a DS game is run ahead of itself, to hide its own input
+    // lag -- see LibretroCore::set_run_ahead(). Off by default: it costs a
+    // whole frame of emulation per frame hidden, and whether this machine
+    // has that to spare, and whether the core's save states are quick
+    // enough, is only known by trying it. Two at the most from the menu.
+    unsigned run_ahead_ds = 0;
+
     // Which device plays the sound while two are connected. Chosen from the
     // layout menu rather than here, since it is the kind of thing that changes
     // with the room rather than once at setup.

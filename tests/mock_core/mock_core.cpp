@@ -304,6 +304,19 @@ void present_through_gpu() {
 
 int16_t g_silence[1024 * 2];
 unsigned g_frame_counter = 0;
+// A real game's own input lag, when MOCK_CORE_GAME_LAG is set: the touch read
+// in one frame is drawn in the next, the way a game reads the pad in its
+// logic and shows the result on the following vblank. Part of the state, as
+// it would be in a real machine, so run-ahead can be seen to hide it.
+struct SeenTouch {
+    int16_t pressed = 0;
+    int16_t x = 0;
+    int16_t y = 0;
+};
+SeenTouch g_touch_seen;
+bool game_lags() {
+    return std::getenv("MOCK_CORE_GAME_LAG") != nullptr;
+}
 bool g_layout_option_honoured = false;
 int16_t g_reported_circle_x = 0;
 int16_t g_reported_circle_y = 0;
@@ -567,14 +580,19 @@ void draw_bottom_screen() {
     if (g_input_state == nullptr) {
         return;
     }
-    const int16_t pressed = g_input_state(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
-    if (pressed == 0) {
-        return;
-    }
+    SeenTouch now;
+    now.pressed = g_input_state(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
     // libretro pointer coordinates span the whole framebuffer, exactly as the
     // real core reads them.
-    const int16_t pointer_x = g_input_state(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
-    const int16_t pointer_y = g_input_state(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+    now.x = g_input_state(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+    now.y = g_input_state(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+    const SeenTouch drawn = game_lags() ? g_touch_seen : now;
+    g_touch_seen = now;
+    if (drawn.pressed == 0) {
+        return;
+    }
+    const int16_t pointer_x = drawn.x;
+    const int16_t pointer_y = drawn.y;
     const int frame_x = static_cast<int>((pointer_x + 32767.0f) / 65534.0f * kFrameWidth);
     const int frame_y = static_cast<int>((pointer_y + 32767.0f) / 65534.0f * kFrameHeight);
 
@@ -644,6 +662,7 @@ RETRO_API void retro_init(void) {
     std::memset(g_silence, 0, sizeof(g_silence));
     std::memset(g_save_ram, 0, sizeof(g_save_ram));
     g_frame_counter = 0;
+    g_touch_seen = SeenTouch();
     g_save_was_loaded = false;
 }
 
@@ -675,7 +694,10 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
 }
 
 RETRO_API void retro_set_controller_port_device(unsigned, unsigned) {}
-RETRO_API void retro_reset(void) { g_frame_counter = 0; }
+RETRO_API void retro_reset(void) {
+    g_frame_counter = 0;
+    g_touch_seen = SeenTouch();
+}
 
 RETRO_API bool retro_load_game(const struct retro_game_info*) {
     enum retro_pixel_format format = RETRO_PIXEL_FORMAT_XRGB8888;
@@ -890,20 +912,26 @@ RETRO_API size_t retro_get_memory_size(unsigned type) {
 // Save states: the whole of this console is its frame counter, behind a tag
 // so a state from anything else is refused the way a real core refuses one.
 constexpr char kStateTag[4] = {'M', 'O', 'C', 'K'};
-RETRO_API size_t retro_serialize_size(void) { return sizeof(kStateTag) + sizeof(g_frame_counter); }
+RETRO_API size_t retro_serialize_size(void) {
+    return sizeof(kStateTag) + sizeof(g_frame_counter) + sizeof(g_touch_seen);
+}
 RETRO_API bool retro_serialize(void* data, size_t size) {
     if (size < retro_serialize_size()) return false;
-    std::memcpy(data, kStateTag, sizeof(kStateTag));
-    std::memcpy(static_cast<uint8_t*>(data) + sizeof(kStateTag), &g_frame_counter,
-                sizeof(g_frame_counter));
+    auto* out = static_cast<uint8_t*>(data);
+    std::memcpy(out, kStateTag, sizeof(kStateTag));
+    std::memcpy(out + sizeof(kStateTag), &g_frame_counter, sizeof(g_frame_counter));
+    std::memcpy(out + sizeof(kStateTag) + sizeof(g_frame_counter), &g_touch_seen,
+                sizeof(g_touch_seen));
     return true;
 }
 RETRO_API bool retro_unserialize(const void* data, size_t size) {
     if (size != retro_serialize_size() || std::memcmp(data, kStateTag, sizeof(kStateTag)) != 0) {
         return false;
     }
-    std::memcpy(&g_frame_counter, static_cast<const uint8_t*>(data) + sizeof(kStateTag),
-                sizeof(g_frame_counter));
+    const auto* in = static_cast<const uint8_t*>(data);
+    std::memcpy(&g_frame_counter, in + sizeof(kStateTag), sizeof(g_frame_counter));
+    std::memcpy(&g_touch_seen, in + sizeof(kStateTag) + sizeof(g_frame_counter),
+                sizeof(g_touch_seen));
     return true;
 }
 RETRO_API void retro_cheat_reset(void) {}

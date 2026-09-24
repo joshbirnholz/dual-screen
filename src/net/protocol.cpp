@@ -350,7 +350,23 @@ void encode_input_payload(const InputMessage& message, std::vector<uint8_t>& out
             const int slot = message.pads[index].slot;
             put_u8(out, slot < 0 || slot > 0xFE ? 0xFFu : static_cast<uint8_t>(slot));
         }
+        // Which input this is -- see InputMessage::sequence.
+        if (message.has_sequence) {
+            put_u32(out, message.sequence);
+        }
     }
+}
+
+void encode_input_echo_payload(const InputEchoMessage& message, std::vector<uint8_t>& out) {
+    put_u32(out, message.sequence);
+    put_u64(out, message.serial);
+}
+
+bool decode_input_echo_payload(const uint8_t* data, std::size_t size, InputEchoMessage& out) {
+    Reader reader(data, size);
+    reader.u32(out.sequence);
+    reader.u64(out.serial);
+    return reader.ok();
 }
 
 void encode_input(const InputMessage& message, std::vector<uint8_t>& out) {
@@ -862,6 +878,7 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
     out.c_stick_y = static_cast<int16_t>(c_stick_y);
     // The pads' tail, when the companion sent one -- see InputMessage::pads.
     out.reports_pads = false;
+    out.has_sequence = false;
     out.pads.clear();
     if (reader.remaining() >= 1) {
         uint8_t count = 0;
@@ -907,6 +924,11 @@ bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out) {
                     uint8_t slot = 0xFF;
                     reader.u8(slot);
                     pad.slot = slot == 0xFF ? -1 : slot;
+                }
+                // And which input this is, from a companion that numbers them.
+                out.has_sequence = false;
+                if (reader.remaining() >= 4) {
+                    out.has_sequence = reader.u32(out.sequence);
                 }
             }
         }

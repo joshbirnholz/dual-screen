@@ -50,6 +50,11 @@ struct AppOptions {
     // no simulated touch.
     float simulate_touch_x = -1.0f;
     float simulate_touch_y = -1.0f;
+    // Taps the window on its own, about eight times a second at alternating
+    // spots, so a companion keeps measuring how long an input takes to come
+    // back as a picture (see CompanionSession's "input to picture" line)
+    // without anybody touching it. For measuring, not for playing.
+    bool latency_probe = false;
     // Taps this one key (an SDL key name, e.g. "a" or "Return") a couple of
     // frames in, so a core's own keyboard callback can be exercised
     // headless. Empty means no simulated key.

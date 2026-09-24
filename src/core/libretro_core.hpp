@@ -176,6 +176,25 @@ public:
     bool save_state(std::vector<uint8_t>& out) const;
     bool load_state(const std::vector<uint8_t>& state);
 
+    // Run-ahead: how many frames of the game's own input lag to hide.
+    //
+    // A game reads the pad in one frame and shows the result in a later one
+    // -- two or three frames later is ordinary on a DS -- and a stream adds
+    // its own delay on top. Each frame, the frame that counts is run and its
+    // sound kept; the machine is saved; it is run on this many frames more
+    // with the same input held, silently, and the last of those is the
+    // picture shown; then it is put back as it was. What is on screen is
+    // where the game will be a few frames from now if nothing changes, which
+    // is exactly the delay the game itself would otherwise add. RetroArch's
+    // single-instance run-ahead, the same way round.
+    //
+    // It costs a whole frame of emulation per frame hidden, plus a save and a
+    // load each frame, and it only works on a core that can save states --
+    // and quickly. Zero, the default, runs frames exactly as before. A core
+    // that fails to save or load a state turns it back off and says so.
+    void set_run_ahead(unsigned frames);
+    unsigned run_ahead() const { return run_ahead_; }
+
     bool is_loaded() const { return handle_ != nullptr; }
     bool game_loaded() const { return game_loaded_; }
     bool wants_shutdown() const { return wants_shutdown_; }
@@ -210,6 +229,10 @@ private:
     int16_t on_input_state(unsigned port, unsigned device, unsigned index, unsigned id) const;
     int16_t pointer_axis(bool horizontal) const;
 
+    // One retro_run, with this frontend's GL handover around it. run_frame()
+    // is this, or several of it for run-ahead.
+    void run_once();
+
     void register_option(const CoreOptionInfo& info);
     void apply_forced_options();
     void refresh_av_info();
@@ -229,6 +252,20 @@ private:
     bool needs_fullpath_ = false;
     bool supports_input_bitmasks_ = false;
     bool variables_dirty_ = true;
+
+    // --- run-ahead ---
+    unsigned run_ahead_ = 0;
+    // While set, what the core draws or plays is not taken: the frame that
+    // counts is not the one shown, and only it is heard.
+    bool hide_video_ = false;
+    bool hide_audio_ = false;
+    // The machine as it stood after the frame that counts, put back once the
+    // frames ahead of it have been drawn. Sized once: asking some cores their
+    // size means writing a whole state out.
+    std::vector<uint8_t> run_ahead_state_;
+    // What run-ahead is costing, said once it has run for a few seconds.
+    double run_ahead_spent_ms_ = 0.0;
+    unsigned run_ahead_frames_timed_ = 0;
 
     CoreAvInfo av_info_;
     CoreVideoFrame video_frame_;

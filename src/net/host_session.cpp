@@ -422,6 +422,10 @@ void HostSession::stop() {
     companion_name_.clear();
     companion_input_ = DsInputState();
     companion_input_fresh_ = false;
+    input_sequence_known_ = false;
+    echoed_any_ = false;
+    touch_unseen_ = false;
+    release_waiting_ = false;
     // Not reset by drop_companion() like everything else above -- that is the
     // whole point of it -- so a fresh hosting session has to clear it itself.
     companion_wants_quit_ = false;
@@ -517,6 +521,10 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_name_.clear();
     companion_input_ = DsInputState();
     companion_input_fresh_ = false;
+    input_sequence_known_ = false;
+    echoed_any_ = false;
+    touch_unseen_ = false;
+    release_waiting_ = false;
     have_request_ = false;
     request_ = RequestMessage();
     menu_presses_.clear();
@@ -762,6 +770,8 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 if (companion_menu_open_) {
                     companion_input_ = DsInputState();
                     companion_input_fresh_ = true;
+                    touch_unseen_ = false;
+                    release_waiting_ = false;
                 }
             }
             break;
@@ -791,23 +801,50 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
             if (!decode_input(payload, payload_size, input)) {
                 return;
             }
-            companion_input_.buttons = input.buttons;
-            companion_input_.touching = input.touching;
+            // A copy of one already taken, or one overtaken on the way by a
+            // newer one: nothing new either way. Numbered inputs only, which is
+            // every companion that sends them twice.
+            if (input.has_sequence) {
+                if (input_sequence_known_ &&
+                    static_cast<int32_t>(input.sequence - input_sequence_) <= 0) {
+                    return;
+                }
+                input_sequence_known_ = true;
+                input_sequence_ = input.sequence;
+            }
+            DsInputState next = companion_input_;
+            next.buttons = input.buttons;
+            next.touching = input.touching;
             // Clamped rather than trusted: these arrive from another machine,
             // and to this console's own touch screen rather than a DS's.
             const ScreenSize touch = system_profile(config_.system).screens.bottom;
-            companion_input_.touch_x = std::min(std::max<int>(input.touch_x, 0), touch.width - 1);
-            companion_input_.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
-            companion_input_.circle_x = input.circle_x;
-            companion_input_.circle_y = input.circle_y;
-            companion_input_.c_stick_x = input.c_stick_x;
-            companion_input_.c_stick_y = input.c_stick_y;
+            next.touch_x = std::min(std::max<int>(input.touch_x, 0), touch.width - 1);
+            next.touch_y = std::min(std::max<int>(input.touch_y, 0), touch.height - 1);
+            next.circle_x = input.circle_x;
+            next.circle_y = input.circle_y;
+            next.c_stick_x = input.c_stick_x;
+            next.c_stick_y = input.c_stick_y;
             // Passed through untouched. These are raw sensor readings in the
             // sender's own units (see DsMotionState); anything this end did
             // to them would be a second opinion about how the device is being
             // held, and the one place that question is answered is the far
             // side of the frame link, in Cemu's own sensor fusion.
-            companion_input_.motion = input.motion;
+            next.motion = input.motion;
+            // A release the game has not yet seen the press of waits for one
+            // frame to see it -- a quick tap can land press and release both
+            // between two frames, and reaching the game as the release alone
+            // is a tap that never happened. Anything else goes straight in.
+            if (!next.touching && (touch_unseen_ || release_waiting_) &&
+                (companion_input_.touching || release_waiting_)) {
+                released_input_ = next;
+                released_sequence_ = input.sequence;
+                release_waiting_ = true;
+            } else {
+                if (next.touching && !companion_input_.touching) touch_unseen_ = true;
+                companion_input_ = next;
+                applied_sequence_ = input.sequence;
+                release_waiting_ = false;
+            }
             companion_input_fresh_ = true;
             // Its pads, each on its own, when it says what they are.
             companion_reports_pads_ = input.reports_pads;
@@ -1610,6 +1647,32 @@ void HostSession::drain_pending_media_sends(uint64_t now_ms) {
     }
 }
 
+void HostSession::note_frame_ran(uint64_t serial) {
+    // Which input this picture is the first to carry, if it is a new one.
+    // Before the waiting release below is let go: this frame ran with the
+    // touch, not with its release.
+    if (input_sequence_known_ && companion_media_known_ &&
+        (!echoed_any_ || applied_sequence_ != echoed_sequence_)) {
+        echoed_any_ = true;
+        echoed_sequence_ = applied_sequence_;
+        InputEchoMessage echo;
+        echo.sequence = applied_sequence_;
+        echo.serial = serial;
+        std::vector<uint8_t> out;
+        encode_media_header(session_token_, MessageType::InputEcho, out);
+        encode_input_echo_payload(echo, out);
+        media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
+                              out.size());
+    }
+    touch_unseen_ = false;
+    if (release_waiting_) {
+        companion_input_ = released_input_;
+        applied_sequence_ = released_sequence_;
+        release_waiting_ = false;
+        companion_input_fresh_ = true;
+    }
+}
+
 void HostSession::publish_screens(const ScreenPixels& top,
                                   const ScreenPixels& bottom,
                                   uint64_t serial) {
@@ -1775,6 +1838,18 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // which is a different question and the one the ack gate asks.
     submitted_serial_ = serial;
     resend_screens_ = false;
+
+    // Out now, not at the next poll(). This is called after the game has run,
+    // and the next poll() is at the top of the next pass of the app's loop --
+    // after it has drawn and waited out its own display's refresh. Every frame
+    // used to sit here that whole refresh, about 17ms at 60Hz, before a byte
+    // of it left: latency on every picture, for nothing, since the pacer's
+    // budget only exists to spread a keyframe out and an ordinary frame fits
+    // in it anyway. What a keyframe does not fit in is still spread across
+    // the polls that follow, exactly as before.
+    if (sent_anything) {
+        drain_pending_media_sends(monotonic_millis());
+    }
 }
 
 }  // namespace ds::net

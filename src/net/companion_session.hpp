@@ -329,10 +329,11 @@ std::size_t video_buffer_target_frames(double jitter_ms, double period_ms);
 // permanent latency. Letting a frame through once it has waited longer than
 // the link's own measured unevenness drains that backlog instead, so the queue
 // settles at the depth the link needs rather than at whatever a past hiccup
-// left behind. Never below one period, or there would be nothing left for the
-// clock to pace with and frames would simply be shown on arrival, jitter and
-// all; never above two from the measurement alone, so no jitter estimate can
-// talk this back into hoarding.
+// left behind. Never below video_hold_floor_ms() -- a few milliseconds, so the
+// clock is not chasing noise -- and no longer a whole period, which on a calm
+// link was the whole of the delay the pacer added; never above two periods
+// from the measurement alone, so no jitter estimate can talk this back into
+// hoarding.
 //
 // `extra_periods` is cover this link has shown it needs beyond that, which is
 // the one thing a quantile cannot know -- see hold_extra_periods().
@@ -426,6 +427,49 @@ std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_lat
 // rate shows every frame and takes about half a second to give back a frame's
 // worth of delay, which nobody can see.
 uint64_t video_pace_step_ms(uint64_t period_ms, std::size_t shown, bool draining);
+// The same in fractions of a millisecond, which is what the clock actually
+// steps by. Whole milliseconds were a latency bug of their own: a 60fps
+// stream's 16.67ms period rounded to 17, the clock ran two percent slow, and
+// the queue grew by twenty milliseconds every second until a drain caught it
+// -- a sawtooth between one frame and four behind.
+double video_pace_step_exact_ms(double period_ms, std::size_t shown, bool draining);
+
+// The least a frame is held for before the clock starts giving ground, in
+// milliseconds -- the floor under video_hold_allowance_ms().
+//
+// It used to be a whole period, and on a calm link that is the whole of the
+// latency the pacer adds: frames settle wherever in the period the clock's
+// phase happens to put them, up to a frame behind, and nothing ever pulls
+// them earlier because none of them has waited *more* than a period. Cover
+// against the link is the measured spread's job; this floor only has to stop
+// the clock chasing a millisecond of noise.
+uint64_t video_hold_floor_ms(uint64_t period_ms);
+
+// Whether to let one frame go unseen to catch up, having been at least a
+// whole frame behind for `behind_for_ms` and last done so `since_last_ms` ago.
+//
+// Bending the clock's rate gives delay back only where this device can show
+// frames faster than they come. A companion drawing at the rate the game runs
+// -- a 60Hz screen showing a 60fps DS -- shows one per refresh either way, so
+// a frame's worth of backlog, once it is there, stays there: measured, a
+// picture sitting 50 to 67ms behind on a link with 3ms of jitter. The only
+// way to give it back is to not show one frame, and one unseen frame now and
+// then is far less noticeable than every tap landing a frame or three late.
+//
+// And promptly. A burst after a hiccup -- a wifi spike that held two frames
+// back and then let them through together -- is exactly how a backlog forms,
+// and replaying it late only carries the hiccup forward into every picture
+// after it; catching up is what Moonlight does too. How promptly is what
+// VideoHold says: at once for Responsive, after two frames for Balanced and
+// six for Smooth, which leave a burst the pacing can absorb to it, and at
+// most four and two frames a second let go respectively. Measured against a
+// link that stalls for 15 to 35ms twice a second, every one of those settles
+// on the same picture: about one frame let go per stall, and the picture no
+// later than the link itself makes it. The hold's own cover is untouched:
+// this only sheds what is past it -- see video_hold_allowance_ms() and
+// hold_extra_ms(), which still buy cover when the picture runs dry.
+bool shed_a_frame_to_catch_up(uint64_t behind_for_ms, uint64_t since_last_ms, uint64_t period_ms,
+                              video::VideoHold hold);
 
 // The companion half: finds hosts, connects to one, and presents the screens it
 // receives as a ScreenSource -- the same seam the libretro core plugs into, so
@@ -923,7 +967,20 @@ private:
     // leaves nothing buffered and each frame held for whichever number of
     // refreshes its arrival happened to land on.
     uint64_t next_due_ms_ = 0;
+    // The same, unrounded -- see video_pace_step_exact_ms().
+    double next_due_exact_ms_ = 0.0;
+    // Since when the picture has been a whole frame or more behind, and when
+    // a frame was last let go to catch up -- see shed_a_frame_to_catch_up().
+    uint64_t behind_since_ms_ = 0;
+    uint64_t last_shed_ms_ = 0;
+    // DUALSCREEN_TEST_LINK's held-back datagrams -- see poll().
+    std::deque<std::pair<uint64_t, std::vector<uint8_t>>> simulated_link_;
+    uint64_t simulated_link_last_due_ms_ = 0;
+    unsigned stats_shed_ = 0;
     uint64_t last_arrival_ms_ = 0;
+    // The host's send stamp on the last new frame -- see where
+    // frame_period_ms_ is measured.
+    uint32_t last_sent_at_ms_ = 0;
     double frame_period_ms_ = 16.7;
     uint64_t frame_period() const;
     // How unevenly frames have been arriving lately, in milliseconds, and the
@@ -1143,6 +1200,25 @@ private:
     bool last_sent_reported_pads_ = false;
     DsInputState last_sent_input_;
     bool ever_sent_input_ = false;
+    // Inputs are numbered, and each is sent again on the next couple of
+    // passes: a datagram lost on wifi is otherwise a tap lost outright, since
+    // only changes are sent and a tap's press is a change that never comes
+    // again. The host drops the copies by number.
+    uint32_t input_sequence_ = 0;
+    std::vector<uint8_t> last_input_datagram_;
+    unsigned input_repeats_left_ = 0;
+    // When each recent input left, by number, and which echoes (see
+    // MessageType::InputEcho) are still waiting for their picture to be
+    // shown -- the two ends of how long an input takes to come back as a
+    // picture, both on this device's clock.
+    struct SentInput {
+        uint32_t sequence = 0;
+        uint64_t at_ms = 0;
+    };
+    std::vector<SentInput> input_sent_at_;
+    std::vector<InputEchoMessage> echoes_waiting_;
+    uint64_t shown_serial_ = 0;
+    std::vector<uint64_t> stats_input_to_picture_ms_;
     AudioCallback audio_callback_;
     uint32_t audio_sample_rate_ = 0;
     RumbleCallback rumble_callback_;

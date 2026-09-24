@@ -524,6 +524,75 @@ If a companion still cannot keep up, in order of how much they buy:
 3. **Turn the render scale down** on a 3DS game. A screen streamed at 3x is
    nine times the pixels of one at 1x.
 
+## Latency
+
+A tap on the companion's screen has to cross the network, be run by the game,
+and come back as a picture before the player sees it land. A game that asks
+for a moving target to be tapped, like the Goombas running across the screen in
+Mario & Luigi: Bowser's Inside Story, stops being playable once that round trip
+is too long. What keeps it short:
+
+- **A frame leaves the host the moment it is made**, not on the host's next
+  pass round its loop, which used to add up to a whole frame.
+- **The companion holds a frame only as long as the link's own unevenness
+  needs.** On a calm link that is a couple of milliseconds, not the whole frame
+  it used to insist on. The pacing clock also keeps the stream's exact rate:
+  in whole milliseconds, 16.67ms rounded to 17, the clock ran 2% slow, and
+  the picture drifted up to four frames behind before catching up.
+- **A backlog is let go rather than carried.** A companion drawing at the
+  game's own rate shows one frame per refresh whatever happens, so the extra
+  frame a Wi-Fi hiccup leaves queued would otherwise stay queued for the rest
+  of the session. It is caught up on by letting one frame go unseen. How
+  promptly depends on **Streaming, when the link is uneven** in Settings:
+  Responsive does it at once, Balanced (the default) after two frames, and
+  Smooth after six.
+- **A tap quicker than a frame still counts.** A press and release that both
+  arrive between two of the host's frames used to reach the game as a release
+  alone, which is a tap that never happened. The release now waits until the
+  game has run one frame with the press.
+- **The companion sends what was touched before it decodes what arrived**, and
+  sends each change twice more on the next two passes, so one lost datagram
+  does not lose a tap.
+
+Measured on one machine, both ends drawing at 60Hz, from sending a tap to the
+first picture made with it: over loopback, 33–84ms and drifting before this
+work, and a steady 17ms after. Over a simulated Wi-Fi link (2–10ms per
+datagram, and stalls of 15–35ms about twice a second) it is 33ms typical,
+letting roughly one frame a second go unseen to stay there.
+
+The companion measures this for real, too. The host tells it which picture
+each input first reached, and with `--verbose` the companion logs a line like
+`latency: input to picture 33ms typical, 33 to 50ms, over 15 inputs` about
+once a second while inputs are changing. That covers everything this app
+controls. It does not cover the display's own delay or the game's.
+
+To reproduce those numbers on one machine, three switches exist for measuring
+only. `--latency-probe` on the companion taps its own screen every 60ms.
+`DUALSCREEN_TEST_VSYNC_HZ=60` makes either end wait for a refresh the way a
+real display would, even under Xvfb. `DUALSCREEN_TEST_LINK=wifi` on the
+companion delays what arrives the way the simulated link above does.
+
+### Run-ahead
+
+A game has input lag of its own: it reads the touch in one frame and draws the
+result a frame or two later, on a real DS as much as here. **Run ahead to hide
+a DS game's lag** in Settings (off, 1 frame or 2 frames) hides that, the way
+RetroArch's run-ahead does. Each frame the game is run normally and its sound
+played. It is then saved, run on silently by the chosen number of frames, and
+the last of those is the picture shown. Then it is put back. What is on
+screen is where the game will be a frame or two from now, which is exactly the
+delay the game itself would otherwise add. One frame of it takes back about
+what the network costs.
+
+It costs a whole frame of emulation per frame hidden, plus a save and a load
+each frame, so it is off by default. After a few seconds the host logs
+`run-ahead is costing Nms a frame…`. If that approaches the 16.7ms a frame
+has, turn it down. It needs a core that can save states, which melonDS does.
+One that fails to save or load a state turns run-ahead off and says so in the
+log. Set too high for the game's actual lag, it shows frames the game would
+not really reach, which reads as a flicker when the input changes. One frame
+is the safe setting, and it applies the moment it is changed.
+
 ## Smoothing
 
 A DS screen is 256x192 and a Deck's is 1280x800, so every pixel is drawn several
@@ -1186,7 +1255,10 @@ ctest --test-dir build --output-on-failure
 - `test_core_host` — loads a **mock libretro core** (`tests/mock_core`) and
   checks option forcing, geometry, video capture, the frontend's own validation
   of what the core accepted, the cartridge-save round trip, and a save state
-  that puts the game back where it was when loaded. Also checks
+  that puts the game back where it was when loaded. Also that run-ahead shows
+  a touch in the frame it was read on a game that lags a frame
+  (`MOCK_CORE_GAME_LAG`), is heard only once, and leaves the game exactly one
+  frame on. Also checks
   that a screen read back for streaming is never sharper than what was
   actually rendered and never softer than the console's own resolution,
   whatever resolution is asked for.
@@ -1214,7 +1286,10 @@ ctest --test-dir build --output-on-failure
   granted the screen it asked for, that audio arrives and stops when switched
   off, that a layout request reaches the host and its answer comes back, that
   the companion's reported window size reaches the host (and is unknown, not
-  wrong, before it has said), and that either end can end the session.
+  wrong, before it has said), and that either end can end the session. Also
+  the latency pieces: the pacing clock keeping a 60fps stream's exact rate,
+  the hold's floor, how promptly each setting lets a standing backlog go, and
+  a tap quicker than a frame still reaching the game.
 - `two_device_headless` / `two_device_top_headless` — launch **two real
   processes** under `Xvfb`, one hosting and one joining, and check each ends up
   showing its own half. Run twice, once for each screen the companion can ask

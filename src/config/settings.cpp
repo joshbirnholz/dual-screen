@@ -4,6 +4,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -135,6 +136,9 @@ Settings Settings::load(const AppPaths& paths) {
     settings.video_hold = video::video_hold_from_key(
         get_or<std::string>(document, "video_hold", video::video_hold_key(settings.video_hold)),
         settings.video_hold);
+    settings.run_ahead_ds = static_cast<unsigned>(
+        std::clamp(get_or<int>(document, "run_ahead_ds", static_cast<int>(settings.run_ahead_ds)),
+                   0, 2));
     settings.audio_target = audio_target_from_key(
         get_or<std::string>(document, "audio_target", audio_target_key(settings.audio_target)));
     const auto left_handed = document.find("left_handed_layouts");
@@ -192,6 +196,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["pad_glyphs"] = to_string(pad_glyphs);
     document["confirm_button"] = to_string(confirm_button);
     document["video_hold"] = video::video_hold_key(video_hold);
+    document["run_ahead_ds"] = run_ahead_ds;
     document["wii_u_alone"] = screen_alone_key(wii_u_screen_alone);
     document["audio_target"] = audio_target_key(audio_target);
     document["cursor_mode"] = cursor_mode_key(cursor_mode);

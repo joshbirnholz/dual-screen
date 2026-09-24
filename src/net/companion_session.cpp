@@ -1,6 +1,7 @@
 #include "net/companion_session.hpp"
 
 #include <algorithm>
+#include <random>
 #include <cmath>
 
 #include "util/log.hpp"
@@ -111,7 +112,11 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     acked_serial_ = 0;
     received_serial_ = 0;
     next_due_ms_ = 0;
+    next_due_exact_ms_ = 0.0;
+    behind_since_ms_ = 0;
+    last_shed_ms_ = 0;
     last_arrival_ms_ = 0;
+    last_sent_at_ms_ = 0;
     jitter_.reset();
     game_title_ = joining_.game_title;
     log_info("connecting to " + joining_.device_name + " at " + joining_.address);
@@ -229,7 +234,11 @@ void CompanionSession::disconnect() {
     pending_frames_.clear();
     received_serial_ = 0;
     next_due_ms_ = 0;
+    next_due_exact_ms_ = 0.0;
+    behind_since_ms_ = 0;
+    last_shed_ms_ = 0;
     last_arrival_ms_ = 0;
+    last_sent_at_ms_ = 0;
     jitter_.reset();
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
@@ -421,6 +430,17 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
 void CompanionSession::handle_media_datagram(MessageType type, const uint8_t* payload,
                                              std::size_t payload_size) {
     switch (type) {
+        case MessageType::InputEcho: {
+            InputEchoMessage echo;
+            // Only a picture not yet on screen can say when the input came
+            // back: one already shown -- a game that drew nothing new -- would
+            // time nothing.
+            if (decode_input_echo_payload(payload, payload_size, echo) &&
+                echo.serial > shown_serial_ && echoes_waiting_.size() < 16) {
+                echoes_waiting_.push_back(echo);
+            }
+            break;
+        }
         case MessageType::Frame:
             handle_frame_fragment(payload, payload_size);
             break;
@@ -671,17 +691,31 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             jitter_.add(transit);
             link_delay_ms = jitter_.above_quietest(transit);
         }
-        if (last_arrival_ms_ != 0 && now > last_arrival_ms_) {
+        // Separately: how fast frames are being sent, which is what the
+        // picture is advanced at. A frame the host never sent cannot be shown,
+        // so the cadence on screen is the delivery's and not the source's --
+        // but read off the host's own send stamps, not off when frames happen
+        // to be read here. Arrivals are bunched by the link and by this
+        // device's loop, which only looks once a refresh: after a wifi hiccup
+        // two frames land together, one of the gaps is nothing and the other
+        // is two periods, and the short one was being thrown away as noise.
+        // That read a 60fps stream as slower than it is, the clock ran slow
+        // by the difference, and the queue grew behind it. The sender's clock
+        // has none of that in it.
+        if (sent != 0 && last_sent_at_ms_ != 0) {
+            const double gap = static_cast<double>(static_cast<int32_t>(sent - last_sent_at_ms_));
+            if (gap >= 4.0 && gap <= 100.0) {
+                frame_period_ms_ = frame_period_ms_ * 0.95 + gap * 0.05;
+            }
+        } else if (sent == 0 && last_arrival_ms_ != 0 && now > last_arrival_ms_) {
+            // A host that stamps nothing: arrivals are all there is.
             const double gap = static_cast<double>(now - last_arrival_ms_);
             if (gap >= 4.0 && gap <= 100.0) {
-                // Separately: how fast frames are actually arriving, which is
-                // what the picture is advanced at. A frame the host never sent
-                // cannot be shown, so the cadence on screen is the delivery's
-                // and not the source's.
                 frame_period_ms_ = frame_period_ms_ * 0.95 + gap * 0.05;
             }
         }
         last_arrival_ms_ = now;
+        last_sent_at_ms_ = sent;
         received_serial_ = frame.serial;
         ++adapt_arrivals_;
         complete_at_.push_back(Arrival{frame.serial, now, link_delay_ms});
@@ -861,21 +895,85 @@ void CompanionSession::poll(uint64_t now_ms) {
     // UDP has no stream to desynchronise, so a bad or stray datagram is just
     // one bad datagram.
     {
-        std::vector<uint8_t> datagram;
-        std::string from_address;
-        while (media_socket_.receive(datagram, from_address)) {
+        const auto take = [&](const std::vector<uint8_t>& datagram) {
             uint64_t token = 0;
             MessageType type = MessageType::Ping;
             const uint8_t* payload = nullptr;
             std::size_t payload_size = 0;
             if (!decode_media_header(datagram.data(), datagram.size(), token, type, payload,
                                      payload_size)) {
-                continue;
+                return;
             }
             if (session_token_ == 0 || token != session_token_) {
-                continue;
+                return;
             }
             handle_media_datagram(type, payload, payload_size);
+        };
+        // For measuring only: DUALSCREEN_TEST_LINK=wifi holds each datagram
+        // back the way a home wireless link does -- a few milliseconds as a
+        // rule, and now and then twenty or thirty -- so the pacing can be
+        // judged against jitter on a machine whose loopback has none.
+        static const bool simulate_wifi = [] {
+            const char* value = std::getenv("DUALSCREEN_TEST_LINK");
+            return value != nullptr && std::string(value) == "wifi";
+        }();
+        std::vector<uint8_t> datagram;
+        std::string from_address;
+        while (media_socket_.receive(datagram, from_address)) {
+            if (!simulate_wifi) {
+                take(datagram);
+                continue;
+            }
+            static std::mt19937 random(12345);
+            std::exponential_distribution<double> spread(1.0 / 2.0);
+            std::uniform_real_distribution<double> chance(0.0, 1.0);
+            double delay = 2.0 + spread(random);
+            // From when the host sent it, where that is known, rather than
+            // from now: it has already sat in this machine's receive buffer
+            // since then, waiting for this pass, and a real link's delay
+            // overlaps that wait instead of starting after it. Both ends run
+            // on one machine's clock here.
+            uint64_t sent_ms = now_ms;
+            {
+                uint64_t token = 0;
+                MessageType type = MessageType::Ping;
+                const uint8_t* payload = nullptr;
+                std::size_t payload_size = 0;
+                FrameFragmentHeader header;
+                const uint8_t* body = nullptr;
+                std::size_t body_size = 0;
+                if (decode_media_header(datagram.data(), datagram.size(), token, type, payload,
+                                        payload_size) &&
+                    type == MessageType::Frame &&
+                    decode_frame_fragment(payload, payload_size, header, body, body_size) &&
+                    header.sent_at_ms != 0) {
+                    const auto ago = static_cast<int32_t>(static_cast<uint32_t>(now_ms) -
+                                                          header.sent_at_ms);
+                    if (ago >= 0 && ago < 100) sent_ms = now_ms - static_cast<uint64_t>(ago);
+                }
+            }
+            // And about twice a second the air is busy for twenty or thirty
+            // milliseconds, and everything sent meanwhile waits it out.
+            static uint64_t stall_from_ms = 0;
+            static uint64_t stall_until_ms = 0;
+            while (sent_ms >= stall_until_ms) {
+                stall_from_ms = std::max(stall_until_ms, sent_ms) +
+                                static_cast<uint64_t>(
+                                    std::exponential_distribution<double>(1.0 / 500.0)(random));
+                stall_until_ms =
+                    stall_from_ms + 15 + static_cast<uint64_t>(chance(random) * 20.0);
+            }
+            if (sent_ms >= stall_from_ms) {
+                delay = std::max(delay, static_cast<double>(stall_until_ms - sent_ms));
+            }
+            const uint64_t due = std::max(simulated_link_last_due_ms_,
+                                          sent_ms + static_cast<uint64_t>(delay + 0.5));
+            simulated_link_last_due_ms_ = due;
+            simulated_link_.push_back({due, datagram});
+        }
+        while (!simulated_link_.empty() && simulated_link_.front().first <= now_ms) {
+            take(simulated_link_.front().second);
+            simulated_link_.pop_front();
         }
     }
 
@@ -922,6 +1020,30 @@ void CompanionSession::poll(uint64_t now_ms) {
             video_hold_allowance_ms(jitter_.estimate(), period, extra_hold_ms_, video_hold_);
         const bool draining =
             !complete_at_.empty() && now_ms > complete_at_.front().at_ms + allowance;
+        // A frame behind on top of the cover -- a second frame already here
+        // behind the one due, and the one due held past the cover by half a
+        // period or more -- for long enough to call it a backlog rather than
+        // a moment: one frame goes unseen. See shed_a_frame_to_catch_up().
+        // Half a period, not a whole one: a single frame queued behind the
+        // one on screen waits just under a period at the display's own rate,
+        // and demanding a whole one left exactly that frame standing for good
+        // after every burst.
+        const bool behind = waiting >= 2 && !complete_at_.empty() &&
+                            now_ms > complete_at_.front().at_ms + allowance + period / 2;
+        if (!behind) {
+            behind_since_ms_ = 0;
+        } else if (behind_since_ms_ == 0) {
+            behind_since_ms_ = now_ms;
+        }
+        if (behind && budget >= 1 &&
+            shed_a_frame_to_catch_up(now_ms - behind_since_ms_,
+                                     last_shed_ms_ == 0 ? UINT64_MAX : now_ms - last_shed_ms_,
+                                     period, video_hold_)) {
+            budget = std::max<std::size_t>(budget, 2);
+            last_shed_ms_ = now_ms;
+            behind_since_ms_ = 0;
+            ++stats_shed_;
+        }
         std::size_t shown = 0;
         for (; shown < budget && decode_next_frame(); ++shown) {
         }
@@ -960,10 +1082,13 @@ void CompanionSession::poll(uint64_t now_ms) {
             // Advanced from when it was due, not from now, so the pace does
             // not drift slower by however late each pass happened to run. A
             // clock that has fallen far behind is started again instead.
-            const uint64_t step = video_pace_step_ms(period, shown, draining);
-            next_due_ms_ = (next_due_ms_ == 0 || now_ms > next_due_ms_ + period * 4)
-                               ? now_ms + period
-                               : next_due_ms_ + step;
+            const double exact_period = std::min(40.0, std::max(8.0, frame_period_ms_));
+            if (next_due_ms_ == 0 || now_ms > next_due_ms_ + period * 4) {
+                next_due_exact_ms_ = static_cast<double>(now_ms) + exact_period;
+            } else {
+                next_due_exact_ms_ += video_pace_step_exact_ms(exact_period, shown, draining);
+            }
+            next_due_ms_ = static_cast<uint64_t>(std::llround(next_due_exact_ms_));
         }
     }
 
@@ -1121,6 +1246,13 @@ void CompanionSession::send_input(const DsInputState& state,
                              state.touch_y == last_sent_input_.touch_y)) &&
         (pads != nullptr) == last_sent_reported_pads_ &&
         (pads == nullptr || same_pads(*pads, last_sent_pads_))) {
+        // Nothing new -- but the last change goes out again for a pass or
+        // two, as the same numbered input, in case the first copy was lost.
+        if (input_repeats_left_ > 0 && !last_input_datagram_.empty()) {
+            --input_repeats_left_;
+            media_socket_.send_to(host_address_, kMediaPort, last_input_datagram_.data(),
+                                  last_input_datagram_.size());
+        }
         return;
     }
 
@@ -1148,10 +1280,31 @@ void CompanionSession::send_input(const DsInputState& state,
             for (ReportedPad& pad : message.pads) pad.held.motion = DsMotionState();
         }
     }
+    // Numbered where there is somewhere to put the number -- see
+    // InputMessage::sequence.
+    if (message.reports_pads) {
+        message.has_sequence = true;
+        message.sequence = ++input_sequence_;
+        constexpr std::size_t kSentInputsKept = 64;
+        if (input_sent_at_.size() >= kSentInputsKept) {
+            input_sent_at_.erase(input_sent_at_.begin());
+        }
+        input_sent_at_.push_back(SentInput{message.sequence, monotonic_millis()});
+    }
     std::vector<uint8_t> out;
     encode_media_header(session_token_, MessageType::Input, out);
     encode_input_payload(message, out);
     media_socket_.send_to(host_address_, kMediaPort, out.data(), out.size());
+    // Sent twice more on the passes that follow; numbered, so the host takes
+    // it once. An unnumbered one would be taken again, which for a press is
+    // harmless but is still not worth the doubt.
+    if (message.has_sequence) {
+        last_input_datagram_ = out;
+        input_repeats_left_ = 2;
+    } else {
+        last_input_datagram_.clear();
+        input_repeats_left_ = 0;
+    }
 
     last_sent_input_ = state;
     last_sent_reported_pads_ = pads != nullptr;
@@ -1758,6 +1911,26 @@ const ScreenTextures& CompanionSession::screens() {
     }
     textures_.top = top_.texture.valid() ? &top_.texture : nullptr;
     textures_.bottom = bottom_.texture.valid() ? &bottom_.texture : nullptr;
+
+    // Being drawn now: every input whose picture this is has come back.
+    shown_serial_ = std::max({shown_serial_, top_.uploaded_serial, bottom_.uploaded_serial});
+    if (!echoes_waiting_.empty()) {
+        const uint64_t now_ms = monotonic_millis();
+        std::vector<InputEchoMessage> still_waiting;
+        for (const InputEchoMessage& echo : echoes_waiting_) {
+            if (echo.serial > shown_serial_) {
+                still_waiting.push_back(echo);
+                continue;
+            }
+            for (const SentInput& sent : input_sent_at_) {
+                if (sent.sequence == echo.sequence && now_ms >= sent.at_ms) {
+                    stats_input_to_picture_ms_.push_back(now_ms - sent.at_ms);
+                    break;
+                }
+            }
+        }
+        echoes_waiting_ = std::move(still_waiting);
+    }
     return textures_;
 }
 
@@ -1814,7 +1987,22 @@ void CompanionSession::report_stream(uint64_t now_ms) {
              std::to_string(stats_decodes_ > 0 ? stats_decode_total_ms_ / stats_decodes_ : 0) +
              "ms a frame turning them into pictures, and this device's loop comes round every " +
              std::to_string(typical_poll_gap_ms_) + "ms at its quickest" +
-             late_pictures_summary(stats_starved_, stats_late_from_host_));
+             late_pictures_summary(stats_starved_, stats_late_from_host_) +
+             (stats_shed_ > 0 ? "; let one picture go unseen to catch up" : ""));
+    stats_shed_ = 0;
+    // The number the rest of the line adds up to, for anything played by
+    // touch or by feel: from an input leaving this device to the first
+    // picture the game drew with it being drawn here. Not the display's own
+    // scan-out after that, which no software can see.
+    if (!stats_input_to_picture_ms_.empty()) {
+        std::vector<uint64_t> sorted = stats_input_to_picture_ms_;
+        std::sort(sorted.begin(), sorted.end());
+        log_info("latency: input to picture " + std::to_string(sorted[sorted.size() / 2]) +
+                 "ms typical, " + std::to_string(sorted.front()) + " to " +
+                 std::to_string(sorted.back()) + "ms, over " + std::to_string(sorted.size()) +
+                 (sorted.size() == 1 ? " input" : " inputs"));
+        stats_input_to_picture_ms_.clear();
+    }
 
     // What the buffer is actually being sized against. One number cannot say
     // whether a link is evenly a little late or mostly prompt with a bad tail,
@@ -1983,10 +2171,41 @@ uint64_t lateness_that_counts_ms(uint64_t period_ms, uint64_t quickest_poll_gap_
     return period_ms / 2 + quickest_poll_gap_ms;
 }
 
+double video_pace_step_exact_ms(double period_ms, std::size_t shown, bool draining) {
+    const double step = period_ms * static_cast<double>(shown > 0 ? shown : 1);
+    // Eight percent fast while giving delay back, as video_pace_step_ms().
+    return draining ? step * 0.92 : step;
+}
+
+uint64_t video_hold_floor_ms(uint64_t period_ms) {
+    return std::max<uint64_t>(2, period_ms / 8);
+}
+
+bool shed_a_frame_to_catch_up(uint64_t behind_for_ms, uint64_t since_last_ms, uint64_t period_ms,
+                              video::VideoHold hold) {
+    uint64_t patience_ms = 0;
+    uint64_t at_most_every_ms = 0;
+    switch (hold) {
+        // The moment it is seen: every frame of backlog is a frame every tap
+        // lands late by, and this setting is the one that says so.
+        case video::VideoHold::Responsive: break;
+        // Two frames, which lets a burst the pacing is about to absorb go
+        // unshed, and no more than four a second.
+        case video::VideoHold::Balanced:
+            patience_ms = period_ms * 2;
+            at_most_every_ms = 250;
+            break;
+        case video::VideoHold::Smooth:
+            patience_ms = period_ms * 6;
+            at_most_every_ms = 500;
+            break;
+    }
+    return behind_for_ms >= patience_ms && since_last_ms >= at_most_every_ms;
+}
+
 uint64_t video_hold_measured_ceiling_ms(video::VideoHold hold, uint64_t period_ms) {
-    // Never below one period whatever the setting says: with less than that
-    // there is nothing left for the clock to pace with, and frames are simply
-    // shown as they land, jitter and all.
+    // The most the measured spread alone may ask for: a period for
+    // Responsive, two otherwise. The least is video_hold_floor_ms().
     return hold == video::VideoHold::Responsive ? period_ms : period_ms * 2;
 }
 
@@ -2011,7 +2230,7 @@ uint64_t video_hold_allowance_ms(double jitter_ms, uint64_t period_ms, uint64_t 
                                  video::VideoHold hold) {
     const auto measured = static_cast<uint64_t>(std::max(0.0, jitter_ms) + 0.5);
     const uint64_t ceiling = video_hold_measured_ceiling_ms(hold, period_ms);
-    return std::clamp(measured, period_ms, ceiling) +
+    return std::clamp(measured, video_hold_floor_ms(period_ms), ceiling) +
            std::min(extra_ms, video_hold_extra_ceiling_ms(hold, period_ms));
 }
 

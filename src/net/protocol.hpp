@@ -72,6 +72,13 @@ enum class MessageType : uint16_t {
     // Save Point to show on a companion: the saves are on the host's disk.
     // Sent when they change. A companion from before save points ignores it.
     SaveSlots = 16,
+    // "The input you numbered N first reached the game in the frame with
+    // serial S." Rides the media channel. The whole of how long a tap takes to
+    // come back as a picture is measured from it: the companion knows when it
+    // sent N and when it shows S, and those are two times on one clock -- see
+    // CompanionSession's input_to_picture figures. A companion from before
+    // this ignores it.
+    InputEcho = 17,
     // either way
     Ping = 20,
 };
@@ -425,7 +432,22 @@ struct InputMessage {
     // fields it knows and never sees the rest.
     bool reports_pads = false;
     std::vector<ReportedPad> pads;
+    // Which input this is, counting up from the start of the session, so the
+    // host can say which frame it first reached (see InputEcho) and can tell
+    // a copy sent again from something new (see CompanionSession::send_input).
+    // The last tail of all, and only after the pads' -- a message with no pads
+    // tail has nowhere to put it that an older host would not misread.
+    bool has_sequence = false;
+    uint32_t sequence = 0;
 };
+
+// See MessageType::InputEcho.
+struct InputEchoMessage {
+    uint32_t sequence = 0;
+    uint64_t serial = 0;
+};
+void encode_input_echo_payload(const InputEchoMessage& message, std::vector<uint8_t>& out);
+bool decode_input_echo_payload(const uint8_t* data, std::size_t size, InputEchoMessage& out);
 
 // --- encoding ---------------------------------------------------------------
 //

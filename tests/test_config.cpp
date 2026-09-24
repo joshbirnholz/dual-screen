@@ -358,6 +358,7 @@ void test_settings_round_trip() {
     defaults.default_right_stick_mode = RightStickMode::DPad;
     defaults.left_stick_press = LeftStickPress::SwapLayout;
     defaults.video_hold = video::VideoHold::Responsive;
+    defaults.run_ahead_ds = 2;
     defaults.audio_target = AudioTarget::BottomScreen;
     defaults.cursor_mode = CursorMode::Hidden;
     defaults.left_handed_layouts = {"upper_focus", "side_by_side"};
@@ -386,6 +387,7 @@ void test_settings_round_trip() {
               "what L3 does did not survive being written down");
     CHECK_MSG(reloaded.video_hold == video::VideoHold::Responsive,
               "how long a frame may be held back did not survive a save and load");
+    CHECK_EQ(reloaded.run_ahead_ds, 2u);
     CHECK_EQ(reloaded.default_screen_gap, false);
     CHECK(reloaded.audio_target == AudioTarget::BottomScreen);
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);

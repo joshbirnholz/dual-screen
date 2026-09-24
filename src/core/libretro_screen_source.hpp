@@ -67,6 +67,11 @@ public:
     // told. A system with no scale to choose ignores this.
     void set_render_scale(int scale);
     int render_scale() const { return render_scale_; }
+    // Frames to run ahead of the game's own input lag -- see
+    // LibretroCore::set_run_ahead(). Safe to change while the game runs.
+    void set_run_ahead(unsigned frames) {
+        if (core_) core_->set_run_ahead(frames);
+    }
     // Restarts the running game from power-on, the way a console's own reset
     // button would. Save RAM is untouched -- this restarts execution, not the
     // cartridge's saved progress.

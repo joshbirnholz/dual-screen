@@ -83,6 +83,7 @@ private:
         PadGlyphs,
         ConfirmButtonRow,
         VideoHold,
+        RunAheadDs,
         Vsync,
         WiiUScreenAlone,
         Back,

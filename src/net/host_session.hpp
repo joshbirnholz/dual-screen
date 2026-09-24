@@ -252,6 +252,14 @@ public:
     const DsInputState& companion_input() const { return companion_input_; }
     bool companion_input_fresh() const { return companion_input_fresh_; }
 
+    // Call after the game has run -- one frame or a catch-up batch of them --
+    // with the serial of the picture that came out. Tells the companion which
+    // of its inputs that picture is the first to include (see InputEcho), and
+    // lets go of a touch the game had not yet seen when it was released: a tap
+    // whose press and release both land between two frames would otherwise
+    // reach the game as no tap at all.
+    void note_frame_ran(uint64_t serial);
+
     // The companion's pads, each on its own, in its own order -- and whether
     // it reports them at all, which one built before this existed does not.
     // See InputMessage::pads.
@@ -458,6 +466,23 @@ private:
 
     DsInputState companion_input_;
     bool companion_input_fresh_ = false;
+    // The newest input numbered by the companion that has been accepted; an
+    // older one, or the same one again, is a copy -- see
+    // CompanionSession::send_input() -- and is dropped.
+    bool input_sequence_known_ = false;
+    uint32_t input_sequence_ = 0;
+    // The one companion_input_ currently holds, which is what the game sees
+    // -- not the newest, while a release is waiting below.
+    uint32_t applied_sequence_ = 0;
+    bool echoed_any_ = false;
+    uint32_t echoed_sequence_ = 0;
+    // A touch that has gone down since the game last ran, and the release
+    // that arrived before it did -- held back until one frame has seen the
+    // touch. See note_frame_ran().
+    bool touch_unseen_ = false;
+    bool release_waiting_ = false;
+    DsInputState released_input_;
+    uint32_t released_sequence_ = 0;
     uint64_t sent_serial_ = 0;
     // The newest serial handed to the encoder, which is not the same as the
     // newest one sent: the encoder pipelines, so a frame goes in one call and

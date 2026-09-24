@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -584,10 +585,76 @@ void LibretroCore::destroy_hw_context() {
     hw_render_requested_ = false;
 }
 
+void LibretroCore::set_run_ahead(unsigned frames) {
+    frames = std::min(frames, 3u);
+    if (frames == run_ahead_) {
+        return;
+    }
+    run_ahead_ = frames;
+    run_ahead_state_.clear();
+    run_ahead_spent_ms_ = 0.0;
+    run_ahead_frames_timed_ = 0;
+    log_info(frames == 0 ? std::string("run-ahead is off")
+                         : "running " + std::to_string(frames) + " frame" +
+                               (frames == 1 ? "" : "s") + " ahead to hide the game's own lag");
+}
+
 void LibretroCore::run_frame() {
     if (handle_ == nullptr || !game_loaded_) {
         return;
     }
+    if (run_ahead_ == 0 || !has_save_states()) {
+        run_once();
+        return;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    // The frame that counts: heard, not seen.
+    hide_video_ = true;
+    run_once();
+    if (run_ahead_state_.empty()) {
+        run_ahead_state_.resize(state_size());
+    }
+    if (run_ahead_state_.empty() ||
+        !api_->retro_serialize(run_ahead_state_.data(), run_ahead_state_.size())) {
+        // This frame goes unseen -- its picture was not taken -- and the next
+        // is run the ordinary way.
+        hide_video_ = false;
+        run_ahead_ = 0;
+        run_ahead_state_.clear();
+        log_warn("this core could not save its state to run ahead; run-ahead is off");
+        return;
+    }
+    // The frames ahead of it: seen, the last of them, and never heard.
+    hide_audio_ = true;
+    for (unsigned frame = 0; frame < run_ahead_; ++frame) {
+        hide_video_ = frame + 1 < run_ahead_;
+        run_once();
+    }
+    hide_video_ = false;
+    hide_audio_ = false;
+    if (!api_->retro_unserialize(run_ahead_state_.data(), run_ahead_state_.size())) {
+        // The game has jumped those frames ahead for real, which is a moment's
+        // skip and nothing worse.
+        run_ahead_ = 0;
+        run_ahead_state_.clear();
+        log_warn("this core could not load back the state it ran ahead from; run-ahead is off");
+        return;
+    }
+    run_ahead_spent_ms_ += std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - started)
+                               .count();
+    if (++run_ahead_frames_timed_ == 300) {
+        char text[160];
+        std::snprintf(text, sizeof(text),
+                      "run-ahead is costing %.1fms a frame for %u frame%s ahead, of %.1fms "
+                      "the game has for each",
+                      run_ahead_spent_ms_ / run_ahead_frames_timed_, run_ahead_,
+                      run_ahead_ == 1 ? "" : "s", 1000.0 / av_info_.fps);
+        log_info(text);
+    }
+}
+
+void LibretroCore::run_once() {
     if (hw_render_requested_) {
         // Catches a core that drew larger than it had announced: the frame that
         // overflowed is already gone, but the next one fits.
@@ -646,6 +713,7 @@ void LibretroCore::unload_game() {
     destroy_hw_context();
     game_loaded_ = false;
     rom_data_.clear();
+    run_ahead_state_.clear();
     video_frame_ = CoreVideoFrame();
     video_buffer_.clear();
 }
@@ -1094,6 +1162,12 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
 // --- video / audio / input --------------------------------------------------
 
 void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned height, std::size_t pitch) {
+    if (hide_video_) {
+        // A frame run to get somewhere, not to be looked at -- see
+        // set_run_ahead(). A GPU core has drawn it into the framebuffer
+        // regardless, and the frame that is shown draws over it.
+        return;
+    }
     if (data == nullptr) {
         // Frame duplication: keep showing the previous frame.
         return;
@@ -1306,13 +1380,17 @@ void LibretroCore::video_refresh_thunk(const void* data, unsigned width, unsigne
 }
 
 void LibretroCore::audio_sample_thunk(int16_t left, int16_t right) {
-    if (g_active_core == nullptr || !g_active_core->audio_callback_) return;
+    if (g_active_core == nullptr || !g_active_core->audio_callback_ ||
+        g_active_core->hide_audio_) {
+        return;
+    }
     const int16_t frame[2] = {left, right};
     g_active_core->audio_callback_(frame, 1);
 }
 
 std::size_t LibretroCore::audio_sample_batch_thunk(const int16_t* data, std::size_t frames) {
-    if (g_active_core != nullptr && g_active_core->audio_callback_ && data != nullptr) {
+    if (g_active_core != nullptr && g_active_core->audio_callback_ && data != nullptr &&
+        !g_active_core->hide_audio_) {
         g_active_core->audio_callback_(data, frames);
     }
     return frames;

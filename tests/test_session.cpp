@@ -863,6 +863,66 @@ void test_shared_settings_stay_in_sync() {
     host.stop();
 }
 
+// A tap quicker than a frame -- press and release both landing between two of
+// the host's frames -- still reaches the game as a tap. Tapping a Goomba as it
+// runs across the screen is exactly that quick, and a game that only ever
+// sees the release sees nothing at all.
+void test_a_tap_quicker_than_a_frame_still_reaches_the_game() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Tap Host";
+    config.game_title = "Tapping";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Tap Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    const std::vector<ReportedPad> no_pads;
+    DsInputState tap;
+    tap.touching = true;
+    tap.touch_x = 40;
+    tap.touch_y = 50;
+    companion.send_input(tap, &no_pads);
+    CHECK_MSG(spin(host, companion, [&] { return host.companion_input().touching; }),
+              "the companion's touch never reached the host");
+
+    // Let go before the game has run a frame: the host keeps the touch until
+    // one has.
+    companion.send_input(DsInputState(), &no_pads);
+    spin(host, companion, [] { return false; }, 150);
+    CHECK_MSG(host.companion_input().touching,
+              "a tap was let go before the game had a frame to see it in");
+    host.note_frame_ran(1);
+    CHECK_MSG(!host.companion_input().touching,
+              "the release was held back after the game had seen the touch");
+
+    // A touch the game has already seen is let go at once.
+    companion.send_input(tap, &no_pads);
+    CHECK(spin(host, companion, [&] { return host.companion_input().touching; }));
+    host.note_frame_ran(2);
+    companion.send_input(DsInputState(), &no_pads);
+    CHECK_MSG(spin(host, companion, [&] { return !host.companion_input().touching; }),
+              "a release was held back although the game had already seen the touch");
+
+    companion.disconnect();
+    host.stop();
+}
+
 // A menu on the companion pauses the host. Otherwise one player reads a menu
 // while the other's game carries on without them.
 void test_companion_menu_pauses_the_host() {
@@ -2361,12 +2421,12 @@ void test_cover_is_earned_by_running_dry_and_given_back_when_calm() {
     CHECK_EQ(hold_extra_ms(period, period, 0, 3), period - period / 4);
     CHECK_EQ(hold_extra_ms(0, period, 0, 3), static_cast<uint64_t>(0));
 
-    // What it is worth on the link that prompted it: the body asks for one
-    // period, which does not reach a frame 76ms late; the earned cover does,
-    // and without rounding up to a whole extra frame to get there.
+    // What it is worth on the link that prompted it: the body asks for what
+    // it measured, which does not reach a frame 76ms late; the earned cover
+    // does, and without rounding up to a whole extra frame to get there.
     CHECK(video_hold_allowance_ms(19.0, period, 0) < 76u);
-    CHECK(video_hold_allowance_ms(19.0, period, 44) >= 76u);
-    CHECK(video_hold_allowance_ms(19.0, period, 44) < video_hold_allowance_ms(19.0, period, 66));
+    CHECK(video_hold_allowance_ms(19.0, period, 57) >= 76u);
+    CHECK(video_hold_allowance_ms(19.0, period, 57) < video_hold_allowance_ms(19.0, period, 66));
 }
 
 // Cover that can only be bought is not cover, it is a ratchet.
@@ -2462,12 +2522,13 @@ void test_the_hold_setting_moves_both_ends_of_the_trade() {
     }
     CHECK_EQ(cover, static_cast<uint64_t>(0));
 
-    // And it holds one frame period whatever the spread says, so the clock
-    // still paces but nothing is ever waited on beyond that. Cover left over
-    // from a previous setting is not applied either.
-    CHECK_EQ(video_hold_allowance_ms(0.0, period, 0, VideoHold::Responsive), period);
+    // And it holds no more than one frame period whatever the spread says,
+    // so the clock still paces but nothing is ever waited on beyond that.
+    // Cover left over from a previous setting is not applied either.
+    CHECK_EQ(video_hold_allowance_ms(0.0, period, 0, VideoHold::Responsive),
+             video_hold_floor_ms(period));
     CHECK_EQ(video_hold_allowance_ms(500.0, period, 0, VideoHold::Responsive), period);
-    CHECK_EQ(video_hold_allowance_ms(19.0, period, 44, VideoHold::Responsive), period);
+    CHECK_EQ(video_hold_allowance_ms(19.0, period, 44, VideoHold::Responsive), 19u);
 
     // Smooth may buy twice what Balanced may, and no more.
     CHECK_EQ(hold_extra_ms(period * 2, period, 5, 0, VideoHold::Smooth), period * 2 + period / 4);
@@ -2608,14 +2669,16 @@ void test_this_devices_own_stall_is_not_the_links_fault() {
 void test_a_backlog_is_given_back_rather_than_carried_for_ever() {
     constexpr uint64_t period = 33;  // a 30fps stream, as these actually run
 
-    // A calm link settles at one frame in hand. Never less: below a period
-    // there is nothing left for the clock to pace with and frames would just
-    // be shown on arrival, jitter and all. Never the two frames that were
-    // being carried either -- that second frame was bought by a hiccup long
-    // past and then never given back.
-    CHECK_EQ(video_hold_allowance_ms(0.0, period, 0), period);
-    CHECK_EQ(video_hold_allowance_ms(15.0, period, 0), period);
-    CHECK_EQ(video_hold_allowance_ms(22.0, period, 0), period);
+    // A calm link holds what its spread asks for and nothing more -- not the
+    // whole frame this used to insist on, which on a calm link was the whole
+    // of the delay the pacer added: frames settled wherever in the period the
+    // clock's phase put them, up to a frame behind, and nothing pulled them
+    // earlier. Only a floor of a few milliseconds is kept, so the clock is not
+    // chasing noise. Never the two frames that were being carried either --
+    // that second frame was bought by a hiccup long past and never given back.
+    CHECK_EQ(video_hold_allowance_ms(0.0, period, 0), video_hold_floor_ms(period));
+    CHECK_EQ(video_hold_allowance_ms(15.0, period, 0), 15u);
+    CHECK_EQ(video_hold_allowance_ms(22.0, period, 0), 22u);
 
     // A link that really is uneven buys cover for as long as it stays uneven.
     CHECK_EQ(video_hold_allowance_ms(50.0, period, 0), 50u);
@@ -2653,6 +2716,56 @@ void test_a_backlog_is_drained_by_pacing_not_by_skipping_frames() {
     const uint64_t frames_to_recover = period / gained;
     CHECK(frames_to_recover >= 5);
     CHECK(frames_to_recover <= 30);
+}
+
+// The clock steps in fractions of a millisecond. In whole ones a 60fps
+// stream's 16.67ms period rounded to 17, the clock ran two percent slow, and
+// the queue grew by twenty milliseconds a second until a drain caught it --
+// a sawtooth between one frame and four behind.
+void test_the_pacing_clock_keeps_the_streams_own_rate() {
+    const double period = 1000.0 / 60.0;
+    double due = 0.0;
+    for (int frame = 0; frame < 600; ++frame) {
+        due += video_pace_step_exact_ms(period, 1, false);
+    }
+    // Ten seconds of frames is ten seconds, to well under a millisecond.
+    CHECK(std::abs((due) - (10000.0)) < 0.01);
+    CHECK(std::abs((video_pace_step_exact_ms(period, 2, false)) - (period * 2.0)) < 1e-9);
+    // Draining is the same eight percent the whole-millisecond step gives.
+    CHECK(std::abs((video_pace_step_exact_ms(period, 1, true)) - (period * 0.92)) < 1e-9);
+    CHECK(std::abs((video_pace_step_exact_ms(period, 0, false)) - (period)) < 1e-9);
+
+    // The least a frame is held for: a few milliseconds, never a frame.
+    CHECK_EQ(video_hold_floor_ms(16), 2u);
+    CHECK_EQ(video_hold_floor_ms(33), 4u);
+    CHECK_EQ(video_hold_floor_ms(0), 2u);
+    CHECK(video_hold_floor_ms(33) < 33u);
+}
+
+// A frame's worth of backlog, once it is there, stays there on a companion
+// drawing at the game's own rate: one frame in and one out for ever. Letting
+// one go unseen is the only way back, and how promptly is the setting's call.
+void test_a_standing_backlog_is_let_go_as_promptly_as_the_setting_says() {
+    using ds::video::VideoHold;
+    constexpr uint64_t period = 17;
+    constexpr uint64_t never = UINT64_MAX;
+
+    // Responsive: the moment it is seen, however recently the last one was.
+    CHECK(shed_a_frame_to_catch_up(0, never, period, VideoHold::Responsive));
+    CHECK(shed_a_frame_to_catch_up(0, 0, period, VideoHold::Responsive));
+
+    // Balanced: two frames of it first, and no more than four a second.
+    CHECK(!shed_a_frame_to_catch_up(0, never, period, VideoHold::Balanced));
+    CHECK(!shed_a_frame_to_catch_up(period, never, period, VideoHold::Balanced));
+    CHECK(shed_a_frame_to_catch_up(period * 2, never, period, VideoHold::Balanced));
+    CHECK(!shed_a_frame_to_catch_up(period * 2, 100, period, VideoHold::Balanced));
+    CHECK(shed_a_frame_to_catch_up(period * 2, 250, period, VideoHold::Balanced));
+
+    // Smooth: longer again, and half as often.
+    CHECK(!shed_a_frame_to_catch_up(period * 2, never, period, VideoHold::Smooth));
+    CHECK(shed_a_frame_to_catch_up(period * 6, never, period, VideoHold::Smooth));
+    CHECK(!shed_a_frame_to_catch_up(period * 6, 250, period, VideoHold::Smooth));
+    CHECK(shed_a_frame_to_catch_up(period * 6, 500, period, VideoHold::Smooth));
 }
 
 // The hardware encoder hands back the packet for an earlier submission than
@@ -3004,6 +3117,7 @@ int main() {
     test_the_menu_is_one_menu_across_both_devices();
     test_shared_settings_stay_in_sync();
     test_companion_menu_pauses_the_host();
+    test_a_tap_quicker_than_a_frame_still_reaches_the_game();
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
     test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it();
     test_menu_gets_the_companion_both_screens();
@@ -3030,6 +3144,8 @@ int main() {
     test_an_empty_queue_is_not_a_stall_if_the_picture_was_on_time();
     test_a_backlog_is_given_back_rather_than_carried_for_ever();
     test_a_backlog_is_drained_by_pacing_not_by_skipping_frames();
+    test_the_pacing_clock_keeps_the_streams_own_rate();
+    test_a_standing_backlog_is_let_go_as_promptly_as_the_setting_says();
     test_a_pipelined_encoder_still_sends_each_picture_under_its_own_serial();
     test_a_lost_frame_is_repaired_by_asking_rather_than_by_waiting();
     test_a_console_that_reads_motion_asks_for_it_and_gets_it();
