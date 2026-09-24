@@ -190,6 +190,15 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
         }
 
         SDL_GL_MakeCurrent(window, gl_context);
+        // Nothing here is typed into. SDL 2 has text input switched on by
+        // default, and sdl2-compat -- which is what a Steam Deck actually runs
+        // SDL 2 programs on -- starts it for every window made; on a Deck,
+        // starting text input is what brings Steam's on-screen keyboard up.
+        // So it came up every time a window was made, which is once when the
+        // app starts and again whenever a game's own GL context needs a new
+        // one. Keys still arrive, and still reach a core that wants them:
+        // those are key events, not text input.
+        SDL_StopTextInput();
         std::string load_error;
         // Whether this is really an ES context is asked of the context itself
         // rather than assumed from what was requested, because the default

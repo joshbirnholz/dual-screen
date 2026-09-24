@@ -2864,6 +2864,10 @@ int App::run(const AppOptions& options) {
     // controller subsystem is initialised separately because it can fail on its
     // own -- device permissions differ inside Game Mode's sandbox -- and losing
     // controllers is a reason to warn, never a reason to refuse to start.
+    // And never an on-screen keyboard, whatever asks for one: nothing here is
+    // typed into, and on a Steam Deck SDL raises Steam's the moment text input
+    // starts. See create_gl_window(), which also turns text input off.
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
         const std::string reason = SDL_GetError();
         log_error("could not start SDL video: " + reason);
