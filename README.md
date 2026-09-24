@@ -35,7 +35,7 @@ one running the game.
 - Remembers the chosen layout per game, keyed by the ROM's SHA-1 rather than
   its path, so moving your ROMs around loses nothing.
 - Writes cartridge saves as `.srm` files, interchangeable with RetroArch's.
-- **Save states** for DS and 3DS games, four per game, from the quick menu —
+- **Save states** for DS games, four per game, from the quick menu —
   laid out like Nintendo Switch Online's suspend points.
 - **Two-device play**: one device runs the game and shows a screen; the other
   finds it on the network, shows the other screen, and sends its touches and
@@ -55,7 +55,7 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | --- | --- |
 | **Continue** | back to the game, the same as B on the list |
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
-| **Create Save State** | the four save state slots; see [Save states](#save-states) |
+| **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
 | **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
@@ -1105,7 +1105,7 @@ folder.
 
 ### Save states
 
-The quick menu of a DS or 3DS game has **Create Save State** and **Load Save
+The quick menu of a DS game has **Create Save State** and **Load Save
 State**. Either shows four slots on the right, two by two, like Nintendo
 Switch Online's suspend points: each an outlined box with a picture of both
 screens, one above the other, and its name ("Save slot 1") with the date and
@@ -1133,8 +1133,10 @@ renamed the next time the menu opens). They are this app's own format, not
 RetroArch's. A save state made with one version of a core may not load
 in a much newer one; the menu says so if it does not.
 
-The entries only appear when the core running the game can make save states
-(melonDS DS and Citra both offer them). The saves are made and kept by the
+The entries only appear for a DS game, and only when its core can make save
+states (melonDS DS can). A 3DS game has none: making one froze the app on a
+Steam Deck, so a 3DS game saves the way it does on the console, from its own
+menus. The saves are made and kept by the
 device running the game; a companion's copy of the menu is sent the slots,
 pictures and all, and saves and loads through the host like any other press.
 

@@ -24,57 +24,6 @@
 // can drag a GPL dependency in.
 namespace ds::video {
 
-// How this device sends screens to another one.
-//
-// Set per system being played -- Settings has one of these each for a DS, a
-// 3DS and a Wii U -- and taken exactly as chosen, with no automatic fallback
-// to the other if this one turns out not to work. That is deliberate: a
-// silent substitution is indistinguishable from the format actually working,
-// which is the one thing this exists to let a player tell apart. If it
-// cannot be honoured -- the far end cannot decode, this build has no encoder,
-// a screen an odd number of pixels wide or tall meets 4:2:0 -- the session
-// says so instead of quietly sending the other one. See
-// HostSession::take_video_error().
-enum class ScreenCodec {
-    Tiles,  // changed tiles
-    H264,   // video
-};
-
-// The settings screen only ever toggles between the two.
-inline ScreenCodec next_screen_codec(ScreenCodec codec) {
-    switch (codec) {
-        case ScreenCodec::Tiles: return ScreenCodec::H264;
-        case ScreenCodec::H264: return ScreenCodec::Tiles;
-    }
-    return ScreenCodec::Tiles;
-}
-
-// What settings.json holds, and what --video-codec accepts.
-inline const char* screen_codec_key(ScreenCodec codec) {
-    switch (codec) {
-        case ScreenCodec::Tiles: return "tiles";
-        case ScreenCodec::H264: return "h264";
-    }
-    return "tiles";
-}
-
-// Anything unrecognised falls back to the caller's own current value rather
-// than to one of these two picked for them: a typo in a config file should
-// leave the setting where it already was rather than silently choosing.
-inline ScreenCodec screen_codec_from_key(const std::string& key, ScreenCodec fallback) {
-    if (key == screen_codec_key(ScreenCodec::Tiles)) return ScreenCodec::Tiles;
-    if (key == screen_codec_key(ScreenCodec::H264)) return ScreenCodec::H264;
-    return fallback;
-}
-
-inline const char* to_string(ScreenCodec codec) {
-    switch (codec) {
-        case ScreenCodec::Tiles: return "Tiles";
-        case ScreenCodec::H264: return "H264";
-    }
-    return "Tiles";
-}
-
 // Whether FFmpeg is compiled into this build. The Switch and Android
 // toolchains do not have it wired up yet, and everything DS and 3DS do works
 // without it, so it stays optional until those are ready.

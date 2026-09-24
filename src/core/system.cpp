@@ -44,6 +44,7 @@ SystemProfile make_ds() {
     profile.rom_extensions = {"nds", "dsi", "ids", "srl"};
     profile.core_filenames = {"melondsds_libretro.so", "melonds_libretro.so"};
     profile.core_description = "melonDS DS";
+    profile.offers_save_states = true;
     return profile;
 }
 

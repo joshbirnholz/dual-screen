@@ -65,6 +65,10 @@ struct SystemProfile {
     // anything else, so there is nothing here to cycle -- has_analog_stick
     // above still applies to it, this does not.
     bool offers_right_stick_mode = false;
+    // Whether the quick menu offers save states. A DS only: making one of a 3DS
+    // game froze the app on a Steam Deck, so a 3DS game saves the way the game
+    // itself does and no other way.
+    bool offers_save_states = false;
     // The largest internal resolution multiplier the quick settings offer for
     // this system. 1 means the core draws at the console's own resolution and
     // there is nothing to choose, so the button does not appear at all.

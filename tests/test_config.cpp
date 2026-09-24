@@ -417,21 +417,6 @@ void test_settings_round_trip() {
     CHECK(next_cursor_mode(CursorMode::Shown) == CursorMode::Hidden);
     CHECK(next_cursor_mode(CursorMode::Hidden) == CursorMode::Shown);
 
-    // A codec nobody recognises leaves the setting where it already was
-    // rather than becoming an error or picking one of the two for the
-    // caller: a typo in a config file should leave the app working as it
-    // would have, whichever console's default that happens to be.
-    CHECK(video::screen_codec_from_key("mpeg2", video::ScreenCodec::H264) ==
-          video::ScreenCodec::H264);
-    CHECK(video::screen_codec_from_key("", video::ScreenCodec::Tiles) == video::ScreenCodec::Tiles);
-    CHECK(video::screen_codec_from_key("tiles", video::ScreenCodec::H264) ==
-          video::ScreenCodec::Tiles);
-    CHECK(video::screen_codec_from_key("h264", video::ScreenCodec::Tiles) ==
-          video::ScreenCodec::H264);
-    // Two entries, so cycling is a toggle either way round.
-    CHECK(video::next_screen_codec(video::ScreenCodec::Tiles) == video::ScreenCodec::H264);
-    CHECK(video::next_screen_codec(video::ScreenCodec::H264) == video::ScreenCodec::Tiles);
-
     // Cycling visits all three and comes back round.
     CHECK(next_audio_target(AudioTarget::Both) == AudioTarget::TopScreen);
     CHECK(next_audio_target(AudioTarget::TopScreen) == AudioTarget::BottomScreen);

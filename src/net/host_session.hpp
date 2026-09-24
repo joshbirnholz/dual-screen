@@ -242,16 +242,17 @@ public:
     // that nobody ever cleared would keep the game paused forever.
     bool take_menu_open_request();
 
-    // Set once when video was asked for -- see set_video_wanted() -- and then
-    // turns out not to work: no codec built into this binary, the companion
-    // said it cannot decode, a screen size 4:2:0 cannot carry, or the encoder
-    // itself failing to open or to encode a frame. There is no fallback to
-    // report around: see ScreenCodec's own comment for why sending tiles
-    // instead, silently, is exactly what this is for telling apart from
-    // working video. Latched the same way take_menu_open_request() is above --
-    // once per failure that starts, not once per frame it keeps failing on --
-    // and cleared the moment video works again, so the caller can show it once
-    // rather than fighting to keep only one copy on screen.
+    // Set once when video was forced -- set_codec_choice(H264), which is
+    // --video-codec h264 -- and then turns out not to work: no codec built
+    // into this binary, the companion said it cannot decode, a screen size
+    // 4:2:0 cannot carry, or the encoder itself failing to open or to encode a
+    // frame. A forced choice has no fallback, since a run that asked for video
+    // on purpose is asking whether it works. The automatic choice falls back
+    // to tiles instead and never sets this. Latched the same way
+    // take_menu_open_request() is above -- once per failure that starts, not
+    // once per frame it keeps failing on -- and cleared the moment video works
+    // again, so the caller can show it once rather than fighting to keep only
+    // one copy on screen.
     bool take_video_error(std::string& out_reason);
 
     // The companion's own window, in device pixels, if it has said. Not part

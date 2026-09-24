@@ -1615,8 +1615,9 @@ bool HostSession::encode_one_screen(ScreenId screen,
         if (codec.tile_window_start_ms == 0) codec.tile_window_start_ms = now;
         codec.tile_bytes += frame.payload.size();
         if (now - codec.tile_window_start_ms >= 1000) {
-            codec.tile_kbytes_per_second =
-                static_cast<double>(codec.tile_bytes) / static_cast<double>(now - codec.tile_window_start_ms);
+            // Bytes per millisecond, which is kilobytes per second.
+            codec.tile_kbytes_per_second = static_cast<double>(codec.tile_bytes) /
+                                           static_cast<double>(now - codec.tile_window_start_ms);
             codec.tile_bytes = 0;
             codec.tile_window_start_ms = now;
         }

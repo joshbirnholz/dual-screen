@@ -1221,7 +1221,8 @@ void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
 }
 
 bool App::Impl::save_points_available() const {
-    return source && !game_path.empty() && source->supports_save_states();
+    return source && !game_path.empty() && system_profile(system).offers_save_states &&
+           source->supports_save_states();
 }
 
 void App::Impl::refresh_save_points(const std::string& status, bool failed) {
@@ -3555,11 +3556,10 @@ int App::run(const AppOptions& options) {
                 // not waiting to be told to.
                 impl.running = false;
             }
-            // Streaming format is an explicit per-console choice with no
-            // fallback -- see Settings::screen_codec_for() -- so a format
-            // that does not actually work is shown rather than quietly
-            // replaced by the other one. Non-fatal: the local game, and
-            // whatever this device shows of it, is untouched either way.
+            // Only when --video-codec h264 forced video and it does not
+            // work: the automatic choice falls back to tiles by itself.
+            // Non-fatal: the local game, and whatever this device shows of
+            // it, is untouched either way.
             std::string video_error;
             if (impl.host_session->take_video_error(video_error)) {
                 impl.enter_message(MessageKind::Error, "Video streaming isn't working",
