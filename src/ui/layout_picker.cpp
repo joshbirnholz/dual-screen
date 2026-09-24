@@ -1083,22 +1083,12 @@ void LayoutPicker::render(QuadRenderer& quads,
             case MenuSection::CreateSavePoint:
             case MenuSection::LoadSavePoint: render_slots(quads, text, geometry); break;
             case MenuSection::Options: render_options(quads, text, geometry); break;
+            // Nothing to choose between, so nothing on the right: these are
+            // only things to pick.
             case MenuSection::Continue:
             case MenuSection::Disconnect:
             case MenuSection::Reset:
-            case MenuSection::Quit: {
-                // Nothing to choose between: a word on what it does instead.
-                const char* what = "Close the game. Unsaved progress will be lost.";
-                if (section_ == MenuSection::Continue) what = "Go back to the game.";
-                if (section_ == MenuSection::Disconnect) what = "Stop playing across two devices.";
-                if (section_ == MenuSection::Reset) {
-                    what = "Restart the game. Unsaved progress will be lost.";
-                }
-                text.draw_wrapped(quads, what, geometry.content.x,
-                                  geometry.content.y + line * 0.5f, geometry.content.w,
-                                  scale * 1.05f, theme.text_dim);
-                break;
-            }
+            case MenuSection::Quit: break;
         }
         const bool saving = section_ == MenuSection::CreateSavePoint ||
                             section_ == MenuSection::LoadSavePoint;
