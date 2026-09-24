@@ -569,6 +569,9 @@ public:
     // broadcasts the result back, so nothing is assumed to have taken effect
     // here -- which is exactly why the two devices cannot end up disagreeing.
     void request_layout(const std::string& layout_id);
+    // A layout and the hand to draw it for, in one request, so the host
+    // changes both at once -- the hand applied to the new layout, not the old.
+    void request_layout(const std::string& layout_id, Handedness hand);
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness handedness);

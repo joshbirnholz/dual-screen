@@ -460,6 +460,9 @@ private:
     std::vector<MenuSection> sections_;
     std::vector<Option> options_;
     MenuSection section_ = MenuSection::Layout;
+    // Whether this menu has been opened before in this run, so the next open
+    // goes back to the section it was closed on -- see open().
+    bool opened_before_ = false;
     bool on_content_ = false;
     int item_ = 0;
     std::vector<SavePointInfo> save_slots_;

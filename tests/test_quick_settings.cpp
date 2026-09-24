@@ -481,9 +481,8 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(picked.selection_changed);
     CHECK(picker.is_open());
 
-    // B backs out one step at a time.
-    CHECK(!picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
-    CHECK(!picker.on_content());
+    // B closes the menu from inside a section too, not just from the list.
+    CHECK(picker.on_content());
     CHECK(picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
 
     // Options: A on a row cycles it and stays there.
@@ -1342,7 +1341,73 @@ void test_the_settings_prompt_is_there_and_is_leftmost() {
 
 }  // namespace
 
+// The menu opens where it was put away: the same section, in the list. The
+// first time in a run it opens at the top, the way NSO's does, and a section
+// the menu no longer has -- save states on a game without them -- starts
+// from the top again.
+void test_the_menu_reopens_on_the_section_it_was_closed_on() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.save_points_available = true;
+
+    LayoutPicker picker(registry);
+    picker.open(state);
+    CHECK(picker.section() == MenuSection::Continue);
+
+    // Down to Options, across into it, and closed with B from in there.
+    while (picker.section() != MenuSection::Options) {
+        picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    }
+    picker.update({UiAction::Right}, {}, kWidth, kHeight);
+    CHECK(picker.on_content());
+    CHECK(picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
+    picker.close();
+
+    picker.open(state);
+    CHECK_MSG(picker.section() == MenuSection::Options,
+              "the menu did not open on the section it was closed on");
+    CHECK_MSG(!picker.on_content(), "the menu opened inside the section rather than on it");
+
+    // Closed on Load Save State, then opened for a game that has none.
+    while (picker.section() != MenuSection::LoadSavePoint) {
+        picker.update({UiAction::Up}, {}, kWidth, kHeight);
+    }
+    picker.close();
+    LayoutPickerState without = state;
+    without.save_points_available = false;
+    picker.open(without);
+    CHECK(picker.section() == MenuSection::Continue);
+}
+
+// L3 flips between the two focus layouts, and the stylus stays on the side it
+// was on: the player's hand has not changed because the layout did.
+void test_the_layout_swap_keeps_the_stylus_hand() {
+    LayoutRegistry registry;
+    bool found_a_pair = false;
+    for (const Layout& layout : registry.layouts()) {
+        const LayoutSwap swap = layout_swap_from(registry, layout);
+        if (swap.layout_id.empty()) continue;
+        const Layout* other = registry.find(swap.layout_id);
+        CHECK(other != nullptr);
+        if (other == nullptr) continue;
+        // Paired both ways, so L3 twice comes back.
+        CHECK_STR_EQ(layout_swap_from(registry, *other).layout_id, layout.id);
+        if (layout_has_handedness(layout) && layout_has_handedness(*other)) {
+            CHECK_MSG(swap.keeps_hand, layout.id + " to " + other->id + " dropped the hand");
+            found_a_pair = true;
+        }
+    }
+    CHECK_MSG(found_a_pair, "no pair of layouts with a hand to swap between, so this says nothing");
+    // A layout that pairs with nothing goes nowhere.
+    Layout alone = registry.at(0);
+    alone.swap_layout_id.clear();
+    CHECK(layout_swap_from(registry, alone).layout_id.empty());
+}
+
 int main() {
+    test_the_menu_reopens_on_the_section_it_was_closed_on();
+    test_the_layout_swap_keeps_the_stylus_hand();
     test_the_sections_come_in_order();
     test_moving_between_the_list_and_what_it_shows();
     test_loading_a_save_point_asks_first();

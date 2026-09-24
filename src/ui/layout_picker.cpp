@@ -59,6 +59,10 @@ int LayoutPicker::tile_index_of(const std::string& layout_id) const {
 }
 
 void LayoutPicker::open(const LayoutPickerState& state) {
+    // Where it was closed, held before anything below can move it.
+    const MenuSection closed_on = section_;
+    const bool reopening = opened_before_;
+    opened_before_ = true;
     open_ = true;
     confirm_ = MenuConfirm::None;
     state_ = state;
@@ -68,9 +72,18 @@ void LayoutPicker::open(const LayoutPickerState& state) {
 
     rebuild_footer();
     focus_ = 0;
-    // The list, at its top -- the way NSO's menu opens -- with the layouts
-    // already showing beside it.
-    section_ = sections_.empty() ? MenuSection::Layout : sections_.front();
+    // The first time, the list at its top -- the way NSO's menu opens -- with
+    // the layouts already showing beside it. After that, back on the section
+    // it was closed on, in the list rather than inside it: whoever comes back
+    // to the menu mostly comes back for the same thing. A section this game
+    // or this session does not have starts from the top instead.
+    if (sections_.empty()) {
+        section_ = MenuSection::Layout;
+    } else if (reopening && has_section(closed_on)) {
+        section_ = closed_on;
+    } else {
+        section_ = sections_.front();
+    }
     on_content_ = false;
     item_ = 0;
 }
@@ -681,14 +694,18 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
                 activate_section(result);
             }
             break;
-        // One step at a time, the way NSO backs out: off the right-hand side,
-        // then out of the menu.
+        // Straight out of the menu, from the list or from inside a section:
+        // B is how a player gets back to the game, and having to press it
+        // twice from the right-hand side was a step nobody wanted. Left is
+        // still the way back to the list. The section is remembered, so the
+        // menu opens on it again -- see open().
         case UiAction::Cancel:
         case UiAction::ToggleMenu:
-            if (on_content_) {
-                on_content_ = false;
-            } else if (!state_.embedded) {
+            if (!state_.embedded) {
                 result.close_requested = true;
+            } else if (on_content_) {
+                // Shown in place of the game, there is nothing to close to.
+                on_content_ = false;
             }
             break;
         // The app's own quit key, which is not a face button and is not

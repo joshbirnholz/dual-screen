@@ -623,6 +623,18 @@ void test_companion_can_request_a_layout() {
         spin(host, companion, [&] { return companion.host_layout_id() == "vertical"; });
     CHECK_MSG(agreed, "the host's layout change never reached the companion");
 
+    // L3's swap asks for a layout and the hand to draw it in together, so the
+    // host puts the hand on the layout being swapped to, not the old one.
+    companion.request_layout("upper_on_tv", Handedness::Left);
+    RequestMessage swapped;
+    const bool swap_asked = spin(host, companion, [&] { return host.take_request(swapped); });
+    CHECK_MSG(swap_asked, "the swap never reached the host");
+    if (swap_asked) {
+        CHECK_STR_EQ(swapped.layout_id, "upper_on_tv");
+        CHECK(swapped.wants_handedness);
+        CHECK(swapped.handedness == Handedness::Left);
+    }
+
     companion.disconnect();
     host.stop();
 }

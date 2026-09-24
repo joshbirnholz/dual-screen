@@ -53,7 +53,7 @@ a list down the left, and whatever the highlighted entry holds on the right.
 
 | entry | what it shows or does |
 | --- | --- |
-| **Continue** | back to the game, the same as B on the list |
+| **Continue** | back to the game, the same as B |
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
@@ -62,11 +62,11 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking |
 
-The menu opens on Continue. Up and down move through the list, and the
-right-hand side follows. Right or
-A goes across onto it, always onto its first thing, top left; left from its
-edge, or B, comes back. B on the list
-resumes the game. **−** still opens Settings, and the old face-button
+The menu opens on Continue the first time, and after that on whichever entry
+it was last closed on. Up and down move through the list, and the right-hand
+side follows. Right or A goes across onto it, always onto its first thing, top
+left; left from its edge comes back. B resumes the game from anywhere in the
+menu, the list or the right-hand side. **−** still opens Settings, and the old face-button
 shortcuts (X quit, Y reset, + disconnect, R3 smoothing) still work, though the
 guide no longer shows them. A Wii U game's menu stays a plain list.
 
@@ -95,7 +95,9 @@ and the other top-aligned.
 
 The two focus layouts are the same pair of screens with the emphasis reversed,
 and which one you want changes with what the game is doing, so **L3** swaps
-between them while playing — no menu, no pause. On a DS that is one of two
+between them while playing — no menu, no pause — keeping whichever hand the
+stylus is set for: a left-handed focus layout swaps to the other one
+left-handed too. On a DS that is one of two
 things L3 can be: **Left Stick Click** under Options in the quick menu chooses
 between that and holding the DS's microphone, for games that ask to be blown
 into. Like everything else on that menu it is the host's, and both devices'

@@ -283,6 +283,17 @@ const Layout& LayoutRegistry::fallback() const {
     return layout != nullptr ? *layout : layouts_.front();
 }
 
+LayoutSwap layout_swap_from(const LayoutRegistry& registry, const Layout& from) {
+    LayoutSwap swap;
+    const Layout* to = registry.find(from.swap_layout_id);
+    if (to == nullptr || to->id == from.id) {
+        return swap;
+    }
+    swap.layout_id = to->id;
+    swap.keeps_hand = layout_has_handedness(from) && layout_has_handedness(*to);
+    return swap;
+}
+
 const Layout& LayoutRegistry::resolve(const std::string& id) const {
     const Layout* layout = find(id);
     if (layout != nullptr) {

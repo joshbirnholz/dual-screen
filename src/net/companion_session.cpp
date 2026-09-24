@@ -1493,6 +1493,19 @@ void CompanionSession::request_layout(const std::string& layout_id) {
     send_request(request);
 }
 
+void CompanionSession::request_layout(const std::string& layout_id, Handedness hand) {
+    if (layout_id.empty()) {
+        return;
+    }
+    // The host takes the layout before the hand from one request -- see its
+    // run loop -- so the hand lands on the layout being asked for.
+    RequestMessage request;
+    request.layout_id = layout_id;
+    request.wants_handedness = true;
+    request.handedness = hand;
+    send_request(request);
+}
+
 void CompanionSession::request_filtering(bool bilinear) {
     RequestMessage request;
     request.wants_filtering = true;

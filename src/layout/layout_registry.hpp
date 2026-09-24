@@ -37,4 +37,14 @@ private:
     std::vector<Layout> layouts_;
 };
 
+// Where L3 goes from a layout -- the one it pairs with -- and whether the
+// stylus hand goes with it. It does wherever both have a hand, so flipping
+// between the two focus layouts never also flips which side the stylus is on:
+// the player's hand has not changed because the layout did.
+struct LayoutSwap {
+    std::string layout_id;  // empty where the layout pairs with nothing
+    bool keeps_hand = false;
+};
+LayoutSwap layout_swap_from(const LayoutRegistry& registry, const Layout& from);
+
 }  // namespace ds

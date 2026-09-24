@@ -924,11 +924,24 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                         // device running the game.
                         session_.request_filtering(!session_.host_filtering());
                         break;
-                    case UiAction::SwapLayout:
-                        // L3, likewise: the two focus layouts swap.
-                        session_.request_layout(
-                            registry_.resolve(session_.host_layout_id()).swap_layout_id);
+                    case UiAction::SwapLayout: {
+                        // L3, likewise: the two focus layouts swap, and the
+                        // stylus stays on the side it was -- see
+                        // layout_swap_from().
+                        const Layout& from = registry_.resolve(session_.host_layout_id());
+                        const LayoutSwap swap = layout_swap_from(registry_, from);
+                        if (swap.layout_id.empty()) break;
+                        if (swap.keeps_hand) {
+                            const auto& left = session_.host_left_handed_layouts();
+                            const bool left_handed =
+                                std::find(left.begin(), left.end(), from.id) != left.end();
+                            session_.request_layout(
+                                swap.layout_id, left_handed ? Handedness::Left : Handedness::Right);
+                        } else {
+                            session_.request_layout(swap.layout_id);
+                        }
                         break;
+                    }
                     case UiAction::Quit:
                         break;  // Quit lives in the menu here, not on a button
                     default:

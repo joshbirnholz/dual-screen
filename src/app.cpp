@@ -631,6 +631,9 @@ struct App::Impl {
     // and change nothing locally; the host owns them and broadcasts the result,
     // which is what keeps the two devices from ever disagreeing.
     void request_layout(const std::string& layout_id);
+    // L3: the layout this one pairs with, drawn for the same hand -- see
+    // layout_swap_from().
+    void swap_layout();
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
@@ -1571,6 +1574,27 @@ void App::Impl::request_layout(const std::string& layout_id) {
     log_info("layout: " + active_layout().display_name);
 }
 
+void App::Impl::swap_layout() {
+    const Layout& from = active_layout();
+    const LayoutSwap swap = layout_swap_from(registry, from);
+    if (swap.layout_id.empty()) {
+        return;
+    }
+    const Handedness hand = handedness_of(from.id);
+    if (is_companion()) {
+        if (swap.keeps_hand) {
+            companion_session->request_layout(swap.layout_id, hand);
+        } else {
+            companion_session->request_layout(swap.layout_id);
+        }
+        return;  // the host decides; it will tell us
+    }
+    request_layout(swap.layout_id);
+    if (swap.keeps_hand) {
+        adopt_handedness(hand);  // onto the layout just swapped to
+    }
+}
+
 LeftStickPress App::Impl::left_stick_press_in_effect() const {
     return is_companion() ? companion_session->host_left_stick_press() : settings.left_stick_press;
 }
@@ -2386,7 +2410,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                         update_solo_screen();
                     }
                 } else {
-                    request_layout(active_layout().swap_layout_id);
+                    swap_layout();
                 }
                 break;
             }
