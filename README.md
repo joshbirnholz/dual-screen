@@ -53,15 +53,17 @@ a list down the left, and whatever the highlighted entry holds on the right.
 
 | entry | what it shows or does |
 | --- | --- |
+| **Continue** | back to the game, the same as B on the list |
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it |
 | **Create Save Point** | the four save point slots; see [Save points](#save-points) |
 | **Load Save Point** | the same slots, to go back to one |
 | **Options** | the settings you might change mid-game, as a list: render scale (3DS), stylus hand, sound (with two devices), pointer, right stick (3DS), screen gap (where the layout has one) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
-| **Reset** | restarts the game, after asking |
+| **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking |
 
-Up and down move through the list, and the right-hand side follows. Right or
+The menu opens on Continue. Up and down move through the list, and the
+right-hand side follows. Right or
 A goes across onto it; left from its edge, or B, comes back. B on the list
 resumes the game. **−** still opens Settings, and the old face-button
 shortcuts (X quit, Y reset, + disconnect, R3 smoothing) still work, though the

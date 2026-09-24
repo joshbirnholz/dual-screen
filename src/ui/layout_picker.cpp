@@ -121,9 +121,10 @@ void LayoutPicker::rebuild_footer() {
         return;
     }
 
-    // The sections, in the order the player asked for them: what the game
-    // looks like, then saving and loading, then everything else, and last the
-    // three that end something.
+    // The sections, in the order the player asked for them: back to the game,
+    // what the game looks like, then saving and loading, then everything
+    // else, and last the three that end something.
+    sections_.push_back(MenuSection::Continue);
     if (tile_count() > 0) sections_.push_back(MenuSection::Layout);
     if (state_.save_points_available) {
         sections_.push_back(MenuSection::CreateSavePoint);
@@ -184,6 +185,7 @@ int LayoutPicker::content_count(MenuSection section) const {
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint: return kSavePointSlots;
         case MenuSection::Options: return static_cast<int>(options_.size());
+        case MenuSection::Continue:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: break;
@@ -297,21 +299,16 @@ namespace {
 
 const char* section_label(MenuSection section) {
     switch (section) {
+        case MenuSection::Continue: return "Continue";
         case MenuSection::Layout: return "Screen Layout";
         case MenuSection::CreateSavePoint: return "Create Save Point";
         case MenuSection::LoadSavePoint: return "Load Save Point";
         case MenuSection::Options: return "Options";
         case MenuSection::Disconnect: return "Disconnect";
-        case MenuSection::Reset: return "Reset";
+        case MenuSection::Reset: return "Reset Game";
         case MenuSection::Quit: return "Quit";
     }
     return "";
-}
-
-// The three that end something sit a little apart from the rest.
-bool ends_something(MenuSection section) {
-    return section == MenuSection::Disconnect || section == MenuSection::Reset ||
-           section == MenuSection::Quit;
 }
 
 }  // namespace
@@ -341,12 +338,7 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
     const float row_height = line * 2.2f;
     const float row_step = row_height + line * 0.25f;
     float y = geometry.content_top;
-    bool apart = false;
-    for (const MenuSection section : sections_) {
-        if (ends_something(section) && !apart) {
-            y += line * 0.8f;
-            apart = true;
-        }
+    for (std::size_t index = 0; index < sections_.size(); ++index) {
         geometry.sections.push_back(PixelRect{geometry.panel.x, y, left_width, row_height});
         y += row_step;
     }
@@ -395,6 +387,7 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             }
             break;
         }
+        case MenuSection::Continue:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: break;
@@ -542,6 +535,10 @@ void LayoutPicker::activate_section(LayoutPickerResult& result) {
                 item_ = natural_item(section_);
             }
             break;
+        // Back to the game, the same as B on the list.
+        case MenuSection::Continue:
+            if (!state_.embedded) result.close_requested = true;
+            break;
         // Not asked about: unlike resetting or quitting, reconnecting is a
         // menu away and costs nothing but the walk back.
         case MenuSection::Disconnect:
@@ -593,6 +590,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Smoothing: result.filtering_toggled = true; break;
             }
             return;
+        case MenuSection::Continue:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: return;
@@ -1087,16 +1085,17 @@ void LayoutPicker::render(QuadRenderer& quads,
             case MenuSection::CreateSavePoint:
             case MenuSection::LoadSavePoint: render_slots(quads, text, geometry); break;
             case MenuSection::Options: render_options(quads, text, geometry); break;
+            case MenuSection::Continue:
             case MenuSection::Disconnect:
             case MenuSection::Reset:
             case MenuSection::Quit: {
                 // Nothing to choose between: a word on what it does instead.
-                const char* what =
-                    section_ == MenuSection::Disconnect
-                        ? "Stop playing across two devices."
-                        : section_ == MenuSection::Reset
-                              ? "Restart the game. Unsaved progress will be lost."
-                              : "Close the game. Unsaved progress will be lost.";
+                const char* what = "Close the game. Unsaved progress will be lost.";
+                if (section_ == MenuSection::Continue) what = "Go back to the game.";
+                if (section_ == MenuSection::Disconnect) what = "Stop playing across two devices.";
+                if (section_ == MenuSection::Reset) {
+                    what = "Restart the game. Unsaved progress will be lost.";
+                }
                 text.draw_wrapped(quads, what, geometry.content.x,
                                   geometry.content.y + line * 0.5f, geometry.content.w,
                                   scale * 1.05f, theme.text_dim);

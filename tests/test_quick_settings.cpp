@@ -39,7 +39,8 @@ PointerEvent slide_onto(float from_x, float from_y, float to_x, float to_y) {
 
 // The menu, opened and with the cursor on one of the sections down its left,
 // so what that section shows on the right is there to be tapped. A menu opens
-// on Screen Layout; everything that is a setting lives under Options.
+// on Continue; the layouts are under Screen Layout and everything that is a
+// setting under Options.
 void open_on(LayoutPicker& picker, const LayoutPickerState& state, MenuSection section) {
     picker.open(state);
     picker.set_focus(LayoutPicker::focus_of(section));
@@ -64,7 +65,7 @@ std::vector<std::string> layouts_offered_for(const LayoutRegistry& registry,
             for (float x = 4.0f; x < kWidth; x += 8.0f) {
                 LayoutPicker picker(registry);
                 picker.set_screens(screens, system);
-                picker.open(state);
+                open_on(picker, state, MenuSection::Layout);
                 const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
                 if (!result.selection_changed) continue;
                 const std::string& id = picker.selected_layout_id();
@@ -314,7 +315,7 @@ void test_choosing_a_gap_layout_reveals_the_button() {
     for (float y = 4.0f; y < kHeight && !found; y += 8.0f) {
         for (float x = 4.0f; x < kWidth && !found; x += 8.0f) {
             LayoutPicker picker(registry);
-            picker.open(opened_on_standard);
+            open_on(picker, opened_on_standard, MenuSection::Layout);
             picker.update({}, {tap(x, y)}, kWidth, kHeight);
             if (picker.selected_layout_id() == "vertical") {
                 vertical_tile = tap(x, y);
@@ -328,7 +329,7 @@ void test_choosing_a_gap_layout_reveals_the_button() {
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
-            picker.open(opened_on_standard);
+            open_on(picker, opened_on_standard, MenuSection::Layout);
             picker.update({}, {vertical_tile}, kWidth, kHeight);
             picker.set_focus(LayoutPicker::focus_of(MenuSection::Options));
             if (picker.update({}, {tap(x, y)}, kWidth, kHeight).screen_gap_toggled) ++hits;
@@ -397,7 +398,6 @@ void test_the_pointer_button_appears_only_where_there_is_a_pointer() {
 
     int with_pointer = 0;
     int without_pointer = 0;
-    int resume_without_pointer = 0;
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker offered(registry);
@@ -412,12 +412,10 @@ void test_the_pointer_button_appears_only_where_there_is_a_pointer() {
             open_on(absent, console, MenuSection::Options);
             const LayoutPickerResult result = absent.update({}, {tap(x, y)}, kWidth, kHeight);
             if (result.cursor_mode_changed) ++without_pointer;
-            if (result.close_requested) ++resume_without_pointer;
         }
     }
     CHECK(with_pointer > 0);
     CHECK_EQ(without_pointer, 0);
-    CHECK_EQ(resume_without_pointer, 0);  // nothing on the menu itself only closes it
 }
 
 // Every option reports its own intent and no one else's, and one tap is never
@@ -482,19 +480,19 @@ void test_the_sections_come_in_order() {
     LayoutPicker picker(registry);
     picker.open(state);
     // The list, at its top, the way NSO's menu opens.
-    CHECK(picker.section() == MenuSection::Layout);
+    CHECK(picker.section() == MenuSection::Continue);
     CHECK(!picker.on_content());
 
-    const MenuSection expected[] = {MenuSection::Layout,        MenuSection::CreateSavePoint,
-                                    MenuSection::LoadSavePoint, MenuSection::Options,
-                                    MenuSection::Disconnect,    MenuSection::Reset,
-                                    MenuSection::Quit};
+    const MenuSection expected[] = {MenuSection::Continue,      MenuSection::Layout,
+                                    MenuSection::CreateSavePoint, MenuSection::LoadSavePoint,
+                                    MenuSection::Options,       MenuSection::Disconnect,
+                                    MenuSection::Reset,         MenuSection::Quit};
     for (const MenuSection section : expected) {
         CHECK_MSG(picker.section() == section, "the sections are not in the order they should be");
         picker.update({UiAction::Down}, {}, kWidth, kHeight);
     }
     // And round again from the bottom.
-    CHECK(picker.section() == MenuSection::Layout);
+    CHECK(picker.section() == MenuSection::Continue);
 
     // Without save points, a second device or a reset of our own, those go.
     LayoutPickerState bare = state;
@@ -506,9 +504,11 @@ void test_the_sections_come_in_order() {
     for (const MenuSection gone : {MenuSection::CreateSavePoint, MenuSection::LoadSavePoint,
                                    MenuSection::Disconnect, MenuSection::Reset}) {
         lean.set_focus(LayoutPicker::focus_of(gone));
-        CHECK_MSG(lean.section() == MenuSection::Layout,
+        CHECK_MSG(lean.section() == MenuSection::Continue,
                   "a section that should not be there could still be reached");
     }
+    lean.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK(lean.section() == MenuSection::Layout);
     lean.update({UiAction::Down}, {}, kWidth, kHeight);
     CHECK(lean.section() == MenuSection::Options);
     lean.update({UiAction::Down}, {}, kWidth, kHeight);
@@ -524,7 +524,7 @@ void test_moving_between_the_list_and_what_it_shows() {
     state.layout_id = "vertical";
 
     LayoutPicker picker(registry);
-    picker.open(state);
+    open_on(picker, state, MenuSection::Layout);
     picker.update({UiAction::Right}, {}, kWidth, kHeight);
     CHECK(picker.on_content());
     CHECK(picker.section() == MenuSection::Layout);
@@ -688,13 +688,19 @@ void test_save_points_only_where_the_core_can_make_them() {
     CHECK_EQ(asked, 0);
 }
 
-// Disconnect, Reset and Quit are sections of their own now, and choosing one
-// is the same as the face button that used to be it.
+// Continue, Disconnect, Reset Game and Quit are sections of their own, and
+// choosing one is the same as the button that used to be it.
 void test_the_sections_that_end_something() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = "standard";
     state.session_active = true;
+
+    // Continue is the way back into the game, the same as B on the list.
+    LayoutPicker resume(registry);
+    resume.open(state);
+    CHECK(resume.section() == MenuSection::Continue);
+    CHECK(press(resume, UiAction::Confirm).close_requested);
 
     LayoutPicker disconnect(registry);
     open_on(disconnect, state, MenuSection::Disconnect);
@@ -1024,12 +1030,12 @@ void test_a_button_only_answers_a_tap_aimed_at_it() {
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker direct(registry);
-            direct.open(state);
+            open_on(direct, state, MenuSection::Layout);
             if (direct.update({}, {tap(x, y)}, kWidth, kHeight).selection_changed) ++aimed;
 
             // Down in the far corner, up here.
             LayoutPicker onto(registry);
-            onto.open(state);
+            open_on(onto, state, MenuSection::Layout);
             if (onto.update({}, {slide_onto(kWidth - 2.0f, kHeight - 2.0f, x, y)}, kWidth, kHeight)
                     .selection_changed) {
                 ++slid_on;
@@ -1037,7 +1043,7 @@ void test_a_button_only_answers_a_tap_aimed_at_it() {
 
             // Down here, up in the far corner.
             LayoutPicker away(registry);
-            away.open(state);
+            open_on(away, state, MenuSection::Layout);
             if (away.update({}, {slide_onto(x, y, kWidth - 2.0f, kHeight - 2.0f)}, kWidth, kHeight)
                     .selection_changed) {
                 ++slid_off;

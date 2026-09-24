@@ -153,11 +153,14 @@ enum class MenuSection : uint8_t {
     Disconnect = 4,
     Reset = 5,
     Quit = 6,
+    // First in the list, but numbered last: it came last, and the numbers
+    // travel.
+    Continue = 7,
 };
 
 // The quick menu. On a DS or a 3DS, two columns: the sections down the left
-// -- Screen Layout, Create and Load Save Point, Options, then Disconnect,
-// Reset and Quit -- and whichever of them is highlighted shows its choices on
+// -- Continue, Screen Layout, Create and Load Save Point, Options, then
+// Disconnect, Reset Game and Quit -- and whichever of them is highlighted shows its choices on
 // the right: the layouts as pictures of the game in each, the save point
 // slots, or the options as a list. A Wii U's is a plain list; see
 // rebuild_footer().
