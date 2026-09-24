@@ -87,6 +87,26 @@ Handedness other_hand(Handedness handedness) {
     return handedness == Handedness::Left ? Handedness::Right : Handedness::Left;
 }
 
+bool layout_has_handedness(const Layout& layout) {
+    const Layout mirrored = resolve_for_handedness(layout, Handedness::Left);
+    const auto near = [](float a, float b) { return std::fabs(a - b) < 1e-4f; };
+    for (std::size_t index = 0; index < layout.placements.size(); ++index) {
+        const ScreenPlacement& before = layout.placements[index];
+        const ScreenPlacement& after = mirrored.placements[index];
+        if (!near(before.x, after.x) || before.rotation != after.rotation) return true;
+    }
+    const auto& items = layout.composition.items;
+    const auto& mirrored_items = mirrored.composition.items;
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        if (items[index].screen != mirrored_items[index].screen ||
+            items[index].rotation != mirrored_items[index].rotation ||
+            items[index].scale != mirrored_items[index].scale) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Layout resolve_for_handedness(const Layout& layout, Handedness handedness) {
     if (handedness == Handedness::Right) {
         return layout;

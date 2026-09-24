@@ -75,6 +75,19 @@ void test_registry_contents() {
 // inside the TV frame in its Screen Settings shots. Checking against those
 // numbers is the only way to know the layouts match rather than merely resemble.
 // The window here is that same 378 x 212 so the numbers can be read directly.
+// Only a layout that changes when mirrored has a hand to choose: two screens
+// stacked, or a console drawn face on, are the same either way round.
+void test_which_layouts_have_a_hand() {
+    LayoutRegistry registry;
+    for (const char* id : {"upper_focus", "touch_focus", "side_by_side"}) {
+        CHECK_MSG(layout_has_handedness(*registry.find(id)), std::string(id) + " has no hand");
+    }
+    for (const char* id : {"standard", "vertical"}) {
+        CHECK_MSG(!layout_has_handedness(*registry.find(id)),
+                  std::string(id) + " claims a hand it does not have");
+    }
+}
+
 void test_layouts_match_the_wii_u() {
     const LayoutRegistry registry;
     // Scaled well past the small-display threshold (1280x800): at 378x212
@@ -1029,6 +1042,7 @@ void test_audio_off_reaches_neither_screen() {
 }
 
 int main() {
+    test_which_layouts_have_a_hand();
     test_registry_contents();
     test_layouts_match_the_wii_u();
     test_small_displays_drop_the_margin();

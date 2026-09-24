@@ -21,6 +21,11 @@ extern const unsigned long kUiFont_size;
 extern const unsigned char kButtonIconsPng[];
 extern const unsigned long kButtonIconsPng_size;
 
+// A right hand holding a stylus, cut to a circle, for the button that says
+// which hand holds it -- see assets/make_stylus_hand.py.
+extern const unsigned char kStylusHandPng[];
+extern const unsigned long kStylusHandPng_size;
+
 // The shell's own sounds, resampled to one rate and packed into one blob with
 // an index -- see decode_ui_sound_pack().
 

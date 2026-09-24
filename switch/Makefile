@@ -62,7 +62,7 @@ GENERATED   := generated
 # The assets that travel inside the binary. One list, so what gets generated
 # and what gets compiled cannot drift apart -- a generated file that nothing
 # compiles is an undefined symbol at link time and nothing sooner.
-EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kUiFont.cpp kButtonIconsPng.cpp
+EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kUiFont.cpp kButtonIconsPng.cpp kStylusHandPng.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -275,6 +275,11 @@ $(GENERATED)/kButtonIconsPng.cpp: $(CURDIR)/../assets/button_icons.png $(CURDIR)
 	@mkdir -p $(GENERATED)
 	@echo embedding button_icons.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kButtonIconsPng -P $(CURDIR)/../tools/embed_asset.cmake
+
+$(GENERATED)/kStylusHandPng.cpp: $(CURDIR)/../assets/stylus_hand.png $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo Embedding assets/stylus_hand.png
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kStylusHandPng -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kUiFont.cpp: $(CURDIR)/../assets/inter.ttf $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

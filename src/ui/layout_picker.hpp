@@ -310,7 +310,6 @@ private:
     // The rows of a DS or 3DS menu's Options section.
     enum class Option {
         RenderScale,
-        Hands,
         Sound,
         Cursor,
         RightStick,
@@ -338,6 +337,9 @@ private:
         PixelRect content;
         std::vector<PixelRect> items;
         int columns = 1;
+        // Where the stylus button is drawn, usable or not. Among `items`
+        // only while the layout in use has a hand to choose.
+        PixelRect hand_button;
     };
     MenuGeometry compute_menu_geometry(float output_width, float output_height) const;
     // Where the confirmation sits, and the two prompts inside it a finger can
@@ -371,6 +373,9 @@ private:
     // The layout grid's width, from the number of layouts alone, so that both
     // devices agree on what Down means however different their screens are.
     int layout_columns() const;
+    // Whether the layout in use has a hand to choose -- see
+    // layout_has_handedness(). Greyed out, and passed over, where not.
+    bool hand_button_usable() const;
     bool slot_filled(int slot) const;
     void activate_section(LayoutPickerResult& result);
     void activate_item(LayoutPickerResult& result);
@@ -378,8 +383,8 @@ private:
     std::string option_name(Option option) const;
     std::string option_value(Option option) const;
     void render_sections(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
-    void render_layouts(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry,
-                        float output_width, float output_height,
+    void render_layouts(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                        const MenuGeometry& geometry, float output_width, float output_height,
                         const ScreenTextures* textures);
     void render_slots(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
     void render_options(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);

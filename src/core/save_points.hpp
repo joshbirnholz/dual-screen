@@ -69,7 +69,28 @@ bool read_save_point_state(const std::string& path, std::vector<uint8_t>& out,
 // pixels tall. Invalid when there is nothing to read.
 SavePointThumbnail capture_save_point_thumbnail(ScreenSource& source, int height = 96);
 
-// "06/05/2025 - 10:56", in local time.
+// How this device writes a date and a time: which way round the day, month
+// and year go, what sits between them, and whether the clock is 12-hour.
+struct TimeStyle {
+    enum class Order { MonthDayYear, DayMonthYear, YearMonthDay };
+    Order order = Order::MonthDayYear;
+    char separator = '/';
+    bool twelve_hour = false;
+};
+
+// Asked of the device once: on Apple's systems its region and its own 24-Hour
+// Time switch; on Linux -- SteamOS included -- the locale's own date and time
+// formats; on a Switch its system language; elsewhere the language SDL says
+// is preferred. Each device asks for itself, so a companion shows a save's
+// time the way that device writes times, whatever the host does.
+TimeStyle device_time_style();
+
+// What a region writes, from a language and a country code ("en", "US"),
+// either of which may be empty. For a device that only says where it is.
+TimeStyle time_style_for_region(const std::string& language, const std::string& country);
+
+// "06/05/2025 - 10:56 AM", "05.06.2025 - 10:56", in local time.
+std::string format_save_time(int64_t saved_at, const TimeStyle& style);
 std::string format_save_time(int64_t saved_at);
 
 }  // namespace ds

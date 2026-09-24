@@ -429,7 +429,6 @@ void test_the_other_buttons_still_work() {
     state.right_stick_choosable = true;
 
     int sound = 0;
-    int hands = 0;
     int cursor = 0;
     int gap = 0;
     int right_stick = 0;
@@ -449,7 +448,6 @@ void test_the_other_buttons_still_work() {
                                 result.reset_requested + result.selection_changed;
             if (intents > 1) ++doubled;
             if (result.audio_target_changed) ++sound;
-            if (result.handedness_changed) ++hands;
             if (result.cursor_mode_changed) ++cursor;
             if (result.screen_gap_toggled) ++gap;
             if (result.right_stick_mode_changed) ++right_stick;
@@ -458,7 +456,6 @@ void test_the_other_buttons_still_work() {
         }
     }
     CHECK(sound > 0);
-    CHECK(hands > 0);
     CHECK(cursor > 0);
     CHECK(gap > 0);
     CHECK(right_stick > 0);
@@ -559,7 +556,7 @@ void test_moving_between_the_list_and_what_it_shows() {
     options.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(options.on_content());
     const LayoutPickerResult cycled = options.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(cycled.handedness_changed);
+    CHECK(cycled.cursor_mode_changed);
     CHECK(options.on_content());
 }
 
@@ -584,7 +581,48 @@ LayoutPickerResult press(LayoutPicker& picker, UiAction action) {
     return picker.update({action}, {}, kWidth, kHeight);
 }
 
-// "Load this save point?" -- asked every time, answered no by Back, and not
+// Which hand holds the stylus is a round button under the layouts, not an
+// option: down from the grid's bottom row, A swaps hands and the cursor stays
+// there. It is passed over, and a tap on it does nothing, while the layout in
+// use has no hand to choose.
+void test_the_stylus_button() {
+    LayoutRegistry registry;
+    for (const char* id : {"upper_focus", "touch_focus", "side_by_side", "vertical", "standard"}) {
+        const bool handed = std::string(id) != "vertical" && std::string(id) != "standard";
+        LayoutPickerState state;
+        state.layout_id = id;
+
+        int swapped = 0;
+        for (float y = 4.0f; y < kHeight; y += 8.0f) {
+            for (float x = 4.0f; x < kWidth; x += 8.0f) {
+                LayoutPicker picker(registry);
+                open_on(picker, state, MenuSection::Layout);
+                if (picker.update({}, {tap(x, y)}, kWidth, kHeight).handedness_changed) ++swapped;
+            }
+        }
+        CHECK_MSG((swapped > 0) == handed,
+                  std::string(id) + (handed ? " offered no stylus button"
+                                            : " offered a stylus button with no hand to choose"));
+
+        // With the pad: across onto the layouts, then down as far as it goes.
+        LayoutPicker picker(registry);
+        open_on(picker, state, MenuSection::Layout);
+        press(picker, UiAction::Right);
+        for (int step = 0; step < 6; ++step) press(picker, UiAction::Down);
+        const int bottom = picker.focus();
+        const LayoutPickerResult pressed = press(picker, UiAction::Confirm);
+        CHECK_EQ(pressed.handedness_changed, handed);
+        CHECK(!pressed.selection_changed || !handed);
+        if (handed) {
+            CHECK_EQ(picker.focus(), bottom);
+            // And up again lands back on a layout.
+            press(picker, UiAction::Up);
+            CHECK(!press(picker, UiAction::Confirm).handedness_changed);
+        }
+    }
+}
+
+// "Load this save state?" -- asked every time, answered no by Back, and not
 // asked at all of an empty slot, which has nothing to load.
 void test_loading_a_save_point_asks_first() {
     LayoutRegistry registry;
@@ -1251,6 +1289,7 @@ int main() {
     test_saving_asks_only_before_overwriting();
     test_save_points_only_where_the_core_can_make_them();
     test_the_sections_that_end_something();
+    test_the_stylus_button();
     test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape();
     test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();

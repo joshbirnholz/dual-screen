@@ -216,6 +216,11 @@ Handedness other_hand(Handedness handedness);
 // left-handed mirrored left to right, with any quarter turns reversed to match.
 Layout resolve_for_handedness(const Layout& layout, Handedness handedness);
 
+// Whether the hand makes any difference to `layout`: false for one whose
+// mirror image is itself, like two screens stacked one above the other or a
+// console drawn face on, where there is nothing to choose.
+bool layout_has_handedness(const Layout& layout);
+
 // Applies the player's choice of whether a layout shows its gap. A no-op on
 // a layout whose gap is not a choice: see LayoutComposition::gap_toggleable.
 Layout resolve_gap_choice(const Layout& layout, bool include_gap);

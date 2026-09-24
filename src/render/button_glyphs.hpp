@@ -76,7 +76,10 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph);
 class ButtonGlyphSheet {
 public:
     bool initialize(std::string* error);
-    void shutdown() { texture_.destroy(); }
+    void shutdown() {
+        texture_.destroy();
+        stylus_hand_.destroy();
+    }
     bool valid() const { return texture_.valid(); }
 
     // How wide a glyph is when drawn `height` tall, so a caller can lay out a
@@ -108,8 +111,16 @@ public:
     void set_style(PadGlyphStyle style) { style_ = style; }
     PadGlyphStyle style() const { return style_; }
 
+    // The one piece of line art the menus draw that is not a button: a hand
+    // holding a stylus, filling the round `rect` and tinted `color`, mirrored
+    // for a left hand. Kept here with the buttons because it is drawn the same
+    // way and handed to the same places.
+    void draw_stylus_hand(QuadRenderer& quads, const PixelRect& rect, const Color& color,
+                          bool left_handed) const;
+
 private:
     Texture texture_;
+    Texture stylus_hand_;
     PadGlyphStyle style_ = PadGlyphStyle::Nintendo;
     int cell_width_ = 0;
     int cell_height_ = 0;

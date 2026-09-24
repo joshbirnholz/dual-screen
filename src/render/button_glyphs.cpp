@@ -102,6 +102,19 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
         coverage[index] = static_cast<uint8_t>(image.pixels[index] >> 24);
     }
 
+    // The stylus hand, the same way. Only a missing hand on one button if it
+    // cannot be read, so it does not fail the prompts with it.
+    DecodedImage hand;
+    std::string hand_error;
+    if (decode_png(assets::kStylusHandPng, assets::kStylusHandPng_size, hand, &hand_error)) {
+        std::vector<uint8_t> hand_coverage(hand.pixels.size());
+        for (std::size_t index = 0; index < hand.pixels.size(); ++index) {
+            hand_coverage[index] = static_cast<uint8_t>(hand.pixels[index] >> 24);
+        }
+        stylus_hand_.upload_alpha8(hand_coverage.data(), hand.width, hand.height);
+        stylus_hand_.set_linear_filtering(true);
+    }
+
     cell_width_ = image.width / static_cast<int>(GlyphCell::Count);
     cell_height_ = image.height;
     texture_.upload_alpha8(coverage.data(), image.width, image.height);
@@ -111,6 +124,14 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
         return false;
     }
     return true;
+}
+
+void ButtonGlyphSheet::draw_stylus_hand(QuadRenderer& quads, const PixelRect& rect,
+                                        const Color& color, bool left_handed) const {
+    if (!stylus_hand_.valid()) return;
+    // Mirrored by reading the texture right to left.
+    quads.draw_alpha_mask(rect, stylus_hand_, color, left_handed ? 1.0f : 0.0f, 0.0f,
+                          left_handed ? 0.0f : 1.0f, 1.0f);
 }
 
 float ButtonGlyphSheet::width_for(float height) const {

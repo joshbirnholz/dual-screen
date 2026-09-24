@@ -1,10 +1,23 @@
 #include "core/save_points.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
+#include <initializer_list>
 
+#include <SDL.h>
 #include <zlib.h>
+
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#elif defined(__SWITCH__)
+#include <switch.h>
+#elif defined(__linux__) && !defined(__ANDROID__)
+#include <langinfo.h>
+#include <locale.h>
+#endif
 
 #include "config/paths.hpp"
 #include "core/screen_source.hpp"
@@ -303,7 +316,163 @@ SavePointThumbnail capture_save_point_thumbnail(ScreenSource& source, int height
     return thumbnail;
 }
 
-std::string format_save_time(int64_t saved_at) {
+namespace {
+
+bool in(const std::string& code, std::initializer_list<const char*> codes) {
+    for (const char* each : codes) {
+        if (code == each) return true;
+    }
+    return false;
+}
+
+// The order, and the separator, of a date format written with the letters
+// y, M/m and d -- a strftime format ("%m/%d/%Y") or a Unicode one
+// ("dd.MM.yyyy") alike. False when it has not got all three.
+bool read_date_format(const std::string& format, TimeStyle& style) {
+    const auto year = format.find_first_of("yY");
+    const auto month = format.find_first_of("mM");
+    const auto day = format.find_first_of("d");
+    if (year == std::string::npos || month == std::string::npos || day == std::string::npos) {
+        return false;
+    }
+    if (year < month && month < day) {
+        style.order = TimeStyle::Order::YearMonthDay;
+    } else if (day < month) {
+        style.order = TimeStyle::Order::DayMonthYear;
+    } else {
+        style.order = TimeStyle::Order::MonthDayYear;
+    }
+    for (const char mark : format) {
+        if (mark == '/' || mark == '.' || mark == '-') {
+            style.separator = mark;
+            break;
+        }
+    }
+    return true;
+}
+
+TimeStyle style_from_sdl() {
+    TimeStyle style = time_style_for_region("en", "US");
+    SDL_Locale* locales = SDL_GetPreferredLocales();
+    if (locales != nullptr) {
+        if (locales[0].language != nullptr) {
+            style = time_style_for_region(locales[0].language,
+                                          locales[0].country != nullptr ? locales[0].country : "");
+        }
+        SDL_free(locales);
+    }
+    return style;
+}
+
+TimeStyle ask_the_device() {
+#if defined(__APPLE__)
+    // The user's own choices, 24-Hour Time included, which is more than the
+    // region alone would say.
+    TimeStyle style;
+    CFLocaleRef locale = CFLocaleCopyCurrent();
+    const auto pattern = [&](CFStringRef skeleton) {
+        std::string out;
+        CFStringRef format = CFDateFormatterCreateDateFormatFromTemplate(nullptr, skeleton, 0, locale);
+        if (format != nullptr) {
+            char buffer[64] = {};
+            if (CFStringGetCString(format, buffer, sizeof buffer, kCFStringEncodingUTF8)) out = buffer;
+            CFRelease(format);
+        }
+        return out;
+    };
+    const std::string date = pattern(CFSTR("yyyyMMdd"));
+    const std::string hour = pattern(CFSTR("j"));
+    CFRelease(locale);
+    if (!read_date_format(date, style)) return style_from_sdl();
+    style.twelve_hour = hour.find('a') != std::string::npos || hour.find('h') != std::string::npos;
+    return style;
+#elif defined(__SWITCH__)
+    // A Switch has no 12/24-hour setting of its own: it goes by its language,
+    // which carries the region with it ("en-US", "en-GB", "fr-CA").
+    TimeStyle style = time_style_for_region("en", "US");
+    if (R_SUCCEEDED(setInitialize())) {
+        u64 code = 0;
+        if (R_SUCCEEDED(setGetSystemLanguage(&code))) {
+            char text[9] = {};
+            std::memcpy(text, &code, sizeof code);
+            const std::string tag = text;
+            const auto dash = tag.find('-');
+            style = time_style_for_region(tag.substr(0, dash),
+                                          dash == std::string::npos ? "" : tag.substr(dash + 1));
+        }
+        setExit();
+    }
+    return style;
+#elif defined(__linux__) && !defined(__ANDROID__)
+    // The locale's own formats, read without changing this program's locale.
+    locale_t locale = newlocale(LC_TIME_MASK, "", static_cast<locale_t>(0));
+    if (locale == static_cast<locale_t>(0)) return style_from_sdl();
+    const std::string date = nl_langinfo_l(D_FMT, locale);
+    const std::string time = nl_langinfo_l(T_FMT, locale);
+    freelocale(locale);
+    // The C locale's own formats: no locale set at all, which is a missing
+    // answer rather than an American one.
+    if (date == "%m/%d/%y" && time == "%H:%M:%S") return style_from_sdl();
+    TimeStyle style;
+    if (!read_date_format(date, style)) return style_from_sdl();
+    style.twelve_hour = time.find("%p") != std::string::npos || time.find("%r") != std::string::npos ||
+                        time.find("%I") != std::string::npos || time.find("%l") != std::string::npos;
+    return style;
+#else
+    return style_from_sdl();
+#endif
+}
+
+}  // namespace
+
+TimeStyle time_style_for_region(const std::string& language_in, const std::string& country_in) {
+    std::string language = language_in;
+    std::string country = country_in;
+    for (char& letter : language) letter = static_cast<char>(std::tolower(static_cast<unsigned char>(letter)));
+    for (char& letter : country) letter = static_cast<char>(std::toupper(static_cast<unsigned char>(letter)));
+    if (country.empty()) {
+        // A language alone: where it is mostly written from.
+        if (language == "en") country = "US";
+        else if (language == "ja") country = "JP";
+        else if (language == "zh") country = "CN";
+        else if (language == "ko") country = "KR";
+        else if (language == "de") country = "DE";
+        else if (language == "nl") country = "NL";
+        else if (language == "ru") country = "RU";
+    }
+
+    TimeStyle style;
+    style.order = TimeStyle::Order::DayMonthYear;
+    style.separator = '/';
+    if (in(country, {"US", "PH", "FM", "MH", "PR", "GU", "AS", "UM", "VI"})) {
+        style.order = TimeStyle::Order::MonthDayYear;
+    } else if (in(country, {"JP", "CN", "TW", "KR", "HU", "LT", "MN", "IR"})) {
+        style.order = TimeStyle::Order::YearMonthDay;
+        if (country == "HU" || country == "KR") style.separator = '.';
+    } else if (in(country, {"SE", "CA"}) && language != "fr") {
+        style.order = TimeStyle::Order::YearMonthDay;
+        style.separator = '-';
+    } else if (in(country, {"DE", "AT", "CH", "RU", "PL", "NO", "FI", "DK", "CZ", "SK", "TR",
+                            "UA", "RO", "BG", "HR", "SI", "RS", "EE", "LV", "KZ", "BY", "IS"})) {
+        style.separator = '.';
+    } else if (in(country, {"NL"})) {
+        style.separator = '-';
+    }
+    // Where the clock is read with AM and PM.
+    style.twelve_hour =
+        in(country, {"US", "AU", "NZ", "IN", "PH", "PK", "BD", "EG", "SA", "MY", "SG", "HK",
+                     "TW", "KR", "MX", "CO", "VE", "SV", "HN", "NI", "PR", "JO", "IQ", "AE",
+                     "QA", "KW", "OM", "BH", "GU", "AS", "VI"}) ||
+        (country == "CA" && language != "fr");
+    return style;
+}
+
+TimeStyle device_time_style() {
+    static const TimeStyle style = ask_the_device();
+    return style;
+}
+
+std::string format_save_time(int64_t saved_at, const TimeStyle& style) {
     const std::time_t when = static_cast<std::time_t>(saved_at);
     std::tm local{};
 #ifdef _WIN32
@@ -311,9 +480,35 @@ std::string format_save_time(int64_t saved_at) {
 #else
     localtime_r(&when, &local);
 #endif
-    char text[32];
-    if (std::strftime(text, sizeof text, "%m/%d/%Y - %H:%M", &local) == 0) return std::string();
-    return text;
+    char date[48];
+    const int year = local.tm_year + 1900;
+    const int month = local.tm_mon + 1;
+    const int day = local.tm_mday;
+    const char mark = style.separator;
+    switch (style.order) {
+        case TimeStyle::Order::MonthDayYear:
+            std::snprintf(date, sizeof date, "%02d%c%02d%c%04d", month, mark, day, mark, year);
+            break;
+        case TimeStyle::Order::DayMonthYear:
+            std::snprintf(date, sizeof date, "%02d%c%02d%c%04d", day, mark, month, mark, year);
+            break;
+        case TimeStyle::Order::YearMonthDay:
+            std::snprintf(date, sizeof date, "%04d%c%02d%c%02d", year, mark, month, mark, day);
+            break;
+    }
+    char time[32];
+    if (style.twelve_hour) {
+        const int hour = local.tm_hour % 12 == 0 ? 12 : local.tm_hour % 12;
+        std::snprintf(time, sizeof time, "%d:%02d %s", hour, local.tm_min,
+                      local.tm_hour < 12 ? "AM" : "PM");
+    } else {
+        std::snprintf(time, sizeof time, "%02d:%02d", local.tm_hour, local.tm_min);
+    }
+    return std::string(date) + " - " + time;
+}
+
+std::string format_save_time(int64_t saved_at) {
+    return format_save_time(saved_at, device_time_style());
 }
 
 }  // namespace ds

@@ -192,11 +192,41 @@ void test_thumbnail(ChannelOrder order) {
 }
 
 void test_time() {
-    // Whatever the zone, the shape is the NSO one: "06/05/2025 - 10:56".
-    const std::string text = format_save_time(1749120960);
-    CHECK_EQ(text.size(), static_cast<std::size_t>(18));
-    CHECK_STR_EQ(text.substr(2, 1), std::string("/"));
-    CHECK_STR_EQ(text.substr(10, 3), std::string(" - "));
+    // In UTC, so the clock reads the same wherever the test runs: 1749120960
+    // is 5 June 2025, 10:56, and 1749082200 is 00:10 the same morning.
+    setenv("TZ", "UTC", 1);
+    tzset();
+    TimeStyle american;
+    american.order = TimeStyle::Order::MonthDayYear;
+    american.twelve_hour = true;
+    CHECK_STR_EQ(format_save_time(1749120960, american), std::string("06/05/2025 - 10:56 AM"));
+    // Past noon, and the hour after midnight, which a 12-hour clock calls 12.
+    CHECK_STR_EQ(format_save_time(1749120960 + 6 * 3600, american),
+                 std::string("06/05/2025 - 4:56 PM"));
+    CHECK_STR_EQ(format_save_time(1749082200, american), std::string("06/05/2025 - 12:10 AM"));
+
+    TimeStyle german;
+    german.order = TimeStyle::Order::DayMonthYear;
+    german.separator = '.';
+    CHECK_STR_EQ(format_save_time(1749120960, german), std::string("05.06.2025 - 10:56"));
+
+    TimeStyle japanese;
+    japanese.order = TimeStyle::Order::YearMonthDay;
+    CHECK_STR_EQ(format_save_time(1749120960, japanese), std::string("2025/06/05 - 10:56"));
+
+    // What a device that only says where it is gets.
+    const TimeStyle us = time_style_for_region("en", "US");
+    CHECK(us.order == TimeStyle::Order::MonthDayYear && us.twelve_hour);
+    const TimeStyle uk = time_style_for_region("en", "GB");
+    CHECK(uk.order == TimeStyle::Order::DayMonthYear && !uk.twelve_hour && uk.separator == '/');
+    const TimeStyle de = time_style_for_region("de", "DE");
+    CHECK(de.order == TimeStyle::Order::DayMonthYear && !de.twelve_hour && de.separator == '.');
+    const TimeStyle jp = time_style_for_region("ja", "");
+    CHECK(jp.order == TimeStyle::Order::YearMonthDay && !jp.twelve_hour);
+    const TimeStyle quebec = time_style_for_region("fr", "CA");
+    CHECK(!quebec.twelve_hour);
+    const TimeStyle au = time_style_for_region("en", "au");
+    CHECK(au.order == TimeStyle::Order::DayMonthYear && au.twelve_hour);
 }
 
 }  // namespace

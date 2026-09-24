@@ -54,10 +54,10 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | entry | what it shows or does |
 | --- | --- |
 | **Continue** | back to the game, the same as B on the list |
-| **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it |
+| **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a round button showing a hand holding a stylus: press it to swap which hand holds it (the hand flips to match). It is greyed out for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots; see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
-| **Options** | the settings you might change mid-game, as a list: render scale (3DS), stylus hand, sound (with two devices), pointer, right stick (3DS), screen gap (where the layout has one) and screen smoothing |
+| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), screen gap (where the layout has one) and screen smoothing |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking |
@@ -1019,9 +1019,16 @@ folder.
 
 The quick menu of a DS or 3DS game has **Create Save State** and **Load Save
 State**. Either shows four slots on the right, like Nintendo Switch Online's
-suspend points, each with a picture of both screens and the date and time it
-was made. Going across puts the cursor on the first empty slot to save into,
-or on the newest save to load.
+suspend points, each an outlined box with a picture of both screens and the
+date and time it was made. Going across puts the cursor on the first empty slot
+to save into, or on the newest save to load.
+
+Dates and times are written the way the device showing them writes them:
+`09/24/2026 - 10:38 PM` in the US, `24.09.2026 - 22:38` in Germany,
+`2026/09/24 - 22:38` in Japan. On a Mac, iPhone, iPad or Apple TV that follows
+the region and the 24-Hour Time switch in its settings; on Linux and SteamOS,
+the system locale; on a Switch, its system language. A companion shows them its
+own way, whatever the host does.
 
 - **Create** into an empty slot saves straight away. Saving over a slot that
   already has something in it asks *Overwrite this save state?* first.

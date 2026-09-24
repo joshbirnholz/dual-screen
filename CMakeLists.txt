@@ -84,6 +84,7 @@ endfunction()
 dualscreen_embed_asset(ds_bezel.png kDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(inter.ttf kUiFont BEZEL_SOURCES)
+dualscreen_embed_asset(stylus_hand.png kStylusHandPng BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 
 set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
@@ -170,6 +171,12 @@ target_link_libraries(dualscreen_core
         ${CMAKE_DL_LIBS}
 )
 
+# A save state's time is written the way the Mac's own region and 24-Hour Time
+# setting say -- see device_time_style().
+if(APPLE)
+    target_link_libraries(dualscreen_core PUBLIC "-framework CoreFoundation")
+endif()
+
 # PUBLIC so that anything linking the core -- the companion client included --
 # compiles the same headers against the same answer about whether there is a
 # codec at all.
@@ -238,6 +245,9 @@ target_link_libraries(dualscreen-companion PRIVATE
     ZLIB::ZLIB
     Threads::Threads
 )
+if(APPLE)
+    target_link_libraries(dualscreen-companion PRIVATE "-framework CoreFoundation")
+endif()
 # The same answer the core got, so both ends of a session agree about whether
 # there is a codec before they try to negotiate one.
 if(FFMPEG_FOUND)
