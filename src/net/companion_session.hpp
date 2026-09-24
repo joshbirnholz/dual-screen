@@ -500,6 +500,10 @@ public:
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
     bool host_save_points_available() const { return host_save_points_available_; }
+    // What the host last said is in each save point slot, and a number that
+    // moves each time it says so, for the menu to notice.
+    const SaveSlotsMessage& host_save_slots() const { return host_save_slots_; }
+    uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
     // Sends this device's input to the host. Only what changed goes out.
     // `pads`, when given, is every pad on this device on its own, in this
@@ -836,6 +840,8 @@ private:
     bool host_right_stick_choosable_ = false;
     bool host_cursor_shown_ = true;
     bool host_save_points_available_ = false;
+    SaveSlotsMessage host_save_slots_;
+    uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;
     // The host being joined, kept for as long as the join takes: an attempt

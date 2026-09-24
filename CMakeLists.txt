@@ -149,7 +149,6 @@ add_library(dualscreen_core STATIC
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
     src/ui/controllers_screen.cpp
-    src/ui/save_points_screen.cpp
     src/util/build_stamp.cpp
     src/util/child_process.cpp
     src/util/log.cpp

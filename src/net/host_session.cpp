@@ -457,6 +457,12 @@ void HostSession::set_host_screen(ScreenId screen) {
     config_.host_screen = screen;
 }
 
+void HostSession::set_save_slots(const SaveSlotsMessage& slots) {
+    save_slots_ = slots;
+    save_slots_known_ = true;
+    save_slots_dirty_ = true;
+}
+
 void HostSession::set_session_state(const SharedState& state) {
     if (state.per_device_layout != shared_.per_device_layout ||
         state.menu_open != shared_.menu_open) {
@@ -658,6 +664,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             encode_welcome(welcome, out);
             companion_.send(out);
             session_state_dirty_ = true;
+            save_slots_dirty_ = save_slots_known_;
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
@@ -967,6 +974,12 @@ void HostSession::poll(uint64_t now_ms) {
         encode_session_state(state, out);
         companion_.send(out);
         session_state_dirty_ = false;
+    }
+    if (save_slots_dirty_ && handshake_done_) {
+        std::vector<uint8_t> out;
+        encode_save_slots(save_slots_, out);
+        companion_.send(out);
+        save_slots_dirty_ = false;
     }
 
     std::string error;

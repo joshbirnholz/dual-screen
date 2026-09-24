@@ -387,6 +387,15 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             granted_screen_ = state.companion_screen;
             break;
         }
+        case MessageType::SaveSlots: {
+            SaveSlotsMessage slots;
+            if (!decode_save_slots(payload.data(), payload.size(), slots)) {
+                return;  // the menu goes without pictures; not worth a session
+            }
+            host_save_slots_ = std::move(slots);
+            ++host_save_slots_revision_;
+            break;
+        }
         case MessageType::Rumble: {
             RumbleMessage rumble;
             if (!decode_rumble(payload.data(), payload.size(), rumble)) {

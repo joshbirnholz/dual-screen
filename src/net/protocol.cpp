@@ -443,6 +443,89 @@ void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
     finish_message(out, start, MessageType::Rumble);
 }
 
+// Each slot's picture goes deflated: a small one, but four of them, on the
+// same connection as every press.
+void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    const std::size_t count = std::min<std::size_t>(message.slots.size(), 255);
+    put_u8(out, static_cast<uint8_t>(count));
+    for (std::size_t index = 0; index < count; ++index) {
+        const SavePointInfo& slot = message.slots[index];
+        put_u8(out, slot.exists ? 1u : 0u);
+        put_u64(out, static_cast<uint64_t>(slot.saved_at));
+        std::vector<uint8_t> packed;
+        const SavePointThumbnail& picture = slot.thumbnail;
+        if (slot.exists && picture.valid() && picture.width <= 0xffff && picture.height <= 0xffff) {
+            std::vector<uint8_t> raw;
+            raw.reserve(picture.pixels.size() * 4);
+            for (const uint32_t pixel : picture.pixels) put_u32(raw, pixel);
+            uLongf bound = compressBound(static_cast<uLong>(raw.size()));
+            packed.resize(bound);
+            if (compress2(packed.data(), &bound, raw.data(), static_cast<uLong>(raw.size()), 6) ==
+                Z_OK) {
+                packed.resize(bound);
+            } else {
+                packed.clear();
+            }
+        }
+        put_u16(out, packed.empty() ? 0u : static_cast<uint16_t>(picture.width));
+        put_u16(out, packed.empty() ? 0u : static_cast<uint16_t>(picture.height));
+        put_u32(out, static_cast<uint32_t>(packed.size()));
+        out.insert(out.end(), packed.begin(), packed.end());
+    }
+    put_string(out, message.status);
+    put_u8(out, message.status_failed ? 1u : 0u);
+    finish_message(out, start, MessageType::SaveSlots);
+}
+
+bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& out) {
+    Reader reader(data, size);
+    uint8_t count = 0;
+    if (!reader.u8(count)) return false;
+    out.slots.assign(count, SavePointInfo{});
+    for (SavePointInfo& slot : out.slots) {
+        uint8_t exists = 0;
+        uint64_t saved_at = 0;
+        uint16_t width = 0;
+        uint16_t height = 0;
+        uint32_t packed_size = 0;
+        std::vector<uint8_t> packed;
+        reader.u8(exists);
+        reader.u64(saved_at);
+        reader.u16(width);
+        reader.u16(height);
+        reader.u32(packed_size);
+        if (!reader.ok() || packed_size > reader.remaining()) return false;
+        reader.bytes(packed, packed_size);
+        slot.exists = exists != 0;
+        slot.saved_at = static_cast<int64_t>(saved_at);
+        // A picture that does not unpack is only a missing picture.
+        if (width > 0 && height > 0 && width <= 1024 && height <= 1024 && !packed.empty()) {
+            std::vector<uint8_t> raw(static_cast<std::size_t>(width) * height * 4);
+            uLongf raw_size = static_cast<uLongf>(raw.size());
+            if (uncompress(raw.data(), &raw_size, packed.data(), static_cast<uLong>(packed.size())) ==
+                    Z_OK &&
+                raw_size == raw.size()) {
+                slot.thumbnail.width = width;
+                slot.thumbnail.height = height;
+                slot.thumbnail.pixels.resize(raw.size() / 4);
+                for (std::size_t pixel = 0; pixel < slot.thumbnail.pixels.size(); ++pixel) {
+                    const uint8_t* bytes = raw.data() + pixel * 4;
+                    slot.thumbnail.pixels[pixel] =
+                        static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) |
+                        (static_cast<uint32_t>(bytes[2]) << 16) |
+                        (static_cast<uint32_t>(bytes[3]) << 24);
+                }
+            }
+        }
+    }
+    uint8_t failed = 0;
+    reader.string(out.status);
+    reader.u8(failed);
+    out.status_failed = failed != 0;
+    return reader.ok();
+}
+
 bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out) {
     Reader reader(data, size);
     uint8_t active = 0;

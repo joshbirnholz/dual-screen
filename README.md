@@ -46,6 +46,27 @@ one running the game.
   from a core inside it, and treats them like any other console's from there.
   Finished and tested on this side; no emulator speaks it yet.
 
+## The quick menu
+
+On a DS or 3DS game the quick menu is laid out like Nintendo Switch Online's:
+a list down the left, and whatever the highlighted entry holds on the right.
+
+| entry | what it shows or does |
+| --- | --- |
+| **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it |
+| **Create Save Point** | the four save point slots; see [Save points](#save-points) |
+| **Load Save Point** | the same slots, to go back to one |
+| **Options** | the settings you might change mid-game, as a list: render scale (3DS), stylus hand, sound (with two devices), pointer, right stick (3DS), screen gap (where the layout has one) and screen smoothing |
+| **Disconnect** | ends a two-device session; only there while one is running |
+| **Reset** | restarts the game, after asking |
+| **Quit** | closes the game, after asking |
+
+Up and down move through the list, and the right-hand side follows. Right or
+A goes across onto it; left from its edge, or B, comes back. B on the list
+resumes the game. **−** still opens Settings, and the old face-button
+shortcuts (X quit, Y reset, + disconnect, R3 smoothing) still work, though the
+guide no longer shows them. A Wii U game's menu stays a plain list.
+
 ## Layouts
 
 These are the Wii U Virtual Console's own Screen Settings, in its order and
@@ -447,8 +468,8 @@ layout arithmetic, the controller mapping — with this app rather than
 reimplementing them, so a host cannot tell the difference between it and
 another PC, and neither can the menu.
 
-Its in-session menu *is* this menu — the same source, the same tiles, the same
-previews, the same footer — because the device showing a screen is usually the
+Its in-session menu *is* this menu — the same source, the same list, the same
+previews, the same options — because the device showing a screen is usually the
 one being held, and the alternative is reaching for a pad plugged into the
 other machine. The only entry it drops is **Pointer**, which is the one thing
 on that menu belonging to the device rather than the host, and a console has no
@@ -916,7 +937,7 @@ Full options:
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Turn the pointer off entirely | **Pointer** in the layout menu |
+| Turn the pointer off entirely | **Pointer**, under **Options** in the quick menu |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Change how button prompts are drawn | **Button prompts** in Settings: Nintendo letters, PlayStation symbols, Xbox letters, or **Positional** -- four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
@@ -994,11 +1015,11 @@ folder.
 
 ### Save points
 
-The quick menu of a DS or 3DS game has **Load Save Point** and **Create Save
-Point**. Both open the same screen, laid out like Nintendo Switch Online's
-suspend points: the two actions down the left, and four slots down the right,
-each with a picture of both screens and the date and time it was made. Left
-and right move between the two columns; B backs out one step at a time.
+The quick menu of a DS or 3DS game has **Create Save Point** and **Load Save
+Point**. Either shows four slots on the right, like Nintendo Switch Online's
+suspend points, each with a picture of both screens and the date and time it
+was made. Going across puts the cursor on the first empty slot to save into,
+or on the newest save to load.
 
 - **Create** into an empty slot saves straight away. Saving over a slot that
   already has something in it asks *Overwrite this save point?* first.
@@ -1011,12 +1032,12 @@ written as usual. So loading one also puts the cartridge save back to how it
 was then, the same as it would on the console. They are kept beside the
 cartridge save as `<rom name>.savepoint1` to `.savepoint4`, written the same
 all-or-nothing way. A save point made with one version of a core may not load
-in a much newer one; the screen says so if it does not.
+in a much newer one; the menu says so if it does not.
 
 The entries only appear when the core running the game can make save states
-(melonDS DS and Citra both offer them). The screen belongs to the device running the
-game, like Settings: a companion's quick menu has the entries too, and its
-screen says to look at the other one while its buttons keep working it.
+(melonDS DS and Citra both offer them). The saves are made and kept by the
+device running the game; a companion's copy of the menu is sent the slots,
+pictures and all, and saves and loads through the host like any other press.
 
 ### Face buttons
 
@@ -1153,15 +1174,17 @@ ctest --test-dir build --output-on-failure
   that a screen read back for streaming is never sharper than what was
   actually rendered and never softer than the console's own resolution,
   whatever resolution is asked for.
-- `test_quick_settings` — taps a grid over the layout menu and counts which
-  taps do what, so the render-scale button is checked by being *found* rather
-  than by being told where it is: present on a 3DS game, absent on a DS game and
-  on a companion, and the six buttons beside it still each report their own
-  intent now that the row wraps.
+- `test_quick_settings` — taps a grid over the quick menu and counts which
+  taps do what, so the render-scale option is checked by being *found* rather
+  than by being told where it is: present on a 3DS game, absent on a DS game,
+  and every other option still reporting its own intent and no one else's.
+  Also the list's order, moving across to its right-hand side and back, and
+  the save point confirmations.
 - `test_save_points` — save point files round-trip (state, picture and time),
-  a truncated or foreign file is refused rather than handed to the core, the
-  picture is both screens side by side whichever byte order they came in, and
-  the screen asks before loading or overwriting and only then.
+  a truncated or foreign file is refused rather than handed to the core, and
+  the picture is both screens side by side whichever byte order they came in.
+  `test_quick_settings` covers the menu side: the list's order, moving across
+  and back, and asking before loading or overwriting and only then.
 - `test_controller_input` — drives an SDL **virtual game controller** through
   the whole input path, so the face-button mapping is verified end to end with
   no hardware, and the left stick reaches the circle pad — pressing the d-pad

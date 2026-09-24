@@ -117,6 +117,46 @@ void test_welcome_and_session_round_trip() {
 // Everything a companion can ask the host for travels in one message, each
 // field saying whether it means anything, so asking about the sound does not
 // silently also ask for a layout.
+// The save point slots a companion's menu shows: pictures, times and the last
+// save's line all arrive as they were, and a slot's picture that does not
+// unpack is only a slot without a picture.
+void test_save_slots_round_trip() {
+    SaveSlotsMessage sent;
+    sent.slots.resize(4);
+    sent.slots[0].exists = true;
+    sent.slots[0].saved_at = 1749120960;
+    sent.slots[0].thumbnail.width = 3;
+    sent.slots[0].thumbnail.height = 2;
+    sent.slots[0].thumbnail.pixels = {0x00112233u, 0x00445566u, 0x00778899u,
+                                      0x00AABBCCu, 0x00DDEEFFu, 0x00010203u};
+    sent.slots[2].exists = true;
+    sent.slots[2].saved_at = 42;
+    sent.status = "Saved to save point 1.";
+
+    std::vector<uint8_t> buffer;
+    encode_save_slots(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::SaveSlots);
+
+    SaveSlotsMessage received;
+    CHECK(decode_save_slots(payload.data(), payload.size(), received));
+    CHECK_EQ(received.slots.size(), static_cast<std::size_t>(4));
+    CHECK(received.slots[0].exists);
+    CHECK_EQ(received.slots[0].saved_at, static_cast<int64_t>(1749120960));
+    CHECK(received.slots[0].thumbnail.pixels == sent.slots[0].thumbnail.pixels);
+    CHECK_EQ(received.slots[0].thumbnail.width, 3);
+    CHECK(!received.slots[1].exists);
+    CHECK(received.slots[2].exists);
+    CHECK(!received.slots[2].thumbnail.valid());
+    CHECK_STR_EQ(received.status, "Saved to save point 1.");
+    CHECK(!received.status_failed);
+
+    // Cut short: refused rather than half-read.
+    CHECK(!decode_save_slots(payload.data(), payload.size() / 2, received));
+}
+
 void test_request_round_trip() {
     RequestMessage sent;
     sent.layout_id = "side_by_side";
@@ -1138,6 +1178,7 @@ int main() {
     test_hello_round_trip();
     test_welcome_and_session_round_trip();
     test_request_round_trip();
+    test_save_slots_round_trip();
     test_input_round_trip();
     test_rumble_round_trip();
     test_a_companions_pads_ride_the_input_as_a_tail();

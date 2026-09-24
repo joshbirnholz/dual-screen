@@ -1,5 +1,6 @@
 // Save point files: what goes in comes back out, a damaged file is refused
 // rather than handed to a core, and the picture is both screens side by side.
+// The menu that makes and loads them is tested in test_quick_settings.
 
 #include "test_support.hpp"
 
@@ -13,7 +14,6 @@
 #include "config/paths.hpp"
 #include "core/save_points.hpp"
 #include "core/screen_source.hpp"
-#include "ui/save_points_screen.hpp"
 
 using namespace ds;
 
@@ -176,93 +176,6 @@ void test_time() {
     CHECK_STR_EQ(text.substr(10, 3), std::string(" - "));
 }
 
-// Slots 1 and 3 filled, 3 the newer.
-std::vector<SavePointInfo> some_slots() {
-    std::vector<SavePointInfo> slots(kSavePointSlots);
-    slots[0].exists = true;
-    slots[0].saved_at = 100;
-    slots[2].exists = true;
-    slots[2].saved_at = 200;
-    return slots;
-}
-
-SavePointsScreenResult press(SavePointsScreen& screen, UiAction action) {
-    return screen.update({action}, {}, 1280.0f, 800.0f);
-}
-
-void test_loading_asks_first() {
-    SavePointsScreen screen;
-    screen.set_slots(some_slots());
-    screen.open(SavePointMode::Load);
-    // Straight onto the newest save.
-    CHECK(screen.on_slots());
-    CHECK_EQ(screen.slot_focus(), 2);
-
-    // "Load this save point?" -- and Back answers no.
-    CHECK_EQ(press(screen, UiAction::Confirm).load_slot, -1);
-    CHECK(screen.confirming());
-    CHECK_EQ(press(screen, UiAction::Cancel).load_slot, -1);
-    CHECK(!screen.confirming());
-    CHECK(screen.is_open());
-
-    // And OK answers yes.
-    press(screen, UiAction::Confirm);
-    CHECK_EQ(press(screen, UiAction::Confirm).load_slot, 2);
-
-    // An empty slot has nothing to load, and asks nothing.
-    press(screen, UiAction::Down);
-    CHECK_EQ(screen.slot_focus(), 3);
-    const SavePointsScreenResult empty = press(screen, UiAction::Confirm);
-    CHECK_EQ(empty.load_slot, -1);
-    CHECK(!screen.confirming());
-}
-
-void test_saving_asks_only_before_overwriting() {
-    SavePointsScreen screen;
-    screen.set_slots(some_slots());
-    screen.open(SavePointMode::Create);
-    // Onto the first empty slot: saving there loses nothing.
-    CHECK_EQ(screen.slot_focus(), 1);
-    CHECK_EQ(press(screen, UiAction::Confirm).save_slot, 1);
-    CHECK(!screen.confirming());
-
-    // Over a filled one, "Overwrite this save point?" first.
-    press(screen, UiAction::Up);
-    CHECK_EQ(screen.slot_focus(), 0);
-    CHECK_EQ(press(screen, UiAction::Confirm).save_slot, -1);
-    CHECK(screen.confirming());
-    CHECK_EQ(press(screen, UiAction::Confirm).save_slot, 0);
-    CHECK(!screen.confirming());
-
-    // Every slot full: the oldest is offered.
-    std::vector<SavePointInfo> full = some_slots();
-    full[1].exists = true;
-    full[1].saved_at = 50;
-    full[3].exists = true;
-    full[3].saved_at = 300;
-    screen.set_slots(full);
-    screen.open(SavePointMode::Create);
-    CHECK_EQ(screen.slot_focus(), 1);
-}
-
-void test_back_steps_out_one_level_at_a_time() {
-    SavePointsScreen screen;
-    screen.set_slots(some_slots());
-    screen.open(SavePointMode::Load);
-    CHECK(!press(screen, UiAction::Cancel).close_requested);
-    CHECK(!screen.on_slots());
-    // Over on the list, down switches to saving.
-    press(screen, UiAction::Down);
-    CHECK(screen.mode() == SavePointMode::Create);
-    press(screen, UiAction::Right);
-    CHECK(screen.on_slots());
-    CHECK_EQ(screen.slot_focus(), 1);
-    press(screen, UiAction::Left);
-    CHECK(!screen.on_slots());
-    CHECK(press(screen, UiAction::Cancel).close_requested);
-    CHECK(!screen.is_open());
-}
-
 }  // namespace
 
 int main() {
@@ -274,8 +187,5 @@ int main() {
     test_thumbnail(ChannelOrder::XrgbBytes);
     test_thumbnail(ChannelOrder::Rgba);
     test_time();
-    test_loading_asks_first();
-    test_saving_asks_only_before_overwriting();
-    test_back_steps_out_one_level_at_a_time();
     return test::finish("save points");
 }

@@ -44,7 +44,6 @@
 #include "net/host_session.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
-#include "ui/save_points_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/message_screen.hpp"
@@ -269,7 +268,6 @@ struct App::Impl {
         Menu,
         Settings,
         Controllers,
-        SavePoints,
         Message,
         Browser,
         Launcher,
@@ -321,9 +319,6 @@ struct App::Impl {
     std::unique_ptr<SettingsScreen> settings_screen;
     // Opened from Settings, and drawn over it -- see ControllersScreen.
     ControllersScreen controllers_screen;
-    // Opened from the quick menu, and drawn over the paused game -- see
-    // SavePointsScreen.
-    SavePointsScreen save_points_screen;
     // The game running here, which its save points are named after.
     std::string game_path;
     std::unique_ptr<GameBrowser> browser;
@@ -430,8 +425,6 @@ struct App::Impl {
     // Where the Controllers screen was opened from, which is where closing it
     // goes back to.
     State controllers_came_from = State::Playing;
-    // And the same for the Save Points screen.
-    State save_points_came_from = State::Menu;
     // Whether the Wii U list shown in place of "Playing on Cemu" has had the
     // window's focus, as last logged -- see LayoutPickerState::embedded.
     bool embedded_menu_focused = false;
@@ -572,15 +565,16 @@ struct App::Impl {
     void close_controllers();
     void update_controllers_screen(const std::vector<UiAction>& actions,
                                    const std::vector<PointerEvent>& pointers);
-    // The Save Points screen, the same way: up over the paused game, handed
-    // presses, and put away back into the menu -- or straight back into the
-    // game once one has been loaded.
+    // Save points, made and loaded from the quick menu. The slots are read
+    // off the disk here and handed to the menu -- this device's, and the
+    // companion's copy of it -- with one line about the last save.
     bool save_points_available() const;
-    void open_save_points(SavePointMode mode);
-    void close_save_points(bool back_to_game);
-    void refresh_save_points();
-    void update_save_points_screen(const std::vector<UiAction>& actions,
-                                   const std::vector<PointerEvent>& pointers);
+    void refresh_save_points(const std::string& status = std::string(), bool failed = false);
+    void make_save_point(int slot);
+    void load_save_point(int slot);
+    // The companion's end: whatever the host last said is in the slots.
+    uint32_t save_slots_shown = 0;
+    void show_host_save_slots();
     // Buzzes one pad for a moment -- see identify_pad().
     void identify_pad(const KnownPad& pad);
     void tick_identify();
@@ -1185,88 +1179,68 @@ bool App::Impl::save_points_available() const {
     return source && !game_path.empty() && source->supports_save_states();
 }
 
-void App::Impl::refresh_save_points() {
-    std::vector<SavePointInfo> slots(kSavePointSlots);
+void App::Impl::refresh_save_points(const std::string& status, bool failed) {
+    net::SaveSlotsMessage slots;
+    slots.slots.resize(kSavePointSlots);
     for (int slot = 0; slot < kSavePointSlots; ++slot) {
         read_save_point_info(save_point_path(paths.saves_dir, game_path, slot),
-                             slots[static_cast<std::size_t>(slot)]);
+                             slots.slots[static_cast<std::size_t>(slot)]);
     }
-    save_points_screen.set_slots(std::move(slots));
+    slots.status = status;
+    slots.status_failed = failed;
+    if (picker) {
+        picker->set_save_slots(slots.slots);
+        picker->set_save_status(status, failed);
+    }
+    if (host_session) host_session->set_save_slots(slots);
 }
 
-void App::Impl::open_save_points(SavePointMode mode) {
+void App::Impl::show_host_save_slots() {
+    if (!is_companion() || !picker) return;
+    const uint32_t revision = companion_session->host_save_slots_revision();
+    if (revision == save_slots_shown) return;
+    save_slots_shown = revision;
+    const net::SaveSlotsMessage& slots = companion_session->host_save_slots();
+    picker->set_save_slots(slots.slots);
+    picker->set_save_status(slots.status, slots.status_failed);
+}
+
+void App::Impl::make_save_point(int slot) {
     if (!save_points_available()) return;
-    save_points_came_from = state;
-    if (picker) picker->close();
-    refresh_save_points();
-    save_points_screen.open(mode);
-    state = State::SavePoints;
-    input.set_game_input_enabled(false);
-    log_info(mode == SavePointMode::Load ? "the save points screen is up, to load"
-                                         : "the save points screen is up, to save");
-}
-
-void App::Impl::close_save_points(bool back_to_game) {
-    save_points_screen.close();
-    log_info("the save points screen is down");
-    if (!local_game()) {
-        open_launcher();
-    } else if (!back_to_game && save_points_came_from == State::Menu) {
-        set_menu_open(true);
+    const std::string path = save_point_path(paths.saves_dir, game_path, slot);
+    const std::string name = "save point " + std::to_string(slot + 1);
+    std::vector<uint8_t> state_bytes;
+    std::string error;
+    // The picture first: it is of the frame the game is paused on, which is
+    // exactly the moment being saved.
+    const SavePointThumbnail thumbnail = capture_save_point_thumbnail(*source);
+    if (source->save_state(state_bytes, &error) &&
+        write_save_point(path, state_bytes, thumbnail, static_cast<int64_t>(std::time(nullptr)),
+                         &error)) {
+        log_info(name + " saved (" + std::to_string(state_bytes.size()) + " bytes) to " + path);
+        refresh_save_points("Saved to " + name + ".", false);
     } else {
-        state = State::Playing;
-        input.set_game_input_enabled(true);
+        log_warn(name + " could not be saved: " + error);
+        refresh_save_points(error, true);
     }
 }
 
-void App::Impl::update_save_points_screen(const std::vector<UiAction>& actions,
-                                          const std::vector<PointerEvent>& pointers) {
-    const SavePointsScreenResult result = save_points_screen.update(
-        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
-    if (result.save_slot >= 0 && save_points_available()) {
-        const std::string path = save_point_path(paths.saves_dir, game_path, result.save_slot);
-        std::vector<uint8_t> state_bytes;
-        std::string error;
-        // The picture first: it is of the frame the game is paused on, which
-        // is exactly the moment being saved.
-        const SavePointThumbnail thumbnail = capture_save_point_thumbnail(*source);
-        const bool saved =
-            source->save_state(state_bytes, &error) &&
-            write_save_point(path, state_bytes, thumbnail,
-                             static_cast<int64_t>(std::time(nullptr)), &error);
-        if (saved) {
-            log_info("save point " + std::to_string(result.save_slot + 1) + " saved (" +
-                     std::to_string(state_bytes.size()) + " bytes) to " + path);
-            refresh_save_points();
-            save_points_screen.set_status("Saved to save point " +
-                                              std::to_string(result.save_slot + 1) + ".",
-                                          false);
-        } else {
-            log_warn("save point " + std::to_string(result.save_slot + 1) +
-                     " could not be saved: " + error);
-            save_points_screen.set_status(error, true);
-        }
+void App::Impl::load_save_point(int slot) {
+    if (!save_points_available()) return;
+    const std::string path = save_point_path(paths.saves_dir, game_path, slot);
+    const std::string name = "save point " + std::to_string(slot + 1);
+    std::vector<uint8_t> state_bytes;
+    std::string error;
+    if (read_save_point_state(path, state_bytes, &error) &&
+        source->load_state(state_bytes, &error)) {
+        log_info(name + " loaded from " + path);
+        // Straight back into the game, the way NSO does it: loading one is
+        // choosing to play from there.
+        set_menu_open(false);
+        return;
     }
-    if (result.load_slot >= 0 && save_points_available()) {
-        const std::string path = save_point_path(paths.saves_dir, game_path, result.load_slot);
-        std::vector<uint8_t> state_bytes;
-        std::string error;
-        if (read_save_point_state(path, state_bytes, &error) &&
-            source->load_state(state_bytes, &error)) {
-            log_info("save point " + std::to_string(result.load_slot + 1) + " loaded from " +
-                     path);
-            // Straight back into the game, the way NSO does it: loading one
-            // is choosing to play from there.
-            close_save_points(true);
-            return;
-        }
-        log_warn("save point " + std::to_string(result.load_slot + 1) +
-                 " could not be loaded: " + error);
-        save_points_screen.set_status(error, true);
-    }
-    if (result.close_requested) {
-        close_save_points(false);
-    }
+    log_warn(name + " could not be loaded: " + error);
+    refresh_save_points(error, true);
 }
 
 void App::Impl::identify_pad(const KnownPad& pad) {
@@ -1356,6 +1330,12 @@ void App::Impl::set_menu_open(bool open) {
 }
 
 void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed_here) {
+            // Made here whichever device's pad chose them: the saves are on
+            // this machine, beside the game.
+            if (!is_companion()) {
+                if (result.save_slot >= 0) make_save_point(result.save_slot);
+                if (result.load_slot >= 0) load_save_point(result.load_slot);
+            }
             if (result.selection_changed) {
                 // A companion does not own the choice: request_layout() asks,
                 // and this device adopts whatever the host broadcasts back.
@@ -1418,12 +1398,6 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 } else {
                     running = false;
                 }
-            } else if (result.load_save_point_requested ||
-                       result.create_save_point_requested) {
-                // The host's own screen again: the saves are on this machine,
-                // beside the game.
-                open_save_points(result.load_save_point_requested ? SavePointMode::Load
-                                                                  : SavePointMode::Create);
             } else if (result.controllers_requested) {
                 // The host's own screen, the same as Settings below: only it
                 // can see every controller on both devices.
@@ -1485,6 +1459,12 @@ void App::Impl::open_picker(bool embedded) {
     // terms, as the render behind them -- see device_layout().
     picker->set_display_size(0.0f, 0.0f, is_companion() && local_screen == ScreenId::Bottom);
     picker->open(picker_state);
+    if (is_companion()) {
+        save_slots_shown = companion_session->host_save_slots_revision() - 1;
+        show_host_save_slots();
+    } else if (picker_state.save_points_available) {
+        refresh_save_points();
+    }
 }
 
 int App::Impl::next_render_scale() const {
@@ -2448,10 +2428,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
-        case State::SavePoints: {
-            update_save_points_screen(actions, pointers);
-            break;
-        }
 
         case State::Settings: {
             apply_settings_result(
@@ -2650,8 +2626,7 @@ void App::Impl::render() {
     // frame to blur at all.
     const bool show_menu_backdrop =
         state == State::Menu || (state == State::Settings && settings_came_from == State::Menu) ||
-        (state == State::Controllers && controllers_came_from == State::Menu) ||
-        state == State::SavePoints;
+        (state == State::Controllers && controllers_came_from == State::Menu);
     if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is
         // exactly the frame underneath it -- and taken again when that frame
@@ -2674,8 +2649,6 @@ void App::Impl::render() {
                                   settings.device_name,
                                   companion_joined() ? host_session->companion_name()
                                                      : std::string("other device"));
-    } else if (state == State::SavePoints) {
-        save_points_screen.render(quads, text, button_glyphs, width, height);
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
@@ -3134,8 +3107,7 @@ int App::run(const AppOptions& options) {
             // The Controllers screen is the host's own too, and the other
             // device is told to look over here for it the same way.
             shared.settings_open = impl.state == Impl::State::Settings ||
-                                   impl.state == Impl::State::Controllers ||
-                                   impl.state == Impl::State::SavePoints;
+                                   impl.state == Impl::State::Controllers;
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
@@ -3306,8 +3278,7 @@ int App::run(const AppOptions& options) {
                 // closed is not a press at the game.
                 const bool for_menu = impl.state == Impl::State::Menu && impl.picker;
                 const bool for_settings = impl.state == Impl::State::Settings ||
-                                          impl.state == Impl::State::Controllers ||
-                                          impl.state == Impl::State::SavePoints;
+                                          impl.state == Impl::State::Controllers;
                 if (!for_menu && !for_settings) continue;
                 if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
@@ -3316,10 +3287,6 @@ int App::run(const AppOptions& options) {
                 const UiAction action = ui_action_for(press.action);
                 if (impl.state == Impl::State::Controllers) {
                     impl.update_controllers_screen({action}, {});
-                    continue;
-                }
-                if (impl.state == Impl::State::SavePoints) {
-                    impl.update_save_points_screen({action}, {});
                     continue;
                 }
                 if (for_settings) {
@@ -3432,6 +3399,7 @@ int App::run(const AppOptions& options) {
                     impl.picker->show(
                         impl.menu_state_from_host(), impl.companion_session->host_menu_focus(),
                         static_cast<MenuConfirm>(impl.companion_session->host_menu_confirm()));
+                    impl.show_host_save_slots();
                 }
                 if (impl.companion_session->host_filtering() != impl.bilinear_filtering) {
                     impl.bilinear_filtering = impl.companion_session->host_filtering();
@@ -3485,7 +3453,8 @@ int App::run(const AppOptions& options) {
         if (open_save_points_when_playing && impl.state == Impl::State::Playing &&
             impl.source && impl.source->core_frame_for_test().valid()) {
             open_save_points_when_playing = false;
-            impl.open_save_points(SavePointMode::Create);
+            impl.set_menu_open(true);
+            impl.picker->set_focus(LayoutPicker::focus_of(MenuSection::CreateSavePoint));
         }
 
         impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());

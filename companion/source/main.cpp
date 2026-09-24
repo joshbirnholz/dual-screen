@@ -284,6 +284,16 @@ private:
                      const std::vector<PointerEvent>& pointers);
     void open_menu();
     LayoutPickerState menu_state_from_host() const;
+    // The save point slots the host last described, into the menu: the saves
+    // are on its disk, so this end has only what it is told.
+    void show_host_save_slots() {
+        const uint32_t revision = session_.host_save_slots_revision();
+        if (revision == save_slots_shown_) return;
+        save_slots_shown_ = revision;
+        picker_.set_save_slots(session_.host_save_slots().slots);
+        picker_.set_save_status(session_.host_save_slots().status,
+                                session_.host_save_slots().status_failed);
+    }
     void close_menu();
     void draw();
     // Says where a pass that took kSlowPassMs or more went. At most once a
@@ -336,6 +346,9 @@ private:
     LocalOutputRouter router_;
     BezelArt bezel_art_;
     LayoutPicker picker_{registry_};
+    // Which of the host's save slot lists the menu is showing -- see
+    // show_host_save_slots().
+    uint32_t save_slots_shown_ = 0;
     LauncherScreen launcher_;
     HostPickerScreen host_picker_;
     // Where the connecting screen's prompts ended up -- it is a free
@@ -694,6 +707,8 @@ void Client::open_menu() {
     picker_.set_screens(session_.screens_geometry(), session_.system());
     picker_.set_bezel_art(bezel_art_.texture(session_.system()));
     picker_.open(menu_state_from_host());
+    save_slots_shown_ = session_.host_save_slots_revision() - 1;
+    show_host_save_slots();
     // Which console's menu this is. Said out loud because the two devices
     // drawing different menus is otherwise only visible by holding them side
     // by side -- and it happened: this end defaulted to a DS's menu on a
@@ -1137,6 +1152,7 @@ void Client::run() {
                     picker_.set_smoothing(session_.host_filtering());
                     picker_.show(menu_state_from_host(), session_.host_menu_focus(),
                                  static_cast<MenuConfirm>(session_.host_menu_confirm()));
+                    show_host_save_slots();
                 }
                 // The host owns all of this and can change any of it from its
                 // own end; this device's pad drives the same game, so it

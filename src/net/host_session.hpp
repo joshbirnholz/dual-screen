@@ -137,6 +137,11 @@ public:
     // Cheap to call every frame; nothing is sent unless something changed.
     void set_session_state(const SharedState& state);
 
+    // What is in each save point slot, for the companion's copy of the quick
+    // menu. Sent once, and again to each companion that joins; call it again
+    // only when something has changed.
+    void set_save_slots(const SaveSlotsMessage& slots);
+
     // Sends one of the game's audio streams to the companion. DS and 3DS have
     // one soundtrack and always pass Shared; a Wii U's TV and GamePad are
     // independent and pass TopDevice/BottomDevice, each checked here against
@@ -444,6 +449,9 @@ private:
 
     SharedState shared_;
     bool session_state_dirty_ = true;
+    SaveSlotsMessage save_slots_;
+    bool save_slots_known_ = false;
+    bool save_slots_dirty_ = false;
 
     DsInputState companion_input_;
     bool companion_input_fresh_ = false;

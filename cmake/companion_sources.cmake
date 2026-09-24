@@ -20,6 +20,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/video/videotoolbox_decoder.cpp
     src/video/video_decoder.cpp
     src/video/video_encoder.cpp
+    src/core/save_points.cpp
     src/core/system.cpp
     src/input/controller_mapping.cpp
     src/input/cursor_visibility.cpp

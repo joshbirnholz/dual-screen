@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <vector>
 
+#include "core/save_points.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
@@ -53,11 +55,13 @@ struct LayoutPickerResult {
     // The same for the Controllers screen -- a Wii U's, which is the one
     // console whose controllers are each somebody's.
     bool controllers_requested = false;
-    // The Save Points screen was asked for, on the side that loads or the
-    // side that saves. Like Settings, it belongs to the device running the
-    // game.
-    bool load_save_point_requested = false;
-    bool create_save_point_requested = false;
+    // A save point slot to save into or to load, already confirmed where
+    // that throws something away: the caller does it, and hands the slots
+    // back with set_save_slots(). -1 for none. Loading is also the end of
+    // the menu -- the game picks up from there -- which is the caller's to
+    // do, since the menu does not know whether it worked.
+    int save_slot = -1;
+    int load_slot = -1;
 };
 
 // Everything the menu needs to know about the state it is opening onto. A
@@ -124,14 +128,39 @@ struct LayoutPickerState {
     bool save_points_available = false;
 };
 
-// What a face button asked for and has not yet been allowed to do. Both of
-// these throw away something the player cannot get back -- unsaved progress, or
-// the session -- so both are asked about first. Travels over the wire, so the
+// What has been asked for and not yet been allowed to happen. Each of these
+// throws away something the player cannot get back -- unsaved progress, or a
+// save point -- so each is asked about first. Travels over the wire, so the
 // numbers are part of the protocol.
-enum class MenuConfirm : uint8_t { None = 0, Reset = 1, Quit = 2 };
+enum class MenuConfirm : uint8_t {
+    None = 0,
+    Reset = 1,
+    Quit = 2,
+    LoadSavePoint = 3,
+    OverwriteSavePoint = 4,
+};
 
-// The layout menu: a grid of visual previews rather than a cycle-through
-// button, so a player picks the arrangement they want directly.
+// The list down the left of a DS or 3DS quick menu, the way Nintendo Switch
+// Online's own menu is laid out: each entry either shows its choices on the
+// right, or does something. Travels over the wire inside a focus -- see
+// LayoutPicker::focus_of() -- so the numbers are part of the protocol, and are
+// the same whichever entries a given session happens to have.
+enum class MenuSection : uint8_t {
+    Layout = 0,
+    CreateSavePoint = 1,
+    LoadSavePoint = 2,
+    Options = 3,
+    Disconnect = 4,
+    Reset = 5,
+    Quit = 6,
+};
+
+// The quick menu. On a DS or a 3DS, two columns: the sections down the left
+// -- Screen Layout, Create and Load Save Point, Options, then Disconnect,
+// Reset and Quit -- and whichever of them is highlighted shows its choices on
+// the right: the layouts as pictures of the game in each, the save point
+// slots, or the options as a list. A Wii U's is a plain list; see
+// rebuild_footer().
 //
 // There is one of these per session, not one per device. Whichever machine
 // runs the game holds it; the other draws the same menu from what it is told
@@ -153,7 +182,23 @@ public:
 
     // The whole of what the other device has to be told to draw the same menu,
     // and what it hands back when it is the one being told.
-    int focus() const { return focus_; }
+    //
+    // On a Wii U, the row. On a DS or a 3DS, one number for the section and
+    // the thing in it: see focus_of().
+    int focus() const;
+    // A DS or 3DS focus: `section` on the left, or its `item` on the right.
+    // Sections are 32 apart, so a focus fits the byte it travels in.
+    static constexpr int kSectionStride = 32;
+    static int focus_of(MenuSection section, int item = -1) {
+        return static_cast<int>(section) * kSectionStride + (item >= 0 ? item + 1 : 0);
+    }
+    MenuSection section() const { return section_; }
+    bool on_content() const { return on_content_; }
+    // What is in each save point slot, and one line about the last save.
+    // Read off the disk by the device running the game, and handed on to the
+    // other one, which has only what it is told.
+    void set_save_slots(std::vector<SavePointInfo> slots);
+    void set_save_status(std::string status, bool failed);
     MenuConfirm confirmation() const { return confirm_; }
 
     // Everything the menu shows, applied in one go, for the device that is not
@@ -249,42 +294,49 @@ public:
                              bool smoothing);
 
 private:
-    // Footer buttons, in focus order after the layout tiles. Which of them are
-    // present depends on the session, so they are built per-open rather than
-    // being a fixed enum.
+    // A Wii U session's whole menu, as a plain list: there is no layout to
+    // pick (see rebuild_tiles()) and nothing else here is a value worth
+    // cycling -- see rebuild_footer()'s Wii U branch and render()'s.
     enum class Footer {
-        LoadSavePoint,
-        CreateSavePoint,
-        RenderScale,
-        Hands,
-        Sound,
-        Cursor,
-        RightStick,
-        ScreenGap,
-        // A Wii U session's whole menu is these four, in place of everything
-        // above: there is no layout to pick (see rebuild_tiles()) and nothing
-        // else here is a value worth cycling from a footer button -- see
-        // rebuild_footer()'s Wii U branch and render()'s.
         OpenControllers,
         OpenSettings,
         Disconnect,
         Quit,
     };
 
-
-
-    struct Geometry {
-        std::vector<PixelRect> tiles;
-        std::vector<PixelRect> footer;
-        PixelRect panel;
-        int columns = 1;
-        // The footer wraps onto a second row rather than squeezing six buttons
-        // into one: a label nobody can read is not a shortcut.
-        int footer_columns = 1;
-        float scale = 1.0f;
+    // The rows of a DS or 3DS menu's Options section.
+    enum class Option {
+        RenderScale,
+        Hands,
+        Sound,
+        Cursor,
+        RightStick,
+        ScreenGap,
+        Smoothing,
     };
 
+    struct Geometry {
+        std::vector<PixelRect> footer;
+        PixelRect panel;
+        float scale = 1.0f;
+    };
+    // The Wii U list.
     Geometry compute_geometry(float output_width, float output_height) const;
+
+    // The two columns of a DS or 3DS menu. `items` are the right-hand side's
+    // things for the section showing there, in its own order.
+    struct MenuGeometry {
+        PixelRect panel;
+        float scale = 1.0f;
+        std::vector<PixelRect> sections;
+        float divider_x = 0.0f;
+        float content_top = 0.0f;
+        float content_bottom = 0.0f;
+        PixelRect content;
+        std::vector<PixelRect> items;
+        int columns = 1;
+    };
+    MenuGeometry compute_menu_geometry(float output_width, float output_height) const;
     // Where the confirmation sits, and the two prompts inside it a finger can
     // land on. Only meaningful while one is up.
     struct ConfirmGeometry {
@@ -301,13 +353,37 @@ private:
     const Layout& tile_layout(int index) const;
     int tile_index_of(const std::string& layout_id) const;
     int footer_count() const { return static_cast<int>(footer_.size()); }
-    int focus_count() const { return tile_count() + footer_count(); }
-    void move_focus(int delta_x, int delta_y, const Geometry& geometry);
+    void move_focus(int delta_y);
     bool activate_focus(LayoutPickerResult& result);
-
     std::string footer_label(Footer kind) const;
-    // Which buttons the footer carries depends on the session, so it is built
-    // per-open rather than fixed.
+
+    // The DS and 3DS menu.
+    bool has_section(MenuSection section) const;
+    // How many things a section shows on the right; 0 for one that does
+    // something instead.
+    int content_count(MenuSection section) const;
+    // Where the cursor lands on moving into a section's things: the layout in
+    // use, the newest save to load, the slot a save loses least in.
+    int natural_item(MenuSection section) const;
+    // The layout grid's width, from the number of layouts alone, so that both
+    // devices agree on what Down means however different their screens are.
+    int layout_columns() const;
+    bool slot_filled(int slot) const;
+    void activate_section(LayoutPickerResult& result);
+    void activate_item(LayoutPickerResult& result);
+    void handle_menu_action(UiAction action, LayoutPickerResult& result);
+    std::string option_name(Option option) const;
+    std::string option_value(Option option) const;
+    void render_sections(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
+    void render_layouts(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry,
+                        float output_width, float output_height,
+                        const ScreenTextures* textures);
+    void render_slots(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
+    void render_options(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
+
+    // What the menu has depends on the session and the console -- a
+    // companion, a render scale, a stick -- so it is built per-open rather
+    // than fixed: the Wii U list, or the DS and 3DS sections and options.
     void rebuild_footer();
     // Which tiles this console offers, and in what order -- see set_screens().
     void rebuild_tiles();
@@ -319,7 +395,20 @@ private:
     // both. See layout_fits_system().
     std::vector<std::size_t> tiles_;
     bool open_ = false;
+    // The Wii U list's row.
     int focus_ = 0;
+    // The DS and 3DS menu's cursor: which section, and whether it is over on
+    // that section's things, and on which.
+    std::vector<MenuSection> sections_;
+    std::vector<Option> options_;
+    MenuSection section_ = MenuSection::Layout;
+    bool on_content_ = false;
+    int item_ = 0;
+    std::vector<SavePointInfo> save_slots_;
+    std::array<Texture, kSavePointSlots> slot_pictures_;
+    std::array<bool, kSavePointSlots> slot_pictures_dirty_{};
+    std::string save_status_;
+    bool save_status_failed_ = false;
     std::string selected_layout_id_;
     std::vector<Footer> footer_;
     LayoutPickerState state_;

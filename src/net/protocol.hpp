@@ -6,6 +6,7 @@
 
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
+#include "core/save_points.hpp"
 #include "core/system.hpp"
 #include "layout/layout.hpp"
 
@@ -67,6 +68,10 @@ enum class MessageType : uint16_t {
     // The GamePad's motor turning on or off. Sent only on Wii U, and only
     // when it changes -- see HostSession::publish_rumble().
     Rumble = 15,
+    // What is in each save point slot, for the quick menu's Create and Load
+    // Save Point to show on a companion: the saves are on the host's disk.
+    // Sent when they change. A companion from before save points ignores it.
+    SaveSlots = 16,
     // either way
     Ping = 20,
 };
@@ -324,6 +329,14 @@ struct BeaconMessage {
 // starts. Just on/off: what a real Wii U GamePad's motor does with a finer
 // pattern than that is not something a phone's or a Joy-Con's single motor
 // could reproduce over a network link anyway.
+struct SaveSlotsMessage {
+    // kSavePointSlots of them, empty ones included.
+    std::vector<SavePointInfo> slots;
+    // One line about the last save -- "Saved to save point 1." -- or why not.
+    std::string status;
+    bool status_failed = false;
+};
+
 struct RumbleMessage {
     bool active = false;
     // Which of the companion's pads, by the id it reported (see ReportedPad),
@@ -432,6 +445,7 @@ void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
 // above is defined in terms of it.
 void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out);
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
+void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 void encode_bye(std::vector<uint8_t>& out);
 void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out);
@@ -451,6 +465,7 @@ bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out);
 bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out);
 bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out);
 bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
+bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one
 // device; a bound so a malformed message cannot ask for a million.
