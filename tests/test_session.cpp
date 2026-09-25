@@ -1580,10 +1580,17 @@ void test_a_companion_that_falls_behind_stops_being_sent_frames() {
     };
 
     // Keeping up: the host must be free to send, and the acks must come back.
+    // Waited for rather than assumed to have happened by the last poll: the
+    // companion reads the network on a thread of its own, which a busy
+    // machine may not have run yet.
     for (uint64_t serial = 1; serial <= 12; ++serial) {
         publish(serial);
         companion.poll(monotonic_millis());
     }
+    spin(host, companion, [&] {
+        return companion.newest_frame_serial_for_test() > 0 &&
+               host.companion_frames_behind_for_test() == 0;
+    });
     CHECK_MSG(companion.newest_frame_serial_for_test() > 0,
               "the companion never decoded a frame while it was keeping up");
 
@@ -1727,11 +1734,15 @@ void test_a_companion_that_stops_acking_entirely_is_recovered_from() {
 
     // Keeping up first, the same as the test above, so this is a companion
     // that was working and then went silent -- not one that never answered
-    // at all.
+    // at all. Waited for, as there.
     for (uint64_t serial = 1; serial <= 6; ++serial) {
         publish(serial);
         companion.poll(monotonic_millis());
     }
+    spin(host, companion, [&] {
+        return companion.newest_frame_serial_for_test() > 0 &&
+               host.companion_frames_behind_for_test() == 0;
+    });
     CHECK_MSG(companion.newest_frame_serial_for_test() > 0,
               "the companion never decoded a frame while it was keeping up");
 

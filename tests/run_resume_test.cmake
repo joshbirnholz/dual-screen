@@ -9,7 +9,8 @@
 #   4. With it off again, the game starts as usual whatever is on the disk.
 #
 # The mock core's state is its frame counter, so resuming is resuming for
-# real, not just reading a file.
+# real, not just reading a file. And like melonDS DS, it will not take a state
+# before it has run a frame, so resuming too early fails here.
 #
 # Invoked by CTest with -DXVFB_RUN, -DDUALSCREEN, -DMOCK_CORE, -DWORK_DIR,
 # -DCHECKER.
@@ -80,7 +81,7 @@ if(output MATCHES "the resumed game is running")
     message(FATAL_ERROR "the resumed game ran without anybody pressing OK:\n${output}")
 endif()
 execute_process(
-    COMMAND "${CHECKER}" "${SHOT}" "at=0.24,0.5,dialog" "upper=blue" "lower=green"
+    COMMAND "${CHECKER}" "${SHOT}" "at=0.24,0.5,dialog" "at=0.5,0.36,blue" "lower=green"
     RESULT_VARIABLE check_result
     OUTPUT_VARIABLE check_output
     ERROR_VARIABLE check_errors)

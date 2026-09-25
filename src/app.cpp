@@ -1780,16 +1780,49 @@ bool App::Impl::resume_game() {
     read_save_point_info(path, info);
     std::vector<uint8_t> state_bytes;
     std::string error;
-    if (!read_save_point_state(path, state_bytes, &error) ||
-        !source->load_state(state_bytes, &error)) {
+    if (!read_save_point_state(path, state_bytes, &error)) {
         log_warn("could not resume from " + path + ": " + error + "; starting from the beginning");
         return false;
     }
-    // One frame from there, so what is paused behind the popup is the
-    // moment resumed and not a blank screen.
+    // Not straight after loading the game: the core has to have run first.
+    // melonDS DS finishes setting itself up on its first frame -- its renderer
+    // and its screen layout are built then -- and a state loaded before that
+    // lands in a console that is only half there: sprites drawn over nothing,
+    // and a picture the wrong shape, which the next frame then fails on. A
+    // state loaded from the quick menu never met this, because by then the
+    // game has been running for a while. Nothing of these frames is seen or
+    // heard: the sound is not open yet, and the popup goes up over the frame
+    // run after the state is in.
+    constexpr int kFramesBeforeResuming = 3;
+    constexpr int kMostFramesToWaitForAPicture = 60;
+    int ran = 0;
+    for (int frame = 0; frame < kMostFramesToWaitForAPicture; ++frame) {
+        std::string boot_error;
+        if (!source->advance_frame(&boot_error)) {
+            log_warn("could not resume: the game did not start (" + boot_error +
+                     "); starting from the beginning");
+            return false;
+        }
+        ++ran;
+        if (ran >= kFramesBeforeResuming && source->core_frame_for_test().valid()) break;
+    }
+    if (!source->load_state(state_bytes, &error)) {
+        log_warn("could not resume from " + path + ": " + error + "; starting from the beginning");
+        source->reset();
+        return false;
+    }
+    // One frame from there, so what is paused behind the popup is the moment
+    // resumed. A core that cannot run from the state it was handed is started
+    // again from the beginning, rather than left to fail in front of the
+    // player a moment later.
     std::string frame_error;
-    source->advance_frame(&frame_error);
-    log_info("resumed from " + path +
+    if (!source->advance_frame(&frame_error)) {
+        log_warn("resumed from " + path + ", but the game would not run from there (" +
+                 frame_error + "); starting from the beginning");
+        source->reset();
+        return false;
+    }
+    log_info("resumed from " + path + " after " + std::to_string(ran) + " frames of start-up" +
              (info.exists ? " (saved " + format_save_time(info.saved_at) + ")" : std::string()));
     return true;
 }

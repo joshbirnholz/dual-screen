@@ -304,6 +304,12 @@ void present_through_gpu() {
 
 int16_t g_silence[1024 * 2];
 unsigned g_frame_counter = 0;
+// Whether a frame has been run since the game was loaded. melonDS DS finishes
+// setting itself up on its first retro_run -- renderer, screen layout -- and a
+// state handed to it before then lands in a console that is only half there.
+// This core refuses one instead, so a frontend that loads a state too early is
+// caught here rather than on a device.
+bool g_ran_since_load = false;
 // A real game's own input lag, when MOCK_CORE_GAME_LAG is set: the touch read
 // in one frame is drawn in the next, the way a game reads the pad in its
 // logic and shows the result on the following vblank. Part of the state, as
@@ -713,6 +719,7 @@ RETRO_API void retro_reset(void) {
 }
 
 RETRO_API bool retro_load_game(const struct retro_game_info*) {
+    g_ran_since_load = false;
     enum retro_pixel_format format = RETRO_PIXEL_FORMAT_XRGB8888;
     if (g_environment != nullptr &&
         !g_environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format)) {
@@ -806,6 +813,7 @@ void check_frontend_left_default_gl_state() {
 }
 
 RETRO_API void retro_run(void) {
+    g_ran_since_load = true;
     if (g_input_poll != nullptr) {
         g_input_poll();
     }
@@ -951,6 +959,7 @@ RETRO_API bool retro_serialize(void* data, size_t size) {
     return true;
 }
 RETRO_API bool retro_unserialize(const void* data, size_t size) {
+    if (!g_ran_since_load) return false;  // see g_ran_since_load
     if (size != retro_serialize_size() || std::memcmp(data, kStateTag, sizeof(kStateTag)) != 0) {
         return false;
     }
