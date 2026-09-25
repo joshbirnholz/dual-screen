@@ -159,7 +159,7 @@ if(DUALSCREEN_GLES2_INCLUDE)
     add_test(NAME apple_typecheck
         COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=${CMAKE_CXX_COMPILER}
-            "-DSOURCES=${CMAKE_SOURCE_DIR}/src/video/videotoolbox_decoder.cpp;${CMAKE_SOURCE_DIR}/src/render/texture.cpp"
+            "-DSOURCES=${CMAKE_SOURCE_DIR}/src/video/videotoolbox_decoder.cpp;${CMAKE_SOURCE_DIR}/src/render/texture.cpp;${CMAKE_SOURCE_DIR}/src/render/system_video_layer.cpp"
             -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/apple_stub
             -DGLES_STUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/gles_stub
             -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
@@ -178,6 +178,15 @@ if(DUALSCREEN_OBJC_CLANG)
         COMMAND ${CMAKE_COMMAND}
             -DCOMPILER=${DUALSCREEN_OBJC_CLANG}
             -DSOURCE=${CMAKE_SOURCE_DIR}/apple/ios_scene_lifecycle.m
+            -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/uikit_stub
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_uikit_typecheck.cmake)
+    # And the layer streamed video is shown in on those platforms -- see
+    # src/render/system_video_layer.hpp. The same stubs, with AVFoundation,
+    # QuartzCore and CoreMedia's slices added.
+    add_test(NAME video_layer_typecheck
+        COMMAND ${CMAKE_COMMAND}
+            -DCOMPILER=${DUALSCREEN_OBJC_CLANG}
+            -DSOURCE=${CMAKE_SOURCE_DIR}/apple/system_video_layer.m
             -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/uikit_stub
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_uikit_typecheck.cmake)
 else()

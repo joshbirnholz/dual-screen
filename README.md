@@ -545,18 +545,31 @@ frozen for seconds at a time. Three things stand in front of that now:
   the host well under a millisecond for an ordinary picture.
 - **Asking again.** A picture missing more than that is set aside and its
   missing datagrams -- or, for a small picture lost outright, the whole of
-  it -- are asked for by name. On a home network that is a few
-  milliseconds. The pictures behind it wait and are shown after it, in order.
-  Only if nothing comes within 90ms is a keyframe asked for.
+  it -- are asked for by name, the moment its last recovery piece has
+  arrived and nothing more of it can be coming. On a home network the answer
+  takes a few milliseconds. The pictures behind it wait and are shown after
+  it, in order. How long an answer is waited for before asking again is
+  learned from how long answers have actually been taking, the way TCP times
+  its resends (between 8 and 30ms); after three unanswered askings, or 90ms,
+  a keyframe is asked for instead. A copy of a piece that arrives after its
+  picture is finished with -- both askings answered -- is recognised and
+  dropped, and a picture is never shown behind a newer one.
 - **A smaller picture.** A link that keeps losing pictures anyway -- two or
   more in a second -- gets a picture 20% smaller, and after five calm seconds
   a larger one again. The size rather than the bitrate, because the Deck's
   hardware encoder does not honour the bitrate it is asked for; fewer pixels
   is fewer bytes either way.
 
+The companion reads the network on a thread of its own, so all of this
+happens as datagrams land rather than once a refresh when the app gets round
+to it: a missing piece is asked for, and the answer put in place, while the
+app is waiting for the display. `DUALSCREEN_RECEIVE_THREAD=0` reads in the
+app's loop instead, as before.
+
 Both ends log what happened each second at the level a console shows:
 `latency: ...` on the companion (pictures shown, frames lost, pieces rebuilt,
-frames repaired, pictures passed over waiting for a keyframe) and `sending:
+frames repaired and how long the answers took, pictures passed over waiting
+for a keyframe) and `sending:
 ...` on the host (pictures sent, KB/s against the video allowance, round
 trip, how long the send queue held things, keyframes and pieces asked for).
 
@@ -593,6 +606,15 @@ is too long. What keeps it short:
   up to a refresh sooner. It measures the display's rhythm and its own work
   and backs off after a missed refresh; `DUALSCREEN_FRAME_DELAY=0` turns it
   off.
+- **On an iPhone, iPad or Apple TV the system shows the video**, not GL. The
+  decoded picture goes straight to an `AVSampleBufferDisplayLayer` laid over
+  the window where the screen belongs -- no texture, no shader, and none of
+  Apple's GL, which is a layer over Metal and the part of that platform most
+  prone to stalling. While the quick menu is open the picture goes back
+  through GL, which has to see it to blur it; the same decoded picture serves
+  either way, so switching costs nothing. If the layer fails it is left
+  alone and GL draws everything, as before; `DUALSCREEN_VIDEO_LAYER=0` does
+  the same on purpose.
 - **The companion holds a frame only as long as the link's own unevenness
   needs.** On a calm link that is a couple of milliseconds, not the whole frame
   it used to insist on. The pacing clock also keeps the stream's exact rate:

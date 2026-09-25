@@ -14,6 +14,10 @@ namespace ds {
 enum class OutputRoute {
     Local,   // drawn into this device's compositor window
     Remote,  // handed to something else (a companion device, later)
+    // Shown by the operating system in a layer of its own laid over the
+    // window, exactly where the compositor would have drawn it -- see
+    // SystemVideoLayers. The compositor leaves the place black underneath.
+    SystemLayer,
 };
 
 // The single decision point for "which screens render locally vs. get handed
@@ -28,6 +32,11 @@ public:
     // where that screen *would* have gone locally, which a future encoder can
     // ignore and a future local-preview mode can use.
     virtual void hand_off(ScreenId screen, const Texture& texture, const PixelRect& rect);
+    // Called for each screen routed to OutputRoute::SystemLayer, with where it
+    // landed and whether smoothing was asked for -- the texture is not used,
+    // and need not be current.
+    virtual void place_in_layer(const PlacedScreen& placed, bool smoothing_requested,
+                                float output_width, float output_height);
 };
 
 // V1's router: everything renders locally.

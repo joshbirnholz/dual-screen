@@ -11,6 +11,8 @@ void OutputRouter::hand_off(ScreenId, const Texture&, const PixelRect&) {
     // Nothing to do until a transport exists.
 }
 
+void OutputRouter::place_in_layer(const PlacedScreen&, bool, float, float) {}
+
 OutputRoute LocalOutputRouter::route_for(ScreenId) const { return OutputRoute::Local; }
 
 namespace {
@@ -119,6 +121,13 @@ void Compositor::render(QuadRenderer& quads,
 
         // The one place that decides local vs. elsewhere.
         const OutputRoute route = router.route_for(placed.screen);
+        if (route == OutputRoute::SystemLayer) {
+            // Covered by the layer; black beneath it, so a layer a moment
+            // late in appearing shows nothing rather than the backdrop.
+            quads.draw_solid(rect, style_.background);
+            router.place_in_layer(placed, smoothing_, output_width, output_height);
+            continue;
+        }
         if (route != OutputRoute::Local) {
             quads.draw_solid(rect, style_.remote_placeholder);
             if (texture != nullptr && texture->valid()) {

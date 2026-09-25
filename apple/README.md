@@ -878,6 +878,10 @@ What *is* checked, by tests that run on every build:
   and is the opposite of the truth on the other two.
 - **`test_config`** — that a tvOS build writes to `Library/Caches` and not to
   an Application Support directory that does not exist there.
+- **`video_layer_typecheck`** and **`apple_typecheck`** — that
+  `system_video_layer.m` parses as iOS and as tvOS against the slices of
+  AVFoundation, QuartzCore, CoreMedia and CoreVideo in `tests/uikit_stub`, and
+  that its C++ half compiles as both. Signatures, not behaviour.
 
 What is reasoned from documentation and **not** checked anywhere:
 
@@ -901,6 +905,16 @@ What is reasoned from documentation and **not** checked anywhere:
 - Touch on an iPhone or iPad reaching the host's touch screen correctly. The
   code path is the one Android uses, which is exercised, but the mapping from a
   device's panel to the console's screen has never been seen on these.
+- That streamed video shows correctly in the system's own layer
+  (`system_video_layer.m`; see `src/render/system_video_layer.hpp`): in the
+  right place, the right way up, in the right colours, and that the quick
+  menu opening and closing hands it back and forth to GL without a flash.
+  Written from the documentation and never run. What to look for in the log:
+  `video: showing streamed video through the system's own video layer, not
+  GL` once it works, or `video: the system video layer failed (...)` if it
+  does not -- after three of those it stays with GL for the rest of the run.
+  `DUALSCREEN_VIDEO_LAYER=0` in the scheme's environment turns it off, for
+  comparing.
 - Anything at all about how it performs. The Mac decodes in 3-4ms; an iPhone
   should be comparable and an Apple TV slower, and neither of those is a
   measurement.

@@ -94,6 +94,7 @@ extern "C" {
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
+#include "render/system_video_layer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
@@ -244,6 +245,52 @@ struct PassTimes {
 // not so long that the passes worth knowing about go unsaid.
 constexpr uint64_t kSlowPassMs = 50;
 
+// Where each streamed screen goes: the system's own video layer where it can
+// go there (see SystemVideoLayers), and the compositor's GL everywhere else.
+// Decided each frame before the session's textures are asked for, so a screen
+// headed for a layer is not mapped into a texture as well.
+class CompanionOutputRouter final : public OutputRouter {
+public:
+    CompanionOutputRouter(net::CompanionSession& session, SystemVideoLayers& layers)
+        : session_(session), layers_(layers) {}
+
+    // `nothing_drawn_over` is false while anything is drawn over the screens
+    // -- the quick menu, which blurs the picture behind itself and so has to
+    // have it drawn with GL.
+    void decide(bool nothing_drawn_over) {
+        for (ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+            const bool layered = nothing_drawn_over && layers_.usable() &&
+                                 session_.native_picture(screen).picture != nullptr;
+            layered_[screen == ScreenId::Top ? 0 : 1] = layered;
+            session_.set_screen_shown_elsewhere(screen, layered);
+        }
+    }
+    void reset() {
+        for (ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+            layered_[screen == ScreenId::Top ? 0 : 1] = false;
+            session_.set_screen_shown_elsewhere(screen, false);
+        }
+    }
+
+    OutputRoute route_for(ScreenId screen) const override {
+        return layered_[screen == ScreenId::Top ? 0 : 1] ? OutputRoute::SystemLayer
+                                                         : OutputRoute::Local;
+    }
+    void place_in_layer(const PlacedScreen& placed, bool smoothing_requested,
+                        float output_width, float output_height) override {
+        const net::CompanionSession::NativePicture native = session_.native_picture(placed.screen);
+        layers_.show(placed.screen, native.picture, native.serial, placed,
+                     screen_needs_smoothing(placed, native.width, native.height,
+                                            smoothing_requested),
+                     output_width, output_height);
+    }
+
+private:
+    net::CompanionSession& session_;
+    SystemVideoLayers& layers_;
+    bool layered_[2] = {false, false};
+};
+
 class Client {
 public:
     explicit Client(const Options& options) : options_(options) {}
@@ -300,6 +347,7 @@ private:
     }
     void close_menu();
     void draw();
+    void draw_scene();
     // Says where a pass that took kSlowPassMs or more went. At most once a
     // second, with a count of the ones in between, so a device that is slow
     // for a stretch does not also spend the stretch writing to its card.
@@ -352,7 +400,8 @@ private:
     FrameDelay frame_delay_;
     bool frame_delay_said_ = false;
     Compositor compositor_;
-    LocalOutputRouter router_;
+    SystemVideoLayers video_layers_;
+    CompanionOutputRouter router_{session_, video_layers_};
     BezelArt bezel_art_;
     LayoutPicker picker_{registry_};
     // Which of the host's save slot lists the menu is showing -- see
@@ -469,6 +518,9 @@ bool Client::start() {
     if (!create_gl_window(request, gl_, &start_error_)) {
         log_error(start_error_);
         return false;
+    }
+    if (SystemVideoLayers::available()) {
+        video_layers_.attach(gl_.window);
     }
 
     if (!load_gl_resources(&start_error_)) {
@@ -1350,6 +1402,15 @@ void Client::report_slow_pass(const PassTimes& pass) {
 }
 
 void Client::draw() {
+    // Whatever a layer is not given this frame, it stops showing -- see
+    // SystemVideoLayers::end_frame().
+    router_.reset();
+    video_layers_.begin_frame();
+    draw_scene();
+    video_layers_.end_frame();
+}
+
+void Client::draw_scene() {
     const float width = static_cast<float>(output_width_);
     const float height = static_cast<float>(output_height_);
     gl::log_error_once("something in the last frame was rejected by OpenGL");
@@ -1386,6 +1447,7 @@ void Client::draw() {
     }
 
     compositor_.set_smoothing(session_.host_filtering());
+    router_.decide(!menu_open_);
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);

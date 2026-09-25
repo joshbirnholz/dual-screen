@@ -46,6 +46,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/render/menu_backdrop.cpp
     src/render/png_image.cpp
     src/render/quad_renderer.cpp
+    src/render/system_video_layer.cpp
     src/render/text_renderer.cpp
     src/render/texture.cpp
     src/ui/connecting_screen.cpp

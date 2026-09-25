@@ -1,4 +1,5 @@
-// The slice of UIKit that apple/ios_scene_lifecycle.m names, and nothing else.
+// The slice of UIKit that apple/ios_scene_lifecycle.m and
+// apple/system_video_layer.m name, and nothing else.
 //
 // That file is Objective-C, it is compiled only for iOS and tvOS, and it is
 // the one file here that decides whether the app launches at all. Until this
@@ -13,6 +14,8 @@
 
 #include <TargetConditionals.h>
 
+#include <CoreGraphics/CoreGraphics.h>
+
 typedef signed char BOOL;
 #define YES ((BOOL)1)
 #define NO ((BOOL)0)
@@ -21,6 +24,9 @@ typedef signed char BOOL;
 #endif
 
 @interface NSObject
++ (instancetype)alloc;
+- (instancetype)retain;
+- (void)release;
 + (Class)class;
 - (BOOL)isKindOfClass:(Class)cls;
 - (BOOL)respondsToSelector:(SEL)selector;
@@ -29,7 +35,15 @@ typedef signed char BOOL;
 @end
 
 @interface NSString : NSObject
++ (instancetype)stringWithFormat:(NSString *)format, ...;
+@property (readonly) const char *UTF8String;
 @end
+
+@interface NSError : NSObject
+@property (readonly, copy) NSString *localizedDescription;
+@end
+
+@class CALayer;
 
 typedef struct {
     unsigned long state;
@@ -97,13 +111,24 @@ typedef unsigned long UIInterfaceOrientationMask;
 #define UIInterfaceOrientationMaskLandscape ((UIInterfaceOrientationMask)0x18)
 #endif
 
+@interface UIView : UIResponder
+@property (nonatomic, readonly) CALayer *layer;
+@property (nonatomic) CGRect bounds;
+@end
+
+@interface UIColor : NSObject
+@property (class, nonatomic, readonly) UIColor *blackColor;
+@property (nonatomic, readonly) CGColorRef CGColor;
+@end
+
 @interface UIViewController : UIResponder
+@property (nonatomic, strong) UIView *view;
 #if !TARGET_OS_TV
 - (void)setNeedsUpdateOfSupportedInterfaceOrientations;
 #endif
 @end
 
-@interface UIWindow : UIResponder
+@interface UIWindow : UIView
 @property (nonatomic, assign) UIWindowScene *windowScene;
 @property (nonatomic, assign) UIViewController *rootViewController;
 - (void)makeKeyAndVisible;

@@ -134,7 +134,10 @@ set(DUALSCREEN_APP_NAME "Dualscreen Companion")
 set(DUALSCREEN_PLATFORM_SOURCES "")
 if(NOT DUALSCREEN_PLATFORM STREQUAL "macos")
     list(APPEND DUALSCREEN_PLATFORM_SOURCES
-         "${CMAKE_CURRENT_SOURCE_DIR}/ios_scene_lifecycle.m")
+         "${CMAKE_CURRENT_SOURCE_DIR}/ios_scene_lifecycle.m"
+         # Streamed video shown by the system rather than drawn with GL; see
+         # src/render/system_video_layer.hpp.
+         "${CMAKE_CURRENT_SOURCE_DIR}/system_video_layer.m")
 endif()
 
 add_executable(dualscreen_companion MACOSX_BUNDLE
@@ -371,6 +374,13 @@ foreach(framework VideoToolbox CoreMedia CoreVideo CoreFoundation)
     find_library(${framework}_FRAMEWORK ${framework} REQUIRED)
     target_link_libraries(dualscreen_companion PRIVATE ${${framework}_FRAMEWORK})
 endforeach()
+# And what system_video_layer.m shows it with, on iOS and tvOS.
+if(NOT DUALSCREEN_PLATFORM STREQUAL "macos")
+    foreach(framework AVFoundation QuartzCore UIKit)
+        find_library(${framework}_FRAMEWORK ${framework} REQUIRED)
+        target_link_libraries(dualscreen_companion PRIVATE ${${framework}_FRAMEWORK})
+    endforeach()
+endif()
 
 set(DUALSCREEN_HAVE_CODEC OFF)
 if(DUALSCREEN_EMBEDDED)

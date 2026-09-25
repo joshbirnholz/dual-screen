@@ -44,9 +44,8 @@ foreach(tv IN ITEMS 0 1)
             set(which "iOS")
         endif()
         message(FATAL_ERROR
-            "${SOURCE} does not parse as ${which} sees it, and it is what "
-            "makes the app launch:\n${errors}${output}")
+            "${SOURCE} does not parse as ${which} sees it:\n${errors}${output}")
     endif()
 endforeach()
 
-message(STATUS "the UIKit scene life cycle file parses, as both iOS and tvOS")
+message(STATUS "${SOURCE} parses, as both iOS and tvOS")
