@@ -123,8 +123,9 @@ void test_two_screens_of_one_moment_arrive_whole() {
 
     std::string error;
     CHECK(producer.publish(ScreenId::Top, 7, tv.data(), kTvWidth, kTvHeight, kTvWidth, &error));
+    // Said to have been captured 50ms ago, as a game's readback would say.
     CHECK(producer.publish(ScreenId::Bottom, 7, pad.data(), kPadWidth, kPadHeight, kPadWidth,
-                           &error));
+                           &error, external_frame_clock_us() - 50000));
 
     ExternalFrame got;
     CHECK_MSG(wait_for_frame(link, ScreenId::Top, got), "no television frame arrived");
@@ -137,6 +138,19 @@ void test_two_screens_of_one_moment_arrive_whole() {
     CHECK_MSG(wait_for_frame(link, ScreenId::Bottom, got), "no GamePad frame arrived");
     CHECK_EQ(got.width, kPadWidth);
     CHECK_MSG(got.pixels == pad, "the GamePad picture that arrived is not the one that was sent");
+
+    // How old each was, by the producer's own capture time.
+    const ExternalFrameLink::FrameCounts pad_counts = link.take_frame_counts(ScreenId::Bottom);
+    CHECK_EQ(pad_counts.timed_taken, 1u);
+    CHECK_MSG(pad_counts.taken_age_us >= 50000 && pad_counts.taken_age_us < 5000000,
+              "the GamePad frame's age does not count from when it was captured");
+    CHECK_MSG(pad_counts.announced_age_us >= 50000 &&
+                  pad_counts.announced_age_us <= pad_counts.taken_age_us,
+              "the GamePad frame was older when announced than when taken");
+    const ExternalFrameLink::FrameCounts tv_counts = link.take_frame_counts(ScreenId::Top);
+    CHECK_EQ(tv_counts.timed_taken, 1u);
+    CHECK_MSG(tv_counts.taken_age_us < 5000000,
+              "a frame published without a capture time was not timed from its publishing");
 
     // Taken once. Asking again before anything new is published has to say so,
     // or a stalled producer would look like one running perfectly.

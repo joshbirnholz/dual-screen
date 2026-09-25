@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <thread>
 #include <ctime>
@@ -1071,6 +1072,19 @@ void App::Impl::report_external_frames() {
         line += std::string(any ? ";" : "") + " " + to_string(screen) + " screen " +
                 std::to_string(counts.announced) + " made, " + std::to_string(counts.missed) +
                 " replaced before they were taken";
+        // How old the frames were -- from the game recording the copy of its
+        // screen to the announcement, and to this app taking it. A game that
+        // does not say when it captured them leaves this out.
+        if (counts.timed_announced > 0 && counts.timed_taken > 0) {
+            const auto ms = [](uint64_t us) {
+                char text[16];
+                std::snprintf(text, sizeof(text), "%.1f", static_cast<double>(us) / 1000.0);
+                return std::string(text);
+            };
+            line += " (" + ms(counts.announced_age_us / counts.timed_announced) +
+                    "ms old when announced, " + ms(counts.taken_age_us / counts.timed_taken) +
+                    "ms when taken, at most " + ms(counts.taken_age_max_us) + "ms)";
+        }
         any = true;
     }
     if (any) log_info(line);
