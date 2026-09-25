@@ -1,6 +1,7 @@
 #include "net/host_session.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <random>
 
 #include "util/log.hpp"
@@ -387,6 +388,7 @@ std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_peri
 
 bool HostSession::start(const Config& config, std::string* error) {
     stop();
+    start_encoder_thread();
     config_ = config;
     companion_screen_ = (config.host_screen == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
 
@@ -442,6 +444,7 @@ void HostSession::stop(bool companion_quits_too) {
     // Not reset by drop_companion() like everything else above -- that is the
     // whole point of it -- so a fresh hosting session has to clear it itself.
     companion_wants_quit_ = false;
+    stop_encoder_thread();
 }
 
 void HostSession::set_codec_choice(CodecChoice choice) {
@@ -512,13 +515,21 @@ void HostSession::switch_codec(ScreenId screen, bool video, const char* why) {
     if (video) {
         // Whatever it held from before means nothing to a decoder that has
         // been reading tiles since; the next frame stands alone.
-        ((screen == ScreenId::Top) ? video_top_ : video_bottom_).request_keyframe();
+        ((screen == ScreenId::Top) ? video_keyframe_owed_top_ : video_keyframe_owed_bottom_) = true;
         return;
     }
     // Back to tiles, which only send what changed since the last tiled frame
     // the companion confirmed -- and it has been showing video since then. So
-    // no baseline at all: the next one is the whole picture.
-    ((screen == ScreenId::Top) ? video_top_ : video_bottom_).close();
+    // no baseline at all: the next one is the whole picture. The encoder is
+    // closed by the thread it belongs to, after anything it still has queued.
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        VideoJob close;
+        close.close = true;
+        close.screen = screen;
+        video_jobs_.push_back(std::move(close));
+    }
+    video_jobs_cv_.notify_one();
     (screen == ScreenId::Top ? previous_top_ : previous_bottom_).clear();
     (screen == ScreenId::Top ? tile_snapshots_top_ : tile_snapshots_bottom_).clear();
 }
@@ -620,9 +631,25 @@ void HostSession::drop_companion(const std::string& reason) {
     resend_screens_ = false;
     sent_serial_ = 0;
     submitted_serial_ = 0;
-    encode_serials_top_.clear();
-    encode_serials_bottom_.clear();
     acked_serial_ = 0;
+    // Everything the encoder thread shares, under the lock it shares it by --
+    // see media_mutex_.
+    std::unique_lock<std::mutex> media_lock(media_mutex_);
+    // Whatever it is in the middle of was for the companion that just left.
+    ++media_generation_;
+    video_jobs_.clear();
+    video_failures_.clear();
+    video_worked_ = false;
+    for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+        // A stream's frames only mean anything after the keyframe they
+        // descend from, so whoever connects next needs a stream of their own
+        // rather than the middle of somebody else's.
+        VideoJob close;
+        close.close = true;
+        close.screen = screen;
+        video_jobs_.push_back(std::move(close));
+    }
+    video_jobs_cv_.notify_one();
     // Whoever connects next gets a fresh token and has to say hello on the
     // media channel again -- its address there is not carried over from a
     // companion that is gone.
@@ -663,12 +690,12 @@ void HostSession::drop_companion(const std::string& reason) {
     tile_snapshots_top_.clear();
     tile_snapshots_bottom_.clear();
     sent_video_frames_.clear();
-    // The same reasoning as the two lines above, in video form: a stream's
-    // frames only mean anything after the keyframe they descend from, so
-    // whoever connects next needs a stream of their own rather than the middle
-    // of somebody else's. Their answer about decoding video is theirs too.
-    video_top_.close();
-    video_bottom_.close();
+    encode_cost_top_ = video::VideoEncoder::EncodeCost();
+    encode_cost_bottom_ = video::VideoEncoder::EncodeCost();
+    media_lock.unlock();
+    // Their answer about decoding video is theirs too.
+    video_keyframe_owed_top_ = false;
+    video_keyframe_owed_bottom_ = false;
     companion_accepts_video_ = false;
     // A different device may be a different size, and the encoder is opened
     // for the size it is given, so the next one gets its own attempt.
@@ -738,9 +765,13 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             // Fresh for this companion; see session_token_'s own comment. The
             // companion's own address on the media channel is not known yet --
             // that arrives with its first datagram there, once it has this.
-            session_token_ = random_session_token();
-            companion_media_address_.clear();
-            companion_media_port_ = 0;
+            {
+                // Read by a send on the encoder thread -- see media_mutex_.
+                std::lock_guard<std::mutex> lock(media_mutex_);
+                session_token_ = random_session_token();
+                companion_media_address_.clear();
+                companion_media_port_ = 0;
+            }
             companion_media_known_ = false;
 
             WelcomeMessage welcome;
@@ -1047,8 +1078,11 @@ void HostSession::poll(uint64_t now_ms) {
         // Learned here rather than announced anywhere: the companion's media
         // socket is on an ephemeral port, and this is simply whichever
         // address its most recent datagram actually came from.
-        companion_media_address_ = from_address;
-        companion_media_port_ = from_port;
+        if (from_address != companion_media_address_ || from_port != companion_media_port_) {
+            std::lock_guard<std::mutex> lock(media_mutex_);
+            companion_media_address_ = from_address;
+            companion_media_port_ = from_port;
+        }
         companion_media_known_ = true;
         handle_media_datagram(type, payload, payload_size);
     }
@@ -1060,7 +1094,10 @@ void HostSession::poll(uint64_t now_ms) {
     // the receive loop above: draining is what lets a fresh companion's
     // fragments (queued for the one that just left, then cleared by
     // drop_companion()) never pile up either.
-    drain_pending_media_sends(now_ms);
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        drain_pending_media_sends(now_ms);
+    }
 
     if (!companion_.open()) {
         TcpStream incoming;
@@ -1080,7 +1117,10 @@ void HostSession::poll(uint64_t now_ms) {
             // table pick, which can put the media on the wireless leg while
             // the session itself is on the wire, and can even change mid
             // session. See UdpSocket::set_source_address().
-            media_socket_.set_source_address(companion_.local_address());
+            {
+                std::lock_guard<std::mutex> lock(media_mutex_);
+                media_socket_.set_source_address(companion_.local_address());
+            }
             audio_media_socket_.set_source_address(companion_.local_address());
             refresh_beacon();
         }
@@ -1230,8 +1270,12 @@ bool HostSession::take_video_error(std::string& out_reason) {
 // Only the screen that is being streamed has a cost to report, so the two are
 // summed rather than shown apart -- one of them is always zero.
 std::string HostSession::encode_cost_summary() {
-    const video::VideoEncoder::EncodeCost top = video_top_.take_cost();
-    const video::VideoEncoder::EncodeCost bottom = video_bottom_.take_cost();
+    // Gathered by the encoder thread, whose encoders these are; the caller
+    // holds media_mutex_.
+    const video::VideoEncoder::EncodeCost top = encode_cost_top_;
+    const video::VideoEncoder::EncodeCost bottom = encode_cost_bottom_;
+    encode_cost_top_ = video::VideoEncoder::EncodeCost();
+    encode_cost_bottom_ = video::VideoEncoder::EncodeCost();
     const unsigned frames = top.frames + bottom.frames;
     if (frames == 0) {
         return std::string();
@@ -1245,6 +1289,8 @@ std::string HostSession::encode_cost_summary() {
 }
 
 void HostSession::report_stream(uint64_t now_ms) {
+    // Most of what is counted here is counted on the encoder thread too.
+    std::lock_guard<std::mutex> lock(media_mutex_);
     if (stats_at_ms_ == 0) {
         stats_at_ms_ = now_ms;
         stats_bytes_ = media_bytes_sent_;
@@ -1443,8 +1489,8 @@ bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, i
     return true;
 }
 
-bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,
-                                   std::string& reason) {
+bool HostSession::queue_video(ScreenId screen, const ScreenPixels& source, uint64_t serial,
+                              std::string& reason) {
     if (!video::can_encode()) {
         reason = "this build has no video encoder compiled in";
         return false;
@@ -1466,6 +1512,14 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
         return false;
     }
 
+    VideoJob job;
+    job.screen = screen;
+    job.serial = serial;
+    job.width = width;
+    job.height = height;
+    job.frame_width = static_cast<uint16_t>(source.width);
+    job.frame_height = static_cast<uint16_t>(source.height);
+    job.channel_order = source.channel_order;
     // Never sent any larger than the companion can actually show -- see
     // compute_capped_encode_size()'s own comment. Unknown display size (still
     // false before the companion has ever reported one) leaves encode_width/
@@ -1473,11 +1527,64 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     int display_width = 0;
     int display_height = 0;
     companion_display_size(display_width, display_height);
-    int encode_width = width;
-    int encode_height = height;
-    compute_capped_encode_size(width, height, display_width, display_height, encode_width,
-                               encode_height);
+    job.encode_width = width;
+    job.encode_height = height;
+    compute_capped_encode_size(width, height, display_width, display_height, job.encode_width,
+                               job.encode_height);
+    // What the source is really producing at, which is what the bitrate and
+    // the keyframe interval both have to be built from. produce_period_ms_ is
+    // a smoothed measurement, so it is not worth anything on the first frame
+    // of a session -- which is exactly when the first encoder has to open.
+    job.produced_fps = produce_period_ms_ > 0.0 ? 1000.0 / produce_period_ms_ : 60.0;
+    // A video frame means nothing without the frames before it, so a companion
+    // that has just started needing this screen gets one that stands alone --
+    // and so does one that has told us it lost a frame and cannot decode past
+    // it, and a screen that has just switched to video. The second is what
+    // makes the encoder's own periodic keyframe interval affordable to
+    // lengthen; see kKeyframeSeconds.
+    bool& asked = (screen == ScreenId::Top) ? keyframe_asked_top_ : keyframe_asked_bottom_;
+    bool& owed = (screen == ScreenId::Top) ? video_keyframe_owed_top_ : video_keyframe_owed_bottom_;
+    job.force_keyframe = resend_screens_ || asked || owed;
+    asked = false;
+    owed = false;
+    // Copied, because the source's pixels are the game's and will be written
+    // over by its next frame while this one is still being encoded. About a
+    // millisecond for a 720p picture -- which is what this thread now spends
+    // on video, where it used to spend the whole encode.
+    job.pixels.resize(static_cast<std::size_t>(width) * height);
+    for (int row = 0; row < height; ++row) {
+        std::memcpy(job.pixels.data() + static_cast<std::size_t>(row) * width,
+                    source.pixels + static_cast<std::size_t>(row) * source.stride_pixels,
+                    static_cast<std::size_t>(width) * sizeof(uint32_t));
+    }
 
+    std::lock_guard<std::mutex> lock(media_mutex_);
+    job.generation = media_generation_;
+    // Only the newest picture of a screen is worth encoding: one still
+    // waiting when the next arrives has been overtaken, and the encoder never
+    // having seen it breaks nothing. Its keyframe, if it owed one, is owed by
+    // the picture replacing it.
+    for (auto waiting = video_jobs_.begin(); waiting != video_jobs_.end();) {
+        if (!waiting->close && waiting->screen == screen) {
+            job.force_keyframe = job.force_keyframe || waiting->force_keyframe;
+            waiting = video_jobs_.erase(waiting);
+        } else {
+            ++waiting;
+        }
+    }
+    video_jobs_.push_back(std::move(job));
+    video_jobs_cv_.notify_one();
+    return true;
+}
+
+bool HostSession::encode_video_job(const VideoJob& job, FrameMessage& frame, std::string& reason,
+                                   uint32_t& opened_kbps) {
+    opened_kbps = 0;
+    const ScreenId screen = job.screen;
+    const int width = job.width;
+    const int height = job.height;
+    const int encode_width = job.encode_width;
+    const int encode_height = job.encode_height;
     video::VideoEncoder& encoder = (screen == ScreenId::Top) ? video_top_ : video_bottom_;
     std::deque<std::pair<int64_t, uint64_t>>& pending =
         (screen == ScreenId::Top) ? encode_serials_top_ : encode_serials_bottom_;
@@ -1510,17 +1617,10 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
             pending.clear();
         }
     }
-    // What the source is really producing at, which is what the bitrate and
-    // the keyframe interval both have to be built from. produce_period_ms_ is
-    // a smoothed measurement, so it is not worth anything on the first frame
-    // of a session -- which is exactly when the first encoder has to open.
-    // Hence the reopen below rather than a better guess here.
-    const double produced_fps =
-        produce_period_ms_ > 0.0 ? 1000.0 / produce_period_ms_ : 60.0;
+    // What the source is really producing at -- see queue_video().
+    const double produced_fps = job.produced_fps;
     const int wanted_bitrate_kbps =
         bitrate_kbps_for_encode_size(encode_width, encode_height, produced_fps);
-    uint32_t& bitrate_member =
-        (screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_;
 
     // No reopening to correct this number once the rate is known. It was
     // tried, and measured: reopening cost a keyframe each time (three in one
@@ -1532,7 +1632,7 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     // off the GPU rather than out of the core's own memory, say, when its size
     // moves across what a readback does on the CPU -- would otherwise go on
     // being read as the old order, red and blue swapped across the picture.
-    const video::PixelOrder pixel_order = (source.channel_order == PixelChannelOrder::Rgba)
+    const video::PixelOrder pixel_order = (job.channel_order == PixelChannelOrder::Rgba)
                                               ? video::PixelOrder::Rgba
                                               : video::PixelOrder::Bgra;
     if (!encoder.is_open() || encoder.source_width() != width || encoder.source_height() != height ||
@@ -1558,26 +1658,22 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
             return false;
         }
         // Tells drain_pending_media_sends() what rate to expect from this
-        // screen from now on -- see its own comment.
-        bitrate_member = static_cast<uint32_t>(config.bitrate_kbps);
+        // screen from now on -- see its own comment. Handed back rather than
+        // set here: the drain reads it under media_mutex_.
+        opened_kbps = static_cast<uint32_t>(config.bitrate_kbps);
         // A reopened encoder counts from zero again, so anything still mapped
         // against the old one's numbering would resolve to the wrong moment.
         pending.clear();
     }
-    // A video frame means nothing without the frames before it, so a companion
-    // that has just started needing this screen gets one that stands alone --
-    // and so does one that has told us it lost a frame and cannot decode past
-    // it. The second is what makes the encoder's own periodic keyframe
-    // interval affordable to lengthen; see kKeyframeSeconds.
-    bool& asked = (screen == ScreenId::Top) ? keyframe_asked_top_ : keyframe_asked_bottom_;
-    if (resend_screens_ || asked) {
+    // Decided on the game's thread when the picture was queued -- see
+    // queue_video().
+    if (job.force_keyframe) {
         encoder.request_keyframe();
-        asked = false;
     }
 
     video::EncodedFrame encoded;
     std::string encode_error;
-    if (!encoder.encode(source.pixels, source.stride_pixels, encoded, &encode_error)) {
+    if (!encoder.encode(job.pixels.data(), job.width, encoded, &encode_error)) {
         encoder.close();
         pending.clear();
         reason = "the video encoder failed: " + encode_error;
@@ -1588,7 +1684,7 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     // submission's -- sending them under this frame's serial would tell the
     // companion a picture is newer than it is, and its own pacing, acking and
     // tile baselines are all built on that number being true.
-    pending.emplace_back(encoder.last_submitted_pts(), frame.serial);
+    pending.emplace_back(encoder.last_submitted_pts(), job.serial);
     // A frame whose packet never arrives (an encoder reset losing what it was
     // holding) must not leave its entry here for ever.
     while (pending.size() > 8) {
@@ -1601,17 +1697,20 @@ bool HostSession::try_encode_video(ScreenId screen, const ScreenPixels& source, 
     if (!resolve_encoded_serial(pending, encoded.pts, resolved)) {
         return false;  // cannot say which moment this is, so it does not go
     }
+    frame.screen = screen;
     frame.serial = resolved;
+    frame.width = job.frame_width;
+    frame.height = job.frame_height;
     frame.encoding = FrameEncoding::H264;
     frame.keyframe = encoded.keyframe;
     frame.payload = std::move(encoded.bytes);
     return true;
 }
 
-bool HostSession::encode_one_screen(ScreenId screen,
-                                    const ScreenPixels& source,
-                                    std::vector<uint8_t>& previous,
-                                    FrameMessage& frame) {
+HostSession::Encoded HostSession::encode_one_screen(ScreenId screen,
+                                                    const ScreenPixels& source,
+                                                    std::vector<uint8_t>& previous,
+                                                    FrameMessage& frame) {
     CodecState& codec = screen == ScreenId::Top ? codec_top_ : codec_bottom_;
     {
         const bool video = sends_video(screen, source.width, source.height);
@@ -1670,7 +1769,7 @@ bool HostSession::encode_one_screen(ScreenId screen,
             codec.tile_bytes = 0;
             codec.tile_window_start_ms = now;
         }
-        return encoded;
+        return encoded ? Encoded::Ready : Encoded::Nothing;
     }
 
     // Pinned to video by --video-codec, nothing past here falls back to
@@ -1679,24 +1778,29 @@ bool HostSession::encode_one_screen(ScreenId screen,
     // the other format would defeat the point of pinning one. Chosen here
     // instead, a failure is only a reason to go back to tiles for a while.
     if (codec_choice_ == CodecChoice::H264 && monotonic_millis() < video_retry_at_ms_) {
-        return false;  // still backed off from the last failure -- see below
+        return Encoded::Nothing;  // still backed off from the last failure -- see below
     }
 
     std::string reason;
-    if (try_encode_video(screen, source, frame, reason)) {
-        video_error_reported_ = false;  // it is working, or working again
-        return true;
+    if (queue_video(screen, source, frame.serial, reason)) {
+        return Encoded::Queued;
     }
-    if (reason.empty()) {
-        return false;  // nothing to send this frame, which is not a failure
+    const Encoded instead = video_failed(screen, reason);
+    if (instead == Encoded::Ready) {
+        // Gone back to tiles, and this picture goes as tiles right now.
+        previous.clear();
+        return encode_one_screen(screen, source, previous, frame);
     }
+    return instead;
+}
+
+HostSession::Encoded HostSession::video_failed(ScreenId screen, const std::string& reason) {
     if (codec_choice_ == CodecChoice::Automatic) {
         video_retry_at_ms_ = monotonic_millis() + kVideoFallbackMs;
         log_warn("video would not work for the " + std::string(to_string(screen)) +
                  " screen (" + reason + "); sending it as tiles instead");
         switch_codec(screen, false, "video would not work");
-        previous.clear();
-        return encode_one_screen(screen, source, previous, frame);
+        return Encoded::Ready;
     }
 
     // A genuine failure. Backed off so it is retried and, if it is still
@@ -1711,10 +1815,122 @@ bool HostSession::encode_one_screen(ScreenId screen,
         log_warn("video streaming is not working, and nothing is sent in its place: " +
                  pending_video_error_);
     }
-    return false;
+    return Encoded::Nothing;
+}
+
+void HostSession::take_video_outcomes() {
+    std::vector<VideoFailure> failures;
+    bool worked = false;
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        failures.swap(video_failures_);
+        worked = video_worked_;
+        video_worked_ = false;
+    }
+    if (worked) {
+        video_error_reported_ = false;  // it is working, or working again
+    }
+    for (const VideoFailure& failure : failures) {
+        // Found out on the encoder thread, a picture later than it would have
+        // been here: the next picture goes as tiles instead, where that is
+        // the answer. See video_failed().
+        video_failed(failure.screen, failure.reason);
+        if (codec_choice_ == CodecChoice::Automatic) {
+            (failure.screen == ScreenId::Top ? previous_top_ : previous_bottom_).clear();
+        }
+    }
+}
+
+HostSession::~HostSession() { stop_encoder_thread(); }
+
+void HostSession::start_encoder_thread() {
+    stop_encoder_thread();
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        encoder_stopping_ = false;
+        video_jobs_.clear();
+    }
+    encoder_thread_ = std::thread([this] { encoder_loop(); });
+}
+
+void HostSession::stop_encoder_thread() {
+    if (!encoder_thread_.joinable()) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        encoder_stopping_ = true;
+        video_jobs_.clear();
+    }
+    video_jobs_cv_.notify_all();
+    encoder_thread_.join();
+    // Nothing else touches them now.
+    video_top_.close();
+    video_bottom_.close();
+    encode_serials_top_.clear();
+    encode_serials_bottom_.clear();
+}
+
+void HostSession::encoder_loop() {
+    std::unique_lock<std::mutex> lock(media_mutex_);
+    while (true) {
+        video_jobs_cv_.wait(lock, [this] { return encoder_stopping_ || !video_jobs_.empty(); });
+        if (encoder_stopping_) {
+            return;
+        }
+        VideoJob job = std::move(video_jobs_.front());
+        video_jobs_.pop_front();
+        lock.unlock();
+
+        video::VideoEncoder& encoder = (job.screen == ScreenId::Top) ? video_top_ : video_bottom_;
+        if (job.close) {
+            encoder.close();
+            ((job.screen == ScreenId::Top) ? encode_serials_top_ : encode_serials_bottom_).clear();
+            lock.lock();
+            continue;
+        }
+        FrameMessage frame;
+        std::string reason;
+        uint32_t opened_kbps = 0;
+        const uint64_t started_ms = monotonic_millis();
+        const bool encoded = encode_video_job(job, frame, reason, opened_kbps);
+        const uint64_t ended_ms = monotonic_millis();
+        const video::VideoEncoder::EncodeCost cost = encoder.take_cost();
+
+        lock.lock();
+        video::VideoEncoder::EncodeCost& total =
+            (job.screen == ScreenId::Top) ? encode_cost_top_ : encode_cost_bottom_;
+        total.scale_ms += cost.scale_ms;
+        total.upload_ms += cost.upload_ms;
+        total.submit_ms += cost.submit_ms;
+        total.frames += cost.frames;
+        stats_encode_total_ms_ += ended_ms > started_ms ? ended_ms - started_ms : 0;
+        ++stats_encodes_;
+        if (opened_kbps != 0) {
+            ((job.screen == ScreenId::Top) ? video_bitrate_kbps_top_ : video_bitrate_kbps_bottom_) =
+                opened_kbps;
+        }
+        // For a companion that has gone, or a session since restarted: not
+        // to be sent to whoever is there now.
+        if (job.generation != media_generation_) {
+            continue;
+        }
+        if (encoded) {
+            video_worked_ = true;
+            // Out the moment it exists, rather than at the game's next pass.
+            if (send_frame_fragments(frame) > 0) {
+                drain_pending_media_sends(monotonic_millis());
+            }
+        } else if (!reason.empty()) {
+            video_failures_.push_back(VideoFailure{job.screen, reason});
+        }
+    }
 }
 
 void HostSession::resend_pieces(const RepairRequestMessage& request) {
+    // The pieces kept, and the queue they go back on, are shared with the
+    // encoder thread -- see media_mutex_.
+    std::lock_guard<std::mutex> lock(media_mutex_);
     ++stats_repairs_asked_;
     for (const SentVideoFrame& sent : sent_video_frames_) {
         if (sent.screen != request.screen) {
@@ -1981,6 +2197,10 @@ void HostSession::publish_screens(const ScreenPixels& top,
     if (!has_companion() || !companion_media_known_) {
         return;
     }
+    // Whatever the encoder thread found out since the last picture -- video
+    // that would not work, or that works again -- before deciding how this
+    // one goes.
+    take_video_outcomes();
     // Normally an unchanged frame costs nothing: the serial only moves when the
     // pixels do. But when the companion starts needing a screen it was not being
     // sent -- it opened its menu, whose previews show both -- the pixels may
@@ -2101,15 +2321,25 @@ void HostSession::publish_screens(const ScreenPixels& top,
         // there is nothing to keep for it.
         std::vector<uint8_t> attempt = entry.acked_baseline;
         const uint64_t encode_started_ms = monotonic_millis();
-        const bool encoded = encode_one_screen(entry.screen, source, attempt, frame);
+        const Encoded encoded = encode_one_screen(entry.screen, source, attempt, frame);
         const uint64_t encode_ended_ms = monotonic_millis();
+        if (encoded == Encoded::Nothing) {
+            continue;
+        }
+        if (encoded == Encoded::Queued) {
+            // On its way from the encoder thread, which sends it itself. It
+            // counts as sent from now for the ack gate: the ack that clears it
+            // is for this serial, and the encode is part of the round trip.
+            sent_anything = true;
+            emitted_serial = std::max(emitted_serial, serial);
+            continue;
+        }
+        std::unique_lock<std::mutex> media_lock(media_mutex_);
         stats_encode_total_ms_ +=
             encode_ended_ms > encode_started_ms ? encode_ended_ms - encode_started_ms : 0;
         ++stats_encodes_;
-        if (!encoded) {
-            continue;
-        }
         const std::size_t queued_bytes = send_frame_fragments(frame);
+        media_lock.unlock();
         if (queued_bytes > 0) {
             // media_bytes_sent_ is credited by drain_pending_media_sends() at
             // actual-send time, not here at queue time -- see its own
@@ -2150,6 +2380,7 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // in it anyway. What a keyframe does not fit in is still spread across
     // the polls that follow, exactly as before.
     if (sent_anything) {
+        std::lock_guard<std::mutex> lock(media_mutex_);
         drain_pending_media_sends(monotonic_millis());
     }
 }

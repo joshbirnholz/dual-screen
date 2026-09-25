@@ -580,6 +580,19 @@ is too long. What keeps it short:
 
 - **A frame leaves the host the moment it is made**, not on the host's next
   pass round its loop, which used to add up to a whole frame.
+- **Video is encoded on a thread of its own**, the way Sunshine does it. The
+  game's thread copies the picture (half a millisecond at 720p) and carries
+  on; the encoder thread encodes it with nothing queued ahead of it and sends
+  it the moment it is done. Encoding on the game's thread cost it 11ms a 720p
+  frame with a software encoder, and on a Deck meant running VAAPI a frame
+  deep -- a whole frame of latency on every picture -- so that a busy GPU's
+  17ms waits did not stall the game. `DUALSCREEN_VAAPI_ASYNC_DEPTH=2` puts
+  the old depth back, for comparing.
+- **The companion draws each frame just before its display refreshes**, not
+  straight after the last refresh, so the newest picture is the one shown --
+  up to a refresh sooner. It measures the display's rhythm and its own work
+  and backs off after a missed refresh; `DUALSCREEN_FRAME_DELAY=0` turns it
+  off.
 - **The companion holds a frame only as long as the link's own unevenness
   needs.** On a calm link that is a couple of milliseconds, not the whole frame
   it used to insist on. The pacing clock also keeps the stream's exact rate:

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/screen_source.hpp"
@@ -100,6 +103,11 @@ public:
         // own output to match.
         uint32_t audio_sample_rate = 0;
     };
+
+    HostSession() = default;
+    ~HostSession();
+    HostSession(const HostSession&) = delete;
+    HostSession& operator=(const HostSession&) = delete;
 
     bool start(const Config& config, std::string* error);
     // `companion_quits_too`: the player quit from the companion's side, so the
@@ -329,7 +337,10 @@ public:
     // whether a frame was actually sent, which is what the ack-based backlog
     // limit decides -- UDP has no send queue of its own to inspect the way
     // the TCP connection this used to ride did.
-    uint64_t queued_bytes_for_test() const { return media_bytes_sent_; }
+    uint64_t queued_bytes_for_test() const {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        return media_bytes_sent_;
+    }
     // How many frames have been sent that the companion has not yet said it
     // has, which is what the frame limit throttles on. Frames, not the gap
     // between two serials -- see the gate in publish_screens() for why those
@@ -513,12 +524,51 @@ private:
     // actually work; see take_video_error(). try_encode_video() is the half
     // of that which can fail, with why in `reason` -- empty means it simply
     // had nothing new to send, which is not a failure.
-    bool encode_one_screen(ScreenId screen,
-                           const ScreenPixels& source,
-                           std::vector<uint8_t>& previous,
-                           FrameMessage& frame);
-    bool try_encode_video(ScreenId screen, const ScreenPixels& source, FrameMessage& frame,
-                          std::string& reason);
+    //
+    // Video goes to the encoder thread rather than coming back here: see
+    // encoder_loop(). Queued means it is on its way and will be sent from
+    // there the moment it is encoded.
+    enum class Encoded { Nothing, Ready, Queued };
+    Encoded encode_one_screen(ScreenId screen,
+                              const ScreenPixels& source,
+                              std::vector<uint8_t>& previous,
+                              FrameMessage& frame);
+    // Video that cannot go -- before it is queued, or after the encoder
+    // thread tried -- handled the one way wherever it is found out.
+    Encoded video_failed(ScreenId screen, const std::string& reason);
+
+    // One screen's picture for the encoder thread, and everything about the
+    // session it needs to encode it, copied: the thread touches nothing of
+    // the session's own but what media_mutex_ guards.
+    struct VideoJob {
+        bool close = false;  // close this screen's encoder instead
+        ScreenId screen = ScreenId::Top;
+        uint64_t serial = 0;
+        uint64_t generation = 0;
+        std::vector<uint32_t> pixels;  // `width` x `height`, packed
+        int width = 0;                 // even, cropped from the source
+        int height = 0;
+        uint16_t frame_width = 0;      // the source's own, for the frame header
+        uint16_t frame_height = 0;
+        PixelChannelOrder channel_order = PixelChannelOrder::XrgbBytes;
+        int encode_width = 0;
+        int encode_height = 0;
+        double produced_fps = 60.0;
+        bool force_keyframe = false;
+    };
+    // The checks that need nothing but this thread's own state, then the
+    // job. False with `reason` when video cannot go at all.
+    bool queue_video(ScreenId screen, const ScreenPixels& source, uint64_t serial,
+                     std::string& reason);
+    // On the encoder thread: the encode itself. `opened_kbps` is the bitrate
+    // an encoder was (re)opened at, zero if none was.
+    bool encode_video_job(const VideoJob& job, FrameMessage& frame, std::string& reason,
+                          uint32_t& opened_kbps);
+    void encoder_loop();
+    void start_encoder_thread();
+    void stop_encoder_thread();
+    // What the encoder thread found, applied on this one: see video_failed().
+    void take_video_outcomes();
 
     ScreenId companion_screen_ = ScreenId::Bottom;
     std::string last_notice_;
@@ -663,6 +713,45 @@ private:
     // video encoder's whole value is what it remembers of the frame before.
     video::VideoEncoder video_top_;
     video::VideoEncoder video_bottom_;
+
+    // The encoder thread, and what it shares with the thread that runs the
+    // game.
+    //
+    // Video used to be encoded on the game's thread, which could not afford
+    // to wait for it: on a game that keeps the GPU busy the wait was 17ms a
+    // frame (Bayonetta 2), so the encoder was run a frame deep instead --
+    // a picture going in and the previous one coming out -- which is a whole
+    // frame of latency on every picture. Sunshine encodes on a thread of its
+    // own and runs VAAPI with nothing queued, and so does this now: the
+    // game's thread copies the picture and moves on, and this thread encodes
+    // it, waits for it and sends it the moment it is done.
+    //
+    // media_mutex_ guards everything both touch: the send queue and its
+    // pacing, send_frame_fragments()'s counters and kept pieces, the bitrates,
+    // the session's token and the companion's address (written only under it,
+    // so a send never reads half of one), and the jobs and what came of them.
+    // The encoders themselves belong to the encoder thread alone.
+    mutable std::mutex media_mutex_;
+    std::condition_variable video_jobs_cv_;
+    std::deque<VideoJob> video_jobs_;
+    struct VideoFailure {
+        ScreenId screen = ScreenId::Top;
+        std::string reason;
+    };
+    std::vector<VideoFailure> video_failures_;
+    bool video_worked_ = false;
+    // Bumped whenever a companion goes, so a picture the encoder thread was
+    // in the middle of for it is not sent to whoever comes next.
+    uint64_t media_generation_ = 0;
+    std::thread encoder_thread_;
+    bool encoder_stopping_ = false;
+    // A screen that has just switched to video: its next picture stands alone.
+    bool video_keyframe_owed_top_ = false;
+    bool video_keyframe_owed_bottom_ = false;
+    // What encoding cost, per screen, gathered by the encoder thread for the
+    // once-a-second report.
+    video::VideoEncoder::EncodeCost encode_cost_top_;
+    video::VideoEncoder::EncodeCost encode_cost_bottom_;
     bool companion_accepts_video_ = false;
     // Send the current screens once more even if nothing has changed, because
     // what the companion needs has.

@@ -2,10 +2,12 @@
 
 #include "video/color_convert.hpp"
 
+#include <algorithm>
 #include <chrono>
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 
 #include "util/log.hpp"
 
@@ -280,25 +282,30 @@ bool VideoEncoder::open_backend(const std::string& name,
         }
         context_->hw_frames_ctx = frames;
         if (name.find("_vaapi") != std::string::npos) {
-            // Two, so that submitting a frame does not wait for it to finish
-            // encoding. This was one, on the reasoning that a frame queued
-            // behind another is a frame of latency nobody asked for -- which
-            // is true of the encoder in isolation and quite wrong in context.
-            // The wait does not happen in the encoder's own time: it happens
-            // on the thread that also paces sending, processes acks and
-            // forwards input. Measured against a game that keeps the GPU busy
-            // (Bayonetta 2), that wait was 17ms per frame -- the encode job
-            // queues behind the game's own rendering -- and the stream fell to
-            // a third of the frames the game was producing. The same encoder
-            // against an idle GPU costs 4ms and keeps up fine, which is why
-            // this only ever showed up on the heavier games.
+            // One: each picture comes out of the encoder as soon as it is
+            // encoded, with nothing queued behind it -- what Sunshine runs.
             //
-            // With two, the packet handed back is generally the previous
-            // submission's rather than this one's. That is a frame of
-            // pipeline delay, paid once, against a stall paid on every single
-            // frame -- and it is why EncodedFrame carries the pts of whatever
-            // actually came out instead of the caller assuming it matches.
-            av_opt_set_int(context_->priv_data, "async_depth", 2, 0);
+            // This was two for a while, and the reason is worth keeping. With
+            // one, submitting a frame waits for it to finish encoding, and
+            // that wait used to happen on the thread that also runs the game,
+            // paces sending, processes acks and forwards input. Against a game
+            // that keeps the GPU busy (Bayonetta 2) it was 17ms a frame -- the
+            // encode queues behind the game's own rendering -- and the stream
+            // fell to a third of the frames the game was producing. Two hid
+            // the wait by handing back the previous submission's packet: a
+            // whole frame of latency on every picture, to avoid a stall.
+            //
+            // Encoding has its own thread now (HostSession::encoder_loop()),
+            // so the wait holds up nothing but the encode itself, and the
+            // frame of latency is gone. DUALSCREEN_VAAPI_ASYNC_DEPTH sets it
+            // anyway, for comparing the two on a real machine. EncodedFrame
+            // still carries the pts of whatever actually came out, so a depth
+            // above one keeps working.
+            int depth = 1;
+            if (const char* wanted = std::getenv("DUALSCREEN_VAAPI_ASYNC_DEPTH")) {
+                depth = std::max(1, std::atoi(wanted));
+            }
+            av_opt_set_int(context_->priv_data, "async_depth", depth, 0);
         }
     } else {
         context_->pix_fmt = software_format;
