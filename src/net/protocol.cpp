@@ -1110,8 +1110,104 @@ bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentH
     return true;
 }
 
+namespace {
+
+// GF(2^8) over x^8 + x^4 + x^3 + x^2 + 1 (0x11D), the field Reed-Solomon codes
+// are usually built on. A whole multiplication table is 64KB and makes the
+// inner loops one lookup a byte, which is what makes a keyframe's recovery
+// pieces a few milliseconds of work rather than tens.
+struct GaloisField {
+    uint8_t exp[512];
+    uint8_t log[256];
+    uint8_t mul[256][256];
+    GaloisField() {
+        unsigned value = 1;
+        for (unsigned power = 0; power < 255; ++power) {
+            exp[power] = static_cast<uint8_t>(value);
+            log[value] = static_cast<uint8_t>(power);
+            value <<= 1;
+            if (value & 0x100u) value ^= 0x11Du;
+        }
+        for (unsigned power = 255; power < 512; ++power) exp[power] = exp[power - 255];
+        log[0] = 0;
+        for (unsigned a = 0; a < 256; ++a) {
+            for (unsigned b = 0; b < 256; ++b) {
+                mul[a][b] = (a == 0 || b == 0) ? 0 : exp[log[a] + log[b]];
+            }
+        }
+    }
+    uint8_t inverse(uint8_t value) const { return exp[255 - log[value]]; }
+};
+
+const GaloisField& field() {
+    static const GaloisField instance;
+    return instance;
+}
+
+// The coefficient recovery piece `row` of a block gives data piece `column`:
+// a Cauchy matrix, 1 / (x_row + y_column) with the x and y all different, so
+// that every square piece of it can be inverted -- which is what lets any
+// recovery pieces stand in for any missing ones.
+uint8_t cauchy(std::size_t row, std::size_t column) {
+    const uint8_t x = static_cast<uint8_t>(255 - row);
+    const uint8_t y = static_cast<uint8_t>(column);
+    return field().inverse(static_cast<uint8_t>(x ^ y));
+}
+
+// out ^= coefficient * in, a byte at a time.
+void multiply_add(uint8_t* out, const uint8_t* in, std::size_t size, uint8_t coefficient) {
+    if (coefficient == 0) return;
+    const uint8_t* row = field().mul[coefficient];
+    for (std::size_t index = 0; index < size; ++index) {
+        out[index] ^= row[in[index]];
+    }
+}
+
+// How a frame of `count` pieces is cut into blocks: every block the same size
+// but the last, and how many recovery pieces each gets.
+struct ParityBlock {
+    std::size_t first = 0;         // index of its first data piece
+    std::size_t count = 0;         // data pieces in it
+    std::size_t parity_first = 0;  // index of its first recovery piece, from 0
+    std::size_t parity_count = 0;
+};
+
+std::vector<ParityBlock> parity_blocks(std::size_t count) {
+    std::vector<ParityBlock> blocks;
+    if (count == 0) return blocks;
+    const std::size_t block_count =
+        (count + kMaxDataPerParityBlock - 1) / kMaxDataPerParityBlock;
+    const std::size_t per_block = (count + block_count - 1) / block_count;
+    std::size_t parity_so_far = 0;
+    for (std::size_t first = 0; first < count; first += per_block) {
+        ParityBlock block;
+        block.first = first;
+        block.count = std::min(per_block, count - first);
+        block.parity_first = parity_so_far;
+        block.parity_count =
+            std::max(kMinParityPerBlock, (block.count * kParityPercent + 99) / 100);
+        parity_so_far += block.parity_count;
+        blocks.push_back(block);
+    }
+    return blocks;
+}
+
+// The range the first, XOR, recovery pieces were numbered in -- one per
+// eight pieces -- kept clear so nothing else is ever read as one of them.
+std::size_t legacy_xor_parity_count(std::size_t count) { return (count + 7) / 8; }
+
+}  // namespace
+
+std::size_t frame_parity_first_index(std::size_t fragment_count) {
+    return fragment_count + legacy_xor_parity_count(fragment_count);
+}
+
 std::size_t frame_parity_count(std::size_t fragment_count) {
-    return fragment_count == 0 ? 0 : (fragment_count + kFragmentsPerParity - 1) / kFragmentsPerParity;
+    std::size_t total = 0;
+    for (const ParityBlock& block : parity_blocks(fragment_count)) {
+        total += block.parity_count;
+    }
+    return total;
 }
 
 std::vector<std::vector<uint8_t>> build_frame_parity(const std::vector<uint8_t>& payload,
@@ -1121,23 +1217,24 @@ std::vector<std::vector<uint8_t>> build_frame_parity(const std::vector<uint8_t>&
         return parity;
     }
     const std::size_t count = (payload.size() + fragment_size - 1) / fragment_size;
-    const std::size_t groups = frame_parity_count(count);
     const std::size_t last_size = payload.size() - (count - 1) * fragment_size;
-    parity.assign(groups, std::vector<uint8_t>());
-    for (std::size_t group = 0; group < groups; ++group) {
-        std::vector<uint8_t>& out = parity[group];
-        out.push_back(static_cast<uint8_t>(last_size & 0xFFu));
-        out.push_back(static_cast<uint8_t>((last_size >> 8) & 0xFFu));
-    }
-    for (std::size_t index = 0; index < count; ++index) {
-        std::vector<uint8_t>& out = parity[index % groups];
-        const std::size_t offset = index * fragment_size;
-        const std::size_t size = std::min(fragment_size, payload.size() - offset);
-        if (out.size() < kParityPrefixBytes + size) {
-            out.resize(kParityPrefixBytes + size, 0);
-        }
-        for (std::size_t byte = 0; byte < size; ++byte) {
-            out[kParityPrefixBytes + byte] ^= payload[offset + byte];
+    for (const ParityBlock& block : parity_blocks(count)) {
+        // As long as the block's longest piece: full length, unless the block
+        // is the frame's short last piece alone.
+        const bool holds_last = block.first + block.count == count;
+        const std::size_t span = (holds_last && block.count == 1) ? last_size : fragment_size;
+        for (std::size_t row = 0; row < block.parity_count; ++row) {
+            std::vector<uint8_t> out(kParityPrefixBytes + span, 0);
+            out[0] = static_cast<uint8_t>(last_size & 0xFFu);
+            out[1] = static_cast<uint8_t>((last_size >> 8) & 0xFFu);
+            for (std::size_t column = 0; column < block.count; ++column) {
+                const std::size_t index = block.first + column;
+                const std::size_t offset = index * fragment_size;
+                const std::size_t size = std::min(fragment_size, payload.size() - offset);
+                multiply_add(out.data() + kParityPrefixBytes, payload.data() + offset, size,
+                             cauchy(row, column));
+            }
+            parity.push_back(std::move(out));
         }
     }
     return parity;
@@ -1148,43 +1245,106 @@ unsigned recover_fragments(std::vector<std::vector<uint8_t>>& fragments,
                            const std::vector<std::vector<uint8_t>>& parity,
                            const std::vector<bool>& parity_received) {
     const std::size_t count = fragments.size();
-    const std::size_t groups = parity.size();
-    if (count == 0 || groups == 0 || received.size() != count ||
-        parity_received.size() != groups) {
+    if (count == 0 || received.size() != count || parity.size() != parity_received.size() ||
+        parity.size() != frame_parity_count(count)) {
         return 0;
     }
+    const GaloisField& gf = field();
     unsigned recovered = 0;
-    for (std::size_t group = 0; group < groups; ++group) {
-        if (!parity_received[group] || parity[group].size() < kParityPrefixBytes) continue;
-        std::size_t missing = count;
-        unsigned missing_count = 0;
-        for (std::size_t index = group; index < count; index += groups) {
-            if (!received[index]) {
-                missing = index;
-                ++missing_count;
+    for (const ParityBlock& block : parity_blocks(count)) {
+        std::vector<std::size_t> missing;
+        for (std::size_t column = 0; column < block.count; ++column) {
+            if (!received[block.first + column]) missing.push_back(column);
+        }
+        if (missing.empty()) continue;
+        std::vector<std::size_t> rows;
+        for (std::size_t row = 0; row < block.parity_count && rows.size() < missing.size(); ++row) {
+            const std::vector<uint8_t>& piece = parity[block.parity_first + row];
+            if (parity_received[block.parity_first + row] && piece.size() > kParityPrefixBytes) {
+                rows.push_back(row);
             }
         }
-        if (missing_count != 1) continue;
-        const std::vector<uint8_t>& bytes = parity[group];
-        const std::size_t span = bytes.size() - kParityPrefixBytes;
-        const std::size_t last_size =
-            static_cast<std::size_t>(bytes[0]) | (static_cast<std::size_t>(bytes[1]) << 8);
-        // Every piece but the last is full length, which is the longest in
-        // any group that has one; the last says its own.
-        const std::size_t size = missing == count - 1 ? last_size : span;
-        if (size > span) continue;  // not a parity this frame could have made
-        std::vector<uint8_t> rebuilt(bytes.begin() + kParityPrefixBytes, bytes.end());
-        for (std::size_t index = group; index < count; index += groups) {
-            if (index == missing) continue;
-            const std::vector<uint8_t>& piece = fragments[index];
-            for (std::size_t byte = 0; byte < piece.size() && byte < span; ++byte) {
-                rebuilt[byte] ^= piece[byte];
+        if (rows.size() < missing.size()) continue;  // more lost than this can cover
+        const std::size_t m = missing.size();
+        const std::vector<uint8_t>& first_row = parity[block.parity_first + rows[0]];
+        const std::size_t span = first_row.size() - kParityPrefixBytes;
+        const std::size_t last_size = static_cast<std::size_t>(first_row[0]) |
+                                      (static_cast<std::size_t>(first_row[1]) << 8);
+        bool consistent = true;
+        for (const std::size_t row : rows) {
+            if (parity[block.parity_first + row].size() != first_row.size()) consistent = false;
+        }
+        // Recovery pieces of one block all have one length, and no piece is
+        // longer than they are: anything else was not made by this frame.
+        if (!consistent || last_size > span) {
+            continue;
+        }
+
+        // What each recovery piece used holds of the missing pieces alone:
+        // itself, with every piece that did arrive taken back out of it.
+        std::vector<std::vector<uint8_t>> syndromes(m);
+        for (std::size_t r = 0; r < m; ++r) {
+            const std::vector<uint8_t>& piece = parity[block.parity_first + rows[r]];
+            syndromes[r].assign(piece.begin() + kParityPrefixBytes, piece.end());
+            for (std::size_t column = 0; column < block.count; ++column) {
+                const std::size_t index = block.first + column;
+                if (!received[index]) continue;
+                const std::vector<uint8_t>& data = fragments[index];
+                multiply_add(syndromes[r].data(), data.data(), std::min(data.size(), span),
+                             cauchy(rows[r], column));
             }
         }
-        rebuilt.resize(size);
-        fragments[missing] = std::move(rebuilt);
-        received[missing] = true;
-        ++recovered;
+
+        // The m by m corner of the matrix that ties those to the missing
+        // pieces, inverted by Gauss-Jordan elimination.
+        std::vector<uint8_t> a(m * m);
+        std::vector<uint8_t> inverse(m * m, 0);
+        for (std::size_t r = 0; r < m; ++r) {
+            for (std::size_t k = 0; k < m; ++k) a[r * m + k] = cauchy(rows[r], missing[k]);
+            inverse[r * m + r] = 1;
+        }
+        bool singular = false;
+        for (std::size_t column = 0; column < m && !singular; ++column) {
+            std::size_t pivot = column;
+            while (pivot < m && a[pivot * m + column] == 0) ++pivot;
+            if (pivot == m) {
+                singular = true;
+                break;
+            }
+            if (pivot != column) {
+                for (std::size_t k = 0; k < m; ++k) {
+                    std::swap(a[pivot * m + k], a[column * m + k]);
+                    std::swap(inverse[pivot * m + k], inverse[column * m + k]);
+                }
+            }
+            const uint8_t scale = gf.inverse(a[column * m + column]);
+            for (std::size_t k = 0; k < m; ++k) {
+                a[column * m + k] = gf.mul[scale][a[column * m + k]];
+                inverse[column * m + k] = gf.mul[scale][inverse[column * m + k]];
+            }
+            for (std::size_t r = 0; r < m; ++r) {
+                const uint8_t factor = a[r * m + column];
+                if (r == column || factor == 0) continue;
+                for (std::size_t k = 0; k < m; ++k) {
+                    a[r * m + k] ^= gf.mul[factor][a[column * m + k]];
+                    inverse[r * m + k] ^= gf.mul[factor][inverse[column * m + k]];
+                }
+            }
+        }
+        if (singular) continue;  // cannot happen with a Cauchy matrix; not trusted blindly
+
+        for (std::size_t k = 0; k < m; ++k) {
+            std::vector<uint8_t> rebuilt(span, 0);
+            for (std::size_t r = 0; r < m; ++r) {
+                multiply_add(rebuilt.data(), syndromes[r].data(), span, inverse[k * m + r]);
+            }
+            const std::size_t index = block.first + missing[k];
+            // Every piece but the frame's last is full length.
+            rebuilt.resize(index == count - 1 ? std::min(last_size, span) : span);
+            fragments[index] = std::move(rebuilt);
+            received[index] = true;
+            ++recovered;
+        }
     }
     return recovered;
 }

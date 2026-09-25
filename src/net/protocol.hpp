@@ -660,32 +660,44 @@ constexpr std::size_t kFrameFragmentHeaderBytes = 25;
 // sixty-five thousand frames of loss.
 unsigned frames_missing_between(uint16_t last_seen, uint16_t arrived);
 
-// Recovery pieces for a video frame, so one lost datagram does not lose the
-// frame. Over wifi a datagram goes missing now and then, and a frame of eighty
-// of them -- a 720p keyframe -- has about even odds of losing one at a loss
-// rate of one in a hundred. Lost, the frame was gone: the picture held while
-// a new keyframe was asked for, which could lose a piece just the same. That
-// was the seconds-long freezes on an Apple TV.
+// Recovery pieces for a video frame, so a lost datagram does not lose the
+// frame. Over wifi datagrams go missing now and then, and a frame of eighty of
+// them -- a 720p keyframe -- has about even odds of losing one at a loss rate
+// of one in a hundred. Lost, the frame was gone: the picture held while a new
+// keyframe was asked for, which could lose a piece just the same.
 //
-// After a frame's own `fragment_count` pieces come frame_parity_count() more,
-// numbered on from fragment_count. Parity piece p is the XOR of every piece i
-// with i % parity_count == p, each zero-padded to the longest -- interleaved,
-// so a run of losses up to parity_count long takes at most one piece from each
-// group, and each group's parity puts its one back. A companion from before
-// this sees a fragment_index past fragment_count and drops it unread.
+// Reed-Solomon, the way Moonlight and Sunshine do it: about a fifth again as
+// many recovery pieces as the frame has pieces of its own, never fewer than
+// two, and any of them stands in for any missing piece -- so a frame comes
+// through whole however its losses fall, up to as many as it has recovery
+// pieces. A frame of more than kMaxDataPerParityBlock pieces is split into
+// blocks, each with its own. (The first version here was one XOR piece per
+// eight, which put back one loss per group and nothing more.)
 //
-// A parity payload is the length of the frame's last piece (u16), then the
-// XOR: the only length a lost piece cannot be told from its neighbours.
+// Numbered after the frame's own pieces, and after the range that first
+// version's pieces used -- a companion from then reads a fragment_index there
+// as XOR parity, and must never be handed anything else under it; past it,
+// every companion from before this drops the piece unread. So a new host and
+// an old companion stream without recovery pieces, never with wrong ones.
+//
+// A recovery payload is the length of the frame's last piece (u16) -- the
+// only length a lost piece cannot be told from its neighbours -- and then the
+// piece itself.
 constexpr std::size_t kParityPrefixBytes = 2;
-constexpr std::size_t kFragmentsPerParity = 8;
+constexpr std::size_t kParityPercent = 20;
+constexpr std::size_t kMinParityPerBlock = 2;
+constexpr std::size_t kMaxDataPerParityBlock = 200;
+// Where a frame's recovery pieces start, and how many there are.
+std::size_t frame_parity_first_index(std::size_t fragment_count);
 std::size_t frame_parity_count(std::size_t fragment_count);
-// The parity payloads for `payload` cut into `fragment_size` pieces.
+// The recovery payloads for `payload` cut into `fragment_size` pieces, in the
+// order they are numbered.
 std::vector<std::vector<uint8_t>> build_frame_parity(const std::vector<uint8_t>& payload,
                                                      std::size_t fragment_size);
-// Puts back every piece its group's parity can: a group missing exactly one,
-// with its parity here. `fragments`/`received` are the frame's own pieces;
-// `parity`/`parity_received` are frame_parity_count() long. Returns how many
-// came back.
+// Puts back every missing piece the recovery pieces that arrived can:
+// everything in a block missing no more pieces than it has recovery pieces
+// here. `fragments`/`received` are the frame's own pieces; `parity`/
+// `parity_received` are frame_parity_count() long. Returns how many came back.
 unsigned recover_fragments(std::vector<std::vector<uint8_t>>& fragments,
                            std::vector<bool>& received,
                            const std::vector<std::vector<uint8_t>>& parity,

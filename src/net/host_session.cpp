@@ -1817,7 +1817,8 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         const std::vector<std::vector<uint8_t>> parity =
             build_frame_parity(frame.payload, kMaxFragmentPayload);
         for (std::size_t group = 0; group < parity.size(); ++group) {
-            header.fragment_index = static_cast<uint16_t>(header.fragment_count + group);
+            header.fragment_index = static_cast<uint16_t>(
+                frame_parity_first_index(header.fragment_count) + group);
             std::vector<uint8_t> out;
             encode_media_header(session_token_, MessageType::Frame, out);
             encode_frame_fragment(header, parity[group].data(), parity[group].size(), out);

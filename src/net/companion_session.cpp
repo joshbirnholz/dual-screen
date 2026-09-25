@@ -589,13 +589,19 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     constexpr uint16_t kMaxFrameDimension = 4096;
     // A video frame's recovery pieces are numbered on past its own -- see
     // build_frame_parity().
-    const std::size_t parity_count = header.encoding == FrameEncoding::H264
-                                         ? frame_parity_count(header.fragment_count)
-                                         : 0;
+    const bool video = header.encoding == FrameEncoding::H264;
+    const std::size_t parity_count = video ? frame_parity_count(header.fragment_count) : 0;
+    const std::size_t parity_first = frame_parity_first_index(header.fragment_count);
     if (header.width == 0 || header.height == 0 || header.width > kMaxFrameDimension ||
         header.height > kMaxFrameDimension || header.fragment_count == 0 ||
-        header.fragment_index >= header.fragment_count + parity_count) {
-        return;  // not worth ending a session over -- see the class comment
+        (header.fragment_index >= header.fragment_count &&
+         (!video || header.fragment_index < parity_first ||
+          header.fragment_index >= parity_first + parity_count))) {
+        // Past the frame's own pieces and not one of its recovery pieces --
+        // among them, the XOR pieces of a host from before Reed-Solomon,
+        // which this does not read. Not worth ending a session over either
+        // way; see the class comment.
+        return;
     }
     const bool is_parity = header.fragment_index >= header.fragment_count;
 
@@ -627,7 +633,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         header.fragment_count == repair.frame.fragment_count) {
         FrameReassembly& held = repair.frame;
         if (is_parity) {
-            const std::size_t group = header.fragment_index - header.fragment_count;
+            const std::size_t group = header.fragment_index - parity_first;
             if (group < held.parity.size() && !held.parity_received[group]) {
                 held.parity[group].assign(chunk, chunk + chunk_size);
                 held.parity_received[group] = true;
@@ -770,7 +776,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     }
     slot.last_piece_ms = monotonic_millis();
     if (is_parity) {
-        const std::size_t group = header.fragment_index - header.fragment_count;
+        const std::size_t group = header.fragment_index - parity_first;
         if (group < slot.parity.size() && !slot.parity_received[group]) {
             slot.parity[group].assign(chunk, chunk + chunk_size);
             slot.parity_received[group] = true;

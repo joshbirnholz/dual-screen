@@ -663,21 +663,31 @@ void test_rumble_can_name_one_pad() {
     CHECK_EQ(received_ping.ping_ms, 180);
 }
 
-// A video frame's recovery pieces put back any one lost piece per group, and
-// a run of losses as long as there are groups -- which is how wifi loses
-// them. Two from the same group is more than parity can do, and says so by
-// leaving the piece missing rather than making one up.
+// A video frame's recovery pieces put back any missing pieces, however they
+// fall, up to as many as the block has recovery pieces here -- the way
+// Moonlight's Reed-Solomon does. More than that is more than it can do, and
+// it says so by leaving the pieces missing rather than making them up.
 void test_lost_pieces_come_back_from_parity() {
     constexpr std::size_t kPiece = 100;
+    unsigned seed = 12345;
+    const auto random = [&seed](std::size_t below) {
+        seed = seed * 1103515245u + 12345u;
+        return static_cast<std::size_t>((seed >> 8) % below);
+    };
     for (const std::size_t size : {std::size_t{37}, std::size_t{100}, std::size_t{450},
-                                   std::size_t{1650}, std::size_t{8000}}) {
+                                   std::size_t{1650}, std::size_t{8000}, std::size_t{30050}}) {
         std::vector<uint8_t> payload(size);
         for (std::size_t index = 0; index < size; ++index) {
-            payload[index] = static_cast<uint8_t>((index * 131 + 7) & 0xFFu);
+            payload[index] = static_cast<uint8_t>((index * 131 + 7 + index / 97) & 0xFFu);
         }
         const std::size_t count = (size + kPiece - 1) / kPiece;
         const std::vector<std::vector<uint8_t>> parity = build_frame_parity(payload, kPiece);
         CHECK_EQ(parity.size(), frame_parity_count(count));
+        // At least two, and about a fifth as many again.
+        CHECK(parity.size() >= 2);
+        CHECK(parity.size() * 100 >= count * 20);
+        // After the range the XOR pieces of the first version used.
+        CHECK_EQ(frame_parity_first_index(count), count + (count + 7) / 8);
         const auto pieces = [&] {
             std::vector<std::vector<uint8_t>> out(count);
             for (std::size_t index = 0; index < count; ++index) {
@@ -696,35 +706,63 @@ void test_lost_pieces_come_back_from_parity() {
             fragments[lost].clear();
             received[lost] = false;
             CHECK_EQ(recover_fragments(fragments, received, parity, all_parity), 1u);
-            CHECK(received[lost]);
-            CHECK(fragments[lost] == pieces()[lost]);
-        }
-
-        // A run as long as there are groups, anywhere in the frame.
-        const std::size_t run = parity.size();
-        for (std::size_t start = 0; start + run <= count; ++start) {
-            std::vector<std::vector<uint8_t>> fragments = pieces();
-            std::vector<bool> received(count, true);
-            for (std::size_t lost = start; lost < start + run; ++lost) {
-                fragments[lost].clear();
-                received[lost] = false;
-            }
-            CHECK_EQ(recover_fragments(fragments, received, parity, all_parity),
-                     static_cast<unsigned>(run));
             CHECK(fragments == pieces());
         }
 
-        // Two from one group: not put back, and nothing invented.
-        if (count > parity.size()) {
+        // Random losses, anywhere, as many as there are recovery pieces --
+        // for a frame of one block. (A frame of several is checked below.)
+        if (count <= kMaxDataPerParityBlock) {
+            for (int trial = 0; trial < 50; ++trial) {
+                std::vector<std::vector<uint8_t>> fragments = pieces();
+                std::vector<bool> received(count, true);
+                const std::size_t lose = std::min(parity.size(), count);
+                std::size_t lost = 0;
+                while (lost < lose) {
+                    const std::size_t index = random(count);
+                    if (!received[index]) continue;
+                    received[index] = false;
+                    fragments[index].assign(3, 0xEE);  // rubbish, to be replaced
+                    ++lost;
+                }
+                CHECK_EQ(recover_fragments(fragments, received, parity, all_parity),
+                         static_cast<unsigned>(lose));
+                CHECK(fragments == pieces());
+            }
+            // Some recovery pieces lost as well: still fine while what is left
+            // covers what is missing.
+            if (parity.size() >= 2 && count >= 1) {
+                std::vector<std::vector<uint8_t>> fragments = pieces();
+                std::vector<bool> received(count, true);
+                std::vector<bool> some_parity(parity.size(), true);
+                some_parity[0] = false;
+                received[count - 1] = false;
+                CHECK_EQ(recover_fragments(fragments, received, parity, some_parity), 1u);
+                CHECK(fragments == pieces());
+            }
+            // One more lost than there are recovery pieces: nothing put back,
+            // and nothing invented.
+            if (count > parity.size()) {
+                std::vector<std::vector<uint8_t>> fragments = pieces();
+                std::vector<bool> received(count, true);
+                for (std::size_t index = 0; index <= parity.size(); ++index) {
+                    received[index] = false;
+                }
+                CHECK_EQ(recover_fragments(fragments, received, parity, all_parity), 0u);
+                for (std::size_t index = 0; index <= parity.size(); ++index) {
+                    CHECK(!received[index]);
+                }
+            }
+        } else {
+            // Several blocks: a burst in each, each put back by its own.
             std::vector<std::vector<uint8_t>> fragments = pieces();
             std::vector<bool> received(count, true);
-            received[0] = false;
-            received[parity.size()] = false;
-            CHECK_EQ(recover_fragments(fragments, received, parity, all_parity), 0u);
-            CHECK(!received[0] && !received[parity.size()]);
+            received[0] = received[1] = received[2] = false;
+            received[count - 1] = received[count - 2] = false;
+            CHECK_EQ(recover_fragments(fragments, received, parity, all_parity), 5u);
+            CHECK(fragments == pieces());
         }
 
-        // Nor without the parity itself.
+        // Nor without the recovery pieces.
         {
             std::vector<std::vector<uint8_t>> fragments = pieces();
             std::vector<bool> received(count, true);

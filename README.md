@@ -537,10 +537,12 @@ picture: the screen held while a keyframe was asked for, and the keyframe --
 dozens more datagrams -- could lose one just the same. That was a picture
 frozen for seconds at a time. Three things stand in front of that now:
 
-- **Recovery pieces.** Every video picture carries one extra datagram per
-  eight, each able to rebuild any one missing datagram from its group. The
-  groups are interleaved, so a run of losses in a row is spread across them.
-  About 12% more data; nothing to wait for.
+- **Recovery pieces.** Every video picture carries about a fifth again as
+  many datagrams of Reed-Solomon recovery data (never fewer than two) -- the
+  scheme Moonlight and Sunshine use. Any of them stands in for any missing
+  datagram, so a picture comes through whole however its losses fall, up to
+  as many as it has recovery pieces. Nothing to wait for; building them costs
+  the host well under a millisecond for an ordinary picture.
 - **Asking again.** A picture missing more than that is set aside and its
   missing datagrams -- or, for a small picture lost outright, the whole of
   it -- are asked for by name. On a home network that is a few
