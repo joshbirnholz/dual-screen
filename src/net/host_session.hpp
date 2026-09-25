@@ -431,6 +431,18 @@ private:
     // frames' worth of these can ever be waiting at once, by refusing to
     // queue a new one until earlier ones are acked.
     std::deque<std::vector<uint8_t>> pending_media_sends_;
+    // The last few video frames' own pieces, as they went out, so a piece the
+    // companion says never arrived can be sent again -- see resend_pieces().
+    struct SentVideoFrame {
+        ScreenId screen = ScreenId::Top;
+        uint64_t serial = 0;
+        std::vector<std::vector<uint8_t>> pieces;
+    };
+    std::deque<SentVideoFrame> sent_video_frames_;
+    // Puts the pieces asked for back on the wire, ahead of everything queued.
+    void resend_pieces(const RepairRequestMessage& request);
+    unsigned stats_pieces_resent_ = 0;
+    unsigned stats_repairs_asked_ = 0;
     // When drain_pending_media_sends() last ran, and the encoders' own
     // configured rate at that point -- see its own comment for why the drain
     // rate tracks these instead of being a flat constant. Zero means it has

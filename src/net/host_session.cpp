@@ -662,6 +662,7 @@ void HostSession::drop_companion(const std::string& reason) {
     previous_bottom_.clear();
     tile_snapshots_top_.clear();
     tile_snapshots_bottom_.clear();
+    sent_video_frames_.clear();
     // The same reasoning as the two lines above, in video form: a stream's
     // frames only mean anything after the keyframe they descend from, so
     // whoever connects next needs a stream of their own rather than the middle
@@ -982,6 +983,13 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
             }
             break;
         }
+        case MessageType::RepairRequest: {
+            RepairRequestMessage request;
+            if (decode_repair_request_payload(payload, payload_size, request)) {
+                resend_pieces(request);
+            }
+            break;
+        }
         case MessageType::KeyframeRequest: {
             KeyframeRequestMessage request;
             if (!decode_keyframe_request_payload(payload, payload_size, request)) {
@@ -1274,6 +1282,35 @@ void HostSession::report_stream(uint64_t now_ms) {
               std::to_string(stats_pacing_worst_ms_) + "ms worst, " +
               std::to_string(stats_keyframe_requests_ - stats_keyframe_requests_reported_) +
               " keyframes asked for");
+    // The same second at a level the console sees: the host's half of any
+    // freeze a companion reports. Every freeze chased so far stopped at "and
+    // what was the Deck doing?", because this was a debug line.
+    const unsigned keyframes_asked = stats_keyframe_requests_ - stats_keyframe_requests_reported_;
+    log_info("sending: " + std::to_string(stats_sent_ * 1000 / elapsed) + " pictures a second of " +
+             std::to_string(stats_produced_ * 1000 / elapsed) + " made, " +
+             std::to_string(bytes * 1000 / elapsed / 1024) + " KB/s" +
+             ((video_bitrate_kbps_top_ + video_bitrate_kbps_bottom_) > 0
+                  ? " of the " +
+                        std::to_string((video_bitrate_kbps_top_ + video_bitrate_kbps_bottom_) / 8) +
+                        " KB/s video is allowed"
+                  : std::string()) +
+             ", biggest picture " + std::to_string(stats_frame_bytes_worst_ / 1024) + "KB" +
+             ", round trip " +
+             std::to_string(stats_round_trips_ > 0 ? stats_round_trip_total_ms_ / stats_round_trips_
+                                                   : 0) +
+             "ms, " + std::to_string(behind) + " pictures unconfirmed, queued up to " +
+             std::to_string(stats_pacing_worst_ms_) + "ms before leaving" +
+             (keyframes_asked > 0 ? ", " + std::to_string(keyframes_asked) +
+                                        (keyframes_asked == 1 ? " keyframe" : " keyframes") +
+                                        " asked for"
+                                  : std::string()) +
+             (stats_repairs_asked_ > 0
+                  ? ", " + std::to_string(stats_pieces_resent_) + " lost pieces sent again for " +
+                        std::to_string(stats_repairs_asked_) +
+                        (stats_repairs_asked_ == 1 ? " request" : " requests")
+                  : std::string()));
+    stats_pieces_resent_ = 0;
+    stats_repairs_asked_ = 0;
     stats_at_ms_ = now_ms;
     stats_bytes_ = media_bytes_sent_;
     stats_produced_ = 0;
@@ -1677,6 +1714,27 @@ bool HostSession::encode_one_screen(ScreenId screen,
     return false;
 }
 
+void HostSession::resend_pieces(const RepairRequestMessage& request) {
+    ++stats_repairs_asked_;
+    for (const SentVideoFrame& sent : sent_video_frames_) {
+        if (sent.screen != request.screen || sent.serial != request.serial) {
+            continue;
+        }
+        // At the front, in the order asked for: the companion is holding
+        // this frame, and every one behind it, until these land -- anything
+        // already queued can wait the few microseconds these take.
+        for (auto piece = request.pieces.rbegin(); piece != request.pieces.rend(); ++piece) {
+            if (*piece < sent.pieces.size()) {
+                pending_media_sends_.push_front(sent.pieces[*piece]);
+                ++stats_pieces_resent_;
+            }
+        }
+        return;
+    }
+    // Too old to still be held, or never sent as video: the companion gives
+    // up on it and asks for a keyframe, which is what would happen anyway.
+}
+
 std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     if (frame.payload.empty()) {
         // Not itself a failure -- see encode_one_screen()'s own comment on an
@@ -1709,6 +1767,19 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
 
     std::size_t queued_bytes = 0;
     std::size_t offset = 0;
+    // Kept, for a video frame, in case a piece has to go again -- see
+    // resend_pieces(). A dozen frames is a fifth of a second at 60 a second,
+    // longer than any repair is waited for at the far end.
+    constexpr std::size_t kSentVideoFramesKept = 12;
+    SentVideoFrame* kept = nullptr;
+    if (frame.encoding == FrameEncoding::H264) {
+        while (sent_video_frames_.size() >= kSentVideoFramesKept) {
+            sent_video_frames_.pop_front();
+        }
+        sent_video_frames_.push_back(SentVideoFrame{frame.screen, frame.serial, {}});
+        kept = &sent_video_frames_.back();
+        kept->pieces.reserve(header.fragment_count);
+    }
     for (uint16_t index = 0; index < header.fragment_count; ++index) {
         header.fragment_index = index;
         const std::size_t chunk =
@@ -1718,6 +1789,9 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         encode_frame_fragment(header, frame.payload.data() + offset, chunk, out);
         queued_bytes += out.size();
         media_produced_window_bytes_ += out.size();
+        if (kept != nullptr) {
+            kept->pieces.push_back(out);
+        }
         pending_media_sends_.push_back(std::move(out));
         offset += chunk;
     }

@@ -69,6 +69,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     keyframe_wanted_top_ = false;
     completed_serial_top_ = 0;
     completed_serial_bottom_ = 0;
+    repair_top_ = FrameRepair();
+    repair_bottom_ = FrameRepair();
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -205,6 +207,8 @@ void CompanionSession::disconnect() {
     keyframe_wanted_top_ = false;
     completed_serial_top_ = 0;
     completed_serial_bottom_ = 0;
+    repair_top_ = FrameRepair();
+    repair_bottom_ = FrameRepair();
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -285,6 +289,8 @@ void CompanionSession::fail(const std::string& reason) {
     keyframe_wanted_top_ = false;
     completed_serial_top_ = 0;
     completed_serial_bottom_ = 0;
+    repair_top_ = FrameRepair();
+    repair_bottom_ = FrameRepair();
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -546,6 +552,10 @@ unsigned CompanionSession::note_frames_that_never_arrived(const FrameFragmentHea
     return missing;
 }
 
+// How many frames may complete behind one being repaired before it is given
+// up on: at 60 a second, a tenth of a second of picture held back.
+constexpr std::size_t kMaxFramesHeldForRepair = 6;
+
 void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t payload_size) {
     FrameFragmentHeader header;
     const uint8_t* chunk = nullptr;
@@ -573,6 +583,37 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         return;  // not worth ending a session over -- see the class comment
     }
     const bool is_parity = header.fragment_index >= header.fragment_count;
+
+    // A piece of the frame being repaired: the answer to asking for it, or a
+    // straggler of the first sending. Before everything below, which would
+    // take it for a piece of a frame already given up on.
+    FrameRepair& repair = (header.screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
+    if (repair.active && header.serial == repair.frame.serial &&
+        header.fragment_count == repair.frame.fragment_count) {
+        FrameReassembly& held = repair.frame;
+        if (is_parity) {
+            const std::size_t group = header.fragment_index - header.fragment_count;
+            if (group < held.parity.size() && !held.parity_received[group]) {
+                held.parity[group].assign(chunk, chunk + chunk_size);
+                held.parity_received[group] = true;
+            }
+        } else if (!held.received[header.fragment_index]) {
+            held.fragments[header.fragment_index].assign(chunk, chunk + chunk_size);
+            held.received[header.fragment_index] = true;
+            ++held.received_count;
+        }
+        if (held.received_count < held.fragment_count && !held.parity.empty()) {
+            const unsigned recovered = recover_fragments(held.fragments, held.received,
+                                                         held.parity, held.parity_received);
+            held.received_count += recovered;
+            stats_fragments_recovered_ += recovered;
+            pieces_rebuilt_total_ += recovered;
+        }
+        if (held.received_count >= held.fragment_count) {
+            finish_repair(repair, true);
+        }
+        return;
+    }
 
     // Older than a picture this screen already has whole: see
     // completed_serial_top_. Only a little older, though -- far enough back is
@@ -616,7 +657,20 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     const bool same_transmission =
         slot.active && header.serial == slot.serial && header.fragment_count == slot.fragment_count;
     if (!same_transmission && (!slot.active || header.serial >= slot.serial)) {
-        if (slot.active && slot.received_count < slot.fragment_count) {
+        const std::size_t pieces_missing =
+            slot.active ? slot.fragment_count - slot.received_count : 0;
+        if (slot.active && pieces_missing > 0 && slot.encoding == FrameEncoding::H264 &&
+            !repair.active && pieces_missing <= kMaxRepairPieces) {
+            // The host has moved on with pieces of this one missing. Asked
+            // for again rather than given up on: a round trip, where a
+            // keyframe is a frozen picture and dozens of pieces more to lose.
+            const uint64_t now = monotonic_millis();
+            repair.active = true;
+            repair.frame = std::move(slot);
+            repair.started_ms = now;
+            repair.held.clear();
+            ask_for_repair(repair, now);
+        } else if (slot.active && slot.received_count < slot.fragment_count) {
             // A frame the host definitely sent that this end definitely never
             // got whole -- the sender has moved on, so the missing pieces are
             // not coming. Everything decoded from here on is built on a
@@ -644,6 +698,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         slot.received.assign(header.fragment_count, false);
         slot.parity.assign(parity_count, std::vector<uint8_t>());
         slot.parity_received.assign(parity_count, false);
+        slot.keyframe = header.keyframe;
     } else if (!same_transmission) {
         return;
     }
@@ -661,6 +716,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     if (static_cast<int32_t>(header.sent_at_ms - slot.sent_at_ms) > 0) {
         slot.sent_at_ms = header.sent_at_ms;
     }
+    slot.last_piece_ms = monotonic_millis();
     if (is_parity) {
         const std::size_t group = header.fragment_index - header.fragment_count;
         if (group < slot.parity.size() && !slot.parity_received[group]) {
@@ -684,7 +740,111 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     }
     ((slot.screen == ScreenId::Top) ? completed_serial_top_ : completed_serial_bottom_) =
         slot.serial;
-    if (header.keyframe) {
+    // Held behind a frame still being repaired: shown after it, in order, or
+    // after it is given up on -- see finish_repair().
+    FrameRepair& repairing = (slot.screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
+    if (repairing.active) {
+        repairing.held.push_back(std::move(slot));
+        slot = FrameReassembly();
+        if (repairing.held.size() > kMaxFramesHeldForRepair) {
+            finish_repair(repairing, false);
+        }
+        return;
+    }
+    complete_frame(slot);
+}
+
+// How long a frame being repaired is waited for, and how often its pieces are
+// asked for again meanwhile. A repair answered takes a round trip, which on a
+// home network is a few milliseconds; one not answered in this long is not
+// coming -- a host from before repairs, or the answer lost as well -- and the
+// frames held behind it have waited long enough.
+constexpr uint64_t kRepairAskAgainMs = 30;
+constexpr uint64_t kRepairGiveUpMs = 90;
+
+void CompanionSession::ask_for_repair(FrameRepair& repair, uint64_t now_ms) {
+    RepairRequestMessage request;
+    request.screen = repair.frame.screen;
+    request.serial = repair.frame.serial;
+    for (std::size_t index = 0; index < repair.frame.received.size(); ++index) {
+        if (!repair.frame.received[index]) {
+            request.pieces.push_back(static_cast<uint16_t>(index));
+        }
+    }
+    repair.asked_ms = now_ms;
+    std::vector<uint8_t> out;
+    encode_media_header(session_token_, MessageType::RepairRequest, out);
+    encode_repair_request_payload(request, out);
+    media_socket_.send_to(host_address_, kMediaPort, out.data(), out.size());
+}
+
+void CompanionSession::finish_repair(FrameRepair& repair, bool repaired) {
+    FrameRepair taken = std::move(repair);
+    repair = FrameRepair();
+    const ScreenId screen = taken.frame.screen;
+    if (repaired) {
+        ++stats_frames_repaired_;
+        ++frames_repaired_total_;
+        // Whole now, so a late copy of one of its pieces -- the second
+        // asking answered as well -- is a straggler, not a new frame.
+        uint64_t& completed =
+            (screen == ScreenId::Top) ? completed_serial_top_ : completed_serial_bottom_;
+        completed = std::max(completed, taken.frame.serial);
+    } else {
+        // Lost after all: everything after it is built on a picture this end
+        // never had, which is what a keyframe repairs.
+        ++stats_frames_lost_;
+        ((screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
+    }
+    // Nothing shown here says anything about the link: these waited on the
+    // repair, not on the way here, and counting that wait as jitter would buy
+    // buffer against a stall that has already been dealt with.
+    const bool measuring = this_pass_measures_the_link_;
+    this_pass_measures_the_link_ = false;
+    if (repaired) {
+        complete_frame(taken.frame);
+    }
+    for (FrameReassembly& held : taken.held) {
+        complete_frame(held);
+    }
+    this_pass_measures_the_link_ = measuring;
+}
+
+void CompanionSession::check_repairs(uint64_t now_ms) {
+    // A frame with pieces missing and nothing more arriving for it: the last
+    // one sent before the game paused, which no newer frame will ever come
+    // along to show was left incomplete. Without this the picture stayed one
+    // frame short for as long as the pause lasted.
+    constexpr uint64_t kQuietBeforeRepairMs = 30;
+    for (FrameReassembly* slot : {&reassembly_top_, &reassembly_bottom_}) {
+        FrameRepair& repair = (slot->screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
+        const std::size_t missing = slot->fragment_count - slot->received_count;
+        if (!slot->active || missing == 0 || slot->encoding != FrameEncoding::H264 ||
+            repair.active || missing > kMaxRepairPieces ||
+            now_ms - slot->last_piece_ms < kQuietBeforeRepairMs) {
+            continue;
+        }
+        repair.active = true;
+        repair.frame = std::move(*slot);
+        *slot = FrameReassembly();
+        repair.started_ms = now_ms;
+        repair.held.clear();
+        ask_for_repair(repair, now_ms);
+    }
+    for (FrameRepair* repair : {&repair_top_, &repair_bottom_}) {
+        if (!repair->active) continue;
+        if (now_ms - repair->started_ms >= kRepairGiveUpMs) {
+            finish_repair(*repair, false);
+        } else if (now_ms - repair->asked_ms >= kRepairAskAgainMs) {
+            ask_for_repair(*repair, now_ms);
+        }
+    }
+}
+
+// A frame whose every piece is here: shown, or passed over while waiting for
+// a keyframe. Leaves `slot` empty.
+void CompanionSession::complete_frame(FrameReassembly& slot) {
+    if (slot.keyframe) {
         // The answer landed: this picture stands on its own, so whatever was
         // lost before it no longer matters. Cleared here rather than when the
         // request was sent, because a request can be lost -- see
@@ -712,7 +872,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     // Only video: a tile picture is built against a baseline the host
     // rebases on acks, and is whole in itself as far as this end goes.
     const bool awaiting_keyframe =
-        slot.encoding == FrameEncoding::H264 && !header.keyframe &&
+        slot.encoding == FrameEncoding::H264 && !slot.keyframe &&
         ((slot.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_);
 
     FrameMessage frame;
@@ -981,7 +1141,7 @@ void CompanionSession::poll(uint64_t now_ms) {
                 return;
             }
             if (piece_loss_every_for_test_ > 0 && type == MessageType::Frame &&
-                ++pieces_seen_for_test_ % piece_loss_every_for_test_ == 0) {
+                ++pieces_seen_for_test_ % piece_loss_every_for_test_ < piece_loss_run_for_test_) {
                 return;
             }
             if (dropping_frames_for_test_ && type == MessageType::Frame) {
@@ -1181,6 +1341,7 @@ void CompanionSession::poll(uint64_t now_ms) {
     // left for the next poll: an ack that describes the state of things two
     // polls ago reads to the host as a device two frames further behind than
     // it is, and the host throttles on exactly that number.
+    check_repairs(now_ms);
     ask_for_keyframes(now_ms);
     adapt_to_what_this_device_can_decode(now_ms);
 
@@ -2067,7 +2228,7 @@ std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_lat
 // passed over while waiting for one that stands on its own. The loss half is
 // left out on a second with none, which is the ordinary second.
 std::string loss_summary(uint64_t pictures, uint64_t frames_lost, uint64_t pieces_rebuilt,
-                         uint64_t passed_over) {
+                         uint64_t frames_repaired, uint64_t passed_over) {
     std::string summary = "; " + std::to_string(pictures) + " pictures this second";
     if (frames_lost > 0) {
         summary += ", " + std::to_string(frames_lost) +
@@ -2076,6 +2237,11 @@ std::string loss_summary(uint64_t pictures, uint64_t frames_lost, uint64_t piece
     if (pieces_rebuilt > 0) {
         summary += ", " + std::to_string(pieces_rebuilt) +
                    (pieces_rebuilt == 1 ? " lost piece rebuilt" : " lost pieces rebuilt");
+    }
+    if (frames_repaired > 0) {
+        summary += ", " + std::to_string(frames_repaired) +
+                   (frames_repaired == 1 ? " frame" : " frames") +
+                   " repaired by asking for missing pieces again";
     }
     if (passed_over > 0) {
         summary += ", " + std::to_string(passed_over) + " passed over waiting for a keyframe";
@@ -2128,7 +2294,8 @@ void CompanionSession::report_stream(uint64_t now_ms) {
              late_pictures_summary(stats_starved_, stats_late_from_host_) +
              (stats_shed_ > 0 ? "; let one picture go unseen to catch up" : "") +
              loss_summary(stats_decoded_ * 1000 / elapsed, stats_frames_lost_,
-                          stats_fragments_recovered_, stats_frames_skipped_));
+                          stats_fragments_recovered_, stats_frames_repaired_,
+                          stats_frames_skipped_));
     stats_shed_ = 0;
     // The number the rest of the line adds up to, for anything played by
     // touch or by feel: from an input leaving this device to the first
@@ -2173,6 +2340,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_frames_lost_ = 0;
     stats_frames_skipped_ = 0;
     stats_fragments_recovered_ = 0;
+    stats_frames_repaired_ = 0;
 }
 
 // How long each frame should be on screen: what the host is producing at,

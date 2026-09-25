@@ -416,7 +416,7 @@ std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_lat
 // The rest of that line: pictures shown this second, and what was lost on the
 // way -- see its definition.
 std::string loss_summary(uint64_t pictures, uint64_t frames_lost, uint64_t pieces_rebuilt,
-                         uint64_t passed_over);
+                         uint64_t frames_repaired, uint64_t passed_over);
 
 // How far to advance the pacing clock after showing `shown` frames.
 //
@@ -612,8 +612,13 @@ public:
     // One frame datagram in every `every` lost, the way wifi loses them: a
     // piece here and there rather than whole frames. Zero stops it.
     uint64_t pieces_rebuilt_for_test() const { return pieces_rebuilt_total_; }
-    void lose_one_piece_in_for_test(unsigned every) {
+    uint64_t frames_repaired_for_test() const { return frames_repaired_total_; }
+    void lose_one_piece_in_for_test(unsigned every) { lose_pieces_for_test(every, 1); }
+    // `run` datagrams in a row lost out of every `every`: a burst, longer than
+    // a frame's recovery pieces can put back on their own.
+    void lose_pieces_for_test(unsigned every, unsigned run) {
         piece_loss_every_for_test_ = every;
+        piece_loss_run_for_test_ = run;
         pieces_seen_for_test_ = 0;
     }
     // Whether that screen is still waiting on a picture that stands on its
@@ -782,7 +787,29 @@ private:
         // The recovery pieces that came with it -- see build_frame_parity().
         std::vector<std::vector<uint8_t>> parity;
         std::vector<bool> parity_received;
+        bool keyframe = false;
+        // When the last piece of it arrived, so a frame nothing follows -- the
+        // last before a game pauses -- is noticed as incomplete too.
+        uint64_t last_piece_ms = 0;
     };
+    // A video frame the host has moved on from with pieces still missing --
+    // more than its recovery pieces could put back -- set aside while those
+    // pieces are asked for again. Frames that complete behind it are held
+    // until it is either whole, and shown first, or given up on. See
+    // RepairRequest.
+    struct FrameRepair {
+        bool active = false;
+        FrameReassembly frame;
+        uint64_t started_ms = 0;
+        uint64_t asked_ms = 0;
+        std::deque<FrameReassembly> held;
+    };
+    FrameRepair repair_top_;
+    FrameRepair repair_bottom_;
+    void ask_for_repair(FrameRepair& repair, uint64_t now_ms);
+    void finish_repair(FrameRepair& repair, bool repaired);
+    void check_repairs(uint64_t now_ms);
+    void complete_frame(FrameReassembly& slot);
     void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
     // The newest frame put together whole for each screen. A piece of an older
     // one arriving after it -- overtaken on the way, which wifi does -- would
@@ -796,6 +823,8 @@ private:
     // Pieces of frames put back from their recovery pieces this second -- see
     // build_frame_parity().
     unsigned stats_fragments_recovered_ = 0;
+    unsigned stats_frames_repaired_ = 0;
+    uint64_t frames_repaired_total_ = 0;
     uint64_t pieces_rebuilt_total_ = 0;
     uint64_t completed_serial_top_ = 0;
     uint64_t completed_serial_bottom_ = 0;
@@ -1012,6 +1041,7 @@ private:
     uint64_t last_ack_ms_ = 0;
     bool dropping_frames_for_test_ = false;
     unsigned piece_loss_every_for_test_ = 0;
+    unsigned piece_loss_run_for_test_ = 1;
     unsigned pieces_seen_for_test_ = 0;
     uint64_t received_serial_ = 0;
 

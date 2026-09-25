@@ -1212,6 +1212,34 @@ bool decode_keyframe_request_payload(const uint8_t* data, std::size_t size,
     return reader.ok() && screen_from_wire(screen, out.screen);
 }
 
+void encode_repair_request_payload(const RepairRequestMessage& request, std::vector<uint8_t>& out) {
+    put_u8(out, screen_to_wire(request.screen));
+    put_u64(out, request.serial);
+    const std::size_t count = std::min(request.pieces.size(), kMaxRepairPieces);
+    put_u16(out, static_cast<uint16_t>(count));
+    for (std::size_t index = 0; index < count; ++index) {
+        put_u16(out, request.pieces[index]);
+    }
+}
+
+bool decode_repair_request_payload(const uint8_t* data, std::size_t size,
+                                   RepairRequestMessage& out) {
+    Reader reader(data, size);
+    uint8_t screen = 0;
+    uint16_t count = 0;
+    reader.u8(screen);
+    reader.u64(out.serial);
+    reader.u16(count);
+    if (!reader.ok() || !screen_from_wire(screen, out.screen) || count > kMaxRepairPieces) {
+        return false;
+    }
+    out.pieces.resize(count);
+    for (uint16_t index = 0; index < count; ++index) {
+        reader.u16(out.pieces[index]);
+    }
+    return reader.ok();
+}
+
 // --- pixels -----------------------------------------------------------------
 
 namespace {

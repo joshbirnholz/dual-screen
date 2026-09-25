@@ -735,6 +735,31 @@ void test_lost_pieces_come_back_from_parity() {
     }
 }
 
+// A request for missing pieces says which frame and which pieces, and a
+// request claiming more than the cap is refused rather than trusted.
+void test_a_repair_request_round_trips() {
+    RepairRequestMessage request;
+    request.screen = ScreenId::Bottom;
+    request.serial = 123456789012ull;
+    request.pieces = {0, 7, 8, 9, 81};
+    std::vector<uint8_t> out;
+    encode_repair_request_payload(request, out);
+    RepairRequestMessage back;
+    CHECK(decode_repair_request_payload(out.data(), out.size(), back));
+    CHECK(back.screen == ScreenId::Bottom);
+    CHECK_EQ(back.serial, request.serial);
+    CHECK(back.pieces == request.pieces);
+    // Cut short: not a request.
+    CHECK(!decode_repair_request_payload(out.data(), out.size() - 1, back));
+    // A count past the cap, whatever follows it.
+    std::vector<uint8_t> greedy;
+    RepairRequestMessage none;
+    encode_repair_request_payload(none, greedy);
+    greedy[greedy.size() - 2] = 0xFF;
+    greedy[greedy.size() - 1] = 0xFF;
+    CHECK(!decode_repair_request_payload(greedy.data(), greedy.size(), back));
+}
+
 // A Bye can say the player quit from the companion, so it closes its own app
 // too. An ordinary one says nothing -- and is still empty, so a companion from
 // before this reads either the way it always did.
@@ -1440,6 +1465,7 @@ void test_a_gap_in_sent_frames_is_loss() {
 }
 
 int main() {
+    test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
     test_a_bye_can_say_quit_too();
     test_hello_round_trip();

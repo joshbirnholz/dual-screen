@@ -3029,6 +3029,109 @@ void test_a_lost_piece_does_not_lose_the_frame() {
     host.stop();
 }
 
+// A burst of losses longer than a frame's recovery pieces can cover -- wifi
+// does that, a dozen datagrams gone in a row -- is repaired by asking for the
+// missing pieces by name: a round trip, where a keyframe is a frozen picture
+// and dozens more pieces to lose. The frames behind the one being repaired
+// wait for it and are shown after it, in order.
+void test_a_burst_of_losses_is_repaired_by_asking_again() {
+    if (!video::have_ffmpeg()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Apple TV", ScreenId::Top, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    if (!host.companion_accepts_video()) {
+        test::skip("the far end cannot decode video");
+        companion.disconnect();
+        host.stop();
+        return;
+    }
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 720;
+    uint64_t serial = 1;
+    std::map<uint64_t, std::vector<uint32_t>> sent;
+    unsigned checked = 0;
+    unsigned wrong = 0;
+    uint64_t last_checked = 0;
+    const auto check_shown = [&] {
+        const CompanionSession::ScreenPixels shown = companion.screen_pixels(ScreenId::Top);
+        if (!shown.valid() || shown.serial == last_checked) return;
+        last_checked = shown.serial;
+        const auto it = sent.find(shown.serial);
+        if (it == sent.end()) return;
+        const PictureError off = picture_error(shown, it->second, PixelChannelOrder::XrgbBytes);
+        ++checked;
+        if (off.mean > 6.0 || off.badly_off > 0.02) ++wrong;
+    };
+    const auto send = [&](int frame) {
+        std::vector<uint32_t>& pixels = sent[serial];
+        pixels = moving_picture(kWidth, kHeight, frame, PixelChannelOrder::XrgbBytes);
+        HostSession::ScreenPixels top;
+        top.pixels = pixels.data();
+        top.width = kWidth;
+        top.height = kHeight;
+        top.stride_pixels = kWidth;
+        host.publish_screens(top, HostSession::ScreenPixels(), serial++);
+        const uint64_t until = monotonic_millis() + 16;
+        while (monotonic_millis() < until) {
+            const uint64_t now = monotonic_millis();
+            host.poll(now);
+            companion.poll(now);
+            check_shown();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    };
+    for (int frame = 0; frame < 20; ++frame) send(frame);
+    spin(host, companion, [&] { return companion.screen_pixels(ScreenId::Top).serial == serial - 1; });
+    const unsigned asked_before = host.keyframes_asked_for_test();
+
+    // Twelve datagrams in a row, out of every two hundred.
+    companion.lose_pieces_for_test(200, 12);
+    for (int frame = 20; frame < 140; ++frame) send(frame);
+    companion.lose_pieces_for_test(0, 1);
+
+    CHECK_MSG(companion.frames_repaired_for_test() > 0,
+              "no frame was repaired, so the bursts never outran the recovery pieces");
+    CHECK_MSG(host.keyframes_asked_for_test() == asked_before,
+              "a keyframe was asked for " +
+                  std::to_string(host.keyframes_asked_for_test() - asked_before) +
+                  " times over losses that asking for the pieces again should have repaired");
+    const bool caught_up = spin(host, companion, [&] {
+        check_shown();
+        return companion.screen_pixels(ScreenId::Top).serial == serial - 1;
+    });
+    CHECK_MSG(caught_up, "the picture stopped at frame " +
+                             std::to_string(companion.screen_pixels(ScreenId::Top).serial) +
+                             " of " + std::to_string(serial - 1));
+    CHECK_MSG(checked >= 60, "only " + std::to_string(checked) + " pictures came up to check");
+    CHECK_MSG(wrong == 0, std::to_string(wrong) + " of " + std::to_string(checked) +
+                              " pictures shown were wrong");
+    companion.disconnect();
+    host.stop();
+}
+
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     constexpr double at_60fps = 16.7;
 
@@ -3942,6 +4045,7 @@ int main() {
     test_a_quit_from_the_companion_closes_it_too();
     test_switching_codec_mid_game_keeps_the_picture_right();
     test_a_lost_piece_does_not_lose_the_frame();
+    test_a_burst_of_losses_is_repaired_by_asking_again();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

@@ -59,6 +59,14 @@ enum class MessageType : uint16_t {
     // ordinary frame, which is exactly what the pacing queue then has to
     // spread out, and exactly the periodic latency spike that follows.
     KeyframeRequest = 6,
+    // "These pieces of this frame never got here -- send them again." Rides
+    // the media channel. The step before asking for a keyframe: a video
+    // frame missing more pieces than its recovery pieces can put back is set
+    // aside, the pieces are asked for, and the frame goes on to be shown when
+    // they land, a round trip later rather than a keyframe later. A host from
+    // before this ignores it, and the companion falls back to asking for a
+    // keyframe. See CompanionSession's repair and HostSession::resend_pieces().
+    RepairRequest = 7,
     // host -> companion
     Welcome = 10,
     Reject = 11,
@@ -694,6 +702,20 @@ struct KeyframeRequestMessage {
 
 void encode_keyframe_request_payload(const KeyframeRequestMessage& request,
                                      std::vector<uint8_t>& out);
+
+// Which pieces of which frame to send again: the frame's screen and serial,
+// and the indices of its own pieces (never its recovery pieces) that did not
+// arrive. At most kMaxRepairPieces, which a single datagram holds with room
+// to spare; a frame missing more than that is not worth repairing.
+struct RepairRequestMessage {
+    ScreenId screen = ScreenId::Top;
+    uint64_t serial = 0;
+    std::vector<uint16_t> pieces;
+};
+constexpr std::size_t kMaxRepairPieces = 256;
+void encode_repair_request_payload(const RepairRequestMessage& request, std::vector<uint8_t>& out);
+bool decode_repair_request_payload(const uint8_t* data, std::size_t size,
+                                   RepairRequestMessage& out);
 bool decode_keyframe_request_payload(const uint8_t* data, std::size_t size,
                                      KeyframeRequestMessage& out);
 
