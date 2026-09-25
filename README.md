@@ -551,7 +551,7 @@ frozen for seconds at a time. Three things stand in front of that now:
   it, in order. How long an answer is waited for before asking again is
   learned from how long answers have actually been taking, the way TCP times
   its resends (between 8 and 30ms); after three unanswered askings, or 90ms,
-  a keyframe is asked for instead. A keyframe itself is asked after for up to
+  a keyframe is asked for instead. A keyframe's own missing pieces are asked for up to
   eight times, or 300ms, since giving up on one leaves nothing to show until
   another arrives whole. A copy of a piece that arrives after its
   picture is finished with -- both askings answered -- is recognised and
