@@ -179,6 +179,19 @@ private:
 std::size_t audio_trim_frames(std::size_t sustained_frames, std::size_t target_frames,
                               std::size_t margin_frames, std::size_t block_frames);
 
+// How deep the queue is held, in the device's frames, for a device running at
+// `device_rate` that takes `device_buffer_frames` from the queue at a time.
+//
+// kAudioTargetQueueMs, where the device takes little at a time. A device that
+// takes a lot at once empties the queue in steps of that much, so its depth is
+// a sawtooth around the target: it has to hold a whole buffer at the moment of
+// each take, which on average is half a buffer above where it bottoms out --
+// so the target is half a buffer plus the usual cover. Not two whole buffers,
+// which is what this used to be: on a Switch, whose device takes 4096 frames
+// at a time, that kept a quarter of a second queued that never came near
+// running dry, and the sound that far behind the picture.
+std::size_t audio_target_frames(int device_rate, std::size_t device_buffer_frames);
+
 // Appends `frames` of stereo int16 to `out` with the first `skip` of them
 // dropped, crossfading from what was dropped into what follows so the join is
 // not a step. With `skip` of zero this is a plain copy.

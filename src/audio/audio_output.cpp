@@ -30,6 +30,14 @@ int16_t lerp_sample(int16_t a, int16_t b, double t) {
 
 }  // namespace
 
+std::size_t audio_target_frames(int device_rate, std::size_t device_buffer_frames) {
+    const std::size_t cover = static_cast<std::size_t>(device_rate) * kAudioTargetQueueMs / 1000;
+    if (device_buffer_frames <= cover) {
+        return cover;
+    }
+    return device_buffer_frames / 2 + cover;
+}
+
 double audio_drift_ratio(std::size_t queued_frames, std::size_t target_frames, double current) {
     if (target_frames == 0) {
         return 1.0;
@@ -179,8 +187,9 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
         return false;
     }
 
+    const int source_rate = static_cast<int>(sample_rate + 0.5);
     SDL_AudioSpec desired {};
-    desired.freq = static_cast<int>(sample_rate + 0.5);
+    desired.freq = source_rate;
     desired.format = AUDIO_S16SYS;
     desired.channels = 2;
     // ~11ms at 44.1kHz; small enough to stay responsive, large enough not to
@@ -194,6 +203,10 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     // lower samples"). That is ~85ms a buffer, which is latency this would
     // rather not carry, but a clean 85ms beats a broken 11ms.
     desired.samples = 4096;
+    // And at the Switch's own rate, 48kHz, converted to on the way in below --
+    // which is what makes those 4096 frames 85ms. At a DS's 32.7kHz they are
+    // 125ms, a buffer, and the Switch plays more than one buffer behind.
+    desired.freq = 48000;
 #endif
     desired.callback = nullptr;  // queue-driven
 
@@ -207,36 +220,36 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
 
     sample_rate_ = sample_rate;
 
-    if (spec_.freq != desired.freq) {
-        // The device would not take the core's rate, so convert on the way in.
-        stream_ = SDL_NewAudioStream(AUDIO_S16SYS, 2, desired.freq, spec_.format, spec_.channels,
+    if (spec_.freq != source_rate) {
+        // The device is not at the core's rate -- it would not take it, or it
+        // was not asked to -- so convert on the way in.
+        stream_ = SDL_NewAudioStream(AUDIO_S16SYS, 2, source_rate, spec_.format, spec_.channels,
                                      spec_.freq);
         if (stream_ == nullptr) {
             log_warn(std::string("could not create an audio resampler: ") + SDL_GetError() +
                      "; audio will play at the wrong pitch");
         } else {
-            log_info("resampling core audio from " + std::to_string(desired.freq) + " Hz to " +
+            log_info("resampling core audio from " + std::to_string(source_rate) + " Hz to " +
                      std::to_string(spec_.freq) + " Hz");
         }
     }
 
     // Both measured against the device's own rate, since that is what the queue
     // these bound is actually drained at.
-    target_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioTargetQueueMs / 1000;
     panic_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioPanicQueueMs / 1000;
-    // A target below what the device takes in one go is not a target, it is a
-    // guaranteed underrun: the device empties the queue past it on every
-    // single refill, and the drift correction spends the whole session winding
-    // the rate up to chase a level it can never hold. So the target is never
-    // less than a couple of the device's own buffers, whatever it granted --
-    // which matters most exactly where the buffer had to be made large.
+    // A target the device's own refills would take the queue past is not a
+    // target, it is a guaranteed underrun, and the drift correction then
+    // spends the whole session winding the rate up to chase a level it can
+    // never hold. See audio_target_frames() for what is enough and why.
     const std::size_t device_buffer_frames = static_cast<std::size_t>(spec_.samples);
-    const std::size_t floor_frames = device_buffer_frames * 2;
-    if (target_frames_ < floor_frames) {
-        log_info("audio: device buffer is " + std::to_string(device_buffer_frames) +
-                 " frames, so aiming the queue at " + std::to_string(floor_frames) +
-                 " rather than " + std::to_string(target_frames_));
-        target_frames_ = floor_frames;
+    target_frames_ = audio_target_frames(spec_.freq, device_buffer_frames);
+    const std::size_t plain_target =
+        static_cast<std::size_t>(spec_.freq) * kAudioTargetQueueMs / 1000;
+    if (target_frames_ != plain_target) {
+        log_info("audio: the device takes " + std::to_string(device_buffer_frames) +
+                 " frames at a time at " + std::to_string(spec_.freq) + " Hz, so the queue is "
+                 "held at " + std::to_string(target_frames_ * 1000 / spec_.freq) + "ms rather than " +
+                 std::to_string(kAudioTargetQueueMs) + "ms");
     }
     // Still clear of the target, since ordinary drift must never reach it --
     // but by a margin rather than a multiple, so a large target cannot push

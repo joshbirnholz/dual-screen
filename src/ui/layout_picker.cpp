@@ -1229,7 +1229,13 @@ void LayoutPicker::render(QuadRenderer& quads,
                          Color{0.0f, 0.0f, 0.0f, 0.5f});
         quads.draw_solid(confirm.dialog, theme.text);
 
-        const char* question = "Are you sure you want to quit?\nUnsaved progress will be lost.";
+        // With Resume from Save State on, quitting loses nothing: the game
+        // starts from right here next time, so the warning would be untrue.
+        const bool quitting_keeps_progress =
+            state_.resume_choosable && state_.resume_from_save_state;
+        const char* question = quitting_keeps_progress
+                                   ? "Are you sure you want to quit?"
+                                   : "Are you sure you want to quit?\nUnsaved progress will be lost.";
         switch (confirm_) {
             case MenuConfirm::Reset:
                 question = "Are you sure you want to reset?\nUnsaved progress will be lost.";

@@ -468,7 +468,24 @@ void test_the_low_water_mark_follows_the_trough_not_the_peak() {
 
 }  // namespace
 
+// The queue is held at the usual cover where the device takes little at a
+// time, and at half a device buffer more where it takes a lot -- never at two
+// whole buffers, which kept a Switch a quarter of a second behind.
+void test_the_queue_target_follows_the_device_buffer() {
+    // A desktop: 512 frames at 48kHz is well under 60ms, so 60ms it is.
+    CHECK_EQ(audio_target_frames(48000, 512), static_cast<std::size_t>(2880));
+    // A Switch at 48kHz, taking 4096 frames at a time: half of that plus the
+    // cover -- about 103ms, where two buffers was 171ms.
+    CHECK_EQ(audio_target_frames(48000, 4096), static_cast<std::size_t>(2048 + 2880));
+    // Enough that the queue still holds a whole buffer when the device takes
+    // one: the target sits half a buffer above the sawtooth's bottom.
+    const std::size_t target = audio_target_frames(32728, 4096);
+    CHECK(target >= 4096 / 2 + 32728 * 50 / 1000);
+    CHECK(target < 4096 * 2);
+}
+
 int main() {
+    test_the_queue_target_follows_the_device_buffer();
     test_the_correction_stays_inaudible_however_far_off_the_queue_is();
     test_a_ratio_of_one_passes_samples_through_unchanged();
     test_a_faster_ratio_emits_fewer_frames_and_a_slower_one_more();
