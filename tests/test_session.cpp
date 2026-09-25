@@ -3221,6 +3221,72 @@ void test_a_troubled_link_gets_a_smaller_picture() {
     host.stop();
 }
 
+// An Apple TV draws at 1080p and says so, and a 1080p picture -- a Wii U game
+// Cemu renders at 1080p -- reaches it whole: nothing between the two ends
+// takes it down to 720p.
+void test_a_1080p_picture_reaches_a_1080p_display_whole() {
+    if (!video::have_ffmpeg()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Apple TV", ScreenId::Top, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    if (!host.companion_accepts_video()) {
+        test::skip("the far end cannot decode video");
+        companion.disconnect();
+        host.stop();
+        return;
+    }
+    companion.request_display_size(1920, 1080);
+    spin(host, companion, [] { return false; }, 200);
+
+    uint64_t serial = 1;
+    std::vector<uint32_t> latest;
+    for (int frame = 0; frame < 30; ++frame) {
+        latest = moving_picture(1920, 1080, frame, PixelChannelOrder::Rgba);
+        HostSession::ScreenPixels top;
+        top.pixels = latest.data();
+        top.width = 1920;
+        top.height = 1080;
+        top.stride_pixels = 1920;
+        top.channel_order = PixelChannelOrder::Rgba;
+        host.publish_screens(top, HostSession::ScreenPixels(), serial++);
+        spin(host, companion, [] { return false; }, 16);
+    }
+    CHECK(spin(host, companion,
+               [&] { return companion.screen_pixels(ScreenId::Top).serial == serial - 1; }));
+    const CompanionSession::ScreenPixels shown = companion.screen_pixels(ScreenId::Top);
+    CHECK_MSG(shown.width == 1920 && shown.height == 1080,
+              "a 1080p picture arrived at " + std::to_string(shown.width) + "x" +
+                  std::to_string(shown.height));
+    if (shown.width == 1920 && shown.height == 1080) {
+        const PictureError off = picture_error(shown, latest, PixelChannelOrder::Rgba);
+        CHECK_MSG(off.mean <= 6.0 && off.badly_off <= 0.02, "the 1080p picture arrived wrong");
+    }
+    companion.disconnect();
+    host.stop();
+}
+
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     constexpr double at_60fps = 16.7;
 
@@ -4136,6 +4202,7 @@ int main() {
     test_a_lost_piece_does_not_lose_the_frame();
     test_a_burst_of_losses_is_repaired_by_asking_again();
     test_a_troubled_link_gets_a_smaller_picture();
+    test_a_1080p_picture_reaches_a_1080p_display_whole();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

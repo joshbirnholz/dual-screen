@@ -925,10 +925,12 @@ Then pick a target in Xcode and press Run. A real Apple TV needs SDL built
 for tvOS first; [apple/README.md](apple/README.md) has that, and the ways a
 device build tends to fail.
 
-An Apple TV draws at 1080p even on a 4K television, which scales it up: the
-picture it is sent is 720p, and filling four times the pixels every frame
-bought nothing anyone could see across a room. An iPhone or iPad draws at its
-full resolution.
+An Apple TV draws at 1080p even on a 4K television, which scales it up, and
+asks the host for pictures up to 1920x1080. A Wii U game arrives at whatever
+size Cemu renders its TV screen at: 1280x720 for most games as they are, or
+the full 1920x1080 with a Cemu graphic pack that raises the TV resolution to
+1080p. Drawing at 4K filled four times the pixels every frame for detail no
+stream carries. An iPhone or iPad draws at its full resolution.
 
 ### Nintendo Switch
 
