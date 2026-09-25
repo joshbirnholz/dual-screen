@@ -78,6 +78,62 @@ void test_paths() {
                  std::string("/saves/Mario Kart DS.savestate1"));
     CHECK_STR_EQ(save_point_path("/saves", "/games/Mario Kart DS.nds", 3),
                  std::string("/saves/Mario Kart DS.savestate4"));
+    // The resume point sits beside them, under a name the slot list never
+    // reads.
+    CHECK_STR_EQ(resume_point_path("/saves", "/games/Mario Kart DS.nds"),
+                 std::string("/saves/Mario Kart DS.resume"));
+}
+
+// The resume point's writer: what it is handed ends up on disk, the newest
+// of several asked for in a row is the one that stays, a cancelled write
+// never lands, and one that cannot be written is counted rather than lost
+// silently.
+void test_background_writer(const std::string& sandbox) {
+    const std::string path = resume_point_path(sandbox, "/games/Resumed.nds");
+    std::string error;
+    {
+        BackgroundSavePointWriter writer;
+        writer.write(path, std::vector<uint8_t>(4096, 1), 100);
+        writer.finish();
+        std::vector<uint8_t> loaded;
+        CHECK(read_save_point_state(path, loaded, &error));
+        CHECK(loaded == std::vector<uint8_t>(4096, 1));
+
+        // A run of them: whichever are skipped, the last is what is left.
+        for (int round = 2; round <= 20; ++round) {
+            writer.write(path, std::vector<uint8_t>(200000, static_cast<uint8_t>(round)),
+                         100 + round);
+        }
+        writer.finish();
+        CHECK(read_save_point_state(path, loaded, &error));
+        CHECK(loaded == std::vector<uint8_t>(200000, 20));
+        SavePointInfo info;
+        CHECK(read_save_point_info(path, info));
+        CHECK_EQ(info.saved_at, static_cast<int64_t>(120));
+
+        // Somewhere it cannot go: under a file, as if it were a folder.
+        writer.write(path_join(path, "x.resume"), std::vector<uint8_t>(16, 3), 1);
+        writer.finish();
+        std::string why;
+        CHECK_EQ(writer.take_failures(&why), 1u);
+        CHECK(!why.empty());
+        CHECK_EQ(writer.take_failures(nullptr), 0u);
+
+        // Cancelled, then removed: nothing comes back to replace it.
+        writer.cancel();
+        std::remove(path.c_str());
+        writer.finish();
+        CHECK(!file_exists(path));
+    }
+    // What is still queued when the writer goes is written before it goes:
+    // the write asked for on the way out of the app is the one that matters.
+    {
+        BackgroundSavePointWriter writer;
+        writer.write(path, std::vector<uint8_t>(300000, 9), 200);
+    }
+    std::vector<uint8_t> loaded;
+    CHECK(read_save_point_state(path, loaded, &error));
+    CHECK(loaded == std::vector<uint8_t>(300000, 9));
 }
 
 // Slots written under their first name, .savepoint1, are picked up under
@@ -240,6 +296,7 @@ int main() {
     CHECK(!sandbox.empty());
     test_paths();
     test_round_trip(sandbox);
+    test_background_writer(sandbox);
     test_old_names_are_adopted(sandbox);
     test_damage_refused(sandbox);
     test_thumbnail(ChannelOrder::XrgbBytes);

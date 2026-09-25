@@ -43,6 +43,7 @@
 #include "render/text_renderer.hpp"
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
+#include "ui/notice_popup.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "ui/connecting_screen.hpp"
@@ -72,6 +73,13 @@ constexpr std::chrono::milliseconds kShutdownDeadline{10000};
 // handheld gets put to sleep and powered off without warning, so waiting for a
 // clean exit to write the save is not good enough.
 constexpr double kSaveFlushIntervalSeconds = 5.0;
+
+// How often, while a game with Resume from Save State on is being played, its
+// resume point is brought up to date even when nothing else has asked. Quitting,
+// the quick menu, losing the focus and every in-game save each write one too;
+// this is for what gives no warning at all -- a battery running out, a crash --
+// and says how far back that can land.
+constexpr double kResumePointIntervalSeconds = 30.0;
 
 std::string next_argument(int argc, char** argv, int& index, const char* flag, std::string& error) {
     if (index + 1 >= argc) {
@@ -277,7 +285,11 @@ struct App::Impl {
         Browser,
         Launcher,
         HostPicker,
-        Companion
+        Companion,
+        // The game has just been started from its resume point and is held
+        // there, paused, under a popup saying so, until OK is pressed -- on
+        // either device. See resume_game().
+        ResumeNotice
     };
 
     AppOptions options;
@@ -496,6 +508,12 @@ struct App::Impl {
     double frame_period = 1.0 / 60.0;
     double frame_accumulator = 0.0;
     double save_flush_accumulator = 0.0;
+    // Played time since the resume point was last written -- see
+    // kResumePointIntervalSeconds.
+    double resume_point_accumulator = 0.0;
+    // Writes resume points off the game's thread. Declared after the
+    // settings and paths it writes with, so it finishes with them still here.
+    BackgroundSavePointWriter resume_writer;
     bool awaiting_auto_connect = false;
     // The host being joined, kept so the connecting screen can name it before
     // the handshake has told this device anything.
@@ -678,6 +696,29 @@ struct App::Impl {
     void adopt_left_stick_press(LeftStickPress press);
     // Puts whatever is in effect into this device's L3 and the menu.
     void apply_left_stick_press();
+    // Resume from Save State: whether it is on for this game, as the host has
+    // it, and the same ask-or-apply pair as everything else the menu shares.
+    // Off means the resume point is deleted as well as no longer written, so
+    // one left from before can never be resumed later by surprise.
+    bool resume_in_effect() const;
+    void request_resume(bool on);
+    void adopt_resume(bool on);
+    // Brings this game's resume point up to date, if it has Resume from Save
+    // State on: the state is taken here, on the game's thread, and written
+    // on resume_writer's. `why` goes in the log.
+    void write_resume_point(const char* why);
+    // Writes the cartridge save if it has changed, and the resume point with
+    // it when it has -- the two have to agree, since loading a state puts the
+    // in-game save back to how it was then. With `why`, the resume point is
+    // written either way.
+    void flush_saves(const char* why = nullptr);
+    // At the start of a game with it on: loads the resume point, if there is
+    // one, and runs one frame from it so the picture paused behind the popup
+    // is the moment resumed. False, and the game starts from the beginning,
+    // when there is nothing to resume or it will not load.
+    bool resume_game();
+    // OK on the popup, from either device: the game goes on from there.
+    void dismiss_resume_notice();
     // A DS game's Rumble Pak: whether one is in, as the host has it, and the
     // same ask-or-apply pair as everything else the menu shares.
     bool rumble_pak_in_effect() const;
@@ -1357,9 +1398,14 @@ LayoutPickerState App::Impl::menu_state_from_host() const {
 void App::Impl::set_menu_open(bool open) {
     if (open) {
         if (state == State::Menu) return;
+        // The popup is answered first: it is what the game is waiting on.
+        if (state == State::ResumeNotice) return;
         open_picker();
         state = State::Menu;
         log_info("the quick menu is up");
+        // A menu is often the last thing opened before a game is put down,
+        // whichever device opened it.
+        if (!is_companion()) flush_saves("the quick menu opened");
         input.set_game_input_enabled(false);
         if (is_companion()) companion_session->set_menu_open(true);
         return;
@@ -1411,6 +1457,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
             if (result.rumble_pak_toggled) {
                 request_rumble_pak(!rumble_pak_in_effect());
+            }
+            if (result.resume_toggled) {
+                request_resume(!resume_in_effect());
             }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
@@ -1509,6 +1558,10 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.rumble_pak = rumble_pak_in_effect();
     picker_state.rumble_choosable = is_companion() ? companion_session->host_rumble_choosable()
                                                    : (source && source->offers_rumble_pak());
+    // Resume from Save State, wherever save states are.
+    picker_state.resume_from_save_state = resume_in_effect();
+    picker_state.resume_choosable =
+        is_companion() ? companion_session->host_resume_choosable() : save_points_available();
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
     picker_state.cursor_choosable =
@@ -1640,6 +1693,113 @@ void App::Impl::apply_left_stick_press() {
     if (picker) {
         picker->set_left_stick_press(press);
     }
+}
+
+bool App::Impl::resume_in_effect() const {
+    if (is_companion()) return companion_session->host_resume_from_save_state();
+    return have_game_config && game_config.resume_from_save_state;
+}
+
+void App::Impl::request_resume(bool on) {
+    if (is_companion()) {
+        companion_session->request_resume_from_save_state(on);
+        return;  // the host decides; it will tell us
+    }
+    adopt_resume(on);
+}
+
+void App::Impl::adopt_resume(bool on) {
+    if (!have_game_config || !save_points_available() || on == game_config.resume_from_save_state) {
+        return;
+    }
+    game_config.resume_from_save_state = on;
+    persist_game_config();
+    if (picker) picker->set_resume_from_save_state(on);
+    resume_point_accumulator = 0.0;
+    if (on) {
+        log_info("resume from save state is on: this game will start where it is left");
+        return;
+    }
+    // Nothing still on its way to the disk, and nothing left there.
+    resume_writer.cancel();
+    const std::string path = resume_point_path(paths.saves_dir, game_path);
+    if (file_exists(path)) std::remove(path.c_str());
+    log_info("resume from save state is off: this game will start from the beginning");
+}
+
+void App::Impl::write_resume_point(const char* why) {
+    if (is_companion() || !source || !have_game_config || !game_config.resume_from_save_state ||
+        !save_points_available()) {
+        return;
+    }
+    // Still exactly where it was resumed, which is what is on the disk.
+    if (state == State::ResumeNotice) return;
+    resume_point_accumulator = 0.0;
+    const auto began = std::chrono::steady_clock::now();
+    std::vector<uint8_t> state_bytes;
+    std::string error;
+    if (!source->save_state(state_bytes, &error)) {
+        log_warn(std::string("resume point not written (") + why + "): " + error);
+        return;
+    }
+    const auto taken_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::steady_clock::now() - began)
+                              .count();
+    log_debug(std::string("resume point: ") + std::to_string(state_bytes.size()) +
+              " bytes taken in " + std::to_string(taken_us / 1000) + "." +
+              std::to_string((taken_us / 100) % 10) + "ms (" + why + ")");
+    resume_writer.write(resume_point_path(paths.saves_dir, game_path), std::move(state_bytes),
+                        static_cast<int64_t>(std::time(nullptr)));
+    std::string failure;
+    if (resume_writer.take_failures(&failure) > 0) {
+        log_warn("an earlier resume point could not be written: " + failure);
+    }
+}
+
+void App::Impl::flush_saves(const char* why) {
+    if (!source) return;
+    if (source->flush_save_ram(false)) {
+        write_resume_point("the game saved");
+    } else if (why != nullptr) {
+        write_resume_point(why);
+    }
+}
+
+bool App::Impl::resume_game() {
+    if (!source || !have_game_config || !game_config.resume_from_save_state ||
+        !save_points_available()) {
+        return false;
+    }
+    const std::string path = resume_point_path(paths.saves_dir, game_path);
+    if (!file_exists(path)) {
+        log_info("resume from save state is on, but there is nothing to resume yet; starting "
+                 "from the beginning");
+        return false;
+    }
+    SavePointInfo info;
+    read_save_point_info(path, info);
+    std::vector<uint8_t> state_bytes;
+    std::string error;
+    if (!read_save_point_state(path, state_bytes, &error) ||
+        !source->load_state(state_bytes, &error)) {
+        log_warn("could not resume from " + path + ": " + error + "; starting from the beginning");
+        return false;
+    }
+    // One frame from there, so what is paused behind the popup is the
+    // moment resumed and not a blank screen.
+    std::string frame_error;
+    source->advance_frame(&frame_error);
+    log_info("resumed from " + path +
+             (info.exists ? " (saved " + format_save_time(info.saved_at) + ")" : std::string()));
+    return true;
+}
+
+void App::Impl::dismiss_resume_notice() {
+    if (state != State::ResumeNotice) return;
+    state = State::Playing;
+    input.set_game_input_enabled(true);
+    frame_accumulator = 0.0;
+    log_info("the resumed game is running");
 }
 
 bool App::Impl::rumble_pak_in_effect() const {
@@ -2124,6 +2284,9 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
 }
 
 bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
+    // The game being left is left where it was, for when it is next started.
+    write_resume_point("another game is starting");
+    resume_writer.finish();
     // Tear down anything already running, so picking a second game from the
     // browser is the same code path as booting the first.
     audio.close();
@@ -2352,13 +2515,17 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // rather than what it is really sending; adopt_external_timing() replaces
     // them the moment it says.
     frame_period = 1.0 / std::max(1.0, local_frames_per_second());
+    // Before the sound opens, so the one frame run from the resume point is
+    // not heard.
+    const bool resumed = resume_game();
+    resume_point_accumulator = 0.0;
     std::string audio_error;
     if (!audio.open(local_audio_sample_rate(), &audio_error)) {
         log_warn(audio_error + "; continuing without sound");
     }
 
-    state = State::Playing;
-    input.set_game_input_enabled(true);
+    state = resumed ? State::ResumeNotice : State::Playing;
+    input.set_game_input_enabled(!resumed);
     apply_filtering();
     frame_accumulator = 0.0;
     last_counter = SDL_GetPerformanceCounter();
@@ -2540,6 +2707,17 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
+            // The host has just resumed its game and is waiting under a popup
+            // that says so; this device shows the same one, and its OK is the
+            // host's OK. Nothing reaches the game until then.
+            if (companion_session->host_resume_notice()) {
+                input.set_game_input_enabled(false);
+                if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
+                                          static_cast<float>(output_height))) {
+                    companion_session->request_menu_action(net::MenuAction::Confirm);
+                }
+                break;
+            }
             // Connected: the companion's own touchscreen and buttons drive the
             // host's game from here on.
             input.set_game_input_enabled(true);
@@ -2640,6 +2818,14 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
+        case State::ResumeNotice: {
+            if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
+                                      static_cast<float>(output_height))) {
+                dismiss_resume_notice();
+            }
+            break;
+        }
+
 
         case State::Settings: {
             apply_settings_result(
@@ -2681,9 +2867,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             for (const UiAction action : actions) {
                 if (action == UiAction::ToggleMenu || action == UiAction::OpenMenu) {
                     set_menu_open(true);
-                    if (source) {
-                        source->flush_save_ram(false);
-                    }
                     break;
                 }
             }
@@ -2904,6 +3087,10 @@ void App::Impl::render() {
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
         message.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::ResumeNotice ||
+               (state == State::Companion && companion_session &&
+                companion_session->host_resume_notice())) {
+        render_notice_popup(quads, text, button_glyphs, width, height, kResumedNotice);
     }
 
     swap();
@@ -3248,9 +3435,7 @@ int App::run(const AppOptions& options) {
             impl.frame_accumulator = 0.0;
             impl.audio.flush();
             impl.refresh_output_size();
-            if (impl.source) {
-                impl.source->flush_save_ram(false);
-            }
+            impl.flush_saves();
         }
 
         impl.last_delta_seconds = elapsed;
@@ -3357,10 +3542,10 @@ int App::run(const AppOptions& options) {
             if (event.type == SDL_WINDOWEVENT) {
                 if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
                     impl.audio.set_paused(true);
-                    // Losing focus often precedes being suspended.
-                    if (impl.source) {
-                        impl.source->flush_save_ram(false);
-                    }
+                    // Losing focus often precedes being suspended -- and in
+                    // Game Mode, pressing the Steam button or putting the Deck
+                    // to sleep is how a game is put down.
+                    impl.flush_saves("the window lost the focus");
                 } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                     impl.audio.flush();
                     impl.audio.set_paused(false);
@@ -3385,7 +3570,13 @@ int App::run(const AppOptions& options) {
         impl.input.end_frame(touch_layout, static_cast<float>(impl.output_width),
                              static_cast<float>(impl.output_height), impl.screens_geometry());
 
-        if (impl.input.quit_requested()) {
+        if (impl.input.quit_requested() && impl.running) {
+            // The window being closed, or the system asking the app to end --
+            // SIGTERM arrives as the same event. Said, because whether an
+            // "Exit game" from SteamOS lands here (and so writes the save and
+            // the resume point on the way out) or kills the app outright is
+            // only knowable from a log on the device.
+            log_info("asked to close by the window or the system; leaving normally");
             impl.running = false;
         }
         // Both sessions are polled before the UI so a state change this frame
@@ -3446,6 +3637,9 @@ int App::run(const AppOptions& options) {
             shared.rumble_choosable = impl.source && impl.source->offers_rumble_pak();
             shared.rumble_pak = impl.source && impl.source->rumble_pak();
             shared.save_points_available = impl.save_points_available();
+            shared.resume_choosable = impl.save_points_available();
+            shared.resume_from_save_state = impl.resume_in_effect();
+            shared.resume_notice = impl.state == Impl::State::ResumeNotice;
             impl.host_session->set_session_state(shared);
             impl.host_session->poll(network_now);
 
@@ -3582,6 +3776,9 @@ int App::run(const AppOptions& options) {
                 if (request.wants_rumble_pak) {
                     impl.adopt_rumble_pak(request.rumble_pak);
                 }
+                if (request.wants_resume_from_save_state) {
+                    impl.adopt_resume(request.resume_from_save_state);
+                }
                 if (request.wants_reset) {
                     impl.request_reset();
                 }
@@ -3606,6 +3803,15 @@ int App::run(const AppOptions& options) {
             // them: two of them are two moves, not one.
             net::HostSession::MenuPress press;
             while (impl.host_session->take_menu_press(press)) {
+                // The resumed game's popup, shown on both devices: OK there
+                // is OK here.
+                if (impl.state == Impl::State::ResumeNotice) {
+                    if (press.has_action && (press.action == net::MenuAction::Confirm ||
+                                             press.action == net::MenuAction::Cancel)) {
+                        impl.dismiss_resume_notice();
+                    }
+                    continue;
+                }
                 // A press from the other pad answers whichever of the two
                 // screens this device is actually showing, and is dropped when
                 // it is showing neither: a press aimed at a menu that has since
@@ -3948,7 +4154,11 @@ int App::run(const AppOptions& options) {
                 impl.save_flush_accumulator += elapsed;
                 if (impl.save_flush_accumulator >= kSaveFlushIntervalSeconds) {
                     impl.save_flush_accumulator = 0.0;
-                    impl.source->flush_save_ram(false);
+                    impl.flush_saves();
+                }
+                impl.resume_point_accumulator += elapsed;
+                if (impl.resume_point_accumulator >= kResumePointIntervalSeconds) {
+                    impl.write_resume_point("half a minute of play");
                 }
             }
 
@@ -4095,6 +4305,10 @@ int App::run(const AppOptions& options) {
     // written when the core closes. See ShutdownWatchdog for why the order
     // matters.
     impl.persist_game_config();
+    // Where the game was, for Resume from Save State: taken before the core
+    // closes, and on the disk before anything below that might not answer.
+    impl.write_resume_point("the app is closing");
+    impl.resume_writer.finish();
     if (impl.source) {
         impl.source->close();
         impl.source.reset();

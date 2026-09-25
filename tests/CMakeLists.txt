@@ -233,6 +233,20 @@ if(XVFB_RUN_EXECUTABLE)
     set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300
         RESOURCE_LOCK dualscreen_ports)
 
+    # Resume from Save State, end to end: a game played with it on leaves a
+    # resume point behind when the app closes, and the next start is from
+    # there, paused under the popup that says so.
+    add_test(NAME resume_headless
+        COMMAND ${CMAKE_COMMAND}
+            -DXVFB_RUN=${XVFB_RUN_EXECUTABLE}
+            -DDUALSCREEN=$<TARGET_FILE:dualscreen>
+            -DMOCK_CORE=${MOCK_CORE_PATH}
+            -DWORK_DIR=${CMAKE_BINARY_DIR}/resume
+            -DCHECKER=$<TARGET_FILE:check_screenshot>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_resume_test.cmake)
+    set_tests_properties(resume_headless PROPERTIES TIMEOUT 300
+        RESOURCE_LOCK dualscreen_ports)
+
     # The compressed screen path, end to end. No console needs it yet, so the
     # host is told to use it -- which is how it can be finished and held to
     # before the console that needs it exists.

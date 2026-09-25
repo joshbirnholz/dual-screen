@@ -9,6 +9,7 @@
 #include "layout/layout_registry.hpp"
 #include "render/button_glyphs.hpp"
 #include "ui/layout_picker.hpp"
+#include "ui/notice_popup.hpp"
 
 using namespace ds;
 
@@ -521,6 +522,25 @@ void test_moving_between_the_list_and_what_it_shows() {
             listed.update({UiAction::Down}, {}, kWidth, kHeight);
         }
         CHECK_EQ(offered, pak);
+    }
+
+    // Resume from Save State, where save states are, and nowhere else -- and
+    // saying which way it is set.
+    for (const bool offered_here : {false, true}) {
+        LayoutPickerState with_resume = state;
+        with_resume.resume_choosable = offered_here;
+        with_resume.resume_from_save_state = true;
+        LayoutPicker listed(registry);
+        open_on(listed, with_resume, MenuSection::Options);
+        listed.update({UiAction::Right}, {}, kWidth, kHeight);
+        bool offered = false;
+        for (int row = 0; row < 10; ++row) {
+            if (listed.update({UiAction::Confirm}, {}, kWidth, kHeight).resume_toggled) {
+                offered = true;
+            }
+            listed.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+        CHECK_EQ(offered, offered_here);
     }
 
     // What the left stick's click does is there too, where the console has a
@@ -1405,7 +1425,31 @@ void test_the_layout_swap_keeps_the_stylus_hand() {
     CHECK(layout_swap_from(registry, alone).layout_id.empty());
 }
 
+// The popup a resumed game waits under: A or B puts it away, and so does a
+// tap on its OK -- but a tap anywhere else, or a press of anything else, does
+// not, so a player reaching for the game cannot wave it away by accident.
+void test_the_resume_popup_is_put_away_with_ok() {
+    constexpr float kWidth = 1280.0f;
+    constexpr float kHeight = 800.0f;
+    CHECK(notice_popup_answered({UiAction::Confirm}, {}, kWidth, kHeight));
+    CHECK(notice_popup_answered({UiAction::Cancel}, {}, kWidth, kHeight));
+    CHECK(!notice_popup_answered({}, {}, kWidth, kHeight));
+    CHECK(!notice_popup_answered({UiAction::Up, UiAction::ToggleMenu, UiAction::SwapLayout}, {},
+                                 kWidth, kHeight));
+    const NoticePopupGeometry geometry = notice_popup_geometry(kWidth, kHeight);
+    // Inside the window, centred, with its OK along the bottom of the box.
+    CHECK(geometry.dialog.x > 0.0f && geometry.dialog.x + geometry.dialog.w < kWidth);
+    CHECK(geometry.accept.y > geometry.dialog.y);
+    CHECK(geometry.accept.y + geometry.accept.h <= geometry.dialog.y + geometry.dialog.h);
+    const float ok_x = geometry.accept.x + geometry.accept.w * 0.5f;
+    const float ok_y = geometry.accept.y + geometry.accept.h * 0.5f;
+    CHECK(notice_popup_answered({}, {tap(ok_x, ok_y)}, kWidth, kHeight));
+    CHECK(!notice_popup_answered({}, {tap(ok_x, geometry.dialog.y - 20.0f)}, kWidth, kHeight));
+    CHECK(!notice_popup_answered({}, {slide_onto(10.0f, 10.0f, ok_x, ok_y)}, kWidth, kHeight));
+}
+
 int main() {
+    test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_on_the_section_it_was_closed_on();
     test_the_layout_swap_keeps_the_stylus_hand();
     test_the_sections_come_in_order();

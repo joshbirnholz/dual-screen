@@ -143,6 +143,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // nothing carried over from it, this included.
     menu_open_ = false;
     session_token_ = 0;
+    // A popup the last host had up is not one this device is still under.
+    host_resume_notice_ = false;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -293,6 +295,8 @@ void CompanionSession::disconnect() {
     said_hello_ = false;
     menu_open_ = false;
     session_token_ = 0;
+    // A popup the last host had up is not one this device is still under.
+    host_resume_notice_ = false;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -385,6 +389,8 @@ void CompanionSession::fail(const std::string& reason) {
     said_hello_ = false;
     menu_open_ = false;
     session_token_ = 0;
+    // A popup the last host had up is not one this device is still under.
+    host_resume_notice_ = false;
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -534,6 +540,9 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_rumble_pak_ = state.rumble_pak;
             host_cursor_shown_ = state.cursor_shown;
             host_save_points_available_ = state.save_points_available;
+            host_resume_choosable_ = state.resume_choosable;
+            host_resume_from_save_state_ = state.resume_from_save_state;
+            host_resume_notice_ = state.resume_notice;
             granted_screen_ = state.companion_screen;
             break;
         }
@@ -913,7 +922,8 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         // missing is lost, and asked for now -- rather than when the next
         // frame starts arriving, a whole frame's time later, or when this one
         // has been quiet for a while.
-        if (is_parity && header.fragment_index + 1 == parity_first + parity_count &&
+        if (is_parity &&
+            static_cast<std::size_t>(header.fragment_index) + 1 == parity_first + parity_count &&
             !repair.active && slot.fragment_count - slot.received_count <= kMaxRepairPieces) {
             begin_repair(slot, arrived_ms);
         }
@@ -2035,6 +2045,13 @@ void CompanionSession::request_rumble_pak(bool inserted) {
     RequestMessage request;
     request.wants_rumble_pak = true;
     request.rumble_pak = inserted;
+    send_request(request);
+}
+
+void CompanionSession::request_resume_from_save_state(bool on) {
+    RequestMessage request;
+    request.wants_resume_from_save_state = true;
+    request.resume_from_save_state = on;
     send_request(request);
 }
 

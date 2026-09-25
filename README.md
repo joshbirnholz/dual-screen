@@ -57,7 +57,7 @@ a list down the left, and whatever the highlighted entry holds on the right.
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
-| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts) and screen smoothing |
+| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking. Chosen on the companion, it closes the app there too rather than going back to its main menu (except on an iPhone, iPad or Apple TV, where apps do not close themselves) |
@@ -1214,6 +1214,37 @@ Steam Deck, so a 3DS game saves the way it does on the console, from its own
 menus. The saves are made and kept by the
 device running the game; a companion's copy of the menu is sent the slots,
 pictures and all, and saves and loads through the host like any other press.
+
+### Resume from save state
+
+**Resume from Save State**, under **Options** in a DS game's quick menu, is
+per game and off until it is turned on. Off, the game starts from the
+beginning as always. On, it starts from wherever it was when the app last
+closed -- paused, under a popup that says *Resuming from save state.* with an
+**OK** to put it away and carry on. The popup is on both devices when a
+companion is connected, and OK on either one starts the game. Like
+Switch Online's suspend point, it does not matter how the app was left:
+
+- **Quitting**, from the menu or with SteamOS's *Exit game*, writes it on the
+  way out. So does starting another game from the browser.
+- **The quick menu opening**, and **the window losing the focus** -- the Steam
+  button, or the Deck going to sleep -- each write one, since either is often
+  the last thing before a game is put down.
+- **Every in-game save** writes one at the same moment. Loading a state puts
+  the cartridge save back to how it was when the state was made, so a resume
+  point older than the last in-game save could undo that save; kept in step,
+  it never can.
+- **Every 30 seconds of play** otherwise, for what gives no warning at all: a
+  flat battery or a crash lands you at most half a minute back, never behind
+  your last in-game save.
+
+It is kept beside the cartridge save as `<rom name>.resume`, separate from the
+four slots, and written the same all-or-nothing way, so a power cut while one
+is being written leaves the one before it. The game only pauses long enough to
+take the snapshot; compressing it and writing it happen on a thread of their
+own. Turning the option off deletes it, so an old one can never be resumed by
+surprise later. If it will not load -- a much newer core, say -- the game
+starts from the beginning and the log says why.
 
 ### Face buttons
 

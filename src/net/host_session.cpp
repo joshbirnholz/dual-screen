@@ -576,6 +576,9 @@ void HostSession::set_session_state(const SharedState& state) {
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
         state.save_points_available != shared_.save_points_available ||
+        state.resume_choosable != shared_.resume_choosable ||
+        state.resume_from_save_state != shared_.resume_from_save_state ||
+        state.resume_notice != shared_.resume_notice ||
         state.left_handed_layouts != shared_.left_handed_layouts) {
         shared_ = state;
         session_state_dirty_ = true;
@@ -837,6 +840,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             if (have_request_ && !request.wants_rumble_pak && request_.wants_rumble_pak) {
                 request.wants_rumble_pak = true;
                 request.rumble_pak = request_.rumble_pak;
+            }
+            if (have_request_ && !request.wants_resume_from_save_state &&
+                request_.wants_resume_from_save_state) {
+                request.wants_resume_from_save_state = true;
+                request.resume_from_save_state = request_.resume_from_save_state;
             }
             if (have_request_ && !request.wants_handedness && request_.wants_handedness) {
                 request.wants_handedness = true;
@@ -1154,6 +1162,9 @@ void HostSession::poll(uint64_t now_ms) {
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;
+        state.resume_choosable = shared_.resume_choosable;
+        state.resume_from_save_state = shared_.resume_from_save_state;
+        state.resume_notice = shared_.resume_notice;
         state.left_handed_layouts = shared_.left_handed_layouts;
         // Not a setting anyone chose -- it is a property of the console being
         // played, so it comes from the profile rather than from shared_. What

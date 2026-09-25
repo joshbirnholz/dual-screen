@@ -564,6 +564,12 @@ public:
     bool host_rumble_pak() const { return host_rumble_pak_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
     bool host_save_points_available() const { return host_save_points_available_; }
+    // Resume from Save State: offered, on, and whether the host has just
+    // resumed that way and is waiting under the popup that says so -- see
+    // SessionStateMessage::resume_notice.
+    bool host_resume_choosable() const { return host_resume_choosable_; }
+    bool host_resume_from_save_state() const { return host_resume_from_save_state_; }
+    bool host_resume_notice() const { return host_resume_notice_; }
     // What the host last said is in each save point slot, and a number that
     // moves each time it says so, for the menu to notice.
     const SaveSlotsMessage& host_save_slots() const { return host_save_slots_; }
@@ -589,6 +595,7 @@ public:
     void request_right_stick_mode(RightStickMode mode);
     void request_left_stick_press(LeftStickPress press);
     void request_rumble_pak(bool inserted);
+    void request_resume_from_save_state(bool on);
     void request_render_scale(int scale);
     // Whether the host reads how this device is being held -- true only on a
     // console that has a use for it, see SystemProfile::uses_motion. What the
@@ -1067,6 +1074,9 @@ private:
     bool host_rumble_pak_ = false;
     bool host_cursor_shown_ = true;
     bool host_save_points_available_ = false;
+    bool host_resume_choosable_ = false;
+    bool host_resume_from_save_state_ = false;
+    bool host_resume_notice_ = false;
     SaveSlotsMessage host_save_slots_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;

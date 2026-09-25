@@ -53,6 +53,8 @@ struct LayoutPickerResult {
     bool left_stick_press_changed = false;
     // The Rumble Pak was put in or taken out. The game's, like the scale.
     bool rumble_pak_toggled = false;
+    // Resume from Save State was turned on or off. The game's too.
+    bool resume_toggled = false;
     // The settings screen was asked for. Not a value to adopt: the caller puts
     // that screen up, and it belongs to the device running the game however
     // this was pressed.
@@ -144,6 +146,11 @@ struct LayoutPickerState {
     // LibretroCore::has_save_states(). Never for a Wii U, whose emulator is not
     // ours to ask.
     bool save_points_available = false;
+    // Whether the game starts where it was left, from a save state kept up to
+    // date while it plays, and whether that is on offer at all: only where
+    // save states are. See GameConfig::resume_from_save_state.
+    bool resume_from_save_state = false;
+    bool resume_choosable = false;
 };
 
 // What has been asked for and not yet been allowed to happen. Each of these
@@ -273,6 +280,7 @@ public:
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
     void set_left_stick_press(LeftStickPress press) { state_.left_stick_press = press; }
     void set_rumble_pak(bool inserted) { state_.rumble_pak = inserted; }
+    void set_resume_from_save_state(bool on) { state_.resume_from_save_state = on; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
@@ -362,6 +370,7 @@ private:
         Rumble,
         ScreenGap,
         Smoothing,
+        Resume,
     };
 
     struct Geometry {

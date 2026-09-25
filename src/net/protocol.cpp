@@ -285,6 +285,9 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
                                                                          : 2u);
     // Likewise: 0 when not offered, 1 out, 2 in.
     put_u8(out, !message.rumble_choosable ? 0u : message.rumble_pak ? 2u : 1u);
+    // And again: 0 when not offered, 1 off, 2 on.
+    put_u8(out, !message.resume_choosable ? 0u : message.resume_from_save_state ? 2u : 1u);
+    put_u8(out, message.resume_notice ? 1u : 0u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -622,6 +625,10 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
                                                                          : 2u);
     // 0 for no change, 1 out, 2 in.
     put_u8(out, !message.wants_rumble_pak ? 0u : message.rumble_pak ? 2u : 1u);
+    // 0 for no change, 1 off, 2 on.
+    put_u8(out, !message.wants_resume_from_save_state ? 0u
+                : message.resume_from_save_state   ? 2u
+                                                   : 1u);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -686,6 +693,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         if (rumble > 2) return false;
         out.wants_rumble_pak = rumble != 0;
         out.rumble_pak = rumble == 2;
+    }
+    out.wants_resume_from_save_state = false;
+    out.resume_from_save_state = false;
+    if (reader.remaining() > 0) {
+        uint8_t resume = 0;
+        reader.u8(resume);
+        if (resume > 2) return false;
+        out.wants_resume_from_save_state = resume != 0;
+        out.resume_from_save_state = resume == 2;
     }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);
@@ -847,6 +863,21 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         if (rumble > 2) return false;
         out.rumble_choosable = rumble != 0;
         out.rumble_pak = rumble == 2;
+    }
+    out.resume_choosable = false;
+    out.resume_from_save_state = false;
+    out.resume_notice = false;
+    if (reader.remaining() > 0) {
+        uint8_t resume = 0;
+        reader.u8(resume);
+        if (resume > 2) return false;
+        out.resume_choosable = resume != 0;
+        out.resume_from_save_state = resume == 2;
+    }
+    if (reader.remaining() > 0) {
+        uint8_t notice = 0;
+        reader.u8(notice);
+        out.resume_notice = notice != 0;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

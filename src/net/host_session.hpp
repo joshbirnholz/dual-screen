@@ -183,6 +183,10 @@ public:
         bool rumble_pak = false;
         bool cursor_shown = true;
         bool save_points_available = false;
+        // See SessionStateMessage::resume_choosable and resume_notice.
+        bool resume_choosable = false;
+        bool resume_from_save_state = false;
+        bool resume_notice = false;
         // Which layouts are flipped for a left hand; `handedness` is the
         // layout in use's. See SessionStateMessage::left_handed_layouts.
         std::vector<std::string> left_handed_layouts;

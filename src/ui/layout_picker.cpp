@@ -173,6 +173,9 @@ void LayoutPicker::rebuild_footer() {
     options_.push_back(Option::ScreenGap);
     // R3 still does this without opening anything; this is where it is seen.
     if (state_.smoothing_available) options_.push_back(Option::Smoothing);
+    // Where the game starts next time, which is about the game rather than
+    // about how it looks -- so last. Only where save states are.
+    if (state_.resume_choosable) options_.push_back(Option::Resume);
 
     // The cursor can be sitting on something that just went away.
     if (!has_section(section_)) {
@@ -247,6 +250,7 @@ std::string LayoutPicker::option_name(Option option) const {
         case Option::Rumble: return "Rumble";
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
+        case Option::Resume: return "Resume from Save State";
     }
     return std::string();
 }
@@ -268,6 +272,7 @@ std::string LayoutPicker::option_value(Option option) const {
         case Option::Rumble: return state_.rumble_pak ? "On" : "Off";
         case Option::ScreenGap: return state_.screen_gap ? "On" : "Off";
         case Option::Smoothing: return state_.bilinear_filtering ? "On" : "Off";
+        case Option::Resume: return state_.resume_from_save_state ? "On" : "Off";
     }
     return std::string();
 }
@@ -429,6 +434,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.left_stick_choosable != state_.left_stick_choosable ||
                                  state.rumble_choosable != state_.rumble_choosable ||
                                  state.save_points_available != state_.save_points_available ||
+                                 state.resume_choosable != state_.resume_choosable ||
                                  state.reset_available != state_.reset_available ||
                                  state.smoothing_available != state_.smoothing_available;
     state_ = state;
@@ -624,6 +630,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Rumble: result.rumble_pak_toggled = true; break;
                 case Option::ScreenGap: result.screen_gap_toggled = true; break;
                 case Option::Smoothing: result.filtering_toggled = true; break;
+                case Option::Resume: result.resume_toggled = true; break;
             }
             return;
         case MenuSection::Continue:

@@ -266,6 +266,10 @@ struct RequestMessage {
     // A DS game's Rumble Pak, in or out -- the host's to decide, per game.
     bool wants_rumble_pak = false;
     bool rumble_pak = false;
+    // Whether the game starts where it was left the next time it is played --
+    // see SessionStateMessage::resume_from_save_state.
+    bool wants_resume_from_save_state = false;
+    bool resume_from_save_state = false;
 };
 
 struct RejectMessage {
@@ -336,6 +340,15 @@ struct SessionStateMessage {
     // this, which only ever draws that one. Last, and optional: from an older
     // host it is worked out from those two -- see decode_session_state().
     std::vector<std::string> left_handed_layouts;
+    // Whether the menu offers Resume from Save State -- a game whose core can
+    // make save states -- and whether it is on: the next time the game is
+    // started, it starts from where it was when the app last closed.
+    bool resume_choosable = false;
+    bool resume_from_save_state = false;
+    // The game has just been started that way and is waiting, paused, under
+    // a popup that says so, for somebody to press OK. The companion shows
+    // the same popup, and its OK is sent over as MenuAction::Confirm.
+    bool resume_notice = false;
 };
 
 struct FrameMessage {

@@ -100,6 +100,7 @@ extern "C" {
 #include "ui/launcher_screen.hpp"
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
+#include "ui/notice_popup.hpp"
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
@@ -898,6 +899,17 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         }
         return;
     }
+    // The host has just resumed its game from where it was left, and is
+    // waiting, paused, under a popup that says so. The same popup is up here,
+    // and OK here is OK there. Nothing else is answered until then -- on a
+    // remote, back included, which would otherwise open the menu.
+    if (state_ == State::Playing && session_.host_resume_notice()) {
+        if (notice_popup_answered(actions, pointers, static_cast<float>(output_width_),
+                                  static_cast<float>(output_height_))) {
+            session_.request_menu_action(net::MenuAction::Confirm);
+        }
+        return;
+    }
 
     if (state_ == State::Launcher) {
         const LauncherResult result =
@@ -1324,7 +1336,8 @@ void Client::run() {
         route_guide_taps(actions, pointers);
         handle_actions(actions, pointers);
 
-        if (state_ == State::Playing && !menu_open_ && !session_.host_settings_open()) {
+        if (state_ == State::Playing && !menu_open_ && !session_.host_settings_open() &&
+            !session_.host_resume_notice()) {
             // Each pad on its own as well, so a Wii U host can make them
             // different players.
             const std::vector<net::ReportedPad> pads = net::reported_pads(input_.pad_readings());
@@ -1447,7 +1460,10 @@ void Client::draw_scene() {
     }
 
     compositor_.set_smoothing(session_.host_filtering());
-    router_.decide(!menu_open_);
+    // Both are drawn over the game with GL, so the game has to be drawn that
+    // way too while either is up.
+    const bool resume_notice = session_.host_resume_notice();
+    router_.decide(!menu_open_ && !resume_notice);
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -1468,6 +1484,9 @@ void Client::draw_scene() {
                        &textures);
     } else {
         menu_backdrop_.forget();
+        if (resume_notice) {
+            render_notice_popup(quads_, text_, button_glyphs_, width, height, kResumedNotice);
+        }
     }
 }
 

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace ds {
@@ -44,6 +47,13 @@ struct SavePointInfo {
 // "<saves>/<game>.savestate1" for the first.
 std::string save_point_path(const std::string& saves_dir, const std::string& rom_path, int slot);
 
+// Where the resume point for the game at `rom_path` lives:
+// "<saves>/<game>.resume". A save point like the numbered ones, and read and
+// written with the same calls, but never shown in the slot list: it is kept
+// up to date on its own while the game plays, for "Resume from Save State" --
+// see App::Impl::write_resume_point().
+std::string resume_point_path(const std::string& saves_dir, const std::string& rom_path);
+
 // Renames a game's slots from the name they were first written under,
 // "<game>.savepoint1", to the one they have now, wherever a slot has only
 // the old one. Harmless to call every time.
@@ -56,6 +66,50 @@ bool write_save_point(const std::string& path,
                       const SavePointThumbnail& thumbnail,
                       int64_t saved_at,
                       std::string* error);
+
+// Writes save points on a thread of its own, so the game only pays for
+// taking the state -- a few milliseconds -- and not for compressing it and
+// putting it on disk, which for a resume point written every half minute
+// while the game runs would be a stutter every half minute.
+//
+// One write at a time. A write asked for while another is still waiting to
+// start replaces it: only the newest state of a game is worth having.
+class BackgroundSavePointWriter {
+public:
+    BackgroundSavePointWriter();
+    // Finishes whatever is queued first: a resume point asked for on the way
+    // out is the one that matters most.
+    ~BackgroundSavePointWriter();
+    BackgroundSavePointWriter(const BackgroundSavePointWriter&) = delete;
+    BackgroundSavePointWriter& operator=(const BackgroundSavePointWriter&) = delete;
+
+    void write(std::string path, std::vector<uint8_t> state, int64_t saved_at);
+    // Waits until nothing is queued or being written.
+    void finish();
+    // Forgets a write not yet started, and waits out one that has.
+    void cancel();
+    // Writes that failed since the last ask, with the reason for the last.
+    unsigned take_failures(std::string* last_error);
+
+private:
+    struct Job {
+        std::string path;
+        std::vector<uint8_t> state;
+        int64_t saved_at = 0;
+    };
+    void run();
+
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    std::condition_variable idle_;
+    bool has_job_ = false;
+    Job job_;
+    bool busy_ = false;
+    bool stopping_ = false;
+    unsigned failures_ = 0;
+    std::string last_error_;
+    std::thread thread_;
+};
 
 // The slot's picture and time. False, with `out.exists` false, for an empty
 // slot or one that cannot be read.

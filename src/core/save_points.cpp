@@ -195,6 +195,79 @@ std::string save_point_path(const std::string& saves_dir, const std::string& rom
     return path_join(saves_dir, path_stem(rom_path) + ".savestate" + std::to_string(slot + 1));
 }
 
+std::string resume_point_path(const std::string& saves_dir, const std::string& rom_path) {
+    return path_join(saves_dir, path_stem(rom_path) + ".resume");
+}
+
+BackgroundSavePointWriter::BackgroundSavePointWriter() : thread_([this] { run(); }) {}
+
+BackgroundSavePointWriter::~BackgroundSavePointWriter() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stopping_ = true;
+    }
+    wake_.notify_all();
+    thread_.join();
+}
+
+void BackgroundSavePointWriter::write(std::string path, std::vector<uint8_t> state,
+                                      int64_t saved_at) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        job_.path = std::move(path);
+        job_.state = std::move(state);
+        job_.saved_at = saved_at;
+        has_job_ = true;
+    }
+    wake_.notify_all();
+}
+
+void BackgroundSavePointWriter::finish() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    idle_.wait(lock, [this] { return !has_job_ && !busy_; });
+}
+
+void BackgroundSavePointWriter::cancel() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    has_job_ = false;
+    job_ = Job();
+    idle_.wait(lock, [this] { return !busy_; });
+}
+
+unsigned BackgroundSavePointWriter::take_failures(std::string* last_error) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const unsigned failures = failures_;
+    failures_ = 0;
+    if (last_error != nullptr) *last_error = last_error_;
+    return failures;
+}
+
+void BackgroundSavePointWriter::run() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (true) {
+        wake_.wait(lock, [this] { return stopping_ || has_job_; });
+        if (!has_job_) {
+            break;  // stopping, with nothing left to write
+        }
+        Job job = std::move(job_);
+        job_ = Job();
+        has_job_ = false;
+        busy_ = true;
+        lock.unlock();
+        std::string error;
+        const bool written =
+            write_save_point(job.path, job.state, SavePointThumbnail(), job.saved_at, &error);
+        lock.lock();
+        busy_ = false;
+        if (!written) {
+            ++failures_;
+            last_error_ = error;
+        }
+        idle_.notify_all();
+    }
+    idle_.notify_all();
+}
+
 void adopt_old_save_point_names(const std::string& saves_dir, const std::string& rom_path) {
     for (int slot = 0; slot < kSavePointSlots; ++slot) {
         const std::string current = save_point_path(saves_dir, rom_path, slot);

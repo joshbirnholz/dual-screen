@@ -22,6 +22,8 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.rumble_pak = session.host_rumble_pak();
     state.rumble_choosable = session.host_rumble_choosable();
     state.save_points_available = session.host_save_points_available();
+    state.resume_from_save_state = session.host_resume_from_save_state();
+    state.resume_choosable = session.host_resume_choosable();
     state.cursor_mode = session.host_cursor_shown() ? CursorMode::Shown : CursorMode::Hidden;
     // Properties of the console, not of the session -- the session already
     // carries `system()`, so these need nothing from the host beyond that.

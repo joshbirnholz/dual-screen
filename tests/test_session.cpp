@@ -621,6 +621,73 @@ void test_audio_reaches_the_companion() {
     host.stop();
 }
 
+// Resume from Save State over the wire: the host's option and its popup reach
+// the companion, the companion's OK on that popup reaches the host as a press,
+// and turning the option off from the companion is asked of the host.
+void test_the_resume_popup_is_shown_and_answered_on_either_device() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Resume Host";
+    config.game_title = "Resumed";
+    std::string error;
+    if (!host.start(config, &error)) return;
+    HostSession::SharedState shared;
+    shared.layout_id = "vertical";
+    shared.save_points_available = true;
+    shared.resume_choosable = true;
+    shared.resume_from_save_state = true;
+    shared.resume_notice = true;
+    host.set_session_state(shared);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Resumer", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    CHECK_MSG(spin(host, companion, [&] { return companion.host_resume_notice(); }),
+              "the companion never heard that the host is waiting under the popup");
+    CHECK(companion.host_resume_choosable());
+    CHECK(companion.host_resume_from_save_state());
+
+    // OK on the companion's copy of the popup.
+    companion.request_menu_action(MenuAction::Confirm);
+    HostSession::MenuPress press;
+    const bool pressed = spin(host, companion, [&] { return host.take_menu_press(press); });
+    CHECK_MSG(pressed, "the companion's OK never reached the host");
+    if (pressed) {
+        CHECK(press.has_action);
+        CHECK(press.action == MenuAction::Confirm);
+    }
+
+    // The host puts it away, and the companion follows.
+    shared.resume_notice = false;
+    host.set_session_state(shared);
+    CHECK_MSG(spin(host, companion, [&] { return !companion.host_resume_notice(); }),
+              "the popup stayed up on the companion after the host put it away");
+
+    // Turned off from the companion's menu: asked of the host, which decides.
+    companion.request_resume_from_save_state(false);
+    RequestMessage requested;
+    const bool asked = spin(host, companion, [&] {
+        return host.take_request(requested) && requested.wants_resume_from_save_state;
+    });
+    CHECK_MSG(asked, "turning Resume from Save State off never reached the host");
+    if (asked) CHECK(!requested.resume_from_save_state);
+
+    companion.disconnect();
+    host.stop();
+}
+
 // A companion can ask for a layout; the host owns the decision.
 void test_companion_can_request_a_layout() {
     HostSession host;
@@ -4170,6 +4237,7 @@ void test_a_device_that_cannot_keep_up_asks_for_a_smaller_picture() {
 
 int main() {
     test_host_and_companion_pair_up();
+    test_the_resume_popup_is_shown_and_answered_on_either_device();
     test_a_refused_connect_is_really_tried_again();
     test_a_received_screen_is_readable_as_pixels();
     test_a_screen_above_the_old_native_only_size_still_arrives();

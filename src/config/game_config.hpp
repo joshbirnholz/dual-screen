@@ -33,6 +33,10 @@ struct GameConfig {
     // A Rumble Pak in the DS's GBA slot -- out unless asked for, since a game
     // that finds one may say so, and one that has no use for it gains nothing.
     bool rumble_pak = false;
+    // Start the game from where it was when the app last closed, rather than
+    // from its title screen -- see App::Impl::write_resume_point(). Off unless
+    // asked for, and only offered where save states are.
+    bool resume_from_save_state = false;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

@@ -90,6 +90,7 @@ CPPFILES    := main.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
+               notice_popup.cpp \
                build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
 

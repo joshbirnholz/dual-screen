@@ -130,6 +130,11 @@ bool matches_colour(const std::string& expected, double r, double g, double b) {
         // The mock core paints this band only when it found save data.
         return (r > 150.0) && (g > 60.0) && (g < 200.0) && (b < 80.0);
     }
+    if (expected == "dialog") {
+        // A popup's box: the theme's text colour, #EBF0F7, which nothing a
+        // mock core draws comes near.
+        return (r > 215.0) && (g > 220.0) && (b > 225.0);
+    }
     if (expected == "black") {
         // The letterbox around the screens has to be genuinely black, not
         // merely dark: a lifted background reads as a frame on an OLED.
