@@ -529,6 +529,35 @@ or the other for a run, for comparing the two on your own machines; forced to
 H.264 with no way to send it, the session says so on screen rather than
 quietly sending tiles.
 
+**When the wifi loses data.** Video is a chain: each picture is a
+difference from the one before, so a picture that never arrives breaks every
+picture after it until one that stands on its own (a keyframe) comes. A 720p
+picture is dozens of datagrams, and losing any one of them used to lose the
+picture: the screen held while a keyframe was asked for, and the keyframe --
+dozens more datagrams -- could lose one just the same. That was a picture
+frozen for seconds at a time. Three things stand in front of that now:
+
+- **Recovery pieces.** Every video picture carries one extra datagram per
+  eight, each able to rebuild any one missing datagram from its group. The
+  groups are interleaved, so a run of losses in a row is spread across them.
+  About 12% more data; nothing to wait for.
+- **Asking again.** A picture missing more than that is set aside and its
+  missing datagrams -- or, for a small picture lost outright, the whole of
+  it -- are asked for by name. On a home network that is a few
+  milliseconds. The pictures behind it wait and are shown after it, in order.
+  Only if nothing comes within 90ms is a keyframe asked for.
+- **A smaller picture.** A link that keeps losing pictures anyway -- two or
+  more in a second -- gets a picture 20% smaller, and after five calm seconds
+  a larger one again. The size rather than the bitrate, because the Deck's
+  hardware encoder does not honour the bitrate it is asked for; fewer pixels
+  is fewer bytes either way.
+
+Both ends log what happened each second at the level a console shows:
+`latency: ...` on the companion (pictures shown, frames lost, pieces rebuilt,
+frames repaired, pictures passed over waiting for a keyframe) and `sending:
+...` on the host (pictures sent, KB/s against the video allowance, round
+trip, how long the send queue held things, keyframes and pieces asked for).
+
 If a companion still cannot keep up, in order of how much they buy:
 
 1. **Use the Upper Screen on TV layout.** One screen per device rather than
@@ -895,6 +924,11 @@ open build-apple/Dualscreen.xcworkspace
 Then pick a target in Xcode and press Run. A real Apple TV needs SDL built
 for tvOS first; [apple/README.md](apple/README.md) has that, and the ways a
 device build tends to fail.
+
+An Apple TV draws at 1080p even on a 4K television, which scales it up: the
+picture it is sent is 720p, and filling four times the pixels every frame
+bought nothing anyone could see across a room. An iPhone or iPad draws at its
+full resolution.
 
 ### Nintendo Switch
 

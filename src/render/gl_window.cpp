@@ -151,6 +151,15 @@ bool create_gl_window(const GlWindowRequest& request, GlWindow& out, std::string
     if (native_gl_family() == GlFamily::EmbeddedOnly) {
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
+#if defined(TARGET_OS_TV) && TARGET_OS_TV
+    // An Apple TV draws at 1080p, not at the 4K its television may be. The
+    // picture it shows arrives at 720p, the menus are read from across a
+    // room, and 3840x2160 is four times the pixels to fill every frame for
+    // nothing anyone can see -- the television scales 1080p up on its own.
+    // An iPhone or iPad keeps its full resolution: it is held at arm's
+    // length, where small text shows the difference.
+    flags &= ~static_cast<Uint32>(SDL_WINDOW_ALLOW_HIGHDPI);
+#endif
 
     std::string last_error;
     for (std::size_t index = 0; index < attempt_count; ++index) {
