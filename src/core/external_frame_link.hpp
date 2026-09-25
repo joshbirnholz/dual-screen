@@ -310,6 +310,19 @@ public:
 
     // The newest frame published for this screen since the last call, if any.
     bool take_frame(ScreenId screen, ExternalFrame& out);
+    // Waits up to `timeout_ms` for the producer to say something -- a new
+    // frame, most often -- so a loop can run at the game's pace rather than
+    // at its own. True when there is something to read; at once when there
+    // is nothing connected to wait on.
+    bool wait_for_message(int timeout_ms) const;
+    // Frames the producer announced for a screen since the last ask, and how
+    // many of those were overwritten by the next before anything took them.
+    // The game's own rate, and what reading it too slowly cost.
+    struct FrameCounts {
+        unsigned announced = 0;
+        unsigned missed = 0;
+    };
+    FrameCounts take_frame_counts(ScreenId screen);
     // Audio sent for this screen since the last call, interleaved stereo.
     // Drained rather than peeked: it is played once. Tagged by screen for the
     // same reason frames are: a Wii U's TV and GamePad each have their own
@@ -413,6 +426,7 @@ private:
     std::vector<uint8_t> inbox_;
     std::vector<int16_t> audio_[2];
     Pending pending_[2];
+    FrameCounts counts_[2];
     ExternalInput sent_input_;
     bool have_sent_input_ = false;
     // What request_screen() last sent, so a repeat of the same request costs

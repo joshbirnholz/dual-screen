@@ -43,6 +43,14 @@ public:
     const std::string& ended_reason() const { return ended_reason_; }
 
     bool advance_frame(std::string* error) override;
+    // Waits up to `timeout_ms` for the game to say something -- a new frame,
+    // most often -- so the loop taking its frames runs at the game's pace.
+    bool wait_for_frame(int timeout_ms) const { return link_.wait_for_message(timeout_ms); }
+    // How many frames the game announced for a screen since the last ask, and
+    // how many were overwritten before this app took them.
+    ExternalFrameLink::FrameCounts take_frame_counts(ScreenId screen) {
+        return link_.take_frame_counts(screen);
+    }
     const ScreenTextures& screens() override;
     SystemScreens screens_geometry() const override;
     bool read_screen(ScreenId screen, ScreenReadback& out, int target_width = 0,

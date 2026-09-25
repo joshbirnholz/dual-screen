@@ -564,6 +564,21 @@ struct App::Impl {
     double local_frames_per_second() const;
     double local_audio_sample_rate() const;
     void adopt_external_timing();
+    // Whether a game played by another program is setting this loop's pace
+    // -- see the top of the main loop.
+    bool paced_by_external_game() const {
+        return !is_companion() && external_source && external_source->running();
+    }
+    // Vsync on or off for this window: the setting, except while an external
+    // game paces the loop, when waiting on this window's refresh as well
+    // would be two clocks. Applied only when it changes.
+    int swap_interval_applied = -1;
+    void update_swap_pacing();
+    // Once a second: how many frames the game made and how many came and went
+    // before this app took them.
+    uint64_t external_frames_said_ms = 0;
+    uint64_t last_render_us = 0;
+    void report_external_frames();
     void start_companion(ScreenId wanted_screen);
     void open_launcher();
     // The session this device joined has ended, however it ended. Called from
@@ -1024,6 +1039,41 @@ void App::Impl::adopt_external_timing() {
     }
     log_info("the game runs at " + std::to_string(static_cast<int>(local_frames_per_second() + 0.5)) +
              " fps, " + std::to_string(static_cast<int>(local_audio_sample_rate())) + " Hz");
+}
+
+void App::Impl::update_swap_pacing() {
+    const int wanted = paced_by_external_game() ? 0 : (settings.vsync ? 1 : 0);
+    if (wanted == swap_interval_applied || window == nullptr) return;
+    SDL_GL_SetSwapInterval(wanted);
+    if (swap_interval_applied != -1 || wanted == 0) {
+        log_info(wanted == 0 && paced_by_external_game()
+                     ? "the game beside this app now sets the pace; this window no longer waits "
+                       "for its own refresh"
+                     : std::string("this window waits for its refresh: ") +
+                           (wanted ? "yes" : "no"));
+    }
+    swap_interval_applied = wanted;
+}
+
+void App::Impl::report_external_frames() {
+    const uint64_t now = SDL_GetTicks64();
+    if (external_frames_said_ms == 0) {
+        external_frames_said_ms = now;
+        return;
+    }
+    if (now - external_frames_said_ms < 1000) return;
+    external_frames_said_ms = now;
+    std::string line = "from the game this second:";
+    bool any = false;
+    for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+        const ExternalFrameLink::FrameCounts counts = external_source->take_frame_counts(screen);
+        if (counts.announced == 0) continue;
+        line += std::string(any ? ";" : "") + " " + to_string(screen) + " screen " +
+                std::to_string(counts.announced) + " made, " + std::to_string(counts.missed) +
+                " replaced before they were taken";
+        any = true;
+    }
+    if (any) log_info(line);
 }
 
 ScreenSource* App::Impl::active_source() {
@@ -2130,7 +2180,8 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         if (!settings.save(paths)) {
             log_warn("could not save settings.json");
         }
-        SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+        swap_interval_applied = -1;  // reapplied next pass: see update_swap_pacing()
+        update_swap_pacing();
         // The prompts change under the cursor that changed them, which is the
         // only way to see what the setting does.
         button_glyphs.set_style(settings.pad_glyphs);
@@ -3463,6 +3514,20 @@ int App::run(const AppOptions& options) {
                                "not steady enough to aim at");
             }
         }
+        // A game played by Cemu paces this loop instead of this window's own
+        // refresh: each pass waits for its next frame and takes it the moment
+        // it is announced. This window is not what anybody is watching while
+        // Cemu plays -- its own window is -- and a loop held to the refresh of
+        // a window in the background was only ever as regular as the
+        // compositor made it: every frame that arrived twice within one of
+        // its passes was one this app never took.
+        impl.update_swap_pacing();
+        if (impl.paced_by_external_game()) {
+            const int longest_ms = std::max(
+                4, static_cast<int>(impl.frame_period * 1000.0 * 1.5 + 0.5));
+            impl.external_source->wait_for_frame(longest_ms);
+            impl.report_external_frames();
+        }
         impl.pass_began_us = steady_micros();
         const uint64_t now = SDL_GetPerformanceCounter();
         double elapsed = static_cast<double>(now - impl.last_counter) / static_cast<double>(counter_frequency);
@@ -4168,6 +4233,13 @@ int App::run(const AppOptions& options) {
             // Cap catch-up so a hitch cannot spiral into a long fast-forward.
             const int max_frames_per_iteration = 4;
             int advanced = 0;
+            // A game played by another program runs on its own clock: taking
+            // its frames is collecting what it has made, every pass, not
+            // stepping a core -- so it is not held to this clock's ticks, which
+            // left a frame that landed just before a tick waiting a whole pass.
+            if (impl.external_source && impl.frame_accumulator < impl.frame_period) {
+                impl.frame_accumulator = impl.frame_period;
+            }
             while (impl.frame_accumulator >= impl.frame_period && advanced < max_frames_per_iteration) {
                 std::string frame_error;
                 if (!playing->advance_frame(&frame_error)) {
@@ -4303,7 +4375,19 @@ int App::run(const AppOptions& options) {
         }
         impl.game_was_running = game_running;
 
-        impl.render();
+        // Drawn at most once a game frame while the game beside it sets the
+        // pace: without the refresh to hold it, a pass woken by every audio
+        // message would draw this window hundreds of times a second -- on the
+        // GPU the game itself is running on.
+        const uint64_t render_now_us = steady_micros();
+        const bool draw_this_pass =
+            !impl.paced_by_external_game() ||
+            render_now_us - impl.last_render_us >=
+                static_cast<uint64_t>(impl.frame_period * 1'000'000.0 * 0.9);
+        if (draw_this_pass) {
+            impl.last_render_us = render_now_us;
+            impl.render();
+        }
 
         if (!impl.settings.vsync) {
             // Without vsync, hand the CPU back rather than spinning.

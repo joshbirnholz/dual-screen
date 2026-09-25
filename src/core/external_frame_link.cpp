@@ -557,6 +557,10 @@ bool ExternalFrameLink::handle_message(ExternalControl kind, const std::vector<u
                                     (static_cast<uint64_t>(read_u32(body.data() + 9)) << 32);
             // Only the newest is kept: this is a live picture and an older
             // frame has nothing to offer once a newer one exists.
+            ++counts_[screen_index].announced;
+            if (pending_[screen_index].slot >= 0) {
+                ++counts_[screen_index].missed;  // the last one, never taken
+            }
             if (serial >= pending_[screen_index].serial) {
                 pending_[screen_index].slot = slot;
                 pending_[screen_index].serial = serial;
@@ -613,6 +617,24 @@ bool ExternalFrameLink::handle_message(ExternalControl kind, const std::vector<u
             return true;
     }
     return true;
+}
+
+bool ExternalFrameLink::wait_for_message(int timeout_ms) const {
+    const int fd = peer_fd_ >= 0 ? peer_fd_ : listen_fd_;
+    if (fd < 0) {
+        return false;
+    }
+    pollfd waiting {};
+    waiting.fd = fd;
+    waiting.events = POLLIN;
+    return ::poll(&waiting, 1, timeout_ms) > 0;
+}
+
+ExternalFrameLink::FrameCounts ExternalFrameLink::take_frame_counts(ScreenId screen) {
+    const int index = ExternalSharedHeader::screen_index(screen);
+    const FrameCounts counts = counts_[index];
+    counts_[index] = FrameCounts();
+    return counts;
 }
 
 bool ExternalFrameLink::take_frame(ScreenId screen, ExternalFrame& out) {
@@ -1121,6 +1143,10 @@ bool ExternalFrameLink::poll(std::string* error) {
     return false;
 }
 bool ExternalFrameLink::take_frame(ScreenId, ExternalFrame&) { return false; }
+bool ExternalFrameLink::wait_for_message(int) const { return false; }
+ExternalFrameLink::FrameCounts ExternalFrameLink::take_frame_counts(ScreenId) {
+    return FrameCounts();
+}
 void ExternalFrameLink::take_audio(ScreenId, std::vector<int16_t>& out) { out.clear(); }
 void ExternalFrameLink::request_reset() {}
 void ExternalFrameLink::send_input(const ExternalInput&) {}
