@@ -223,6 +223,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     acked_serial_ = 0;
     last_ack_ms_ = 0;
     received_serial_ = 0;
+    newest_link_delay_ms_ = -1.0;
     next_due_ms_ = 0;
     next_due_exact_ms_ = 0.0;
     behind_since_ms_ = 0;
@@ -365,6 +366,7 @@ void CompanionSession::disconnect() {
     host_wants_motion_ = false;
     pending_frames_.clear();
     received_serial_ = 0;
+    newest_link_delay_ms_ = -1.0;
     next_due_ms_ = 0;
     next_due_exact_ms_ = 0.0;
     behind_since_ms_ = 0;
@@ -1259,6 +1261,7 @@ void CompanionSession::complete_frame(FrameReassembly& slot) {
         last_arrival_ms_ = now;
         last_sent_at_ms_ = sent;
         received_serial_ = frame.serial;
+        newest_link_delay_ms_ = link_delay_ms;
         ++adapt_arrivals_;
         complete_at_.push_back(Arrival{frame.serial, now, link_delay_ms});
         // A frame that is never shown (a serial dropped for being behind)
@@ -1687,7 +1690,15 @@ void CompanionSession::poll(uint64_t now_ms) {
         last_ack_ms_ = now_ms;
         std::vector<uint8_t> ack;
         encode_media_header(session_token_, MessageType::FrameAck, ack);
-        encode_frame_ack_payload(newest, ack);
+        // With how late the newest frame got here, which is the half of the
+        // round trip the host cannot see: a slow ack on a link carrying frames
+        // on time is not a link to hold frames back from.
+        const uint16_t link_delay =
+            newest_link_delay_ms_ < 0.0
+                ? kUnknownLinkDelay
+                : static_cast<uint16_t>(std::min(newest_link_delay_ms_ + 0.5,
+                                                 static_cast<double>(kUnknownLinkDelay - 1)));
+        encode_frame_ack_payload(newest, link_delay, ack);
         media_socket_.send_to(host_address_, kMediaPort, ack.data(), ack.size());
     }
 }

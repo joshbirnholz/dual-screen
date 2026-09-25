@@ -744,8 +744,27 @@ void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out) {
 }
 
 bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial) {
+    uint16_t link_delay_ms = kUnknownLinkDelay;
+    return decode_frame_ack(data, size, out_serial, link_delay_ms);
+}
+
+void encode_frame_ack_payload(uint64_t serial, uint16_t link_delay_ms,
+                              std::vector<uint8_t>& out) {
+    put_u64(out, serial);
+    put_u16(out, link_delay_ms);
+}
+
+bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial,
+                      uint16_t& out_link_delay_ms) {
+    out_link_delay_ms = kUnknownLinkDelay;
     Reader reader(data, size);
     reader.u64(out_serial);
+    if (!reader.ok()) {
+        return false;
+    }
+    if (size >= 10) {
+        reader.u16(out_link_delay_ms);
+    }
     return reader.ok();
 }
 

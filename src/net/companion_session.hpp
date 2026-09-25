@@ -1320,6 +1320,9 @@ private:
     // When the picture was last allowed to grow, while that growth is still on
     // trial; 0 otherwise.
     uint64_t link_grew_at_ms_ = 0;
+    // How much later than its quickest the newest frame arrived, sent with
+    // each ack; negative when that frame could not be measured.
+    double newest_link_delay_ms_ = -1.0;
     void adapt_to_the_link(uint64_t now_ms);
     // Decode time accumulated since the last time that decision was made, and
     // when that was.

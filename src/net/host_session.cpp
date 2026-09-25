@@ -140,6 +140,11 @@ constexpr uint64_t kMaxCoveredRoundTripMs = 120;
 // and a half -- long enough that a tail arriving in bursts stays covered,
 // short enough that a link which has settled stops paying for it.
 constexpr double kRoundTripDecayPerAck = 0.99;
+// How fast the quickest round trip seen is allowed to creep back up, per ack:
+// a millisecond a second or so at the usual rate of acks, so a route that has
+// really got slower is followed, and a single quick trip is not the floor for
+// ever.
+constexpr double kRoundTripFloorRisePerAck = 0.02;
 
 // How long the oldest still-unacked frame is allowed to sit before this end
 // stops waiting for its ack and treats it as gone rather than merely late.
@@ -367,12 +372,21 @@ uint64_t ack_stall_ms(double round_trip_ms, bool measured) {
                                           std::min(scaled, static_cast<double>(kAckStallMs))));
 }
 
-std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms) {
+std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms,
+                                     uint64_t return_delay_ms) {
     if (!(produce_period_ms > 0.0)) {
         return kMinFramesInFlight;
     }
+    // The ceiling is for congestion, which is on the way out: frames piling
+    // up in front of the companion. Delay on the way back -- acks held up
+    // while the frames themselves arrive on time -- is not that, and a window
+    // that shut on it dropped frames the companion would have shown. Seen on
+    // a Deck over wifi at 30fps: the round trip jumping to 100-135ms every
+    // so often, the window full at five, two to four frames a second not
+    // sent, and an Apple TV at the far end reporting every frame on time.
     const double covered =
-        std::min(static_cast<double>(round_trip_ms), static_cast<double>(kMaxCoveredRoundTripMs));
+        std::min(static_cast<double>(round_trip_ms),
+                 static_cast<double>(kMaxCoveredRoundTripMs + return_delay_ms));
     // One more than the product itself, so the gate opens as the ack for the
     // oldest frame lands rather than one frame after it -- at exactly the
     // product, every frame waits for an ack that is already on its way.
@@ -686,6 +700,8 @@ void HostSession::drop_companion(const std::string& reason) {
     video_bitrate_kbps_top_ = 0;
     video_bitrate_kbps_bottom_ = 0;
     round_trip_high_ms_ = 0.0;
+    round_trip_floor_ms_ = 0.0;
+    return_delay_high_ms_ = 0.0;
     produce_period_ms_ = kAssumedProducePeriodMs;
     last_produced_at_ms_ = 0;
     previous_top_.clear();
@@ -982,7 +998,8 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
         }
         case MessageType::FrameAck: {
             uint64_t serial = 0;
-            if (decode_frame_ack(payload, payload_size, serial)) {
+            uint16_t link_delay_ms = kUnknownLinkDelay;
+            if (decode_frame_ack(payload, payload_size, serial, link_delay_ms)) {
                 acked_serial_ = std::max(acked_serial_, serial);
                 // Everything up to the acked frame has arrived, so time the
                 // newest of them and discard the rest.
@@ -1004,6 +1021,23 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
                         round_trip_high_ms_ =
                             std::max(static_cast<double>(trip),
                                      round_trip_high_ms_ * kRoundTripDecayPerAck);
+                        // The quickest trip, and how much of this one's
+                        // excess over it the companion saw on the way out.
+                        // The rest was on the way back.
+                        const double sample = static_cast<double>(trip);
+                        round_trip_floor_ms_ =
+                            (round_trip_floor_ms_ <= 0.0 || sample < round_trip_floor_ms_)
+                                ? sample
+                                : round_trip_floor_ms_ + kRoundTripFloorRisePerAck;
+                        double return_delay = 0.0;
+                        if (link_delay_ms != kUnknownLinkDelay) {
+                            return_delay = std::max(
+                                0.0, sample - round_trip_floor_ms_ - link_delay_ms);
+                        }
+                        return_delay_high_ms_ = std::max(
+                            return_delay, return_delay_high_ms_ * kRoundTripDecayPerAck);
+                        stats_return_delay_worst_ms_ =
+                            std::max(stats_return_delay_worst_ms_, return_delay);
                     }
                 }
                 // What is still waiting after that, if it has waited well past
@@ -1328,7 +1362,8 @@ void HostSession::report_stream(uint64_t now_ms) {
               "KB, companion " +
               std::to_string(behind) + " of " +
               std::to_string(frames_in_flight_allowed(
-                  static_cast<uint64_t>(round_trip_high_ms_ + 0.5), produce_period_ms_)) +
+                  static_cast<uint64_t>(round_trip_high_ms_ + 0.5), produce_period_ms_,
+                  static_cast<uint64_t>(return_delay_high_ms_ + 0.5))) +
               " frames in flight, round trip " +
               std::to_string(stats_round_trips_ > 0
                                  ? stats_round_trip_total_ms_ / stats_round_trips_
@@ -1355,7 +1390,15 @@ void HostSession::report_stream(uint64_t now_ms) {
              ", round trip " +
              std::to_string(stats_round_trips_ > 0 ? stats_round_trip_total_ms_ / stats_round_trips_
                                                    : 0) +
-             "ms, " + std::to_string(behind) + " pictures unconfirmed, queued up to " +
+             "ms" +
+             // How much of the worst trip this second was acks coming back
+             // late rather than frames going out late -- which the window
+             // lets through rather than holding frames back for.
+             (stats_return_delay_worst_ms_ >= 10.0
+                  ? " (up to " + std::to_string(static_cast<int>(stats_return_delay_worst_ms_ + 0.5)) +
+                        "ms of it acks coming back late)"
+                  : std::string()) +
+             ", " + std::to_string(behind) + " pictures unconfirmed, queued up to " +
              std::to_string(stats_pacing_worst_ms_) + "ms before leaving" +
              (keyframes_asked > 0 ? ", " + std::to_string(keyframes_asked) +
                                         (keyframes_asked == 1 ? " keyframe" : " keyframes") +
@@ -1387,6 +1430,7 @@ void HostSession::report_stream(uint64_t now_ms) {
     stats_keyframe_requests_reported_ = stats_keyframe_requests_;
     stats_round_trip_total_ms_ = 0;
     stats_round_trip_worst_ms_ = 0;
+    stats_return_delay_worst_ms_ = 0.0;
     stats_frame_bytes_worst_ = 0;
     stats_frame_bytes_total_ = 0;
     stats_frames_counted_ = 0;
@@ -2301,7 +2345,8 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // the gate open indefinitely to begin with.
     if (frame_sent_at_.size() >= frames_in_flight_allowed(
                                      static_cast<uint64_t>(round_trip_high_ms_ + 0.5),
-                                     produce_period_ms_)) {
+                                     produce_period_ms_,
+                                     static_cast<uint64_t>(return_delay_high_ms_ + 0.5))) {
         // Still worth waiting for, unless the oldest of these has been
         // outstanding long enough that the ack which would release it is
         // never coming -- see kAckStallMs's own comment for why that is a

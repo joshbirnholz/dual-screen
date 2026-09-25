@@ -3399,6 +3399,18 @@ void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     CHECK_EQ(frames_in_flight_allowed(0, at_60fps), std::size_t{2});
     CHECK_EQ(frames_in_flight_allowed(40, 0.0), std::size_t{2});
     CHECK_EQ(frames_in_flight_allowed(40, -1.0), std::size_t{2});
+
+    // Delay on the way back is not congestion. At 30fps a 135ms trip is
+    // capped at the congestion ceiling -- five frames -- unless the companion
+    // says the frames themselves arrived on time, and the rest was acks
+    // coming back late: then the window covers the whole trip.
+    constexpr double at_30fps = 33.3;
+    CHECK_EQ(frames_in_flight_allowed(135, at_30fps), frames_in_flight_allowed(120, at_30fps));
+    CHECK(frames_in_flight_allowed(135, at_30fps, 100) >
+          frames_in_flight_allowed(135, at_30fps));
+    // Never more than the trip itself, and never past the frame count.
+    CHECK_EQ(frames_in_flight_allowed(40, at_30fps, 100), frames_in_flight_allowed(40, at_30fps));
+    CHECK(frames_in_flight_allowed(100000, at_30fps, 100000) <= std::size_t{8});
 }
 
 // The link the Steam Deck actually provides: mostly even, with one bad moment

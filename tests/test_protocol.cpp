@@ -1378,6 +1378,31 @@ void test_frame_fragment_rejects_truncation() {
     }
 }
 
+// An ack says how late the frame it covers arrived, and one from before that
+// did -- a bare serial -- still reads, as not saying.
+void test_frame_ack_carries_how_late_the_frame_arrived() {
+    std::vector<uint8_t> buffer;
+    encode_frame_ack_payload(0x0102030405060708ull, 42, buffer);
+    uint64_t serial = 0;
+    uint16_t link_delay = 0;
+    CHECK(decode_frame_ack(buffer.data(), buffer.size(), serial, link_delay));
+    CHECK(serial == 0x0102030405060708ull);
+    CHECK_EQ(link_delay, uint16_t{42});
+
+    std::vector<uint8_t> older;
+    encode_frame_ack_payload(77, older);
+    CHECK(decode_frame_ack(older.data(), older.size(), serial, link_delay));
+    CHECK(serial == 77u);
+    CHECK_EQ(link_delay, kUnknownLinkDelay);
+    // And the old reader still takes the new one.
+    CHECK(decode_frame_ack(buffer.data(), buffer.size(), serial));
+    CHECK(serial == 0x0102030405060708ull);
+
+    for (std::size_t length = 0; length < 8; ++length) {
+        CHECK(!decode_frame_ack(buffer.data(), length, serial, link_delay));
+    }
+}
+
 void test_keyframe_request_round_trip() {
     KeyframeRequestMessage request;
     request.screen = ScreenId::Bottom;
@@ -1587,6 +1612,7 @@ int main() {
     test_frame_fragment_round_trip();
     test_frame_fragment_rejects_truncation();
     test_keyframe_request_round_trip();
+    test_frame_ack_carries_how_late_the_frame_arrived();
     test_a_gap_in_sent_frames_is_loss();
     test_a_fragment_can_be_restamped_as_it_leaves();
     return test::finish("protocol");

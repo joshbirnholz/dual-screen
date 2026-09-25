@@ -39,7 +39,13 @@ bool resolve_encoded_serial(std::deque<std::pair<int64_t, uint64_t>>& pending, i
 // drops frames in a burst until the link settles. Which is judder at the far
 // end, not a saving: during an excursion the picture is not any newer for
 // having fewer frames in it. See kMinFramesInFlight and its neighbours.
-std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms);
+//
+// `return_delay_ms` is how much of the round trip was spent on the way back --
+// acks held up while frames arrived on time -- which the window covers without
+// the ceiling it puts on everything else. Zero when the companion does not say
+// how late its frames arrived.
+std::size_t frames_in_flight_allowed(uint64_t round_trip_ms, double produce_period_ms,
+                                     uint64_t return_delay_ms = 0);
 
 // How long the oldest unacked frame may wait before it is taken for lost --
 // see kAckStallMs. `round_trip_ms` is the link's high-water round trip, and
@@ -675,6 +681,12 @@ private:
     // showing, as a high-water mark that decays, and how fast frames are
     // really being produced. See frames_in_flight_allowed().
     double round_trip_high_ms_ = 0.0;
+    // The quickest round trip lately, and a decaying high-water mark of how
+    // much of each trip beyond that was spent on the way back rather than on
+    // the way out -- see frames_in_flight_allowed().
+    double round_trip_floor_ms_ = 0.0;
+    double return_delay_high_ms_ = 0.0;
+    double stats_return_delay_worst_ms_ = 0.0;
     double produce_period_ms_ = 16.7;
     uint64_t last_produced_at_ms_ = 0;
     unsigned stats_round_trips_ = 0;

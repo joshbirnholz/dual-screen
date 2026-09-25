@@ -526,6 +526,16 @@ void encode_frame_ack(uint64_t serial, std::vector<uint8_t>& out);
 // As encode_audio_payload() is to encode_audio() above.
 void encode_frame_ack_payload(uint64_t serial, std::vector<uint8_t>& out);
 bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial);
+
+// How much later than its quickest the newest acked frame reached the
+// companion, in milliseconds: the outward half of a round trip, which the host
+// cannot measure on its own. Added after the serial; an ack from before this
+// has none, and one that has not measured says kUnknownLinkDelay.
+inline constexpr uint16_t kUnknownLinkDelay = 0xFFFF;
+void encode_frame_ack_payload(uint64_t serial, uint16_t link_delay_ms, std::vector<uint8_t>& out);
+// `out_link_delay_ms` is kUnknownLinkDelay when the ack does not say.
+bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_serial,
+                      uint16_t& out_link_delay_ms);
 // The beacon is not framed -- it replaces the buffer with one datagram.
 void encode_beacon(const BeaconMessage& message, std::vector<uint8_t>& out);
 bool decode_beacon(const uint8_t* data, std::size_t size, BeaconMessage& out);
