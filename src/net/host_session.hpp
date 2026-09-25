@@ -484,6 +484,8 @@ private:
     // and what stops a report landing mid-test from erasing what it is
     // waiting to see.
     unsigned stats_keyframe_requests_reported_ = 0;
+    // Video keyframes that went out this second, asked for or not.
+    unsigned stats_keyframes_sent_ = 0;
     // Set when a companion asks for a keyframe on that screen (see
     // handle_media_datagram) and cleared by the encode that answers it.
     bool keyframe_asked_top_ = false;

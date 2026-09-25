@@ -563,6 +563,15 @@ bool VideoEncoder::encode(const uint32_t* pixels,
             return false;
         }
         hw_frame_->pts = frame_->pts;
+        // And whether it is to be a keyframe, which is set on frame_ above and
+        // was not being carried across: the transfer copies pixels and nothing
+        // else. Every keyframe a companion asked a hardware encoder for came
+        // out as an ordinary frame, so a lost frame froze the picture until
+        // the encoder's own keyframe, up to ten seconds later -- seen on an
+        // Apple TV as five seconds of pictures arriving whole and every one
+        // passed over, with the Deck answering two or three requests a second
+        // the whole time.
+        hw_frame_->pict_type = frame_->pict_type;
         submitted = hw_frame_;
     }
     cost_.upload_ms += milliseconds_since(upload_started);

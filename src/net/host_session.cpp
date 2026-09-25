@@ -1361,6 +1361,13 @@ void HostSession::report_stream(uint64_t now_ms) {
                                         (keyframes_asked == 1 ? " keyframe" : " keyframes") +
                                         " asked for"
                                   : std::string()) +
+             // Said beside the asking, so an encoder that is asked and does
+             // not deliver -- which a hardware one did -- shows
+             // as the two numbers disagreeing.
+             (stats_keyframes_sent_ > 0 || keyframes_asked > 0
+                  ? ", " + std::to_string(stats_keyframes_sent_) +
+                        (stats_keyframes_sent_ == 1 ? " keyframe" : " keyframes") + " sent"
+                  : std::string()) +
              (stats_repairs_asked_ > 0
                   ? ", " + std::to_string(stats_pieces_resent_) + " lost pieces sent again for " +
                         std::to_string(stats_repairs_asked_) +
@@ -1368,6 +1375,7 @@ void HostSession::report_stream(uint64_t now_ms) {
                   : std::string()));
     stats_pieces_resent_ = 0;
     stats_repairs_asked_ = 0;
+    stats_keyframes_sent_ = 0;
     stats_at_ms_ = now_ms;
     stats_bytes_ = media_bytes_sent_;
     stats_produced_ = 0;
@@ -1989,6 +1997,9 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     header.width = frame.width;
     header.height = frame.height;
     header.keyframe = frame.keyframe;
+    if (frame.keyframe && frame.encoding == FrameEncoding::H264) {
+        ++stats_keyframes_sent_;
+    }
     // Filled in here only so the field exists; the number that matters is
     // written again as each datagram actually leaves, in
     // drain_pending_media_sends(). Everything between the two is this
