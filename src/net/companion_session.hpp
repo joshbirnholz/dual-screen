@@ -1,8 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <functional>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/screen_source.hpp"
@@ -603,26 +606,45 @@ public:
     // point (asking, repeating, and stopping once a keyframe lands) is the
     // real path. See ask_for_keyframes().
     void lose_a_frame_for_test(ScreenId screen) {
+        std::lock_guard<std::mutex> lock(media_mutex_);
         ((screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
     }
     // Every frame that arrives while this is set goes nowhere, as if the air
     // had eaten it -- the one kind of loss a loopback link never has --
     // while everything else, acks included, carries on.
-    void drop_frames_for_test(bool drop) { dropping_frames_for_test_ = drop; }
+    void drop_frames_for_test(bool drop) {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        dropping_frames_for_test_ = drop;
+    }
+    // Lost pieces put back from recovery pieces, and frames put back by
+    // asking for pieces again, since the session began.
+    uint64_t pieces_rebuilt_for_test() const {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        return pieces_rebuilt_total_;
+    }
+    uint64_t frames_repaired_for_test() const {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        return frames_repaired_total_;
+    }
+    // How long an unanswered request for pieces is currently given.
+    uint64_t repair_wait_for_test() const {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        return repair_wait_ms();
+    }
     // One frame datagram in every `every` lost, the way wifi loses them: a
     // piece here and there rather than whole frames. Zero stops it.
-    uint64_t pieces_rebuilt_for_test() const { return pieces_rebuilt_total_; }
-    uint64_t frames_repaired_for_test() const { return frames_repaired_total_; }
     void lose_one_piece_in_for_test(unsigned every) { lose_pieces_for_test(every, 1); }
     // `run` datagrams in a row lost out of every `every`: a burst, longer than
     // a frame's recovery pieces can put back on their own.
     void lose_pieces_for_test(unsigned every, unsigned run) {
+        std::lock_guard<std::mutex> lock(media_mutex_);
         piece_loss_every_for_test_ = every;
         piece_loss_run_for_test_ = run;
         pieces_seen_for_test_ = 0;
     }
-    // Whether that screen is still waiting on a picture that stands on its
-    // own. Goes back to false when one actually arrives.
+    // Whether datagrams are being read on a thread of their own -- see
+    // receive_loop().
+    bool receiving_on_a_thread_for_test() const { return receiver_.joinable(); }
     // Stands in for a device slow enough that turning frames into pictures
     // costs it more than it has -- which a loopback test with a fast decoder
     // cannot produce for real. Everything downstream of the measurement (the
@@ -634,7 +656,10 @@ public:
     double display_scale_for_test() const { return display_scale_; }
     double link_scale_for_test() const { return link_scale_; }
 
+    // Whether that screen is still waiting on a picture that stands on its
+    // own. Goes back to false when one actually arrives.
     bool waiting_for_keyframe_for_test(ScreenId screen) const {
+        std::lock_guard<std::mutex> lock(media_mutex_);
         return (screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
     }
     // A press made on this device, for the host's menu to answer.
@@ -734,6 +759,23 @@ public:
     // --- ScreenSource ---
     bool advance_frame(std::string* error) override;
     const ScreenTextures& screens() override;
+    // The decoder's own picture for a screen, where it has one that the
+    // system can show as it is (DecodedFrame::native) -- for
+    // SystemVideoLayers. Null for a tiled screen, or a platform whose decoder
+    // hands back bytes.
+    struct NativePicture {
+        std::shared_ptr<void> picture;
+        int width = 0;
+        int height = 0;
+        uint64_t serial = 0;
+    };
+    NativePicture native_picture(ScreenId screen) const;
+    // Whether a screen is being shown by something other than screens()'s
+    // textures this frame, so there is no point turning its picture into one.
+    // A screen that comes back gets its current picture uploaded as usual.
+    void set_screen_shown_elsewhere(ScreenId screen, bool elsewhere) {
+        (screen == ScreenId::Top ? top_ : bottom_).shown_elsewhere = elsewhere;
+    }
     // Drops the GL textures the streamed screens were uploaded into, so the
     // next screens() uploads them again. For a device whose GL context can be
     // taken away and given back -- Android, when the app is backgrounded --
@@ -741,7 +783,10 @@ public:
     void forget_screen_textures();
 
     // How many whole frames have arrived and not yet been shown.
-    std::size_t buffered_frames() const;
+    std::size_t buffered_frames() const {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        return frames_waiting();
+    }
     // The newest frame actually decoded here, which is what the host is told.
     uint64_t newest_frame_serial_for_test() const {
         return std::max(top_.serial, bottom_.serial);
@@ -810,6 +855,13 @@ private:
         FrameReassembly frame;
         uint64_t started_ms = 0;
         uint64_t asked_ms = 0;
+        // How many times it has been asked for, and the newest departure
+        // stamp seen on this screen when it first was: a piece stamped later
+        // than that was sent in answer, one stamped earlier is a straggler of
+        // the first sending -- see note_repair_answer().
+        unsigned asks = 0;
+        uint32_t newest_stamp_when_asked = 0;
+        bool timed = false;
         std::deque<FrameReassembly> held;
     };
     FrameRepair repair_top_;
@@ -817,6 +869,27 @@ private:
     void ask_for_repair(FrameRepair& repair, uint64_t now_ms);
     void finish_repair(FrameRepair& repair, bool repaired);
     void check_repairs(uint64_t now_ms);
+    // How long an answer to asking for pieces is waited for before asking
+    // again, from how long answers have actually been taking: a round trip
+    // and its spread, the way TCP times its own resends. Before any answer
+    // has been timed, a guess that suits a home network.
+    uint64_t repair_wait_ms() const;
+    // A piece of a frame being repaired has arrived: if it was sent in
+    // answer to the first asking, how long that took is one more sample of
+    // the round trip.
+    void note_repair_answer(FrameRepair& repair, uint32_t piece_sent_at_ms, uint64_t now_ms);
+    // Starts repairing what `slot` still lacks, now -- moving it aside so
+    // newer frames can be put together meanwhile.
+    void begin_repair(FrameReassembly& slot, uint64_t now_ms);
+    double repair_round_trip_ms_ = 0.0;
+    double repair_round_trip_spread_ms_ = 0.0;
+    bool repair_round_trip_known_ = false;
+    // The newest departure stamp seen on each screen's pieces.
+    uint32_t newest_stamp_top_ = 0;
+    uint32_t newest_stamp_bottom_ = 0;
+    // Answers timed this second, for the log.
+    unsigned stats_repair_answers_ = 0;
+    double stats_repair_answer_total_ms_ = 0.0;
     void complete_frame(FrameReassembly& slot);
     void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
     // The newest frame put together whole for each screen. A piece of an older
@@ -836,6 +909,23 @@ private:
     uint64_t pieces_rebuilt_total_ = 0;
     uint64_t completed_serial_top_ = 0;
     uint64_t completed_serial_bottom_ = 0;
+    // The sendings (sent_index) each screen has recently finished with --
+    // put together whole, or given up on. A piece of one of them arriving
+    // after that is a copy: the first sending's straggler, or an answer to
+    // asking twice that both came back. Taken for a new frame, it started a
+    // reassembly that could never finish, which was then "repaired" and shown
+    // after pictures newer than it -- and a video frame decoded out of order
+    // leaves every picture after it wrong until the next keyframe.
+    static constexpr std::size_t kSendingsRemembered = 32;
+    struct FinishedSendings {
+        uint16_t index[kSendingsRemembered] = {};
+        std::size_t count = 0;
+        std::size_t next = 0;
+        bool contains(uint16_t sent_index) const;
+        void add(uint16_t sent_index);
+    };
+    FinishedSendings finished_top_;
+    FinishedSendings finished_bottom_;
     // Notices frames that left the host and never got here, from the gap they
     // leave in the run of sent_index values for that screen. Returns how many
     // went missing, which is zero for the ordinary case of the next one in the
@@ -1069,6 +1159,61 @@ private:
     // DUALSCREEN_TEST_LINK's held-back datagrams -- see poll().
     std::deque<std::pair<uint64_t, std::vector<uint8_t>>> simulated_link_;
     uint64_t simulated_link_last_due_ms_ = 0;
+
+    // The media socket, read on a thread of its own.
+    //
+    // Everything else here runs once a refresh, when the app gets round to
+    // poll() -- and with FrameDelay that is the last few milliseconds before
+    // the display wants a picture, after a sleep of most of the refresh. A
+    // datagram read only then has been sitting in the socket for up to a
+    // refresh: what it says about the link is that much wrong, and a piece
+    // found missing is asked for that much late. Read here instead, each
+    // datagram is taken as it lands -- pieces put together, recovery pieces
+    // applied, missing ones asked for again -- so a repair can be answered
+    // and the frame whole before the pass that shows it, rather than a
+    // refresh or two after.
+    //
+    // media_mutex_ is what makes that safe. poll() holds it throughout, so
+    // everything in here that the thread touches is only ever touched by one
+    // side at a time; the thread only ever tries for it, so that poll() can
+    // stop the thread -- fail() does, from inside poll() -- without the two
+    // waiting on each other. What it reads while poll() has the lock waits in
+    // arrivals_, stamped with when it came, and is taken by whichever of the
+    // two gets there first.
+    //
+    // DUALSCREEN_RECEIVE_THREAD=0 reads it in poll() instead, as before.
+    struct ArrivedDatagram {
+        std::vector<uint8_t> bytes;
+        uint64_t at_ms = 0;
+    };
+    std::size_t frames_waiting() const;
+    void start_receiver();
+    void stop_receiver();
+    void receive_loop();
+    // Takes everything in arrivals_; media_mutex_ held.
+    void take_arrivals();
+    // One media datagram, which arrived at `at_ms`; media_mutex_ held.
+    void take_media_datagram(const std::vector<uint8_t>& datagram, uint64_t at_ms);
+    mutable std::mutex media_mutex_;
+    std::mutex arrivals_mutex_;
+    std::vector<ArrivedDatagram> arrivals_;
+    std::thread receiver_;
+    std::atomic<bool> receiver_stopping_{false};
+    // When the datagram being handled arrived -- or, for a frame completed
+    // by a repair being given up on, when that happened. What the frame's
+    // arrival is timed from.
+    uint64_t arrival_ms_ = 0;
+    // Whether arrival_ms_ can be measured against the link: always, for
+    // datagrams stamped as they were read; for ones read by poll(), only
+    // when poll() itself was on time -- see this_pass_measures_the_link_.
+    bool arrivals_measure_the_link_ = true;
+    // Sound that arrived, for poll() to hand on: the callback plays it, and
+    // opens the output to do so, which belongs on the app's own thread.
+    struct ArrivedSound {
+        std::vector<int16_t> samples;
+        uint32_t rate = 0;
+    };
+    std::deque<ArrivedSound> sound_waiting_;
     unsigned stats_shed_ = 0;
     uint64_t last_arrival_ms_ = 0;
     // The host's send stamp on the last new frame -- see where
@@ -1252,6 +1397,9 @@ private:
     // Latest pixels per screen, uploaded lazily so a frame that arrives twice
     // between draws is only sent to the GPU once.
     struct ScreenBuffer {
+        // Shown by a SystemVideoLayers layer this frame -- see
+        // set_screen_shown_elsewhere().
+        bool shown_elsewhere = false;
         // Which of the two below is the frame and which is derived from it. A
         // tiled payload patches rgb565 and is expanded on demand; a video frame
         // decodes straight to pixels and never has a 5-6-5 form at all.

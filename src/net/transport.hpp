@@ -167,6 +167,10 @@ public:
     // needs to answer a datagram whose sender is not listening on a fixed,
     // well-known port (an ephemeral one, like a companion's media socket).
     bool receive(std::vector<uint8_t>& out, std::string& from_address, uint16_t& from_port);
+    // Waits up to `timeout_ms` for a datagram to be waiting, for a thread that
+    // does nothing but read this socket. True when one is; false on the
+    // timeout, and at once for a socket that is not open.
+    bool wait_readable(int timeout_ms) const;
 
 private:
     int descriptor_ = -1;

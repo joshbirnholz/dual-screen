@@ -20,7 +20,95 @@ const char* to_string(CompanionSession::Status status) {
 }
 
 CompanionSession::CompanionSession() = default;
-CompanionSession::~CompanionSession() { disconnect(); }
+CompanionSession::~CompanionSession() {
+    disconnect();
+    stop_receiver();
+}
+
+void CompanionSession::start_receiver() {
+    static const bool wanted = [] {
+        const char* setting = std::getenv("DUALSCREEN_RECEIVE_THREAD");
+        const char* link = std::getenv("DUALSCREEN_TEST_LINK");
+        // The simulated link lives in poll(), so it keeps the reading there.
+        return !(setting != nullptr && setting[0] == '0') &&
+               !(link != nullptr && std::string(link) == "wifi");
+    }();
+    if (!wanted || receiver_.joinable() || !media_socket_.open()) {
+        return;
+    }
+    receiver_stopping_ = false;
+    receiver_ = std::thread([this] { receive_loop(); });
+}
+
+void CompanionSession::stop_receiver() {
+    if (!receiver_.joinable()) {
+        return;
+    }
+    receiver_stopping_ = true;
+    receiver_.join();
+    std::lock_guard<std::mutex> lock(arrivals_mutex_);
+    arrivals_.clear();
+}
+
+void CompanionSession::receive_loop() {
+    // How long a wait for the next datagram lasts before looking at the
+    // repairs anyway: an unanswered request is asked again on time whether
+    // or not anything else arrives meanwhile.
+    constexpr int kWaitMs = 2;
+    std::vector<uint8_t> datagram;
+    std::string from_address;
+    while (!receiver_stopping_) {
+        media_socket_.wait_readable(kWaitMs);
+        const uint64_t now = monotonic_millis();
+        while (media_socket_.receive(datagram, from_address)) {
+            std::lock_guard<std::mutex> lock(arrivals_mutex_);
+            arrivals_.push_back(ArrivedDatagram{datagram, now});
+        }
+        // Only ever tried for: see media_mutex_. Whatever was read waits in
+        // arrivals_ meanwhile, stamped with when it came, which is all that
+        // measuring it needs.
+        std::unique_lock<std::mutex> lock(media_mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) {
+            continue;
+        }
+        take_arrivals();
+        check_repairs(monotonic_millis());
+    }
+}
+
+void CompanionSession::take_arrivals() {
+    std::vector<ArrivedDatagram> taken;
+    {
+        std::lock_guard<std::mutex> lock(arrivals_mutex_);
+        taken.swap(arrivals_);
+    }
+    for (const ArrivedDatagram& arrived : taken) {
+        take_media_datagram(arrived.bytes, arrived.at_ms);
+    }
+}
+
+void CompanionSession::take_media_datagram(const std::vector<uint8_t>& datagram, uint64_t at_ms) {
+    uint64_t token = 0;
+    MessageType type = MessageType::Ping;
+    const uint8_t* payload = nullptr;
+    std::size_t payload_size = 0;
+    if (!decode_media_header(datagram.data(), datagram.size(), token, type, payload,
+                             payload_size)) {
+        return;
+    }
+    if (session_token_ == 0 || token != session_token_) {
+        return;
+    }
+    if (piece_loss_every_for_test_ > 0 && type == MessageType::Frame &&
+        ++pieces_seen_for_test_ % piece_loss_every_for_test_ < piece_loss_run_for_test_) {
+        return;
+    }
+    if (dropping_frames_for_test_ && type == MessageType::Frame) {
+        return;
+    }
+    arrival_ms_ = at_ms;
+    handle_media_datagram(type, payload, payload_size);
+}
 
 bool CompanionSession::begin_search(const std::string& device_name,
                                     ScreenId wanted_screen,
@@ -42,6 +130,9 @@ bool CompanionSession::begin_search(const std::string& device_name,
 }
 
 void CompanionSession::connect_to(DiscoveredHost host) {
+    // Whatever is still reading for the last session stops before anything
+    // it reads is started again.
+    stop_receiver();
     host_quit_for_this_device_ = false;
     stream_.close();
     inbox_.clear();
@@ -69,8 +160,13 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     keyframe_wanted_top_ = false;
     completed_serial_top_ = 0;
     completed_serial_bottom_ = 0;
+    finished_top_ = FinishedSendings();
+    finished_bottom_ = FinishedSendings();
     repair_top_ = FrameRepair();
     repair_bottom_ = FrameRepair();
+    newest_stamp_top_ = 0;
+    newest_stamp_bottom_ = 0;
+    repair_round_trip_known_ = false;
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -149,6 +245,7 @@ void CompanionSession::begin_connect() {
         fail(error);
         return;
     }
+    start_receiver();
     status_ = Status::Connecting;
     status_detail_ = "connecting to " + joining_.device_name;
 }
@@ -186,6 +283,7 @@ void CompanionSession::disconnect() {
         stream_.pump(ignored, &error);
     }
     stream_.close();
+    stop_receiver();
     media_socket_.stop();
     retry_connect_ = false;
     retry_connect_at_ms_ = 0;
@@ -212,8 +310,12 @@ void CompanionSession::disconnect() {
     keyframe_wanted_top_ = false;
     completed_serial_top_ = 0;
     completed_serial_bottom_ = 0;
+    finished_top_ = FinishedSendings();
+    finished_bottom_ = FinishedSendings();
     repair_top_ = FrameRepair();
     repair_bottom_ = FrameRepair();
+    newest_stamp_top_ = 0;
+    newest_stamp_bottom_ = 0;
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -277,6 +379,7 @@ void CompanionSession::fail(const std::string& reason) {
     retry_connect_ = false;
     retry_connect_at_ms_ = 0;
     waiting_on_local_network_ = false;
+    stop_receiver();
     media_socket_.stop();
     inbox_.clear();
     said_hello_ = false;
@@ -299,8 +402,12 @@ void CompanionSession::fail(const std::string& reason) {
     keyframe_wanted_top_ = false;
     completed_serial_top_ = 0;
     completed_serial_bottom_ = 0;
+    finished_top_ = FinishedSendings();
+    finished_bottom_ = FinishedSendings();
     repair_top_ = FrameRepair();
     repair_bottom_ = FrameRepair();
+    newest_stamp_top_ = 0;
+    newest_stamp_bottom_ = 0;
     keyframe_wanted_bottom_ = false;
     keyframe_asked_at_top_ = 0;
     keyframe_asked_at_bottom_ = 0;
@@ -533,10 +640,14 @@ void CompanionSession::handle_media_datagram(MessageType type, const uint8_t* pa
             // screen -- see HostSession::publish_audio and the External
             // source's own audio callback in app.cpp -- so whichever one
             // arrives here always plays too; there is nothing left to check.
-            if (audio_callback_) {
-                audio_callback_(audio.samples.data(), audio.samples.size() / 2,
-                                audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_);
+            // Played from poll(), which may be a moment from now: see
+            // sound_waiting_. Bounded, for an app that has stopped polling.
+            if (sound_waiting_.size() >= 64) {
+                sound_waiting_.pop_front();
             }
+            sound_waiting_.push_back(ArrivedSound{
+                std::move(audio.samples),
+                audio.sample_rate != 0 ? audio.sample_rate : audio_sample_rate_});
             break;
         }
         default:
@@ -597,13 +708,17 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         (header.fragment_index >= header.fragment_count &&
          (!video || header.fragment_index < parity_first ||
           header.fragment_index >= parity_first + parity_count))) {
-        // Past the frame's own pieces and not one of its recovery pieces --
-        // among them, the XOR pieces of a host from before Reed-Solomon,
-        // which this does not read. Not worth ending a session over either
-        // way; see the class comment.
+        // Past the frame's own pieces and not one of its recovery pieces.
+        // Not worth ending a session over; see the class comment.
         return;
     }
     const bool is_parity = header.fragment_index >= header.fragment_count;
+    const uint64_t arrived_ms = arrival_ms_;
+    uint32_t& newest_stamp = (header.screen == ScreenId::Top) ? newest_stamp_top_ : newest_stamp_bottom_;
+    if (header.sent_at_ms != 0 &&
+        (newest_stamp == 0 || static_cast<int32_t>(header.sent_at_ms - newest_stamp) > 0)) {
+        newest_stamp = header.sent_at_ms;
+    }
 
     // A piece of the frame being repaired: the answer to asking for it, or a
     // straggler of the first sending. Before everything below, which would
@@ -627,11 +742,13 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         started.received.assign(header.fragment_count, false);
         started.parity.assign(parity_count, std::vector<uint8_t>());
         started.parity_received.assign(parity_count, false);
+        note_repair_answer(repair, header.sent_at_ms, arrived_ms);
     }
     if (repair.active && repair.frame.active && header.sent_index == repair.frame.sent_index &&
         header.serial == repair.frame.serial &&
         header.fragment_count == repair.frame.fragment_count) {
         FrameReassembly& held = repair.frame;
+        note_repair_answer(repair, header.sent_at_ms, arrived_ms);
         if (is_parity) {
             const std::size_t group = header.fragment_index - parity_first;
             if (group < held.parity.size() && !held.parity_received[group]) {
@@ -656,6 +773,11 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         return;
     }
 
+    // A piece of a sending already finished with: see finished_top_.
+    if (((header.screen == ScreenId::Top) ? finished_top_ : finished_bottom_)
+            .contains(header.sent_index)) {
+        return;
+    }
     // Older than a picture this screen already has whole: see
     // completed_serial_top_. Only a little older, though -- far enough back is
     // not a straggler but a host that has started counting again, a new game
@@ -679,14 +801,12 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         // One frame lost outright -- a small one, taken whole by a burst.
         // Asked for by the place it had in the run, since nothing else about
         // it ever arrived; the frame this piece belongs to waits behind it.
-        const uint64_t now = monotonic_millis();
+        repair = FrameRepair();
         repair.active = true;
         repair.whole_frame = true;
         repair.sent_index = static_cast<uint16_t>(header.sent_index - 1);
-        repair.frame = FrameReassembly();
-        repair.started_ms = now;
-        repair.held.clear();
-        ask_for_repair(repair, now);
+        repair.started_ms = arrived_ms;
+        ask_for_repair(repair, arrived_ms);
     } else if (missing > 0) {
         stats_frames_lost_ += missing;
         link_trouble_ += missing;
@@ -719,13 +839,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             // The host has moved on with pieces of this one missing. Asked
             // for again rather than given up on: a round trip, where a
             // keyframe is a frozen picture and dozens of pieces more to lose.
-            const uint64_t now = monotonic_millis();
-            repair.active = true;
-            repair.sent_index = slot.sent_index;
-            repair.frame = std::move(slot);
-            repair.started_ms = now;
-            repair.held.clear();
-            ask_for_repair(repair, now);
+            begin_repair(slot, arrived_ms);
         } else if (slot.active && slot.received_count < slot.fragment_count) {
             // A frame the host definitely sent that this end definitely never
             // got whole -- the sender has moved on, so the missing pieces are
@@ -774,7 +888,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     if (static_cast<int32_t>(header.sent_at_ms - slot.sent_at_ms) > 0) {
         slot.sent_at_ms = header.sent_at_ms;
     }
-    slot.last_piece_ms = monotonic_millis();
+    slot.last_piece_ms = arrived_ms;
     if (is_parity) {
         const std::size_t group = header.fragment_index - parity_first;
         if (group < slot.parity.size() && !slot.parity_received[group]) {
@@ -794,10 +908,20 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         pieces_rebuilt_total_ += recovered;
     }
     if (slot.received_count < slot.fragment_count) {
+        // The last of the recovery pieces, which leave after everything else
+        // of the frame: nothing more of it is coming, so what is still
+        // missing is lost, and asked for now -- rather than when the next
+        // frame starts arriving, a whole frame's time later, or when this one
+        // has been quiet for a while.
+        if (is_parity && header.fragment_index + 1 == parity_first + parity_count &&
+            !repair.active && slot.fragment_count - slot.received_count <= kMaxRepairPieces) {
+            begin_repair(slot, arrived_ms);
+        }
         return;
     }
     ((slot.screen == ScreenId::Top) ? completed_serial_top_ : completed_serial_bottom_) =
         slot.serial;
+    ((slot.screen == ScreenId::Top) ? finished_top_ : finished_bottom_).add(slot.sent_index);
     // Held behind a frame still being repaired: shown after it, in order, or
     // after it is given up on -- see finish_repair().
     FrameRepair& repairing = (slot.screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
@@ -812,13 +936,90 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     complete_frame(slot);
 }
 
-// How long a frame being repaired is waited for, and how often its pieces are
-// asked for again meanwhile. A repair answered takes a round trip, which on a
-// home network is a few milliseconds; one not answered in this long is not
-// coming -- a host from before repairs, or the answer lost as well -- and the
-// frames held behind it have waited long enough.
-constexpr uint64_t kRepairAskAgainMs = 30;
+// How long a frame being repaired is waited for at the most. A repair
+// answered takes a round trip, which on a home network is a few milliseconds;
+// one not answered in this long is not coming -- the answer lost as well, or
+// the frame no longer kept -- and the frames held behind it have waited long
+// enough. Before that, it is given up on once it has been asked for
+// kRepairAsks times and the last asking has had its full wait.
 constexpr uint64_t kRepairGiveUpMs = 90;
+constexpr unsigned kRepairAsks = 3;
+// The wait for an answer before asking again: before any answer has been
+// timed, and the bounds on it after. The floor is a scheduler's slack and a
+// host's busy moment; the ceiling keeps three askings inside the most a
+// frame is ever waited for.
+constexpr uint64_t kRepairWaitUntimedMs = 25;
+constexpr uint64_t kRepairWaitFloorMs = 8;
+constexpr uint64_t kRepairWaitCeilingMs = 30;
+// A frame whose pieces have stopped arriving, short of whole, is repaired
+// after this long: the last one sent before the game paused, which no newer
+// frame will come along to show was left incomplete. Never shorter than the
+// wait for an answer -- the pieces of a big frame leave spread out, and quiet
+// for less than a round trip is not yet silence.
+constexpr uint64_t kQuietBeforeRepairFloorMs = 12;
+
+uint64_t CompanionSession::repair_wait_ms() const {
+    if (!repair_round_trip_known_) {
+        return kRepairWaitUntimedMs;
+    }
+    // As TCP times a resend: the smoothed round trip, four times its spread
+    // on top, and a little for this device noticing.
+    const double wait = repair_round_trip_ms_ + 4.0 * repair_round_trip_spread_ms_ + 3.0;
+    return std::min(kRepairWaitCeilingMs,
+                    std::max(kRepairWaitFloorMs, static_cast<uint64_t>(wait + 0.5)));
+}
+
+void CompanionSession::note_repair_answer(FrameRepair& repair, uint32_t piece_sent_at_ms,
+                                          uint64_t now_ms) {
+    // Only an answer to the first asking says how long answers take: after
+    // a second, there is no knowing which of the two it answers.
+    if (repair.timed || repair.asks != 1 || piece_sent_at_ms == 0 ||
+        repair.newest_stamp_when_asked == 0 ||
+        static_cast<int32_t>(piece_sent_at_ms - repair.newest_stamp_when_asked) <= 0 ||
+        now_ms < repair.asked_ms) {
+        return;
+    }
+    repair.timed = true;
+    const double sample = static_cast<double>(now_ms - repair.asked_ms);
+    if (!repair_round_trip_known_) {
+        repair_round_trip_ms_ = sample;
+        repair_round_trip_spread_ms_ = sample / 2.0;
+        repair_round_trip_known_ = true;
+    } else {
+        const double off = sample - repair_round_trip_ms_;
+        repair_round_trip_spread_ms_ =
+            0.75 * repair_round_trip_spread_ms_ + 0.25 * (off < 0 ? -off : off);
+        repair_round_trip_ms_ += off / 8.0;
+    }
+    ++stats_repair_answers_;
+    stats_repair_answer_total_ms_ += sample;
+}
+
+bool CompanionSession::FinishedSendings::contains(uint16_t sent_index) const {
+    for (std::size_t at = 0; at < count; ++at) {
+        if (index[at] == sent_index) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CompanionSession::FinishedSendings::add(uint16_t sent_index) {
+    index[next] = sent_index;
+    next = (next + 1) % kSendingsRemembered;
+    count = std::min(count + 1, kSendingsRemembered);
+}
+
+void CompanionSession::begin_repair(FrameReassembly& slot, uint64_t now_ms) {
+    FrameRepair& repair = (slot.screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
+    repair = FrameRepair();
+    repair.active = true;
+    repair.sent_index = slot.sent_index;
+    repair.frame = std::move(slot);
+    slot = FrameReassembly();
+    repair.started_ms = now_ms;
+    ask_for_repair(repair, now_ms);
+}
 
 void CompanionSession::ask_for_repair(FrameRepair& repair, uint64_t now_ms) {
     RepairRequestMessage request;
@@ -834,6 +1035,10 @@ void CompanionSession::ask_for_repair(FrameRepair& repair, uint64_t now_ms) {
         }
     }
     repair.asked_ms = now_ms;
+    if (repair.asks++ == 0) {
+        repair.newest_stamp_when_asked =
+            request.screen == ScreenId::Top ? newest_stamp_top_ : newest_stamp_bottom_;
+    }
     std::vector<uint8_t> out;
     encode_media_header(session_token_, MessageType::RepairRequest, out);
     encode_repair_request_payload(request, out);
@@ -844,6 +1049,8 @@ void CompanionSession::finish_repair(FrameRepair& repair, bool repaired) {
     const ScreenId screen = (&repair == &repair_top_) ? ScreenId::Top : ScreenId::Bottom;
     FrameRepair taken = std::move(repair);
     repair = FrameRepair();
+    // Done with, either way: whatever of it still arrives is a copy.
+    ((screen == ScreenId::Top) ? finished_top_ : finished_bottom_).add(taken.sent_index);
     if (repaired) {
         ++stats_frames_repaired_;
         ++frames_repaired_total_;
@@ -863,15 +1070,15 @@ void CompanionSession::finish_repair(FrameRepair& repair, bool repaired) {
     // Nothing shown here says anything about the link: these waited on the
     // repair, not on the way here, and counting that wait as jitter would buy
     // buffer against a stall that has already been dealt with.
-    const bool measuring = this_pass_measures_the_link_;
-    this_pass_measures_the_link_ = false;
+    const bool measuring = arrivals_measure_the_link_;
+    arrivals_measure_the_link_ = false;
     if (repaired) {
         complete_frame(taken.frame);
     }
     for (FrameReassembly& held : taken.held) {
         complete_frame(held);
     }
-    this_pass_measures_the_link_ = measuring;
+    arrivals_measure_the_link_ = measuring;
 }
 
 void CompanionSession::check_repairs(uint64_t now_ms) {
@@ -879,28 +1086,28 @@ void CompanionSession::check_repairs(uint64_t now_ms) {
     // one sent before the game paused, which no newer frame will ever come
     // along to show was left incomplete. Without this the picture stayed one
     // frame short for as long as the pause lasted.
-    constexpr uint64_t kQuietBeforeRepairMs = 30;
+    // Anything completed from here -- held frames let go when a repair is
+    // given up on -- became ready now.
+    arrival_ms_ = now_ms;
+    const uint64_t wait = repair_wait_ms();
+    const uint64_t quiet = std::max(kQuietBeforeRepairFloorMs, wait);
     for (FrameReassembly* slot : {&reassembly_top_, &reassembly_bottom_}) {
         FrameRepair& repair = (slot->screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
         const std::size_t missing = slot->fragment_count - slot->received_count;
         if (!slot->active || missing == 0 || slot->encoding != FrameEncoding::H264 ||
-            repair.active || missing > kMaxRepairPieces ||
-            now_ms - slot->last_piece_ms < kQuietBeforeRepairMs) {
+            repair.active || missing > kMaxRepairPieces || now_ms < slot->last_piece_ms ||
+            now_ms - slot->last_piece_ms < quiet) {
             continue;
         }
-        repair.active = true;
-        repair.sent_index = slot->sent_index;
-        repair.frame = std::move(*slot);
-        *slot = FrameReassembly();
-        repair.started_ms = now_ms;
-        repair.held.clear();
-        ask_for_repair(repair, now_ms);
+        begin_repair(*slot, now_ms);
     }
     for (FrameRepair* repair : {&repair_top_, &repair_bottom_}) {
-        if (!repair->active) continue;
-        if (now_ms - repair->started_ms >= kRepairGiveUpMs) {
+        if (!repair->active || now_ms < repair->asked_ms) continue;
+        const bool waited_out = now_ms - repair->asked_ms >= wait;
+        if (now_ms - repair->started_ms >= kRepairGiveUpMs ||
+            (waited_out && repair->asks >= kRepairAsks)) {
             finish_repair(*repair, false);
-        } else if (now_ms - repair->asked_ms >= kRepairAskAgainMs) {
+        } else if (waited_out) {
             ask_for_repair(*repair, now_ms);
         }
     }
@@ -952,10 +1159,20 @@ void CompanionSession::complete_frame(FrameReassembly& slot) {
     }
     slot = FrameReassembly();
 
+    // Never behind a picture already put together: a video frame decoded
+    // after one newer than it corrupts every picture until the next keyframe,
+    // and a tiled one puts back tiles the newer one had moved past. Only a
+    // little behind, though -- far enough back is a host counting afresh.
+    if (received_serial_ != 0 && frame.serial < received_serial_ &&
+        received_serial_ - frame.serial <= 16) {
+        ++stats_frames_skipped_;
+        return;
+    }
+
     // Held rather than applied here: poll() shows frames on a clock, so the
     // cadence on screen is even whatever the arrivals did.
     if (frame.serial != received_serial_) {
-        const uint64_t now = monotonic_millis();
+        const uint64_t now = arrival_ms_ != 0 ? arrival_ms_ : monotonic_millis();
         // How long this frame took to get here, on two clocks that disagree by
         // an unknown constant. Only ever compared with other transits, where
         // that constant cancels -- see VideoJitter.
@@ -966,7 +1183,7 @@ void CompanionSession::complete_frame(FrameReassembly& slot) {
         // once every 49 days.
         const uint32_t sent = sent_at_ms;
         double link_delay_ms = -1.0;
-        if (sent != 0 && this_pass_measures_the_link_) {
+        if (sent != 0 && arrivals_measure_the_link_) {
             const uint32_t arrived = static_cast<uint32_t>(now);
             const double transit = static_cast<double>(static_cast<int32_t>(arrived - sent));
             jitter_.add(transit);
@@ -1014,6 +1231,9 @@ void CompanionSession::complete_frame(FrameReassembly& slot) {
 }
 
 void CompanionSession::poll(uint64_t now_ms) {
+    // Everything the receiving thread touches is this pass's alone until it
+    // ends -- see media_mutex_.
+    std::lock_guard<std::mutex> media_lock(media_mutex_);
     browser_.poll(now_ms);
     knock_on_the_local_network();
 
@@ -1192,27 +1412,16 @@ void CompanionSession::poll(uint64_t now_ms) {
     // ignored (not treated as a session failure) if it does not check out:
     // UDP has no stream to desynchronise, so a bad or stray datagram is just
     // one bad datagram.
-    {
+    if (receiver_.joinable()) {
+        // Read as it landed, and waiting only because this pass had the lock.
+        arrivals_measure_the_link_ = true;
+        take_arrivals();
+    } else {
+        // Read now, however long it has been waiting: what it says about the
+        // link is only worth anything if this pass was on time.
+        arrivals_measure_the_link_ = this_pass_measures_the_link_;
         const auto take = [&](const std::vector<uint8_t>& datagram) {
-            uint64_t token = 0;
-            MessageType type = MessageType::Ping;
-            const uint8_t* payload = nullptr;
-            std::size_t payload_size = 0;
-            if (!decode_media_header(datagram.data(), datagram.size(), token, type, payload,
-                                     payload_size)) {
-                return;
-            }
-            if (session_token_ == 0 || token != session_token_) {
-                return;
-            }
-            if (piece_loss_every_for_test_ > 0 && type == MessageType::Frame &&
-                ++pieces_seen_for_test_ % piece_loss_every_for_test_ < piece_loss_run_for_test_) {
-                return;
-            }
-            if (dropping_frames_for_test_ && type == MessageType::Frame) {
-                return;
-            }
-            handle_media_datagram(type, payload, payload_size);
+            take_media_datagram(datagram, monotonic_millis());
         };
         // For measuring only: DUALSCREEN_TEST_LINK=wifi holds each datagram
         // back the way a home wireless link does -- a few milliseconds as a
@@ -1281,6 +1490,15 @@ void CompanionSession::poll(uint64_t now_ms) {
             simulated_link_.pop_front();
         }
     }
+    // Sound, handed on from here rather than from wherever it was read: see
+    // sound_waiting_.
+    while (!sound_waiting_.empty()) {
+        const ArrivedSound& sound = sound_waiting_.front();
+        if (audio_callback_) {
+            audio_callback_(sound.samples.data(), sound.samples.size() / 2, sound.rate);
+        }
+        sound_waiting_.pop_front();
+    }
 
     // Advance the picture on the host's cadence rather than this device's.
     //
@@ -1291,7 +1509,7 @@ void CompanionSession::poll(uint64_t now_ms) {
     // pictures late, so it is caught up on instead.
     if (!pending_frames_.empty()) {
         const uint64_t period = frame_period();
-        const std::size_t waiting = buffered_frames();
+        const std::size_t waiting = frames_waiting();
         // Skipping frames is the last resort here, not the ordinary way of
         // keeping up: every frame past the first in one pass is a frame that
         // is decoded, applied and then immediately overwritten, so nobody ever
@@ -2278,8 +2496,28 @@ bool CompanionSession::advance_frame(std::string* error) {
     return true;
 }
 
+CompanionSession::NativePicture CompanionSession::native_picture(ScreenId screen) const {
+    const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
+    NativePicture out;
+    if (buffer.has_frame() && buffer.video && buffer.layout == video::DecodedLayout::Nv12 &&
+        buffer.native != nullptr) {
+        out.picture = buffer.native;
+        out.width = buffer.width;
+        out.height = buffer.height;
+        out.serial = buffer.serial;
+    }
+    return out;
+}
+
 const ScreenTextures& CompanionSession::screens() {
     for (ScreenBuffer* buffer : {&top_, &bottom_}) {
+        if (buffer->shown_elsewhere) {
+            // Its picture goes to the screen some other way this frame, and
+            // mapping it into a texture as well is work for nothing. Left
+            // stale on purpose: the frame it comes back, the serial differs
+            // and it is uploaded then.
+            continue;
+        }
         const bool stale =
             !buffer->texture.valid() || buffer->serial != buffer->uploaded_serial;
         if (stale && buffer->has_frame()) {
@@ -2336,8 +2574,15 @@ const ScreenTextures& CompanionSession::screens() {
     textures_.top = top_.texture.valid() ? &top_.texture : nullptr;
     textures_.bottom = bottom_.texture.valid() ? &bottom_.texture : nullptr;
 
-    // Being drawn now: every input whose picture this is has come back.
-    shown_serial_ = std::max({shown_serial_, top_.uploaded_serial, bottom_.uploaded_serial});
+    // Being drawn now: every input whose picture this is has come back. The
+    // echoes are read in as they arrive -- see media_mutex_.
+    std::lock_guard<std::mutex> media_lock(media_mutex_);
+    // A screen shown elsewhere shows its newest picture: see
+    // set_screen_shown_elsewhere().
+    const auto on_screen = [](const ScreenBuffer& buffer) {
+        return buffer.shown_elsewhere ? buffer.serial : buffer.uploaded_serial;
+    };
+    shown_serial_ = std::max({shown_serial_, on_screen(top_), on_screen(bottom_)});
     if (!echoes_waiting_.empty()) {
         const uint64_t now_ms = monotonic_millis();
         std::vector<InputEchoMessage> still_waiting;
@@ -2442,7 +2687,13 @@ void CompanionSession::report_stream(uint64_t now_ms) {
              (stats_shed_ > 0 ? "; let one picture go unseen to catch up" : "") +
              loss_summary(stats_decoded_ * 1000 / elapsed, stats_frames_lost_,
                           stats_fragments_recovered_, stats_frames_repaired_,
-                          stats_frames_skipped_));
+                          stats_frames_skipped_) +
+                 (stats_repair_answers_ > 0
+                      ? " (answered in " +
+                            std::to_string(static_cast<uint64_t>(
+                                stats_repair_answer_total_ms_ / stats_repair_answers_ + 0.5)) +
+                            "ms, asking again after " + std::to_string(repair_wait_ms()) + "ms)"
+                      : std::string()));
     stats_shed_ = 0;
     // The number the rest of the line adds up to, for anything played by
     // touch or by feel: from an input leaving this device to the first
@@ -2488,6 +2739,8 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_frames_skipped_ = 0;
     stats_fragments_recovered_ = 0;
     stats_frames_repaired_ = 0;
+    stats_repair_answers_ = 0;
+    stats_repair_answer_total_ms_ = 0.0;
 }
 
 // How long each frame should be on screen: what the host is producing at,
@@ -2900,7 +3153,7 @@ bool CompanionSession::decode_next_frame() {
     return true;
 }
 
-std::size_t CompanionSession::buffered_frames() const {
+std::size_t CompanionSession::frames_waiting() const {
     std::size_t frames = 0;
     bool counting = false;
     uint64_t previous = 0;

@@ -1581,11 +1581,14 @@ void test_a_source_faster_than_the_link_is_still_allowed_frames_in_flight() {
         host.poll(monotonic_millis());
     };
 
-    // Acking normally first, so the gate is armed at all.
+    // Acking normally first, so the gate is armed at all -- and all the way
+    // up, so what is measured below starts from nothing outstanding rather
+    // than from however far the acks happened to have got.
     for (uint64_t serial = 1; serial <= 6; ++serial) {
         publish(serial);
         companion.poll(monotonic_millis());
     }
+    spin(host, companion, [&] { return host.companion_frames_behind_for_test() == 0; });
 
     // Now the companion goes quiet and the source jumps serials the way a
     // 60fps game does when only every third frame is being sent. The gate

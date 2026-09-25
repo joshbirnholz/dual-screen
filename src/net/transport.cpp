@@ -791,6 +791,16 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, std::string& from_address,
     return true;
 }
 
+bool UdpSocket::wait_readable(int timeout_ms) const {
+    if (descriptor_ < 0) {
+        return false;
+    }
+    pollfd waiting {};
+    waiting.fd = descriptor_;
+    waiting.events = POLLIN;
+    return ::poll(&waiting, 1, timeout_ms) > 0 && (waiting.revents & POLLIN) != 0;
+}
+
 std::vector<LocalNetwork> local_networks() {
     std::vector<LocalNetwork> networks;
 
