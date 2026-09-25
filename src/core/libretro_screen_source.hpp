@@ -125,7 +125,8 @@ public:
     double audio_sample_rate() const;
     const ScreenSplit& split() const { return split_; }
     // Non-fatal complaints worth showing the player (e.g. a core option this
-    // build expected but the loaded core does not have).
+    // build expected but the loaded core does not have). Only what loading
+    // the core found: a core's own passing notices go to the log.
     const std::vector<std::string>& warnings() const { return warnings_; }
     const std::string& core_description() const { return core_description_; }
     // The core's raw framebuffer, before the split. Only used by tests, which

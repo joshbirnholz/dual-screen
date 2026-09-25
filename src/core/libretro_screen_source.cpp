@@ -333,9 +333,13 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
     gl::log_error_once("the core left an OpenGL error behind");
     probe_window_framebuffer();
 
-    for (const std::string& message : core_->core_messages()) {
-        warnings_.push_back(message);
-    }
+    // What a core puts up on screen for a moment -- melonDS DS says "Layout
+    // 1/1" as it starts -- is written to the log as it arrives (see
+    // LibretroCore) and is not a warning. Kept out of warnings_, which is
+    // for settings the core refused: counted as one, a notice from a frame
+    // run while the game was still starting -- which resuming from a save
+    // state does -- put up "did not accept every setting" over a game that
+    // had started perfectly well.
     core_->clear_core_messages();
 
     refresh_split_from_frame();

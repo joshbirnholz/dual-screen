@@ -1811,16 +1811,20 @@ bool App::Impl::resume_game() {
         source->reset();
         return false;
     }
-    // One frame from there, so what is paused behind the popup is the moment
-    // resumed. A core that cannot run from the state it was handed is started
-    // again from the beginning, rather than left to fail in front of the
-    // player a moment later.
-    std::string frame_error;
-    if (!source->advance_frame(&frame_error)) {
-        log_warn("resumed from " + path + ", but the game would not run from there (" +
-                 frame_error + "); starting from the beginning");
-        source->reset();
-        return false;
+    // A couple of frames from there, so what is paused behind the popup is
+    // the moment resumed, whole -- a single frame can still show some of what
+    // the console was drawing before the state went in. A core that cannot
+    // run from the state it was handed is started again from the beginning,
+    // rather than left to fail in front of the player a moment later.
+    constexpr int kFramesAfterResuming = 2;
+    for (int frame = 0; frame < kFramesAfterResuming; ++frame) {
+        std::string frame_error;
+        if (!source->advance_frame(&frame_error)) {
+            log_warn("resumed from " + path + ", but the game would not run from there (" +
+                     frame_error + "); starting from the beginning");
+            source->reset();
+            return false;
+        }
     }
     log_info("resumed from " + path + " after " + std::to_string(ran) + " frames of start-up" +
              (info.exists ? " (saved " + format_save_time(info.saved_at) + ")" : std::string()));
@@ -2241,6 +2245,11 @@ void App::Impl::enter_message(MessageKind kind,
                               bool fatal) {
     message.show(kind, title, body, details);
     message_is_fatal = fatal;
+    // Said in the log too: a message on screen is otherwise the one thing a
+    // log sent afterwards cannot show.
+    std::string said = "showing a message: " + title;
+    for (const std::string& detail : details) said += " | " + detail;
+    log_info(said);
     state = State::Message;
     input.set_game_input_enabled(false);
 }

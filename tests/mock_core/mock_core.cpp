@@ -813,6 +813,13 @@ void check_frontend_left_default_gl_state() {
 }
 
 RETRO_API void retro_run(void) {
+    // And, like melonDS DS ("Layout 1/1"), a notice on the first frame -- which
+    // is only ever a notice, and must not be taken for anything worse.
+    if (!g_ran_since_load && g_environment != nullptr) {
+        static char started[] = "mock core started";
+        struct retro_message message = {started, 60};
+        g_environment(RETRO_ENVIRONMENT_SET_MESSAGE, &message);
+    }
     g_ran_since_load = true;
     if (g_input_poll != nullptr) {
         g_input_poll();
