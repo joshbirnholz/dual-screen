@@ -674,11 +674,7 @@ unsigned frames_missing_between(uint16_t last_seen, uint16_t arrived);
 // blocks, each with its own. (The first version here was one XOR piece per
 // eight, which put back one loss per group and nothing more.)
 //
-// Numbered after the frame's own pieces, and after the range that first
-// version's pieces used -- a companion from then reads a fragment_index there
-// as XOR parity, and must never be handed anything else under it; past it,
-// every companion from before this drops the piece unread. So a new host and
-// an old companion stream without recovery pieces, never with wrong ones.
+// Numbered straight on from the frame's own pieces.
 //
 // A recovery payload is the length of the frame's last piece (u16) -- the
 // only length a lost piece cannot be told from its neighbours -- and then the

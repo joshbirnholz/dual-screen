@@ -686,8 +686,8 @@ void test_lost_pieces_come_back_from_parity() {
         // At least two, and about a fifth as many again.
         CHECK(parity.size() >= 2);
         CHECK(parity.size() * 100 >= count * 20);
-        // After the range the XOR pieces of the first version used.
-        CHECK_EQ(frame_parity_first_index(count), count + (count + 7) / 8);
+        // Numbered straight on from the frame's own.
+        CHECK_EQ(frame_parity_first_index(count), count);
         const auto pieces = [&] {
             std::vector<std::vector<uint8_t>> out(count);
             for (std::size_t index = 0; index < count; ++index) {

@@ -1192,15 +1192,9 @@ std::vector<ParityBlock> parity_blocks(std::size_t count) {
     return blocks;
 }
 
-// The range the first, XOR, recovery pieces were numbered in -- one per
-// eight pieces -- kept clear so nothing else is ever read as one of them.
-std::size_t legacy_xor_parity_count(std::size_t count) { return (count + 7) / 8; }
-
 }  // namespace
 
-std::size_t frame_parity_first_index(std::size_t fragment_count) {
-    return fragment_count + legacy_xor_parity_count(fragment_count);
-}
+std::size_t frame_parity_first_index(std::size_t fragment_count) { return fragment_count; }
 
 std::size_t frame_parity_count(std::size_t fragment_count) {
     std::size_t total = 0;
