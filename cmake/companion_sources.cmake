@@ -40,6 +40,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/render/button_glyphs.cpp
     src/render/compositor.cpp
     src/render/font.cpp
+    src/render/frame_delay.cpp
     src/render/gl_loader.cpp
     src/render/gl_window.cpp
     src/render/menu_backdrop.cpp

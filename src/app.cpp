@@ -34,6 +34,7 @@
 #include "render/bezel_art.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
+#include "render/frame_delay.hpp"
 #include "render/menu_backdrop.hpp"
 #include "ui/menu_actions.hpp"
 #include "render/gl_loader.hpp"
@@ -295,6 +296,12 @@ struct App::Impl {
     TextRenderer text;
     Compositor compositor;
     MenuBackdrop menu_backdrop;
+    // A companion's pass started as late before the display's refresh as it
+    // can be -- see FrameDelay. Never the host's: the host's pass runs the
+    // game, whose timing is the game's.
+    FrameDelay frame_delay;
+    bool frame_delay_said = false;
+    uint64_t pass_began_us = 0;
     // Whether the game was running last frame, so a pause can be noticed once
     // rather than acted on every frame it lasts.
     bool game_was_running = false;
@@ -701,6 +708,8 @@ struct App::Impl {
     // What SDL was last told, so it is only told when the answer changes.
     bool cursor_shown = false;
     void render();
+    // swap_and_pace(), measured for frame_delay.
+    void swap();
     bool write_screenshot(const std::string& path);
 };
 
@@ -2704,6 +2713,24 @@ void swap_and_pace(SDL_Window* window) {
     std::this_thread::sleep_until(start + std::chrono::duration_cast<clock::duration>(period * ticks));
 }
 
+namespace {
+uint64_t steady_micros() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count());
+}
+}  // namespace
+
+void App::Impl::swap() {
+    const uint64_t began = steady_micros();
+    if (pass_began_us != 0 && began > pass_began_us) {
+        frame_delay.worked(began - pass_began_us);
+    }
+    swap_and_pace(window);
+    const uint64_t done = steady_micros();
+    frame_delay.presented(done, done - began);
+}
+
 void App::Impl::render() {
     const float width = static_cast<float>(output_width);
     const float height = static_cast<float>(output_height);
@@ -2715,7 +2742,7 @@ void App::Impl::render() {
 
     if (state == State::Browser) {
         browser->render(quads, text, button_glyphs, width, height);
-        swap_and_pace(window);
+        swap();
         ++frames_rendered;
         return;
     }
@@ -2723,14 +2750,14 @@ void App::Impl::render() {
         launcher->render(quads, text, button_glyphs, width, height,
                          companion_session ? static_cast<int>(companion_session->hosts().size())
                                            : 0);
-        swap_and_pace(window);
+        swap();
         ++frames_rendered;
         return;
     }
     if (state == State::HostPicker) {
         host_picker->render(quads, text, button_glyphs, width, height,
                             companion_session->hosts(), companion_session->status_detail());
-        swap_and_pace(window);
+        swap();
         ++frames_rendered;
         return;
     }
@@ -2747,7 +2774,7 @@ void App::Impl::render() {
                 : std::string();
         render_connecting_screen(quads, text, button_glyphs, width, height,
                                  joining_host.device_name, joining_host.game_title, note);
-        swap_and_pace(window);
+        swap();
         ++frames_rendered;
         return;
     }
@@ -2767,7 +2794,7 @@ void App::Impl::render() {
         render_waiting_screen(quads, text, button_glyphs, width, height, "On the other screen",
                               {"A menu is open there.", "This device's buttons still work it."},
                               {});
-        swap_and_pace(window);
+        swap();
         ++frames_rendered;
         companion_session->note_frame_drawn();
         return;
@@ -2786,7 +2813,7 @@ void App::Impl::render() {
                                        : "to start on " + joining_host.device_name,
                                    "F1 or Tab for the menu"},
                                   {});
-            swap_and_pace(window);
+            swap();
             ++frames_rendered;
             companion_session->note_frame_drawn();
             return;
@@ -2810,7 +2837,7 @@ void App::Impl::render() {
         render_waiting_screen(quads, text, button_glyphs, width, height,
                               (ours ? "Starting " : "Waiting for ") + profile.core_description,
                               lines, {});
-        swap_and_pace(window);
+        swap();
         ++frames_rendered;
         return;
     }
@@ -2879,7 +2906,7 @@ void App::Impl::render() {
         message.render(quads, text, button_glyphs, width, height);
     }
 
-    swap_and_pace(window);
+    swap();
     ++frames_rendered;
     // Only the game path gets here, which is the one whose rate says whether a
     // companion is showing what it is being sent.
@@ -3187,6 +3214,27 @@ int App::run(const AppOptions& options) {
     int simulated_at_frame = 0;
 
     while (impl.running) {
+        // A companion showing a stream waits out most of the refresh first,
+        // so reading input and the network, decoding and drawing all happen
+        // just before the refresh the result is shown at. See FrameDelay.
+        if (impl.state == Impl::State::Companion) {
+            const uint64_t wait = impl.frame_delay.wait_us();
+            if (wait > 0) {
+                std::this_thread::sleep_for(std::chrono::microseconds(wait));
+            }
+            if (impl.frame_delay.active() != impl.frame_delay_said) {
+                impl.frame_delay_said = impl.frame_delay.active();
+                log_info(impl.frame_delay_said
+                             ? "drawing each frame just before the display's refresh (every " +
+                                   std::to_string(impl.frame_delay.period_us() / 100 / 10.0)
+                                       .substr(0, 4) +
+                                   "ms), waiting " + std::to_string(wait / 1000) +
+                                   "ms first so the newest picture is the one shown"
+                             : "no longer waiting before each frame: the display's refresh is "
+                               "not steady enough to aim at");
+            }
+        }
+        impl.pass_began_us = steady_micros();
         const uint64_t now = SDL_GetPerformanceCounter();
         double elapsed = static_cast<double>(now - impl.last_counter) / static_cast<double>(counter_frequency);
         impl.last_counter = now;

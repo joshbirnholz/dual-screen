@@ -78,6 +78,7 @@ add_executable(check_screenshot check_screenshot.cpp)
 target_compile_options(check_screenshot PRIVATE -Wall -Wextra)
 
 dualscreen_add_test(test_layout)
+dualscreen_add_test(test_frame_delay)
 dualscreen_add_test(test_video_codec)
 dualscreen_add_test(test_h264_bitstream)
 dualscreen_add_test(test_external_link)

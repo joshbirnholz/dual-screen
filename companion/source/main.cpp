@@ -64,6 +64,8 @@ extern "C" {
 #endif
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -86,6 +88,7 @@ extern "C" {
 #include "render/bezel_art.hpp"
 #include "render/gl_loader.hpp"
 #include "render/button_glyphs.hpp"
+#include "render/frame_delay.hpp"
 #include "render/menu_backdrop.hpp"
 #include "ui/menu_actions.hpp"
 #include "render/compositor.hpp"
@@ -343,6 +346,11 @@ private:
     TextRenderer text_;
     ButtonGlyphSheet button_glyphs_;
     MenuBackdrop menu_backdrop_;
+    // Each pass started as late before the display's refresh as it can be --
+    // see FrameDelay -- and whether that is currently on, so the log says
+    // when it changes.
+    FrameDelay frame_delay_;
+    bool frame_delay_said_ = false;
     Compositor compositor_;
     LocalOutputRouter router_;
     BezelArt bezel_art_;
@@ -1006,6 +1014,14 @@ void Client::keep_awake(bool awake) {
                    : "no session: the screen may sleep again");
 }
 
+namespace {
+uint64_t steady_micros() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count());
+}
+}  // namespace
+
 void Client::run() {
     const uint64_t started_ms = net::monotonic_millis();
     bool screenshot_taken = false;
@@ -1018,6 +1034,27 @@ void Client::run() {
             break;
         }
 #endif
+        // While a picture is streaming, wait out most of the refresh first,
+        // so everything below -- input, network, decode, draw -- happens just
+        // before the refresh the result is shown at, rather than just after
+        // the one before it. See FrameDelay.
+        if (foreground_ && state_ == State::Playing) {
+            const uint64_t wait = frame_delay_.wait_us();
+            if (wait > 0) {
+                std::this_thread::sleep_for(std::chrono::microseconds(wait));
+            }
+            if (frame_delay_.active() != frame_delay_said_) {
+                frame_delay_said_ = frame_delay_.active();
+                log_info(frame_delay_said_
+                             ? "drawing each frame just before the display's refresh (every " +
+                                   std::to_string(frame_delay_.period_us() / 100 / 10.0).substr(0, 4) +
+                                   "ms), waiting " + std::to_string(wait / 1000) +
+                                   "ms first so the newest picture is the one shown"
+                             : "no longer waiting before each frame: the display's refresh is "
+                               "not steady enough to aim at");
+            }
+        }
+        const uint64_t pass_began_us = steady_micros();
         const uint64_t now = net::monotonic_millis();
         // Where a slow pass went -- see report_slow_pass().
         PassTimes pass;
@@ -1268,7 +1305,11 @@ void Client::run() {
                 screenshot_taken =
                     write_screenshot(output_width_, output_height_, options_.screenshot_path);
             }
+            const uint64_t swap_began_us = steady_micros();
+            frame_delay_.worked(swap_began_us - pass_began_us);
             SDL_GL_SwapWindow(gl_.window);
+            const uint64_t swap_done_us = steady_micros();
+            frame_delay_.presented(swap_done_us, swap_done_us - swap_began_us);
             pass.swap_done = net::monotonic_millis();
             session_.note_frame_drawn();
             report_slow_pass(pass);
