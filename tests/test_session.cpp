@@ -2941,6 +2941,94 @@ void test_switching_codec_mid_game_keeps_the_picture_right() {
     host.stop();
 }
 
+// Wifi loses a datagram here and there, and a 720p frame is dozens of them.
+// Each lost piece used to lose the whole frame: the picture held, a keyframe
+// was asked for -- dozens more pieces that could lose one just the same --
+// and an Apple TV froze for seconds at a time. The recovery pieces sent with
+// each video frame put a lost piece back on the spot, so the picture keeps
+// moving and nothing has to be asked for.
+void test_a_lost_piece_does_not_lose_the_frame() {
+    if (!video::have_ffmpeg()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Apple TV", ScreenId::Top, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    if (!host.companion_accepts_video()) {
+        test::skip("the far end cannot decode video");
+        companion.disconnect();
+        host.stop();
+        return;
+    }
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 720;
+    uint64_t serial = 1;
+    std::vector<uint32_t> latest;
+    const auto send = [&](int frame) {
+        latest = moving_picture(kWidth, kHeight, frame, PixelChannelOrder::XrgbBytes);
+        HostSession::ScreenPixels top;
+        top.pixels = latest.data();
+        top.width = kWidth;
+        top.height = kHeight;
+        top.stride_pixels = kWidth;
+        host.publish_screens(top, HostSession::ScreenPixels(), serial++);
+        spin(host, companion, [] { return false; }, 16);
+    };
+    // Settled first, with nothing lost: the stream's own opening keyframe.
+    for (int frame = 0; frame < 20; ++frame) send(frame);
+    spin(host, companion, [&] { return companion.screen_pixels(ScreenId::Top).serial == serial - 1; });
+    CHECK(companion.screen_is_video_for_test(ScreenId::Top));
+    const unsigned asked_before = host.keyframes_asked_for_test();
+
+    // Then one datagram in forty lost, for two seconds of play.
+    companion.lose_one_piece_in_for_test(40);
+    for (int frame = 20; frame < 140; ++frame) send(frame);
+    companion.lose_one_piece_in_for_test(0);
+
+    CHECK_MSG(companion.pieces_rebuilt_for_test() > 0,
+              "nothing was lost, so this says nothing about putting it back");
+    CHECK_MSG(host.keyframes_asked_for_test() == asked_before,
+              "a keyframe was still asked for " +
+                  std::to_string(host.keyframes_asked_for_test() - asked_before) +
+                  " times over pieces the recovery pieces should have put back");
+    const bool caught_up = spin(host, companion, [&] {
+        return companion.screen_pixels(ScreenId::Top).serial == serial - 1;
+    });
+    CHECK_MSG(caught_up, "the picture stopped at frame " +
+                             std::to_string(companion.screen_pixels(ScreenId::Top).serial) +
+                             " of " + std::to_string(serial - 1));
+    if (caught_up) {
+        const PictureError off = picture_error(companion.screen_pixels(ScreenId::Top), latest,
+                                               PixelChannelOrder::XrgbBytes);
+        CHECK_MSG(off.mean <= 6.0 && off.badly_off <= 0.02,
+                  "the picture after the losses is wrong (average error " +
+                      std::to_string(off.mean) + ")");
+    }
+    companion.disconnect();
+    host.stop();
+}
+
 void test_the_in_flight_window_covers_the_delay_this_link_shows() {
     constexpr double at_60fps = 16.7;
 
@@ -3853,6 +3941,7 @@ int main() {
     test_a_session_picks_the_codec_by_itself();
     test_a_quit_from_the_companion_closes_it_too();
     test_switching_codec_mid_game_keeps_the_picture_right();
+    test_a_lost_piece_does_not_lose_the_frame();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

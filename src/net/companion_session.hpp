@@ -413,6 +413,10 @@ bool lateness_was_the_links(double link_delay_ms, uint64_t period_ms);
 // The tail of the once-a-second latency line: how many pictures were shown
 // late, and which end each was late at. Empty when none were.
 std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_late);
+// The rest of that line: pictures shown this second, and what was lost on the
+// way -- see its definition.
+std::string loss_summary(uint64_t pictures, uint64_t frames_lost, uint64_t pieces_rebuilt,
+                         uint64_t passed_over);
 
 // How far to advance the pacing clock after showing `shown` frames.
 //
@@ -605,6 +609,13 @@ public:
     // had eaten it -- the one kind of loss a loopback link never has --
     // while everything else, acks included, carries on.
     void drop_frames_for_test(bool drop) { dropping_frames_for_test_ = drop; }
+    // One frame datagram in every `every` lost, the way wifi loses them: a
+    // piece here and there rather than whole frames. Zero stops it.
+    uint64_t pieces_rebuilt_for_test() const { return pieces_rebuilt_total_; }
+    void lose_one_piece_in_for_test(unsigned every) {
+        piece_loss_every_for_test_ = every;
+        pieces_seen_for_test_ = 0;
+    }
     // Whether that screen is still waiting on a picture that stands on its
     // own. Goes back to false when one actually arrives.
     // Stands in for a device slow enough that turning frames into pictures
@@ -768,6 +779,9 @@ private:
         // carry zero payload bytes, which must not read as "not received yet"
         // and stall a reassembly that is otherwise already complete.
         std::vector<bool> received;
+        // The recovery pieces that came with it -- see build_frame_parity().
+        std::vector<std::vector<uint8_t>> parity;
+        std::vector<bool> parity_received;
     };
     void handle_frame_fragment(const uint8_t* payload, std::size_t payload_size);
     // The newest frame put together whole for each screen. A piece of an older
@@ -779,6 +793,10 @@ private:
     // The same serial again is let through: it is how the host repairs a lost
     // picture while the game is paused.
     bool host_quit_for_this_device_ = false;
+    // Pieces of frames put back from their recovery pieces this second -- see
+    // build_frame_parity().
+    unsigned stats_fragments_recovered_ = 0;
+    uint64_t pieces_rebuilt_total_ = 0;
     uint64_t completed_serial_top_ = 0;
     uint64_t completed_serial_bottom_ = 0;
     // Notices frames that left the host and never got here, from the gap they
@@ -993,6 +1011,8 @@ private:
     // When an ack last went out, new or repeated.
     uint64_t last_ack_ms_ = 0;
     bool dropping_frames_for_test_ = false;
+    unsigned piece_loss_every_for_test_ = 0;
+    unsigned pieces_seen_for_test_ = 0;
     uint64_t received_serial_ = 0;
 
     // When the next frame is due on screen, and how far apart frames are

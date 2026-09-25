@@ -562,11 +562,17 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     // headroom for larger consoles this app plays later rather than needing
     // to be raised again the next time one arrives.
     constexpr uint16_t kMaxFrameDimension = 4096;
+    // A video frame's recovery pieces are numbered on past its own -- see
+    // build_frame_parity().
+    const std::size_t parity_count = header.encoding == FrameEncoding::H264
+                                         ? frame_parity_count(header.fragment_count)
+                                         : 0;
     if (header.width == 0 || header.height == 0 || header.width > kMaxFrameDimension ||
         header.height > kMaxFrameDimension || header.fragment_count == 0 ||
-        header.fragment_index >= header.fragment_count) {
+        header.fragment_index >= header.fragment_count + parity_count) {
         return;  // not worth ending a session over -- see the class comment
     }
+    const bool is_parity = header.fragment_index >= header.fragment_count;
 
     // Older than a picture this screen already has whole: see
     // completed_serial_top_. Only a little older, though -- far enough back is
@@ -577,6 +583,12 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     const uint64_t completed =
         (header.screen == ScreenId::Top) ? completed_serial_top_ : completed_serial_bottom_;
     if (header.serial < completed && completed - header.serial <= kStragglerWindow) {
+        return;
+    }
+    // A recovery piece for a frame already whole, which is the ordinary case:
+    // they are sent after the pieces they cover. Taken as the start of a new
+    // reassembly it would never complete, and read as a lost frame.
+    if (is_parity && header.serial == completed) {
         return;
     }
 
@@ -630,6 +642,8 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         slot.sent_at_ms = header.sent_at_ms;
         slot.fragments.resize(header.fragment_count);
         slot.received.assign(header.fragment_count, false);
+        slot.parity.assign(parity_count, std::vector<uint8_t>());
+        slot.parity_received.assign(parity_count, false);
     } else if (!same_transmission) {
         return;
     }
@@ -647,10 +661,23 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     if (static_cast<int32_t>(header.sent_at_ms - slot.sent_at_ms) > 0) {
         slot.sent_at_ms = header.sent_at_ms;
     }
-    if (!slot.received[header.fragment_index]) {
+    if (is_parity) {
+        const std::size_t group = header.fragment_index - header.fragment_count;
+        if (group < slot.parity.size() && !slot.parity_received[group]) {
+            slot.parity[group].assign(chunk, chunk + chunk_size);
+            slot.parity_received[group] = true;
+        }
+    } else if (!slot.received[header.fragment_index]) {
         slot.fragments[header.fragment_index].assign(chunk, chunk + chunk_size);
         slot.received[header.fragment_index] = true;
         ++slot.received_count;
+    }
+    if (slot.received_count < slot.fragment_count && !slot.parity.empty()) {
+        const unsigned recovered =
+            recover_fragments(slot.fragments, slot.received, slot.parity, slot.parity_received);
+        slot.received_count += recovered;
+        stats_fragments_recovered_ += recovered;
+        pieces_rebuilt_total_ += recovered;
     }
     if (slot.received_count < slot.fragment_count) {
         return;
@@ -951,6 +978,10 @@ void CompanionSession::poll(uint64_t now_ms) {
                 return;
             }
             if (session_token_ == 0 || token != session_token_) {
+                return;
+            }
+            if (piece_loss_every_for_test_ > 0 && type == MessageType::Frame &&
+                ++pieces_seen_for_test_ % piece_loss_every_for_test_ == 0) {
                 return;
             }
             if (dropping_frames_for_test_ && type == MessageType::Frame) {
@@ -2030,6 +2061,28 @@ std::string late_pictures_summary(unsigned held_up_on_the_way, unsigned sent_lat
     return summary;
 }
 
+// Whether the picture moved this second, and what went missing on the way.
+// A freeze is a second with few pictures in it, and this says why: frames
+// lost, pieces of frames put back from their recovery pieces, and frames
+// passed over while waiting for one that stands on its own. The loss half is
+// left out on a second with none, which is the ordinary second.
+std::string loss_summary(uint64_t pictures, uint64_t frames_lost, uint64_t pieces_rebuilt,
+                         uint64_t passed_over) {
+    std::string summary = "; " + std::to_string(pictures) + " pictures this second";
+    if (frames_lost > 0) {
+        summary += ", " + std::to_string(frames_lost) +
+                   (frames_lost == 1 ? " frame lost" : " frames lost");
+    }
+    if (pieces_rebuilt > 0) {
+        summary += ", " + std::to_string(pieces_rebuilt) +
+                   (pieces_rebuilt == 1 ? " lost piece rebuilt" : " lost pieces rebuilt");
+    }
+    if (passed_over > 0) {
+        summary += ", " + std::to_string(passed_over) + " passed over waiting for a keyframe";
+    }
+    return summary;
+}
+
 void CompanionSession::report_stream(uint64_t now_ms) {
     if (stats_at_ms_ == 0) {
         stats_at_ms_ = now_ms;
@@ -2073,7 +2126,9 @@ void CompanionSession::report_stream(uint64_t now_ms) {
              "ms a frame turning them into pictures, and this device's loop comes round every " +
              std::to_string(typical_poll_gap_ms_) + "ms at its quickest" +
              late_pictures_summary(stats_starved_, stats_late_from_host_) +
-             (stats_shed_ > 0 ? "; let one picture go unseen to catch up" : ""));
+             (stats_shed_ > 0 ? "; let one picture go unseen to catch up" : "") +
+             loss_summary(stats_decoded_ * 1000 / elapsed, stats_frames_lost_,
+                          stats_fragments_recovered_, stats_frames_skipped_));
     stats_shed_ = 0;
     // The number the rest of the line adds up to, for anything played by
     // touch or by feel: from an input leaving this device to the first
@@ -2117,6 +2172,7 @@ void CompanionSession::report_stream(uint64_t now_ms) {
     stats_decodes_ = 0;
     stats_frames_lost_ = 0;
     stats_frames_skipped_ = 0;
+    stats_fragments_recovered_ = 0;
 }
 
 // How long each frame should be on screen: what the host is producing at,

@@ -652,6 +652,37 @@ constexpr std::size_t kFrameFragmentHeaderBytes = 25;
 // sixty-five thousand frames of loss.
 unsigned frames_missing_between(uint16_t last_seen, uint16_t arrived);
 
+// Recovery pieces for a video frame, so one lost datagram does not lose the
+// frame. Over wifi a datagram goes missing now and then, and a frame of eighty
+// of them -- a 720p keyframe -- has about even odds of losing one at a loss
+// rate of one in a hundred. Lost, the frame was gone: the picture held while
+// a new keyframe was asked for, which could lose a piece just the same. That
+// was the seconds-long freezes on an Apple TV.
+//
+// After a frame's own `fragment_count` pieces come frame_parity_count() more,
+// numbered on from fragment_count. Parity piece p is the XOR of every piece i
+// with i % parity_count == p, each zero-padded to the longest -- interleaved,
+// so a run of losses up to parity_count long takes at most one piece from each
+// group, and each group's parity puts its one back. A companion from before
+// this sees a fragment_index past fragment_count and drops it unread.
+//
+// A parity payload is the length of the frame's last piece (u16), then the
+// XOR: the only length a lost piece cannot be told from its neighbours.
+constexpr std::size_t kParityPrefixBytes = 2;
+constexpr std::size_t kFragmentsPerParity = 8;
+std::size_t frame_parity_count(std::size_t fragment_count);
+// The parity payloads for `payload` cut into `fragment_size` pieces.
+std::vector<std::vector<uint8_t>> build_frame_parity(const std::vector<uint8_t>& payload,
+                                                     std::size_t fragment_size);
+// Puts back every piece its group's parity can: a group missing exactly one,
+// with its parity here. `fragments`/`received` are the frame's own pieces;
+// `parity`/`parity_received` are frame_parity_count() long. Returns how many
+// came back.
+unsigned recover_fragments(std::vector<std::vector<uint8_t>>& fragments,
+                           std::vector<bool>& received,
+                           const std::vector<std::vector<uint8_t>>& parity,
+                           const std::vector<bool>& parity_received);
+
 // The payload of a KeyframeRequest: which screen went wrong, and the serial
 // the far end last managed to put together whole (zero if it never has). The
 // serial is only used to tell a request that crossed with a keyframe already

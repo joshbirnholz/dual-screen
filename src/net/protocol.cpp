@@ -1110,6 +1110,85 @@ bool decode_frame_fragment(const uint8_t* data, std::size_t size, FrameFragmentH
     return true;
 }
 
+std::size_t frame_parity_count(std::size_t fragment_count) {
+    return fragment_count == 0 ? 0 : (fragment_count + kFragmentsPerParity - 1) / kFragmentsPerParity;
+}
+
+std::vector<std::vector<uint8_t>> build_frame_parity(const std::vector<uint8_t>& payload,
+                                                     std::size_t fragment_size) {
+    std::vector<std::vector<uint8_t>> parity;
+    if (payload.empty() || fragment_size == 0) {
+        return parity;
+    }
+    const std::size_t count = (payload.size() + fragment_size - 1) / fragment_size;
+    const std::size_t groups = frame_parity_count(count);
+    const std::size_t last_size = payload.size() - (count - 1) * fragment_size;
+    parity.assign(groups, std::vector<uint8_t>());
+    for (std::size_t group = 0; group < groups; ++group) {
+        std::vector<uint8_t>& out = parity[group];
+        out.push_back(static_cast<uint8_t>(last_size & 0xFFu));
+        out.push_back(static_cast<uint8_t>((last_size >> 8) & 0xFFu));
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        std::vector<uint8_t>& out = parity[index % groups];
+        const std::size_t offset = index * fragment_size;
+        const std::size_t size = std::min(fragment_size, payload.size() - offset);
+        if (out.size() < kParityPrefixBytes + size) {
+            out.resize(kParityPrefixBytes + size, 0);
+        }
+        for (std::size_t byte = 0; byte < size; ++byte) {
+            out[kParityPrefixBytes + byte] ^= payload[offset + byte];
+        }
+    }
+    return parity;
+}
+
+unsigned recover_fragments(std::vector<std::vector<uint8_t>>& fragments,
+                           std::vector<bool>& received,
+                           const std::vector<std::vector<uint8_t>>& parity,
+                           const std::vector<bool>& parity_received) {
+    const std::size_t count = fragments.size();
+    const std::size_t groups = parity.size();
+    if (count == 0 || groups == 0 || received.size() != count ||
+        parity_received.size() != groups) {
+        return 0;
+    }
+    unsigned recovered = 0;
+    for (std::size_t group = 0; group < groups; ++group) {
+        if (!parity_received[group] || parity[group].size() < kParityPrefixBytes) continue;
+        std::size_t missing = count;
+        unsigned missing_count = 0;
+        for (std::size_t index = group; index < count; index += groups) {
+            if (!received[index]) {
+                missing = index;
+                ++missing_count;
+            }
+        }
+        if (missing_count != 1) continue;
+        const std::vector<uint8_t>& bytes = parity[group];
+        const std::size_t span = bytes.size() - kParityPrefixBytes;
+        const std::size_t last_size =
+            static_cast<std::size_t>(bytes[0]) | (static_cast<std::size_t>(bytes[1]) << 8);
+        // Every piece but the last is full length, which is the longest in
+        // any group that has one; the last says its own.
+        const std::size_t size = missing == count - 1 ? last_size : span;
+        if (size > span) continue;  // not a parity this frame could have made
+        std::vector<uint8_t> rebuilt(bytes.begin() + kParityPrefixBytes, bytes.end());
+        for (std::size_t index = group; index < count; index += groups) {
+            if (index == missing) continue;
+            const std::vector<uint8_t>& piece = fragments[index];
+            for (std::size_t byte = 0; byte < piece.size() && byte < span; ++byte) {
+                rebuilt[byte] ^= piece[byte];
+            }
+        }
+        rebuilt.resize(size);
+        fragments[missing] = std::move(rebuilt);
+        received[missing] = true;
+        ++recovered;
+    }
+    return recovered;
+}
+
 unsigned frames_missing_between(uint16_t last_seen, uint16_t arrived) {
     const auto step = static_cast<int16_t>(arrived - last_seen);
     if (step <= 0) {

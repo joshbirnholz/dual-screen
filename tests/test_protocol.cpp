@@ -663,6 +663,78 @@ void test_rumble_can_name_one_pad() {
     CHECK_EQ(received_ping.ping_ms, 180);
 }
 
+// A video frame's recovery pieces put back any one lost piece per group, and
+// a run of losses as long as there are groups -- which is how wifi loses
+// them. Two from the same group is more than parity can do, and says so by
+// leaving the piece missing rather than making one up.
+void test_lost_pieces_come_back_from_parity() {
+    constexpr std::size_t kPiece = 100;
+    for (const std::size_t size : {std::size_t{37}, std::size_t{100}, std::size_t{450},
+                                   std::size_t{1650}, std::size_t{8000}}) {
+        std::vector<uint8_t> payload(size);
+        for (std::size_t index = 0; index < size; ++index) {
+            payload[index] = static_cast<uint8_t>((index * 131 + 7) & 0xFFu);
+        }
+        const std::size_t count = (size + kPiece - 1) / kPiece;
+        const std::vector<std::vector<uint8_t>> parity = build_frame_parity(payload, kPiece);
+        CHECK_EQ(parity.size(), frame_parity_count(count));
+        const auto pieces = [&] {
+            std::vector<std::vector<uint8_t>> out(count);
+            for (std::size_t index = 0; index < count; ++index) {
+                const std::size_t offset = index * kPiece;
+                out[index].assign(payload.begin() + static_cast<long>(offset),
+                                  payload.begin() + static_cast<long>(std::min(size, offset + kPiece)));
+            }
+            return out;
+        };
+        const std::vector<bool> all_parity(parity.size(), true);
+
+        // Each single piece, the last (short) one included.
+        for (std::size_t lost = 0; lost < count; ++lost) {
+            std::vector<std::vector<uint8_t>> fragments = pieces();
+            std::vector<bool> received(count, true);
+            fragments[lost].clear();
+            received[lost] = false;
+            CHECK_EQ(recover_fragments(fragments, received, parity, all_parity), 1u);
+            CHECK(received[lost]);
+            CHECK(fragments[lost] == pieces()[lost]);
+        }
+
+        // A run as long as there are groups, anywhere in the frame.
+        const std::size_t run = parity.size();
+        for (std::size_t start = 0; start + run <= count; ++start) {
+            std::vector<std::vector<uint8_t>> fragments = pieces();
+            std::vector<bool> received(count, true);
+            for (std::size_t lost = start; lost < start + run; ++lost) {
+                fragments[lost].clear();
+                received[lost] = false;
+            }
+            CHECK_EQ(recover_fragments(fragments, received, parity, all_parity),
+                     static_cast<unsigned>(run));
+            CHECK(fragments == pieces());
+        }
+
+        // Two from one group: not put back, and nothing invented.
+        if (count > parity.size()) {
+            std::vector<std::vector<uint8_t>> fragments = pieces();
+            std::vector<bool> received(count, true);
+            received[0] = false;
+            received[parity.size()] = false;
+            CHECK_EQ(recover_fragments(fragments, received, parity, all_parity), 0u);
+            CHECK(!received[0] && !received[parity.size()]);
+        }
+
+        // Nor without the parity itself.
+        {
+            std::vector<std::vector<uint8_t>> fragments = pieces();
+            std::vector<bool> received(count, true);
+            received[0] = false;
+            const std::vector<bool> none(parity.size(), false);
+            CHECK_EQ(recover_fragments(fragments, received, parity, none), 0u);
+        }
+    }
+}
+
 // A Bye can say the player quit from the companion, so it closes its own app
 // too. An ordinary one says nothing -- and is still empty, so a companion from
 // before this reads either the way it always did.
@@ -1368,6 +1440,7 @@ void test_a_gap_in_sent_frames_is_loss() {
 }
 
 int main() {
+    test_lost_pieces_come_back_from_parity();
     test_a_bye_can_say_quit_too();
     test_hello_round_trip();
     test_welcome_and_session_round_trip();

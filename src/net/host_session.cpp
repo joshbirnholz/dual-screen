@@ -187,8 +187,10 @@ constexpr uint64_t kMinLostAfterMs = 100;
 // kMaxMediaDatagramBytes for why the datagram itself is capped where it is.
 constexpr std::size_t kMediaHeaderBytes = 9;    // u64 session_token + u8 type
 constexpr std::size_t kFragmentHeaderBytes = kFrameFragmentHeaderBytes;
+// Less the parity prefix, so a recovery piece -- the prefix and a full
+// piece's worth of XOR -- fits in the same datagram as the pieces it covers.
 constexpr std::size_t kMaxFragmentPayload =
-    kMaxMediaDatagramBytes - kMediaHeaderBytes - kFragmentHeaderBytes;
+    kMaxMediaDatagramBytes - kMediaHeaderBytes - kFragmentHeaderBytes - kParityPrefixBytes;
 
 // Audio's own fixed header inside encode_audio_payload(): u8 stream + u32
 // sample_rate + u32 sample count.
@@ -1718,6 +1720,23 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         media_produced_window_bytes_ += out.size();
         pending_media_sends_.push_back(std::move(out));
         offset += chunk;
+    }
+    // The recovery pieces, straight after -- see build_frame_parity(). Video
+    // only: a lost piece of a video frame costs a keyframe and a frozen
+    // picture while it is asked for, where a lost tile frame is simply
+    // covered by the next one, which is built against what was confirmed.
+    if (frame.encoding == FrameEncoding::H264) {
+        const std::vector<std::vector<uint8_t>> parity =
+            build_frame_parity(frame.payload, kMaxFragmentPayload);
+        for (std::size_t group = 0; group < parity.size(); ++group) {
+            header.fragment_index = static_cast<uint16_t>(header.fragment_count + group);
+            std::vector<uint8_t> out;
+            encode_media_header(session_token_, MessageType::Frame, out);
+            encode_frame_fragment(header, parity[group].data(), parity[group].size(), out);
+            queued_bytes += out.size();
+            media_produced_window_bytes_ += out.size();
+            pending_media_sends_.push_back(std::move(out));
+        }
     }
     // How even the frames are, which decides whether the link sees a steady
     // trickle or a run of lumps -- see the report for why that matters.
