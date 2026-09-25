@@ -11,6 +11,7 @@
 
 #include "render/gl_loader.hpp"
 #include "render/menu_backdrop.hpp"
+#include "render/quad_renderer.hpp"
 #include "render/texture.hpp"
 
 #include <cstdlib>
@@ -545,6 +546,61 @@ void test_the_menu_backdrop_leaves_the_windows_framebuffer_bound() {
     window_colour.destroy();
 }
 
+// Every quad of a frame goes in a slot of its own in the vertex buffer, and
+// the buffer starts afresh when it fills: more quads than it holds, in one
+// frame, all still land where they were put -- the ones before the refill and
+// the ones after.
+void test_a_frame_of_many_quads_draws_every_one() {
+    GlFixture gl_fixture;
+    if (!gl_fixture.start()) {
+        test::skip("no OpenGL 3.3 context available");
+        return;
+    }
+    constexpr int kSize = 100;
+    Texture target;
+    target.allocate_rgba(kSize, kSize);
+    GLuint framebuffer = 0;
+    gl::GenFramebuffers(1, &framebuffer);
+    gl::BindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    gl::FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target.id(), 0);
+
+    QuadRenderer quads;
+    std::string error;
+    CHECK_MSG(quads.initialize(&error), error);
+    quads.begin_frame(kSize, kSize);
+    quads.clear(Color{0.0f, 0.0f, 0.0f, 1.0f});
+    // Ten thousand one-pixel quads across the whole picture, row by row, red
+    // on the left half and blue on the right: twice round the buffer and more.
+    for (int y = 0; y < kSize; ++y) {
+        for (int x = 0; x < kSize; ++x) {
+            const Color colour = x < kSize / 2 ? Color{1.0f, 0.0f, 0.0f, 1.0f}
+                                               : Color{0.0f, 0.0f, 1.0f, 1.0f};
+            quads.draw_solid(PixelRect{static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f},
+                             colour);
+        }
+    }
+    std::vector<uint8_t> rgba(static_cast<std::size_t>(kSize) * kSize * 4);
+    gl::ReadPixels(0, 0, kSize, kSize, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    int wrong = 0;
+    for (int y = 0; y < kSize; ++y) {
+        for (int x = 0; x < kSize; ++x) {
+            const uint8_t* pixel = rgba.data() + (static_cast<std::size_t>(y) * kSize + x) * 4;
+            const bool red = x < kSize / 2;
+            if ((red && (pixel[0] < 200 || pixel[2] > 50)) ||
+                (!red && (pixel[2] < 200 || pixel[0] > 50))) {
+                ++wrong;
+            }
+        }
+    }
+    CHECK_MSG(wrong == 0, std::to_string(wrong) + " of " + std::to_string(kSize * kSize) +
+                              " quads did not land where they were drawn");
+    CHECK(gl::take_error().empty());
+    quads.shutdown();
+    gl::BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl::DeleteFramebuffers(1, &framebuffer);
+    target.destroy();
+}
+
 // The same frontend against a core shaped like a 3DS: two screens of different
 // widths, the narrower one centred under the wider, drawn on the GPU rather
 // than handed over as pixels. Every step from the core option through the
@@ -991,6 +1047,7 @@ int main() {
     test_a_ds_game_takes_a_rumble_pak();
     test_a_screen_texture_follows_its_frames_from_one_form_to_another();
     test_the_menu_backdrop_leaves_the_windows_framebuffer_bound();
+    test_a_frame_of_many_quads_draws_every_one();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
     test_render_scale_only_changes_the_resolution();

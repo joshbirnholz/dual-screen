@@ -107,6 +107,12 @@ private:
 
     GLuint program_ = 0;
     GLuint vertex_buffer_ = 0;
+    // Which slot of the vertex buffer the next quad goes in -- see
+    // kQuadsPerBuffer in the definition.
+    std::size_t next_quad_ = 0;
+    // Fresh storage for the buffer, so nothing written from here on has to
+    // wait for a draw the GPU has not done yet.
+    void orphan_vertex_buffer();
     GLuint vertex_array_ = 0;
     GLint attr_position_ = -1;
     GLint attr_texcoord_ = -1;

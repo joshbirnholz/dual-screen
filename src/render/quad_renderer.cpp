@@ -205,13 +205,37 @@ bool QuadRenderer::initialize(std::string* error) {
     }
 
     gl::GenBuffers(1, &vertex_buffer_);
-    gl::BindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
-    gl::BufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sizeof(float) * 24), nullptr, GL_DYNAMIC_DRAW);
-    gl::BindBuffer(GL_ARRAY_BUFFER, 0);
+    orphan_vertex_buffer();
 
     // Blend state is not set here: begin_frame establishes it every frame,
     // because a core sharing this context will have changed it by then.
     return true;
+}
+
+// How many quads the vertex buffer holds before it is started afresh.
+//
+// Each quad used to be written over the one before it, in one six-vertex
+// buffer. A desktop driver copies behind the scenes to make that cheap; the
+// OpenGL ES on an iPhone, iPad or Apple TV, which runs on Metal, instead waits
+// for the GPU to finish the draw still reading the old contents -- once per
+// quad. A screen of text is hundreds of quads, one a glyph, and an Apple TV's
+// main menu took 80 to 90ms a frame at 4K doing it, against 1ms for a game
+// picture of one quad. Now every quad of a frame has its own slot, and the
+// buffer gets new storage at the start of each frame (or when it fills), so
+// nothing ever writes where the GPU may still be reading.
+constexpr std::size_t kQuadsPerBuffer = 4096;
+constexpr std::size_t kFloatsPerQuad = 24;
+
+void QuadRenderer::orphan_vertex_buffer() {
+    if (vertex_buffer_ == 0 || gl::BufferData == nullptr) {
+        return;
+    }
+    gl::BindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
+    gl::BufferData(GL_ARRAY_BUFFER,
+                   static_cast<GLsizeiptr>(sizeof(float) * kFloatsPerQuad * kQuadsPerBuffer),
+                   nullptr, GL_STREAM_DRAW);
+    gl::BindBuffer(GL_ARRAY_BUFFER, 0);
+    next_quad_ = 0;
 }
 
 void QuadRenderer::shutdown() {
@@ -236,6 +260,7 @@ void QuadRenderer::begin_frame(int output_width, int output_height) {
         return;
     }
     gl::Viewport(0, 0, output_width, output_height);
+    orphan_vertex_buffer();
 
     // Every frame, not once at startup: a GPU-rendering core shares this
     // context and leaves its own state behind, so nothing set in initialize()
@@ -358,8 +383,13 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
         }
     }
 
+    static_assert(sizeof(vertices) == sizeof(float) * kFloatsPerQuad, "one quad's vertices");
+    if (next_quad_ >= kQuadsPerBuffer) {
+        orphan_vertex_buffer();
+    }
     gl::BindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
-    gl::BufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(sizeof(vertices)), vertices);
+    gl::BufferSubData(GL_ARRAY_BUFFER, static_cast<GLintptr>(next_quad_ * sizeof(vertices)),
+                      static_cast<GLsizeiptr>(sizeof(vertices)), vertices);
 
     const GLuint position = static_cast<GLuint>(attr_position_);
     const GLuint texcoord = static_cast<GLuint>(attr_texcoord_);
@@ -370,7 +400,8 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     gl::VertexAttribPointer(texcoord, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
                             reinterpret_cast<const void*>(2 * sizeof(float)));
 
-    gl::DrawArrays(GL_TRIANGLES, 0, 6);
+    gl::DrawArrays(GL_TRIANGLES, static_cast<GLint>(next_quad_ * 6), 6);
+    ++next_quad_;
 
     gl::DisableVertexAttribArray(position);
     gl::DisableVertexAttribArray(texcoord);
