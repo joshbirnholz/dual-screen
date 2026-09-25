@@ -79,6 +79,11 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // Whatever this device settled on for the last host is not a judgement
     // about the next one, which may be sending a quite different picture.
     display_scale_ = 1.0;
+    link_scale_ = 1.0;
+    link_trouble_ = 0;
+    link_calm_windows_ = 0;
+    link_judged_at_ms_ = 0;
+    link_stepped_at_ms_ = 0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
     adapt_lock_micros_ = 0;
@@ -217,6 +222,11 @@ void CompanionSession::disconnect() {
     // Whatever this device settled on for the last host is not a judgement
     // about the next one, which may be sending a quite different picture.
     display_scale_ = 1.0;
+    link_scale_ = 1.0;
+    link_trouble_ = 0;
+    link_calm_windows_ = 0;
+    link_judged_at_ms_ = 0;
+    link_stepped_at_ms_ = 0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
     adapt_lock_micros_ = 0;
@@ -299,6 +309,11 @@ void CompanionSession::fail(const std::string& reason) {
     // Whatever this device settled on for the last host is not a judgement
     // about the next one, which may be sending a quite different picture.
     display_scale_ = 1.0;
+    link_scale_ = 1.0;
+    link_trouble_ = 0;
+    link_calm_windows_ = 0;
+    link_judged_at_ms_ = 0;
+    link_stepped_at_ms_ = 0;
     adapt_decode_ms_ = 0;
     adapt_readback_micros_ = 0;
     adapt_lock_micros_ = 0;
@@ -588,7 +603,27 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     // straggler of the first sending. Before everything below, which would
     // take it for a piece of a frame already given up on.
     FrameRepair& repair = (header.screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
-    if (repair.active && header.serial == repair.frame.serial &&
+    if (repair.active && repair.whole_frame && !repair.frame.active &&
+        header.sent_index == repair.sent_index) {
+        // The first piece of a frame lost outright: now it can be started.
+        FrameReassembly& started = repair.frame;
+        started.active = true;
+        started.serial = header.serial;
+        started.screen = header.screen;
+        started.encoding = header.encoding;
+        started.width = header.width;
+        started.height = header.height;
+        started.fragment_count = header.fragment_count;
+        started.sent_at_ms = header.sent_at_ms;
+        started.keyframe = header.keyframe;
+        started.sent_index = header.sent_index;
+        started.fragments.resize(header.fragment_count);
+        started.received.assign(header.fragment_count, false);
+        started.parity.assign(parity_count, std::vector<uint8_t>());
+        started.parity_received.assign(parity_count, false);
+    }
+    if (repair.active && repair.frame.active && header.sent_index == repair.frame.sent_index &&
+        header.serial == repair.frame.serial &&
         header.fragment_count == repair.frame.fragment_count) {
         FrameReassembly& held = repair.frame;
         if (is_parity) {
@@ -634,8 +669,21 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     }
 
     const unsigned missing = note_frames_that_never_arrived(header);
-    if (missing > 0) {
+    if (missing == 1 && header.encoding == FrameEncoding::H264 && !repair.active) {
+        // One frame lost outright -- a small one, taken whole by a burst.
+        // Asked for by the place it had in the run, since nothing else about
+        // it ever arrived; the frame this piece belongs to waits behind it.
+        const uint64_t now = monotonic_millis();
+        repair.active = true;
+        repair.whole_frame = true;
+        repair.sent_index = static_cast<uint16_t>(header.sent_index - 1);
+        repair.frame = FrameReassembly();
+        repair.started_ms = now;
+        repair.held.clear();
+        ask_for_repair(repair, now);
+    } else if (missing > 0) {
         stats_frames_lost_ += missing;
+        link_trouble_ += missing;
         ((header.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
     }
 
@@ -654,8 +702,9 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     // started arriving, most likely) -- mixing fragments from the two would
     // reassemble into bytes that were never one real frame to begin with,
     // which is corruption a decoder has no way to recover from.
-    const bool same_transmission =
-        slot.active && header.serial == slot.serial && header.fragment_count == slot.fragment_count;
+    const bool same_transmission = slot.active && header.serial == slot.serial &&
+                                   header.fragment_count == slot.fragment_count &&
+                                   header.sent_index == slot.sent_index;
     if (!same_transmission && (!slot.active || header.serial >= slot.serial)) {
         const std::size_t pieces_missing =
             slot.active ? slot.fragment_count - slot.received_count : 0;
@@ -666,6 +715,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             // keyframe is a frozen picture and dozens of pieces more to lose.
             const uint64_t now = monotonic_millis();
             repair.active = true;
+            repair.sent_index = slot.sent_index;
             repair.frame = std::move(slot);
             repair.started_ms = now;
             repair.held.clear();
@@ -681,6 +731,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
             // decoder handed a stream with a hole in it mostly carries on
             // producing plausible-looking rubbish rather than failing.
             ++stats_frames_lost_;
+            ++link_trouble_;
             ((slot.screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) =
                 true;
         }
@@ -699,6 +750,7 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
         slot.parity.assign(parity_count, std::vector<uint8_t>());
         slot.parity_received.assign(parity_count, false);
         slot.keyframe = header.keyframe;
+        slot.sent_index = header.sent_index;
     } else if (!same_transmission) {
         return;
     }
@@ -764,7 +816,11 @@ constexpr uint64_t kRepairGiveUpMs = 90;
 
 void CompanionSession::ask_for_repair(FrameRepair& repair, uint64_t now_ms) {
     RepairRequestMessage request;
-    request.screen = repair.frame.screen;
+    request.screen = (&repair == &repair_top_) ? ScreenId::Top : ScreenId::Bottom;
+    // By its place in the run until something of it has arrived; after that,
+    // by name, for just what is still missing.
+    request.whole_frame = !repair.frame.active;
+    request.sent_index = repair.sent_index;
     request.serial = repair.frame.serial;
     for (std::size_t index = 0; index < repair.frame.received.size(); ++index) {
         if (!repair.frame.received[index]) {
@@ -779,12 +835,13 @@ void CompanionSession::ask_for_repair(FrameRepair& repair, uint64_t now_ms) {
 }
 
 void CompanionSession::finish_repair(FrameRepair& repair, bool repaired) {
+    const ScreenId screen = (&repair == &repair_top_) ? ScreenId::Top : ScreenId::Bottom;
     FrameRepair taken = std::move(repair);
     repair = FrameRepair();
-    const ScreenId screen = taken.frame.screen;
     if (repaired) {
         ++stats_frames_repaired_;
         ++frames_repaired_total_;
+        ++link_trouble_;
         // Whole now, so a late copy of one of its pieces -- the second
         // asking answered as well -- is a straggler, not a new frame.
         uint64_t& completed =
@@ -794,6 +851,7 @@ void CompanionSession::finish_repair(FrameRepair& repair, bool repaired) {
         // Lost after all: everything after it is built on a picture this end
         // never had, which is what a keyframe repairs.
         ++stats_frames_lost_;
+        ++link_trouble_;
         ((screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_) = true;
     }
     // Nothing shown here says anything about the link: these waited on the
@@ -825,6 +883,7 @@ void CompanionSession::check_repairs(uint64_t now_ms) {
             continue;
         }
         repair.active = true;
+        repair.sent_index = slot->sent_index;
         repair.frame = std::move(*slot);
         *slot = FrameReassembly();
         repair.started_ms = now_ms;
@@ -1344,6 +1403,7 @@ void CompanionSession::poll(uint64_t now_ms) {
     check_repairs(now_ms);
     ask_for_keyframes(now_ms);
     adapt_to_what_this_device_can_decode(now_ms);
+    adapt_to_the_link(monotonic_millis());
 
     // And said again every so often while nothing newer has come, which is
     // how the host learns that frames it sent a while ago are not coming: a
@@ -1879,8 +1939,9 @@ void CompanionSession::send_display_size() {
     }
     // Even numbers: the host encodes 4:2:0, which cannot represent an odd
     // dimension, and it would only round this down again itself.
-    const int width = std::max(2, static_cast<int>(wanted_display_width_ * display_scale_) & ~1);
-    const int height = std::max(2, static_cast<int>(wanted_display_height_ * display_scale_) & ~1);
+    const double scale = std::min(display_scale_, link_scale_);
+    const int width = std::max(2, static_cast<int>(wanted_display_width_ * scale) & ~1);
+    const int height = std::max(2, static_cast<int>(wanted_display_height_ * scale) & ~1);
     // Whatever cover was bought is about to stop being about anything.
     //
     // extra_hold_ms_ is delay this device bought itself after the picture ran
@@ -1911,6 +1972,86 @@ void CompanionSession::send_display_size() {
     request.display_width = static_cast<uint16_t>(std::clamp(width, 1, 65535));
     request.display_height = static_cast<uint16_t>(std::clamp(height, 1, 65535));
     send_request(request);
+}
+
+// Frames lost or repaired in one second that say the link is carrying more
+// than it can, and how many calm seconds in a row earn a larger picture back.
+// Slower up than down, like the decode side, so a session does not see-saw:
+// every step is a new stream, which starts with a keyframe.
+constexpr unsigned kLinkTroublePerWindow = 2;
+constexpr unsigned kLinkCalmWindowsToGrow = 5;
+// After a step, long enough for the new size to arrive and be judged on its
+// own rather than on the losses of the stream it replaced.
+constexpr uint64_t kLinkSettleMs = 2000;
+
+void CompanionSession::adapt_to_the_link(uint64_t now_ms) {
+    if (status_ != Status::Connected || wanted_display_width_ <= 0) {
+        return;
+    }
+    if (link_judged_at_ms_ == 0) {
+        link_judged_at_ms_ = now_ms;
+        link_trouble_ = 0;
+        return;
+    }
+    if (now_ms - link_judged_at_ms_ < kAdaptWindowMs) {
+        return;
+    }
+    const unsigned trouble = link_trouble_;
+    link_trouble_ = 0;
+    link_judged_at_ms_ = now_ms;
+    if (link_stepped_at_ms_ != 0 && now_ms - link_stepped_at_ms_ < kLinkSettleMs) {
+        return;
+    }
+    const double floor_scale = lowest_display_scale(wanted_display_width_);
+    if (trouble >= kLinkTroublePerWindow) {
+        link_calm_windows_ = 0;
+        // From the size pictures are arriving at, which on a big display is
+        // well under it: a fraction of a 4K panel is still larger than the
+        // 720p picture being sent, and would shrink nothing.
+        const double arrived = adapt_last_width_ > 0
+                                   ? scale_the_picture_arrived_at(adapt_last_width_,
+                                                                  adapt_last_height_,
+                                                                  wanted_display_width_,
+                                                                  wanted_display_height_)
+                                   : link_scale_;
+        const double from = std::min(link_scale_, arrived > 0.0 ? arrived : link_scale_);
+        const double smaller = std::max(floor_scale, from * kDisplayScaleStep);
+        if (smaller >= link_scale_ && link_scale_ <= floor_scale) {
+            return;  // as small as it goes
+        }
+        link_scale_ = smaller;
+        link_stepped_at_ms_ = now_ms;
+        log_info("the link lost or had to repair " + std::to_string(trouble) +
+                 " frames in a second, so asking for a smaller picture, " +
+                 std::to_string(static_cast<int>(link_scale_ * 100.0 + 0.5)) +
+                 "% of this device's display, to send fewer bytes");
+        send_display_size();
+        return;
+    }
+    if (trouble > 0 || link_scale_ >= 1.0) {
+        link_calm_windows_ = 0;
+        return;
+    }
+    if (++link_calm_windows_ < kLinkCalmWindowsToGrow) {
+        return;
+    }
+    link_calm_windows_ = 0;
+    // A cap the picture is already under -- the host sends it smaller than
+    // this anyway -- is not holding anything back, so it goes altogether.
+    const double arrived = adapt_last_width_ > 0
+                               ? scale_the_picture_arrived_at(adapt_last_width_, adapt_last_height_,
+                                                              wanted_display_width_,
+                                                              wanted_display_height_)
+                               : 0.0;
+    const double larger = link_scale_ / kDisplayScaleStep;
+    link_scale_ = (larger >= 1.0 || (arrived > 0.0 && arrived < link_scale_ * 0.9)) ? 1.0 : larger;
+    link_stepped_at_ms_ = now_ms;
+    log_info("the link has been calm for " + std::to_string(kLinkCalmWindowsToGrow) +
+             " seconds, so asking for a larger picture again" +
+             (link_scale_ >= 1.0 ? std::string(", as large as this device shows")
+                                 : ", " + std::to_string(static_cast<int>(link_scale_ * 100.0 + 0.5)) +
+                                       "% of its display"));
+    send_display_size();
 }
 
 void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_ms) {

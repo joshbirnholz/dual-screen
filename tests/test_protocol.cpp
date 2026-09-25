@@ -749,6 +749,19 @@ void test_a_repair_request_round_trips() {
     CHECK(back.screen == ScreenId::Bottom);
     CHECK_EQ(back.serial, request.serial);
     CHECK(back.pieces == request.pieces);
+    CHECK(!back.whole_frame);
+    // A frame lost outright, asked for by its place in the run.
+    RepairRequestMessage whole;
+    whole.screen = ScreenId::Top;
+    whole.whole_frame = true;
+    whole.sent_index = 65535;
+    std::vector<uint8_t> whole_out;
+    encode_repair_request_payload(whole, whole_out);
+    RepairRequestMessage whole_back;
+    CHECK(decode_repair_request_payload(whole_out.data(), whole_out.size(), whole_back));
+    CHECK(whole_back.whole_frame);
+    CHECK_EQ(whole_back.sent_index, 65535);
+    CHECK(whole_back.pieces.empty());
     // Cut short: not a request.
     CHECK(!decode_repair_request_payload(out.data(), out.size() - 1, back));
     // A count past the cap, whatever follows it.

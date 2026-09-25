@@ -632,6 +632,7 @@ public:
     }
     // The fraction of its display size this device is currently asking for.
     double display_scale_for_test() const { return display_scale_; }
+    double link_scale_for_test() const { return link_scale_; }
 
     bool waiting_for_keyframe_for_test(ScreenId screen) const {
         return (screen == ScreenId::Top) ? keyframe_wanted_top_ : keyframe_wanted_bottom_;
@@ -791,6 +792,8 @@ private:
         // When the last piece of it arrived, so a frame nothing follows -- the
         // last before a game pauses -- is noticed as incomplete too.
         uint64_t last_piece_ms = 0;
+        // Which sending this is -- see RepairRequestMessage.
+        uint16_t sent_index = 0;
     };
     // A video frame the host has moved on from with pieces still missing --
     // more than its recovery pieces could put back -- set aside while those
@@ -799,6 +802,11 @@ private:
     // RepairRequest.
     struct FrameRepair {
         bool active = false;
+        // A frame lost outright, known only by the gap in sent_index it left:
+        // nothing about it is known until the first piece of it is sent
+        // again, which is when `frame` is started.
+        bool whole_frame = false;
+        uint16_t sent_index = 0;
         FrameReassembly frame;
         uint64_t started_ms = 0;
         uint64_t asked_ms = 0;
@@ -1124,6 +1132,18 @@ private:
     // A fraction of the above, in each direction. 1.0 until this device shows
     // it cannot keep up.
     double display_scale_ = 1.0;
+    // The same kind of fraction, set by the link rather than by this device:
+    // a smaller picture is fewer bytes to lose, whatever the host's encoder
+    // does with a bitrate it is asked for. What is asked for is the smaller
+    // of the two -- see adapt_to_the_link().
+    double link_scale_ = 1.0;
+    // Frames lost or repaired since the link was last judged, and how many
+    // calm windows in a row there have been since.
+    unsigned link_trouble_ = 0;
+    unsigned link_calm_windows_ = 0;
+    uint64_t link_judged_at_ms_ = 0;
+    uint64_t link_stepped_at_ms_ = 0;
+    void adapt_to_the_link(uint64_t now_ms);
     // Decode time accumulated since the last time that decision was made, and
     // when that was.
     uint64_t adapt_decode_ms_ = 0;

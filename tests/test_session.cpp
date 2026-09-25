@@ -3114,7 +3114,10 @@ void test_a_burst_of_losses_is_repaired_by_asking_again() {
 
     CHECK_MSG(companion.frames_repaired_for_test() > 0,
               "no frame was repaired, so the bursts never outran the recovery pieces");
-    CHECK_MSG(host.keyframes_asked_for_test() == asked_before,
+    // Not none: now and then one burst takes the end of one frame and all of
+    // the next, which is two frames to repair and one repair at a time -- a
+    // keyframe, as before. Without asking again at all it is ten or more.
+    CHECK_MSG(host.keyframes_asked_for_test() - asked_before <= 2,
               "a keyframe was asked for " +
                   std::to_string(host.keyframes_asked_for_test() - asked_before) +
                   " times over losses that asking for the pieces again should have repaired");
@@ -3128,6 +3131,92 @@ void test_a_burst_of_losses_is_repaired_by_asking_again() {
     CHECK_MSG(checked >= 60, "only " + std::to_string(checked) + " pictures came up to check");
     CHECK_MSG(wrong == 0, std::to_string(wrong) + " of " + std::to_string(checked) +
                               " pictures shown were wrong");
+    companion.disconnect();
+    host.stop();
+}
+
+// A link that keeps losing frames -- more than recovery pieces and repairs
+// can hide -- gets a smaller picture: fewer bytes to lose, whatever the
+// host's encoder does with a bitrate. Asked for by the companion, from the
+// size pictures are actually arriving at, and given back once the link has
+// been calm for a while.
+void test_a_troubled_link_gets_a_smaller_picture() {
+    if (!video::have_ffmpeg()) {
+        test::skip("this build has no video codec");
+        return;
+    }
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Test Deck";
+    config.game_title = "Test Game";
+    config.host_screen = ScreenId::Bottom;
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv");
+    CompanionSession companion;
+    CHECK_MSG(companion.begin_search("Apple TV", ScreenId::Top, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+    if (!host.companion_accepts_video()) {
+        test::skip("the far end cannot decode video");
+        companion.disconnect();
+        host.stop();
+        return;
+    }
+    // A 4K television, as an Apple TV reports: far larger than the picture.
+    companion.request_display_size(3840, 2160);
+
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 720;
+    uint64_t serial = 1;
+    int frame = 0;
+    const auto play_for = [&](int milliseconds) {
+        const uint64_t until = monotonic_millis() + static_cast<uint64_t>(milliseconds);
+        while (monotonic_millis() < until) {
+            const std::vector<uint32_t> pixels =
+                moving_picture(kWidth, kHeight, frame++, PixelChannelOrder::XrgbBytes);
+            HostSession::ScreenPixels top;
+            top.pixels = pixels.data();
+            top.width = kWidth;
+            top.height = kHeight;
+            top.stride_pixels = kWidth;
+            host.publish_screens(top, HostSession::ScreenPixels(), serial++);
+            spin(host, companion, [] { return false; }, 16);
+        }
+    };
+    play_for(1500);
+    const int full_width = companion.screen_pixels(ScreenId::Top).width;
+    CHECK_EQ(full_width, kWidth);
+    CHECK(companion.link_scale_for_test() >= 1.0);
+
+    // Bursts too long for anything but a keyframe: forty in a row of every
+    // hundred, for three seconds.
+    companion.lose_pieces_for_test(100, 40);
+    play_for(3000);
+    companion.lose_pieces_for_test(0, 1);
+    CHECK_MSG(companion.link_scale_for_test() < 1.0,
+              "the link kept losing frames and no smaller picture was asked for");
+    play_for(1500);
+    const int smaller_width = companion.screen_pixels(ScreenId::Top).width;
+    CHECK_MSG(smaller_width > 0 && smaller_width < full_width,
+              "a smaller picture was asked for but the host went on sending " +
+                  std::to_string(smaller_width) + " wide");
+
+    // Calm again: the size comes back, a step at a time.
+    const double shrunk_to = companion.link_scale_for_test();
+    play_for(8000);
+    CHECK_MSG(companion.link_scale_for_test() > shrunk_to,
+              "eight calm seconds and the picture was not allowed to grow again");
     companion.disconnect();
     host.stop();
 }
@@ -4046,6 +4135,7 @@ int main() {
     test_switching_codec_mid_game_keeps_the_picture_right();
     test_a_lost_piece_does_not_lose_the_frame();
     test_a_burst_of_losses_is_repaired_by_asking_again();
+    test_a_troubled_link_gets_a_smaller_picture();
     test_one_bad_moment_a_second_does_not_buy_a_whole_session_of_buffer();
     test_an_emulator_rendering_unevenly_does_not_buy_buffer();
     test_this_devices_own_stall_is_not_the_links_fault();

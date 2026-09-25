@@ -1717,8 +1717,21 @@ bool HostSession::encode_one_screen(ScreenId screen,
 void HostSession::resend_pieces(const RepairRequestMessage& request) {
     ++stats_repairs_asked_;
     for (const SentVideoFrame& sent : sent_video_frames_) {
-        if (sent.screen != request.screen || sent.serial != request.serial) {
+        if (sent.screen != request.screen) {
             continue;
+        }
+        // By the sending, not the serial: a picture sent again after a stall
+        // goes out under the same serial, encoded afresh, and pieces of the
+        // two mixed would be a frame that never existed.
+        if (sent.sent_index != request.sent_index) {
+            continue;
+        }
+        if (request.whole_frame) {
+            for (auto piece = sent.pieces.rbegin(); piece != sent.pieces.rend(); ++piece) {
+                pending_media_sends_.push_front(*piece);
+                ++stats_pieces_resent_;
+            }
+            return;
         }
         // At the front, in the order asked for: the companion is holding
         // this frame, and every one behind it, until these land -- anything
@@ -1776,7 +1789,8 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
         while (sent_video_frames_.size() >= kSentVideoFramesKept) {
             sent_video_frames_.pop_front();
         }
-        sent_video_frames_.push_back(SentVideoFrame{frame.screen, frame.serial, {}});
+        sent_video_frames_.push_back(
+            SentVideoFrame{frame.screen, frame.serial, header.sent_index, {}});
         kept = &sent_video_frames_.back();
         kept->pieces.reserve(header.fragment_count);
     }

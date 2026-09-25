@@ -703,13 +703,23 @@ struct KeyframeRequestMessage {
 void encode_keyframe_request_payload(const KeyframeRequestMessage& request,
                                      std::vector<uint8_t>& out);
 
-// Which pieces of which frame to send again: the frame's screen and serial,
+// Which pieces of which frame to send again: the frame by its screen and its
+// sent_index -- which, unlike its serial, names one sending of it: a picture
+// sent again after a stall goes out under the same serial, encoded afresh --
 // and the indices of its own pieces (never its recovery pieces) that did not
 // arrive. At most kMaxRepairPieces, which a single datagram holds with room
 // to spare; a frame missing more than that is not worth repairing.
+//
+// Or, with `whole_frame`, every piece of the frame sent `sent_index`th on that
+// screen: one lost outright, which the companion knows of only from the gap
+// it left in the run of sent_index values, and so has no serial to name it by.
+// A small video frame is one or two datagrams, and a burst of loss takes it
+// whole.
 struct RepairRequestMessage {
     ScreenId screen = ScreenId::Top;
+    bool whole_frame = false;
     uint64_t serial = 0;
+    uint16_t sent_index = 0;
     std::vector<uint16_t> pieces;
 };
 constexpr std::size_t kMaxRepairPieces = 256;

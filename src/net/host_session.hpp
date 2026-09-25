@@ -436,6 +436,7 @@ private:
     struct SentVideoFrame {
         ScreenId screen = ScreenId::Top;
         uint64_t serial = 0;
+        uint16_t sent_index = 0;
         std::vector<std::vector<uint8_t>> pieces;
     };
     std::deque<SentVideoFrame> sent_video_frames_;
