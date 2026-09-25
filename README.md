@@ -551,12 +551,16 @@ frozen for seconds at a time. Three things stand in front of that now:
   it, in order. How long an answer is waited for before asking again is
   learned from how long answers have actually been taking, the way TCP times
   its resends (between 8 and 30ms); after three unanswered askings, or 90ms,
-  a keyframe is asked for instead. A copy of a piece that arrives after its
+  a keyframe is asked for instead. A keyframe itself is asked after for up to
+  eight times, or 300ms, since giving up on one leaves nothing to show until
+  another arrives whole. A copy of a piece that arrives after its
   picture is finished with -- both askings answered -- is recognised and
   dropped, and a picture is never shown behind a newer one.
 - **A smaller picture.** A link that keeps losing pictures anyway -- two or
-  more in a second -- gets a picture 20% smaller, and after five calm seconds
-  a larger one again. The size rather than the bitrate, because the Deck's
+  more in a second, two seconds running -- gets a picture 20% smaller, and
+  after ten calm seconds a larger one again. A larger picture that runs into
+  trouble within 30 seconds doubles the calm it takes next time, up to 80
+  seconds. Pictures recovered by asking again do not count as lost. The size rather than the bitrate, because the Deck's
   hardware encoder does not honour the bitrate it is asked for; fewer pixels
   is fewer bytes either way.
 

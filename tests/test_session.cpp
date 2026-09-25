@@ -3295,9 +3295,9 @@ void test_a_troubled_link_gets_a_smaller_picture() {
 
     // Calm again: the size comes back, a step at a time.
     const double shrunk_to = companion.link_scale_for_test();
-    play_for(8000);
+    play_for(12000);
     CHECK_MSG(companion.link_scale_for_test() > shrunk_to,
-              "eight calm seconds and the picture was not allowed to grow again");
+              "twelve calm seconds and the picture was not allowed to grow again");
     companion.disconnect();
     host.stop();
 }

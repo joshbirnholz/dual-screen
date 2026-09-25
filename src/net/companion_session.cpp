@@ -180,6 +180,9 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     link_scale_ = 1.0;
     link_trouble_ = 0;
     link_calm_windows_ = 0;
+    link_troubled_windows_ = 0;
+    link_calm_windows_to_grow_ = kLinkCalmWindowsToGrowFirst;
+    link_grew_at_ms_ = 0;
     link_judged_at_ms_ = 0;
     link_stepped_at_ms_ = 0;
     adapt_decode_ms_ = 0;
@@ -331,6 +334,9 @@ void CompanionSession::disconnect() {
     link_scale_ = 1.0;
     link_trouble_ = 0;
     link_calm_windows_ = 0;
+    link_troubled_windows_ = 0;
+    link_calm_windows_to_grow_ = kLinkCalmWindowsToGrowFirst;
+    link_grew_at_ms_ = 0;
     link_judged_at_ms_ = 0;
     link_stepped_at_ms_ = 0;
     adapt_decode_ms_ = 0;
@@ -425,6 +431,9 @@ void CompanionSession::fail(const std::string& reason) {
     link_scale_ = 1.0;
     link_trouble_ = 0;
     link_calm_windows_ = 0;
+    link_troubled_windows_ = 0;
+    link_calm_windows_to_grow_ = kLinkCalmWindowsToGrowFirst;
+    link_grew_at_ms_ = 0;
     link_judged_at_ms_ = 0;
     link_stepped_at_ms_ = 0;
     adapt_decode_ms_ = 0;
@@ -691,6 +700,18 @@ unsigned CompanionSession::note_frames_that_never_arrived(const FrameFragmentHea
 // up on: at 60 a second, a tenth of a second of picture held back.
 constexpr std::size_t kMaxFramesHeldForRepair = 6;
 
+// The same for a keyframe, which is worth far more of a wait. Giving up on one
+// leaves nothing to show until another keyframe is asked for, sent and gets
+// here whole -- and it goes out in the same big burst that just lost a piece
+// of this one. Seen on an Apple TV: seconds at a time of a frozen picture,
+// every picture arriving whole but passed over, while keyframe after keyframe
+// failed to and the asking backed off between them. Asking again for the few pieces missing is a round trip and a
+// handful of datagrams, and whatever is held behind a keyframe cannot be shown
+// without it anyway.
+constexpr uint64_t kKeyframeRepairGiveUpMs = 300;
+constexpr unsigned kKeyframeRepairAsks = 8;
+constexpr std::size_t kMaxFramesHeldForKeyframeRepair = 20;
+
 void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t payload_size) {
     FrameFragmentHeader header;
     const uint8_t* chunk = nullptr;
@@ -938,7 +959,10 @@ void CompanionSession::handle_frame_fragment(const uint8_t* payload, std::size_t
     if (repairing.active) {
         repairing.held.push_back(std::move(slot));
         slot = FrameReassembly();
-        if (repairing.held.size() > kMaxFramesHeldForRepair) {
+        const std::size_t most_held = repairing_a_keyframe(repairing)
+                                          ? kMaxFramesHeldForKeyframeRepair
+                                          : kMaxFramesHeldForRepair;
+        if (repairing.held.size() > most_held) {
             finish_repair(repairing, false);
         }
         return;
@@ -1020,6 +1044,12 @@ void CompanionSession::FinishedSendings::add(uint16_t sent_index) {
     count = std::min(count + 1, kSendingsRemembered);
 }
 
+bool CompanionSession::repairing_a_keyframe(const FrameRepair& repair) {
+    // Known once any piece of it is here; a frame lost outright could be
+    // anything, and is repaired like any other.
+    return repair.active && repair.frame.active && repair.frame.keyframe;
+}
+
 void CompanionSession::begin_repair(FrameReassembly& slot, uint64_t now_ms) {
     FrameRepair& repair = (slot.screen == ScreenId::Top) ? repair_top_ : repair_bottom_;
     repair = FrameRepair();
@@ -1064,7 +1094,10 @@ void CompanionSession::finish_repair(FrameRepair& repair, bool repaired) {
     if (repaired) {
         ++stats_frames_repaired_;
         ++frames_repaired_total_;
-        ++link_trouble_;
+        // Not trouble for the picture size: nothing was seen of it. A link
+        // that needs the odd frame asked for again is one the repairs are
+        // handling, and shrinking the picture for it cost a new stream and a
+        // keyframe every time -- the very thing a struggling link loses.
         // Whole now, so a late copy of one of its pieces -- the second
         // asking answered as well -- is a straggler, not a new frame.
         uint64_t& completed =
@@ -1114,8 +1147,9 @@ void CompanionSession::check_repairs(uint64_t now_ms) {
     for (FrameRepair* repair : {&repair_top_, &repair_bottom_}) {
         if (!repair->active || now_ms < repair->asked_ms) continue;
         const bool waited_out = now_ms - repair->asked_ms >= wait;
-        if (now_ms - repair->started_ms >= kRepairGiveUpMs ||
-            (waited_out && repair->asks >= kRepairAsks)) {
+        const bool keyframe = repairing_a_keyframe(*repair);
+        if (now_ms - repair->started_ms >= (keyframe ? kKeyframeRepairGiveUpMs : kRepairGiveUpMs) ||
+            (waited_out && repair->asks >= (keyframe ? kKeyframeRepairAsks : kRepairAsks))) {
             finish_repair(*repair, false);
         } else if (waited_out) {
             ask_for_repair(*repair, now_ms);
@@ -2215,12 +2249,26 @@ void CompanionSession::send_display_size() {
     send_request(request);
 }
 
-// Frames lost or repaired in one second that say the link is carrying more
-// than it can, and how many calm seconds in a row earn a larger picture back.
-// Slower up than down, like the decode side, so a session does not see-saw:
-// every step is a new stream, which starts with a keyframe.
+// Frames lost in one second that say the link is carrying more than it can,
+// and how many such seconds in a row it takes. Every step is a new stream,
+// which starts with a keyframe -- the biggest thing there is to lose -- so a
+// step has to be worth that.
+//
+// In a row, because a single bad second is not a link too small for the
+// picture. Seen on an Apple TV over wifi: spells of a few seconds every so
+// often, at every picture size alike, with the link carrying the full-size
+// picture cleanly in between. Stepping down for each of them bought nothing
+// but a keyframe on the way down and another five seconds later on the way
+// back up, a dozen times in two minutes.
 constexpr unsigned kLinkTroublePerWindow = 2;
-constexpr unsigned kLinkCalmWindowsToGrow = 5;
+constexpr unsigned kLinkTroubledWindowsToShrink = 2;
+// Calm seconds in a row that earn a larger picture back start at
+// kLinkCalmWindowsToGrowFirst, and are doubled each time a larger picture
+// turns out not to fit -- trouble again soon after growing -- so a size the
+// link keeps failing at is tried less and less often, up to the most here.
+constexpr unsigned kMostLinkCalmWindowsToGrow = 80;
+// Trouble this soon after growing is the larger size not fitting.
+constexpr uint64_t kLinkGrowthFailedWithinMs = 30000;
 // After a step, long enough for the new size to arrive and be judged on its
 // own rather than on the losses of the stream it replaced.
 constexpr uint64_t kLinkSettleMs = 2000;
@@ -2246,6 +2294,10 @@ void CompanionSession::adapt_to_the_link(uint64_t now_ms) {
     const double floor_scale = lowest_display_scale(wanted_display_width_);
     if (trouble >= kLinkTroublePerWindow) {
         link_calm_windows_ = 0;
+        if (++link_troubled_windows_ < kLinkTroubledWindowsToShrink) {
+            return;
+        }
+        link_troubled_windows_ = 0;
         // From the size pictures are arriving at, which on a big display is
         // well under it: a fraction of a 4K panel is still larger than the
         // 720p picture being sent, and would shrink nothing.
@@ -2261,21 +2313,29 @@ void CompanionSession::adapt_to_the_link(uint64_t now_ms) {
             return;  // as small as it goes
         }
         link_scale_ = smaller;
+        if (link_grew_at_ms_ != 0 && now_ms - link_grew_at_ms_ < kLinkGrowthFailedWithinMs) {
+            link_calm_windows_to_grow_ =
+                std::min(kMostLinkCalmWindowsToGrow, link_calm_windows_to_grow_ * 2);
+        }
+        link_grew_at_ms_ = 0;
         link_stepped_at_ms_ = now_ms;
-        log_info("the link lost or had to repair " + std::to_string(trouble) +
-                 " frames in a second, so asking for a smaller picture, " +
+        log_info("the link lost " + std::to_string(trouble) +
+                 " frames in a second, " + std::to_string(kLinkTroubledWindowsToShrink) +
+                 " seconds running, so asking for a smaller picture, " +
                  std::to_string(static_cast<int>(link_scale_ * 100.0 + 0.5)) +
                  "% of this device's display, to send fewer bytes");
         send_display_size();
         return;
     }
+    link_troubled_windows_ = 0;
     if (trouble > 0 || link_scale_ >= 1.0) {
         link_calm_windows_ = 0;
         return;
     }
-    if (++link_calm_windows_ < kLinkCalmWindowsToGrow) {
+    if (++link_calm_windows_ < link_calm_windows_to_grow_) {
         return;
     }
+    const unsigned calm_for = link_calm_windows_;
     link_calm_windows_ = 0;
     // A cap the picture is already under -- the host sends it smaller than
     // this anyway -- is not holding anything back, so it goes altogether.
@@ -2287,7 +2347,8 @@ void CompanionSession::adapt_to_the_link(uint64_t now_ms) {
     const double larger = link_scale_ / kDisplayScaleStep;
     link_scale_ = (larger >= 1.0 || (arrived > 0.0 && arrived < link_scale_ * 0.9)) ? 1.0 : larger;
     link_stepped_at_ms_ = now_ms;
-    log_info("the link has been calm for " + std::to_string(kLinkCalmWindowsToGrow) +
+    link_grew_at_ms_ = now_ms;
+    log_info("the link has been calm for " + std::to_string(calm_for) +
              " seconds, so asking for a larger picture again" +
              (link_scale_ >= 1.0 ? std::string(", as large as this device shows")
                                  : ", " + std::to_string(static_cast<int>(link_scale_ * 100.0 + 0.5)) +

@@ -51,7 +51,13 @@ inline constexpr uint64_t kKeyframeRequestIntervalMs = 120;
 // the last one. Measured on a Switch: 7-8 keyframes a second, every second,
 // none of them arriving whole, for an entire session. Backing off turns a
 // storm that cannot recover into a handful of attempts that can.
-inline constexpr uint64_t kMaxKeyframeRequestIntervalMs = 1000;
+//
+// But not far. The picture is frozen for as long as this is waited out, and at
+// a second the doubling from 120ms reached three seconds of freeze after four
+// failures -- on an Apple TV whose ordinary frames were arriving whole the
+// whole time. Under half a second is still under three keyframes a second,
+// against the seven or eight that made the storm.
+inline constexpr uint64_t kMaxKeyframeRequestIntervalMs = 400;
 
 // How long a stretch to judge "can this device keep up?" over, and the two
 // thresholds it is judged against -- as milliseconds spent decoding per second
@@ -172,6 +178,11 @@ bool picture_size_changed_enough(int before_width, int after_width);
 // A tenth missing is the bar. The odd picture dropped in passing is not the
 // host holding a stream back.
 bool host_held_pictures_back(uint64_t serials_advanced, uint64_t arrived);
+
+// Calm seconds in a row before a picture made smaller for the link may grow
+// again, the first time. Slower up than down, like the decode side: every
+// step is a new stream, starting with a keyframe. See adapt_to_the_link().
+inline constexpr unsigned kLinkCalmWindowsToGrowFirst = 10;
 
 // How long a step waits for pictures of its new size before it is judged
 // anyway. Long enough for the host to rebuild its encoder and send a
@@ -875,6 +886,9 @@ private:
     FrameRepair repair_bottom_;
     void ask_for_repair(FrameRepair& repair, uint64_t now_ms);
     void finish_repair(FrameRepair& repair, bool repaired);
+    // Whether what is being repaired is a keyframe, which is waited for
+    // longer -- see kKeyframeRepairGiveUpMs.
+    static bool repairing_a_keyframe(const FrameRepair& repair);
     void check_repairs(uint64_t now_ms);
     // How long an answer to asking for pieces is waited for before asking
     // again, from how long answers have actually been taking: a round trip
@@ -1296,8 +1310,16 @@ private:
     // calm windows in a row there have been since.
     unsigned link_trouble_ = 0;
     unsigned link_calm_windows_ = 0;
+    // Troubled windows in a row, and how many calm ones in a row the next
+    // larger picture takes -- see kLinkTroubledWindowsToShrink and
+    // kLinkCalmWindowsToGrowFirst.
+    unsigned link_troubled_windows_ = 0;
+    unsigned link_calm_windows_to_grow_ = kLinkCalmWindowsToGrowFirst;
     uint64_t link_judged_at_ms_ = 0;
     uint64_t link_stepped_at_ms_ = 0;
+    // When the picture was last allowed to grow, while that growth is still on
+    // trial; 0 otherwise.
+    uint64_t link_grew_at_ms_ = 0;
     void adapt_to_the_link(uint64_t now_ms);
     // Decode time accumulated since the last time that decision was made, and
     // when that was.

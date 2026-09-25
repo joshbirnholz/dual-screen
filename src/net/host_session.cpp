@@ -2008,9 +2008,10 @@ std::size_t HostSession::send_frame_fragments(const FrameMessage& frame) {
     std::size_t queued_bytes = 0;
     std::size_t offset = 0;
     // Kept, for a video frame, in case a piece has to go again -- see
-    // resend_pieces(). A dozen frames is a fifth of a second at 60 a second,
-    // longer than any repair is waited for at the far end.
-    constexpr std::size_t kSentVideoFramesKept = 12;
+    // resend_pieces(). Thirty frames is half a second at 60 a second, longer
+    // than any repair is waited for at the far end -- a keyframe's included,
+    // which is waited for longest (kKeyframeRepairGiveUpMs).
+    constexpr std::size_t kSentVideoFramesKept = 30;
     SentVideoFrame* kept = nullptr;
     if (frame.encoding == FrameEncoding::H264) {
         while (sent_video_frames_.size() >= kSentVideoFramesKept) {
