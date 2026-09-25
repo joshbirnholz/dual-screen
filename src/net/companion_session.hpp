@@ -1361,6 +1361,10 @@ private:
     // request above has to be judged against.
     int adapt_last_width_ = 0;
     int adapt_last_height_ = 0;
+    // The narrowest and widest pictures decoded in this window. A window of
+    // more than one size is not judged -- see adapt_to_what_this_device_can_decode().
+    int adapt_narrowest_width_ = 0;
+    int adapt_widest_width_ = 0;
     // The largest share of the display any picture in this window filled --
     // see scale_the_picture_arrived_at(). The rung the next step goes from.
     double adapt_arrived_scale_ = 0.0;

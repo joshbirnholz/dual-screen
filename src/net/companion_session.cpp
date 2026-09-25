@@ -193,6 +193,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     adapt_width_before_step_ = 0;
     adapt_last_width_ = 0;
     adapt_last_height_ = 0;
+    adapt_narrowest_width_ = 0;
+    adapt_widest_width_ = 0;
     adapt_arrived_scale_ = 0.0;
     adapt_awaiting_from_width_ = 0;
     adapt_awaiting_since_ms_ = 0;
@@ -348,6 +350,8 @@ void CompanionSession::disconnect() {
     adapt_width_before_step_ = 0;
     adapt_last_width_ = 0;
     adapt_last_height_ = 0;
+    adapt_narrowest_width_ = 0;
+    adapt_widest_width_ = 0;
     adapt_arrived_scale_ = 0.0;
     adapt_awaiting_from_width_ = 0;
     adapt_awaiting_since_ms_ = 0;
@@ -446,6 +450,8 @@ void CompanionSession::fail(const std::string& reason) {
     adapt_width_before_step_ = 0;
     adapt_last_width_ = 0;
     adapt_last_height_ = 0;
+    adapt_narrowest_width_ = 0;
+    adapt_widest_width_ = 0;
     adapt_arrived_scale_ = 0.0;
     adapt_awaiting_from_width_ = 0;
     adapt_awaiting_since_ms_ = 0;
@@ -2442,6 +2448,18 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     adapt_lock_micros_ = 0;
     adapt_frames_ = 0;
     adapt_arrived_scale_ = 0.0;
+    // Pictures of more than one size in this window: its cost per frame is an
+    // average over sizes, and says nothing about any one of them. Seen on a
+    // Switch joining a Wii U game whose GamePad Cemu draws at 1080p: the first
+    // window was mostly 854-wide pictures from before the host's size request
+    // reached Cemu and a few 1280-wide ones after, the step down to 1024 was
+    // judged against the 854s, found "no quicker", and the device was left
+    // at a size it could decode nine pictures a second of.
+    const bool window_mixed_sizes =
+        adapt_narrowest_width_ > 0 &&
+        picture_size_changed_enough(adapt_narrowest_width_, adapt_widest_width_);
+    adapt_narrowest_width_ = 0;
+    adapt_widest_width_ = 0;
 
     // Did the last step down actually buy anything? Asked before deciding to
     // take another one, and only once there is a step to judge -- and only
@@ -2450,9 +2468,15 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
     // proves nothing about size.
     const bool picture_actually_shrank =
         picture_shrank_enough_to_judge(adapt_width_before_step_, adapt_last_width_);
+    // And a picture that got smaller and dearer at once is a measurement gone
+    // wrong -- something else changed too -- not evidence that size does not
+    // matter.
+    const bool dearer_after_shrinking =
+        adapt_cost_before_step_ms_ > 0.0 && cost_per_frame_ms > adapt_cost_before_step_ms_ * 1.1;
     if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0 &&
-        !picture_actually_shrank) {
-        // The ask did not bite yet. Nothing to learn from it; keep going.
+        (!picture_actually_shrank || window_mixed_sizes || dearer_after_shrinking)) {
+        // The ask did not bite yet, or this window cannot say whether it
+        // did. Nothing to learn from it; keep going.
         adapt_cost_before_step_ms_ = 0.0;
         adapt_width_before_step_ = 0;
     } else if (adapt_size_decides_cost_ && adapt_cost_before_step_ms_ > 0.0 && frames > 0) {
@@ -2487,8 +2511,10 @@ void CompanionSession::adapt_to_what_this_device_can_decode(uint64_t stale_now_m
         // And remembered so the next window can say whether this was worth it
         // -- the width as well as the cost, because a step that does not make
         // the picture any smaller says nothing about whether size matters.
-        adapt_cost_before_step_ms_ = cost_per_frame_ms;
-        adapt_width_before_step_ = adapt_last_width_;
+        // Not from a window of mixed sizes, which has no one cost to compare
+        // against -- see window_mixed_sizes. The step is taken either way.
+        adapt_cost_before_step_ms_ = window_mixed_sizes ? 0.0 : cost_per_frame_ms;
+        adapt_width_before_step_ = window_mixed_sizes ? 0 : adapt_last_width_;
         display_scale_ = std::max(floor_scale, from * kDisplayScaleStep);
         adapt_easy_windows_ = 0;
         adapt_awaiting_from_width_ = adapt_last_width_;
@@ -3164,6 +3190,10 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
     adapt_lock_micros_ += static_cast<uint64_t>(decoded.lock_micros);
     adapt_last_width_ = decoded.width;
     adapt_last_height_ = decoded.height;
+    adapt_narrowest_width_ = adapt_narrowest_width_ == 0
+                                 ? decoded.width
+                                 : std::min(adapt_narrowest_width_, decoded.width);
+    adapt_widest_width_ = std::max(adapt_widest_width_, decoded.width);
     adapt_arrived_scale_ =
         std::max(adapt_arrived_scale_,
                  scale_the_picture_arrived_at(decoded.width, decoded.height,
