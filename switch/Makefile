@@ -291,7 +291,7 @@ DS_BUILD_STAMP := $(DS_GIT_HASH), built $(shell date -u '+%Y-%m-%d %H:%M') UTC
 
 .PHONY: all clean
 
-all: $(BUILD) assets stamp
+all: $(BUILD) assets stamp config
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):
@@ -309,6 +309,24 @@ stamp: | $(BUILD)
 	else \
 	    mv $(BUILD)/ds_build_stamp.h.new $(BUILD)/ds_build_stamp.h; \
 	    echo 'build stamp: $(DS_BUILD_STAMP)'; \
+	fi
+
+# Which configuration the objects in $(BUILD) were compiled for: with a DS core
+# or without, with a video codec or without. A change in either is a change in
+# the flags every file is compiled with, which make does not notice on its own
+# -- an object is only rebuilt when a file it was built from changes. So a
+# build made before the core was dropped into cores/ kept its main.o, compiled
+# without DS_LOCAL_PLAY, and the Switch app it linked had no Load a game on its
+# menu. Everything is rebuilt instead, whenever the configuration changes.
+.PHONY: config
+config: | $(BUILD)
+	@printf '%s\n' 'core $(HAVE_CORE) codec $(HAVE_FFMPEG)' > $(BUILD)/configuration.new
+	@if cmp -s $(BUILD)/configuration.new $(BUILD)/configuration; then \
+	    rm -f $(BUILD)/configuration.new; \
+	else \
+	    rm -f $(BUILD)/*.o $(BUILD)/*.d; \
+	    mv $(BUILD)/configuration.new $(BUILD)/configuration; \
+	    echo 'configuration: core $(HAVE_CORE), codec $(HAVE_FFMPEG) -- compiling everything for it'; \
 	fi
 
 .PHONY: assets
