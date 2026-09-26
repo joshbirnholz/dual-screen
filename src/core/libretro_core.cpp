@@ -4,7 +4,9 @@
 #include "core/gl_call_trace.hpp"
 
 #include <SDL.h>
+#if !DS_STATIC_LIBRETRO_CORE
 #include <dlfcn.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -19,8 +21,82 @@
 #include "render/gl_loader.hpp"
 #include "util/log.hpp"
 
+#ifndef DS_STATIC_LIBRETRO_CORE
+#define DS_STATIC_LIBRETRO_CORE 0
+#endif
+
 namespace ds {
 namespace {
+
+// Where a core's entry points come from: a shared library opened at run time,
+// everywhere that can -- or, with DS_STATIC_LIBRETRO_CORE, the one core linked
+// into this program, on a device that cannot load code at all. A Switch is
+// that device: RetroArch there is one program per core for the same reason.
+// Everything past these three functions is the same either way.
+#if DS_STATIC_LIBRETRO_CORE
+// Stands in for a library handle: non-null while "open", so everything that
+// asks whether a core is loaded asks the same question it always did.
+int g_builtin_core_marker = 0;
+
+void* open_core_library(const std::string&, std::string*) { return &g_builtin_core_marker; }
+
+void* find_core_symbol(void*, const char* name) {
+    struct Entry {
+        const char* name;
+        void* address;
+    };
+    // Every entry point this frontend ever asks for. Cast through the
+    // function's own type, so a signature that drifted from libretro.h is a
+    // compile error here rather than a crash in the core.
+    static const Entry kEntries[] = {
+        {"retro_api_version", reinterpret_cast<void*>(&retro_api_version)},
+        {"retro_init", reinterpret_cast<void*>(&retro_init)},
+        {"retro_deinit", reinterpret_cast<void*>(&retro_deinit)},
+        {"retro_get_system_info", reinterpret_cast<void*>(&retro_get_system_info)},
+        {"retro_get_system_av_info", reinterpret_cast<void*>(&retro_get_system_av_info)},
+        {"retro_set_environment", reinterpret_cast<void*>(&retro_set_environment)},
+        {"retro_set_video_refresh", reinterpret_cast<void*>(&retro_set_video_refresh)},
+        {"retro_set_audio_sample", reinterpret_cast<void*>(&retro_set_audio_sample)},
+        {"retro_set_audio_sample_batch", reinterpret_cast<void*>(&retro_set_audio_sample_batch)},
+        {"retro_set_input_poll", reinterpret_cast<void*>(&retro_set_input_poll)},
+        {"retro_set_input_state", reinterpret_cast<void*>(&retro_set_input_state)},
+        {"retro_set_controller_port_device",
+         reinterpret_cast<void*>(&retro_set_controller_port_device)},
+        {"retro_reset", reinterpret_cast<void*>(&retro_reset)},
+        {"retro_run", reinterpret_cast<void*>(&retro_run)},
+        {"retro_load_game", reinterpret_cast<void*>(&retro_load_game)},
+        {"retro_unload_game", reinterpret_cast<void*>(&retro_unload_game)},
+        {"retro_get_memory_data", reinterpret_cast<void*>(&retro_get_memory_data)},
+        {"retro_get_memory_size", reinterpret_cast<void*>(&retro_get_memory_size)},
+        {"retro_serialize_size", reinterpret_cast<void*>(&retro_serialize_size)},
+        {"retro_serialize", reinterpret_cast<void*>(&retro_serialize)},
+        {"retro_unserialize", reinterpret_cast<void*>(&retro_unserialize)},
+    };
+    for (const Entry& entry : kEntries) {
+        if (std::strcmp(entry.name, name) == 0) {
+            return entry.address;
+        }
+    }
+    return nullptr;
+}
+
+void close_core_library(void*) {}
+#else
+void* open_core_library(const std::string& core_path, std::string* error) {
+    // RTLD_LOCAL keeps the core's symbols out of the global namespace; cores
+    // routinely bundle their own copies of zlib and friends.
+    void* handle = dlopen(core_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (handle == nullptr && error != nullptr) {
+        const char* reason = dlerror();
+        *error = "could not load core '" + core_path + "': " + (reason ? reason : "unknown error");
+    }
+    return handle;
+}
+
+void* find_core_symbol(void* handle, const char* name) { return dlsym(handle, name); }
+
+void close_core_library(void* handle) { dlclose(handle); }
+#endif
 
 // The libretro callback surface is plain C function pointers with no user-data
 // parameter, so the active core instance has to be reachable statically.
@@ -156,6 +232,15 @@ unsigned retro_id_for(DsButton button) {
 
 }  // namespace
 
+std::optional<SystemId> builtin_core_system() {
+#if DS_STATIC_LIBRETRO_CORE
+    // One core per program, and on every device that needs this, a DS one.
+    return SystemId::Ds;
+#else
+    return std::nullopt;
+#endif
+}
+
 // Entry points resolved out of the core's shared object.
 struct LibretroCore::Api {
     void (*retro_init)() = nullptr;
@@ -248,7 +333,7 @@ std::string LibretroCore::option_value(const std::string& key) const {
 
 template <typename T>
 bool LibretroCore::resolve_symbol(const char* name, T& out, std::string* error) {
-    void* symbol = dlsym(handle_, name);
+    void* symbol = find_core_symbol(handle_, name);
     if (symbol == nullptr) {
         if (error != nullptr) {
             *error = std::string("core is missing the libretro entry point '") + name + "'";
@@ -269,14 +354,8 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
         return false;
     }
 
-    // RTLD_LOCAL keeps the core's symbols out of the global namespace; cores
-    // routinely bundle their own copies of zlib and friends.
-    handle_ = dlopen(core_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    handle_ = open_core_library(core_path, error);
     if (handle_ == nullptr) {
-        const char* reason = dlerror();
-        if (error != nullptr) {
-            *error = "could not load core '" + core_path + "': " + (reason ? reason : "unknown error");
-        }
         return false;
     }
 
@@ -300,7 +379,7 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
         resolve_symbol("retro_get_memory_data", api_->retro_get_memory_data, error) &&
         resolve_symbol("retro_get_memory_size", api_->retro_get_memory_size, error);
     if (!resolved) {
-        dlclose(handle_);
+        close_core_library(handle_);
         handle_ = nullptr;
         return false;
     }
@@ -308,11 +387,12 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
     // one: looked up without failing, and a core without them simply offers
     // no save points.
     api_->retro_serialize_size =
-        reinterpret_cast<std::size_t (*)()>(dlsym(handle_, "retro_serialize_size"));
+        reinterpret_cast<std::size_t (*)()>(find_core_symbol(handle_, "retro_serialize_size"));
     api_->retro_serialize =
-        reinterpret_cast<bool (*)(void*, std::size_t)>(dlsym(handle_, "retro_serialize"));
+        reinterpret_cast<bool (*)(void*, std::size_t)>(find_core_symbol(handle_, "retro_serialize"));
     api_->retro_unserialize =
-        reinterpret_cast<bool (*)(const void*, std::size_t)>(dlsym(handle_, "retro_unserialize"));
+        reinterpret_cast<bool (*)(const void*, std::size_t)>(
+            find_core_symbol(handle_, "retro_unserialize"));
 
     const unsigned api_version = api_->retro_api_version();
     if (api_version != RETRO_API_VERSION) {
@@ -320,7 +400,7 @@ bool LibretroCore::load(const std::string& core_path, std::string* error) {
             *error = "core targets libretro API version " + std::to_string(api_version) +
                      ", this build speaks version " + std::to_string(RETRO_API_VERSION);
         }
-        dlclose(handle_);
+        close_core_library(handle_);
         handle_ = nullptr;
         return false;
     }
@@ -736,7 +816,7 @@ void LibretroCore::unload() {
         if (api_->retro_deinit != nullptr) {
             api_->retro_deinit();
         }
-        dlclose(handle_);
+        close_core_library(handle_);
         handle_ = nullptr;
     }
     if (g_active_core == this) {

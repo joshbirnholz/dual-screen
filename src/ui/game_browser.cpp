@@ -25,6 +25,18 @@ bool is_supported_rom(const std::string& filename) {
 }
 
 std::vector<std::string> default_browse_dirs() {
+#if defined(__SWITCH__)
+    // The SD card, and where Switch homebrew conventionally keeps ROMs --
+    // RetroArch's own default among them.
+    std::vector<std::string> on_the_card;
+    for (const char* candidate : {"/roms/nds", "/roms/NDS", "/roms/ds", "/roms", "/ROMs"}) {
+        if (directory_exists(candidate)) {
+            on_the_card.push_back(candidate);
+        }
+    }
+    on_the_card.push_back("/");
+    return on_the_card;
+#else
     const char* home_env = std::getenv("HOME");
     const std::string home = (home_env != nullptr && home_env[0] != '\0') ? home_env : "/home";
 
@@ -50,6 +62,7 @@ std::vector<std::string> default_browse_dirs() {
     }
     candidates.push_back(home);
     return candidates;
+#endif
 }
 
 void GameBrowser::open(const std::string& directory) {

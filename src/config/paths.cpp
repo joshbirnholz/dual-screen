@@ -72,7 +72,20 @@ std::string path_extension_lower(const std::string& path) {
     return extension;
 }
 
-std::string expand_user_path(const std::string& path) {
+std::string without_sd_device(const std::string& path) {
+#if defined(__SWITCH__)
+    constexpr const char kDevice[] = "sdmc:";
+    constexpr std::size_t kLength = sizeof(kDevice) - 1;
+    if (path.compare(0, kLength, kDevice) == 0) {
+        const std::string rest = path.substr(kLength);
+        return rest.empty() || rest.front() != '/' ? "/" + rest : rest;
+    }
+#endif
+    return path;
+}
+
+std::string expand_user_path(const std::string& raw) {
+    const std::string path = without_sd_device(raw);
     if (path.empty()) return path;
     if (path[0] == '~' && (path.size() == 1 || path[1] == '/')) {
         // Drop the '/' as well as the '~': path_join treats a leading slash as
@@ -91,7 +104,8 @@ std::string absolute_path(const std::string& path) {
         // which is the same thing the C library would resolve it against.
         char buffer[4096];
         const char* working = ::getcwd(buffer, sizeof(buffer));
-        full = path_join(working != nullptr ? std::string(working) : std::string("/"), full);
+        full = path_join(
+            working != nullptr ? without_sd_device(std::string(working)) : std::string("/"), full);
     }
 
     // Fold the path lexically. Without this a "." survives into the result and
@@ -292,7 +306,9 @@ bool list_directory(const std::string& directory,
 }
 
 PathStyle native_path_style() {
-#if defined(__APPLE__)
+#if defined(__SWITCH__)
+    return PathStyle::SwitchSd;
+#elif defined(__APPLE__)
 #if TARGET_OS_TV
     return PathStyle::AppleCaches;
 #else
@@ -334,6 +350,15 @@ PathConvention path_convention(PathStyle style, const std::string& home,
         convention.log_root = path_join(library, "Logs");
         return convention;
     }
+    if (style == PathStyle::SwitchSd) {
+        // One root for all of it, /switch, so AppPaths::under() lands
+        // everything in /switch/dualscreen beside the app. `home` means
+        // nothing here and is not used.
+        convention.config_root = "/switch";
+        convention.data_root = convention.config_root;
+        convention.log_root = convention.config_root;
+        return convention;
+    }
     const std::string config = environment("XDG_CONFIG_HOME");
     const std::string data = environment("XDG_DATA_HOME");
     convention.config_root = config.empty() ? path_join(home, ".config") : config;
@@ -366,6 +391,13 @@ std::vector<std::string> candidate_system_dirs(const AppPaths& paths) {
     candidates.push_back(paths.default_system_dir);
 
     const std::string home = home_dir();
+#if defined(__SWITCH__)
+    // RetroArch's own, on the same card, offered in Settings: a player who
+    // has set up melonDS there already has its BIOS and firmware in place.
+    if (directory_exists("/retroarch/cores/system")) {
+        candidates.push_back("/retroarch/cores/system");
+    }
+#endif
     const std::string others[] = {
         path_join(paths.config_dir, "system"),
         path_join(home, ".var/app/org.libretro.RetroArch/config/retroarch/system"),

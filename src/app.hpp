@@ -63,6 +63,17 @@ struct AppOptions {
     // through the picker. Used by the two-process test; also genuinely handy
     // when there is only ever one host on the network.
     std::string auto_connect_screen;
+    // For a device whose main menu is another program's -- the Switch's,
+    // where this app is started from Dualscreen's own companion menu or from a
+    // game's forwarder. With no --game, the app opens straight to the game
+    // browser; and wherever it would go back to its own main menu -- the
+    // browser left, a game that would not start -- it leaves instead, for the
+    // caller to take the player back to theirs.
+    bool leave_instead_of_launcher = false;
+    // The log is already open, in the caller's place: carry on writing to it
+    // rather than starting one of this app's own, so a device has one log and
+    // not two.
+    bool keep_log_file = false;
     std::string parse_error;
 };
 

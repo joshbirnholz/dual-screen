@@ -165,6 +165,13 @@ void test_each_platform_puts_things_where_that_platform_keeps_them() {
                      .config_root,
                  "/var/mobile/Containers/app/Library/Caches");
 
+    // A Switch keeps everything on the SD card beside the app, whatever HOME
+    // and XDG_* say -- neither means anything on a console.
+    const AppPaths card = AppPaths::under(path_convention(PathStyle::SwitchSd, "", xdg_set));
+    CHECK_STR_EQ(card.config_dir, "/switch/dualscreen");
+    CHECK_STR_EQ(card.saves_dir, "/switch/dualscreen/saves");
+    CHECK_STR_EQ(card.log_file, "/switch/dualscreen/dualscreen.log");
+
     // This build's own answer is the one resolve() uses, and on anything that
     // is not Apple it is the freedesktop one.
 #if defined(__APPLE__)

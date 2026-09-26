@@ -13,7 +13,8 @@
 # shape of the API it calls, which is exactly what was wrong both times.
 #
 # Invoked by CTest with -DCOMPILER, -DSOURCES, -DSTUB_DIR, -DSRC_DIR,
-# -DEXTRA_INCLUDES.
+# -DEXTRA_INCLUDES, and optionally -DDEFINES: more -D flags, separated by
+# semicolons, for a configuration only some Switch builds have.
 
 separate_arguments(SOURCE_LIST UNIX_COMMAND "${SOURCES}")
 set(INCLUDE_FLAGS "-I${STUB_DIR}" "-I${SRC_DIR}")
@@ -23,9 +24,16 @@ foreach(dir IN LISTS EXTRA_INCLUDES)
     endif()
 endforeach()
 
+set(DEFINE_FLAGS "")
+foreach(define IN LISTS DEFINES)
+    if(define)
+        list(APPEND DEFINE_FLAGS "-D${define}")
+    endif()
+endforeach()
+
 foreach(source IN LISTS SOURCE_LIST)
     execute_process(
-        COMMAND "${COMPILER}" -fsyntax-only -std=c++20 -D__SWITCH__
+        COMMAND "${COMPILER}" -fsyntax-only -std=c++20 -D__SWITCH__ ${DEFINE_FLAGS}
                 ${INCLUDE_FLAGS} "${source}"
         RESULT_VARIABLE result
         OUTPUT_VARIABLE output

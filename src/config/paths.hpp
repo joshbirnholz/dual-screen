@@ -58,10 +58,24 @@ enum class PathStyle {
     // saves on this side of the link, because the game is running on the
     // other machine.
     AppleCaches,
+    // A Switch: everything on the SD card beside the app itself, in
+    // /switch/dualscreen, where homebrew keeps its files and where a player
+    // copying saves off the card will look. There is no home directory, and
+    // HOME is not set, so the XDG answer would be wherever the app happened
+    // to be started from.
+    SwitchSd,
 };
 
 // This build's own, which is the only one resolve() below will use.
 PathStyle native_path_style();
+
+// A Switch path without the SD card's device name in front of it: "sdmc:/roms"
+// becomes "/roms", which the Switch's C library resolves against the SD card
+// all the same. Everything that walks a path upwards assumes it starts at "/",
+// and a path from the console -- a forwarder's argument, getcwd() -- does not.
+// Anything else comes back unchanged, and on every other device this is the
+// identity.
+std::string without_sd_device(const std::string& path);
 
 // The roots a style puts things under, given a home directory and a way to
 // read the environment. `environment` returns an empty string for a variable

@@ -2,6 +2,10 @@
 
 #include <SDL.h>
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -23,6 +27,7 @@
 #include "config/sha1.hpp"
 #include "core/external_screen_source.hpp"
 #include "core/gl_call_trace.hpp"
+#include "core/libretro_core.hpp"
 #include "core/libretro_screen_source.hpp"
 #include "core/game_title.hpp"
 #include "core/system.hpp"
@@ -114,6 +119,11 @@ std::string fill_placeholders(const std::string& argument, const std::string& so
 std::string resolve_core_path(const AppOptions& options,
                               const Settings& settings,
                               SystemId system) {
+    // A build with its core linked in has that one core and no way to load
+    // another: its own console gets it, and every other console has none.
+    if (const std::optional<SystemId> built_in = builtin_core_system()) {
+        return *built_in == system ? std::string(kBuiltInCorePath) : std::string();
+    }
     if (!options.core_path.empty()) {
         return expand_user_path(options.core_path);
     }
@@ -2264,6 +2274,13 @@ void App::Impl::end_companion_session() {
 }
 
 void App::Impl::open_launcher() {
+    if (options.leave_instead_of_launcher) {
+        // The main menu this would go back to is the caller's -- see
+        // AppOptions::leave_instead_of_launcher.
+        log_info("leaving for the main menu of the program that started this");
+        running = false;
+        return;
+    }
     if (!launcher) {
         launcher.reset(new LauncherScreen());
     }
@@ -2366,7 +2383,12 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
 
     if (!source->open(source_config, error)) {
         if (details != nullptr) {
-            if (resolved_core_path.empty()) {
+            if (resolved_core_path.empty() && builtin_core_system()) {
+                details->push_back("This device plays " +
+                                   system_profile(*builtin_core_system()).name +
+                                   " games only: its emulator is part of the app, and there is "
+                                   "no other to load.");
+            } else if (resolved_core_path.empty()) {
                 details->push_back("Looked for " + profile.core_filenames.front() +
                                    " in the RetroArch core folders and /usr/lib/libretro.");
                 details->push_back("Point at it directly with --core, or set \"" +
@@ -3257,9 +3279,13 @@ int App::run(const AppOptions& options) {
     // Opened before anything that can fail. In Game Mode there is no terminal,
     // so without a log on disk an early failure is indistinguishable from the
     // app never starting at all.
-    ensure_directory(path_dirname(impl.paths.log_file));
-    if (set_log_file(impl.paths.log_file)) {
-        log_info("dualscreen starting; log at " + impl.paths.log_file);
+    if (!options.keep_log_file) {
+        ensure_directory(path_dirname(impl.paths.log_file));
+        if (set_log_file(impl.paths.log_file)) {
+            log_info("dualscreen starting; log at " + impl.paths.log_file);
+        }
+    } else {
+        log_info("dualscreen starting, in the log that was already open");
     }
     // Immediately after, because everything below is read in the light of it:
     // a log from a binary older than the change being looked for says nothing
@@ -3399,7 +3425,7 @@ int App::run(const AppOptions& options) {
         log_error("no usable OpenGL context was available, so there is nothing to draw into");
         std::fprintf(stderr, "dualscreen: %s\n", error.c_str());
         SDL_Quit();
-        close_log_file();
+        if (!options.keep_log_file) close_log_file();
         return 1;
     }
     if (!impl.quads.initialize(&error) || !impl.text.initialize(&error) ||
@@ -3408,7 +3434,7 @@ int App::run(const AppOptions& options) {
         std::fprintf(stderr, "dualscreen: %s\n", error.c_str());
         impl.destroy_window();
         SDL_Quit();
-        close_log_file();
+        if (!options.keep_log_file) close_log_file();
         return 1;
     }
 
@@ -3446,6 +3472,10 @@ int App::run(const AppOptions& options) {
             impl.awaiting_auto_connect = true;
             impl.input.set_game_input_enabled(true);
         }
+    } else if (options.game_path.empty() && options.leave_instead_of_launcher) {
+        // Somebody else's main menu sent the player here to pick a game, so
+        // that is what they get -- see AppOptions::leave_instead_of_launcher.
+        impl.open_browser();
     } else if (options.game_path.empty()) {
         // No ROM named: offer to play here or to join a game already running on
         // another device. Failing to start a game chosen this way returns to the
@@ -3508,6 +3538,15 @@ int App::run(const AppOptions& options) {
     int simulated_at_frame = 0;
 
     while (impl.running) {
+#ifdef __SWITCH__
+        // The console can take the app away -- the HOME menu's close, a
+        // system update -- and this is how it says so.
+        if (!appletMainLoop()) {
+            log_info("the console asked this app to close");
+            impl.running = false;
+            break;
+        }
+#endif
         // A companion showing a stream waits out most of the refresh first,
         // so reading input and the network, decoding and drawing all happen
         // just before the refresh the result is shown at. See FrameDelay.
@@ -4485,7 +4524,7 @@ int App::run(const AppOptions& options) {
     SDL_Quit();
     watchdog.finish();
     log_info("dualscreen exiting normally");
-    close_log_file();
+    if (!options.keep_log_file) close_log_file();
     return 0;
 }
 

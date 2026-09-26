@@ -48,7 +48,7 @@ void LauncherScreen::open(bool runs_games) {
     focus_ = 0;
     runs_games_ = runs_games;
     rows_.clear();
-    if (runs_games) {
+    if (runs_games || offers_load_game_) {
         rows_.push_back(LauncherChoice::LoadGame);
     }
     rows_.push_back(LauncherChoice::ConnectAsTopScreen);
@@ -167,7 +167,7 @@ void LauncherScreen::render(QuadRenderer& quads,
     text.draw(quads, "Dualscreen", margin, std::round(output_height * 0.14f), scale * 2.0f,
               theme.text);
     text.draw(quads,
-              runs_games_
+              runs_games_ || offers_load_game_
                   ? "Play a DS game here, or be a screen for one running on another device"
                   : "Be a screen for a game running on another device",
               margin, std::round(output_height * 0.14f) + line * 2.4f, scale * 0.95f,

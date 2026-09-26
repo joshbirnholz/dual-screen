@@ -46,3 +46,35 @@ endif()
 
 list(LENGTH cmake_files count)
 message(STATUS "switch/Makefile lists all ${count} of the companion's sources")
+
+# And a Switch build with a DS core linked in, which is the desktop app as well
+# as the companion: everything the desktop app's library is built from has to
+# be in one list or the other, or that build fails to link in the same way.
+if(DESKTOP_CMAKE)
+    file(READ "${DESKTOP_CMAKE}" desktop_text)
+    string(REGEX MATCH "add_library\\(dualscreen_core STATIC([^)]*)\\)" _ "${desktop_text}")
+    string(REGEX MATCHALL "[A-Za-z0-9_]+\\.cpp" desktop_files "${CMAKE_MATCH_1}")
+    if(NOT desktop_files)
+        message(FATAL_ERROR "found no dualscreen_core sources in ${DESKTOP_CMAKE}; has it moved?")
+    endif()
+    string(REGEX MATCH "LOCAL_PLAY_CPPFILES[ \t]*:=([^\n]*(\\\\\n[^\n]*)*)" _ "${make_text}")
+    string(REGEX MATCHALL "[A-Za-z0-9_]+\\.cpp" local_play_files "${CMAKE_MATCH_1}")
+    if(NOT local_play_files)
+        message(FATAL_ERROR "found no LOCAL_PLAY_CPPFILES in ${SWITCH_MAKEFILE}; has it moved?")
+    endif()
+    set(missing "")
+    foreach(source IN LISTS desktop_files)
+        if(NOT source IN_LIST make_files AND NOT source IN_LIST local_play_files)
+            list(APPEND missing "${source}")
+        endif()
+    endforeach()
+    if(missing)
+        list(JOIN missing ", " missing_text)
+        message(FATAL_ERROR
+            "the desktop app is built from ${missing_text}, but switch/Makefile lists it in "
+            "neither CPPFILES nor LOCAL_PLAY_CPPFILES, so a Switch build with a DS core will "
+            "fail to link. Add it to LOCAL_PLAY_CPPFILES.")
+    endif()
+    list(LENGTH desktop_files desktop_count)
+    message(STATUS "and every one of the desktop app's ${desktop_count} sources, for local play")
+endif()

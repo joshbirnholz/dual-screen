@@ -170,12 +170,15 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
 
     if (config.core_path.empty()) {
         if (error != nullptr) {
-            *error = "No " + profile.core_description + " libretro core was found. Install " +
-                     profile.core_filenames.front() + ", or set \"core_path\" in settings.json.";
+            *error = builtin_core_system()
+                         ? "This device cannot play " + profile.name + " games."
+                         : "No " + profile.core_description + " libretro core was found. Install " +
+                               profile.core_filenames.front() +
+                               ", or set \"core_path\" in settings.json.";
         }
         return false;
     }
-    if (!file_exists(config.core_path)) {
+    if (config.core_path != kBuiltInCorePath && !file_exists(config.core_path)) {
         if (error != nullptr) {
             *error = "The core file does not exist: " + config.core_path;
         }

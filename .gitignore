@@ -4,3 +4,7 @@ build-*/
 .cache/
 compile_commands.json
 .ffmpeg-steamos/
+
+# A DS core built for the Switch -- see switch/README.md. Built by whoever
+# builds the Switch app, and never committed: it is GPL-3.0, see THIRD_PARTY.md.
+switch/cores/

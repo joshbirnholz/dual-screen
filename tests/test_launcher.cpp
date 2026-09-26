@@ -72,6 +72,7 @@ std::vector<LauncherChoice> rows_you_can_reach(LauncherScreen& launcher) {
         LauncherScreen probe;
         probe.set_plus_quits(launcher.plus_quits());
         probe.set_offers_quit(launcher.offers_quit());
+        probe.set_offers_load_game(launcher.offers_load_game());
         probe.open(/*runs_games=*/false);
         for (int down = 0; down < step; ++down) {
             probe.update({UiAction::Down}, {}, kWidth, kHeight);
@@ -112,6 +113,27 @@ void test_leaving_is_not_offered_where_the_system_does_it() {
     CHECK_MSG(offers(rows, LauncherChoice::ConnectAsTopScreen) &&
                   offers(rows, LauncherChoice::ConnectAsBottomScreen),
               "removing Quit took the rest of the launcher with it");
+}
+
+// A Switch carrying its own DS emulator: a companion that can also play a game
+// itself offers to, and still offers nothing in the way of Settings -- those
+// belong to the game, in its own menu, once there is one.
+void test_a_companion_that_plays_games_offers_to_load_one() {
+    LauncherScreen plain;
+    plain.open(/*runs_games=*/false);
+    CHECK_MSG(!offers(rows_you_can_reach(plain), LauncherChoice::LoadGame),
+              "a companion with no emulator offered to load a game");
+
+    LauncherScreen switch_with_core;
+    switch_with_core.set_offers_load_game(true);
+    switch_with_core.open(/*runs_games=*/false);
+    const std::vector<LauncherChoice> rows = rows_you_can_reach(switch_with_core);
+    CHECK_MSG(offers(rows, LauncherChoice::LoadGame), "Load a game was not offered");
+    CHECK_MSG(offers(rows, LauncherChoice::ConnectAsTopScreen) &&
+                  offers(rows, LauncherChoice::ConnectAsBottomScreen),
+              "offering to load a game took the connect rows away");
+    CHECK_MSG(!offers(rows, LauncherChoice::Settings),
+              "Settings appeared on a companion's opening screen");
 }
 
 // Not through a keyboard either. An iPad with a keyboard attached is still an
@@ -158,6 +180,7 @@ int main() {
     test_the_other_face_buttons_do_nothing_here();
     test_quit_leads_the_control_guide();
     test_leaving_is_not_offered_where_the_system_does_it();
+    test_a_companion_that_plays_games_offers_to_load_one();
     test_no_key_leaves_where_leaving_is_not_offered();
     test_the_connection_list_does_not_show_addresses();
     return test::finish("launcher");

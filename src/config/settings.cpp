@@ -4,6 +4,8 @@
 
 #include <unistd.h>
 
+#include "input/switch_console.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -57,11 +59,17 @@ WiiUScreenAlone screen_alone_from_key(const std::string& key) {
 }
 
 std::string default_device_name() {
+#if defined(__SWITCH__)
+    // What the console is, the same name the companion gives itself -- a
+    // Switch has no host name worth showing.
+    return switch_console_name();
+#else
     char hostname[256] = {0};
     if (::gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
         return std::string(hostname);
     }
     return std::string("Dualscreen");
+#endif
 }
 
 }  // namespace

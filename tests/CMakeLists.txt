@@ -18,6 +18,34 @@ function(dualscreen_add_mock_core target output)
 endfunction()
 
 dualscreen_add_mock_core(mock_core mock_ds_libretro)
+
+# The whole app with the mock core linked into it instead of loaded from a
+# file: the shape a Switch build has, with melonDS in the mock's place. The
+# loader is compiled again with DS_STATIC_LIBRETRO_CORE, and that object stands
+# in for the ordinary one in dualscreen_core -- the linker only takes a member
+# of a static library for a symbol nothing earlier defined.
+add_executable(dualscreen_builtin_core
+    ${CMAKE_SOURCE_DIR}/src/main.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libretro_core.cpp
+    mock_core/mock_core.cpp)
+target_compile_definitions(dualscreen_builtin_core PRIVATE DS_STATIC_LIBRETRO_CORE=1)
+target_link_libraries(dualscreen_builtin_core PRIVATE dualscreen_core)
+target_compile_options(dualscreen_builtin_core PRIVATE -Wall -Wextra)
+
+# And the Switch's own program in the shape a Switch build with melonDS has:
+# the companion, able to play a DS game itself through the desktop app, with
+# the mock core linked in. Everything but libnx -- see local_play.hpp.
+add_executable(dualscreen_companion_local_play
+    ${CMAKE_SOURCE_DIR}/companion/source/main.cpp
+    ${CMAKE_SOURCE_DIR}/companion/source/local_play.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libretro_core.cpp
+    mock_core/mock_core.cpp)
+target_include_directories(dualscreen_companion_local_play PRIVATE
+    ${CMAKE_SOURCE_DIR}/companion/source)
+target_compile_definitions(dualscreen_companion_local_play PRIVATE
+    DS_STATIC_LIBRETRO_CORE=1 DS_LOCAL_PLAY=1)
+target_link_libraries(dualscreen_companion_local_play PRIVATE dualscreen_core)
+target_compile_options(dualscreen_companion_local_play PRIVATE -Wall -Wextra)
 dualscreen_add_mock_core(mock_core_3ds mock_3ds_libretro MOCK_CORE_3DS)
 
 set(MOCK_CORE_PATH "${CMAKE_BINARY_DIR}/tests/mock_ds_libretro.so")
@@ -116,12 +144,28 @@ add_test(NAME switch_network_typecheck
         -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
         "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS}"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
+# And the Switch that plays DS games itself: the desktop app with melonDS
+# linked in, the paths and file browser on an SD card, and the hand-off
+# between the companion's menu and a game. See companion/source/local_play.hpp.
+get_target_property(DUALSCREEN_JSON_INCLUDES nlohmann_json::nlohmann_json
+                    INTERFACE_INCLUDE_DIRECTORIES)
+add_test(NAME switch_local_play_typecheck
+    COMMAND ${CMAKE_COMMAND}
+        -DCOMPILER=${CMAKE_CXX_COMPILER}
+        "-DSOURCES=${CMAKE_SOURCE_DIR}/src/app.cpp ${CMAKE_SOURCE_DIR}/src/core/libretro_core.cpp ${CMAKE_SOURCE_DIR}/src/config/paths.cpp ${CMAKE_SOURCE_DIR}/src/config/settings.cpp ${CMAKE_SOURCE_DIR}/src/ui/game_browser.cpp ${CMAKE_SOURCE_DIR}/companion/source/local_play.cpp"
+        -DSTUB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/switch_stub
+        -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
+        "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party;${CMAKE_SOURCE_DIR}/companion/source;${DUALSCREEN_JSON_INCLUDES}"
+        "-DDEFINES=DS_STATIC_LIBRETRO_CORE=1;DS_LOCAL_PLAY=1;DS_HAVE_VIDEO_CODEC=0"
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_typecheck.cmake)
+
 # And whether switch/Makefile still lists everything the companion is built
 # from. See the script for the two times it did not.
 add_test(NAME switch_makefile_sources
     COMMAND ${CMAKE_COMMAND}
         -DSOURCES_CMAKE=${CMAKE_SOURCE_DIR}/cmake/companion_sources.cmake
         -DSWITCH_MAKEFILE=${CMAKE_SOURCE_DIR}/switch/Makefile
+        -DDESKTOP_CMAKE=${CMAKE_SOURCE_DIR}/CMakeLists.txt
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_sources_test.cmake)
 # And the configuration iOS and tvOS actually ship: no FFmpeg, VideoToolbox
 # doing the decoding. Linux always finds FFmpeg, so that half of the fork is
@@ -231,6 +275,30 @@ if(XVFB_RUN_EXECUTABLE)
             -DCHECKER=$<TARGET_FILE:check_screenshot>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_smoke_test.cmake)
     set_tests_properties(smoke_headless PROPERTIES TIMEOUT 300
+        RESOURCE_LOCK dualscreen_ports)
+
+    # The app with its core linked into it, as a Switch has to carry one --
+    # see run_builtin_core_test.cmake.
+    add_test(NAME builtin_core_headless
+        COMMAND ${CMAKE_COMMAND}
+            -DXVFB_RUN=${XVFB_RUN_EXECUTABLE}
+            -DDUALSCREEN=$<TARGET_FILE:dualscreen_builtin_core>
+            -DWORK_DIR=${CMAKE_BINARY_DIR}/builtin-core
+            -DCHECKER=$<TARGET_FILE:check_screenshot>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_builtin_core_test.cmake)
+    set_tests_properties(builtin_core_headless PROPERTIES TIMEOUT 300
+        RESOURCE_LOCK dualscreen_ports)
+
+    # The Switch's own program playing a game itself -- see
+    # run_switch_local_play_test.cmake.
+    add_test(NAME switch_local_play_headless
+        COMMAND ${CMAKE_COMMAND}
+            -DXVFB_RUN=${XVFB_RUN_EXECUTABLE}
+            -DPROGRAM=$<TARGET_FILE:dualscreen_companion_local_play>
+            -DWORK_DIR=${CMAKE_BINARY_DIR}/switch-local-play
+            -DCHECKER=$<TARGET_FILE:check_screenshot>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_local_play_test.cmake)
+    set_tests_properties(switch_local_play_headless PROPERTIES TIMEOUT 300
         RESOURCE_LOCK dualscreen_ports)
 
     # Resume from Save State, end to end: a game played with it on leaves a

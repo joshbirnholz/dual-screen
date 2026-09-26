@@ -7,10 +7,13 @@ frontend implemented here is compiled against exactly the ABI the cores were
 built for. Copyright (C) 2010-2024 The libretro team, MIT licensed — the full
 notice is at the top of the file.
 
-## nlohmann::json
+## `third_party/nlohmann/json.hpp`
 
-Used for the config files. Not vendored: CMake prefers a system-installed copy
-and only fetches the release archive if none is found. MIT licensed.
+Used for the config files. Release 3.11.3, the single-header distribution,
+vendored verbatim for the Switch build, which has no package to find it in.
+CMake still prefers a system-installed copy and uses this one otherwise.
+Copyright (C) 2013-2023 Niels Lohmann, MIT licensed — the licence is beside it
+in `third_party/nlohmann/LICENSE.MIT`.
 
 ## SDL2
 
@@ -22,6 +25,22 @@ A build and runtime dependency, not vendored. zlib licensed.
 `dlopen`'d at runtime from wherever the user installed it, across the stable
 libretro C ABI. melonDS DS is GPL-3.0; nothing from it is compiled into this
 project.
+
+## A DS core linked into the Switch build
+
+The one exception to the above. A Switch cannot load code at run time, so a
+Switch build that plays DS games itself has its core -- libretro's melonDS,
+GPL-3.0 -- linked into `Dualscreen.nro` (see `switch/README.md`). Nothing from
+it is in this repository: the core is built separately by whoever builds the
+Switch app, and `switch/Makefile` links it only if it is there.
+
+**That `.nro` is a combined work with a GPL-3.0 program, and distributing it is
+distributing that combination.** Anyone who shares a Switch build with a core in
+it has to do so on the GPL's terms, including making the corresponding source
+available -- this project's as well as the core's. This repository carries no
+licence of its own yet, which makes that impossible to do properly until it
+does. A build for your own console, not passed on, raises none of this. A Switch
+build without a core is the companion alone and links nothing of melonDS.
 
 ## `assets/ds_bezel.png` and `assets/three_ds_bezel.png`
 

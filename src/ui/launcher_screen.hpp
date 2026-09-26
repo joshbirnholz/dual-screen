@@ -57,6 +57,13 @@ public:
     void set_offers_quit(bool offers) { offers_quit_ = offers; }
     bool offers_quit() const { return offers_quit_; }
 
+    // Whether a companion client that also plays games itself offers to load
+    // one: a Switch carrying its own DS emulator. Its Settings stay out --
+    // they belong to the game once one is running, in its own menu. Read by
+    // open(), like the flag above.
+    void set_offers_load_game(bool offers) { offers_load_game_ = offers; }
+    bool offers_load_game() const { return offers_load_game_; }
+
     // What the control guide at the foot of the screen says, in the order it
     // says it. Exposed rather than built where it is drawn so the order is
     // something that can be checked.
@@ -95,6 +102,7 @@ private:
     bool runs_games_ = true;
     bool plus_quits_ = false;
     bool offers_quit_ = true;
+    bool offers_load_game_ = false;
     std::vector<GuideHit> guide_hits_;
 
 public:

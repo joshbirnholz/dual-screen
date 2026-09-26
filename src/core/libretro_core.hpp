@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <cstdint>
 
 // Opaque here on purpose: libretro.h stays out of this header.
@@ -10,8 +12,19 @@ struct retro_hw_render_callback;
 #include <vector>
 
 #include "core/hw_render_target.hpp"
+#include "core/system.hpp"
 
 namespace ds {
+
+// What a build with its core linked in, rather than loaded from a file, gives
+// as that core's path -- see builtin_core_system(). Shown as it is, so the
+// Settings screen says where the core is: in the program.
+inline constexpr const char* kBuiltInCorePath = "built in";
+
+// The console the linked-in core plays, on a build that has one; nullopt
+// everywhere a core is a file loaded at run time. A Switch cannot load code,
+// so it carries one core, melonDS, and plays DS games and nothing else.
+std::optional<SystemId> builtin_core_system();
 
 struct DsInputState;
 

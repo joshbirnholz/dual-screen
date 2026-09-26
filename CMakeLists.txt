@@ -49,7 +49,10 @@ endif()
 # and only then reach for the network.
 find_package(nlohmann_json 3.9 QUIET)
 if(NOT nlohmann_json_FOUND)
-    find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp)
+    # The copy in third_party is the one the Switch build uses, which has no
+    # package to find it in; it is the same release as the download below.
+    find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp
+              PATHS ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
     if(NLOHMANN_JSON_INCLUDE_DIR)
         add_library(nlohmann_json INTERFACE)
         target_include_directories(nlohmann_json INTERFACE ${NLOHMANN_JSON_INCLUDE_DIR})

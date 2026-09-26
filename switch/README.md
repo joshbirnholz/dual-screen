@@ -3,10 +3,15 @@
 A Switch homebrew app that joins a game already running on another device and
 becomes one of its two screens.
 
-It runs no emulator and holds no ROM. There is no core to install, no BIOS to
-supply and nothing to dump: everything is being played on the other device, and
-this app draws the screen it was given and sends its buttons and touches back.
-That is the whole of it.
+Built as it comes, it runs no emulator and holds no ROM. There is no core to
+install, no BIOS to supply and nothing to dump: everything is being played on
+the other device, and this app draws the screen it was given and sends its
+buttons and touches back.
+
+A Switch can play DS games perfectly well itself, though (a 3DS or a Wii U it
+cannot), so the app can also be built with a DS emulator in it, and then it
+plays DS games on the console too. See **Playing DS games on the Switch**
+below.
 
 ## What it does
 
@@ -162,6 +167,79 @@ A finished `.nro` carries an asset section on the end — `icon.jpg` and the nam
 and version from the top of the `Makefile` — so a menu shows it as *dualscreen
 companion* with the two-screen icon rather than as a bare filename. If a loader
 says it **cannot parse the nro**, that section is what it is missing.
+
+## Playing DS games on the Switch
+
+With a DS core built in, the opening screen gains **Load a game**, and the app
+plays DS games on the console with everything the desktop app has for them:
+the same file browser, the same layouts and quick menu, per-game options, save
+points, **Resume from Save State**, and a second device joining as the other
+screen. It is the desktop app's own code, compiled for the Switch, not a port
+of it.
+
+**Load a game** starts Dualscreen again, straight into the file browser. It
+opens at `/roms/nds` (or `/roms/NDS`, `/roms/ds`, `/roms`, `/ROMs`, whichever is
+on the card first), else at the card's root. Leaving the browser, or quitting a
+game from its quick menu, brings the opening screen back the same way.
+
+Only DS games: a 3DS file is refused with a message saying so.
+
+### A game's own forwarder
+
+Dualscreen goes straight into a game when started with its ROM as an argument,
+which is what makes a forwarder for one game possible. A forwarder that starts
+an `.nro` with arguments should start
+
+```
+sdmc:/switch/Dualscreen.nro
+```
+
+with the ROM's path as the argument, plain or after `--game`:
+
+```
+sdmc:/roms/nds/Some Game.nds
+--game "sdmc:/roms/nds/Some Game.nds"
+```
+
+Quitting a game started this way leaves Dualscreen, back to wherever the
+forwarder was started from, as leaving any game does.
+
+### Where it keeps things
+
+Everything is under `/switch/dualscreen/` on the SD card:
+
+| | |
+| --- | --- |
+| `saves/` | the game's own saves (`Some Game.srm`, named like RetroArch's), and save points |
+| `games/` | per-game options and layouts |
+| `system/` | BIOS and firmware, if the core wants any — Settings, in a game's quick menu, offers RetroArch's `/retroarch/cores/system` instead when it is on the card |
+| `settings.json` | the app's settings |
+
+A game played here logs to `/switch/Dualscreen-game.log`, beside the menu's own
+log, because leaving the game starts the menu's log afresh.
+
+### Building it in
+
+The core is libretro's melonDS, built as a static library for the Switch. It
+is GPL-3.0 and not part of this repository, so it is built separately and
+dropped in:
+
+```sh
+git clone https://github.com/libretro/melonDS
+cd melonDS
+make platform=libnx -j8
+mkdir -p ../dual-screen/switch/cores
+cp melonds_libretro_libnx.a ../dual-screen/switch/cores/
+cd ../dual-screen/switch && make
+```
+
+`make` looks for `cores/melonds_libretro_libnx.a` and says whether it found it.
+A core anywhere else, or named differently, is given as
+`make CORE_LIB=/path/to/core.a`. With no core, the build is the companion
+alone, exactly as before.
+
+**Before passing a built `.nro` on to anyone:** with melonDS linked in, it is a
+combined work with a GPL-3.0 program — see `THIRD_PARTY.md`.
 
 ## Reading the log
 

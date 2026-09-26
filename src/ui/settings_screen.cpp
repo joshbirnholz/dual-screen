@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "core/libretro_core.hpp"
 #include "ui/control_guide.hpp"
 
 namespace ds {
@@ -319,7 +320,8 @@ void SettingsScreen::render(QuadRenderer& quads,
     text.draw(quads, "Emulators", geometry.core_panel.x, core_pen_y, scale, theme.text);
     core_pen_y += line * 1.6f;
     for (const CoreStatus& core : cores_) {
-        const bool found = !core.resolved_path.empty() && file_exists(core.resolved_path);
+        const bool found = core.resolved_path == kBuiltInCorePath ||
+                           (!core.resolved_path.empty() && file_exists(core.resolved_path));
         const std::string label = core.system_name + "  ";
         text.draw(quads, label, geometry.core_panel.x, core_pen_y, scale * 0.9f, theme.text_dim);
         const float label_width = TextRenderer::measure_width(label, scale * 0.9f);

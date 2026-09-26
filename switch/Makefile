@@ -94,6 +94,48 @@ CPPFILES    := main.cpp \
                build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
 
+# Playing DS games on the Switch itself, which it can do (a 3DS or a Wii U it
+# cannot). A Switch cannot load code at run time, so the emulator is linked in:
+# a libretro DS core built as a static library for libnx -- libretro's melonDS,
+# built with `make platform=libnx` (see README.md). Put it at CORE_LIB, or
+# point CORE_LIB at it, and this app plays DS games here as well as joining
+# them elsewhere: the desktop app's own game browser, per-game options, save
+# points, resume and quick menu, compiled again. Without one, this is the
+# companion alone, exactly as it was.
+#
+# Linking a GPL core in makes the .nro a combined work with it -- see
+# THIRD_PARTY.md before passing one on.
+CORE_LIB ?= cores/melonds_libretro_libnx.a
+CORE_LIB_PATH := $(if $(filter /%,$(CORE_LIB)),$(CORE_LIB),$(TOPDIR)/$(CORE_LIB))
+HAVE_CORE := $(if $(wildcard $(CORE_LIB_PATH)),1,0)
+
+# The desktop app's sources beyond the companion's. A second list, like the one
+# above, and checked the same way: tests/run_switch_sources_test.cmake compares
+# the two with the desktop build's own, since nothing here can run this link.
+LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
+               game_config.cpp settings.cpp sha1.cpp \
+               game_title.cpp gl_call_trace.cpp hw_render_target.cpp \
+               external_frame_link.cpp external_screen_source.cpp \
+               libretro_core.cpp libretro_screen_source.cpp core_input_sink.cpp \
+               pad_routing.cpp retro_keymap.cpp \
+               host_session.cpp \
+               game_browser.cpp message_screen.cpp settings_screen.cpp controllers_screen.cpp \
+               child_process.cpp
+
+ifeq ($(HAVE_CORE),1)
+$(info DS core: $(CORE_LIB_PATH), so this build plays DS games here too)
+# Last, so the companion's main.cpp is the one found: src/ has a main.cpp of
+# its own, the desktop app's, which this program never uses.
+SOURCE_DIRS += $(SHARED)
+CPPFILES    += $(LOCAL_PLAY_CPPFILES)
+LOCAL_PLAY_DEFINES := -DDS_LOCAL_PLAY=1 -DDS_STATIC_LIBRETRO_CORE=1
+LOCAL_PLAY_LIBS := $(CORE_LIB_PATH)
+else
+$(info DS core: none at $(CORE_LIB_PATH), so this build is the companion alone -- see README.md)
+LOCAL_PLAY_DEFINES :=
+LOCAL_PLAY_LIBS :=
+endif
+
 INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY)
 
 #---------------------------------------------------------------------------------
@@ -121,7 +163,7 @@ endif
 
 CFLAGS  := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(DEFINES) \
            $(shell $(SDL2_CONFIG) --cflags) \
-           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=$(HAVE_FFMPEG) $(INCLUDE)
+           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=$(HAVE_FFMPEG) $(LOCAL_PLAY_DEFINES) $(INCLUDE)
 # The template's -fno-rtti -fno-exceptions are deliberately not here. The
 # shared code throws nothing and asks nothing its type, so neither flag would
 # change what the program does -- only what happens if the standard library
@@ -136,7 +178,11 @@ LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $
 # out of sdl2-config, including the GL stack SDL's own renderer sits on. This
 # program links no GL of its own: gl_loader.cpp reaches every entry point
 # through SDL_GL_GetProcAddress, so it names no GL symbol at link time.
-LIBS    := $(shell $(SDL2_CONFIG) --libs) -lz -lnx
+#
+# The core, when there is one, comes first: it is a static archive whose own
+# needs -- the C and C++ runtimes, and GL on a core built with its OpenGL
+# renderer -- are met by everything after it.
+LIBS    := $(LOCAL_PLAY_LIBS) $(shell $(SDL2_CONFIG) --libs) -lz -lnx
 
 # switch-ffmpeg's own dependencies (switch-dav1d, switch-libass and what
 # *that* needs in turn) are still static archives this binary has to satisfy

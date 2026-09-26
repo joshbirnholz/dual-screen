@@ -104,6 +104,8 @@ extern "C" {
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
+#include "local_play.hpp"
+
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #if TARGET_OS_IPHONE && !TARGET_OS_TV
@@ -136,6 +138,11 @@ struct Options {
     // is about, so there is nowhere smaller it can be driven from.
     double disconnect_at_seconds = 0.0;
     std::string screenshot_path;
+    // A game to play on this device, or its game browser, on a build that
+    // can -- see local_play.hpp. A game's forwarder names the ROM, as a plain
+    // argument or after --game; --browse is how the menu here asks for the
+    // browser, by starting this program again.
+    LocalPlayRequest local_play;
     std::string parse_error;
 };
 
@@ -187,14 +194,35 @@ Options parse_options(int argc, char** argv) {
         } else if (argument == "--screenshot") {
             options.screenshot_path =
                 next_argument(argc, argv, index, "--screenshot", options.parse_error);
+        } else if (argument == "--game") {
+            options.local_play.game_path =
+                next_argument(argc, argv, index, "--game", options.parse_error);
+        } else if (argument == kBrowseArgument) {
+            options.local_play.browse = true;
         } else if (!argument.empty() && argument[0] == '-') {
             options.parse_error = "unknown option " + argument;
+        } else if (!argument.empty() && options.local_play.game_path.empty()) {
+            // A bare path: what a forwarder passes, and what dropping a ROM
+            // on a desktop build's icon would.
+            options.local_play.game_path = argument;
         }
         if (!options.parse_error.empty()) {
             break;
         }
     }
     return options;
+}
+
+// What a run of the desktop app playing here is given of this program's own
+// options -- see local_play.hpp.
+[[maybe_unused]] LocalPlayRequest local_play_request(const Options& options) {
+    LocalPlayRequest request = options.local_play;
+    request.windowed = options.windowed;
+    request.verbose = options.verbose;
+    request.exit_after_seconds = options.exit_after_seconds;
+    request.screenshot_at_seconds = options.screenshot_at_seconds;
+    request.screenshot_path = options.screenshot_path;
+    return request;
 }
 
 bool write_screenshot(int width, int height, const std::string& path) {
@@ -302,6 +330,9 @@ public:
     // Why start() said no. On a console there is no window to have printed it
     // in and no terminal behind the app, so the caller has to be able to ask.
     const std::string& start_error() const { return start_error_; }
+    // Whether the player chose Load a game, which is played by this program
+    // starting again -- see local_play.hpp.
+    bool wants_to_play_here() const { return wants_to_play_here_; }
 
 private:
     // Launcher is the opening screen -- which screen to be; Browsing is the
@@ -429,6 +460,7 @@ private:
     std::string failure_;
     bool menu_open_ = false;
     bool running_ = true;
+    bool wants_to_play_here_ = false;
     // Whether there is a surface to draw on. Only ever false on a device that
     // can take the app off screen without ending it.
     bool foreground_ = true;
@@ -622,6 +654,9 @@ void Client::open_launcher() {
     // nothing to say why.
     launcher_.set_offers_quit(false);
 #endif
+    // Unless this build carries its own emulator, in which case it can play a
+    // game here too -- see local_play.hpp.
+    launcher_.set_offers_load_game(DS_LOCAL_PLAY != 0);
     launcher_.open(/*runs_games=*/false);
 }
 
@@ -924,6 +959,11 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 break;
             case LauncherChoice::Quit:
                 log_info("leaving: the launcher's Quit row was chosen");
+                running_ = false;
+                break;
+            case LauncherChoice::LoadGame:
+                log_info("leaving the menu to play a game on this device");
+                wants_to_play_here_ = true;
                 running_ = false;
                 break;
             default:
@@ -1497,6 +1537,11 @@ void Client::draw_scene() {
 // the fact is to leave it on the SD card -- and the only way to read it as it
 // happens is nxlink, which needs a computer already listening.
 constexpr const char* kSwitchLogPath = "sdmc:/switch/Dualscreen.log";
+// And a game played here, in a file of its own. Leaving a game starts the menu
+// again, which starts its log afresh -- so a game sharing the menu's file would
+// lose its whole log the moment the player left it, which is exactly when
+// somebody would want to read it.
+constexpr const char* kSwitchGameLogPath = "sdmc:/switch/Dualscreen-game.log";
 
 // Start-up failing has to be visible. Without this the app returns to the
 // homebrew menu the instant something goes wrong, which looks exactly like it
@@ -1543,7 +1588,8 @@ int main(int argc, char** argv) {
     // Opened before anything else can fail, and written a line at a time, so
     // the log survives whatever happens next -- including the app being killed
     // outright rather than exiting.
-    set_log_file(kSwitchLogPath);
+    set_log_file(DS_LOCAL_PLAY && options.local_play.wanted() ? kSwitchGameLogPath
+                                                              : kSwitchLogPath);
     log_info("Dualscreen starting");
 
     // Sockets are not on by default, and without them there is nothing this
@@ -1630,10 +1676,24 @@ int main(int argc, char** argv) {
     // whose bundle hides it best. See build_stamp.hpp.
     log_build_stamp();
 
+    // This program's own path, for starting it again -- see local_play.hpp.
+    [[maybe_unused]] const std::string self_path = argc > 0 && argv[0] != nullptr ? argv[0] : "";
+
     int status = 0;
     if (!options.parse_error.empty()) {
         log_error(options.parse_error);
         status = 2;
+#if DS_LOCAL_PLAY
+    } else if (options.local_play.wanted()) {
+        // A game, or the browser to choose one: the desktop app does the
+        // playing, in this process. Sent here from the menu, the menu comes
+        // back when the game is over; started by a game's forwarder, leaving
+        // the game leaves the program, as leaving any game does.
+        status = play_here(local_play_request(options));
+        if (options.local_play.browse) {
+            relaunch(self_path, "");
+        }
+#endif
     } else {
         Client client(options);
         if (client.start()) {
@@ -1646,6 +1706,16 @@ int main(int argc, char** argv) {
 #endif
         }
         client.stop();
+#if DS_LOCAL_PLAY
+        if (client.wants_to_play_here() && !relaunch(self_path, kBrowseArgument)) {
+            // Nothing to ask to start this again, so it plays here, now that
+            // the menu's window is gone -- and ends when the game does, since
+            // there is no way back to the menu either.
+            LocalPlayRequest browse = local_play_request(options);
+            browse.browse = true;
+            status = play_here(browse);
+        }
+#endif
     }
 
     log_info("Dualscreen exiting");
