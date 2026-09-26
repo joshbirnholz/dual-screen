@@ -224,14 +224,18 @@ The core is libretro's melonDS, built as a static library for the Switch. It
 is GPL-3.0 and not part of this repository, so it is built separately and
 dropped in:
 
+From this `switch` directory — `cores/` is ignored by git, so the core and its
+source stay out of this repository:
+
 ```sh
-git clone https://github.com/libretro/melonDS
-cd melonDS
-make platform=libnx -j8
-mkdir -p ../dual-screen/switch/cores
-cp melonds_libretro_libnx.a ../dual-screen/switch/cores/
-cd ../dual-screen/switch && make
+git clone https://github.com/libretro/melonDS cores/melonDS
+make -C cores/melonDS platform=libnx AR=aarch64-none-elf-ar -j8
+cp cores/melonDS/melonds_libretro_libnx.a cores/
+make
 ```
+
+`AR=` because melonDS's own Makefile asks for `aarch64-none-elf-gcc-ar`, which
+a current devkitA64 does not have; plain `ar` makes the same archive.
 
 `make` looks for `cores/melonds_libretro_libnx.a` and says whether it found it.
 A core anywhere else, or named differently, is given as
