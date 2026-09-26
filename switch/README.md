@@ -229,13 +229,19 @@ source stay out of this repository:
 
 ```sh
 git clone https://github.com/libretro/melonDS cores/melonDS
-make -C cores/melonDS platform=libnx AR=aarch64-none-elf-ar -j8
+make -C cores/melonDS platform=libnx AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8
 cp cores/melonDS/melonds_libretro_libnx.a cores/
 make
 ```
 
-`AR=` because melonDS's own Makefile asks for `aarch64-none-elf-gcc-ar`, which
-a current devkitA64 does not have; plain `ar` makes the same archive.
+`AR=` with the whole path because of how its last step runs. devkitPro's
+rules put the toolchain on the path for the commands `make` hands to a shell,
+but a command with nothing in it for a shell to interpret -- the archiver line
+-- is started directly, and the `make` that comes with macOS looks for it on the
+path it was itself started with, which does not have devkitPro's tools on it.
+Every compile succeeds and then `aarch64-none-elf-gcc-ar: No such file or
+directory` at the end. Naming the archiver in full works everywhere, and plain
+`ar` makes the same archive.
 
 `make` looks for `cores/melonds_libretro_libnx.a` and says whether it found it.
 A core anywhere else, or named differently, is given as
