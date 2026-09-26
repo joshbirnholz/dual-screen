@@ -1676,6 +1676,12 @@ int main(int argc, char** argv) {
     // whose bundle hides it best. See build_stamp.hpp.
     log_build_stamp();
 
+    // Whether this build can play a game itself, said once up front: a build
+    // made without the core in place looks exactly like one with it until
+    // the menu is missing a row.
+    log_info(DS_LOCAL_PLAY ? "this build carries a DS core and can play DS games here"
+                           : "this build has no DS core; it joins games running elsewhere");
+
     // This program's own path, for starting it again -- see local_play.hpp.
     [[maybe_unused]] const std::string self_path = argc > 0 && argv[0] != nullptr ? argv[0] : "";
 
