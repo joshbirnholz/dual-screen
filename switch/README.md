@@ -248,6 +248,13 @@ A core anywhere else, or named differently, is given as
 `make CORE_LIB=/path/to/core.a`. With no core, the build is the companion
 alone, exactly as before.
 
+Keep the clone in `cores/melonDS` after copying the archive out: the link needs
+its source as well. A core built to be linked into a program leaves out
+libretro-common's file, path and string helpers (`rfopen`, `path_basename`,
+`strlcpy_retro__` and the rest), because RetroArch has its own copy, so `make`
+compiles them from the clone's `src/libretro/libretro-common`. A clone
+somewhere else is given as `make CORE_SRC=/path/to/melonDS`.
+
 **Before passing a built `.nro` on to anyone:** with melonDS linked in, it is a
 combined work with a GPL-3.0 program — see `THIRD_PARTY.md`.
 

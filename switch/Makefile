@@ -122,18 +122,54 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp controllers_screen.cpp \
                child_process.cpp
 
+# What a libretro frontend supplies to a core linked into it. A core built as a
+# static library -- which is what `platform=libnx` builds -- leaves out
+# libretro-common's file, path and string helpers, because RetroArch, the
+# frontend it is normally linked into, has its own copy and two would collide.
+# This program has none, so it compiles the core's: the same files the core's
+# own Makefile.common builds into every other kind of core, from the core's own
+# source tree, so they are exactly the version it was written against. Without
+# them the link fails on rfopen, filestream_vfs_init, path_basename and
+# strlcpy_retro__.
+CORE_SRC ?= cores/melonDS
+CORE_SRC_PATH := $(if $(filter /%,$(CORE_SRC)),$(CORE_SRC),$(TOPDIR)/$(CORE_SRC))
+CORE_COMMON := $(CORE_SRC_PATH)/src/libretro/libretro-common
+CORE_COMMON_CFILES := compat/compat_strl.c compat/fopen_utf8.c \
+               compat/compat_posix_string.c compat/compat_strcasestr.c \
+               encodings/encoding_utf.c file/file_path.c \
+               streams/file_stream.c streams/file_stream_transforms.c \
+               string/stdstring.c vfs/vfs_implementation.c
+CORE_COMMON_DIRS := $(sort $(dir $(addprefix $(CORE_COMMON)/,$(CORE_COMMON_CFILES))))
+
 ifeq ($(HAVE_CORE),1)
 $(info DS core: $(CORE_LIB_PATH), so this build plays DS games here too)
+ifeq ($(wildcard $(CORE_COMMON)/file/file_path.c),)
+$(error Cannot find the core's source at $(CORE_SRC_PATH), which the link needs \
+        libretro-common from -- clone melonDS there, as README.md says, or set \
+        CORE_SRC to where it is)
+endif
 # Last, so the companion's main.cpp is the one found: src/ has a main.cpp of
 # its own, the desktop app's, which this program never uses.
 SOURCE_DIRS += $(SHARED)
 CPPFILES    += $(LOCAL_PLAY_CPPFILES)
+CFILES      := $(notdir $(CORE_COMMON_CFILES))
 LOCAL_PLAY_DEFINES := -DDS_LOCAL_PLAY=1 -DDS_STATIC_LIBRETRO_CORE=1
 LOCAL_PLAY_LIBS := $(CORE_LIB_PATH)
+# melonDS's GL function pointers are declared in a libretro-common header
+# (glsym/switch/nx_glsym.h) without `extern`, so every C file that includes it
+# defines them all again. That was harmless while compilers merged such
+# duplicates by default, which RetroArch still builds with -fcommon to get;
+# since GCC 10 each one is a definition of its own, and three of the core's
+# files -- glsm, rglgen and glsym_gl -- collide on every one of them. They are
+# the same zeroed pointer each time, so letting the linker keep the first is
+# exactly what -fcommon would have done, without rebuilding the core.
+LOCAL_PLAY_LDFLAGS := -Wl,--allow-multiple-definition
 else
 $(info DS core: none at $(CORE_LIB_PATH), so this build is the companion alone -- see README.md)
+CFILES      :=
 LOCAL_PLAY_DEFINES :=
 LOCAL_PLAY_LIBS :=
+LOCAL_PLAY_LDFLAGS :=
 endif
 
 INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY)
@@ -172,7 +208,7 @@ CFLAGS  := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(DEFINES) \
 CXXFLAGS := $(CFLAGS) -std=gnu++17
 
 ASFLAGS := -g $(ARCH)
-LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) $(LOCAL_PLAY_LDFLAGS)
 
 # zlib is the frame codec's; everything else SDL2 needs on this platform comes
 # out of sdl2-config, including the GL stack SDL's own renderer sits on. This
@@ -256,10 +292,11 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 export OUTPUT   := $(CURDIR)/$(TARGET)
 export TOPDIR   := $(CURDIR)
-export VPATH    := $(foreach dir,$(SOURCE_DIRS),$(CURDIR)/$(dir))
+export VPATH    := $(foreach dir,$(SOURCE_DIRS),$(CURDIR)/$(dir)) \
+                   $(if $(CFILES),$(CORE_COMMON_DIRS))
 export DEPSDIR  := $(CURDIR)/$(BUILD)
 
-export OFILES   := $(CPPFILES:.cpp=.o)
+export OFILES   := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o)
 export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                    $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
                    -I$(CURDIR)/$(BUILD)
@@ -374,6 +411,12 @@ $(OUTPUT).elf: $(OFILES)
 # The one file that reads the stamp, and the only one it is given to.
 build_stamp.o: $(DEPSDIR)/ds_build_stamp.h
 build_stamp.o: CXXFLAGS += -include $(DEPSDIR)/ds_build_stamp.h
+
+# The core's libretro-common, compiled the way the core compiles it for this
+# console: its own headers first, ahead of anything of this program's, and
+# its own platform macros, which vfs_implementation.c picks its file calls by.
+# Its warnings are its own business.
+$(CFILES:.c=.o): CFLAGS := -I$(CORE_COMMON)/include -DSWITCH=1 -DHAVE_LIBNX=1 $(CFLAGS) -w
 
 -include $(DEPENDS)
 
