@@ -233,7 +233,19 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOptShowCursor, {"disabled"}, Requirement::IfPresent);  // ours
             // and the older core's:
             core_->force_option(kOptLegacyScreenLayout, {"Top/Bottom"}, Requirement::IfPresent);
-            core_->force_option(kOptLegacyOpenGl, {"disabled"}, Requirement::IfPresent);
+            // Its OpenGL renderer draws the 3D on the GPU, where the software
+            // one takes a whole CPU core and on a Switch cannot keep up with a
+            // game like Mario Kart DS. Only where this window can serve the
+            // desktop OpenGL 3.1 it asks for: a melonDS whose context request
+            // is refused does not fall back to software, it draws nothing.
+            const bool gpu_3d =
+                config.prefer_gpu_renderer && !gl::is_gles() && gl::at_least(3, 1);
+            core_->force_option(kOptLegacyOpenGl, {gpu_3d ? "enabled" : "disabled"},
+                                Requirement::IfPresent);
+            if (config.prefer_gpu_renderer && !gpu_3d) {
+                log_warn("drawing the DS's 3D in software: this window has no desktop OpenGL "
+                         "3.1 for the GPU renderer");
+            }
             // Both have these.
             core_->force_option(kOptScreenGap, "0");  // no dead rows between screens
             // touch arrives as a libretro pointer

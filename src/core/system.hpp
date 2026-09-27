@@ -54,6 +54,10 @@ struct SystemProfile {
     std::string core_description;
     // The context this system's cores need to be given.
     GlContextNeed gl_context = GlContextNeed::Any;
+    // Whether that context is only wanted, not needed: a core that can draw
+    // in software as well plays on in whatever context there is. A 3DS core
+    // has no software renderer, so for it this stays false.
+    bool gl_context_optional = false;
     // Whether the console itself has an analogue stick. One that does reads the
     // left stick as that stick and nothing else; one that does not lets the
     // stick stand in for the d-pad, since players reach for it either way.

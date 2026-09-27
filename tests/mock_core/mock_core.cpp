@@ -48,7 +48,13 @@ constexpr unsigned kBottomX = (kFrameWidth - kBottomWidth) / 2;
 // reports RETRO_HW_FRAME_BUFFER_VALID instead of handing over pixels. Without
 // this the hardware-render path in the frontend would never be exercised, and
 // that path is the whole reason a 3DS core loads at all.
-constexpr bool kUsesHwRender = kIsThreeDs;
+//
+// The DS build does too when it is standing in for libretro's older melonDS
+// and the frontend has switched that core's OpenGL renderer on -- which is
+// what a Switch does, and the only way a DS game there draws its 3D on the
+// GPU. Decided when the game loads, as the real core decides it.
+bool g_legacy_gpu = false;
+bool uses_hw_render() { return kIsThreeDs || g_legacy_gpu; }
 
 // How many pixels this core draws per console pixel, the way Citra's
 // citra_resolution_factor works. The frame is still composed at 1x on the CPU
@@ -749,8 +755,8 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info* info) {
     // player asks for more. The frontend sizes the core's framebuffer from the
     // maximum, so on the GPU path the picture occupies a small corner of a much
     // larger buffer -- and anything that assumed the two matched breaks there.
-    info->geometry.max_width = kFrameWidth * (kUsesHwRender ? 10 : 1);
-    info->geometry.max_height = kFrameHeight * (kUsesHwRender ? 10 : 1);
+    info->geometry.max_width = kFrameWidth * (uses_hw_render() ? 10 : 1);
+    info->geometry.max_height = kFrameHeight * (uses_hw_render() ? 10 : 1);
     info->geometry.aspect_ratio = 0.0f;
     info->timing.fps = 59.8261;
     info->timing.sample_rate = 32823.6;
@@ -769,7 +775,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
         !g_environment(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &format)) {
         return false;
     }
-    if (kUsesHwRender) {
+    g_legacy_gpu = speaks_legacy_melonds() && read_variable("melonds_opengl_renderer") == "enabled";
+    if (uses_hw_render()) {
         const char* nothing = std::getenv("MOCK_CORE_PRESENT_NOTHING");
         g_present_nothing = nothing != nullptr && nothing[0] != '\0' && nothing[0] != '0';
 
@@ -778,7 +785,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
         // refuses gets the same "cannot load" a real 3DS core would give.
         g_hw_render.context_type = RETRO_HW_CONTEXT_OPENGL_CORE;
         g_hw_render.version_major = 3;
-        g_hw_render.version_minor = 3;
+        // The older melonDS asks for 3.1, not Citra's 3.3.
+        g_hw_render.version_minor = g_legacy_gpu ? 1 : 3;
         g_hw_render.context_reset = hw_context_reset;
         g_hw_render.context_destroy = hw_context_destroy;
         g_hw_render.depth = true;
@@ -806,14 +814,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
     } else if (speaks_legacy_melonds()) {
         g_layout_option_honoured = read_variable("melonds_screen_layout") == "Top/Bottom" &&
                                    read_variable("melonds_screen_gap") == "0" &&
-                                   read_variable("melonds_touch_mode") == "Touch" &&
-                                   read_variable("melonds_opengl_renderer") == "disabled";
+                                   read_variable("melonds_touch_mode") == "Touch";
     } else {
         g_layout_option_honoured = (read_variable("melonds_screen_layout1") == "top-bottom") &&
                                    (read_variable("melonds_number_of_screen_layouts") == "1") &&
                                    (read_variable("melonds_screen_gap") == "0");
     }
-    if (kUsesHwRender) {
+    if (uses_hw_render()) {
         // Before the frontend asks for the av_info, so the first frame is
         // already the size the player asked for.
         refresh_render_scale();
@@ -830,7 +837,7 @@ RETRO_API void retro_unload_game(void) {}
 // one that hurts: left enabled with a SRC_ALPHA function, it quietly discards
 // everything the core draws that has no alpha of its own.
 void check_frontend_left_default_gl_state() {
-    if (!kUsesHwRender || !g_hw_ready || gl_IsEnabled == nullptr) return;
+    if (!uses_hw_render() || !g_hw_ready || gl_IsEnabled == nullptr) return;
     if (g_state_checked) return;
     g_state_checked = true;
 
@@ -878,7 +885,7 @@ RETRO_API void retro_run(void) {
     bool options_changed = false;
     if (g_environment != nullptr &&
         g_environment(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &options_changed) && options_changed &&
-        kUsesHwRender && refresh_render_scale()) {
+        uses_hw_render() && refresh_render_scale()) {
         announce_geometry();
     }
     check_frontend_left_default_gl_state();
@@ -957,7 +964,7 @@ RETRO_API void retro_run(void) {
         }
     }
 
-    if (!kUsesHwRender && g_environment != nullptr && g_input_state != nullptr) {
+    if (!uses_hw_render() && g_environment != nullptr && g_input_state != nullptr) {
         if (!g_asked_for_rumble) {
             g_asked_for_rumble = true;
             if (!g_environment(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &g_rumble)) {
@@ -976,7 +983,7 @@ RETRO_API void retro_run(void) {
     ++g_frame_counter;
 
     if (g_video_refresh != nullptr) {
-        if (kUsesHwRender) {
+        if (uses_hw_render()) {
             present_through_gpu();
             g_video_refresh(RETRO_HW_FRAME_BUFFER_VALID, kFrameWidth * g_render_scale,
                             kFrameHeight * g_render_scale, 0);

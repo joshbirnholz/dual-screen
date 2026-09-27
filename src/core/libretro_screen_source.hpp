@@ -48,6 +48,11 @@ struct LibretroSourceConfig {
     // A Rumble Pak in the DS's GBA slot, where the core offers one -- see
     // LibretroCoreScreenSource::offers_rumble_pak().
     bool rumble_pak = false;
+    // Draw the DS's 3D on the GPU where the core can -- libretro's older
+    // melonDS, through its OpenGL renderer -- rather than in software on a CPU
+    // core. Asked only where the window can serve it: see SystemProfile's
+    // gl_context, which is what makes it so on a Switch.
+    bool prefer_gpu_renderer = false;
 };
 
 // The V1 ScreenSource: hosts the melonDS DS libretro core, pins it to a single

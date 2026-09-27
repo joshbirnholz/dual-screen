@@ -2396,6 +2396,9 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
     source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
     source_config.render_scale = render_scale;
     source_config.rumble_pak = have_game_config && game_config.rumble_pak;
+    // A system whose window is built for GPU rendering is one where the core
+    // should use it -- see SystemProfile::gl_context.
+    source_config.prefer_gpu_renderer = profile.gl_context == GlContextNeed::OpenGl33Core;
 
     source.reset(new LibretroCoreScreenSource());
     source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
@@ -2555,11 +2558,19 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // all if the answer is no.
     std::string context_error;
     if (!ensure_gl_context(profile.gl_context, &context_error)) {
-        enter_message(MessageKind::Error, "Cannot set up the display for " + profile.name,
-                      context_error,
-                      {profile.core_description + " renders on the GPU and needs OpenGL 3.3."},
-                      fatal_on_failure);
-        return false;
+        // Wanted rather than needed, and ensure_gl_context() has put a window
+        // back: the core draws in software in it instead -- see
+        // LibretroSourceConfig::prefer_gpu_renderer.
+        if (profile.gl_context_optional && window != nullptr) {
+            log_warn("carrying on without the OpenGL " + profile.name +
+                     " games draw fastest with: " + context_error);
+        } else {
+            enter_message(MessageKind::Error, "Cannot set up the display for " + profile.name,
+                          context_error,
+                          {profile.core_description + " renders on the GPU and needs OpenGL 3.3."},
+                          fatal_on_failure);
+            return false;
+        }
     }
 
     switch (profile.frame_origin) {
@@ -3464,6 +3475,14 @@ int App::run(const AppOptions& options) {
         SystemId booting = SystemId::Ds;
         if (system_for_rom(options.game_path, booting)) {
             initial_context = system_profile(booting).gl_context;
+        }
+    }
+    // A build with its core linked in plays that one console and nothing
+    // else, so its window can be built for it from the start, browser and
+    // all, rather than torn down and built again as each game opens.
+    if (!skip_initial_context && initial_context == GlContextNeed::Any) {
+        if (const std::optional<SystemId> built_in = builtin_core_system()) {
+            initial_context = system_profile(*built_in).gl_context;
         }
     }
 
