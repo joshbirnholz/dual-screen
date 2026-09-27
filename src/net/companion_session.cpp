@@ -4,6 +4,7 @@
 #include <random>
 #include <cmath>
 
+#include "input/cursor_visibility.hpp"
 #include "util/log.hpp"
 
 namespace ds::net {
@@ -1438,6 +1439,7 @@ void CompanionSession::poll(uint64_t now_ms) {
         // decode through VideoToolbox, and asking the FFmpeg question got the
         // answer "no video" out of a device that decodes video perfectly well.
         hello.accepts_video = video::can_decode();
+        hello.has_pointer = device_has_pointer();
         std::vector<uint8_t> out;
         encode_hello(hello, out);
         stream_.send(out);

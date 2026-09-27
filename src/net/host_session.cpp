@@ -716,6 +716,7 @@ void HostSession::drop_companion(const std::string& reason) {
     video_keyframe_owed_top_ = false;
     video_keyframe_owed_bottom_ = false;
     companion_accepts_video_ = false;
+    companion_has_pointer_ = false;
     // A different device may be a different size, and the encoder is opened
     // for the size it is given, so the next one gets its own attempt.
     video_retry_at_ms_ = 0;
@@ -780,6 +781,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 (companion_screen_ == ScreenId::Top) ? ScreenId::Bottom : ScreenId::Top;
             companion_name_ = hello.device_name.empty() ? "companion" : hello.device_name;
             companion_accepts_video_ = hello.accepts_video;
+            companion_has_pointer_ = hello.has_pointer;
             handshake_done_ = true;
             // Fresh for this companion; see session_token_'s own comment. The
             // companion's own address on the media channel is not known yet --

@@ -20,6 +20,12 @@ CursorMode next_cursor_mode(CursorMode mode);
 const char* cursor_mode_key(CursorMode mode);
 CursorMode cursor_mode_from_key(const std::string& key);
 
+// Whether this device has a mouse pointer for the Pointer setting to show or
+// hide: a computer does, and a Steam Deck's trackpads drive one. A Switch, an
+// Apple TV, a phone or a tablet has a finger or a remote instead, and nothing
+// on screen that the setting could do anything to.
+bool device_has_pointer();
+
 // Shows the mouse pointer while it is being moved and hides it again once it
 // has been still for a moment.
 //

@@ -480,6 +480,48 @@ const retro_core_option_v2_definition kAzaharOptions[] = {
     {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
 };
 
+// The DS options as libretro's own melonDS (0.9.3, the core a Switch build
+// links in) declares them, copied from what a real one listed on a Switch:
+// one screen layout rather than melonDS DS's numbered ones, the renderer as an
+// on/off switch, capitalised touch modes, and no cursor, microphone-button or
+// render-mode options at all.
+//
+// Selected by MOCK_CORE_LEGACY_MELONDS_OPTIONS.
+const retro_core_option_v2_definition kLegacyMelonDsOptions[] = {
+    {"melonds_screen_layout", "Screen Layout", nullptr, nullptr, nullptr, "screen",
+     {{"Top/Bottom", nullptr},
+      {"Bottom/Top", nullptr},
+      {"Left/Right", nullptr},
+      {"Right/Left", nullptr},
+      {"Top Only", nullptr},
+      {"Bottom Only", nullptr},
+      {"Hybrid Top", nullptr},
+      {"Hybrid Bottom", nullptr},
+      {nullptr, nullptr}},
+     "Top/Bottom"},
+    {"melonds_screen_gap", "Screen Gap", nullptr, nullptr, nullptr, "screen",
+     {{"0", nullptr}, {"1", nullptr}, {"2", nullptr}, {nullptr, nullptr}}, "0"},
+    {"melonds_opengl_renderer", "OpenGL Renderer (Restart)", nullptr, nullptr, nullptr, "video",
+     {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
+    {"melonds_threaded_renderer", "Threaded Software Renderer", nullptr, nullptr, nullptr,
+     "video", {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
+    {"melonds_touch_mode", "Touch mode", nullptr, nullptr, nullptr, "input",
+     {{"Mouse", nullptr},
+      {"Touch", nullptr},
+      {"Joystick", nullptr},
+      {"disabled", nullptr},
+      {nullptr, nullptr}},
+     "Mouse"},
+    {"melonds_mic_input", "Microphone Input", nullptr, nullptr, nullptr, "input",
+     {{"Blow Noise", nullptr}, {"White Noise", nullptr}, {nullptr, nullptr}}, "Blow Noise"},
+    {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
+};
+
+bool speaks_legacy_melonds() {
+    const char* set = std::getenv("MOCK_CORE_LEGACY_MELONDS_OPTIONS");
+    return !kIsThreeDs && set != nullptr && set[0] != '\0' && set[0] != '0';
+}
+
 bool speaks_azahar() {
     const char* set = std::getenv("MOCK_CORE_AZAHAR_OPTIONS");
     return kIsThreeDs && set != nullptr && set[0] != '\0' && set[0] != '0';
@@ -655,7 +697,9 @@ RETRO_API void retro_set_environment(retro_environment_t callback) {
         retro_core_options_v2 options {};
         options.categories = const_cast<retro_core_option_v2_category*>(kCategories);
         options.definitions = const_cast<retro_core_option_v2_definition*>(
-            speaks_azahar() ? kAzaharOptions : kOptions);
+            speaks_azahar()           ? kAzaharOptions
+            : speaks_legacy_melonds() ? kLegacyMelonDsOptions
+                                      : kOptions);
         callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &options);
     }
 
@@ -759,6 +803,11 @@ RETRO_API bool retro_load_game(const struct retro_game_info*) {
             speaks_azahar() || read_variable("citra_touch_touchscreen") == "enabled";
         g_layout_option_honoured = (layout == "Default Top-Bottom Screen" || layout == "default") &&
                                    read_variable("citra_swap_screen") == "Top" && touch_ok;
+    } else if (speaks_legacy_melonds()) {
+        g_layout_option_honoured = read_variable("melonds_screen_layout") == "Top/Bottom" &&
+                                   read_variable("melonds_screen_gap") == "0" &&
+                                   read_variable("melonds_touch_mode") == "Touch" &&
+                                   read_variable("melonds_opengl_renderer") == "disabled";
     } else {
         g_layout_option_honoured = (read_variable("melonds_screen_layout1") == "top-bottom") &&
                                    (read_variable("melonds_number_of_screen_layouts") == "1") &&

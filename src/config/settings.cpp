@@ -209,8 +209,9 @@ bool Settings::save(const AppPaths& paths) const {
             return false;
         }
     }
-    if (std::rename(temporary.c_str(), paths.settings_file.c_str()) != 0) {
-        log_error("could not replace " + paths.settings_file);
+    std::string why;
+    if (!replace_file(temporary, paths.settings_file, &why)) {
+        log_error("could not save: " + why);
         return false;
     }
     return true;

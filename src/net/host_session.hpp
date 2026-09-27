@@ -127,6 +127,8 @@ public:
     // What the companion said it could decode. Tiles are always possible; video
     // needs a decoder at the far end and an encoder at this one.
     bool companion_accepts_video() const { return companion_accepts_video_; }
+    // Whether the device connected now has a mouse pointer; false with none.
+    bool companion_has_pointer() const { return has_companion() && companion_has_pointer_; }
 
     // How screens are sent. Automatic, the default, is decided here screen by
     // screen -- see screen_goes_as_video(). The other two pin one format for
@@ -771,6 +773,7 @@ private:
     video::VideoEncoder::EncodeCost encode_cost_top_;
     video::VideoEncoder::EncodeCost encode_cost_bottom_;
     bool companion_accepts_video_ = false;
+    bool companion_has_pointer_ = false;
     // Send the current screens once more even if nothing has changed, because
     // what the companion needs has.
     bool resend_screens_ = true;

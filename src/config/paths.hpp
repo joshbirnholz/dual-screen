@@ -129,6 +129,14 @@ bool write_file_atomically(const std::string& path,
                            const void* data,
                            std::size_t size,
                            std::string* error);
+// Puts `temporary` where `path` is, replacing whatever was there -- the last
+// step of writing a file safely. A rename, where the file system lets one
+// replace a file; the Switch's SD card does not, and there the old file is
+// moved aside to `path`.old first and removed once the new one is in place,
+// so a power cut between the two leaves the old contents behind rather than
+// nothing (read_file() falls back to them). False, with the reason, if the
+// new file could not be put in place; the old one is then where it was.
+bool replace_file(const std::string& temporary, const std::string& path, std::string* error);
 bool file_exists(const std::string& path);
 bool directory_exists(const std::string& path);
 std::string path_join(const std::string& a, const std::string& b);

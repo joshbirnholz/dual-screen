@@ -8,10 +8,12 @@
 
 #include "test_support.hpp"
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <unistd.h>
+#include <vector>
 
 #include "app.hpp"
 #include "config/game_config.hpp"
@@ -223,6 +225,37 @@ void test_path_helpers() {
         CHECK_MSG(path_dirname(resolved) != resolved,
                   std::string(relative) + " resolved to a directory that is its own parent");
     }
+}
+
+// Writing a file is replacing one, more often than not, and the Switch's SD
+// card will not rename over an existing file -- so a save written there was
+// only ever written the first time. Linux will, so what can be checked here is
+// that replacing works and that a replace cut short on a card that will not
+// leaves something to read.
+void test_files_are_replaced_and_a_cut_short_replace_is_read_back() {
+    const std::string sandbox = make_sandbox();
+    CHECK(!sandbox.empty());
+    const std::string path = path_join(sandbox, "game.sav");
+    std::string error;
+    CHECK(write_file_atomically(path, "first", 5, &error));
+    CHECK(write_file_atomically(path, "second", 6, &error));
+    std::vector<uint8_t> bytes;
+    CHECK(ds::read_file(path, bytes, &error));
+    CHECK_STR_EQ(std::string(bytes.begin(), bytes.end()), "second");
+    CHECK(!file_exists(path + ".tmp"));
+
+    // Moved aside, and the power went before the new one was put in place.
+    CHECK(std::rename(path.c_str(), (path + ".old").c_str()) == 0);
+    CHECK(ds::read_file(path, bytes, &error));
+    CHECK_STR_EQ(std::string(bytes.begin(), bytes.end()), "second");
+    // The next write is the file again, and it is what gets read.
+    CHECK(write_file_atomically(path, "third", 5, &error));
+    CHECK(ds::read_file(path, bytes, &error));
+    CHECK_STR_EQ(std::string(bytes.begin(), bytes.end()), "third");
+
+    // Nothing at either name is still a quiet failure.
+    const std::string missing = path_join(sandbox, "missing.sav");
+    CHECK(!ds::read_file(missing, bytes, &error));
 }
 
 void test_game_config_round_trip() {
@@ -548,6 +581,7 @@ int main() {
     test_paths_resolve_under_xdg();
     test_each_platform_puts_things_where_that_platform_keeps_them();
     test_path_helpers();
+    test_files_are_replaced_and_a_cut_short_replace_is_read_back();
     test_game_config_round_trip();
     test_game_config_preserves_unknown_keys();
     test_game_config_survives_a_corrupt_file();

@@ -144,6 +144,11 @@ struct HelloMessage {
     // session uses anyway. Asked rather than assumed from the version: the same
     // protocol version is spoken by builds with and without one.
     bool accepts_video = false;
+    // Whether this device has a mouse pointer (see device_has_pointer()). The
+    // host offers the Pointer setting when either device has one, and only
+    // then. Missing from an older build's hello, which is taken as yes: that
+    // is what every build assumed before it was asked.
+    bool has_pointer = true;
 };
 
 struct WelcomeMessage {

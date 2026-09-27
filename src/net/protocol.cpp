@@ -232,6 +232,7 @@ void encode_hello(const HelloMessage& message, std::vector<uint8_t>& out) {
     put_string(out, message.device_name);
     put_u8(out, screen_to_wire(message.wanted_screen));
     put_u8(out, message.accepts_video ? 1u : 0u);
+    put_u8(out, message.has_pointer ? 1u : 0u);
     finish_message(out, start, MessageType::Hello);
 }
 
@@ -788,6 +789,9 @@ bool decode_hello(const uint8_t* data, std::size_t size, HelloMessage& out) {
         return false;
     }
     out.accepts_video = accepts_video != 0;
+    uint8_t has_pointer = 1;
+    if (reader.remaining() > 0) reader.u8(has_pointer);
+    out.has_pointer = has_pointer != 0;
     return screen_from_wire(screen, out.wanted_screen);
 }
 

@@ -41,6 +41,25 @@ void test_hello_round_trip() {
     CHECK_STR_EQ(received.device_name, "Steam Deck");
     CHECK(received.wanted_screen == ScreenId::Bottom);
     CHECK_EQ(received.protocol_version, kProtocolVersion);
+    CHECK(received.has_pointer);
+
+    // A Switch says it has no pointer, which is what keeps the Pointer
+    // setting off the menu of a Switch hosting another Switch.
+    sent.has_pointer = false;
+    buffer.clear();
+    encode_hello(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_hello(payload.data(), payload.size(), received));
+    CHECK(!received.has_pointer);
+
+    // A build from before the question was asked stops one byte short, and
+    // still decodes -- as a device with a pointer, which is what was assumed.
+    payload.pop_back();
+    HelloMessage older;
+    older.has_pointer = false;
+    CHECK(decode_hello(payload.data(), payload.size(), older));
+    CHECK(older.has_pointer);
+    CHECK_STR_EQ(older.device_name, "Steam Deck");
 }
 
 void test_welcome_and_session_round_trip() {

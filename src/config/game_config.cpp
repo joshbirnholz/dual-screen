@@ -163,8 +163,9 @@ bool GameConfig::save(const AppPaths& paths) const {
             return false;
         }
     }
-    if (std::rename(temporary.c_str(), path.c_str()) != 0) {
-        log_error("could not replace " + path);
+    std::string why;
+    if (!replace_file(temporary, path, &why)) {
+        log_error("could not save: " + why);
         std::remove(temporary.c_str());
         return false;
     }

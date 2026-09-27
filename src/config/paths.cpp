@@ -174,6 +174,12 @@ bool ensure_directory(const std::string& path) {
 bool read_file(const std::string& path, std::vector<uint8_t>& out, std::string* error) {
     out.clear();
     std::FILE* file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr && errno == ENOENT) {
+        // A replace_file() cut short between moving the old file aside and
+        // putting the new one in place: the old contents are all there is.
+        file = std::fopen((path + ".old").c_str(), "rb");
+        if (file == nullptr) errno = ENOENT;
+    }
     if (file == nullptr) {
         if (error != nullptr) {
             *error = std::string("cannot open ") + path + ": " + std::strerror(errno);
@@ -234,13 +240,48 @@ bool write_file_atomically(const std::string& path,
         if (error != nullptr) *error = std::string("cannot write ") + temporary;
         return false;
     }
-    if (std::rename(temporary.c_str(), path.c_str()) != 0) {
+    if (!replace_file(temporary, path, error)) {
         std::remove(temporary.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool replace_file(const std::string& temporary, const std::string& path, std::string* error) {
+    if (std::rename(temporary.c_str(), path.c_str()) == 0) {
+        return true;
+    }
+    const int rename_errno = errno;
+    // Nothing there to replace, so the rename failed for some other reason,
+    // and moving things aside would not help.
+    if (!file_exists(path)) {
         if (error != nullptr) {
-            *error = std::string("cannot replace ") + path + ": " + std::strerror(errno);
+            *error = std::string("cannot replace ") + path + ": " + std::strerror(rename_errno);
         }
         return false;
     }
+    // A file system whose rename will not replace an existing file -- the
+    // Switch's, which is FAT underneath and says so only by failing. A
+    // leftover from an earlier replace cut short goes first: the file at
+    // `path` is newer than it.
+    const std::string aside = path + ".old";
+    std::remove(aside.c_str());
+    if (std::rename(path.c_str(), aside.c_str()) != 0) {
+        if (error != nullptr) {
+            *error = std::string("cannot move ") + path + " aside to replace it: " +
+                     std::strerror(errno);
+        }
+        return false;
+    }
+    if (std::rename(temporary.c_str(), path.c_str()) != 0) {
+        const int second_errno = errno;
+        std::rename(aside.c_str(), path.c_str());
+        if (error != nullptr) {
+            *error = std::string("cannot replace ") + path + ": " + std::strerror(second_errno);
+        }
+        return false;
+    }
+    std::remove(aside.c_str());
     return true;
 }
 

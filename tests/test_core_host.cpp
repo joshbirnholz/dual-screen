@@ -726,6 +726,42 @@ void test_a_3ds_core_that_spells_its_options_differently() {
     source.close();
 }
 
+// The same for a DS: melonDS DS and libretro's older melonDS, which is the one
+// a Switch build links in, name nearly every option differently. Sent melonDS
+// DS's names, the older core refused six of them and the player was greeted
+// with a list of refusals before the game began -- so the mock speaks that
+// dialect too, and the frontend has to get the same split out of it, quietly.
+void test_the_older_melonds_takes_its_own_option_names() {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return;
+
+    ::setenv("MOCK_CORE_LEGACY_MELONDS_OPTIONS", "1", 1);
+    struct Restore {
+        ~Restore() { ::unsetenv("MOCK_CORE_LEGACY_MELONDS_OPTIONS"); }
+    } restore;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.core_path = core_path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+
+    std::string error;
+    CHECK_MSG(source.open(config, &error), error);
+    for (const std::string& warning : source.warnings()) {
+        CHECK_MSG(false, "the older melonDS refused: " + warning);
+    }
+    CHECK_MSG(source.split().valid, "the DS framebuffer did not split for the older core");
+    CHECK_EQ(source.split().top_height, 192);
+    CHECK_EQ(source.split().bottom_height, 192);
+    CHECK_STR_EQ(source.core_option_for_test("melonds_touch_mode"), "Touch");
+    CHECK_STR_EQ(source.core_option_for_test("melonds_threaded_renderer"), "enabled");
+    CHECK_STR_EQ(source.core_option_for_test("melonds_mic_input"), "Blow Noise");
+    CHECK_MSG(source.advance_frame(&error), error);
+    source.close();
+}
+
 // Rendering at 2x changes how much the core draws and nothing else. The two
 // screens have to come out of the larger buffer whole, in the same places, and
 // the geometry the layouts are built from has to stay the console's own -- a
@@ -1050,6 +1086,7 @@ int main() {
     test_a_frame_of_many_quads_draws_every_one();
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
+    test_the_older_melonds_takes_its_own_option_names();
     test_render_scale_only_changes_the_resolution();
     test_read_screen_bounds_the_target_size();
     test_render_scale_is_ignored_where_there_is_none();

@@ -31,6 +31,19 @@ constexpr const char* kOptScreenGap = "melonds_screen_gap";
 constexpr const char* kOptRenderMode = "melonds_render_mode";
 constexpr const char* kOptTouchMode = "melonds_touch_mode";
 constexpr const char* kOptShowCursor = "melonds_show_cursor";
+// libretro's own melonDS, the core melonDS DS grew out of, and the one a
+// Switch build links in (melonDS DS is not built for the Switch). Most of its
+// options have different names: one layout rather than a numbered list, the
+// renderer as a switch rather than a mode, and no cursor option at all -- it
+// draws none in Touch mode. Neither core has the other's, so each of these is
+// set only where it exists; a layout neither core took shows up anyway, loudly,
+// as a framebuffer compute_top_bottom_split() cannot divide.
+constexpr const char* kOptLegacyScreenLayout = "melonds_screen_layout";
+constexpr const char* kOptLegacyOpenGl = "melonds_opengl_renderer";
+// The software renderer drawing on a thread of its own. Both cores have it,
+// and on a Switch, whose cores are a third the speed of a Deck's, it is the
+// difference between a game that keeps up and one that does not.
+constexpr const char* kOptThreadedRenderer = "melonds_threaded_renderer";
 // The microphone. melonDS can synthesise the blow a DS game is listening for,
 // which is the only way in here: the libretro microphone interface this app
 // does not implement is exactly what the core reports missing at start-up
@@ -210,18 +223,32 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
         case SystemId::WiiU:
             break;
         case SystemId::Ds:
-            core_->force_option(kOptNumberOfLayouts, "1");   // no layout cycling
-            core_->force_option(kOptScreenLayout1, "top-bottom");
-            core_->force_option(kOptScreenGap, "0");         // no dead rows between screens
-            core_->force_option(kOptRenderMode, "software"); // composited from a CPU framebuffer
-            core_->force_option(kOptTouchMode, "touch");     // touch arrives as a libretro pointer
-            core_->force_option(kOptShowCursor, "disabled"); // we draw our own UI
+        {
+            using Requirement = LibretroCore::OptionRequirement;
+            // melonDS DS's spellings:
+            core_->force_option(kOptNumberOfLayouts, {"1"}, Requirement::IfPresent);  // no cycling
+            core_->force_option(kOptScreenLayout1, {"top-bottom"}, Requirement::IfPresent);
+            // composited from a CPU framebuffer
+            core_->force_option(kOptRenderMode, {"software"}, Requirement::IfPresent);
+            core_->force_option(kOptShowCursor, {"disabled"}, Requirement::IfPresent);  // ours
+            // and the older core's:
+            core_->force_option(kOptLegacyScreenLayout, {"Top/Bottom"}, Requirement::IfPresent);
+            core_->force_option(kOptLegacyOpenGl, {"disabled"}, Requirement::IfPresent);
+            // Both have these.
+            core_->force_option(kOptScreenGap, "0");  // no dead rows between screens
+            // touch arrives as a libretro pointer
+            core_->force_option(kOptTouchMode, std::vector<std::string>{"touch", "Touch"});
+            core_->force_option(kOptThreadedRenderer, {"enabled"}, Requirement::IfPresent);
+        }
             // Blow rather than silence, and only while the button is held --
             // "always" would have the console blown into for the whole
             // session, which several games read as an input of its own.
             core_->force_option(kOptMicInput,
                                 std::vector<std::string>{"blow", "Blow Noise", "blow noise"});
-            core_->force_option(kOptMicActive, std::vector<std::string>{"hold", "Hold"});
+            // The older core has no such option: its blow lasts exactly as long as
+            // the button is held, which is what this asks for anyway.
+            core_->force_option(kOptMicActive, std::vector<std::string>{"hold", "Hold"},
+                                LibretroCore::OptionRequirement::IfPresent);
             // And show it, because a microphone is the one input with no
             // visible effect when it is working and none when it is not: a
             // game that ignores a blow looks exactly like a button that is not

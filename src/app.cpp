@@ -79,6 +79,8 @@ constexpr std::chrono::milliseconds kShutdownDeadline{10000};
 // handheld gets put to sleep and powered off without warning, so waiting for a
 // clean exit to write the save is not good enough.
 constexpr double kSaveFlushIntervalSeconds = 5.0;
+// How often a game played on this device says how fast it is really running.
+constexpr double kSpeedReportSeconds = 10.0;
 
 // How often, while a game with Resume from Save State on is being played, its
 // resume point is brought up to date even when nothing else has asked. Quitting,
@@ -515,9 +517,23 @@ struct App::Impl {
     // preview goes through this rather than assuming a DS's.
     SystemScreens screens_geometry() const;
 
+    void report_speed();
+
     uint64_t last_counter = 0;
     double frame_period = 1.0 / 60.0;
     double frame_accumulator = 0.0;
+    // How fast a game played here is really running, said every
+    // kSpeedReportSeconds: frames the core ran against the frames that time
+    // was worth, and how much of it went to the core rather than to this app.
+    // A device that cannot keep up shows it here first, and which side of that
+    // line the time went is the whole question when it does.
+    double speed_seconds = 0.0;
+    // Whether the core has made a frame since this window last drew one. See
+    // draw_this_pass in the main loop.
+    bool core_frame_undrawn = true;
+    double speed_core_seconds = 0.0;
+    int speed_frames = 0;
+    int speed_passes = 0;
     double save_flush_accumulator = 0.0;
     // Played time since the resume point was last written -- see
     // kResumePointIntervalSeconds.
@@ -628,6 +644,12 @@ struct App::Impl {
     // Whether a companion is joined, and whether this device then counts as
     // holding the GamePad -- see route_wii_u_pads().
     bool companion_joined() const { return host_session && host_session->has_companion(); }
+    // Whether the Pointer setting has anything to show or hide: a mouse
+    // pointer on this device or on the one that joined it. A Switch playing
+    // alone, or with another Switch, has neither, and is not offered it.
+    bool pointer_choosable() const {
+        return device_has_pointer() || (host_session && host_session->companion_has_pointer());
+    }
     bool holds_gamepad() const { return !companion_joined() || gamepad_is_here(); }
     // The Controllers screen: put up over whatever this device is showing,
     // handed presses, and put away again back to where it was opened from.
@@ -1639,7 +1661,7 @@ void App::Impl::open_picker(bool embedded) {
     // Which entries the menu has has to match on both devices, or the same
     // cursor position would mean different things on the two screens.
     picker_state.cursor_choosable =
-        is_companion() ? companion_session->host_cursor_choosable() : true;
+        is_companion() ? companion_session->host_cursor_choosable() : pointer_choosable();
     // A property of the console, not of the session, so both devices reach the
     // same answer from `system` without anything to ask the host for.
     picker_state.save_points_available = is_companion()
@@ -2657,6 +2679,10 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     input.set_game_input_enabled(!resumed);
     apply_filtering();
     frame_accumulator = 0.0;
+    speed_seconds = 0.0;
+    speed_core_seconds = 0.0;
+    speed_frames = 0;
+    speed_passes = 0;
     last_counter = SDL_GetPerformanceCounter();
 
     // Offer this game to the network. A failure here is not fatal: the game is
@@ -2682,6 +2708,26 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                       source->warnings(), false);
     }
     return true;
+}
+
+void App::Impl::report_speed() {
+    const double wanted = speed_seconds / frame_period;
+    const double percent = wanted > 0.0 ? 100.0 * speed_frames / wanted : 0.0;
+    const double core_ms = speed_frames > 0 ? 1000.0 * speed_core_seconds / speed_frames : 0.0;
+    const double rest_ms =
+        speed_passes > 0 ? 1000.0 * (speed_seconds - speed_core_seconds) / speed_passes : 0.0;
+    char line[256];
+    std::snprintf(line, sizeof(line),
+                  "speed: %d frames in %.1fs, %.0f%% of full speed; the core took %.1f ms a frame "
+                  "(a frame is %.1f ms), and each of %d passes spent %.1f ms more drawing, "
+                  "reading input and waiting",
+                  speed_frames, speed_seconds, percent, core_ms, 1000.0 * frame_period, speed_passes,
+                  rest_ms);
+    log_info(line);
+    speed_seconds = 0.0;
+    speed_core_seconds = 0.0;
+    speed_frames = 0;
+    speed_passes = 0;
 }
 
 void App::Impl::persist_game_config() {
@@ -3785,7 +3831,7 @@ int App::run(const AppOptions& options) {
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
             shared.max_render_scale =
                 impl.local_game() ? system_profile(impl.system).max_render_scale : 1;
-            shared.cursor_choosable = true;  // this end is a machine with a pointer
+            shared.cursor_choosable = impl.pointer_choosable();
             shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
                 impl.local_game() && system_profile(impl.system).offers_right_stick_mode;
@@ -4293,6 +4339,7 @@ int App::run(const AppOptions& options) {
             if (impl.external_source && impl.frame_accumulator < impl.frame_period) {
                 impl.frame_accumulator = impl.frame_period;
             }
+            const uint64_t core_started = SDL_GetPerformanceCounter();
             while (impl.frame_accumulator >= impl.frame_period && advanced < max_frames_per_iteration) {
                 std::string frame_error;
                 if (!playing->advance_frame(&frame_error)) {
@@ -4311,6 +4358,18 @@ int App::run(const AppOptions& options) {
             }
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
                 impl.frame_accumulator = 0.0;
+            }
+            if (advanced > 0) impl.core_frame_undrawn = true;
+            if (impl.source) {
+                impl.speed_core_seconds +=
+                    static_cast<double>(SDL_GetPerformanceCounter() - core_started) /
+                    static_cast<double>(counter_frequency);
+                impl.speed_frames += advanced;
+                impl.speed_passes += 1;
+                impl.speed_seconds += elapsed;
+                if (impl.speed_seconds >= kSpeedReportSeconds) {
+                    impl.report_speed();
+                }
             }
             // What the companion's input has now reached, and a quick tap's
             // release let go of -- see HostSession::note_frame_ran().
@@ -4432,13 +4491,25 @@ int App::run(const AppOptions& options) {
         // pace: without the refresh to hold it, a pass woken by every audio
         // message would draw this window hundreds of times a second -- on the
         // GPU the game itself is running on.
+        //
+        // And a game played here, without the refresh to hold it either, is
+        // drawn when its core has made a frame and not in between: nothing on
+        // screen changes between two of them, and drawing the same picture on
+        // every pass of a loop that comes round each millisecond is hundreds
+        // of draws a second on the thread the core runs on. A Steam Deck
+        // shrugs that off; a Switch, running the core on the same cores the
+        // GPU driver is using, ran the game well short of full speed.
         const uint64_t render_now_us = steady_micros();
+        const bool core_paced = !impl.settings.vsync && !impl.paced_by_external_game() &&
+                                impl.state == Impl::State::Playing && impl.source != nullptr;
         const bool draw_this_pass =
-            !impl.paced_by_external_game() ||
-            render_now_us - impl.last_render_us >=
-                static_cast<uint64_t>(impl.frame_period * 1'000'000.0 * 0.9);
+            core_paced ? impl.core_frame_undrawn
+            : !impl.paced_by_external_game() ||
+                render_now_us - impl.last_render_us >=
+                    static_cast<uint64_t>(impl.frame_period * 1'000'000.0 * 0.9);
         if (draw_this_pass) {
             impl.last_render_us = render_now_us;
+            impl.core_frame_undrawn = false;
             impl.render();
         }
 

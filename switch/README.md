@@ -248,6 +248,25 @@ A core anywhere else, or named differently, is given as
 `make CORE_LIB=/path/to/core.a`. With no core, the build is the companion
 alone, exactly as before.
 
+**Faster, experimentally: melonDS's JIT.** Built as above, melonDS interprets
+every DS instruction one at a time, and a Switch's cores are too slow for that
+to keep up with most games. melonDS can translate DS code into the Switch's
+own instead -- its JIT, which has code written for the Switch -- but libretro's
+build leaves it switched off, with a note about memory problems still to be
+solved. To try it, rebuild the core with it on (the `clean` matters: every
+file compiles differently with it):
+
+```sh
+make -C cores/melonDS platform=libnx clean
+make -C cores/melonDS platform=libnx JIT_ARCH=aarch64 AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8
+cp cores/melonDS/melonds_libretro_libnx.a cores/
+make
+```
+
+The game log says how fast a game is running every ten seconds (lines
+starting `speed:`), which is the way to tell whether it helped. If games crash
+with it, build the core again without `JIT_ARCH`.
+
 Keep the clone in `cores/melonDS` after copying the archive out: the link needs
 its source as well. A core built to be linked into a program leaves out
 libretro-common's file, path and string helpers (`rfopen`, `path_basename`,
