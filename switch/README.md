@@ -265,10 +265,19 @@ it):
 
 ```sh
 make -C cores/melonDS platform=libnx clean
-make -C cores/melonDS platform=libnx JIT_ARCH=aarch64 AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8
-cp cores/melonDS/melonds_libretro_libnx.a cores/
-make
+make -C cores/melonDS platform=libnx JIT_ARCH=aarch64 ASFLAGS=-D_POSIX_C_SOURCE=200809L \
+    AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8 &&
+  cp cores/melonDS/melonds_libretro_libnx.a cores/ && make
 ```
+
+`ASFLAGS=` because one file the JIT brings in, borrowed from Dolphin, calls
+the POSIX `strerror_r`, which devkitPro's C library only declares when POSIX
+is asked for -- and melonDS compiles as strict C++17, which does not ask. With
+current devkitPro the build stops at `src/dolphin/CommonFuncs.cpp` without it.
+melonDS's Switch flags happen to start from `ASFLAGS`, which nothing else
+sets, so this reaches every C++ file without replacing any of the others. The
+`&&`s stop an archive that failed to build from being copied over the one
+that worked.
 
 The game log says how fast a game is running every ten seconds (lines
 starting `speed:`), which is the way to tell whether it helped. If games crash
