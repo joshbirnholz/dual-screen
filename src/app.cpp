@@ -611,6 +611,7 @@ struct App::Impl {
     // game paces the loop, when waiting on this window's refresh as well
     // would be two clocks. Applied only when it changes.
     int swap_interval_applied = -1;
+    int swap_interval_said = -1;
     void update_swap_pacing();
     // Once a second: how many frames the game made and how many came and went
     // before this app took them.
@@ -1089,7 +1090,10 @@ void App::Impl::update_swap_pacing() {
     const int wanted = paced_by_external_game() ? 0 : (settings.vsync ? 1 : 0);
     if (wanted == swap_interval_applied || window == nullptr) return;
     SDL_GL_SetSwapInterval(wanted);
-    if (swap_interval_applied != -1 || wanted == 0) {
+    // Said when it changes, not each time it is applied again: every change
+    // in Settings reapplies it, and the log had a line per button press.
+    if (wanted != swap_interval_said && (swap_interval_applied != -1 || wanted == 0)) {
+        swap_interval_said = wanted;
         log_info(wanted == 0 && paced_by_external_game()
                      ? "the game beside this app now sets the pace; this window no longer waits "
                        "for its own refresh"
