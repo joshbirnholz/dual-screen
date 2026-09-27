@@ -60,3 +60,51 @@ typedef enum {
 Result setsysInitialize(void);
 void setsysExit(void);
 Result setsysGetProductModel(SetSysProductModel* model);
+
+// The kernel, for which cores this process may use and putting a thread on one.
+typedef uint64_t u64;
+typedef u32 Handle;
+#define CUR_PROCESS_HANDLE 0xFFFF8001
+#define CUR_THREAD_HANDLE 0xFFFF8000
+typedef enum { InfoType_CoreMask = 0 } InfoType;
+Result svcGetInfo(u64* out, u32 id0, Handle handle, u64 id1);
+Result svcSetThreadCoreMask(Handle handle, s32 core_id, u32 affinity_mask);
+u32 svcGetCurrentProcessorNumber(void);
+
+// The CPU clock: pcv before system version 8.0.0, clkrst from it on.
+typedef enum { PcvModule_CpuBus = 0 } PcvModule;
+typedef enum { PcvModuleId_CpuBus = 0x40000001 } PcvModuleId;
+Result pcvInitialize(void);
+void pcvExit(void);
+Result pcvGetClockRate(PcvModule module, u32* out_hz);
+Result pcvSetClockRate(PcvModule module, u32 hz);
+typedef struct { u32 service_holder[4]; } ClkrstSession;
+Result clkrstInitialize(void);
+void clkrstExit(void);
+Result clkrstOpenSession(ClkrstSession* session_out, PcvModuleId module_id, u32 unk);
+void clkrstCloseSession(ClkrstSession* session);
+Result clkrstSetClockRate(ClkrstSession* session, u32 hz);
+Result clkrstGetClockRate(ClkrstSession* session, u32* out_hz);
+static inline bool hosversionBefore(u32 major, u32 minor, u32 micro) {
+    (void)major; (void)minor; (void)micro;
+    return false;
+}
+
+// Told when the console docks, undocks or comes back to this program -- any of
+// which can put the clocks back where the system wants them.
+typedef enum {
+    AppletHookType_OnFocusState = 0,
+    AppletHookType_OnOperationMode,
+    AppletHookType_OnPerformanceMode,
+    AppletHookType_OnExitRequest,
+    AppletHookType_OnResume,
+} AppletHookType;
+typedef void (*AppletHookFn)(AppletHookType hook, void* param);
+typedef struct AppletHookCookie AppletHookCookie;
+struct AppletHookCookie {
+    AppletHookCookie* next;
+    AppletHookFn callback;
+    void* param;
+};
+void appletHook(AppletHookCookie* cookie, AppletHookFn callback, void* param);
+void appletUnhook(AppletHookCookie* cookie);

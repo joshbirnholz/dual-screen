@@ -143,6 +143,14 @@ CORE_COMMON_DIRS := $(sort $(dir $(addprefix $(CORE_COMMON)/,$(CORE_COMMON_CFILE
 
 ifeq ($(HAVE_CORE),1)
 $(info DS core: $(CORE_LIB_PATH), so this build plays DS games here too)
+# Whether melonDS was built with its JIT, which is the difference between most
+# games keeping up on a Switch and not: an archive built with it has the JIT's
+# compiler in it, by name.
+ifeq ($(shell grep -c ARMJIT_Compiler $(CORE_LIB_PATH) 2>/dev/null),0)
+$(info DS core: built without its JIT, so most games will run slowly -- see README.md)
+else
+$(info DS core: built with its JIT)
+endif
 ifeq ($(wildcard $(CORE_COMMON)/file/file_path.c),)
 $(error Cannot find the core's source at $(CORE_SRC_PATH), which the link needs \
         libretro-common from -- clone melonDS there, as README.md says, or set \
@@ -163,7 +171,11 @@ LOCAL_PLAY_LIBS := $(CORE_LIB_PATH)
 # files -- glsm, rglgen and glsym_gl -- collide on every one of them. They are
 # the same zeroed pointer each time, so letting the linker keep the first is
 # exactly what -fcommon would have done, without rebuilding the core.
-LOCAL_PLAY_LDFLAGS := -Wl,--allow-multiple-definition
+#
+# And every thread started while a game is played here goes through
+# local_play.cpp on its way to pthreads, which puts it on a core of its own --
+# see __wrap_pthread_create there.
+LOCAL_PLAY_LDFLAGS := -Wl,--allow-multiple-definition -Wl,--wrap=pthread_create
 else
 $(info DS core: none at $(CORE_LIB_PATH), so this build is the companion alone -- see README.md)
 CFILES      :=

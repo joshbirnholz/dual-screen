@@ -518,6 +518,16 @@ struct App::Impl {
     SystemScreens screens_geometry() const;
 
     void report_speed();
+    // Starts the next window afresh -- after a report, and whenever the game
+    // stops being played (a menu, a message), so paused time is not counted
+    // as a slow game.
+    void reset_speed_window() {
+        speed_window_start = 0;
+        speed_seconds = 0.0;
+        speed_core_seconds = 0.0;
+        speed_frames = 0;
+        speed_passes = 0;
+    }
 
     uint64_t last_counter = 0;
     double frame_period = 1.0 / 60.0;
@@ -527,6 +537,7 @@ struct App::Impl {
     // was worth, and how much of it went to the core rather than to this app.
     // A device that cannot keep up shows it here first, and which side of that
     // line the time went is the whole question when it does.
+    uint64_t speed_window_start = 0;  // a performance counter; 0 between windows
     double speed_seconds = 0.0;
     // Whether the core has made a frame since this window last drew one. See
     // draw_this_pass in the main loop.
@@ -2679,10 +2690,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     input.set_game_input_enabled(!resumed);
     apply_filtering();
     frame_accumulator = 0.0;
-    speed_seconds = 0.0;
-    speed_core_seconds = 0.0;
-    speed_frames = 0;
-    speed_passes = 0;
+    reset_speed_window();
     last_counter = SDL_GetPerformanceCounter();
 
     // Offer this game to the network. A failure here is not fatal: the game is
@@ -2724,10 +2732,7 @@ void App::Impl::report_speed() {
                   speed_frames, speed_seconds, percent, core_ms, 1000.0 * frame_period, speed_passes,
                   rest_ms);
     log_info(line);
-    speed_seconds = 0.0;
-    speed_core_seconds = 0.0;
-    speed_frames = 0;
-    speed_passes = 0;
+    reset_speed_window();
 }
 
 void App::Impl::persist_game_config() {
@@ -4257,6 +4262,9 @@ int App::run(const AppOptions& options) {
                                     impl.paths.settings_file + "."},
                                true);
         }
+        if (!(playing != nullptr && game_running) && impl.speed_window_start != 0) {
+            impl.reset_speed_window();
+        }
         if (playing != nullptr && game_running) {
             // Whose controls the console's pad takes. On a DS or a 3DS, both
             // devices', merged, so either player can press anything -- the
@@ -4366,7 +4374,12 @@ int App::run(const AppOptions& options) {
                     static_cast<double>(counter_frequency);
                 impl.speed_frames += advanced;
                 impl.speed_passes += 1;
-                impl.speed_seconds += elapsed;
+                // By the clock, from the start of the first pass counted, so
+                // the core's time and the window's are the same span.
+                if (impl.speed_window_start == 0) impl.speed_window_start = core_started;
+                impl.speed_seconds =
+                    static_cast<double>(SDL_GetPerformanceCounter() - impl.speed_window_start) /
+                    static_cast<double>(counter_frequency);
                 if (impl.speed_seconds >= kSpeedReportSeconds) {
                     impl.report_speed();
                 }

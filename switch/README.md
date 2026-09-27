@@ -248,13 +248,20 @@ A core anywhere else, or named differently, is given as
 `make CORE_LIB=/path/to/core.a`. With no core, the build is the companion
 alone, exactly as before.
 
-**Faster, experimentally: melonDS's JIT.** Built as above, melonDS interprets
-every DS instruction one at a time, and a Switch's cores are too slow for that
-to keep up with most games. melonDS can translate DS code into the Switch's
-own instead -- its JIT, which has code written for the Switch -- but libretro's
-build leaves it switched off, with a note about memory problems still to be
-solved. To try it, rebuild the core with it on (the `clean` matters: every
-file compiles differently with it):
+**Speed.** While a game plays here the app runs the CPU at 1785 MHz rather
+than the 1020 MHz programs get by default -- the speed the Switch's own games
+use while loading -- and puts the threads melonDS, the sound and the network
+start on cores of their own, where otherwise every one of them would share
+the main thread's. It puts the clock back when the game ends. melonDS's own
+Switch port (RSDuck's) did both.
+
+That port also always ran melonDS with its **JIT**, which translates DS code
+into the Switch's own instead of interpreting it one instruction at a time,
+and most games need it to keep up. libretro's build leaves it switched off,
+with a note about memory problems still to be solved, so it is not the
+default here yet; `make` says whether the core it found has it. To build the
+core with it on (the `clean` matters: every file compiles differently with
+it):
 
 ```sh
 make -C cores/melonDS platform=libnx clean
