@@ -229,10 +229,29 @@ source stay out of this repository:
 
 ```sh
 git clone https://github.com/libretro/melonDS cores/melonDS
-make -C cores/melonDS platform=libnx AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8
-cp cores/melonDS/melonds_libretro_libnx.a cores/
-make
+make -C cores/melonDS platform=libnx JIT_ARCH=aarch64 ASFLAGS=-D_POSIX_C_SOURCE=200809L \
+    AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8 &&
+  cp cores/melonDS/melonds_libretro_libnx.a cores/ && make
 ```
+
+`JIT_ARCH=aarch64` turns on melonDS's **JIT**, which translates DS code into
+the Switch's own rather than interpreting it one instruction at a time.
+libretro's build leaves it off for the Switch, with a note about memory
+problems still to be solved, but melonDS's own Switch port (RSDuck's) always
+ran with it, and here it is the difference between a game running at about
+60% of full speed and at full speed: Mario & Luigi: Bowser's Inside Story
+went from 27 ms a frame to 13, where a frame has 16.7. `make` says whether the
+core it found has it. If a game crashes with it, the game log says where
+(a line starting `crashed:`), and building the core again without `JIT_ARCH`
+-- after `make -C cores/melonDS platform=libnx clean`, since every file
+compiles differently with it -- gives the slower core back.
+
+`ASFLAGS=` because one file the JIT brings in, borrowed from Dolphin, calls
+the POSIX `strerror_r`, which devkitPro's C library only declares when POSIX
+is asked for -- and melonDS compiles as strict C++17, which does not ask. With
+current devkitPro the build stops at `src/dolphin/CommonFuncs.cpp` without it.
+melonDS's Switch flags happen to start from `ASFLAGS`, which nothing else
+sets, so this reaches every C++ file without replacing any of the others.
 
 `AR=` with the whole path because of how its last step runs. devkitPro's
 rules put the toolchain on the path for the commands `make` hands to a shell,
@@ -243,45 +262,21 @@ Every compile succeeds and then `aarch64-none-elf-gcc-ar: No such file or
 directory` at the end. Naming the archiver in full works everywhere, and plain
 `ar` makes the same archive.
 
+The `&&`s stop an archive that failed to build from being copied over one that
+worked.
+
 `make` looks for `cores/melonds_libretro_libnx.a` and says whether it found it.
 A core anywhere else, or named differently, is given as
 `make CORE_LIB=/path/to/core.a`. With no core, the build is the companion
 alone, exactly as before.
 
-**Speed.** While a game plays here the app runs the CPU at 1785 MHz rather
-than the 1020 MHz programs get by default -- the speed the Switch's own games
-use while loading -- and puts the threads melonDS, the sound and the network
-start on cores of their own, where otherwise every one of them would share
-the main thread's. It puts the clock back when the game ends. melonDS's own
-Switch port (RSDuck's) did both.
-
-That port also always ran melonDS with its **JIT**, which translates DS code
-into the Switch's own instead of interpreting it one instruction at a time,
-and most games need it to keep up. libretro's build leaves it switched off,
-with a note about memory problems still to be solved, so it is not the
-default here yet; `make` says whether the core it found has it. To build the
-core with it on (the `clean` matters: every file compiles differently with
-it):
-
-```sh
-make -C cores/melonDS platform=libnx clean
-make -C cores/melonDS platform=libnx JIT_ARCH=aarch64 ASFLAGS=-D_POSIX_C_SOURCE=200809L \
-    AR=$DEVKITPRO/devkitA64/bin/aarch64-none-elf-ar -j8 &&
-  cp cores/melonDS/melonds_libretro_libnx.a cores/ && make
-```
-
-`ASFLAGS=` because one file the JIT brings in, borrowed from Dolphin, calls
-the POSIX `strerror_r`, which devkitPro's C library only declares when POSIX
-is asked for -- and melonDS compiles as strict C++17, which does not ask. With
-current devkitPro the build stops at `src/dolphin/CommonFuncs.cpp` without it.
-melonDS's Switch flags happen to start from `ASFLAGS`, which nothing else
-sets, so this reaches every C++ file without replacing any of the others. The
-`&&`s stop an archive that failed to build from being copied over the one
-that worked.
-
-The game log says how fast a game is running every ten seconds (lines
-starting `speed:`), which is the way to tell whether it helped. If games crash
-with it, build the core again without `JIT_ARCH`.
+**Speed.** While a game plays here the app also runs the CPU at 1785 MHz
+rather than the 1020 MHz programs get by default -- the speed the Switch's own
+games use while loading -- and puts the threads melonDS, the sound and the
+network start on cores of their own, where otherwise every one of them would
+share the main thread's. It puts the clock back when the game ends. melonDS's
+Switch port did both. The game log says how fast a game is running every ten
+seconds, in lines starting `speed:`.
 
 Keep the clone in `cores/melonDS` after copying the archive out: the link needs
 its source as well. A core built to be linked into a program leaves out
