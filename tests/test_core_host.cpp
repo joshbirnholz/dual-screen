@@ -746,17 +746,12 @@ void test_the_older_melonds_takes_its_own_option_names() {
     config.rom_path = make_fake_rom();
     config.system_directory = "/tmp";
     config.save_directory = "/tmp";
-    // Asked for, but with no OpenGL context to serve it: the core has to be
-    // left drawing in software, since told to use the GPU and then refused a
-    // context, the real one draws nothing at all.
-    config.prefer_gpu_renderer = true;
 
     std::string error;
     CHECK_MSG(source.open(config, &error), error);
     for (const std::string& warning : source.warnings()) {
         CHECK_MSG(false, "the older melonDS refused: " + warning);
     }
-    CHECK_STR_EQ(source.core_option_for_test("melonds_opengl_renderer"), "disabled");
     CHECK_MSG(source.split().valid, "the DS framebuffer did not split for the older core");
     CHECK_EQ(source.split().top_height, 192);
     CHECK_EQ(source.split().bottom_height, 192);
@@ -764,61 +759,6 @@ void test_the_older_melonds_takes_its_own_option_names() {
     CHECK_STR_EQ(source.core_option_for_test("melonds_threaded_renderer"), "enabled");
     CHECK_STR_EQ(source.core_option_for_test("melonds_mic_input"), "Blow Noise");
     CHECK_MSG(source.advance_frame(&error), error);
-    source.close();
-}
-
-// And given a window that can serve it, the older melonDS draws its 3D on the
-// GPU: its OpenGL renderer is switched on, it asks for desktop OpenGL 3.1, and
-// what comes back is a texture the two screens are cut from. On a Switch this
-// is the difference between Mario Kart DS at two-thirds speed and full speed.
-void test_the_older_melonds_draws_on_the_gpu_where_the_window_can() {
-    const std::string core_path = mock_core_path();
-    if (core_path.empty()) return;
-
-    GlFixture gl_fixture;
-    if (!gl_fixture.start()) {
-        test::skip("no OpenGL 3.3 context available for the GPU renderer");
-        return;
-    }
-    ::setenv("MOCK_CORE_LEGACY_MELONDS_OPTIONS", "1", 1);
-    struct Restore {
-        ~Restore() { ::unsetenv("MOCK_CORE_LEGACY_MELONDS_OPTIONS"); }
-    } restore;
-
-    LibretroCoreScreenSource source;
-    LibretroSourceConfig config;
-    config.core_path = core_path;
-    config.rom_path = make_fake_rom();
-    config.system_directory = "/tmp";
-    config.save_directory = "/tmp";
-    config.prefer_gpu_renderer = true;
-
-    std::string error;
-    CHECK_MSG(source.open(config, &error), error);
-    for (const std::string& warning : source.warnings()) {
-        CHECK_MSG(false, "the older melonDS refused: " + warning);
-    }
-    CHECK_STR_EQ(source.core_option_for_test("melonds_opengl_renderer"), "enabled");
-    CHECK_MSG(source.split().valid, "the DS framebuffer did not split on the GPU path");
-    CHECK_MSG(source.advance_frame(&error), error);
-
-    const CoreVideoFrame& frame = source.core_frame_for_test();
-    CHECK_MSG(frame.source == FrameSource::Texture, "the DS core did not render on the GPU");
-    CHECK_EQ(static_cast<int>(frame.width), 256);
-    CHECK_EQ(static_cast<int>(frame.height), 384);
-
-    // The mock draws the upper screen in blues and the touch screen in greens.
-    const ScreenTextures& screens = source.screens();
-    CHECK_MSG(screens.top != nullptr && screens.bottom != nullptr,
-              "the GPU frame did not become two screen textures");
-    if (screens.top != nullptr && screens.bottom != nullptr) {
-        uint8_t top_rgba[4] = {0, 0, 0, 0};
-        uint8_t bottom_rgba[4] = {0, 0, 0, 0};
-        CHECK(read_texture_pixel(*screens.top, 128, 96, top_rgba));
-        CHECK(read_texture_pixel(*screens.bottom, 128, 96, bottom_rgba));
-        CHECK_MSG(top_rgba[2] > top_rgba[1], "the upper screen was not where it should be");
-        CHECK_MSG(bottom_rgba[1] > bottom_rgba[2], "the touch screen was not where it should be");
-    }
     source.close();
 }
 
@@ -1147,7 +1087,6 @@ int main() {
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
     test_the_older_melonds_takes_its_own_option_names();
-    test_the_older_melonds_draws_on_the_gpu_where_the_window_can();
     test_render_scale_only_changes_the_resolution();
     test_read_screen_bounds_the_target_size();
     test_render_scale_is_ignored_where_there_is_none();

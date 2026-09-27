@@ -278,14 +278,6 @@ share the main thread's. It puts the clock back when the game ends. melonDS's
 Switch port did both. The game log says how fast a game is running every ten
 seconds, in lines starting `speed:`.
 
-The DS's 3D is drawn on the Switch's GPU, through melonDS's OpenGL renderer:
-drawn in software, a 3D game's scenes take a CPU core of their own and more,
-and Mario Kart DS raced at two-thirds speed. That renderer needs desktop
-OpenGL, so the app's window on a Switch is built with it (the same kind a 3DS
-game's window is built with everywhere else); if the Switch will not give it
-one, the log says so and the game carries on with the software renderer. The
-game log's `the core renders on the GPU` line is the sign it is in use.
-
 Keep the clone in `cores/melonDS` after copying the archive out: the link needs
 its source as well. A core built to be linked into a program leaves out
 libretro-common's file, path and string helpers (`rfopen`, `path_basename`,

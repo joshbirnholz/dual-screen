@@ -45,18 +45,6 @@ SystemProfile make_ds() {
     profile.core_filenames = {"melondsds_libretro.so", "melonds_libretro.so"};
     profile.core_description = "melonDS DS";
     profile.offers_save_states = true;
-#ifdef __SWITCH__
-    // A Switch plays DS games with libretro's older melonDS linked in, and its
-    // CPU cannot draw a 3D game's scenes in software and keep up: Mario Kart
-    // DS took 24 ms a frame racing, where a frame has 16.7. That core's OpenGL
-    // renderer does the 3D on the GPU instead, but only given desktop OpenGL
-    // 3.1, which the window does not have unless it is built for it. So the
-    // DS window there is built the way a 3DS one is everywhere.
-    profile.gl_context = GlContextNeed::OpenGl33Core;
-    // Wanted, not needed: without it the core draws in software, slower but
-    // still playable.
-    profile.gl_context_optional = true;
-#endif
     return profile;
 }
 
