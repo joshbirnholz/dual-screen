@@ -7,6 +7,7 @@
 #include <switch.h>
 
 #include <atomic>
+#include <cstdio>
 #include <new>
 #endif
 
@@ -78,6 +79,35 @@ extern "C" int __wrap_pthread_create(pthread_t* thread, const pthread_attr_t* at
         }
     }
     return __real_pthread_create(thread, attributes, start, argument);
+}
+#endif
+
+#ifdef __SWITCH__
+// What melonDS's JIT calls when the Switch reports a memory fault the JIT
+// cannot account for -- a real crash rather than one of the deliberate faults
+// its fast memory relies on. melonDS declares it and leaves it to the program
+// around it (its own Switch port defined one; libretro's frontends never
+// linked the JIT on a Switch, so none does), and a build with the JIT does
+// not link without it.
+//
+// Says where, in the game log, and returns: returning is what lets the
+// system's own crash handling take over, as it would have anyway. The
+// addresses are also given relative to the start of the program, which is
+// what `aarch64-none-elf-addr2line -e Dualscreen.elf` wants to name the line.
+// The types are spelled as melonDS declares them (u64 and u32 are unsigned
+// long and unsigned int there), since C++ links by them.
+extern "C" char __start__;
+
+void HandleFault(unsigned long pc, unsigned long lr, unsigned long fp, unsigned long fault_address,
+                 unsigned int description) {
+    const unsigned long start = reinterpret_cast<unsigned long>(&__start__);
+    char line[256];
+    std::snprintf(line, sizeof(line),
+                  "crashed: a memory fault the JIT could not handle (type %u) at pc 0x%lx "
+                  "(program + 0x%lx), returning to 0x%lx (program + 0x%lx), reaching for 0x%lx, "
+                  "frame 0x%lx",
+                  description, pc, pc - start, lr, lr - start, fault_address, fp);
+    ds::log_error(line);
 }
 #endif
 
