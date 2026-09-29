@@ -53,6 +53,12 @@ bool g_lid_closed = false;
 std::string g_rom_path;
 std::string g_sram_path;
 std::vector<uint8_t> g_state_scratch;
+// The length of the state in g_state_scratch while it is still the game's
+// state as it stands -- no frame run, nothing loaded since -- else 0. A
+// frontend asks for the size and then for the state itself, one straight
+// after the other, and each is a whole save of 6-7 MB; this lets the second
+// be a copy of the first.
+std::size_t g_state_current = 0;
 
 void log_at(retro_log_level level, const std::string& message) {
     if (g_log != nullptr) {
@@ -225,6 +231,7 @@ void send_audio() {
 // Writes the running game's state to the scratch buffer, returning its size.
 std::size_t save_state_to_scratch() {
     if (g_state_scratch.empty()) g_state_scratch.resize(16u << 20);
+    g_state_current = 0;
     state_target(g_state_scratch.data(), g_state_scratch.size());
     {
         Savestate state(kStateStreamName, true);
@@ -237,7 +244,8 @@ std::size_t save_state_to_scratch() {
     // Savestate fills in its total length at offset 8 when it closes.
     uint32_t length = 0;
     std::memcpy(&length, g_state_scratch.data() + 8, sizeof(length));
-    return std::min<std::size_t>(length, g_state_scratch.size());
+    g_state_current = std::min<std::size_t>(length, g_state_scratch.size());
+    return g_state_current;
 }
 
 }  // namespace
@@ -363,16 +371,19 @@ RETRO_API void retro_unload_game(void) {
     NDS::DeInit();
     gfx_deinit();
     g_loaded = false;
+    g_state_current = 0;
 }
 
 RETRO_API void retro_reset(void) {
     if (!g_loaded) return;
     // melonDS's own frontend resets a game by loading it again.
+    g_state_current = 0;
     NDS::LoadROM(g_rom_path.c_str(), g_sram_path.c_str(), true);
 }
 
 RETRO_API void retro_run(void) {
     if (!g_loaded) return;
+    g_state_current = 0;
     apply_input();
     NDS::RunFrame();
     gfx_read_screens(g_framebuffer);
@@ -395,7 +406,8 @@ RETRO_API size_t retro_serialize_size(void) {
 
 RETRO_API bool retro_serialize(void* data, size_t size) {
     if (!g_loaded || data == nullptr) return false;
-    const std::size_t length = save_state_to_scratch();
+    const std::size_t length =
+        g_state_current != 0 ? g_state_current : save_state_to_scratch();
     if (length == 0 || length > size) return false;
     std::memcpy(data, g_state_scratch.data(), length);
     return true;
@@ -403,6 +415,7 @@ RETRO_API bool retro_serialize(void* data, size_t size) {
 
 RETRO_API bool retro_unserialize(const void* data, size_t size) {
     if (!g_loaded || data == nullptr || size < 16) return false;
+    g_state_current = 0;
     state_source(static_cast<const uint8_t*>(data), size);
     bool ok = false;
     {

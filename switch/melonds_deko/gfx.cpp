@@ -13,6 +13,7 @@
 #include <switch.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <optional>
@@ -121,6 +122,26 @@ dk::MemBlock g_copy_cmd_memory;
 dk::MemBlock g_readback;
 dk::Fence g_copied;
 bool g_ready = false;
+
+// How long each frame waits for the GPU to finish drawing it and copying it
+// out, and how long turning it into libretro's format takes, told every
+// ten seconds of frames: the part of a frame's time that is the GPU's rather
+// than the emulated CPUs'.
+struct ReadbackTimes {
+    uint64_t frames = 0;
+    uint64_t wait_ticks = 0;
+    uint64_t worst_wait_ticks = 0;
+    uint64_t convert_ticks = 0;
+} g_times;
+constexpr uint64_t kTimesEvery = 600;
+
+double ticks_ms(uint64_t ticks) { return double(armTicksToNs(ticks)) / 1e6; }
+
+std::string ms_text(double ms) {
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.1f", ms);
+    return text;
+}
 
 void debug_output(void*, const char* context, DkResult result, const char* message) {
     log_error(std::string("deko3d: ") + (context != nullptr ? context : "") + ": " +
@@ -245,7 +266,9 @@ void gfx_read_screens(uint32_t* out) {
     g_copy_cmd.signalFence(g_copied);
     g_copy_queue.submitCommands(g_copy_cmd.finishList());
     g_copy_queue.flush();
+    const uint64_t wait_start = armGetSystemTick();
     g_copied.wait();
+    const uint64_t convert_start = armGetSystemTick();
 
     // RGBA8 as the renderer draws it, to libretro's XRGB8888. Copied out of
     // the uncached block in one pass first, which is far quicker than reading
@@ -255,6 +278,19 @@ void gfx_read_screens(uint32_t* out) {
     for (uint32_t i = 0; i < kScreenWidth * kScreenHeight * 2; ++i) {
         const uint32_t rgba = staged[i];
         out[i] = ((rgba & 0xFFu) << 16) | (rgba & 0xFF00u) | ((rgba >> 16) & 0xFFu);
+    }
+
+    const uint64_t wait = convert_start - wait_start;
+    g_times.wait_ticks += wait;
+    g_times.worst_wait_ticks = std::max(g_times.worst_wait_ticks, wait);
+    g_times.convert_ticks += armGetSystemTick() - convert_start;
+    if (++g_times.frames == kTimesEvery) {
+        const double frames = double(g_times.frames);
+        log_info("melonDS (deko3d): each frame waited " + ms_text(ticks_ms(g_times.wait_ticks) / frames) +
+                 " ms for the GPU (at worst " + ms_text(ticks_ms(g_times.worst_wait_ticks)) +
+                 " ms) and took " + ms_text(ticks_ms(g_times.convert_ticks) / frames) +
+                 " ms to convert");
+        g_times = {};
     }
 }
 

@@ -7,8 +7,12 @@
 #include <switch.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdio>
+#include <mutex>
 #include <new>
+#include <thread>
 #endif
 
 #include "app.hpp"
@@ -137,7 +141,10 @@ u32 spare_cores() {
 //
 // The system resets the clock whenever the console is docked or undocked, and
 // may when this program is left and returned to, so it is set again each time
-// the applet says one of those has happened.
+// the applet says one of those has happened. It also resets it at times no
+// applet message marks -- a race in Mario Kart ran at 1020 MHz from a
+// 1.3-second stall onwards, every frame 60% slower -- so a thread looks once a
+// second as well, and sets it again whenever it has changed.
 constexpr u32 kPlayingCpuHz = 1785000000u;
 
 class CpuBoost {
@@ -168,10 +175,17 @@ public:
         appletHook(&hook_, on_applet_event, this);
         log_info("CPU at " + std::to_string(kPlayingCpuHz / 1000000) + " MHz while playing (was " +
                  std::to_string(original_hz_ / 1000000) + " MHz)");
+        watchdog_ = std::thread([this] { watch(); });
     }
 
     ~CpuBoost() {
         if (!ready_) return;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopping_ = true;
+        }
+        wake_.notify_all();
+        if (watchdog_.joinable()) watchdog_.join();
         appletUnhook(&hook_);
         apply(original_hz_ != 0 ? original_hz_ : 1020000000u);
         if (use_pcv_) {
@@ -193,6 +207,24 @@ private:
         }
     }
 
+    u32 current() {
+        u32 hz = 0;
+        const Result result = use_pcv_ ? pcvGetClockRate(PcvModule_CpuBus, &hz)
+                                       : clkrstGetClockRate(&session_, &hz);
+        return R_SUCCEEDED(result) ? hz : 0;
+    }
+
+    void watch() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (!wake_.wait_for(lock, std::chrono::seconds(1), [this] { return stopping_; })) {
+            const u32 hz = current();
+            if (hz == 0 || hz == kPlayingCpuHz) continue;
+            log_info("the system put the CPU at " + std::to_string(hz / 1000000) +
+                     " MHz; back to " + std::to_string(kPlayingCpuHz / 1000000));
+            apply(kPlayingCpuHz);
+        }
+    }
+
     void apply(u32 hz) {
         const Result result =
             use_pcv_ ? pcvSetClockRate(PcvModule_CpuBus, hz) : clkrstSetClockRate(&session_, hz);
@@ -207,6 +239,10 @@ private:
     u32 original_hz_ = 0;
     ClkrstSession session_{};
     AppletHookCookie hook_{};
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    bool stopping_ = false;
+    std::thread watchdog_;
 };
 
 }  // namespace
