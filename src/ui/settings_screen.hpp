@@ -71,10 +71,16 @@ public:
 private:
     // The cores are not in here: they are read-only, one per console, and a
     // focusable row that does nothing when pressed is worse than a plain list.
+    //
+    // A Switch has no button settings: its prompts are always its own, and
+    // its menus confirm on A like every other Switch menu -- see
+    // App::Impl::apply_button_style().
     enum class Row {
         SystemDir,
+#ifndef __SWITCH__
         PadGlyphs,
         ConfirmButtonRow,
+#endif
         VideoHold,
         RunAheadDs,
         Vsync,

@@ -218,6 +218,13 @@ public:
     // counts it and cannot tell the difference. See prompt_style_for().
     int connected_gamepads() const;
 
+    // Whether the controller being played with is one Joy-Con held sideways
+    // -- the last one pressed, or before any press, every one there is. The
+    // Switch's own menus show its face buttons by position rather than by
+    // letter then, since the letters are printed for holding it upright.
+    // False anywhere but a Switch.
+    bool single_joycon_in_use() const;
+
 
     // Rumbles every connected controller, or stops them -- for a companion
     // standing in for a Wii U GamePad, whose one motor this collapses onto
@@ -335,6 +342,8 @@ private:
     bool left_stick_is_mic_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
+    // See single_joycon_in_use(). -1 until anything is pressed.
+    SDL_JoystickID last_pad_pressed_ = -1;
     MotionReader motion_;
 
     DsInputState ds_state_;

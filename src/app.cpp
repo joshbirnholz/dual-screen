@@ -575,6 +575,9 @@ struct App::Impl {
     // What the current context was built for.
     GlContextNeed gl_context_need = GlContextNeed::Any;
     void refresh_output_size();
+    // Which pad's symbols the prompts are drawn in, and which button means
+    // yes: the player's settings, except on a Switch -- see the definition.
+    void apply_button_style();
     // The panel in front of the player, where that is not the window: see
     // Compositor::set_display_size(). Zero in both everywhere else.
     void panel_size(float& width, float& height) const;
@@ -968,6 +971,31 @@ void App::Impl::refresh_output_size() {
         output_width = width;
         output_height = height;
     }
+}
+
+void App::Impl::apply_button_style() {
+#ifdef __SWITCH__
+    // A Switch's own, the way its own menus have them, with no setting for
+    // either: A (east) says yes, and the buttons are drawn as the letters on
+    // them -- except with one Joy-Con held sideways, whose letters are the
+    // wrong way round for how it is held, so the system draws them by
+    // position instead and so does this. Asked every pass, since which
+    // controller is in the player's hands can change at any press.
+    const PadGlyphStyle style =
+        input.single_joycon_in_use() ? PadGlyphStyle::Positional : PadGlyphStyle::Nintendo;
+    if (style != button_glyphs.style()) {
+        button_glyphs.set_style(style);
+        log_info(style == PadGlyphStyle::Positional
+                     ? "button prompts: by position, for a single Joy-Con"
+                     : "button prompts: the Switch's letters");
+    }
+    input.set_confirm_button(ConfirmButton::East);
+    set_confirm_button(ConfirmButton::East);
+#else
+    button_glyphs.set_style(settings.pad_glyphs);
+    input.set_confirm_button(settings.confirm_button);
+    set_confirm_button(settings.confirm_button);
+#endif
 }
 
 void App::Impl::panel_size(float& width, float& height) const {
@@ -2275,9 +2303,7 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         update_swap_pacing();
         // The prompts change under the cursor that changed them, which is the
         // only way to see what the setting does.
-        button_glyphs.set_style(settings.pad_glyphs);
-        input.set_confirm_button(settings.confirm_button);
-        set_confirm_button(settings.confirm_button);
+        apply_button_style();
         // L3's job is one of the things that can have just changed, and the
         // player who changed it is about to press it.
         input.set_microphone_button(left_stick_is_microphone(
@@ -3398,9 +3424,7 @@ int App::run(const AppOptions& options) {
 
     impl.settings = Settings::load(impl.paths);
     impl.adopt_legacy_handedness();
-    impl.button_glyphs.set_style(impl.settings.pad_glyphs);
-    impl.input.set_confirm_button(impl.settings.confirm_button);
-    set_confirm_button(impl.settings.confirm_button);
+    impl.apply_button_style();
     if (!options.system_dir.empty()) {
         impl.settings.system_dir = expand_user_path(options.system_dir);
     }
@@ -3817,6 +3841,9 @@ int App::run(const AppOptions& options) {
         if (impl.input.window_size_changed()) {
             impl.refresh_output_size();
         }
+#ifdef __SWITCH__
+        impl.apply_button_style();
+#endif
 
         // Touches are mapped against what this device is actually showing, not
         // against the shared layout. On "one screen per device" the two differ

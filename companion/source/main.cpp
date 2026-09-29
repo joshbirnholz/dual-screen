@@ -1371,6 +1371,14 @@ void Client::run() {
         const ConfirmButton confirms = confirm_button_for_style(style);
         input_.set_confirm_button(confirms);
         set_confirm_button(confirms);
+#ifdef __SWITCH__
+        // The letters on the buttons, as the Switch's own menus draw them --
+        // or, with one Joy-Con held sideways, their positions, as they draw
+        // those. The same rule as a game played here: see the desktop app's
+        // apply_button_style().
+        button_glyphs_.set_style(input_.single_joycon_in_use() ? PadGlyphStyle::Positional
+                                                               : PadGlyphStyle::Nintendo);
+#endif
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
         route_guide_taps(actions, pointers);

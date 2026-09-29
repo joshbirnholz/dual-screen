@@ -53,23 +53,6 @@ void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus
 
 void SettingsScreen::refresh_bios() { bios_ = check_bios_files(settings_.system_dir); }
 
-namespace {
-
-// What the confirming button is called, in the style the prompts are drawn
-// in. The setting is a position; this is what that position is printed as,
-// and it is the only thing anybody actually reads.
-std::string confirm_button_name(PadGlyphStyle style, ConfirmButton choice) {
-    const bool south = choice == ConfirmButton::South;
-    switch (style) {
-        case PadGlyphStyle::PlayStation: return south ? "Cross" : "Circle";
-        case PadGlyphStyle::Xbox: return south ? "A" : "B";
-        case PadGlyphStyle::Positional: return south ? "Bottom button" : "Right button";
-        default: return south ? "B" : "A";
-    }
-}
-
-}  // namespace
-
 SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                                                           float output_height) const {
     Geometry geometry;
@@ -128,6 +111,7 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
         }
+#ifndef __SWITCH__
         case Row::PadGlyphs: {
             // Three values, so this one steps rather than flips -- and it
             // steps the way the cursor was pushed.
@@ -145,6 +129,7 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
                                            : ConfirmButton::East;
             result.settings_changed = true;
             break;
+#endif
         case Row::VideoHold:
             settings_.video_hold = video::next_video_hold(settings_.video_hold);
             result.settings_changed = true;
@@ -276,8 +261,11 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     const std::string rows[kRowCount][2] = {
         {"BIOS / system folder", settings_.system_dir},
+#ifndef __SWITCH__
         {"Button prompts", to_string(settings_.pad_glyphs)},
-        {"Confirm with", confirm_button_name(settings_.pad_glyphs, settings_.confirm_button)},
+        // Drawn as the two buttons themselves, below.
+        {"Confirm/Cancel", ""},
+#endif
         {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},
         {"Run ahead to hide a DS game's lag",
          settings_.run_ahead_ds == 0
@@ -301,6 +289,29 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float pad = line * 0.5f;
         const float baseline = row.y + (row.h - line) * 0.5f;
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
+#ifndef __SWITCH__
+        if (index == static_cast<int>(Row::ConfirmButtonRow)) {
+            // The yes button, then the no one, as the prompts everywhere else
+            // draw them -- so the row reads (A)/(B) or (B)/(A) in whichever
+            // pad's symbols are chosen above, rather than a name for a
+            // position that nobody reads a button by.
+            const Color value_color = focused ? theme.panel : theme.text_dim;
+            const float height = line;
+            const float glyph_width = glyphs.width_for(height);
+            const float slash_width = TextRenderer::measure_width("/", scale * 0.9f);
+            const float gap = line * 0.15f;
+            const float glyph_y = row.y + (row.h - height) * 0.5f;
+            float pen_x = row.x + row.w - pad - (glyph_width * 2.0f + slash_width + gap * 2.0f);
+            glyphs.draw(quads, confirm_glyph_for(settings_.confirm_button), pen_x, glyph_y, height,
+                        value_color);
+            pen_x += glyph_width + gap;
+            text.draw(quads, "/", pen_x, baseline, scale * 0.9f, value_color);
+            pen_x += slash_width + gap;
+            glyphs.draw(quads, cancel_glyph_for(settings_.confirm_button), pen_x, glyph_y, height,
+                        value_color);
+            continue;
+        }
+#endif
         if (!rows[index][1].empty()) {
             const Color value_color = focused ? theme.panel : theme.text_dim;
             const float label_width = TextRenderer::measure_width(rows[index][0], scale);

@@ -425,6 +425,29 @@ bool controller_is_a_remote(const char* sdl_name) {
     return lowered.find("remote") != std::string::npos;
 }
 
+bool InputManager::single_joycon_in_use() const {
+#ifdef __SWITCH__
+    const auto single = [](SDL_JoystickID id) {
+        const u32 styles = hidGetNpadStyleSet(npad_for(id));
+        return (styles & (HidNpadStyleTag_NpadJoyLeft | HidNpadStyleTag_NpadJoyRight)) != 0 &&
+               (styles & (HidNpadStyleTag_NpadJoyDual | HidNpadStyleTag_NpadFullKey |
+                          HidNpadStyleTag_NpadHandheld)) == 0;
+    };
+    if (last_pad_pressed_ >= 0 && pad_connected(last_pad_pressed_)) {
+        return single(last_pad_pressed_);
+    }
+    bool any = false;
+    for (SDL_JoystickID id = 0; id <= kSwitchHandheldId; ++id) {
+        if (!pad_connected(id)) continue;
+        if (!single(id)) return false;
+        any = true;
+    }
+    return any;
+#else
+    return false;
+#endif
+}
+
 int InputManager::connected_gamepads() const {
     int count = 0;
     for (const auto& [instance_id, controller] : connected_pads()) {
@@ -705,6 +728,7 @@ void InputManager::handle_event(const SDL_Event& event) {
         case SDL_CONTROLLERBUTTONDOWN: {
             const SDL_GameControllerButton button =
                 static_cast<SDL_GameControllerButton>(event.cbutton.button);
+            last_pad_pressed_ = event.cbutton.which;
 
             // Every press is logged under --verbose with the name SDL gives it,
             // so a pad whose buttons arrive as the wrong thing can be
