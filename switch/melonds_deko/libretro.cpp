@@ -378,6 +378,7 @@ RETRO_API void retro_reset(void) {
     if (!g_loaded) return;
     // melonDS's own frontend resets a game by loading it again.
     g_state_current = 0;
+    gfx_reset_readback();
     NDS::LoadROM(g_rom_path.c_str(), g_sram_path.c_str(), true);
 }
 
@@ -423,6 +424,7 @@ RETRO_API bool retro_unserialize(const void* data, size_t size) {
         if (!state.Error) {
             NDS::DoSavestate(&state);
             ok = true;
+            gfx_reset_readback();
         }
     }
     state_source(nullptr, 0);

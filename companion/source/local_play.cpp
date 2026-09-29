@@ -287,13 +287,15 @@ int play_here(const LocalPlayRequest& request, bool* quit_chosen) {
 #endif
     App app;
     const int status = app.run(options);
-#ifdef __SWITCH__
-    if (exit_locked) appletUnlockExit();
-    g_spare_cores.store(0);
-#endif
     if (quit_chosen != nullptr) *quit_chosen = app.quit_chosen();
     log_info("finished playing here (status " + std::to_string(status) + ")" +
              (app.quit_chosen() ? "; the player quit" : ""));
+#ifdef __SWITCH__
+    g_spare_cores.store(0);
+    // Last: if the system asked to close the app, letting go is its cue to end
+    // the process there and then, and anything after this may never run.
+    if (exit_locked) appletUnlockExit();
+#endif
     return status;
 }
 

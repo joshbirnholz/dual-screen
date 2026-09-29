@@ -34,10 +34,14 @@ void log_error(const std::string& message);
 bool gfx_init(std::string* error);
 void gfx_deinit();
 
-// The frame melonDS has just finished: waits for the GPU to draw it, copies
-// both screens into `out` -- 256x384, the upper screen above the touch
-// screen, XRGB8888 -- and hands the images back to the renderer.
+// After melonDS finishes a frame: starts the GPU copying it off once drawn,
+// hands the images back to the renderer, and puts the frame before it -- by
+// now long copied -- into `out`: 256x384, the upper screen above the touch
+// screen, XRGB8888. One frame behind, so the CPU never waits on the GPU.
 void gfx_read_screens(uint32_t* out);
+// Forgets the frame gfx_read_screens() is holding, so the next one it hands
+// over is the one just run rather than one from before a load or a reset.
+void gfx_reset_readback();
 
 // Save states, which melonDS writes through a file: Platform::OpenLocalFile()
 // and Platform::OpenFile() answer this name with a stream in memory instead.

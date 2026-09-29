@@ -115,12 +115,17 @@ constexpr uint64_t kHeadroom = 96ull << 20;
 
 // The copy that takes each finished frame off the GPU: a queue of its own, so
 // nothing is ever recorded into the renderers' command buffer, and a buffer the
-// CPU can read, both screens one after the other.
+// CPU can read, both screens one after the other -- two of them, the frame
+// just finished going into one while the one before it is read out of the
+// other. See gfx_read_screens().
 dk::Queue g_copy_queue;
 dk::CmdBuf g_copy_cmd;
 dk::MemBlock g_copy_cmd_memory;
 dk::MemBlock g_readback;
-dk::Fence g_copied;
+dk::Fence g_copied[2];
+int g_next_slot = 0;
+// The slot holding a frame copied but not yet handed over; -1 for none.
+int g_pending_slot = -1;
 bool g_ready = false;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
@@ -220,10 +225,12 @@ bool gfx_init(std::string* error) {
                             .create();
     g_copy_cmd = dk::CmdBufMaker{Gfx::Device}.create();
     g_copy_cmd.addMemory(g_copy_cmd_memory, 0, kCopyCmdSize);
-    g_readback = dk::MemBlockMaker{Gfx::Device, align_up(kScreenBytes * 2, DK_MEMBLOCK_ALIGNMENT)}
+    g_readback = dk::MemBlockMaker{Gfx::Device, align_up(kScreenBytes * 4, DK_MEMBLOCK_ALIGNMENT)}
                      .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
                      .create();
 
+    g_next_slot = 0;
+    g_pending_slot = -1;
     g_ready = true;
     log_info("melonDS (deko3d): the GPU is set up");
     return true;
@@ -246,9 +253,13 @@ void gfx_deinit() {
     g_ready = false;
 }
 
+void gfx_reset_readback() { g_pending_slot = -1; }
+
 void gfx_read_screens(uint32_t* out) {
     auto* renderer = static_cast<GPU2D::DekoRenderer*>(GPU::GPU2D_Renderer.get());
     const int front = GPU::FrontBuffer;
+    const int slot = g_next_slot;
+    g_next_slot ^= 1;
 
     // After the frame the renderer has just submitted is drawn: both screens
     // out -- image 0 is always the upper one, whichever engine drew it -- then
@@ -259,22 +270,36 @@ void gfx_read_screens(uint32_t* out) {
     g_copy_cmd.waitFence(renderer->FramebufferReady[front]);
     for (uint32_t screen = 0; screen < 2; ++screen) {
         dk::ImageView view{renderer->GetFramebuffer(front, screen)};
-        const DkCopyBuf destination{g_readback.getGpuAddr() + screen * kScreenBytes, 0, 0};
+        const DkCopyBuf destination{
+            g_readback.getGpuAddr() + (slot * 2 + screen) * kScreenBytes, 0, 0};
         g_copy_cmd.copyImageToBuffer(view, {0, 0, 0, kScreenWidth, kScreenHeight, 1}, destination);
     }
     g_copy_cmd.signalFence(renderer->FramebufferPresented[front]);
-    g_copy_cmd.signalFence(g_copied);
+    g_copy_cmd.signalFence(g_copied[slot]);
     g_copy_queue.submitCommands(g_copy_cmd.finishList());
     g_copy_queue.flush();
+
+    // What is handed over is the frame before this one, whose copy went in a
+    // whole frame ago and is long done: the GPU draws this frame while the
+    // CPU emulates the next, as melonDS's own frontend has them, rather than
+    // the CPU standing idle while it does. Waiting on this frame instead cost
+    // 3-4ms of every frame in a Mario Kart race -- the difference between
+    // keeping up and not, in its busiest stretches -- for a picture one frame
+    // sooner. After a load or a reset there is no frame before, and this
+    // one is waited for, once.
+    const int deliver = g_pending_slot >= 0 ? g_pending_slot : slot;
+    g_pending_slot = slot;
     const uint64_t wait_start = armGetSystemTick();
-    g_copied.wait();
+    g_copied[deliver].wait();
     const uint64_t convert_start = armGetSystemTick();
 
     // RGBA8 as the renderer draws it, to libretro's XRGB8888. Copied out of
     // the uncached block in one pass first, which is far quicker than reading
     // it a pixel at a time.
     static uint32_t staged[kScreenWidth * kScreenHeight * 2];
-    std::memcpy(staged, g_readback.getCpuAddr(), sizeof(staged));
+    std::memcpy(staged,
+                static_cast<const uint8_t*>(g_readback.getCpuAddr()) + deliver * 2 * kScreenBytes,
+                sizeof(staged));
     for (uint32_t i = 0; i < kScreenWidth * kScreenHeight * 2; ++i) {
         const uint32_t rgba = staged[i];
         out[i] = ((rgba & 0xFFu) << 16) | (rgba & 0xFF00u) | ((rgba >> 16) & 0xFFu);

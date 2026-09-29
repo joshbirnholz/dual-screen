@@ -531,6 +531,9 @@ struct App::Impl {
         speed_core_seconds = 0.0;
         speed_frames = 0;
         speed_passes = 0;
+        speed_slowest_frame = 0.0;
+        speed_long_frames = 0;
+        speed_catch_ups = 0;
     }
 
     uint64_t last_counter = 0;
@@ -549,6 +552,14 @@ struct App::Impl {
     double speed_core_seconds = 0.0;
     int speed_frames = 0;
     int speed_passes = 0;
+    // What an average over ten seconds hides: a second of slow frames, or one
+    // frame long enough to be seen as a hitch, barely moves it. The slowest
+    // frame the core ran, how many took longer than a frame lasts, and how
+    // many passes had to run more than one frame to catch up -- each of those
+    // a picture the player never saw.
+    double speed_slowest_frame = 0.0;
+    int speed_long_frames = 0;
+    int speed_catch_ups = 0;
     double save_flush_accumulator = 0.0;
     // Played time since the resume point was last written -- see
     // kResumePointIntervalSeconds.
@@ -2791,13 +2802,14 @@ void App::Impl::report_speed() {
     const double core_ms = speed_frames > 0 ? 1000.0 * speed_core_seconds / speed_frames : 0.0;
     const double rest_ms =
         speed_passes > 0 ? 1000.0 * (speed_seconds - speed_core_seconds) / speed_passes : 0.0;
-    char line[256];
+    char line[384];
     std::snprintf(line, sizeof(line),
                   "speed: %d frames in %.1fs, %.0f%% of full speed; the core took %.1f ms a frame "
                   "(a frame is %.1f ms), and each of %d passes spent %.1f ms more drawing, "
-                  "reading input and waiting",
+                  "reading input and waiting; slowest frame %.1f ms, %d longer than a frame, "
+                  "%d passes catching up",
                   speed_frames, speed_seconds, percent, core_ms, 1000.0 * frame_period, speed_passes,
-                  rest_ms);
+                  rest_ms, 1000.0 * speed_slowest_frame, speed_long_frames, speed_catch_ups);
     log_info(line);
     reset_speed_window();
 }
@@ -4429,7 +4441,16 @@ int App::run(const AppOptions& options) {
             const uint64_t core_started = SDL_GetPerformanceCounter();
             while (impl.frame_accumulator >= impl.frame_period && advanced < max_frames_per_iteration) {
                 std::string frame_error;
-                if (!playing->advance_frame(&frame_error)) {
+                const uint64_t frame_started = SDL_GetPerformanceCounter();
+                const bool ran = playing->advance_frame(&frame_error);
+                if (ran && impl.source) {
+                    const double took =
+                        static_cast<double>(SDL_GetPerformanceCounter() - frame_started) /
+                        static_cast<double>(counter_frequency);
+                    impl.speed_slowest_frame = std::max(impl.speed_slowest_frame, took);
+                    if (took > impl.frame_period) ++impl.speed_long_frames;
+                }
+                if (!ran) {
                     // A game that has finished is not a game that failed: a
                     // console played by another program ends its session by
                     // that program closing, which is an ordinary way to stop
@@ -4453,6 +4474,7 @@ int App::run(const AppOptions& options) {
                     static_cast<double>(counter_frequency);
                 impl.speed_frames += advanced;
                 impl.speed_passes += 1;
+                if (advanced > 1) ++impl.speed_catch_ups;
                 // By the clock, from the start of the first pass counted, so
                 // the core's time and the window's are the same span.
                 if (impl.speed_window_start == 0) impl.speed_window_start = core_started;
