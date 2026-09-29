@@ -376,6 +376,108 @@ void test_a_received_screen_is_readable_as_pixels() {
     host.stop();
 }
 
+// A Switch hosting a game encodes the tiles and sends everything on the
+// encoder thread -- see HostSession::set_media_off_thread(). The picture that
+// arrives has to be the one published, however the pictures in between were
+// split between the two threads: a block that moves and leaves tiles as they
+// were before it came is exactly what the in-flight snapshots are for, and
+// they are kept on the game's thread while the tiles are measured on the
+// other.
+void test_media_sent_off_the_game_thread_arrives_intact() {
+    HostSession host;
+    host.set_media_off_thread(true);
+    HostSession::Config config;
+    config.device_name = "Switch";
+    config.game_title = "Racing";
+    config.audio_sample_rate = 32823;
+    config.host_screen = ScreenId::Top;
+
+    std::string error;
+    if (!host.start(config, &error)) {
+        std::fprintf(stderr, "skipping: cannot host (%s)\n", error.c_str());
+        return;
+    }
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    std::size_t frames_heard = 0;
+    companion.set_audio_callback(
+        [&](const int16_t*, std::size_t frames, uint32_t) { frames_heard += frames; });
+    CHECK_MSG(companion.begin_search("Deck", ScreenId::Bottom, &error), error);
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        CHECK_MSG(false, "the companion never discovered the host");
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        CHECK_MSG(false, "handshake did not complete: " + companion.status_detail());
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    const auto picture = [](int step) {
+        std::vector<uint32_t> pixels = flat_screen(0x00102030u);
+        // A 40x40 block sliding right and wrapping, over a background that
+        // never changes, so every tile it leaves goes back to how it was.
+        const int left = (step * 12) % (kDsScreenWidth - 40);
+        for (int y = 60; y < 100; ++y) {
+            for (int x = left; x < left + 40; ++x) {
+                pixels[static_cast<std::size_t>(y) * kDsScreenWidth + x] =
+                    0x00f0f0f0u - static_cast<uint32_t>(step) * 0x00080808u % 0x00808080u;
+            }
+        }
+        return pixels;
+    };
+
+    std::vector<int16_t> tone(512 * 2, 1000);
+    constexpr int kSteps = 60;
+    std::vector<uint32_t> bottom;
+    for (int step = 1; step <= kSteps; ++step) {
+        bottom = picture(step);
+        const uint64_t serial = static_cast<uint64_t>(step);
+        // As the app does: offered every pass until it goes, since a picture
+        // offered while the last is still being encoded waits for it. The
+        // host reads its acks only every fifth picture, so several are in
+        // flight -- shown by the companion, not yet known to be -- when the
+        // next one's tiles are measured.
+        const uint64_t until = monotonic_millis() + 16;
+        while (monotonic_millis() < until) {
+            host.publish_screens(screen_pixels(top), screen_pixels(bottom), serial);
+            const uint64_t now = monotonic_millis();
+            if (step % 5 == 0) host.poll(now);
+            companion.poll(now);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        host.publish_audio(AudioStreamId::Shared, tone.data(), 512, 32823);
+    }
+    const bool arrived = spin(host, companion, [&] {
+        host.publish_screens(screen_pixels(top), screen_pixels(bottom), kSteps);
+        return companion.screen_pixels(ScreenId::Bottom).serial == static_cast<uint64_t>(kSteps);
+    });
+    CHECK_MSG(arrived, "the last picture never arrived");
+    CHECK_MSG(frames_heard > 0, "no audio arrived");
+
+    const CompanionSession::ScreenPixels frame = companion.screen_pixels(ScreenId::Bottom);
+    if (arrived && frame.valid()) {
+        int worst = 0;
+        for (int y = 0; y < frame.height; ++y) {
+            for (int x = 0; x < frame.width; ++x) {
+                const uint32_t got = frame.pixels[static_cast<std::size_t>(y) * frame.width + x];
+                const uint32_t want = bottom[static_cast<std::size_t>(y) * kDsScreenWidth + x];
+                for (int shift : {16, 8, 0}) {
+                    worst = std::max(worst, std::abs(static_cast<int>((got >> shift) & 0xff) -
+                                                     static_cast<int>((want >> shift) & 0xff)));
+                }
+            }
+        }
+        CHECK_MSG(worst <= 8, "the picture that arrived was off by " + std::to_string(worst) +
+                                  " -- a tile left behind");
+    }
+
+    companion.disconnect();
+    host.stop();
+}
+
 void test_a_screen_above_the_old_native_only_size_still_arrives() {
     HostSession host;
     HostSession::Config config;
@@ -4263,6 +4365,7 @@ int main() {
     test_the_resume_popup_is_shown_and_answered_on_either_device();
     test_a_refused_connect_is_really_tried_again();
     test_a_received_screen_is_readable_as_pixels();
+    test_media_sent_off_the_game_thread_arrives_intact();
     test_a_screen_above_the_old_native_only_size_still_arrives();
     test_non_split_layout_sends_both_screens();
     test_companion_gets_the_screen_it_asked_for();

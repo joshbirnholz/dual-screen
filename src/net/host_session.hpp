@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -217,6 +218,17 @@ public:
                        uint32_t sample_rate);
     // Governs only the Shared stream -- see publish_audio.
     void set_audio_enabled(bool enabled) { audio_enabled_ = enabled; }
+
+    // Changed-tile pictures encoded, and every picture and sound sent, on the
+    // encoder thread rather than on the thread calling publish_screens() and
+    // publish_audio() -- which then only copies the pixels. For a device whose
+    // game thread cannot spare the time: on a Switch each datagram is a call
+    // into the system, a busy DS picture is thirty of them plus 3ms of
+    // compression, and a game there dropped from one picture a pass to one
+    // every three frames once a companion joined. Off by default: where
+    // sending is cheap, doing it in place is a thread handoff sooner.
+    // Set before start().
+    void set_media_off_thread(bool off_thread) { media_off_thread_ = off_thread; }
     bool audio_enabled() const { return audio_enabled_; }
 
     // Tells the companion whether the Wii U GamePad's motor is on right now,
@@ -569,7 +581,41 @@ private:
         int encode_height = 0;
         double produced_fps = 60.0;
         bool force_keyframe = false;
+        // Changed tiles rather than video -- see set_media_off_thread(). The
+        // pixels are then the source's own size, `baseline` the picture the
+        // tiles are measured against (the new one once encoded) and
+        // `also_unlike` the ones still in flight.
+        bool tiles = false;
+        bool keyframe = false;
+        std::vector<uint8_t> baseline;
+        std::vector<std::vector<uint8_t>> also_unlike;
     };
+    // A tiles job the encoder thread has finished, for this thread to keep
+    // the new picture of as in flight -- see take_finished_tiles().
+    struct FinishedTiles {
+        ScreenId screen = ScreenId::Top;
+        uint64_t serial = 0;
+        std::vector<uint8_t> snapshot;
+        std::size_t bytes = 0;
+        bool sent = false;
+    };
+    // Queues this screen's picture as a tiles job. `previous` is the baseline
+    // it is measured against, taken.
+    void queue_tiles(ScreenId screen, const ScreenPixels& source, uint64_t serial, bool keyframe,
+                     std::vector<uint8_t>& previous);
+    // On the encoder thread; called unlocked, returns with `lock` held.
+    void encode_tiles_job(VideoJob& job, std::unique_lock<std::mutex>& lock);
+    // Keeps what the encoder thread's tiles jobs made as in flight, on this
+    // thread, which owns the snapshots.
+    void take_finished_tiles();
+    // Counts what a screen's tiles came to, for the codec choice.
+    void note_tile_bytes(ScreenId screen, std::size_t bytes);
+    // How much of the send queue may go now -- see drain_pending_media_sends().
+    // Zero when it is empty. Under media_mutex_.
+    std::size_t media_drain_budget(uint64_t now_ms);
+    // On the encoder thread: the queued sound, then as much of the queued
+    // pictures as pacing allows, sent with media_mutex_ let go.
+    void send_media_off_thread(std::unique_lock<std::mutex>& lock);
     // The checks that need nothing but this thread's own state, then the
     // job. False with `reason` when video cannot go at all.
     bool queue_video(ScreenId screen, const ScreenPixels& source, uint64_t serial,
@@ -765,6 +811,20 @@ private:
     uint64_t media_generation_ = 0;
     std::thread encoder_thread_;
     bool encoder_stopping_ = false;
+    // See set_media_off_thread().
+    std::atomic<bool> media_off_thread_{false};
+    // Tiles jobs queued and not yet taken back, per screen (top, bottom). A
+    // screen's next picture waits for its last: the tiles it sends are
+    // measured against every picture still in flight, and that one is not
+    // known to be until it comes back. This thread's alone.
+    int tile_jobs_outstanding_[2] = {0, 0};
+    std::vector<FinishedTiles> finished_tiles_;
+    // Sound waiting for the encoder thread to send it -- see
+    // set_media_off_thread().
+    std::deque<std::vector<uint8_t>> audio_sends_;
+    // Held while the encoder thread sends with media_mutex_ let go, and while
+    // anything changes which address the sockets send from.
+    std::mutex send_mutex_;
     // A screen that has just switched to video: its next picture stands alone.
     bool video_keyframe_owed_top_ = false;
     bool video_keyframe_owed_bottom_ = false;

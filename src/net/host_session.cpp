@@ -442,6 +442,8 @@ void HostSession::stop(bool companion_quits_too) {
         companion_.pump(ignored, &error);  // best effort
     }
     companion_.close();
+    // Before the sockets it sends on close under it.
+    stop_encoder_thread();
     listener_.stop();
     media_socket_.stop();
     audio_media_socket_.stop();
@@ -458,7 +460,6 @@ void HostSession::stop(bool companion_quits_too) {
     // Not reset by drop_companion() like everything else above -- that is the
     // whole point of it -- so a fresh hosting session has to clear it itself.
     companion_wants_quit_ = false;
-    stop_encoder_thread();
 }
 
 void HostSession::set_codec_choice(CodecChoice choice) {
@@ -655,6 +656,10 @@ void HostSession::drop_companion(const std::string& reason) {
     // Whatever it is in the middle of was for the companion that just left.
     ++media_generation_;
     video_jobs_.clear();
+    finished_tiles_.clear();
+    tile_jobs_outstanding_[0] = 0;
+    tile_jobs_outstanding_[1] = 0;
+    audio_sends_.clear();
     video_failures_.clear();
     video_worked_ = false;
     for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
@@ -683,8 +688,11 @@ void HostSession::drop_companion(const std::string& reason) {
     sent_index_bottom_ = 0;
     // Back to letting the routing table decide until the next companion says
     // which of this machine's addresses it reached.
-    media_socket_.set_source_address("");
-    audio_media_socket_.set_source_address("");
+    {
+        std::lock_guard<std::mutex> sending(send_mutex_);
+        media_socket_.set_source_address("");
+        audio_media_socket_.set_source_address("");
+    }
     // Fragments queued for the companion that just left are for a session
     // nobody at the other end will ever see the token of again.
     pending_media_sends_.clear();
@@ -1093,6 +1101,8 @@ void HostSession::handle_media_datagram(MessageType type, const uint8_t* payload
 
 void HostSession::poll(uint64_t now_ms) {
     announcer_.poll(now_ms);
+    // Before any ack below is matched against the pictures in flight.
+    if (media_off_thread_) take_finished_tiles();
     if (has_companion()) {
         report_stream(now_ms);
     }
@@ -1163,9 +1173,10 @@ void HostSession::poll(uint64_t now_ms) {
             // session. See UdpSocket::set_source_address().
             {
                 std::lock_guard<std::mutex> lock(media_mutex_);
+                std::lock_guard<std::mutex> sending(send_mutex_);
                 media_socket_.set_source_address(companion_.local_address());
+                audio_media_socket_.set_source_address(companion_.local_address());
             }
-            audio_media_socket_.set_source_address(companion_.local_address());
             refresh_beacon();
         }
     }
@@ -1474,6 +1485,16 @@ void HostSession::publish_audio(AudioStreamId stream, const int16_t* interleaved
         std::vector<uint8_t> out;
         encode_media_header(session_token_, MessageType::Audio, out);
         encode_audio_payload(message, out);
+        if (media_off_thread_) {
+            // Sent by the encoder thread, first thing -- see
+            // set_media_off_thread().
+            {
+                std::lock_guard<std::mutex> lock(media_mutex_);
+                audio_sends_.push_back(std::move(out));
+            }
+            video_jobs_cv_.notify_one();
+            continue;
+        }
         // audio_media_socket_, not media_socket_ -- see its own comment on
         // why audio needs a send buffer a video keyframe burst can't fill.
         if (audio_media_socket_.send_to(companion_media_address_, companion_media_port_,
@@ -1772,6 +1793,111 @@ bool HostSession::encode_video_job(const VideoJob& job, FrameMessage& frame, std
     return true;
 }
 
+void HostSession::note_tile_bytes(ScreenId screen, std::size_t bytes) {
+    // What tiles are costing this screen, over a second at a time.
+    CodecState& codec = screen == ScreenId::Top ? codec_top_ : codec_bottom_;
+    const uint64_t now = monotonic_millis();
+    if (codec.tile_window_start_ms == 0) codec.tile_window_start_ms = now;
+    codec.tile_bytes += bytes;
+    if (now - codec.tile_window_start_ms >= 1000) {
+        // Bytes per millisecond, which is kilobytes per second.
+        codec.tile_kbytes_per_second = static_cast<double>(codec.tile_bytes) /
+                                       static_cast<double>(now - codec.tile_window_start_ms);
+        codec.tile_bytes = 0;
+        codec.tile_window_start_ms = now;
+    }
+}
+
+void HostSession::queue_tiles(ScreenId screen, const ScreenPixels& source, uint64_t serial,
+                              bool keyframe, std::vector<uint8_t>& previous) {
+    VideoJob job;
+    job.tiles = true;
+    job.screen = screen;
+    job.serial = serial;
+    job.width = source.width;
+    job.height = source.height;
+    job.frame_width = static_cast<uint16_t>(source.width);
+    job.frame_height = static_cast<uint16_t>(source.height);
+    job.channel_order = source.channel_order;
+    job.keyframe = keyframe;
+    job.baseline = std::move(previous);
+    previous.clear();
+    // Copies, not pointers: an ack arriving while the job is encoded moves
+    // these along underneath it.
+    if (!job.baseline.empty()) {
+        for (const auto& snapshot :
+             screen == ScreenId::Top ? tile_snapshots_top_ : tile_snapshots_bottom_) {
+            job.also_unlike.push_back(snapshot.second);
+        }
+    }
+    // Copied now, since the caller's pixels are the game's and change with
+    // its next frame.
+    job.pixels.resize(static_cast<std::size_t>(source.width) * source.height);
+    for (int row = 0; row < source.height; ++row) {
+        std::memcpy(job.pixels.data() + static_cast<std::size_t>(row) * source.width,
+                    source.pixels + static_cast<std::size_t>(row) * source.stride_pixels,
+                    static_cast<std::size_t>(source.width) * sizeof(uint32_t));
+    }
+    ++tile_jobs_outstanding_[screen == ScreenId::Top ? 0 : 1];
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        job.generation = media_generation_;
+        video_jobs_.push_back(std::move(job));
+    }
+    video_jobs_cv_.notify_one();
+}
+
+void HostSession::encode_tiles_job(VideoJob& job, std::unique_lock<std::mutex>& lock) {
+    FrameMessage frame;
+    frame.screen = job.screen;
+    frame.serial = job.serial;
+    frame.width = job.frame_width;
+    frame.height = job.frame_height;
+    frame.encoding = FrameEncoding::Rgb565DeflateTiles;
+    frame.keyframe = job.keyframe;
+    std::vector<const std::vector<uint8_t>*> in_flight;
+    for (const std::vector<uint8_t>& other : job.also_unlike) {
+        in_flight.push_back(&other);
+    }
+    const uint64_t started_ms = monotonic_millis();
+    const bool encoded =
+        encode_screen_tiles(job.pixels.data(), job.width, job.height, job.width, job.baseline,
+                            frame.payload, job.channel_order, in_flight);
+    const uint64_t ended_ms = monotonic_millis();
+
+    lock.lock();
+    stats_encode_total_ms_ += ended_ms > started_ms ? ended_ms - started_ms : 0;
+    ++stats_encodes_;
+    FinishedTiles done;
+    done.screen = job.screen;
+    done.serial = job.serial;
+    done.bytes = frame.payload.size();
+    // For a companion that has gone, or a session since restarted: not to be
+    // sent to whoever is there now, nor kept as in flight to them.
+    if (encoded && job.generation == media_generation_) {
+        done.sent = send_frame_fragments(frame) > 0;
+        if (done.sent) done.snapshot = std::move(job.baseline);
+    }
+    finished_tiles_.push_back(std::move(done));
+}
+
+void HostSession::take_finished_tiles() {
+    std::vector<FinishedTiles> finished;
+    {
+        std::lock_guard<std::mutex> lock(media_mutex_);
+        finished.swap(finished_tiles_);
+    }
+    for (FinishedTiles& done : finished) {
+        int& outstanding = tile_jobs_outstanding_[done.screen == ScreenId::Top ? 0 : 1];
+        if (outstanding > 0) --outstanding;
+        note_tile_bytes(done.screen, done.bytes);
+        if (done.sent) {
+            (done.screen == ScreenId::Top ? tile_snapshots_top_ : tile_snapshots_bottom_)
+                .emplace_back(done.serial, std::move(done.snapshot));
+        }
+    }
+}
+
 HostSession::Encoded HostSession::encode_one_screen(ScreenId screen,
                                                     const ScreenPixels& source,
                                                     std::vector<uint8_t>& previous,
@@ -1811,6 +1937,10 @@ HostSession::Encoded HostSession::encode_one_screen(ScreenId screen,
         // A tile frame stands on its own exactly when it was built without a
         // baseline, which is what an empty `previous` means here.
         frame.keyframe = previous.empty();
+        if (media_off_thread_) {
+            queue_tiles(screen, source, frame.serial, frame.keyframe, previous);
+            return Encoded::Queued;
+        }
         // Every frame sent since that baseline and not yet confirmed: the
         // companion may be showing any of their tiles. See also_unlike.
         std::vector<const std::vector<uint8_t>*> in_flight;
@@ -1823,17 +1953,7 @@ HostSession::Encoded HostSession::encode_one_screen(ScreenId screen,
         const bool encoded = encode_screen_tiles(source.pixels, source.width, source.height,
                                                  source.stride_pixels, previous, frame.payload,
                                                  source.channel_order, in_flight);
-        // What tiles are costing this screen, over a second at a time.
-        const uint64_t now = monotonic_millis();
-        if (codec.tile_window_start_ms == 0) codec.tile_window_start_ms = now;
-        codec.tile_bytes += frame.payload.size();
-        if (now - codec.tile_window_start_ms >= 1000) {
-            // Bytes per millisecond, which is kilobytes per second.
-            codec.tile_kbytes_per_second = static_cast<double>(codec.tile_bytes) /
-                                           static_cast<double>(now - codec.tile_window_start_ms);
-            codec.tile_bytes = 0;
-            codec.tile_window_start_ms = now;
-        }
+        note_tile_bytes(screen, frame.payload.size());
         return encoded ? Encoded::Ready : Encoded::Nothing;
     }
 
@@ -1914,7 +2034,11 @@ void HostSession::start_encoder_thread() {
         std::lock_guard<std::mutex> lock(media_mutex_);
         encoder_stopping_ = false;
         video_jobs_.clear();
+        finished_tiles_.clear();
+        audio_sends_.clear();
     }
+    tile_jobs_outstanding_[0] = 0;
+    tile_jobs_outstanding_[1] = 0;
     encoder_thread_ = std::thread([this] { encoder_loop(); });
 }
 
@@ -1926,9 +2050,13 @@ void HostSession::stop_encoder_thread() {
         std::lock_guard<std::mutex> lock(media_mutex_);
         encoder_stopping_ = true;
         video_jobs_.clear();
+        finished_tiles_.clear();
+        audio_sends_.clear();
     }
     video_jobs_cv_.notify_all();
     encoder_thread_.join();
+    tile_jobs_outstanding_[0] = 0;
+    tile_jobs_outstanding_[1] = 0;
     // Nothing else touches them now.
     video_top_.close();
     video_bottom_.close();
@@ -1939,13 +2067,35 @@ void HostSession::stop_encoder_thread() {
 void HostSession::encoder_loop() {
     std::unique_lock<std::mutex> lock(media_mutex_);
     while (true) {
-        video_jobs_cv_.wait(lock, [this] { return encoder_stopping_ || !video_jobs_.empty(); });
+        if (media_off_thread_ && !encoder_stopping_) {
+            send_media_off_thread(lock);
+        }
+        const auto work = [this] {
+            return encoder_stopping_ || !video_jobs_.empty() ||
+                   (media_off_thread_ && !audio_sends_.empty());
+        };
+        if (media_off_thread_ && !pending_media_sends_.empty()) {
+            // Pictures still being paced out: back for more of them shortly
+            // even if nothing new arrives -- the game's thread's poll() did
+            // this when it did the sending.
+            video_jobs_cv_.wait_for(lock, std::chrono::milliseconds(1), work);
+        } else {
+            video_jobs_cv_.wait(lock, work);
+        }
         if (encoder_stopping_) {
             return;
+        }
+        if (video_jobs_.empty()) {
+            continue;
         }
         VideoJob job = std::move(video_jobs_.front());
         video_jobs_.pop_front();
         lock.unlock();
+
+        if (job.tiles) {
+            encode_tiles_job(job, lock);
+            continue;
+        }
 
         video::VideoEncoder& encoder = (job.screen == ScreenId::Top) ? video_top_ : video_bottom_;
         if (job.close) {
@@ -2142,13 +2292,91 @@ void HostSession::note_produced_media_rate(uint64_t now_ms) {
 }
 
 void HostSession::drain_pending_media_sends(uint64_t now_ms) {
+    if (media_off_thread_) {
+        // The encoder thread's to send -- see send_media_off_thread().
+        if (!pending_media_sends_.empty()) video_jobs_cv_.notify_one();
+        return;
+    }
+    const std::size_t budget = media_drain_budget(now_ms);
+    std::size_t drained = 0;
+    while (!pending_media_sends_.empty() && drained < budget) {
+        std::vector<uint8_t>& out = pending_media_sends_.front();
+        // Now, not when it was built. The wait in this queue is this end's,
+        // and the far end measures what comes after -- see
+        // stamp_media_datagram_sent_at().
+        stamp_media_datagram_sent_at(out.data(), out.size(), static_cast<uint32_t>(now_ms));
+        if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
+                                   out.size())) {
+            // Try again next poll() rather than losing this fragment outright
+            // -- a transient send failure (e.g. a momentarily full OS send
+            // buffer) is exactly what pacing is meant to give room to
+            // recover from, not a reason to give up on the frame.
+            break;
+        }
+        media_bytes_sent_ += out.size();
+        drained += out.size();
+        pending_media_sends_.pop_front();
+    }
+}
+
+void HostSession::send_media_off_thread(std::unique_lock<std::mutex>& lock) {
+    std::deque<std::vector<uint8_t>> sound;
+    sound.swap(audio_sends_);
+    const uint64_t now_ms = monotonic_millis();
+    const std::size_t budget = media_drain_budget(now_ms);
+    std::vector<std::vector<uint8_t>> pictures;
+    std::size_t taken = 0;
+    while (!pending_media_sends_.empty() && taken < budget) {
+        taken += pending_media_sends_.front().size();
+        pictures.push_back(std::move(pending_media_sends_.front()));
+        pending_media_sends_.pop_front();
+    }
+    if (sound.empty() && pictures.empty()) {
+        return;
+    }
+    const std::string address = companion_media_address_;
+    const uint16_t port = companion_media_port_;
+    const uint64_t generation = media_generation_;
+
+    // Let go while sending, so the game's thread never waits on a send --
+    // which is the whole point of sending here.
+    lock.unlock();
+    std::size_t bytes = 0;
+    std::size_t pictures_sent = 0;
+    {
+        std::lock_guard<std::mutex> sending(send_mutex_);
+        for (const std::vector<uint8_t>& out : sound) {
+            if (audio_media_socket_.send_to(address, port, out.data(), out.size())) {
+                bytes += out.size();
+            }
+        }
+        for (std::vector<uint8_t>& out : pictures) {
+            stamp_media_datagram_sent_at(out.data(), out.size(),
+                                         static_cast<uint32_t>(monotonic_millis()));
+            if (!media_socket_.send_to(address, port, out.data(), out.size())) {
+                break;  // tried again next time, as drain_pending_media_sends() does
+            }
+            bytes += out.size();
+            ++pictures_sent;
+        }
+    }
+    lock.lock();
+    media_bytes_sent_ += bytes;
+    if (generation == media_generation_) {
+        for (std::size_t index = pictures.size(); index > pictures_sent; --index) {
+            pending_media_sends_.push_front(std::move(pictures[index - 1]));
+        }
+    }
+}
+
+std::size_t HostSession::media_drain_budget(uint64_t now_ms) {
     if (pending_media_sends_.empty()) {
         // Nothing queued -- start the pacing clock from here rather than
         // whatever time has passed since it last had something to send,
         // which would otherwise hand the next real frame a huge one-off
         // budget built from an idle gap that was never actually a backlog.
         media_pacing_last_ms_ = now_ms;
-        return;
+        return 0;
     }
     // The rate this drains at follows what is really being produced, not a flat
     // guess and not what the encoder was asked to produce -- see
@@ -2178,26 +2406,7 @@ void HostSession::drain_pending_media_sends(uint64_t now_ms) {
         const auto queued_ms = static_cast<uint64_t>(queued_bytes / bytes_per_ms);
         stats_pacing_worst_ms_ = std::max(stats_pacing_worst_ms_, queued_ms);
     }
-
-    std::size_t drained = 0;
-    while (!pending_media_sends_.empty() && drained < budget) {
-        std::vector<uint8_t>& out = pending_media_sends_.front();
-        // Now, not when it was built. The wait in this queue is this end's,
-        // and the far end measures what comes after -- see
-        // stamp_media_datagram_sent_at().
-        stamp_media_datagram_sent_at(out.data(), out.size(), static_cast<uint32_t>(now_ms));
-        if (!media_socket_.send_to(companion_media_address_, companion_media_port_, out.data(),
-                                   out.size())) {
-            // Try again next poll() rather than losing this fragment outright
-            // -- a transient send failure (e.g. a momentarily full OS send
-            // buffer) is exactly what pacing is meant to give room to
-            // recover from, not a reason to give up on the frame.
-            break;
-        }
-        media_bytes_sent_ += out.size();
-        drained += out.size();
-        pending_media_sends_.pop_front();
-    }
+    return budget;
 }
 
 void HostSession::note_frame_ran(uint64_t serial) {
@@ -2270,6 +2479,19 @@ void HostSession::publish_screens(const ScreenPixels& top,
     // that would not work, or that works again -- before deciding how this
     // one goes.
     take_video_outcomes();
+    // And what the encoder thread made of the last tiles it was given: see
+    // set_media_off_thread(). A screen whose last picture is still being
+    // encoded waits for it -- its tiles are measured against that one too --
+    // and is offered again on the next pass, by then with whatever is newest.
+    if (media_off_thread_) {
+        take_finished_tiles();
+        for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+            if (tile_jobs_outstanding_[screen == ScreenId::Top ? 0 : 1] > 0 &&
+                companion_wants(screen)) {
+                return;
+            }
+        }
+    }
     // Normally an unchanged frame costs nothing: the serial only moves when the
     // pixels do. But when the companion starts needing a screen it was not being
     // sent -- it opened its menu, whose previews show both -- the pixels may

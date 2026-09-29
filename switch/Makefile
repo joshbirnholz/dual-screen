@@ -118,6 +118,12 @@ CORE_IS_DEKO := $(if $(findstring melonds_deko,$(notdir $(CORE_LIB))),1,0)
 # Its shaders, which it loads from the app's romfs; melonds_deko/Makefile
 # builds them beside the archive.
 CORE_ROMFS := $(dir $(CORE_LIB_PATH))melonds_deko_romfs
+# And brought up to date before every build while its source is here, since
+# its glue is part of this repository (melonds_deko/): an archive made before
+# a change to that linked the old glue without a word -- a whole round of
+# Switch testing ran on it.
+DEKO_TREE := $(TOPDIR)/cores/melonds-deko
+BUILD_DEKO_CORE := $(if $(and $(filter $(DEKO_CORE_LIB),$(CORE_LIB)),$(wildcard $(DEKO_TREE)/src/GPU3D_Deko.cpp)),1,0)
 
 # The desktop app's sources beyond the companion's. A second list, like the one
 # above, and checked the same way: tests/run_switch_sources_test.cmake compares
@@ -367,8 +373,15 @@ DS_BUILD_STAMP := $(DS_GIT_HASH), built $(shell date -u '+%Y-%m-%d %H:%M') UTC
 
 .PHONY: all clean
 
-all: $(BUILD) assets stamp config
+all: $(BUILD) assets stamp config deko-core
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+# See BUILD_DEKO_CORE.
+.PHONY: deko-core
+deko-core:
+ifeq ($(BUILD_DEKO_CORE),1)
+	@$(MAKE) --no-print-directory -C $(CURDIR)/melonds_deko VPATH=
+endif
 
 $(BUILD):
 	@mkdir -p $@

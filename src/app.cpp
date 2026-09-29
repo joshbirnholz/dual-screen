@@ -2730,6 +2730,13 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // Offer this game to the network. A failure here is not fatal: the game is
     // perfectly playable on one device.
     host_session.reset(new net::HostSession());
+#ifdef __SWITCH__
+    // Every send here is a call into the system, and a busy picture is
+    // thirty of them: done on this thread, a Mario Kart race streamed to a
+    // Deck ran three frames a pass and sent one picture in three. See
+    // HostSession::set_media_off_thread().
+    host_session->set_media_off_thread(true);
+#endif
     net::HostSession::Config host_config;
     host_config.device_name = settings.device_name;
     host_config.game_title = game_title;

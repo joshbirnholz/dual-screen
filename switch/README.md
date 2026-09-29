@@ -243,7 +243,9 @@ make -C melonds_deko -j8 && make
 ```
 
 That makes `cores/melonds_deko_libnx.a` and `cores/melonds_deko_romfs`, the
-shaders, which `make` builds into the `.nro`'s romfs.
+shaders, which `make` builds into the `.nro`'s romfs. After the first time,
+`make` alone is enough: while `cores/melonds-deko` is there it brings the core
+up to date first, so a change to `melonds_deko/` is never left out of the app.
 
 Two things it needs that libretro's melonDS does not:
 
