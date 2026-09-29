@@ -116,6 +116,8 @@ bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out) {
         case ButtonGlyph::B: out = UiAction::Cancel; return true;
         case ButtonGlyph::Plus: out = UiAction::Quit; return true;
         case ButtonGlyph::Minus: out = UiAction::ToggleMenu; return true;
+        case ButtonGlyph::L: out = UiAction::PageUp; return true;
+        case ButtonGlyph::R: out = UiAction::PageDown; return true;
         // X, Y and the stick clicks only ever appear in the quick menu, where
         // a press is forwarded to the host rather than acted on here. See
         // Client::handle_menu().
@@ -143,10 +145,18 @@ float draw_control_guide(QuadRenderer& quads,
     const bool touch = touch_hints();
     const float pad = chip_pad(scale);
 
-    // One prompt's width: a glyph and its words, or a chip around the words.
+    // Between the two buttons of a pair.
+    const float slash_width = TextRenderer::measure_width("/", scale);
+    const float pair_gap = gap * 0.35f;
+    const auto glyphs_width = [&](const GuidePrompt& prompt) {
+        return prompt.pair == ButtonGlyph::Count
+                   ? glyph_width
+                   : glyph_width * 2.0f + slash_width + pair_gap * 2.0f;
+    };
+    // One prompt's width: its glyphs and its words, or a chip around the words.
     const auto prompt_width = [&](const GuidePrompt& prompt) {
         const float label = TextRenderer::measure_width(prompt.action, scale);
-        return touch ? label + pad * 2.0f : glyph_width + gap + label;
+        return touch ? label + pad * 2.0f : glyphs_width(prompt) + gap + label;
     };
 
     float total = 0.0f;
@@ -190,8 +200,14 @@ float draw_control_guide(QuadRenderer& quads,
             }
         } else {
             glyphs.draw(quads, glyph_as_drawn(prompts[index].glyph), pen_x, y, height, color);
-            text.draw(quads, prompts[index].action, pen_x + glyph_width + gap, label_y, scale,
-                      color);
+            if (prompts[index].pair != ButtonGlyph::Count) {
+                const float slash_x = pen_x + glyph_width + pair_gap;
+                text.draw(quads, "/", slash_x, label_y, scale, color);
+                glyphs.draw(quads, glyph_as_drawn(prompts[index].pair),
+                            slash_x + slash_width + pair_gap, y, height, color);
+            }
+            text.draw(quads, prompts[index].action, pen_x + glyphs_width(prompts[index]) + gap,
+                      label_y, scale, color);
             if (out_hits != nullptr) {
                 // The glyph and its words together: a finger aims at the
                 // prompt, not at the picture inside it.

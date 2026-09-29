@@ -87,6 +87,19 @@ void test_the_stick_clicks_never_change() {
     }
 }
 
+// The shoulders, as each pad prints them. PlayStation and positional share
+// the Steam Controller's L1 and R1.
+void test_the_shoulders() {
+    CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::L) == GlyphCell::SwitchL);
+    CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::R) == GlyphCell::SwitchR);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::L) == GlyphCell::XboxLB);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::R) == GlyphCell::XboxRB);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::L) == GlyphCell::SteamL1);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::R) == GlyphCell::SteamR1);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::L) == GlyphCell::SteamL1);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::R) == GlyphCell::SteamR1);
+}
+
 // Every cell a style asks for has to be in the strip, or it samples past the
 // end of the artwork and draws whatever is there.
 void test_every_cell_is_in_the_sheet() {
@@ -184,6 +197,7 @@ int main() {
     test_playstation_is_shapes();
     test_no_style_draws_two_face_buttons_the_same();
     test_the_stick_clicks_never_change();
+    test_the_shoulders();
     test_every_cell_is_in_the_sheet();
     test_a_style_survives_the_round_trip_through_settings_json();
     test_choosing_south_swaps_the_picture_and_not_the_meaning();

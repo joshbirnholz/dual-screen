@@ -62,6 +62,9 @@ public:
                          float v0 = 0.0f,
                          float u1 = 1.0f,
                          float v1 = 1.0f);
+    // Draws an RGBA picture -- uploaded with upload_rgba8888() -- keeping its
+    // own transparency, which a screen has none of: a game's icon.
+    void draw_image(const PixelRect& rect, const Texture& texture, const Color& tint = Color{});
     // A 1px-per-side outline drawn as four solid quads.
     void draw_outline(const PixelRect& rect, const Color& color, float thickness);
 
@@ -75,6 +78,9 @@ public:
     // rather than a rounded rectangle: there is no radius to choose, so two
     // capsules of different widths always agree.
     void draw_capsule(const PixelRect& rect, const Color& color);
+    // A rectangle with its corners rounded to `radius` -- the capsule's disc,
+    // cut in quarters.
+    void draw_rounded_rect(const PixelRect& rect, float radius, const Color& color);
 
 private:
     // Matches the u_mode the fragment shader switches on. The two planar
@@ -86,6 +92,7 @@ private:
         ScreenRgba = 3,
         ScreenNv12 = 4,
         ScreenYuv420p = 5,
+        Image = 6,
     };
 
     void draw(const PixelRect& rect,

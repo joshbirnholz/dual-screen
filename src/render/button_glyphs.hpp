@@ -19,7 +19,9 @@ namespace ds {
 //
 // which is the whole of why a style can be chosen at all: the position is
 // fixed and only the printing changes.
-enum class ButtonGlyph { A, B, X, Y, LeftStick, RightStick, Plus, Minus, Count };
+// L and R are the shoulder buttons, which every pad has in the same place and
+// prints its own way: L and R, L1 and R1, LB and RB.
+enum class ButtonGlyph { A, B, X, Y, LeftStick, RightStick, Plus, Minus, L, R, Count };
 
 // Whose buttons the prompts are drawn as. The choice is the player's, not the
 // pad's: somebody who has used a PlayStation for twenty years reads a circle
@@ -62,6 +64,15 @@ enum class GlyphCell {
     DotsSouth,
     DotsNorth,
     DotsWest,
+    // The shoulders, from Kenney's Input Prompts: a Switch's, a Steam
+    // Controller's L1 and R1 -- which the PlayStation and positional styles
+    // share, plain enough to read as either -- and an Xbox pad's.
+    SwitchL,
+    SwitchR,
+    SteamL1,
+    SteamR1,
+    XboxLB,
+    XboxRB,
     Count
 };
 

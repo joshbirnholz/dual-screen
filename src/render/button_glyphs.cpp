@@ -84,6 +84,15 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
                 case PadGlyphStyle::Xbox: return GlyphCell::View;
                 default: return GlyphCell::Minus;
             }
+        case ButtonGlyph::L:
+        case ButtonGlyph::R: {
+            const bool right = glyph == ButtonGlyph::R;
+            switch (style) {
+                case PadGlyphStyle::Nintendo: return right ? GlyphCell::SwitchR : GlyphCell::SwitchL;
+                case PadGlyphStyle::Xbox: return right ? GlyphCell::XboxRB : GlyphCell::XboxLB;
+                default: return right ? GlyphCell::SteamR1 : GlyphCell::SteamL1;
+            }
+        }
         case ButtonGlyph::Count: break;
     }
     return GlyphCell::LetterA;

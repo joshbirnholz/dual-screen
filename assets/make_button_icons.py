@@ -22,6 +22,14 @@ assets/positional/switch_buttons_*_outline.png -- white on transparent, so
 only their alpha is taken, the same as every other cell -- scaled to the
 disc every other button fills.
 
+Last come the shoulder buttons, L and R as each pad prints them: a Switch's
+L and R, a Steam Controller's L1 and R1 (for the PlayStation and positional
+styles -- the user's choice of the plainest), an Xbox pad's LB and RB. From
+Kenney's Input Prompts (CC0), assets/shoulders/, filled shapes with the
+letters already knocked out, so again only their alpha is taken. Each is fitted
+to the square the disc sits in, bottom-aligned like it, so a shoulder glyph
+lines up with a face button beside it.
+
 Run from the repository root:  python3 assets/make_button_icons.py
 """
 
@@ -43,6 +51,11 @@ GENERATED = ["cross", "circle", "triangle", "square", "bars", "view", "create"]
 # north, west -- the order of ButtonGlyph A, B, X, Y.
 POSITIONAL = ["right", "down", "up", "left"]
 POSITIONAL_SOURCE = "assets/positional/switch_buttons_{}_outline.png"
+
+# And the shoulders, in GlyphCell order.
+SHOULDERS = ["switch_button_l", "switch_button_r", "controller_button_l1",
+             "controller_button_r1", "xbox_lb", "xbox_rb"]
+SHOULDER_SOURCE = "assets/shoulders/{}.png"
 
 
 def read_png(path):
@@ -124,7 +137,17 @@ def read_palette_png_alpha(path):
 
 def render_positional(direction):
     """One positional cell: the source's alpha, fitted to the button's disc."""
-    sw, sh, alpha = read_palette_png_alpha(POSITIONAL_SOURCE.format(direction))
+    return render_fitted(POSITIONAL_SOURCE.format(direction), square=True)
+
+
+def render_shoulder(name):
+    """One shoulder cell: the source's alpha, as wide as the disc, sitting on
+    the disc's bottom."""
+    return render_fitted(SHOULDER_SOURCE.format(name), square=False)
+
+
+def render_fitted(path, square):
+    sw, sh, alpha = read_palette_png_alpha(path)
 
     def sample(sx, sy):
         # Bilinear, clamped, in source pixels.
@@ -148,6 +171,11 @@ def render_positional(direction):
     # is drawn with never reaches into the next cell of the strip.
     extent = max(ex1 - ex0, ey1 - ey0) * 1.08
     ecx, ecy = (ex0 + ex1) / 2.0, (ey0 + ey1) / 2.0
+    if not square:
+        # A shoulder is wider than it is tall: as wide as the disc, and
+        # standing on the disc's bottom edge rather than centred in it.
+        extent = (ex1 - ex0) * 1.12
+        ecy = ey1 - extent / 2.0 + extent * 0.02
 
     cell = bytearray(CELL_W * CELL_H * 4)
     left, top, size = CX - R, CY - R, 2 * R
@@ -249,20 +277,21 @@ def main():
     if h != CELL_H:
         sys.exit(f"{source} is {h}px tall, expected {CELL_H}")
     kept = 8  # the hand-drawn Nintendo cells
-    total = kept + len(GENERATED) + len(POSITIONAL)
+    total = kept + len(GENERATED) + len(POSITIONAL) + len(SHOULDERS)
     out = bytearray(total * CELL_W * CELL_H * 4)
     for y in range(CELL_H):
         src = (y * w + 0) * 4
         dst = (y * total * CELL_W) * 4
         out[dst:dst + kept * CELL_W * 4] = rgba[src:src + kept * CELL_W * 4]
-    cells = [render(name) for name in GENERATED] + [render_positional(d) for d in POSITIONAL]
+    cells = ([render(name) for name in GENERATED] + [render_positional(d) for d in POSITIONAL] +
+             [render_shoulder(name) for name in SHOULDERS])
     for index, cell in enumerate(cells):
         column = kept + index
         for y in range(CELL_H):
             dst = (y * total * CELL_W + column * CELL_W) * 4
             out[dst:dst + CELL_W * 4] = cell[y * CELL_W * 4:(y + 1) * CELL_W * 4]
     write_png(source, total * CELL_W, CELL_H, bytes(out))
-    print(f"{source}: {kept} kept + {len(GENERATED) + len(POSITIONAL)} generated = {total} cells, "
+    print(f"{source}: {kept} kept + {total - kept} generated = {total} cells, "
           f"{total * CELL_W}x{CELL_H}")
 
 

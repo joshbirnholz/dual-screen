@@ -43,6 +43,10 @@ struct GuidePrompt {
     ButtonGlyph glyph = ButtonGlyph::A;
     std::string action;
     PromptRole role = PromptRole::OwnControl;
+    // A second button that does the same the other way, drawn after a slash:
+    // "[L]/[R] Change Device". Count for none. A finger on the prompt means
+    // the first.
+    ButtonGlyph pair = ButtonGlyph::Count;
 };
 
 // Where one prompt ended up, so a finger can land on it. Filled in while the

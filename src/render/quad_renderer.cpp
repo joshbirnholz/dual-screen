@@ -1,5 +1,6 @@
 #include "render/quad_renderer.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -32,7 +33,7 @@ uniform sampler2D u_chroma;   // NV12's interleaved UV, or YUV420P's U
 uniform sampler2D u_chroma_v; // YUV420P's V
 uniform vec4 u_color;
 // 0 solid, 1 screen (XRGB), 2 alpha mask, 3 screen (RGBA),
-// 4 screen (NV12), 5 screen (YUV420P)
+// 4 screen (NV12), 5 screen (YUV420P), 6 image (RGBA, its own alpha)
 uniform int u_mode;
 // Which component of NV12's two-channel chroma texel holds V: 1 for .a, which
 // is where GL_LUMINANCE_ALPHA puts it, 0 for .g, which is where GL_RG does.
@@ -84,6 +85,10 @@ void main() {
         float u = texture2D(u_chroma, v_texcoord).r;
         float v = texture2D(u_chroma_v, v_texcoord).r;
         gl_FragColor = vec4(ds_yuv_to_rgb(y, u, v) * u_color.rgb, u_color.a);
+    } else if (u_mode == 6) {
+        // A picture with see-through parts of its own: a game's icon.
+        vec4 texel = texture2D(u_texture, v_texcoord);
+        gl_FragColor = vec4(texel.rgb * u_color.rgb, texel.a * u_color.a);
     } else {
         // A screen the GPU filled in itself: already in RGBA order, so
         // swizzling it the way core output needs would turn it inside out.
@@ -456,6 +461,10 @@ void QuadRenderer::draw_alpha_mask(const PixelRect& rect,
     draw(rect, &texture, color, Mode::AlphaMask, u0, v0, u1, v1);
 }
 
+void QuadRenderer::draw_image(const PixelRect& rect, const Texture& texture, const Color& tint) {
+    draw(rect, &texture, tint, Mode::Image, 0.0f, 0.0f, 1.0f, 1.0f);
+}
+
 void QuadRenderer::draw_outline(const PixelRect& rect, const Color& color, float thickness) {
     if (thickness <= 0.0f) return;
     const float t = thickness;
@@ -516,6 +525,32 @@ void QuadRenderer::draw_capsule(const PixelRect& rect, const Color& color) {
                     1.0f);
     draw_alpha_mask(PixelRect{rect.x + rect.w - radius, rect.y, radius, rect.h}, disc_, color,
                     0.5f, 0.0f, 1.0f, 1.0f);
+}
+
+void QuadRenderer::draw_rounded_rect(const PixelRect& rect, float radius, const Color& color) {
+    if (rect.w <= 0.0f || rect.h <= 0.0f) {
+        return;
+    }
+    radius = std::max(0.0f, std::min(radius, std::min(rect.w, rect.h) * 0.5f));
+    if (radius < 0.5f || !build_disc()) {
+        draw_solid(rect, color);
+        return;
+    }
+    // Nine pieces that do not overlap -- where two pieces of a translucent
+    // fill overlap, the overlap is drawn darker: a column the full height, the
+    // two sides between the corners, and a quarter of the disc in each corner.
+    draw_solid(PixelRect{rect.x + radius, rect.y, rect.w - radius * 2.0f, rect.h}, color);
+    const float side = rect.h - radius * 2.0f;
+    if (side > 0.0f) {
+        draw_solid(PixelRect{rect.x, rect.y + radius, radius, side}, color);
+        draw_solid(PixelRect{rect.x + rect.w - radius, rect.y + radius, radius, side}, color);
+    }
+    const float right = rect.x + rect.w - radius;
+    const float bottom = rect.y + rect.h - radius;
+    draw_alpha_mask(PixelRect{rect.x, rect.y, radius, radius}, disc_, color, 0.0f, 0.0f, 0.5f, 0.5f);
+    draw_alpha_mask(PixelRect{right, rect.y, radius, radius}, disc_, color, 0.5f, 0.0f, 1.0f, 0.5f);
+    draw_alpha_mask(PixelRect{rect.x, bottom, radius, radius}, disc_, color, 0.0f, 0.5f, 0.5f, 1.0f);
+    draw_alpha_mask(PixelRect{right, bottom, radius, radius}, disc_, color, 0.5f, 0.5f, 1.0f, 1.0f);
 }
 
 }  // namespace ds

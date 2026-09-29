@@ -89,3 +89,17 @@ stb_truetype does not read. No glyph is changed.
 No Nintendo BIOS, firmware, NAND image, ROM, or font is included here, and none
 is downloaded. BIOS and firmware files have to be supplied by the user; the app
 locates and validates them and reports what is missing.
+
+## Kenney's Input Prompts — `assets/positional/`, `assets/shoulders/`, `assets/ui_icons/steamdeck.png`, `assets/ui_icons/switch.png`
+
+Button and device artwork by Kenney (www.kenney.nl), Input Prompts 1.5A,
+released under Creative Commons Zero (CC0): the positional face-button dots,
+the shoulder buttons (a Switch's L and R, a Steam Controller's L1 and R1, an
+Xbox pad's LB and RB) and the Steam Deck and Switch shown on Data
+Management's game page. Only their shapes are used — see
+`assets/make_button_icons.py` and `assets/make_ui_icons.py`.
+
+## Phosphor Icons — `assets/ui_icons/pc.svg`, `assets/ui_icons/pc.png`
+
+`desktop-tower-fill`, the PC on Data Management's game page. Copyright (c)
+2020 Phosphor Icons, MIT licensed.
