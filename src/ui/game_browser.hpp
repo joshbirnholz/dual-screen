@@ -8,6 +8,7 @@
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/control_guide.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -25,9 +26,9 @@ struct GameBrowserResult {
     std::string chosen_path;
     // The browsed directory changed, so the remembered one is worth updating.
     bool directory_changed = false;
-    // Back to where the browser was opened from, rather than up a folder.
+    // Back to where the browser was opened from, rather than up a folder:
+    // Main Menu, on plus. There is no Quit here -- the main menu has one.
     bool back_requested = false;
-    bool quit_requested = false;
 };
 
 // A file browser for picking a ROM, used when the app is launched with no
@@ -68,8 +69,9 @@ private:
     struct Geometry {
         PixelRect panel;
         PixelRect list;
-        PixelRect back_button;
-        PixelRect quit_button;
+        // The strip under the list the button prompts sit in, right-aligned
+        // like everywhere else in the app.
+        PixelRect footer;
         float row_height = 0.0f;
         float scale = 1.0f;
         int visible_rows = 1;
@@ -96,6 +98,9 @@ private:
     bool drag_moved_ = false;
     float drag_start_y_ = 0.0f;
     int drag_start_scroll_ = 0;
+
+    // Where the prompts were drawn, so tapping one does what pressing it does.
+    std::vector<GuideHit> guide_hits_;
 };
 
 }  // namespace ds

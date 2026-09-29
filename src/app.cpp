@@ -3056,8 +3056,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             }
             if (result.back_requested) {
                 open_launcher();
-            } else if (result.quit_requested) {
-                running = false;
             } else if (result.game_chosen) {
                 settings.last_browse_dir = browser->current_directory();
                 settings.save(paths);

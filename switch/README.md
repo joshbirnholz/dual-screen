@@ -179,8 +179,10 @@ of it.
 
 **Load a game** starts Dualscreen again, straight into the file browser. It
 opens at `/roms/nds` (or `/roms/NDS`, `/roms/ds`, `/roms`, `/ROMs`, whichever is
-on the card first), else at the card's root. Leaving the browser, or quitting a
-game from its quick menu, brings the opening screen back the same way.
+on the card first), else at the card's root. **+** (Main Menu) leaves the
+browser for the opening screen, from however deep in the folders it is; B goes
+up one folder, and out once there is none. Quitting a game from its quick menu,
+or closing it from the HOME menu, closes Dualscreen, as quitting any game does.
 
 Only DS games: a 3DS file is refused with a message saying so.
 

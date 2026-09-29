@@ -260,6 +260,33 @@ void test_duplicate_confirms_navigate_once() {
               "a Confirm+Cancel pair moved to " + browser.current_directory());
 }
 
+// Plus is Main Menu: out of the browser from however deep in the folders it
+// is, where B only climbs one. And there is no Quit here any more -- leaving
+// the app is the main menu's to offer -- so Quit leaves the browser as it was.
+void test_plus_goes_to_the_main_menu_and_quit_is_not_here() {
+    const std::string sandbox = make_sandbox();
+    if (sandbox.empty()) return;
+    const std::string inner = path_join(sandbox, "inner");
+    ensure_directory(inner);
+    touch_file(path_join(inner, "game.nds"));
+
+    GameBrowser browser;
+    browser.open(inner);
+    InputManager input;
+    const std::vector<PointerEvent> no_pointers;
+
+    const GameBrowserResult quit = browser.update(input, {UiAction::Quit}, no_pointers, 1280.0f, 800.0f);
+    CHECK(!quit.back_requested);
+    CHECK(!quit.game_chosen);
+    CHECK(browser.is_open());
+    CHECK_STR_EQ(browser.current_directory(), inner);
+
+    const GameBrowserResult plus =
+        browser.update(input, {UiAction::MenuDisconnect}, no_pointers, 1280.0f, 800.0f);
+    CHECK_MSG(plus.back_requested, "plus did not ask for the main menu");
+    CHECK_STR_EQ(browser.current_directory(), inner);
+}
+
 void test_confirm_on_a_rom_chooses_it() {
     const std::string sandbox = make_sandbox();
     if (sandbox.empty()) return;
@@ -455,6 +482,7 @@ int main() {
     test_cursor_auto_hides();
     test_duplicate_confirms_navigate_once();
     test_confirm_on_a_rom_chooses_it();
+    test_plus_goes_to_the_main_menu_and_quit_is_not_here();
     test_the_opening_screen_offers_what_the_device_can_do();
     test_the_opening_screen_wraps_around_its_own_rows();
     return test::finish("browser");

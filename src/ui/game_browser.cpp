@@ -157,20 +157,8 @@ GameBrowser::Geometry GameBrowser::compute_geometry(float output_width, float ou
     geometry.visible_rows =
         std::max(1, static_cast<int>(geometry.list.h / geometry.row_height));
 
-    const float button_width = std::min(geometry.panel.w * 0.3f,
-                                        TextRenderer::measure_width("  Quit  ", geometry.scale) * 2.0f);
-    const float button_y = geometry.panel.y + geometry.panel.h - footer + line * 0.4f;
-    const float button_height = line * 2.0f;
-    geometry.quit_button = PixelRect{geometry.panel.x + geometry.panel.w - button_width, button_y,
-                                     button_width, button_height};
-    // Beside Quit, because leaving the browser and leaving the app are the two
-    // ways out and they belong together.
-    const float back_width = std::min(
-        geometry.panel.w * 0.35f,
-        TextRenderer::measure_width("  Main menu  ", geometry.scale) * 1.4f);
-    geometry.back_button =
-        PixelRect{geometry.quit_button.x - back_width - line * 0.6f, button_y, back_width,
-                  button_height};
+    geometry.footer = PixelRect{geometry.panel.x, geometry.panel.y + geometry.panel.h - footer,
+                                geometry.panel.w, footer};
     return geometry;
 }
 
@@ -264,15 +252,22 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
             case UiAction::MenuReset:
-            case UiAction::MenuDisconnect:
             // Settings is reached from the main menu and from a game's own
             // menu; a file browser is neither.
             case UiAction::MenuSettings: break;
+            // Plus: straight out to the main menu, from however deep in the
+            // folders this is -- where B only goes up one.
+            case UiAction::MenuDisconnect:
+                if (!navigated) {
+                    result.back_requested = true;
+                    navigated = true;
+                }
+                break;
             // Escape also raises Cancel, which is what it means here.
             case UiAction::OpenMenu: break;
-            case UiAction::Quit:
-                result.quit_requested = true;
-                break;
+            // Leaving the app is the main menu's to offer, not this page's.
+            // F10 still quits from anywhere, which the app sees for itself.
+            case UiAction::Quit: break;
         }
     }
     focus_ = std::max(0, std::min(focus_, std::max(0, count - 1)));
@@ -287,10 +282,23 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             drag_start_y_ = pointer.y;
             drag_start_scroll_ = scroll_;
         } else if (pointer.released) {
-            if (tapped(pointer, geometry.quit_button)) {
-                result.quit_requested = true;
-            } else if (tapped(pointer, geometry.back_button)) {
-                result.back_requested = true;
+            // A prompt tapped is that button pressed, where it came down on
+            // the same one it left.
+            const ButtonGlyph under = guide_button_at(guide_hits_, pointer.x, pointer.y);
+            if (!navigated && under != ButtonGlyph::Count &&
+                under == guide_button_at(guide_hits_, pointer.press_x, pointer.press_y)) {
+                if (under == ButtonGlyph::Plus) {
+                    result.back_requested = true;
+                } else if (under == ButtonGlyph::A) {
+                    activate(focus_, result);
+                } else if (under == ButtonGlyph::B) {
+                    if (!rows_.empty() && rows_.front().is_parent) {
+                        result.directory_changed = navigate_to(rows_.front().path);
+                    } else {
+                        result.back_requested = true;
+                    }
+                }
+                navigated = true;
             } else if (!navigated && dragging_ && !drag_moved_ &&
                        geometry.list.contains(pointer.x, pointer.y)) {
                 const auto row_under = [&](float y) {
@@ -321,7 +329,7 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
         }
     }
 
-    if (result.game_chosen || result.quit_requested) {
+    if (result.game_chosen) {
         open_ = false;
     }
     return result;
@@ -399,26 +407,20 @@ void GameBrowser::render(QuadRenderer& quads,
                          theme.accent);
     }
 
-    draw_menu_row(quads, geometry.back_button, false, scale);
-    text.draw(quads, "Main menu", geometry.back_button.x + geometry.back_button.w * 0.5f,
-              geometry.back_button.y + (geometry.back_button.h - line) * 0.5f, scale,
-              theme.text, TextAlign::Center);
-
-    draw_menu_row(quads, geometry.quit_button, false, scale);
-    text.draw(quads, "Quit", geometry.quit_button.x + geometry.quit_button.w * 0.5f,
-              geometry.quit_button.y + (geometry.quit_button.h - line) * 0.5f, scale,
-              theme.danger, TextAlign::Center);
-
-    // Kept clear of the two buttons rather than running underneath them.
-    // Cancel goes up a folder while there is one to go up to and out of the
-    // browser once there is not, which "Back" covers either way.
+    // Right-aligned to the panel's edge, as every other screen's are. Main
+    // Menu leads, the way the one that leaves leads the main menu's and the
+    // quick menu's rows. Cancel goes up a folder while there is one to go up
+    // to and out of the browser once there is not, which "Back" covers
+    // either way.
     const float guide_height = control_guide_height(scale * 0.9f);
+    guide_hits_.clear();
     draw_control_guide(quads, text, glyphs,
-                       {{ButtonGlyph::A, "Open", PromptRole::ActsOnSelection},
+                       {{ButtonGlyph::Plus, "Main Menu"},
+                        {ButtonGlyph::A, "Open", PromptRole::ActsOnSelection},
                         {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
-                       (geometry.panel.x + geometry.back_button.x) * 0.5f,
-                       geometry.quit_button.y + (geometry.quit_button.h - guide_height) * 0.5f,
-                       scale * 0.9f, theme.text);
+                       geometry.footer.x + geometry.footer.w,
+                       geometry.footer.y + (geometry.footer.h - guide_height) * 0.5f,
+                       scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);
 }
 
 }  // namespace ds
