@@ -18,6 +18,9 @@ void set_min_log_level(LogLevel level);
 // be opened, which is not itself fatal.
 bool set_log_file(const std::string& path);
 void close_log_file();
+// Waits until every line logged so far is on the file -- before anything that
+// may end the process without closing it. See log.cpp for why lines wait.
+void flush_log_file();
 
 void log_debug(const std::string& message);
 void log_info(const std::string& message);

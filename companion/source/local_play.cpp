@@ -293,7 +293,9 @@ int play_here(const LocalPlayRequest& request, bool* quit_chosen) {
 #ifdef __SWITCH__
     g_spare_cores.store(0);
     // Last: if the system asked to close the app, letting go is its cue to end
-    // the process there and then, and anything after this may never run.
+    // the process there and then, and anything after this may never run --
+    // including the log's writer, so what it holds goes out first.
+    flush_log_file();
     if (exit_locked) appletUnlockExit();
 #endif
     return status;
