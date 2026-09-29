@@ -51,8 +51,15 @@ inline constexpr const char* kBrowseArgument = "--browse";
 
 #if DS_LOCAL_PLAY
 // Plays, in this process: the desktop app, opened on `request`'s game or its
-// game browser, writing to the log already open. Returns its exit status.
-int play_here(const LocalPlayRequest& request);
+// game browser, writing to the log already open. Returns its exit status, and
+// in `quit_chosen` whether the player quit (or the system closed the app)
+// rather than leaving for a menu -- see leave_to_home().
+int play_here(const LocalPlayRequest& request, bool* quit_chosen = nullptr);
+
+// Makes this program's exit close it altogether, back to the console's HOME
+// menu, rather than go back to whatever loader started it. For after the player
+// chose Quit: quitting a game closes it.
+void leave_to_home();
 
 // Asks the loader that started this program to start it again, with
 // `arguments` after its own path, once this run exits. False when there is no

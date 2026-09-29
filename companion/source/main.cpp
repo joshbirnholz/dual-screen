@@ -1686,6 +1686,9 @@ int main(int argc, char** argv) {
     [[maybe_unused]] const std::string self_path = argc > 0 && argv[0] != nullptr ? argv[0] : "";
 
     int status = 0;
+    // The player chose Quit while playing here, or the system closed the
+    // app: nothing to go back to -- see leave_to_home().
+    [[maybe_unused]] bool quit_chosen = false;
     if (!options.parse_error.empty()) {
         log_error(options.parse_error);
         status = 2;
@@ -1695,8 +1698,8 @@ int main(int argc, char** argv) {
         // playing, in this process. Sent here from the menu, the menu comes
         // back when the game is over; started by a game's forwarder, leaving
         // the game leaves the program, as leaving any game does.
-        status = play_here(local_play_request(options));
-        if (options.local_play.browse) {
+        status = play_here(local_play_request(options), &quit_chosen);
+        if (options.local_play.browse && !quit_chosen) {
             relaunch(self_path, "");
         }
 #endif
@@ -1719,11 +1722,14 @@ int main(int argc, char** argv) {
             // there is no way back to the menu either.
             LocalPlayRequest browse = local_play_request(options);
             browse.browse = true;
-            status = play_here(browse);
+            status = play_here(browse, &quit_chosen);
         }
 #endif
     }
 
+#if DS_LOCAL_PLAY
+    if (quit_chosen) leave_to_home();
+#endif
     log_info("Dualscreen exiting");
 #ifdef __SWITCH__
     socketExit();

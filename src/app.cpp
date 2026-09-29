@@ -479,6 +479,10 @@ struct App::Impl {
     // is told to close its app too when this one says goodbye -- see
     // HostSession::stop().
     bool quit_from_companion = false;
+    // The player quit -- Quit in the quick menu, from either device -- or the
+    // system closed the app, rather than leaving for a menu. See
+    // App::quit_chosen().
+    bool quit_chosen = false;
     std::string active_layout_id;
     bool bilinear_filtering = false;
     // Which device makes the sound. Only meaningful once two are connected.
@@ -819,6 +823,8 @@ struct App::Impl {
 
 App::App() : impl_(new Impl()) {}
 App::~App() = default;
+
+bool App::quit_chosen() const { return impl_->quit_chosen; }
 
 bool App::Impl::create_window(GlContextNeed need, std::string* error) {
     gl_context_need = need;
@@ -1628,8 +1634,10 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                     // And this app with it: quitting from here means quitting,
                     // not going back to the main menu.
                     running = false;
+                    quit_chosen = true;
                 } else {
                     running = false;
+                    quit_chosen = true;
                     quit_from_companion = !pressed_here;
                 }
             } else if (result.controllers_requested) {
@@ -3625,6 +3633,7 @@ int App::run(const AppOptions& options) {
         if (!appletMainLoop()) {
             log_info("the console asked this app to close");
             impl.running = false;
+            impl.quit_chosen = true;
             break;
         }
 #endif
@@ -3823,6 +3832,7 @@ int App::run(const AppOptions& options) {
             // only knowable from a log on the device.
             log_info("asked to close by the window or the system; leaving normally");
             impl.running = false;
+            impl.quit_chosen = true;
         }
         // Both sessions are polled before the UI so a state change this frame
         // is acted on this frame.
@@ -4093,6 +4103,7 @@ int App::run(const AppOptions& options) {
                 // The companion that asked is leaving on its own right after,
                 // not waiting to be told to.
                 impl.running = false;
+                impl.quit_chosen = true;
                 impl.quit_from_companion = true;
             }
             // Only when --video-codec h264 forced video and it does not

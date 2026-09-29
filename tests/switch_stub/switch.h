@@ -47,6 +47,8 @@ typedef enum {
     AppletOperationMode_Console = 1,
 } AppletOperationMode;
 AppletOperationMode appletGetOperationMode(void);
+Result appletLockExit(void);
+Result appletUnlockExit(void);
 
 // hbloader's hand-off -- how a program asks to be started again.
 bool envHasNextLoad(void);

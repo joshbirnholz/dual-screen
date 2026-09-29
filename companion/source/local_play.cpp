@@ -19,6 +19,10 @@
 #include "util/log.hpp"
 
 #ifdef __SWITCH__
+// libnx's: what the program does once main() returns -- 1 ends the process
+// rather than going back to the loader that started it. See leave_to_home().
+extern "C" u32 __nx_applet_exit_mode;
+
 // Where each new thread runs.
 //
 // Every thread a program here starts through pthreads -- which is how
@@ -248,7 +252,7 @@ private:
 }  // namespace
 #endif
 
-int play_here(const LocalPlayRequest& request) {
+int play_here(const LocalPlayRequest& request, bool* quit_chosen) {
     AppOptions options;
     options.game_path = request.game_path;
     options.verbose = request.verbose;
@@ -274,14 +278,34 @@ int play_here(const LocalPlayRequest& request) {
              (cores.empty() ? std::string("; no other core is free for the rest")
                             : "; threads started while playing go to core " + cores));
     CpuBoost boost;
+    // Closing an application from the HOME menu ends its process there and
+    // then, unless it has asked to be told first: without this, closing the
+    // game that way lost everything since the last resume point. With it the
+    // system asks, the app leaves as it would for Quit -- the resume point and
+    // the cartridge save written on the way out -- and it has 15 seconds to.
+    const bool exit_locked = R_SUCCEEDED(appletLockExit());
 #endif
     App app;
     const int status = app.run(options);
 #ifdef __SWITCH__
+    if (exit_locked) appletUnlockExit();
     g_spare_cores.store(0);
 #endif
-    log_info("finished playing here (status " + std::to_string(status) + ")");
+    if (quit_chosen != nullptr) *quit_chosen = app.quit_chosen();
+    log_info("finished playing here (status " + std::to_string(status) + ")" +
+             (app.quit_chosen() ? "; the player quit" : ""));
     return status;
+}
+
+void leave_to_home() {
+#ifdef __SWITCH__
+    // A program started by hbloader goes back to it when main() returns, and
+    // it starts the homebrew menu again. Quit means the whole thing closes,
+    // as quitting a game does, so this program's exit ends the application
+    // (or the album applet) instead. Read by libnx as main() returns.
+    __nx_applet_exit_mode = 1;
+    log_info("closing to the HOME menu");
+#endif
 }
 
 bool relaunch(const std::string& self_path, const std::string& arguments) {

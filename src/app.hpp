@@ -88,6 +88,12 @@ public:
     // Returns a process exit code.
     int run(const AppOptions& options);
 
+    // After run(): whether it ended because the player chose Quit, or the
+    // system closed the app, rather than to go back to a menu. A caller whose
+    // own menu would come back next (see AppOptions::leave_instead_of_launcher)
+    // leaves as well when this is true.
+    bool quit_chosen() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
