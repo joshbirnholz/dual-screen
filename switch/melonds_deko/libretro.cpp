@@ -4,8 +4,10 @@
 // after libretro's own melonDS, the core the Switch app linked before this one,
 // so the app treats the two alike: the same option names (the few the app
 // sets), the same buttons -- L2 blows into the microphone, L3 closes the lid --
-// the touch screen through the pointer, and the cartridge save in the same
-// place, <save directory>/<game>.sav, which melonDS keeps up to date itself.
+// the touch screen through the pointer. The cartridge save is kept where
+// melonDS DS keeps it on a computer, <save directory>/<game>.srm -- the same
+// raw cartridge memory under the same name, so a save moves between the two
+// as it is -- and melonDS keeps it up to date itself.
 
 #include "melonds_deko.hpp"
 
@@ -252,6 +254,7 @@ std::size_t save_state_to_scratch() {
 
 void log_info(const std::string& message) { log_at(RETRO_LOG_INFO, message); }
 void log_error(const std::string& message) { log_at(RETRO_LOG_ERROR, message); }
+void log_warn(const std::string& message) { log_at(RETRO_LOG_WARN, message); }
 
 }  // namespace melonds_deko
 
@@ -346,7 +349,19 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
     // melonDS opens the save with a plain fopen(), which cannot make the
     // directory it goes in.
     if (!saves.empty()) mkdir(saves.c_str(), 0777);
-    g_sram_path = (saves.empty() ? std::string(".") : saves) + "/" + stem_of(g_rom_path) + ".sav";
+    const std::string save_stem = (saves.empty() ? std::string(".") : saves) + "/" + stem_of(g_rom_path);
+    g_sram_path = save_stem + ".srm";
+    // Saves from before were <game>.sav, libretro melonDS's name for the same
+    // thing, which this adapter kept to begin with.
+    struct stat existing {};
+    const std::string old_path = save_stem + ".sav";
+    if (stat(g_sram_path.c_str(), &existing) != 0 && stat(old_path.c_str(), &existing) == 0) {
+        if (std::rename(old_path.c_str(), g_sram_path.c_str()) == 0) {
+            log_info("melonDS (deko3d): renamed " + old_path + " to " + g_sram_path);
+        } else {
+            log_warn("melonDS (deko3d): could not rename " + old_path + " to " + g_sram_path);
+        }
+    }
 
     NDS::SetConsoleType(0);
     if (!NDS::LoadROM(g_rom_path.c_str(), g_sram_path.c_str(), true)) {

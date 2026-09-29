@@ -126,19 +126,31 @@ constexpr std::size_t kEnglish = 1;
 
 }  // namespace
 
+std::vector<std::string> nds_banner_title_lines(const uint8_t* banner, std::size_t size) {
+    if (banner == nullptr) return {};
+    // Titles are a table of sixteen-bit characters, 128 of them per language,
+    // after 0x240 bytes of version, checksums and icon bitmap. English first;
+    // Japanese, the table's first entry, for a game that has no English one.
+    constexpr std::size_t kTitlesAt = 0x240;
+    constexpr std::size_t kTitleChars = 128;
+    for (const std::size_t language : {kEnglish, std::size_t{0}}) {
+        const std::size_t at = kTitlesAt + language * kTitleChars * 2;
+        std::vector<std::string> lines = non_empty_lines(utf16le_to_utf8(banner, size, at, kTitleChars));
+        if (!lines.empty()) return lines;
+    }
+    return {};
+}
+
 std::string nds_title_from_rom(const uint8_t* data, std::size_t size) {
     if (data == nullptr) return std::string();
     // The header's pointer to the banner. Zero means the ROM has none, which
     // homebrew often does not.
     uint32_t banner = 0;
-    if (!read_u32(data, size, 0x068, banner) || banner == 0) return std::string();
-    // Titles are a table of sixteen-bit characters, 128 of them per language,
-    // after 0x240 bytes of version, checksums and icon bitmap.
-    constexpr std::size_t kTitlesAt = 0x240;
-    constexpr std::size_t kTitleChars = 128;
-    const std::size_t at = static_cast<std::size_t>(banner) + kTitlesAt + kEnglish * kTitleChars * 2;
+    if (!read_u32(data, size, 0x068, banner) || banner == 0 || banner >= size) {
+        return std::string();
+    }
     const std::vector<std::string> lines =
-        non_empty_lines(utf16le_to_utf8(data, size, at, kTitleChars));
+        nds_banner_title_lines(data + banner, size - static_cast<std::size_t>(banner));
     if (lines.empty()) return std::string();
     // The last line is the publisher, by a convention every commercial DS
     // banner follows. One line on its own is the title and nothing else.

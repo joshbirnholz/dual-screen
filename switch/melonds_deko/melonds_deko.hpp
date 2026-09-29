@@ -26,6 +26,7 @@ namespace melonds_deko {
 // The libretro log, once the frontend has given one.
 void log_info(const std::string& message);
 void log_error(const std::string& message);
+void log_warn(const std::string& message);
 
 // The GPU: a deko3d device, the queue the renderers submit to, the memory they
 // allocate from and the shaders they draw with. Before melonDS is initialised,

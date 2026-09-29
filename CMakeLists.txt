@@ -107,6 +107,7 @@ add_library(dualscreen_core STATIC
     src/config/paths.cpp
     src/config/settings.cpp
     src/config/sha1.cpp
+    src/core/ds_rom_info.cpp
     src/core/game_title.cpp
     src/core/gl_call_trace.cpp
     src/core/hw_render_target.cpp
@@ -115,6 +116,7 @@ add_library(dualscreen_core STATIC
     src/core/libretro_core.cpp
     src/core/libretro_screen_source.cpp
     src/core/save_points.cpp
+    src/core/save_store.cpp
     src/core/core_input_sink.cpp
     src/core/system.cpp
     src/input/controller_mapping.cpp

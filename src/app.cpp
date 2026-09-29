@@ -30,6 +30,7 @@
 #include "core/libretro_core.hpp"
 #include "core/libretro_screen_source.hpp"
 #include "core/game_title.hpp"
+#include "core/save_store.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/cursor_visibility.hpp"
@@ -579,6 +580,9 @@ struct App::Impl {
     // Writes resume points off the game's thread. Declared after the
     // settings and paths it writes with, so it finishes with them still here.
     BackgroundSavePointWriter resume_writer;
+    // The games' own saves, for Data Management: which game each is, and
+    // every version it has been. Told when a game starts and stops.
+    std::unique_ptr<SaveStore> save_store;
     bool awaiting_auto_connect = false;
     // The host being joined, kept so the connecting screen can name it before
     // the handshake has told this device anything.
@@ -823,6 +827,11 @@ struct App::Impl {
     // message on screen and returns false; `fatal_on_failure` decides whether
     // dismissing that message quits or goes back to the browser.
     bool start_game(const std::string& rom_path, bool fatal_on_failure);
+    // The game that was playing has closed, and its save may have changed.
+    void note_game_closed();
+    // Where Data Management looks for the ROM of a save it has never seen
+    // played: the folders the file picker would show.
+    void update_save_rom_dirs();
     // The libretro half of the above: the core, its callbacks and its
     // settings, for the game at `rom_path` on `system`. `details` gets lines
     // worth showing the player if it fails.
@@ -2528,6 +2537,18 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
     return true;
 }
 
+void App::Impl::note_game_closed() {
+    if (save_store && !game_path.empty()) save_store->note_game_stopped(game_path);
+}
+
+void App::Impl::update_save_rom_dirs() {
+    if (!save_store) return;
+    std::vector<std::string> directories;
+    if (!settings.last_browse_dir.empty()) directories.push_back(settings.last_browse_dir);
+    for (const std::string& directory : default_browse_dirs()) directories.push_back(directory);
+    save_store->set_rom_dirs(std::move(directories));
+}
+
 bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     // The game being left is left where it was, for when it is next started.
     write_resume_point("another game is starting");
@@ -2538,6 +2559,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     if (source) {
         source->close();
         source.reset();
+        note_game_closed();
     }
     external_program.stop();
     external_source.reset();
@@ -2644,9 +2666,16 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     switch (profile.frame_origin) {
         case FrameOrigin::LibretroCore: {
             game_path = rom_path;
+            // Before the core opens it: a save kept under another name for
+            // this game is brought under this ROM's, where the core looks.
+            if (save_store) {
+                save_store->set_device_name(settings.device_name);
+                save_store->note_game_started(rom_path);
+            }
             std::string source_error;
             std::vector<std::string> details;
             if (!open_core(rom_path, &source_error, &details)) {
+                if (save_store) save_store->note_game_stopped(rom_path);
                 enter_message(MessageKind::Error, "Could not start the game", source_error, details,
                               fatal_on_failure);
                 return false;
@@ -3050,6 +3079,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                                 static_cast<float>(output_height));
             if (result.directory_changed) {
                 settings.last_browse_dir = browser->current_directory();
+                update_save_rom_dirs();
                 if (!settings.save(paths)) {
                     log_warn("could not remember the browsed folder");
                 }
@@ -3058,6 +3088,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 open_launcher();
             } else if (result.game_chosen) {
                 settings.last_browse_dir = browser->current_directory();
+                update_save_rom_dirs();
                 settings.save(paths);
                 start_game(result.chosen_path, false);
             }
@@ -3495,6 +3526,8 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.paths.games_dir);
     ensure_directory(impl.paths.saves_dir);
     ensure_directory(impl.settings.system_dir);
+    impl.save_store.reset(new SaveStore(impl.paths.saves_dir, impl.settings.device_name));
+    impl.update_save_rom_dirs();
 
     apply_controller_hints();
 
@@ -4732,6 +4765,7 @@ int App::run(const AppOptions& options) {
     if (impl.source) {
         impl.source->close();
         impl.source.reset();
+        impl.note_game_closed();
     }
 
     // Everything after this is a call into something that may not answer.

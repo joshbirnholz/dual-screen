@@ -249,6 +249,7 @@ set_tests_properties(test_net test_session PROPERTIES RESOURCE_LOCK dualscreen_p
 dualscreen_add_test(test_config)
 dualscreen_add_test(test_game_title)
 dualscreen_add_test(test_save_points)
+dualscreen_add_test(test_save_store)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_quick_settings)
 dualscreen_add_test(test_touch_hints)

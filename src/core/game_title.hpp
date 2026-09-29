@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace ds {
 
@@ -34,6 +35,11 @@ namespace ds {
 // truncated to fit ("ZELDA PHANTOM"), and is worse than the file name it would
 // be replacing.
 std::string nds_title_from_rom(const uint8_t* data, std::size_t size);
+
+// A DS banner's title, one entry per line as the banner writes it -- the last
+// is usually the publisher. English, or Japanese where there is no English.
+// `banner` points at the banner itself, not the ROM. Empty when it has none.
+std::vector<std::string> nds_banner_title_lines(const uint8_t* banner, std::size_t size);
 
 // A 3DS SMDH blob -- the icon-and-metadata structure every 3DS title carries,
 // and where Azahar's own game list gets its names. Takes the English short
