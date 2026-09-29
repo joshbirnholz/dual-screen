@@ -94,7 +94,7 @@ public:
     SaveStore(std::string saves_dir, std::string device_name);
 
     const std::string& saves_dir() const { return saves_dir_; }
-    const std::string& device_name() const { return device_name_; }
+    std::string device_name() const;
     void set_device_name(std::string name);
 
     // Folders to look in for the ROM of a save this device has not seen

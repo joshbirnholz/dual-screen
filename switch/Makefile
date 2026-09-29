@@ -134,7 +134,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                external_frame_link.cpp external_screen_source.cpp \
                libretro_core.cpp libretro_screen_source.cpp core_input_sink.cpp \
                pad_routing.cpp retro_keymap.cpp \
-               host_session.cpp \
+               host_session.cpp save_exchange.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp controllers_screen.cpp \
                child_process.cpp
 

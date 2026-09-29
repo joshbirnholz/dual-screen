@@ -166,6 +166,11 @@ SaveComparison compare_saves(const SaveVersionState& here, const SaveVersionStat
 SaveStore::SaveStore(std::string saves_dir, std::string device_name)
     : saves_dir_(std::move(saves_dir)), device_name_(std::move(device_name)) {}
 
+std::string SaveStore::device_name() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return device_name_;
+}
+
 void SaveStore::set_device_name(std::string name) {
     std::lock_guard<std::mutex> lock(mutex_);
     device_name_ = std::move(name);

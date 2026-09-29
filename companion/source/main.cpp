@@ -69,6 +69,7 @@ extern "C" {
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,11 @@ extern "C" {
 #include "util/log.hpp"
 
 #include "local_play.hpp"
+
+#if DS_LOCAL_PLAY
+#include "core/save_store.hpp"
+#include "net/save_exchange.hpp"
+#endif
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -464,6 +470,13 @@ private:
     // Whether there is a surface to draw on. Only ever false on a device that
     // can take the app off screen without ending it.
     bool foreground_ = true;
+#if DS_LOCAL_PLAY
+    // This device plays games too, so it keeps their saves, and answers other
+    // devices about them from its menu as well as while a game is going --
+    // the same as the desktop app does.
+    std::unique_ptr<SaveStore> save_store_;
+    std::unique_ptr<net::SaveExchangeService> save_service_;
+#endif
 };
 
 bool Client::start() {
@@ -604,6 +617,21 @@ bool Client::start() {
         }
     });
 
+#if DS_LOCAL_PLAY
+    {
+        const AppPaths paths = AppPaths::resolve();
+        ensure_directory(paths.saves_dir);
+        save_store_.reset(new SaveStore(paths.saves_dir, Settings::load(paths).device_name));
+        save_service_.reset(
+            new net::SaveExchangeService(*save_store_, net::SaveExchangeService::Config{}));
+        std::string error;
+        if (!save_service_->start(&error)) {
+            log_warn("not answering other devices about saves: " + error);
+            save_service_.reset();
+        }
+    }
+#endif
+
     // Straight in when the command line said which screen to be; otherwise
     // the opening screen asks.
     if (options_.auto_connect) {
@@ -615,6 +643,10 @@ bool Client::start() {
 }
 
 void Client::stop() {
+#if DS_LOCAL_PLAY
+    // Before a game here starts answering in its place.
+    save_service_.reset();
+#endif
     session_.disconnect();
     audio_.close();
     // Before the context that owns them.

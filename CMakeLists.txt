@@ -134,6 +134,7 @@ add_library(dualscreen_core STATIC
     src/net/discovery.cpp
     src/net/host_session.cpp
     src/net/protocol.cpp
+    src/net/save_exchange.cpp
     src/net/transport.cpp
     src/layout/layout_registry.cpp
     src/render/bezel_art.cpp

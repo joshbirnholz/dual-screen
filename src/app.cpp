@@ -53,6 +53,7 @@
 #include "ui/notice_popup.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
+#include "net/save_exchange.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/game_browser.hpp"
@@ -583,6 +584,8 @@ struct App::Impl {
     // The games' own saves, for Data Management: which game each is, and
     // every version it has been. Told when a game starts and stops.
     std::unique_ptr<SaveStore> save_store;
+    // Answers other devices asking about those saves, or sending one.
+    std::unique_ptr<net::SaveExchangeService> save_service;
     bool awaiting_auto_connect = false;
     // The host being joined, kept so the connecting screen can name it before
     // the handshake has told this device anything.
@@ -3528,6 +3531,16 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.settings.system_dir);
     impl.save_store.reset(new SaveStore(impl.paths.saves_dir, impl.settings.device_name));
     impl.update_save_rom_dirs();
+    impl.save_service.reset(
+        new net::SaveExchangeService(*impl.save_store, net::SaveExchangeService::Config{}));
+    {
+        std::string error;
+        if (!impl.save_service->start(&error)) {
+            // Another copy of the app is answering on this machine already.
+            log_warn("not answering other devices about saves: " + error);
+            impl.save_service.reset();
+        }
+    }
 
     apply_controller_hints();
 
