@@ -71,6 +71,15 @@ void HostBrowser::ingest(const BeaconMessage& beacon, const std::string& address
     // A version we do not speak is not shown at all: connecting would only fail
     // later, with a worse message.
     if (beacon.protocol_version != kProtocolVersion) {
+        if (std::find(other_versions_.begin(), other_versions_.end(), address) ==
+            other_versions_.end()) {
+            other_versions_.push_back(address);
+            log_warn("heard " + beacon.device_name + " at " + address + " hosting " +
+                     beacon.game_title + ", but it speaks version " +
+                     std::to_string(beacon.protocol_version) + " of the protocol and this " +
+                     "speaks " + std::to_string(kProtocolVersion) +
+                     " -- not listed; update both to the same build");
+        }
         return;
     }
 

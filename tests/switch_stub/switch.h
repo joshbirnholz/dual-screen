@@ -50,6 +50,13 @@ AppletOperationMode appletGetOperationMode(void);
 Result appletLockExit(void);
 Result appletUnlockExit(void);
 
+// The network the console is on.
+typedef enum { NifmServiceType_User = 0 } NifmServiceType;
+Result nifmInitialize(NifmServiceType service_type);
+void nifmExit(void);
+Result nifmGetCurrentIpConfigInfo(u32* current_addr, u32* subnet_mask, u32* gateway,
+                                  u32* primary_dns_server, u32* secondary_dns_server);
+
 // hbloader's hand-off -- how a program asks to be started again.
 bool envHasNextLoad(void);
 Result envSetNextLoad(const char* path, const char* argv);

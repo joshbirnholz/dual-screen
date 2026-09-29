@@ -12,6 +12,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 // Not every platform has getifaddrs(). The Switch's BSD sockets are a subset
 // of the usual ones and libnx has none; Android's Bionic gained it only in API
 // 24, and the companion there is built to run further back than that.
@@ -831,6 +835,31 @@ std::vector<LocalNetwork> local_networks() {
         }
         ::freeifaddrs(list);
     }
+#elif defined(__SWITCH__)
+    // No interface list here, but the console is only ever on one network,
+    // and nifm knows it. Without it a Switch hosting a game announced itself
+    // on 255.255.255.255 alone -- which nothing on the network heard -- so a
+    // Steam Deck looking for a game never listed it.
+    if (R_SUCCEEDED(nifmInitialize(NifmServiceType_User))) {
+        u32 address = 0;
+        u32 mask = 0;
+        u32 gateway = 0;
+        u32 dns[2] = {0, 0};
+        // All in network byte order, as an in_addr holds them.
+        if (R_SUCCEEDED(nifmGetCurrentIpConfigInfo(&address, &mask, &gateway, &dns[0], &dns[1])) &&
+            address != 0 && mask != 0) {
+            sockaddr_in own {};
+            own.sin_family = AF_INET;
+            own.sin_addr.s_addr = address;
+            sockaddr_in everyone = own;
+            everyone.sin_addr.s_addr = address | ~mask;
+            LocalNetwork network;
+            network.address = describe(own);
+            network.broadcast = describe(everyone);
+            networks.push_back(network);
+        }
+        nifmExit();
+    }
 #endif
 
     return networks;
@@ -849,7 +878,14 @@ std::vector<LocalNetwork> announce_networks(const std::vector<LocalNetwork>& net
             announce.push_back(network);
         }
     }
-    if (announce.empty()) {
+#ifdef __SWITCH__
+    // As well as the network's own, not instead: which of the two Nintendo's
+    // sockets actually put on the air is not something to bet discovery on.
+    const bool always_everywhere = true;
+#else
+    const bool always_everywhere = false;
+#endif
+    if (announce.empty() || always_everywhere) {
         LocalNetwork everywhere;
         everywhere.broadcast = "255.255.255.255";
         announce.push_back(everywhere);

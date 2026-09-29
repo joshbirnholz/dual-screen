@@ -62,6 +62,10 @@ public:
 private:
     UdpSocket socket_;
     std::vector<DiscoveredHost> hosts_;
+    // Hosts heard speaking another protocol version, said once each: they are
+    // not listed, and "the other device never shows up" is otherwise all the
+    // player sees of two builds that no longer match.
+    std::vector<std::string> other_versions_;
 };
 
 // How often a host re-announces itself, and how long a companion keeps showing
