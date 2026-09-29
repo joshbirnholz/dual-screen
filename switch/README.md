@@ -210,7 +210,7 @@ Everything is under `/switch/dualscreen/` on the SD card:
 
 | | |
 | --- | --- |
-| `saves/` | the game's own saves (`Some Game.srm`, named like RetroArch's), and save points |
+| `saves/` | the game's own saves (`Some Game.sav`, kept by melonDS itself), and save points |
 | `games/` | per-game options and layouts |
 | `system/` | BIOS and firmware, if the core wants any — Settings, in a game's quick menu, offers RetroArch's `/retroarch/cores/system` instead when it is on the card |
 | `settings.json` | the app's settings |
@@ -220,12 +220,49 @@ log, because leaving the game starts the menu's log afresh.
 
 ### Building it in
 
-The core is libretro's melonDS, built as a static library for the Switch. It
-is GPL-3.0 and not part of this repository, so it is built separately and
-dropped in:
+The emulator is melonDS, GPL-3.0 and not part of this repository, so it is
+built separately and linked in. Either of two builds of it can be: `make`
+uses the first it finds in `cores/`, and says which.
 
-From this `switch` directory — `cores/` is ignored by git, so the core and its
-source stay out of this repository:
+#### RSDuck's melonDS, drawing on the GPU (the faster one)
+
+RSDuck's Switch port of melonDS draws the DS's 2D and 3D on the Switch's GPU
+through deko3d, where libretro's melonDS draws them in software on a CPU core
+-- which a 3D game's races, Mario Kart DS's for one, are more than it can keep
+up with. It is not a libretro core, so `melonds_deko/` here wraps it in the
+libretro interface this app talks to; the emulator itself is compiled from
+RSDuck's tree, unchanged. (It is the same emulator Gheovgos's melonDS for
+Switch, release 7.x, is built on.)
+
+From this `switch` directory — `cores/` is ignored by git:
+
+```sh
+pacman -S deko3d uam        # once: the GPU library and its shader compiler
+git clone -b switch-new https://github.com/RSDuck/melonDS cores/melonds-deko
+make -C melonds_deko -j8 && make
+```
+
+That makes `cores/melonds_deko_libnx.a` and `cores/melonds_deko_romfs`, the
+shaders, which `make` builds into the `.nro`'s romfs.
+
+Two things it needs that libretro's melonDS does not:
+
+- **A DS's BIOS and firmware.** It has no built-in stand-ins, and boots
+  nothing without `bios7.bin`, `bios9.bin` and `firmware.bin`. They are looked
+  for in `/switch/dualscreen/system/` and then `/switch/melonds/`, where
+  melonDS's own Switch app keeps them -- so with that app set up, there is
+  nothing more to do.
+- **Memory.** Its GPU renderer wants about 260 MB of its own. Started from the
+  album, a program gets too little for that; start Dualscreen through a game
+  (hold R while starting one) instead. If there is not enough, the game says
+  so rather than starting.
+
+Cartridge saves go where libretro's melonDS put them,
+`/switch/dualscreen/saves/<game>.sav`, so a game saved with one plays on with
+the other. melonDS's own Switch app keeps its saves beside the ROM instead;
+copy one across to carry it over.
+
+#### libretro's melonDS, drawing in software
 
 ```sh
 git clone https://github.com/libretro/melonDS cores/melonDS
@@ -265,10 +302,10 @@ directory` at the end. Naming the archiver in full works everywhere, and plain
 The `&&`s stop an archive that failed to build from being copied over one that
 worked.
 
-`make` looks for `cores/melonds_libretro_libnx.a` and says whether it found it.
-A core anywhere else, or named differently, is given as
-`make CORE_LIB=/path/to/core.a`. With no core, the build is the companion
-alone, exactly as before.
+`make` looks for `cores/melonds_deko_libnx.a`, then
+`cores/melonds_libretro_libnx.a`, and says which it found. A core anywhere
+else, or named differently, is given as `make CORE_LIB=/path/to/core.a`. With
+no core, the build is the companion alone, exactly as before.
 
 **Speed.** While a game plays here the app also runs the CPU at 1785 MHz
 rather than the 1020 MHz programs get by default -- the speed the Switch's own

@@ -105,9 +105,19 @@ CPPFILES    := main.cpp \
 #
 # Linking a GPL core in makes the .nro a combined work with it -- see
 # THIRD_PARTY.md before passing one on.
-CORE_LIB ?= cores/melonds_libretro_libnx.a
+#
+# Two cores can be linked. RSDuck's Switch port of melonDS, built as a libretro
+# core by melonds_deko/Makefile, draws the DS's 2D and 3D on the GPU and keeps
+# up where libretro's melonDS, drawing in software, cannot -- Mario Kart DS's
+# races, for one -- so it is the one used when it is there.
+DEKO_CORE_LIB := cores/melonds_deko_libnx.a
+CORE_LIB ?= $(if $(wildcard $(TOPDIR)/$(DEKO_CORE_LIB)),$(DEKO_CORE_LIB),cores/melonds_libretro_libnx.a)
 CORE_LIB_PATH := $(if $(filter /%,$(CORE_LIB)),$(CORE_LIB),$(TOPDIR)/$(CORE_LIB))
 HAVE_CORE := $(if $(wildcard $(CORE_LIB_PATH)),1,0)
+CORE_IS_DEKO := $(if $(findstring melonds_deko,$(notdir $(CORE_LIB))),1,0)
+# Its shaders, which it loads from the app's romfs; melonds_deko/Makefile
+# builds them beside the archive.
+CORE_ROMFS := $(dir $(CORE_LIB_PATH))melonds_deko_romfs
 
 # The desktop app's sources beyond the companion's. A second list, like the one
 # above, and checked the same way: tests/run_switch_sources_test.cmake compares
@@ -151,18 +161,31 @@ $(info DS core: built without its JIT, so most games will run slowly -- see READ
 else
 $(info DS core: built with its JIT)
 endif
+ifeq ($(CORE_IS_DEKO),1)
+$(info DS core: RSDuck's melonDS, drawing on the GPU with deko3d)
+ifeq ($(wildcard $(CORE_ROMFS)/shaders/*.dksh),)
+$(error The deko3d core's shaders are not at $(CORE_ROMFS) -- build it with \
+        make -C melonds_deko, which makes both)
+endif
+# RSDuck's melonDS needs nothing of libretro-common: it was never a libretro
+# core, and melonds_deko/ gives it what its own frontend gave it.
+CFILES      :=
+CORE_EXTRA_LIBS := -ldeko3d
+else
 ifeq ($(wildcard $(CORE_COMMON)/file/file_path.c),)
 $(error Cannot find the core's source at $(CORE_SRC_PATH), which the link needs \
         libretro-common from -- clone melonDS there, as README.md says, or set \
         CORE_SRC to where it is)
 endif
+CFILES      := $(notdir $(CORE_COMMON_CFILES))
+CORE_EXTRA_LIBS :=
+endif
 # Last, so the companion's main.cpp is the one found: src/ has a main.cpp of
 # its own, the desktop app's, which this program never uses.
 SOURCE_DIRS += $(SHARED)
 CPPFILES    += $(LOCAL_PLAY_CPPFILES)
-CFILES      := $(notdir $(CORE_COMMON_CFILES))
 LOCAL_PLAY_DEFINES := -DDS_LOCAL_PLAY=1 -DDS_STATIC_LIBRETRO_CORE=1
-LOCAL_PLAY_LIBS := $(CORE_LIB_PATH)
+LOCAL_PLAY_LIBS := $(CORE_LIB_PATH) $(CORE_EXTRA_LIBS)
 # melonDS's GL function pointers are declared in a libretro-common header
 # (glsym/switch/nx_glsym.h) without `extern`, so every C file that includes it
 # defines them all again. That was harmless while compilers merged such
@@ -324,6 +347,10 @@ export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 # same way it inherits OUTPUT and VPATH.
 export APP_ICON := $(CURDIR)/$(ICON)
 export NROFLAGS := --icon=$(APP_ICON) --nacp=$(OUTPUT).nacp
+# The deko3d core's shaders, which it loads from romfs:/shaders.
+ifeq ($(HAVE_CORE)$(CORE_IS_DEKO),11)
+NROFLAGS += --romfsdir=$(abspath $(CORE_ROMFS))
+endif
 
 # Which build this is, in the first lines of the log, in the same shape
 # cmake/build_stamp.cmake gives every other build, so a Switch log and
@@ -419,6 +446,16 @@ all: $(OUTPUT).nro
 
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
 $(OUTPUT).elf: $(OFILES)
+
+# A core built again is a program to link again, though none of this
+# program's own files changed -- and the deko3d core's shaders are part of the
+# .nro too.
+ifeq ($(HAVE_CORE),1)
+$(OUTPUT).elf: $(CORE_LIB_PATH)
+ifeq ($(CORE_IS_DEKO),1)
+$(OUTPUT).nro: $(wildcard $(CORE_ROMFS)/shaders/*.dksh)
+endif
+endif
 
 # The one file that reads the stamp, and the only one it is given to.
 build_stamp.o: $(DEPSDIR)/ds_build_stamp.h

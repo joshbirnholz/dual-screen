@@ -29,10 +29,21 @@ project.
 ## A DS core linked into the Switch build
 
 The one exception to the above. A Switch cannot load code at run time, so a
-Switch build that plays DS games itself has its core -- libretro's melonDS,
-GPL-3.0 -- linked into `Dualscreen.nro` (see `switch/README.md`). Nothing from
-it is in this repository: the core is built separately by whoever builds the
-Switch app, and `switch/Makefile` links it only if it is there.
+Switch build that plays DS games itself has its core -- libretro's melonDS, or
+RSDuck's Switch port of melonDS, both GPL-3.0 -- linked into `Dualscreen.nro`
+(see `switch/README.md`). melonDS itself is not in this repository: it is built
+separately by whoever builds the Switch app, from their own clone, and
+`switch/Makefile` links it only if it is there.
+
+### `switch/melonds_deko/` -- GPL-3.0-or-later
+
+The glue that makes RSDuck's melonDS a libretro core: the libretro interface,
+and the platform and GPU setup its own Switch frontend otherwise provides. It
+is written against melonDS's internal interfaces and exists only to be linked
+with it, so it is licensed as melonDS is, GPL-3.0-or-later, as each of its
+files says -- unlike the rest of this repository. It contains no code copied
+from melonDS; it is compiled and linked only when the Switch app is built with
+that core.
 
 **That `.nro` is a combined work with a GPL-3.0 program, and distributing it is
 distributing that combination.** Anyone who shares a Switch build with a core in
