@@ -571,6 +571,9 @@ struct App::Impl {
     // What the current context was built for.
     GlContextNeed gl_context_need = GlContextNeed::Any;
     void refresh_output_size();
+    // The panel in front of the player, where that is not the window: see
+    // Compositor::set_display_size(). Zero in both everywhere else.
+    void panel_size(float& width, float& height) const;
     const Layout& active_layout() const;
     // What this device actually draws: the chosen layout, resolved for this
     // device's role when it is a per-device layout.
@@ -959,6 +962,21 @@ void App::Impl::refresh_output_size() {
         output_width = width;
         output_height = height;
     }
+}
+
+void App::Impl::panel_size(float& width, float& height) const {
+    width = 0.0f;
+    height = 0.0f;
+#ifdef __SWITCH__
+    // A Switch playing here hands SDL a 1920x1080 window whichever way it is
+    // held, and undocked scales it onto a 1280x720 panel -- so the window
+    // alone said "a television" in handheld, and Standard kept its margins
+    // rather than cropping the console to the screens. The same answer the
+    // Switch companion gets from the console (companion/source/main.cpp).
+    const bool handheld = appletGetOperationMode() == AppletOperationMode_Handheld;
+    width = handheld ? 1280.0f : 1920.0f;
+    height = handheld ? 720.0f : 1080.0f;
+#endif
 }
 
 const Layout& App::Impl::active_layout() const { return registry.resolve(active_layout_id); }
@@ -1687,7 +1705,11 @@ void App::Impl::open_picker(bool embedded) {
     picker->set_screens(screens_geometry(), system);
     // The tiles are judged against the same display, and filled on the same
     // terms, as the render behind them -- see device_layout().
-    picker->set_display_size(0.0f, 0.0f, is_companion() && local_screen == ScreenId::Bottom);
+    float panel_width = 0.0f;
+    float panel_height = 0.0f;
+    panel_size(panel_width, panel_height);
+    picker->set_display_size(panel_width, panel_height,
+                             is_companion() && local_screen == ScreenId::Bottom);
     picker->open(picker_state);
     if (is_companion()) {
         save_slots_shown = companion_session->host_save_slots_revision() - 1;
@@ -3230,6 +3252,10 @@ void App::Impl::render() {
         }
     } else if (ScreenSource* drawing = active_source()) {
         const ScreenTextures& textures = drawing->screens();
+        float panel_width = 0.0f;
+        float panel_height = 0.0f;
+        panel_size(panel_width, panel_height);
+        compositor.set_display_size(panel_width, panel_height);
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
                           router);
         frames = &textures;
@@ -3782,8 +3808,12 @@ int App::run(const AppOptions& options) {
         // with it, while the shared layout still describes a stacked pair, so
         // mapping against the shared one put every touch in the wrong place.
         const Layout touch_layout = impl.device_layout();
+        float panel_width = 0.0f;
+        float panel_height = 0.0f;
+        impl.panel_size(panel_width, panel_height);
         impl.input.end_frame(touch_layout, static_cast<float>(impl.output_width),
-                             static_cast<float>(impl.output_height), impl.screens_geometry());
+                             static_cast<float>(impl.output_height), impl.screens_geometry(),
+                             panel_width, panel_height);
 
         if (impl.input.quit_requested() && impl.running) {
             // The window being closed, or the system asking the app to end --

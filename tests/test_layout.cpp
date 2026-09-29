@@ -488,9 +488,13 @@ void test_the_gap_choice_applies_to_every_layout_that_offers_it() {
         {"vertical", false},
         {"upper_focus", true},
         {"touch_focus", true},
+        // Alone, with no second device to hand a screen to, the same stacked
+        // pair as Vertical Screens -- see App::Impl::device_layout().
+        {"upper_on_tv", false},
     };
     for (const Case& toggle_case : toggleable) {
-        const Layout& layout = *registry.find(toggle_case.id);
+        Layout layout = *registry.find(toggle_case.id);
+        layout.per_device = false;
         CHECK_MSG(layout.composition.gap_toggleable,
                   std::string(toggle_case.id) + " should offer the choice");
 

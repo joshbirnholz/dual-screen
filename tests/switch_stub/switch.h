@@ -42,6 +42,11 @@ size_t hidGetSixAxisSensorStates(HidSixAxisSensorHandle handle, HidSixAxisSensor
 
 // The applet: whether the console still wants this program running.
 bool appletMainLoop(void);
+typedef enum {
+    AppletOperationMode_Handheld = 0,
+    AppletOperationMode_Console = 1,
+} AppletOperationMode;
+AppletOperationMode appletGetOperationMode(void);
 
 // hbloader's hand-off -- how a program asks to be started again.
 bool envHasNextLoad(void);

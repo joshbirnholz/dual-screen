@@ -218,6 +218,10 @@ LayoutRegistry::LayoutRegistry() {
             LayoutAxis::Vertical,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
             kVerticalGap, kVerticalMargin);
+        // Alone, this is Vertical Screens -- the same two screens stacked --
+        // so the gap is the same choice it is there. Split between two
+        // devices each has one screen and no gap to have.
+        layout.composition.gap_toggleable = true;
         // A Wii U's own per-device split is Cemu keeping one screen to itself
         // and this app only ever holding the other -- see tv_only/gamepad_only
         // below -- rather than this app resolving a two-screen layout down to
