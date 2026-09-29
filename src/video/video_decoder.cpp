@@ -363,7 +363,7 @@ bool VideoDecoder::decode_ffmpeg(const uint8_t*, std::size_t, DecodedFrame& out,
 namespace ds::video {
 
 // FFmpeg encodes or it does not; there is no second encoder anywhere.
-bool can_encode() { return have_ffmpeg(); }
+bool can_encode() { return have_h264_encoder(); }
 
 // Decoding has two possible answers, and on a phone only the second one is
 // yes. This is what a companion tells a host when it says whether to bother

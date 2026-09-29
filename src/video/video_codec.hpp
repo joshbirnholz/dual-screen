@@ -33,6 +33,8 @@ namespace ds::video {
 // the same answer: iOS and tvOS ship with no FFmpeg at all and decode through
 // VideoToolbox instead.
 bool have_ffmpeg();
+// Whether that FFmpeg has any of the H.264 encoders EncoderConfig tries.
+bool have_h264_encoder();
 
 // Whether this build can turn a screen into H.264. FFmpeg's business; there
 // is no second encoder on any platform.

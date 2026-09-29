@@ -77,6 +77,20 @@ void ffmpeg_log_callback(void* /*avcl*/, int level, const char* fmt, va_list arg
 
 bool have_ffmpeg() { return true; }
 
+bool have_h264_encoder() {
+    // FFmpeg built without one is FFmpeg all the same: the Switch's
+    // switch-ffmpeg decodes H.264 on the console's own hardware and encodes
+    // nothing, and asking whether FFmpeg was there said a Switch hosting a
+    // game could send video -- which it then tried, mid-race, and could not.
+    static const bool found = [] {
+        for (const std::string& name : EncoderConfig{}.backends) {
+            if (avcodec_find_encoder_by_name(name.c_str()) != nullptr) return true;
+        }
+        return false;
+    }();
+    return found;
+}
+
 // FFmpeg logs to stderr by default, and an encoder's end-of-stream statistics
 // are pages of it. This app's own log is the thing anybody reads when something
 // has gone wrong, so only what went wrong goes in it.
@@ -613,6 +627,7 @@ bool VideoEncoder::encode(const uint32_t* pixels,
 namespace ds::video {
 
 bool have_ffmpeg() { return false; }
+bool have_h264_encoder() { return false; }
 void quieten_ffmpeg() {}
 
 VideoEncoder::~VideoEncoder() = default;

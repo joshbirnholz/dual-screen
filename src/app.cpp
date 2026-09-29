@@ -327,6 +327,18 @@ struct App::Impl {
     FrameDelay frame_delay;
     bool frame_delay_said = false;
     uint64_t pass_began_us = 0;
+    // Where a game-playing pass's time went, for the one line said when a pass
+    // runs long -- see report_slow_pass(). Microseconds this pass.
+    struct PassTimes {
+        uint64_t network_us = 0;
+        uint64_t core_us = 0;
+        int frames = 0;
+        uint64_t stream_us = 0;
+        uint64_t draw_us = 0;
+    } pass_times;
+    uint64_t slow_pass_said_us = 0;
+    int slow_passes_unsaid = 0;
+    void report_slow_pass(uint64_t pass_us);
     // Whether the game was running last frame, so a pause can be noticed once
     // rather than acted on every frame it lasts.
     bool game_was_running = false;
@@ -2796,6 +2808,46 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     return true;
 }
 
+namespace {
+uint64_t steady_micros() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count());
+}
+}  // namespace
+
+void App::Impl::report_slow_pass(uint64_t pass_us) {
+    // Long enough that the next pass has two frames to run, which is a
+    // picture never shown -- and, past four, time the game loses outright.
+    const uint64_t frame_us = static_cast<uint64_t>(frame_period * 1e6);
+    if (pass_us <= frame_us + frame_us / 2) return;
+    // One line a second at most, counting the rest: a stall that lasts a
+    // second is sixty of these, and one of them says what it was.
+    const uint64_t now_us = steady_micros();
+    if (slow_pass_said_us != 0 && now_us - slow_pass_said_us < 1'000'000) {
+        ++slow_passes_unsaid;
+        return;
+    }
+    slow_pass_said_us = now_us;
+    const PassTimes& t = pass_times;
+    const uint64_t known = t.network_us + t.core_us + t.stream_us + t.draw_us;
+    const auto ms = [](uint64_t us) {
+        char text[16];
+        std::snprintf(text, sizeof(text), "%.1f", static_cast<double>(us) / 1000.0);
+        return std::string(text);
+    };
+    log_info("a slow pass: " + ms(pass_us) + "ms -- " + ms(t.network_us) + "ms network, " +
+             ms(t.core_us) + "ms emulating " + std::to_string(t.frames) + " frame" +
+             (t.frames == 1 ? "" : "s") + ", " + ms(t.stream_us) +
+             "ms handing the picture to the other device, " + ms(t.draw_us) +
+             "ms drawing and presenting, " + ms(pass_us > known ? pass_us - known : 0) +
+             "ms everything else (input, menus, waiting)" +
+             (slow_passes_unsaid > 0
+                  ? "; " + std::to_string(slow_passes_unsaid) + " more since the last one said"
+                  : std::string()));
+    slow_passes_unsaid = 0;
+}
+
 void App::Impl::report_speed() {
     const double wanted = speed_seconds / frame_period;
     const double percent = wanted > 0.0 ? 100.0 * speed_frames / wanted : 0.0;
@@ -3155,14 +3207,6 @@ void swap_and_pace(SDL_Window* window) {
     std::this_thread::sleep_until(start + std::chrono::duration_cast<clock::duration>(period * ticks));
 }
 
-namespace {
-uint64_t steady_micros() {
-    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                     std::chrono::steady_clock::now().time_since_epoch())
-                                     .count());
-}
-}  // namespace
-
 void App::Impl::swap() {
     const uint64_t began = steady_micros();
     if (pass_began_us != 0 && began > pass_began_us) {
@@ -3505,7 +3549,8 @@ int App::run(const AppOptions& options) {
         // this host equally needs a codec built in before it can ever
         // encode a Wii U's GamePad screen as video instead of tiles.
         log_info(std::string("video encode: ") +
-                 (video::can_decode() ? "available" : "not built into this binary"));
+                 (video::can_encode() ? "available" : "not in this build") + "; decode: " +
+                 (video::can_decode() ? "available" : "not in this build"));
     }
     // Touch on a desktop should not also arrive as synthetic mouse events, or
     // every tap would register twice.
@@ -3715,6 +3760,7 @@ int App::run(const AppOptions& options) {
             impl.report_external_frames();
         }
         impl.pass_began_us = steady_micros();
+        impl.pass_times = Impl::PassTimes();
         const uint64_t now = SDL_GetPerformanceCounter();
         double elapsed = static_cast<double>(now - impl.last_counter) / static_cast<double>(counter_frequency);
         impl.last_counter = now;
@@ -3942,7 +3988,9 @@ int App::run(const AppOptions& options) {
             shared.resume_from_save_state = impl.resume_in_effect();
             shared.resume_notice = impl.state == Impl::State::ResumeNotice;
             impl.host_session->set_session_state(shared);
+            const uint64_t poll_began_us = steady_micros();
             impl.host_session->poll(network_now);
+            impl.pass_times.network_us += steady_micros() - poll_began_us;
 
             const bool host_now_has_companion = impl.host_session->has_companion();
             // For a Wii U, a companion connecting or changing which screen it
@@ -4468,6 +4516,10 @@ int App::run(const AppOptions& options) {
                 impl.frame_accumulator = 0.0;
             }
             if (advanced > 0) impl.core_frame_undrawn = true;
+            impl.pass_times.frames += advanced;
+            impl.pass_times.core_us += static_cast<uint64_t>(
+                static_cast<double>(SDL_GetPerformanceCounter() - core_started) * 1e6 /
+                static_cast<double>(counter_frequency));
             if (impl.source) {
                 impl.speed_core_seconds +=
                     static_cast<double>(SDL_GetPerformanceCounter() - core_started) /
@@ -4507,6 +4559,7 @@ int App::run(const AppOptions& options) {
             }
         }
 
+        const uint64_t stream_began_us = steady_micros();
         // Hand the current screens to the companion, if any. The serial only
         // advances when the pixels actually changed, so an unchanged frame costs
         // nothing on the wire -- which is why this can sit outside the emulation
@@ -4575,6 +4628,7 @@ int App::run(const AppOptions& options) {
                 impl.host_session->publish_screens(top_pixels, bottom_pixels, serial);
             }
         }
+        impl.pass_times.stream_us += steady_micros() - stream_began_us;
 
         if (playing != nullptr && !game_running) {
             // Paused: hold the sticks and buttons off the game entirely. Not
@@ -4625,11 +4679,15 @@ int App::run(const AppOptions& options) {
             impl.last_render_us = render_now_us;
             impl.core_frame_undrawn = false;
             impl.render();
+            impl.pass_times.draw_us += steady_micros() - render_now_us;
         }
 
         if (!impl.settings.vsync) {
             // Without vsync, hand the CPU back rather than spinning.
             SDL_Delay(1);
+        }
+        if (impl.state == Impl::State::Playing && impl.source != nullptr) {
+            impl.report_slow_pass(steady_micros() - impl.pass_began_us);
         }
         if (options.exit_after_frames > 0 && impl.frames_rendered >= options.exit_after_frames) {
             impl.running = false;
