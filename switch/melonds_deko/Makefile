@@ -58,8 +58,16 @@ INCLUDE := -I$(SRC) -I$(SRC)/teakra/include -I$(DEVKITPRO)/libnx/include \
            -I$(DEVKITPRO)/portlibs/switch/include -I$(CURDIR)/../../third_party/libretro
 # gnu++17 rather than c++17, as CMake compiles it: strict C++17 hides the POSIX
 # half of devkitPro's C library, which the JIT's borrowed Dolphin code uses.
-CXXFLAGS := -O3 -std=gnu++17 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
-CFLAGS   := -O3 -std=gnu11 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
+#
+# -fno-strict-aliasing: melonDS reads its byte arrays of video memory through
+# u16 and u32 pointers throughout -- the texture decoding the 3D renderer does
+# included -- which the language does not allow and a newer GCC at -O3 is free
+# to compile into something that reads stale or reordered values. melonDS's
+# own Switch release was built years ago with an older GCC that happened not
+# to; this build uses today's.
+OPTIMISE := -O3 -fno-strict-aliasing
+CXXFLAGS := $(OPTIMISE) -std=gnu++17 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
+CFLAGS   := $(OPTIMISE) -std=gnu11 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
 
 # RSDuck's src/CMakeLists.txt for a Switch build: the core, the deko3d
 # renderers, the ARM64 JIT -- and from the frontend, only the pieces the
@@ -97,6 +105,17 @@ SHADERS_STAMP := $(BUILD)/shaders.stamp
 
 .PHONY: all clean
 all: $(ARCHIVE) $(SHADERS_STAMP)
+
+# The flags every object was compiled with, rewritten only when they change:
+# make notices a changed source file but not a changed flag, and a core built
+# before a flag changed would otherwise be linked as it was.
+FLAGS_STAMP := $(BUILD)/flags
+# Quoted for the shell by hand, as make 3.81 -- macOS's -- has no $(file).
+SQ := '
+FLAGS_NOW := $(subst $(SQ),$(SQ)"$(SQ)"$(SQ),$(CXX) $(CXXFLAGS) | $(CC) $(CFLAGS))
+$(shell mkdir -p $(BUILD); if [ "$$(cat $(FLAGS_STAMP) 2>/dev/null)" != '$(FLAGS_NOW)' ]; then \
+    printf '%s' '$(FLAGS_NOW)' > $(FLAGS_STAMP); fi)
+$(CORE_OBJECTS) $(ADAPTER_OBJECTS): $(FLAGS_STAMP)
 
 $(ARCHIVE): $(CORE_OBJECTS) $(ADAPTER_OBJECTS)
 	@mkdir -p $(dir $@)

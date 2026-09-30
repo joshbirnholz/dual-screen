@@ -21,7 +21,71 @@
 
 #include "GPU.h"
 #include "GPU2D_Deko.h"
+#include "GPU3D.h"
 #include "frontend/switch/Gfx.h"
+
+namespace melonds_deko {
+namespace {
+
+// The romfs of another .nro -- melonDS's own release -- when its shaders are
+// the ones to use. See gfx_use_shaders_from().
+std::vector<uint8_t> g_shader_romfs;
+
+uint32_t le32(const uint8_t* at) { return uint32_t(at[0]) | uint32_t(at[1]) << 8 | uint32_t(at[2]) << 16 | uint32_t(at[3]) << 24; }
+uint64_t le64(const uint8_t* at) { return uint64_t(le32(at)) | uint64_t(le32(at + 4)) << 32; }
+
+// A file in a romfs by its path, "shaders/X.dksh": each directory found among
+// its parent's children, then the file among the last one's. The romfs
+// layout libnx reads its own with.
+bool romfs_lookup(const std::vector<uint8_t>& romfs, const std::string& path, const uint8_t*& data,
+                  std::size_t& size) {
+    if (romfs.size() < 0x50) return false;
+    const uint64_t dir_table = le64(&romfs[0x18]);
+    const uint64_t dir_table_size = le64(&romfs[0x20]);
+    const uint64_t file_table = le64(&romfs[0x38]);
+    const uint64_t file_table_size = le64(&romfs[0x40]);
+    const uint64_t file_data = le64(&romfs[0x48]);
+    if (dir_table + dir_table_size > romfs.size() || file_table + file_table_size > romfs.size()) return false;
+    const auto name_at = [&](uint64_t entry, uint64_t header) {
+        const uint32_t length = le32(&romfs[entry + header - 4]);
+        if (entry + header + length > romfs.size()) return std::string();
+        return std::string(reinterpret_cast<const char*>(&romfs[entry + header]), length);
+    };
+    uint32_t dir = 0;
+    std::size_t start = 0;
+    for (;;) {
+        const std::size_t slash = path.find('/', start);
+        const std::string part = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+        if (slash == std::string::npos) {
+            for (uint32_t file = le32(&romfs[dir_table + dir + 12]); file != 0xFFFFFFFF;
+                 file = le32(&romfs[file_table + file + 4])) {
+                if (file + 0x20 > file_table_size) return false;
+                if (name_at(file_table + file, 0x20) != part) continue;
+                const uint64_t offset = file_data + le64(&romfs[file_table + file + 8]);
+                size = static_cast<std::size_t>(le64(&romfs[file_table + file + 16]));
+                if (offset + size > romfs.size()) return false;
+                data = &romfs[offset];
+                return true;
+            }
+            return false;
+        }
+        bool found = false;
+        for (uint32_t child = le32(&romfs[dir_table + dir + 8]); child != 0xFFFFFFFF;
+             child = le32(&romfs[dir_table + child + 4])) {
+            if (child + 0x18 > dir_table_size) return false;
+            if (name_at(dir_table + child, 0x18) == part) {
+                dir = child;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+        start = slash + 1;
+    }
+}
+
+}  // namespace
+}  // namespace melonds_deko
 
 namespace Gfx {
 
@@ -50,8 +114,29 @@ struct DkshHeader {
 }  // namespace
 
 void LoadShader(const char* path, dk::Shader& out) {
-    std::FILE* file = std::fopen(path, "rb");
-    if (file == nullptr) {
+    // Every shader whole, from the other .nro's romfs if its are the ones to
+    // use and it has this one, else from this program's.
+    std::vector<uint8_t> bytes;
+    std::string where = path;
+    const std::string romfs_prefix = "romfs:/";
+    const uint8_t* borrowed = nullptr;
+    std::size_t borrowed_size = 0;
+    if (!melonds_deko::g_shader_romfs.empty() && where.rfind(romfs_prefix, 0) == 0 &&
+        melonds_deko::romfs_lookup(melonds_deko::g_shader_romfs, where.substr(romfs_prefix.size()), borrowed,
+                                   borrowed_size)) {
+        bytes.assign(borrowed, borrowed + borrowed_size);
+        where += " (from melonDS's own release)";
+    } else if (std::FILE* file = std::fopen(path, "rb")) {
+        std::fseek(file, 0, SEEK_END);
+        const long length = std::ftell(file);
+        std::rewind(file);
+        if (length > 0) {
+            bytes.resize(static_cast<std::size_t>(length));
+            if (std::fread(bytes.data(), bytes.size(), 1, file) != 1) bytes.clear();
+        }
+        std::fclose(file);
+    }
+    if (bytes.empty()) {
         // melonDS's own frontend asserts here. A missing shader is a build
         // that forgot them, and gfx_init() has already checked for that, so
         // this says which one and leaves the shader empty rather than taking
@@ -60,25 +145,19 @@ void LoadShader(const char* path, dk::Shader& out) {
         return;
     }
     DkshHeader header{};
-    std::vector<uint8_t> control;
-    bool ok = std::fread(&header, sizeof(header), 1, file) == 1 && header.control_sz >= sizeof(header);
+    bool ok = bytes.size() >= sizeof(header);
     if (ok) {
-        control.resize(header.control_sz);
-        std::rewind(file);
-        ok = std::fread(control.data(), control.size(), 1, file) == 1;
+        std::memcpy(&header, bytes.data(), sizeof(header));
+        ok = header.control_sz >= sizeof(header) && uint64_t(header.control_sz) + header.code_sz <= bytes.size();
     }
-    GpuMemHeap::Allocation code{};
-    if (ok) {
-        code = ShaderCodeHeap->Alloc(header.code_sz, DK_SHADER_CODE_ALIGNMENT);
-        ok = std::fread(ShaderCodeHeap->CpuAddr<void>(code), header.code_sz, 1, file) == 1;
-    }
-    std::fclose(file);
     if (!ok) {
-        melonds_deko::log_error(std::string("melonDS (deko3d): could not read the shader ") + path);
+        melonds_deko::log_error("melonDS (deko3d): could not read the shader " + where);
         return;
     }
+    const GpuMemHeap::Allocation code = ShaderCodeHeap->Alloc(header.code_sz, DK_SHADER_CODE_ALIGNMENT);
+    std::memcpy(ShaderCodeHeap->CpuAddr<void>(code), bytes.data() + header.control_sz, header.code_sz);
     dk::ShaderMaker{ShaderCodeHeap->MemBlock, code.Offset}
-        .setControl(control.data())
+        .setControl(bytes.data())
         .setProgramId(0)
         .initialize(out);
 }
@@ -129,6 +208,7 @@ int g_next_slot = 0;
 // The slot holding a frame copied but not yet handed over; -1 for none.
 int g_pending_slot = -1;
 bool g_pipelined = true;
+bool g_keep_texture_cache = true;
 bool g_ready = false;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
@@ -260,6 +340,40 @@ void gfx_deinit() {
 
 void gfx_reset_readback() { g_pending_slot = -1; }
 
+void gfx_set_texture_cache(bool keep) { g_keep_texture_cache = keep; }
+
+bool gfx_use_shaders_from(const std::string& nro_path, std::string* why) {
+    g_shader_romfs.clear();
+    const auto fail = [&](const std::string& reason) {
+        if (why != nullptr) *why = reason;
+        return false;
+    };
+    std::FILE* file = std::fopen(nro_path.c_str(), "rb");
+    if (file == nullptr) return fail("there is no " + nro_path);
+    uint8_t start[0x80];
+    uint8_t assets[0x38];
+    bool ok = std::fread(start, sizeof(start), 1, file) == 1 && le32(start + 0x10) == 0x304F524E;  // NRO0
+    const uint32_t nro_size = ok ? le32(start + 0x18) : 0;
+    ok = ok && std::fseek(file, static_cast<long>(nro_size), SEEK_SET) == 0 &&
+         std::fread(assets, sizeof(assets), 1, file) == 1 && le32(assets) == 0x54455341;  // ASET
+    const uint64_t romfs_offset = ok ? le64(assets + 0x28) : 0;
+    const uint64_t romfs_size = ok ? le64(assets + 0x30) : 0;
+    ok = ok && romfs_size > 0x50 && romfs_size < (64ull << 20);
+    if (ok) {
+        g_shader_romfs.resize(static_cast<std::size_t>(romfs_size));
+        ok = std::fseek(file, static_cast<long>(nro_size + romfs_offset), SEEK_SET) == 0 &&
+             std::fread(g_shader_romfs.data(), g_shader_romfs.size(), 1, file) == 1;
+    }
+    std::fclose(file);
+    const uint8_t* probe = nullptr;
+    std::size_t probe_size = 0;
+    if (!ok || !romfs_lookup(g_shader_romfs, "shaders/FullscreenQuad_vsh.dksh", probe, probe_size)) {
+        g_shader_romfs.clear();
+        return fail(nro_path + " has no melonDS shaders in it");
+    }
+    return true;
+}
+
 void gfx_set_pipelined(bool pipelined) {
     g_pipelined = pipelined;
     g_pending_slot = -1;
@@ -280,6 +394,10 @@ void gfx_wait_for_gpu() {
     const uint64_t start = armGetSystemTick();
     Gfx::EmuQueue.waitIdle();
     const uint64_t idle = armGetSystemTick() - start;
+    // texcache=0: every texture decoded and uploaded afresh, each frame. Slow,
+    // and only for finding out whether the cache is what goes wrong -- the GPU
+    // is idle, so nothing is still reading what this frees.
+    if (!g_keep_texture_cache && GPU3D::CurrentRenderer) GPU3D::CurrentRenderer->Reset();
     g_times.idle_ticks += idle;
     g_times.worst_idle_ticks = std::max(g_times.worst_idle_ticks, idle);
 }

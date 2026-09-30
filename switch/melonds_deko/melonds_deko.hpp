@@ -50,6 +50,14 @@ void gfx_set_pipelined(bool pipelined);
 // frame is emulated, since the renderers reuse memory the frame before may
 // still be drawing from. See the definition.
 void gfx_wait_for_gpu();
+// Diagnostics, from /switch/dualscreen/melonds.ini -- see libretro.cpp.
+// texcache=0: the 3D renderer's texture cache thrown away before every frame.
+void gfx_set_texture_cache(bool keep);
+// shaders=<.nro>: the renderers' shaders read from that .nro's romfs -- the
+// standalone melonDS release's, compiled by its own build -- rather than this
+// build's. Before gfx_init()'s renderers load them; false, with why, when the
+// .nro has none.
+bool gfx_use_shaders_from(const std::string& nro_path, std::string* why);
 
 // Save states, which melonDS writes through a file: Platform::OpenLocalFile()
 // and Platform::OpenFile() answer this name with a stream in memory instead.

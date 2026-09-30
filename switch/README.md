@@ -318,15 +318,32 @@ jit=0          # the JIT off (most 3D games then run well below full speed)
 fastmem=0      # the JIT's fast memory off
 pipeline=0     # each frame shown as soon as it is drawn, not a frame later
 gpu_alone=1    # the app's own drawing finished before each frame of the game
+texcache=0     # the 3D renderer's texture cache emptied before every frame
+shaders=standalone  # the GPU shaders from inside melonDS's own .nro
 ```
 
 `pipeline=0` and `gpu_alone=1` together keep the emulator's GPU work and the
 app's from ever running at the same time.
 
+`texcache=0` and `shaders=standalone` are for finding out where wrong 3D
+textures come from. `texcache=0` is slow -- every texture is decoded and
+uploaded again each frame -- but if the textures come out right with it, the
+cache is what goes wrong. `shaders=standalone` loads the renderer's GPU
+programs from melonDS's own Switch release, found at `/switch/melonDS.nro`
+(or `/switch/melonds/melonDS.nro`; `shaders=<path to its .nro>` names another
+place), instead of the ones this build compiles with today's shader compiler;
+if the textures come out right with it, the shaders are what differ. Try
+them one at a time.
+
+The core is compiled with `-fno-strict-aliasing`: melonDS reads its video
+memory's byte arrays through wider pointers, which a newer GCC at `-O3` may
+compile into reads of stale values. A core built before this is rebuilt
+automatically the next time `make` runs.
+
 Every line is optional. The game log says what is in use when a game starts.
 
-Cartridge saves go where libretro's melonDS put them,
-`/switch/dualscreen/saves/<game>.sav`, so a game saved with one plays on with
+Cartridge saves go where libretro's melonDS puts them,
+`/switch/dualscreen/saves/<game>.srm`, so a game saved with one plays on with
 the other. melonDS's own Switch app keeps its saves beside the ROM instead;
 copy one across to carry it over.
 

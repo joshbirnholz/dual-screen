@@ -143,6 +143,8 @@ void apply_tuning() {
     bool jit = true;
     bool fastmem = true;
     bool pipeline = true;
+    bool texture_cache = true;
+    std::string shaders;
     bool from_file = false;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
         from_file = true;
@@ -163,6 +165,10 @@ void apply_tuning() {
                 fastmem = on;
             } else if (key == "pipeline") {
                 pipeline = on;
+            } else if (key == "texcache") {
+                texture_cache = on;
+            } else if (key == "shaders") {
+                shaders = text.substr(equals + 1);
             } else if (key == "cpu_mhz" || key == "gpu_alone") {
                 // The app's.
             } else {
@@ -178,6 +184,32 @@ void apply_tuning() {
     Config::JIT_LiteralOptimisations = 1;
     Config::JIT_FastMemory = fastmem ? 1 : 0;
     gfx_set_pipelined(pipeline);
+    gfx_set_texture_cache(texture_cache);
+    if (!texture_cache) log_info("melonDS (deko3d): the 3D texture cache is emptied every frame, as " +
+                                 std::string(kTuningPath) + " says");
+    // The shaders melonDS's own release was built with, from inside its .nro,
+    // rather than the ones this build compiled: the one piece of the renderer
+    // that is not source compiled here the same way.
+    if (!shaders.empty() && shaders != "ours") {
+        std::vector<std::string> candidates;
+        if (shaders == "standalone") {
+            candidates = {"/switch/melonDS.nro", "/switch/melonds/melonDS.nro", "/switch/melonDS/melonDS.nro",
+                          "/switch/melonds.nro"};
+        } else {
+            candidates = {shaders};
+        }
+        std::string why;
+        bool used = false;
+        for (const std::string& candidate : candidates) {
+            if (gfx_use_shaders_from(candidate, &why)) {
+                log_info("melonDS (deko3d): shaders from " + candidate + ", as " + std::string(kTuningPath) +
+                         " says");
+                used = true;
+                break;
+            }
+        }
+        if (!used) log_warn("melonDS (deko3d): using this build's own shaders: " + why);
+    }
     log_info(std::string("melonDS (deko3d): JIT ") + (jit ? "on" : "off") +
              (jit ? std::string(", fast memory ") + (fastmem ? "on" : "off") : std::string()) +
              (pipeline ? ", frames handed over a frame behind" : ", each frame handed over once drawn") +
