@@ -9,14 +9,6 @@
 #include "util/log.hpp"
 
 namespace ds {
-namespace {
-
-// A press has to move further than this before it counts as a scroll rather
-// than a tap, so a slightly shaky finger still selects what it landed on.
-constexpr float kDragThresholdPixels = 12.0f;
-
-}  // namespace
-
 bool is_supported_rom(const std::string& filename) {
     // Whatever any system claims, so the browser lists a 3DS game beside a DS
     // one and picking either simply works. Archives are not claimed by
@@ -108,7 +100,8 @@ bool GameBrowser::navigate_to(std::string directory) {
         directory_ = directory;
         rows_.clear();
         focus_ = 0;
-        scroll_ = 0;
+        scroll_ = 0.0f;
+        drag_.stop();
         return true;
     }
 
@@ -116,7 +109,8 @@ bool GameBrowser::navigate_to(std::string directory) {
     directory_ = directory;
     rows_.clear();
     focus_ = 0;
-    scroll_ = 0;
+    scroll_ = 0.0f;
+    drag_.stop();
 
     if (directory != "/") {
         Row up;
@@ -163,18 +157,19 @@ GameBrowser::Geometry GameBrowser::compute_geometry(float output_width, float ou
     return geometry;
 }
 
-void GameBrowser::clamp_scroll(int visible_rows) {
-    const int maximum = std::max(0, static_cast<int>(rows_.size()) - visible_rows);
-    scroll_ = std::clamp(scroll_, 0, maximum);
+float GameBrowser::max_scroll(const Geometry& geometry) const {
+    return std::max(0.0f, static_cast<float>(rows_.size()) * geometry.row_height - geometry.list.h);
 }
 
-void GameBrowser::scroll_focus_into_view(int visible_rows) {
-    if (focus_ < scroll_) {
-        scroll_ = focus_;
-    } else if (focus_ >= scroll_ + visible_rows) {
-        scroll_ = focus_ - visible_rows + 1;
+void GameBrowser::scroll_focus_into_view(const Geometry& geometry) {
+    const float top = static_cast<float>(focus_) * geometry.row_height;
+    const float bottom = top + geometry.row_height;
+    if (top < scroll_) {
+        scroll_ = top;
+    } else if (bottom > scroll_ + geometry.list.h) {
+        scroll_ = bottom - geometry.list.h;
     }
-    clamp_scroll(visible_rows);
+    scroll_ = std::clamp(scroll_, 0.0f, max_scroll(geometry));
 }
 
 void GameBrowser::activate(int index, GameBrowserResult& result) {
@@ -196,6 +191,9 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                                       float output_width,
                                       float output_height) {
     GameBrowserResult result;
+    // Where the finger is comes from live_pointer() now, the same for every
+    // list; the input is kept for what callers hand in.
+    (void)input;
     if (!open_) {
         return result;
     }
@@ -274,64 +272,49 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
     focus_ = std::max(0, std::min(focus_, std::max(0, count - 1)));
     // The view follows the cursor when it moves -- and only then, or a list
     // dragged by a finger would be pulled straight back to it.
-    if (!actions.empty()) scroll_focus_into_view(visible);
+    if (!actions.empty()) {
+        drag_.stop();
+        scroll_focus_into_view(geometry);
+    }
 
-    // Touch: press starts a potential drag, movement past the threshold turns
-    // it into a scroll, and a release that never became a drag is a tap.
+    // Touch: the list follows a finger dragged on it and glides on after
+    // one flicked; a release that never became a drag is a tap.
+    drag_.update(pointers, geometry.list, scroll_, max_scroll(geometry));
     for (const PointerEvent& pointer : pointers) {
-        if (pointer.pressed) {
-            dragging_ = geometry.list.contains(pointer.x, pointer.y);
-            drag_moved_ = false;
-            drag_start_y_ = pointer.y;
-            drag_start_scroll_ = scroll_;
-        } else if (pointer.released) {
-            // A prompt tapped is that button pressed, where it came down on
-            // the same one it left.
-            const ButtonGlyph under = guide_button_at(guide_hits_, pointer.x, pointer.y);
-            if (!navigated && under != ButtonGlyph::Count &&
-                under == guide_button_at(guide_hits_, pointer.press_x, pointer.press_y)) {
-                if (under == ButtonGlyph::Plus) {
+        if (!pointer.released) continue;
+        // A prompt tapped is that button pressed, where it came down on the
+        // same one it left.
+        const ButtonGlyph under = guide_button_at(guide_hits_, pointer.x, pointer.y);
+        if (!navigated && under != ButtonGlyph::Count &&
+            under == guide_button_at(guide_hits_, pointer.press_x, pointer.press_y)) {
+            if (under == ButtonGlyph::Plus) {
+                result.back_requested = true;
+            } else if (under == ButtonGlyph::A) {
+                activate(focus_, result);
+            } else if (under == ButtonGlyph::B) {
+                if (!rows_.empty() && rows_.front().is_parent) {
+                    result.directory_changed = navigate_to(rows_.front().path);
+                } else {
                     result.back_requested = true;
-                } else if (under == ButtonGlyph::A) {
-                    activate(focus_, result);
-                } else if (under == ButtonGlyph::B) {
-                    if (!rows_.empty() && rows_.front().is_parent) {
-                        result.directory_changed = navigate_to(rows_.front().path);
-                    } else {
-                        result.back_requested = true;
-                    }
-                }
-                navigated = true;
-            } else if (!navigated && dragging_ && !drag_moved_ &&
-                       geometry.list.contains(pointer.x, pointer.y)) {
-                const auto row_under = [&](float y) {
-                    return scroll_ + static_cast<int>((y - geometry.list.y) / geometry.row_height);
-                };
-                const int row = row_under(pointer.y);
-                // The finger has to have come down on the same row it left on,
-                // not merely somewhere in the list.
-                // A first tap highlights the row; a second, on the same row,
-                // opens it.
-                if (row >= 0 && row < count && row == row_under(pointer.press_y)) {
-                    if (tap_chooses(focus_, row)) activate(row, result);
-                    navigated = true;
                 }
             }
-            dragging_ = false;
-            drag_moved_ = false;
+            navigated = true;
+        } else if (!navigated && !drag_.release_was_drag() &&
+                   geometry.list.contains(pointer.x, pointer.y)) {
+            const auto row_under = [&](float y) {
+                return static_cast<int>(std::floor((y - geometry.list.y + scroll_) / geometry.row_height));
+            };
+            const int row = row_under(pointer.y);
+            // The finger has to have come down on the same row it left on,
+            // not merely somewhere in the list. A first tap highlights the
+            // row; a second, on the same row, opens it.
+            if (row >= 0 && row < count && row == row_under(pointer.press_y)) {
+                if (tap_chooses(focus_, row)) activate(row, result);
+                navigated = true;
+            }
         }
     }
-
-    if (dragging_ && input.pointer_active() && geometry.row_height > 0.0f) {
-        const float travel = drag_start_y_ - input.pointer_y();
-        if (std::fabs(travel) > kDragThresholdPixels) {
-            drag_moved_ = true;
-        }
-        if (drag_moved_) {
-            scroll_ = drag_start_scroll_ + static_cast<int>(travel / geometry.row_height);
-            clamp_scroll(visible);
-        }
-    }
+    drag_.settle();
 
     if (result.game_chosen) {
         open_ = false;
@@ -372,12 +355,17 @@ void GameBrowser::render(QuadRenderer& quads,
     }
 
     const int count = static_cast<int>(rows_.size());
-    const int last = std::min(count, scroll_ + geometry.visible_rows);
-    for (int index = scroll_; index < last; ++index) {
+    // Rows are placed by the pixel, so the one at the top can be part-way
+    // off it: drawn clipped to the list.
+    quads.set_clip(geometry.list);
+    const int first = std::max(0, static_cast<int>(std::floor(scroll_ / geometry.row_height)));
+    const int last = std::min(count, static_cast<int>(std::ceil((scroll_ + geometry.list.h) /
+                                                                 geometry.row_height)));
+    for (int index = first; index < last; ++index) {
         const Row& row = rows_[static_cast<std::size_t>(index)];
         // Short of the scroll bar, which runs beside the rows.
         const PixelRect rect{geometry.list.x,
-                             geometry.list.y + (index - scroll_) * geometry.row_height,
+                             geometry.list.y + index * geometry.row_height - scroll_,
                              geometry.list.w - scroll_bar_width(scale) - line * 0.4f,
                              geometry.row_height - menu_row_gap(line)};
         const bool focused = (index == focus_);
@@ -398,9 +386,11 @@ void GameBrowser::render(QuadRenderer& quads,
     }
 
     // Scrollbar, drawn only when the list actually overflows.
-    if (count > geometry.visible_rows) {
-        draw_scroll_bar(quads, geometry.list, static_cast<float>(scroll_) / count,
-                        static_cast<float>(geometry.visible_rows) / count, line, scale);
+    quads.clear_clip();
+    const float content = static_cast<float>(count) * geometry.row_height;
+    if (content > geometry.list.h + 0.5f) {
+        draw_scroll_bar(quads, geometry.list, scroll_ / content, geometry.list.h / content, line,
+                        scale);
     }
 
     // Right-aligned to the panel's edge, as every other screen's are. Main

@@ -231,7 +231,10 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
     scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
     // The cursor brings the view with it when it is moved -- and only then,
     // so a page dragged by a finger stays where the finger left it.
-    if (!actions.empty()) scroll_focus_into_view(compute_geometry(output_width, output_height));
+    if (!actions.empty()) {
+        drag_.stop();
+        scroll_focus_into_view(compute_geometry(output_width, output_height));
+    }
     {
         const float view_top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 4.2f;
         drag_.update(pointers,

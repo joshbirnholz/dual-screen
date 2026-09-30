@@ -112,6 +112,14 @@ Frame frame_for(float output_width, float output_height) {
     return frame;
 }
 
+// The part of a row inside the list, for a finger: a row half scrolled out of
+// sight can only be touched where it shows.
+PixelRect visible_part(const PixelRect& row, const PixelRect& list) {
+    const float top = std::max(row.y, list.y);
+    const float bottom = std::min(row.y + row.h, list.y + list.h);
+    return PixelRect{row.x, top, row.w, std::max(0.0f, bottom - top)};
+}
+
 }  // namespace
 
 DataManagementScreen::DataManagementScreen(SaveStore& store, std::string own_instance)
@@ -135,7 +143,7 @@ void DataManagementScreen::open(const std::string& game_in_play) {
     overlay_ = Overlay::None;
     page_ = Page::List;
     list_focus_ = 0;
-    list_scroll_ = 0;
+    list_scroll_ = 0.0f;
     sync_all_ = false;
     plan_queued_ = false;
     seen_changes_ = change_source_ ? change_source_() : 0;
@@ -561,7 +569,7 @@ void DataManagementScreen::activate(Action action, DataManagementResult& result)
         case Action::Earlier:
             earlier_ = store_.earlier(game_.game_id);
             earlier_focus_ = 0;
-            earlier_scroll_ = 0;
+            earlier_scroll_ = 0.0f;
             page_ = Page::Earlier;
             break;
         case Action::Count: break;
@@ -1084,13 +1092,13 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
         for (std::size_t index = 0; index < row_rects_.size(); ++index) {
             if (!tapped(pointer, row_rects_[index])) continue;
             bool chosen = false;
-            if (page_ == Page::List) chosen = tap_chooses(list_focus_, list_scroll_ + static_cast<int>(index));
+            if (page_ == Page::List) chosen = tap_chooses(list_focus_, row_first_ + static_cast<int>(index));
             if (page_ == Page::Game) {
                 chosen = tap_chooses(action_focus_, static_cast<int>(index));
                 action_focus_chosen_ = true;
             }
             if (page_ == Page::Earlier) {
-                chosen = tap_chooses(earlier_focus_, earlier_scroll_ + static_cast<int>(index));
+                chosen = tap_chooses(earlier_focus_, row_first_ + static_cast<int>(index));
             }
             if (chosen) actions.push_back(UiAction::Confirm);
         }
@@ -1186,6 +1194,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
         }
     }
     drag_.settle();
+    if (!input_actions.empty() && overlay_ == Overlay::None) follow_focus(output_width, output_height);
     if (result.close_requested) {
         open_ = false;
     }
@@ -1199,17 +1208,26 @@ void DataManagementScreen::drag_list(const std::vector<PointerEvent>& pointers, 
     const float row_h = menu_two_line_row_height(frame.line);
     const PixelRect list{frame.panel.x, frame.content_top, frame.panel.w,
                          frame.content_bottom - frame.content_top};
-    const int visible = std::max(1, static_cast<int>(list.h / row_h));
-    int& first = page_ == Page::List ? list_scroll_ : earlier_scroll_;
-    int& focus = page_ == Page::List ? list_focus_ : earlier_focus_;
     const int count = static_cast<int>(page_ == Page::List ? saves_.size() : earlier_.size());
-    float pixels = static_cast<float>(first) * row_h;
-    drag_.update(pointers, list, pixels, static_cast<float>(std::max(0, count - visible)) * row_h);
-    if (!drag_.dragging()) return;
-    first = static_cast<int>(std::lround(pixels / row_h));
-    // The cursor stays on a row that can be seen, or drawing would pull the
-    // list back to it.
-    focus = std::clamp(focus, first, std::max(first, std::min(count - 1, first + visible - 1)));
+    float& scroll = page_ == Page::List ? list_scroll_ : earlier_scroll_;
+    drag_.update(pointers, list, scroll, std::max(0.0f, static_cast<float>(count) * row_h - list.h));
+}
+
+void DataManagementScreen::follow_focus(float output_width, float output_height) {
+    // The cursor brings the list with it when it is moved -- and only then,
+    // so a list a finger has moved stays where it was left.
+    if (page_ == Page::Game) return;
+    drag_.stop();
+    const Frame frame = frame_for(output_width, output_height);
+    const float row_h = menu_two_line_row_height(frame.line);
+    const float view = frame.content_bottom - frame.content_top;
+    const int count = static_cast<int>(page_ == Page::List ? saves_.size() : earlier_.size());
+    float& scroll = page_ == Page::List ? list_scroll_ : earlier_scroll_;
+    const int focus = page_ == Page::List ? list_focus_ : earlier_focus_;
+    const float top = static_cast<float>(focus) * row_h;
+    if (top < scroll) scroll = top;
+    if (top + row_h > scroll + view) scroll = top + row_h - view;
+    scroll = std::clamp(scroll, 0.0f, std::max(0.0f, static_cast<float>(count) * row_h - view));
 }
 
 bool DataManagementScreen::ensure_icons() {
@@ -1312,21 +1330,26 @@ void DataManagementScreen::render(QuadRenderer& quads,
         const float row_h = menu_two_line_row_height(line);
         const PixelRect list{frame.panel.x, frame.content_top, frame.panel.w,
                              frame.content_bottom - frame.content_top};
-        const int visible = std::max(1, static_cast<int>(list.h / row_h));
-        if (list_focus_ < list_scroll_) list_scroll_ = list_focus_;
-        if (list_focus_ >= list_scroll_ + visible) list_scroll_ = list_focus_ - visible + 1;
         const int count = static_cast<int>(saves_.size());
-        const bool scrolls = count > visible;
+        const float content = static_cast<float>(count) * row_h;
+        list_scroll_ = std::clamp(list_scroll_, 0.0f, std::max(0.0f, content - list.h));
+        const bool scrolls = content > list.h + 0.5f;
+        // Placed by the pixel, so the top and bottom rows can be part-way out
+        // of the list: drawn clipped to it.
+        const int first = std::max(0, static_cast<int>(std::floor(list_scroll_ / row_h)));
+        const int last = std::min(count, static_cast<int>(std::ceil((list_scroll_ + list.h) / row_h)));
+        row_first_ = first;
+        quads.set_clip(list);
         const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
         if (saves_.empty()) {
             text.draw(quads, "There are no saves on " + own_name_ + " yet.", output_width * 0.5f,
                       (frame.content_top + frame.content_bottom) * 0.5f - line * 0.5f, scale, theme.text_dim,
                       TextAlign::Center);
         }
-        for (int index = list_scroll_; index < count && index < list_scroll_ + visible; ++index) {
+        for (int index = first; index < last; ++index) {
             const SaveInfo& info = saves_[static_cast<std::size_t>(index)];
-            const PixelRect row{list.x, list.y + (index - list_scroll_) * row_h, row_w, row_h - menu_row_gap(line)};
-            row_rects_.push_back(row);
+            const PixelRect row{list.x, list.y + index * row_h - list_scroll_, row_w, row_h - menu_row_gap(line)};
+            row_rects_.push_back(visible_part(row, list));
             const bool focused = index == list_focus_ && overlay_ == Overlay::None;
             draw_menu_row(quads, row, focused, scale);
             if (!focused) draw_menu_rule(quads, row);
@@ -1349,10 +1372,8 @@ void DataManagementScreen::render(QuadRenderer& quads,
             text.draw(quads, when, row.x + row.w - pad, row.y + (row.h - TextRenderer::line_height(date_scale)) * 0.5f,
                       date_scale, dim, TextAlign::Right);
         }
-        if (scrolls) {
-            draw_scroll_bar(quads, list, static_cast<float>(list_scroll_) / count,
-                            static_cast<float>(visible) / count, line, scale);
-        }
+        quads.clear_clip();
+        if (scrolls) draw_scroll_bar(quads, list, list_scroll_ / content, list.h / content, line, scale);
     } else if (page_ == Page::Game) {
         const float left_w = std::round(frame.panel.w * 0.55f);
         const float row_h = std::min(menu_row_height(line),
@@ -1429,17 +1450,18 @@ void DataManagementScreen::render(QuadRenderer& quads,
                       (frame.content_top + frame.content_bottom) * 0.5f - line * 0.5f, scale, theme.text_dim, TextAlign::Center);
         }
         const int count = static_cast<int>(earlier_.size());
-        const int visible = std::max(1, static_cast<int>(list.h / row_h));
-        if (earlier_focus_ < earlier_scroll_) earlier_scroll_ = earlier_focus_;
-        if (earlier_focus_ >= earlier_scroll_ + visible) earlier_scroll_ = earlier_focus_ - visible + 1;
-        earlier_scroll_ = std::clamp(earlier_scroll_, 0, std::max(0, count - visible));
-        const int first = earlier_scroll_;
-        const bool scrolls = count > visible;
+        const float content = static_cast<float>(count) * row_h;
+        earlier_scroll_ = std::clamp(earlier_scroll_, 0.0f, std::max(0.0f, content - list.h));
+        const bool scrolls = content > list.h + 0.5f;
+        const int first = std::max(0, static_cast<int>(std::floor(earlier_scroll_ / row_h)));
+        const int last = std::min(count, static_cast<int>(std::ceil((earlier_scroll_ + list.h) / row_h)));
+        row_first_ = first;
+        quads.set_clip(list);
         const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
-        for (int index = first; index < count && index < first + visible; ++index) {
+        for (int index = first; index < last; ++index) {
             const EarlierSave& save = earlier_[static_cast<std::size_t>(index)];
-            const PixelRect row{list.x, list.y + (index - first) * row_h, row_w, row_h - menu_row_gap(line)};
-            row_rects_.push_back(row);
+            const PixelRect row{list.x, list.y + index * row_h - earlier_scroll_, row_w, row_h - menu_row_gap(line)};
+            row_rects_.push_back(visible_part(row, list));
             const bool focused = index == earlier_focus_ && overlay_ == Overlay::None;
             draw_menu_row(quads, row, focused, scale);
             if (!focused) draw_menu_rule(quads, row);
@@ -1454,10 +1476,8 @@ void DataManagementScreen::render(QuadRenderer& quads,
             text.draw(quads, "Saved on " + (save.made_on.empty() ? own_name_ : save.made_on), row.x + row.w - pad,
                       row.y + (row.h - TextRenderer::line_height(scale * 0.85f)) * 0.5f, scale * 0.85f, dim, TextAlign::Right);
         }
-        if (scrolls) {
-            draw_scroll_bar(quads, list, static_cast<float>(first) / count, static_cast<float>(visible) / count,
-                            line, scale);
-        }
+        quads.clear_clip();
+        if (scrolls) draw_scroll_bar(quads, list, earlier_scroll_ / content, list.h / content, line, scale);
     }
 
     // The dialogs: the page stays where it is behind them, dimmed.

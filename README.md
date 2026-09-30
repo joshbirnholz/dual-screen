@@ -54,8 +54,10 @@ a list down the left, and whatever the highlighted entry holds on the right.
 Every list in the app — this menu, the main menu, Settings, the file picker,
 Data Management — stops at its first and last entries rather than going round.
 With a finger, a first tap highlights an entry and a second tap on it chooses
-it, so a touch that lands on the wrong thing only moves the highlight; a list
-longer than the screen scrolls when dragged.
+it, so a touch that lands on the wrong thing only moves the highlight. A list
+longer than the screen follows the finger smoothly when dragged, keeps gliding
+after a flick and slows to a stop; a touch on a gliding list stops it there
+without choosing anything.
 
 | entry | what it shows or does |
 | --- | --- |

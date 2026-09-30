@@ -187,15 +187,22 @@ private:
     Page page_ = Page::List;
     Overlay overlay_ = Overlay::None;
     int list_focus_ = 0;
-    int list_scroll_ = 0;
+    // How far the save list and Earlier Saves are scrolled, in pixels: a
+    // finger moves them by the pixel.
+    float list_scroll_ = 0.0f;
     int action_focus_ = 0;
     // Whether the player has moved it, or it is still wherever it started.
     bool action_focus_chosen_ = false;
     int earlier_focus_ = 0;
-    int earlier_scroll_ = 0;
+    float earlier_scroll_ = 0.0f;
+    // The first row drawn, which row_rects_ start from.
+    int row_first_ = 0;
     // A finger dragging the save list or Earlier Saves.
     ListDrag drag_;
     void drag_list(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
+    // Scrolls the save list or Earlier Saves just far enough to show the row
+    // the cursor is on.
+    void follow_focus(float output_width, float output_height);
 
     std::vector<SaveInfo> saves_;
     SaveInfo game_;

@@ -9,6 +9,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -82,22 +83,20 @@ private:
     // actually moved, so a refused directory is not reported as a change.
     bool navigate_to(std::string directory);
     void activate(int index, GameBrowserResult& result);
-    void scroll_focus_into_view(int visible_rows);
-    void clamp_scroll(int visible_rows);
+    void scroll_focus_into_view(const Geometry& geometry);
+    float max_scroll(const Geometry& geometry) const;
 
     std::vector<Row> rows_;
     std::string directory_;
     std::string error_;
     int focus_ = 0;
-    int scroll_ = 0;
+    // How far down the list is scrolled, in pixels: a finger moves it by the
+    // pixel, not a row at a time.
+    float scroll_ = 0.0f;
     bool open_ = false;
 
-    // Drag-scroll state: a press that moves more than a few pixels scrolls the
-    // list instead of counting as a tap on whatever was under the finger.
-    bool dragging_ = false;
-    bool drag_moved_ = false;
-    float drag_start_y_ = 0.0f;
-    int drag_start_scroll_ = 0;
+    // A finger dragging the list, and the glide after it lets go.
+    ListDrag drag_;
 
     // Where the prompts were drawn, so tapping one does what pressing it does.
     std::vector<GuideHit> guide_hits_;

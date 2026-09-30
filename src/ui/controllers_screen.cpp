@@ -193,6 +193,7 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
 
     // The view follows the cursor when it moves, and a finger otherwise.
     if (!actions.empty()) {
+        drag_.stop();
         scroll_focus_into_view(output_width, output_height, row_count(), first_unused_row(rows));
     }
     {
