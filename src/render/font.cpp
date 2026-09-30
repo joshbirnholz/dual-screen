@@ -13,12 +13,16 @@ namespace ds {
 namespace {
 
 // What the atlas covers: ASCII, then the Latin-1 letters, so an accented name
-// in a ROM filename draws as itself. The embedded font is subset to these plus
-// a few punctuation marks, which is why it is kilobytes rather than megabytes.
+// in a ROM filename draws as itself, and the punctuation below. The embedded
+// font is subset to little more, which is why it is kilobytes rather than
+// megabytes.
 constexpr uint32_t kAsciiFirst = 32;
 constexpr uint32_t kAsciiLast = 126;
 constexpr uint32_t kLatinFirst = 160;
 constexpr uint32_t kLatinLast = 255;
+// And the punctuation names are written with -- a game's name from SteamGridDB
+// as much as a ROM's: dashes, curly quotes, an ellipsis, the trademark sign.
+constexpr uint32_t kPunctuation[] = {0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2026, 0x2122};
 
 const stbtt_fontinfo* embedded_font() {
     static stbtt_fontinfo info;
@@ -89,6 +93,9 @@ bool pack_into(int atlas_size,
         if (!place(codepoint)) return false;
     }
     for (uint32_t codepoint = kLatinFirst; codepoint <= kLatinLast; ++codepoint) {
+        if (!place(codepoint)) return false;
+    }
+    for (const uint32_t codepoint : kPunctuation) {
         if (!place(codepoint)) return false;
     }
     return true;

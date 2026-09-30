@@ -15,6 +15,8 @@ namespace {
 // wait for them is short.
 constexpr std::size_t kBatch = 8;
 constexpr int kGridColumns = 5;
+// The games a choice offers, which the popup has room for.
+constexpr std::size_t kGamesOffered = 5;
 
 const char* row_label(ForwarderScreen::Row row) {
     switch (row) {
@@ -96,6 +98,9 @@ void ForwarderScreen::open(const std::string& rom_path, const DsRomInfo& info,
         set_icon(forwarder_icon_blank(), "None yet");
     }
     match_name_.clear();
+    match_id_ = 0;
+    search_term_.clear();
+    games_.clear();
     urls_.clear();
     next_url_ = 0;
     found_.clear();
@@ -186,6 +191,26 @@ std::vector<PopupButton> ForwarderScreen::source_buttons() const {
     return {{"ROM Icon", ""}, {"SteamGridDB", ""}};
 }
 
+std::vector<PopupButton> ForwarderScreen::game_buttons() const {
+    std::vector<PopupButton> buttons;
+    for (std::size_t index = 0; index < std::min(kGamesOffered, games_.size()); ++index) {
+        const SteamGridGame& game = games_[index];
+        std::string detail = game.year > 0 ? std::to_string(game.year) : std::string();
+        if (game.id == match_id_ && page_ == Page::Icons) detail += detail.empty() ? "Showing" : ", showing";
+        buttons.push_back({game.name, detail});
+    }
+    buttons.push_back({"Search for Another Name", ""});
+    return buttons;
+}
+
+PopupGeometry ForwarderScreen::game_popup(float output_width, float output_height) const {
+    const PopupText words{game_choice_text_, {}, 0};
+    return popup_geometry(output_width, output_height,
+                          popup_text_height(words, popup_body_width(output_width, output_height),
+                                            output_height),
+                          game_buttons());
+}
+
 PopupGeometry ForwarderScreen::source_popup(float output_width, float output_height) const {
     const PopupText words{"Where should the icon come from?", {}, 0};
     return popup_geometry(output_width, output_height,
@@ -213,11 +238,14 @@ void ForwarderScreen::start_job(std::unique_ptr<Job> job, const std::string& bus
     ForwarderPlatform* platform = &platform_;
     worker_ = std::thread([running, platform] {
         switch (running->kind) {
-            case Job::Kind::Search: {
+            case Job::Kind::Search:
+            case Job::Kind::Pictures: {
                 const HttpGet get = [platform](const std::string& url, const std::string& bearer) {
                     return platform->http_get(url, bearer);
                 };
-                running->search = steamgrid_search(get, running->api_key, running->query);
+                running->search = running->kind == Job::Kind::Pictures
+                                      ? steamgrid_pictures(get, running->api_key, running->game)
+                                      : steamgrid_search(get, running->api_key, running->query);
                 if (running->search.error == SteamGridError::None) {
                     const std::size_t count = std::min(kBatch, running->search.urls.size());
                     running->urls.assign(running->search.urls.begin(),
@@ -252,28 +280,54 @@ void ForwarderScreen::finish_job(ForwarderScreenResult& result) {
         next_url_ += job->urls.size();
     };
     switch (job->kind) {
-        case Job::Kind::Search: {
-            if (job->search.error != SteamGridError::None) {
-                if (job->search.error == SteamGridError::BadKey) {
-                    // Asked for again next time rather than tried again.
-                    api_key_.clear();
-                    result.api_key_changed = true;
-                    result.api_key.clear();
-                }
-                show_notice(describe(job->search.error));
+        case Job::Kind::Search:
+        case Job::Kind::Pictures: {
+            const SteamGridSearch& search = job->search;
+            if (job->kind == Job::Kind::Search) {
+                search_term_ = search.term;
+                games_ = search.games;
+            }
+            if (search.error == SteamGridError::BadKey) {
+                // Asked for again next time rather than tried again.
+                api_key_.clear();
+                result.api_key_changed = true;
+                result.api_key.clear();
+            }
+            if (search.error == SteamGridError::BadKey || search.error == SteamGridError::Network) {
+                show_notice(describe(search.error));
                 return;
             }
-            match_name_ = job->search.match_name;
-            urls_ = job->search.urls;
-            next_url_ = 0;
+            if (search.error == SteamGridError::NotFound) {
+                if (games_.empty()) {
+                    choose_game("SteamGridDB knows no game called " + quoted(job->query) +
+                                ". It might know it by another name.");
+                } else if (job->kind == Job::Kind::Pictures) {
+                    choose_game("SteamGridDB has no pictures of " + quoted(search.match.name) +
+                                ". Is it one of these?");
+                } else {
+                    choose_game("SteamGridDB has no pictures of the games it matched to " +
+                                quoted(search_term_) + ". Is it one of these?");
+                }
+                return;
+            }
+            std::vector<std::unique_ptr<Found>> previous = std::move(found_);
+            const std::size_t previous_next = next_url_;
             found_.clear();
+            next_url_ = 0;
             keep();
             if (found_.empty()) {
-                show_notice("None of SteamGridDB's pictures of this game could be downloaded.");
+                found_ = std::move(previous);
+                next_url_ = previous_next;
+                show_notice("None of SteamGridDB's pictures of " + quoted(search.match.name) +
+                            " could be downloaded.");
                 return;
             }
-            log_info("forwarder: SteamGridDB matched " + match_name_ + ", " +
-                     std::to_string(urls_.size()) + " pictures");
+            match_name_ = search.match.name;
+            match_id_ = search.match.id;
+            urls_ = search.urls;
+            next_url_ = job->urls.size();
+            log_info("forwarder: SteamGridDB matched " + match_name_ + ", " + std::to_string(urls_.size()) +
+                     " pictures");
             page_ = Page::Icons;
             grid_focus_ = 0;
             grid_scroll_ = 0.0f;
@@ -314,26 +368,55 @@ void ForwarderScreen::choose_icon_source() {
     popup_cursor_.reset(2, 1);
 }
 
-void ForwarderScreen::search_steamgriddb(ForwarderScreenResult& result) {
-    if (api_key_.empty()) {
-        std::string key;
-        if (!platform_.edit_text("SteamGridDB API Key",
-                                 "Your API key, from steamgriddb.com: Preferences, API", "", 256,
-                                 key) ||
-            key.empty()) {
-            show_notice("Searching SteamGridDB takes an API key, which anyone can have for free "
-                        "from steamgriddb.com.");
-            return;
-        }
-        api_key_ = key;
-        result.api_key_changed = true;
-        result.api_key = key;
+bool ForwarderScreen::ensure_api_key(ForwarderScreenResult& result) {
+    if (!api_key_.empty()) return true;
+    std::string key;
+    if (!platform_.edit_text("SteamGridDB API Key", "Your API key, from steamgriddb.com: Preferences, API", "",
+                             256, key) ||
+        key.empty()) {
+        show_notice("Searching SteamGridDB takes an API key, which anyone can have for free "
+                    "from steamgriddb.com.");
+        return false;
     }
+    api_key_ = key;
+    result.api_key_changed = true;
+    result.api_key = key;
+    return true;
+}
+
+void ForwarderScreen::search_steamgriddb(ForwarderScreenResult& result, const std::string& term) {
+    if (!ensure_api_key(result)) return;
     auto job = std::make_unique<Job>();
     job->kind = Job::Kind::Search;
     job->api_key = api_key_;
-    job->query = request_.title;
-    start_job(std::move(job), "Searching SteamGridDB for " + quoted(request_.title) + "...");
+    job->query = term;
+    start_job(std::move(job), "Searching SteamGridDB for " + quoted(term) + "...");
+}
+
+void ForwarderScreen::search_another_name(ForwarderScreenResult& result) {
+    std::string typed;
+    const std::string start = search_term_.empty() ? request_.title : search_term_;
+    if (!platform_.edit_text("Search SteamGridDB", "The game's name, as SteamGridDB might know it", start, 128,
+                             typed) ||
+        typed.empty()) {
+        return;
+    }
+    search_steamgriddb(result, typed);
+}
+
+void ForwarderScreen::show_pictures_of(const SteamGridGame& game) {
+    auto job = std::make_unique<Job>();
+    job->kind = Job::Kind::Pictures;
+    job->api_key = api_key_;
+    job->game = game;
+    job->query = game.name;
+    start_job(std::move(job), "Looking for pictures of " + quoted(game.name) + "...");
+}
+
+void ForwarderScreen::choose_game(const std::string& message) {
+    game_choice_text_ = message;
+    overlay_ = Overlay::GameChoice;
+    popup_cursor_.reset(static_cast<int>(game_buttons().size()), 0);
 }
 
 void ForwarderScreen::load_more() {
@@ -413,7 +496,21 @@ ForwarderScreenResult ForwarderScreen::update(const std::vector<UiAction>& actio
             }
         } else if (answer == 1) {
             overlay_ = Overlay::None;
-            search_steamgriddb(result);
+            search_steamgriddb(result, request_.title);
+        }
+        return result;
+    }
+    if (overlay_ == Overlay::GameChoice) {
+        const int offered = static_cast<int>(game_buttons().size()) - 1;
+        const int answer = popup_cursor_.update(actions, pointers, game_popup(output_width, output_height));
+        if (answer == PopupCursor::kCancelled) {
+            overlay_ = Overlay::None;
+        } else if (answer >= 0 && answer < offered) {
+            overlay_ = Overlay::None;
+            show_pictures_of(games_[static_cast<std::size_t>(answer)]);
+        } else if (answer == offered) {
+            overlay_ = Overlay::None;
+            search_another_name(result);
         }
         return result;
     }
@@ -526,6 +623,7 @@ void ForwarderScreen::update_icons(const std::vector<UiAction>& input_actions,
         const ButtonGlyph on_guide = guide_button_at(guide_hits_, pointer.x, pointer.y);
         if (on_guide == ButtonGlyph::A) actions.push_back(UiAction::Confirm);
         if (on_guide == ButtonGlyph::B) actions.push_back(UiAction::Cancel);
+        if (on_guide == ButtonGlyph::Y) actions.push_back(UiAction::MenuReset);
         if (on_guide != ButtonGlyph::Count || grid_drag_.release_was_drag()) continue;
         if (!grid.view.contains(pointer.x, pointer.y)) continue;
         for (int index = 0; index < count; ++index) {
@@ -555,6 +653,7 @@ void ForwarderScreen::update_icons(const std::vector<UiAction>& input_actions,
                 break;
             case UiAction::Confirm: choose(grid_focus_); break;
             case UiAction::Cancel: page_ = Page::Editor; break;
+            case UiAction::MenuReset: choose_game("Which game is it?"); break;
             default: break;
         }
     }
@@ -692,10 +791,11 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
     }
 
     guide_hits_.clear();
-    draw_page_guide(quads, text, glyphs, frame,
-                    {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen},
-                     {ButtonGlyph::A, "Select", PromptRole::ActsOnSelection}},
-                    &guide_hits_);
+    std::vector<GuidePrompt> prompts;
+    if (page_ == Page::Icons) prompts.push_back({ButtonGlyph::Y, "Other Game"});
+    prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+    prompts.push_back({ButtonGlyph::A, "Select", PromptRole::ActsOnSelection});
+    draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
 
     switch (overlay_) {
         case Overlay::IconSource: {
@@ -704,6 +804,14 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
                        popup_cursor_.focus(), popup_cursor_.shown());
             draw_popup_text(quads, text, PopupText{"Where should the icon come from?", {}, 0}, popup.body.x,
                             popup.body.y, popup.body.w, output_height);
+            break;
+        }
+        case Overlay::GameChoice: {
+            const PopupGeometry popup = game_popup(output_width, output_height);
+            draw_popup(quads, text, output_width, output_height, popup, game_buttons(), popup_cursor_.focus(),
+                       popup_cursor_.shown());
+            draw_popup_text(quads, text, PopupText{game_choice_text_, {}, 0}, popup.body.x, popup.body.y,
+                            popup.body.w, output_height);
             break;
         }
         case Overlay::Busy: {

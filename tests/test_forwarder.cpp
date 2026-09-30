@@ -49,7 +49,8 @@ void test_the_ds_banner_becomes_a_menu_icon() {
 }
 
 void test_a_downloaded_picture_is_squared_and_scaled() {
-    // A wide picture, as a JPEG: the icon is its middle, at 256x256.
+    // A wide picture, as a JPEG: blue in the middle, white either side. All
+    // of it makes the icon, across its middle, over a dimmed blur of itself.
     RgbaImage wide;
     wide.width = 600;
     wide.height = 300;
@@ -64,29 +65,66 @@ void test_a_downloaded_picture_is_squared_and_scaled() {
     }
     RgbaImage decoded;
     CHECK(is_icon(forwarder_icon_from_image(encode_jpeg(wide)), decoded));
-    // Blue to its corners: the white either side was cut away.
-    for (const int at : {0, 128 * kForwarderIconSize + 128, kForwarderIconSize * kForwarderIconSize - 1}) {
-        const uint8_t* pixel = decoded.pixels.data() + at * 4;
-        CHECK_MSG(pixel[2] > 200 && pixel[0] < 60, "the icon is not the middle of the picture");
-    }
+    const auto at = [&](int x, int y) { return decoded.pixels.data() + (y * kForwarderIconSize + x) * 4; };
+    CHECK_MSG(at(128, 128)[2] > 200 && at(128, 128)[0] < 60, "the middle of the picture is not in the middle");
+    CHECK_MSG(at(6, 128)[0] > 200 && at(6, 128)[2] > 200, "the picture's white edge was cut away");
+    CHECK_MSG(at(128, 8)[2] > 60 && at(128, 8)[2] < 190 && at(128, 8)[0] < 60,
+              "above the picture is not a dimmed blur of it");
+
+    // A nearly square one: its middle, to the corners.
+    RgbaImage squarish;
+    squarish.width = 300;
+    squarish.height = 270;
+    squarish.pixels.assign(300 * 270 * 4, 255);
+    for (std::size_t i = 0; i < squarish.pixels.size(); i += 4) squarish.pixels[i] = 0;  // cyan
+    CHECK(is_icon(forwarder_icon_from_image(encode_jpeg(squarish)), decoded));
+    CHECK(at(0, 0)[0] < 40 && at(0, 0)[1] > 200);
+
     CHECK(forwarder_icon_from_image(bytes_of("not a picture")).empty());
     CHECK(forwarder_icon_from_image({}).empty());
 }
 
-void test_the_search_asks_and_understands() {
-    std::vector<std::string> asked;
-    std::vector<std::string> keys;
-    const std::map<std::string, std::string> answers = {
-        {"https://www.steamgriddb.com/api/v2/search/autocomplete/Mario%20Kart%20DS",
-         R"({"success":true,"data":[{"id":1234,"name":"Mario Kart DS"},{"id":9,"name":"Other"}]})"},
-        {"https://www.steamgriddb.com/api/v2/grids/game/1234?dimensions=1024x1024,512x512&types=static&mimes=image/png,image/jpeg",
-         R"({"data":[{"url":"https://cdn/a.png"},{"url":"https://cdn/b.jpg"}]})"},
-        {"https://www.steamgriddb.com/api/v2/icons/game/1234?types=static&mimes=image/png,image/jpeg",
-         R"({"data":[{"url":"https://cdn/b.jpg"},{"url":"https://cdn/c.png"}]})"},
-    };
-    const HttpGet get = [&](const std::string& url, const std::string& bearer) {
-        asked.push_back(url);
-        keys.push_back(bearer);
+// A Windows icon of one 2x2 32-bit picture, as SteamGridDB serves many
+// icons: red on top, blue underneath.
+std::vector<uint8_t> tiny_ico() {
+    std::vector<uint8_t> ico = {0, 0, 1, 0, 1, 0,                     // ICONDIR: an icon, one picture
+                                2, 2, 0, 0, 1, 0, 32, 0, 0, 0, 0, 0,  // 2x2, 1 plane, 32 bits, size...
+                                22, 0, 0, 0};                         // ...at 22
+    std::vector<uint8_t> dib(40, 0);
+    dib[0] = 40;
+    dib[4] = 2;   // width
+    dib[8] = 4;   // height: the colours and the mask
+    dib[12] = 1;  // planes
+    dib[14] = 32;
+    const uint8_t blue[4] = {255, 0, 0, 255};  // BGRA
+    const uint8_t red[4] = {0, 0, 255, 255};
+    for (int i = 0; i < 2; ++i) dib.insert(dib.end(), blue, blue + 4);  // bottom row first
+    for (int i = 0; i < 2; ++i) dib.insert(dib.end(), red, red + 4);
+    dib.insert(dib.end(), 8, 0);  // the mask, two rows of four bytes
+    const uint32_t size = static_cast<uint32_t>(dib.size());
+    std::memcpy(ico.data() + 14, &size, 4);
+    ico.insert(ico.end(), dib.begin(), dib.end());
+    return ico;
+}
+
+void test_an_ico_is_read() {
+    RgbaImage image;
+    CHECK(decode_image(tiny_ico(), image));
+    CHECK_EQ(image.width, 2);
+    CHECK_EQ(image.height, 2);
+    if (image.pixels.size() == 16) {
+        CHECK(image.pixels[0] == 255 && image.pixels[2] == 0);   // top left: red
+        CHECK(image.pixels[8] == 0 && image.pixels[10] == 255);  // bottom left: blue
+    }
+    RgbaImage decoded;
+    CHECK(is_icon(forwarder_icon_from_image(tiny_ico()), decoded));
+}
+
+HttpGet answering(const std::map<std::string, std::string>& answers, std::vector<std::string>* asked = nullptr,
+                  std::vector<std::string>* keys = nullptr) {
+    return [answers, asked, keys](const std::string& url, const std::string& bearer) {
+        if (asked != nullptr) asked->push_back(url);
+        if (keys != nullptr) keys->push_back(bearer);
         HttpResponse response;
         response.reached = true;
         const auto it = answers.find(url);
@@ -94,16 +132,77 @@ void test_the_search_asks_and_understands() {
         if (it != answers.end()) response.body = bytes_of(it->second);
         return response;
     };
+}
+
+const std::string kApi = "https://www.steamgriddb.com/api/v2";
+std::string square_grids(int id) {
+    return kApi + "/grids/game/" + std::to_string(id) +
+           "?dimensions=512x512,1024x1024&types=static&mimes=image/png,image/jpeg";
+}
+std::string icons(int id) {
+    return kApi + "/icons/game/" + std::to_string(id) + "?types=static&mimes=image/png,image/vnd.microsoft.icon";
+}
+std::string other_grids(int id) {
+    return kApi + "/grids/game/" + std::to_string(id) +
+           "?dimensions=600x900,342x482,660x930,460x215,920x430&types=static&mimes=image/png,image/jpeg";
+}
+
+void test_the_search_asks_and_understands() {
+    std::vector<std::string> asked;
+    std::vector<std::string> keys;
+    // The name escaped twice, as SteamGridDB's own plugin sends it; icons
+    // asked for as PNG or ICO, which is what the site has.
+    const HttpGet get = answering(
+        {
+            {kApi + "/search/autocomplete/Mario%2520Kart%2520DS",
+             R"({"success":true,"data":[{"id":1234,"name":"Mario Kart DS","release_date":1100000000},{"id":9,"name":"Other"}]})"},
+            {square_grids(1234), R"({"data":[{"url":"https://cdn/a.png"},{"url":"https://cdn/b.jpg"}]})"},
+            {icons(1234), R"({"data":[{"url":"https://cdn/b.jpg"},{"url":"https://cdn/c.ico"}]})"},
+            {other_grids(1234), R"({"data":[{"url":"https://cdn/d.jpg"}]})"},
+        },
+        &asked, &keys);
     const SteamGridSearch search = steamgrid_search(get, "key123", "Mario Kart DS");
     CHECK(search.error == SteamGridError::None);
-    CHECK_STR_EQ(search.match_name, "Mario Kart DS");
-    CHECK_EQ(search.urls.size(), static_cast<std::size_t>(3));
-    if (search.urls.size() == 3) {
+    CHECK_STR_EQ(search.match.name, "Mario Kart DS");
+    CHECK_EQ(search.match.year, 2004);
+    CHECK_EQ(search.games.size(), static_cast<std::size_t>(2));
+    CHECK_EQ(search.urls.size(), static_cast<std::size_t>(4));
+    if (search.urls.size() == 4) {
         CHECK_STR_EQ(search.urls[0], "https://cdn/a.png");
-        CHECK_STR_EQ(search.urls[2], "https://cdn/c.png");
+        CHECK_STR_EQ(search.urls[2], "https://cdn/c.ico");
+        CHECK_STR_EQ(search.urls[3], "https://cdn/d.jpg");
     }
-    CHECK_EQ(asked.size(), static_cast<std::size_t>(3));
+    CHECK_EQ(asked.size(), static_cast<std::size_t>(4));
     for (const std::string& key : keys) CHECK_STR_EQ(key, "key123");
+
+    // The first game matched has no pictures: the next one's are shown.
+    const SteamGridSearch next = steamgrid_search(
+        answering({
+            {kApi + "/search/autocomplete/Mario%2520Kart%2520DS",
+             R"({"data":[{"id":1234,"name":"Mario Kart DS"},{"id":9,"name":"Mario Kart DS Demo"}]})"},
+            {icons(9), R"({"data":[{"url":"https://cdn/e.png"}]})"},
+        }),
+        "key", "Mario Kart DS");
+    CHECK(next.error == SteamGridError::None);
+    CHECK_EQ(next.match.id, static_cast<int64_t>(9));
+
+    // A name it does not know, tidied and then made simpler until it does.
+    std::vector<std::string> tried;
+    const SteamGridSearch simpler = steamgrid_search(
+        answering({{kApi + "/search/autocomplete/Mario%2520Kart", R"({"data":[{"id":5,"name":"Mario Kart"}]})"},
+                   {square_grids(5), R"({"data":[{"url":"https://cdn/f.png"}]})"}},
+                  &tried),
+        "key", "Mario_Kart\xE2\x84\xA2 DS (USA) [!]");
+    CHECK(simpler.error == SteamGridError::None);
+    CHECK_STR_EQ(simpler.term, "Mario Kart");
+    CHECK(!tried.empty() && tried[0] == kApi + "/search/autocomplete/Mario%2520Kart%2520DS");
+
+    // Every game without pictures: NotFound, with the games to choose from.
+    const SteamGridSearch bare = steamgrid_search(
+        answering({{kApi + "/search/autocomplete/Zelda", R"({"data":[{"id":1,"name":"Zelda"},{"id":2,"name":"Zelda II"}]})"}}),
+        "key", "Zelda");
+    CHECK(bare.error == SteamGridError::NotFound);
+    CHECK_EQ(bare.games.size(), static_cast<std::size_t>(2));
 
     // A key the site turns down, a game it does not know, and no network.
     const HttpGet refuses = [](const std::string&, const std::string&) {
@@ -120,12 +219,30 @@ void test_the_search_asks_and_understands() {
         response.body = bytes_of(R"({"success":true,"data":[]})");
         return response;
     };
-    CHECK(steamgrid_search(empty, "key", "Nothing").error == SteamGridError::NotFound);
+    const SteamGridSearch nothing = steamgrid_search(empty, "key", "Nothing");
+    CHECK(nothing.error == SteamGridError::NotFound);
+    CHECK(nothing.games.empty());
     const HttpGet offline = [](const std::string&, const std::string&) { return HttpResponse(); };
     CHECK(steamgrid_search(offline, "key", "Mario Kart DS").error == SteamGridError::Network);
     CHECK(!describe(SteamGridError::BadKey).empty());
 
     CHECK_STR_EQ(url_escape("Pokémon & Co/1"), "Pok%C3%A9mon%20%26%20Co%2F1");
+}
+
+void test_names_are_tidied_for_searching() {
+    CHECK_STR_EQ(steamgrid_clean_title("Mario Kart\xE2\x84\xA2 DS (USA) (En,Fr)"), "Mario Kart DS");
+    CHECK_STR_EQ(steamgrid_clean_title("  Pokemon_Platinum [!] "), "Pokemon Platinum");
+    CHECK_STR_EQ(steamgrid_clean_title("(Demo)"), "(Demo)");
+    const std::vector<std::string> luigi = steamgrid_search_terms("Mario & Luigi: Bowser's Inside Story");
+    CHECK_EQ(luigi.size(), static_cast<std::size_t>(3));
+    if (luigi.size() == 3) {
+        CHECK_STR_EQ(luigi[0], "Mario & Luigi: Bowser's Inside Story");
+        CHECK_STR_EQ(luigi[1], "Mario Luigi Bowsers Inside Story");
+        CHECK_STR_EQ(luigi[2], "Mario & Luigi");
+    }
+    const std::vector<std::string> kart = steamgrid_search_terms("Mario Kart DS");
+    CHECK_EQ(kart.size(), static_cast<std::size_t>(2));
+    if (kart.size() == 2) CHECK_STR_EQ(kart[1], "Mario Kart");
 }
 
 // The Switch's part, stood in for: a keyboard that types what it is told to,
@@ -280,6 +397,65 @@ void test_no_banner_and_no_key() {
     CHECK(press(screen, UiAction::Cancel).close_requested);
 }
 
+
+// A SteamGridDB that knows two games by the name, the first with no pictures
+// and the second with some, and "Brain Age" by another name only.
+class PickyPlatform : public FakePlatform {
+public:
+    HttpResponse http_get(const std::string& url, const std::string& bearer) override {
+        HttpResponse response;
+        response.reached = true;
+        response.status = 200;
+        if (url.find("/search/autocomplete/Brain%2520Age%2520DS") != std::string::npos ||
+            url.find("/search/autocomplete/Brain%2520Age") != std::string::npos) {
+            response.body = bytes_of(R"({"data":[]})");
+        } else if (url.find("/search/autocomplete/Brain%2520Training") != std::string::npos) {
+            response.body = bytes_of(R"({"data":[{"id":7,"name":"Brain Training"},{"id":8,"name":"Brain Training 2"}]})");
+        } else if (url.find("/grids/game/8") != std::string::npos || url.find("/icons/game/8") != std::string::npos) {
+            response.body = bytes_of(R"({"data":[]})");
+        } else {
+            return FakePlatform::http_get(url, bearer);
+        }
+        return response;
+    }
+};
+
+void test_another_game_and_another_name() {
+    PickyPlatform platform;
+    ForwarderScreen screen(platform);
+    DsRomInfo info;
+    info.title = "Brain Age DS";
+    screen.open("sdmc:/roms/nds/Brain Age.nds", info, "key");
+
+    // Nothing by the ROM's name: asked for another.
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Confirm);
+    settle(screen);
+    CHECK(screen.overlay() == ForwarderScreen::Overlay::GameChoice);
+    CHECK(screen.games().empty());
+    CHECK(screen.game_choice_text().find("knows no game called") != std::string::npos);
+    platform.typed = {"Brain Training"};
+    press(screen, UiAction::Confirm);  // Search for Another Name
+    settle(screen);
+    CHECK(screen.page() == ForwarderScreen::Page::Icons);
+    CHECK_STR_EQ(screen.match_name(), "Brain Training");
+    CHECK_EQ(screen.games().size(), static_cast<std::size_t>(2));
+
+    // Y: the other game, which has no pictures -- said so, and offered again.
+    press(screen, UiAction::MenuReset);
+    CHECK(screen.overlay() == ForwarderScreen::Overlay::GameChoice);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    settle(screen);
+    CHECK(screen.overlay() == ForwarderScreen::Overlay::GameChoice);
+    CHECK(screen.game_choice_text().find("Brain Training 2") != std::string::npos);
+    // B: back to the pictures there were.
+    press(screen, UiAction::Cancel);
+    CHECK(screen.overlay() == ForwarderScreen::Overlay::None);
+    CHECK(screen.page() == ForwarderScreen::Page::Icons);
+    CHECK_EQ(screen.icon_count(), static_cast<std::size_t>(3));
+}
+
 }  // namespace
 
 int main() {
@@ -288,5 +464,8 @@ int main() {
     test_the_ds_banner_becomes_a_menu_icon();
     test_a_downloaded_picture_is_squared_and_scaled();
     test_the_search_asks_and_understands();
+    test_names_are_tidied_for_searching();
+    test_an_ico_is_read();
+    test_another_game_and_another_name();
     return test::finish("forwarder");
 }

@@ -53,7 +53,7 @@ public:
 
     // What is on screen, for tests and the log.
     enum class Page { Editor, Icons };
-    enum class Overlay { None, IconSource, Busy, Notice };
+    enum class Overlay { None, IconSource, GameChoice, Busy, Notice };
     enum class Zone { Title, Icon, List };
     Page page() const { return page_; }
     Overlay overlay() const { return overlay_; }
@@ -63,6 +63,10 @@ public:
     const std::string& icon_source() const { return icon_source_; }
     const std::string& notice() const { return notice_; }
     std::size_t icon_count() const { return found_.size(); }
+    // The games SteamGridDB matched the last search to, and which is shown.
+    const std::vector<SteamGridGame>& games() const { return games_; }
+    const std::string& match_name() const { return match_name_; }
+    const std::string& game_choice_text() const { return game_choice_text_; }
     bool busy() const { return job_ != nullptr; }
 
     // The rows down the right.
@@ -77,10 +81,11 @@ private:
     // One thing done off this thread: a search and its first pictures, more
     // pictures, or the install.
     struct Job {
-        enum class Kind { Search, More, Install } kind = Kind::Search;
+        enum class Kind { Search, Pictures, More, Install } kind = Kind::Search;
         std::atomic<bool> done{false};
         std::string api_key;
         std::string query;
+        SteamGridGame game;
         SteamGridSearch search;
         std::vector<std::string> urls;
         std::vector<std::vector<uint8_t>> icons;
@@ -118,7 +123,11 @@ private:
     void activate(ForwarderScreenResult& result);
     void edit_title();
     void choose_icon_source();
-    void search_steamgriddb(ForwarderScreenResult& result);
+    bool ensure_api_key(ForwarderScreenResult& result);
+    void search_steamgriddb(ForwarderScreenResult& result, const std::string& term);
+    void search_another_name(ForwarderScreenResult& result);
+    void show_pictures_of(const SteamGridGame& game);
+    void choose_game(const std::string& message);
     void load_more();
     void create();
     void set_icon(std::vector<uint8_t> jpeg, const std::string& source);
@@ -126,6 +135,8 @@ private:
     void start_job(std::unique_ptr<Job> job, const std::string& busy);
     void finish_job(ForwarderScreenResult& result);
     std::vector<PopupButton> source_buttons() const;
+    std::vector<PopupButton> game_buttons() const;
+    PopupGeometry game_popup(float output_width, float output_height) const;
     PopupGeometry source_popup(float output_width, float output_height) const;
     PopupGeometry busy_popup(float output_width, float output_height) const;
     void scroll_grid_to_focus(float output_width, float output_height);
@@ -151,6 +162,10 @@ private:
 
     // SteamGridDB: what it matched, every picture it has, and those fetched.
     std::string match_name_;
+    int64_t match_id_ = 0;
+    std::string search_term_;
+    std::vector<SteamGridGame> games_;
+    std::string game_choice_text_;
     std::vector<std::string> urls_;
     std::size_t next_url_ = 0;
     std::vector<std::unique_ptr<Found>> found_;

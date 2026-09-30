@@ -209,7 +209,13 @@ screen laid out the way Sphaira's is:
   another.
 - **Icon** — the ROM's own banner icon, enlarged; select it to choose between
   that and **SteamGridDB**, which searches [SteamGridDB](https://www.steamgriddb.com)
-  by the title and shows the square pictures and icons it has for the game.
+  by the title and shows the pictures it has for the game: square grids and
+  icons first, then its tall and wide grids, whole, over a blur of themselves.
+  The search is forgiving — `(USA)`, `[!]`, `™` and the like are left out, and
+  a name SteamGridDB does not know is tried again shorter (without its
+  subtitle, without a trailing "DS") — and when it still finds nothing, or
+  the wrong game, **Y (Other Game)** lists the games the name matched and
+  **Search for Another Name** takes whatever you type.
 - **Publisher** — the publisher the ROM's banner names, to type over.
 - **Screenshots** and **Video Capture** — whether the Capture button works in it.
 - **Create Forwarder** — installs it. It will be on the HOME menu once it is
