@@ -99,6 +99,7 @@ extern "C" {
 #include "render/text_renderer.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
 #include "ui/notice_popup.hpp"
@@ -1454,6 +1455,7 @@ void Client::run() {
 #endif
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
+        set_live_pointer(input_.pointer_active(), input_.pointer_x(), input_.pointer_y());
         route_guide_taps(actions, pointers);
         handle_actions(actions, pointers);
 

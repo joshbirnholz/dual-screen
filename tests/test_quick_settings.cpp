@@ -31,6 +31,10 @@ PointerEvent tap(float x, float y) {
     return pointer;
 }
 
+// Two taps in the same place: the first highlights what is there and the
+// second chooses it, which is what choosing something with a finger takes.
+std::vector<PointerEvent> choose_at(float x, float y) { return {tap(x, y), tap(x, y)}; }
+
 // One that came down somewhere else and lifted here.
 PointerEvent slide_onto(float from_x, float from_y, float to_x, float to_y) {
     PointerEvent pointer = tap(to_x, to_y);
@@ -68,7 +72,7 @@ std::vector<std::string> layouts_offered_for(const LayoutRegistry& registry,
                 LayoutPicker picker(registry);
                 picker.set_screens(screens, system);
                 open_on(picker, state, MenuSection::Layout);
-                const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
                 if (!result.selection_changed) continue;
                 const std::string& id = picker.selected_layout_id();
                 if (std::find(found.begin(), found.end(), id) == found.end()) {
@@ -91,7 +95,7 @@ int taps_that_cycle_the_scale(const LayoutRegistry& registry, const LayoutPicker
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
             const LayoutPickerResult result =
-                picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                picker.update({}, choose_at(x, y), kWidth, kHeight);
             if (result.render_scale_changed) ++hits;
         }
     }
@@ -139,7 +143,7 @@ int taps_that_cycle_the_right_stick(const LayoutRegistry& registry, const Layout
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
-            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
             if (result.right_stick_mode_changed) ++hits;
         }
     }
@@ -185,7 +189,7 @@ int taps_that_open_reset(const LayoutRegistry& registry, const LayoutPickerState
             LayoutPicker picker(registry);
             picker.open(state);
             picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
-            picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            picker.update({}, choose_at(x, y), kWidth, kHeight);
             // Not awaiting_confirmation(): Quit is a separate, still-offered
             // section, and removing Reset moves it up into Reset's place.
             if (picker.confirmation() == MenuConfirm::Reset) ++hits;
@@ -207,7 +211,7 @@ int taps_that_toggle_smoothing(const LayoutRegistry& registry, const LayoutPicke
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
             picker.render(quads, text, glyphs, kWidth, kHeight, "Game");
-            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
             if (result.filtering_toggled) ++hits;
         }
     }
@@ -264,7 +268,7 @@ int taps_that_toggle_the_gap(const LayoutRegistry& registry, const LayoutPickerS
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
-            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
             if (result.screen_gap_toggled) ++hits;
         }
     }
@@ -337,7 +341,7 @@ void test_the_pointer_button_appears_only_where_there_is_a_pointer() {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker offered(registry);
             open_on(offered, state, MenuSection::Options);
-            if (offered.update({}, {tap(x, y)}, kWidth, kHeight).cursor_mode_changed) {
+            if (offered.update({}, choose_at(x, y), kWidth, kHeight).cursor_mode_changed) {
                 ++with_pointer;
             }
 
@@ -345,7 +349,7 @@ void test_the_pointer_button_appears_only_where_there_is_a_pointer() {
             console.cursor_choosable = false;
             LayoutPicker absent(registry);
             open_on(absent, console, MenuSection::Options);
-            const LayoutPickerResult result = absent.update({}, {tap(x, y)}, kWidth, kHeight);
+            const LayoutPickerResult result = absent.update({}, choose_at(x, y), kWidth, kHeight);
             if (result.cursor_mode_changed) ++without_pointer;
         }
     }
@@ -374,7 +378,7 @@ void test_the_other_buttons_still_work() {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
-            const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+            const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
             const int intents = result.audio_target_changed + result.handedness_changed +
                                 result.cursor_mode_changed + result.screen_gap_toggled +
                                 result.right_stick_mode_changed + result.render_scale_changed +
@@ -423,8 +427,8 @@ void test_the_sections_come_in_order() {
         CHECK_MSG(picker.section() == section, "the sections are not in the order they should be");
         picker.update({UiAction::Down}, {}, kWidth, kHeight);
     }
-    // And round again from the bottom.
-    CHECK(picker.section() == MenuSection::Continue);
+    // And no further than the bottom: the list does not go round.
+    CHECK(picker.section() == MenuSection::Quit);
 
     // Without save points, a second device or a reset of our own, those go.
     LayoutPickerState bare = state;
@@ -622,7 +626,7 @@ void test_the_stylus_button() {
             for (float x = 4.0f; x < kWidth; x += 8.0f) {
                 LayoutPicker picker(registry);
                 open_on(picker, state, MenuSection::Layout);
-                if (picker.update({}, {tap(x, y)}, kWidth, kHeight).handedness_changed) ++swapped;
+                if (picker.update({}, choose_at(x, y), kWidth, kHeight).handedness_changed) ++swapped;
             }
         }
         CHECK_MSG((swapped > 0) == handed,
@@ -735,7 +739,7 @@ void test_saving_asks_only_before_overwriting() {
             LayoutPicker tapped(registry);
             tapped.set_save_slots(full);
             open_on(tapped, with_save_points(), MenuSection::CreateSavePoint);
-            if (tapped.update({}, {tap(x, y)}, kWidth, kHeight).save_slot >= 0) ++saved_at_once;
+            if (tapped.update({}, choose_at(x, y), kWidth, kHeight).save_slot >= 0) ++saved_at_once;
             if (tapped.confirmation() == MenuConfirm::OverwriteSavePoint) ++asked;
         }
     }
@@ -792,7 +796,7 @@ void test_save_points_only_where_the_core_can_make_them() {
                 LayoutPicker picker(registry);
                 picker.set_save_slots(some_slots());
                 open_on(picker, state, section);
-                const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
                 if (result.save_slot >= 0 || result.load_slot >= 0 ||
                     picker.confirmation() == MenuConfirm::LoadSavePoint ||
                     picker.confirmation() == MenuConfirm::OverwriteSavePoint) {
@@ -863,7 +867,7 @@ void test_wii_u_menu_is_a_plain_list() {
                 LayoutPicker picker(registry);
                 picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
                 picker.open(state);
-                const LayoutPickerResult result = picker.update({}, {tap(x, y)}, kWidth, kHeight);
+                const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
                 if (result.close_requested) ++closed;
                 if (result.controllers_requested) ++controllers;
                 if (result.settings_requested) ++settings;
@@ -912,7 +916,7 @@ void test_wii_u_menu_is_a_plain_list() {
             LayoutPicker picker(registry);
             picker.set_screens(system_profile(SystemId::Ds).screens, SystemId::Ds);
             open_on(picker, state, MenuSection::Options);
-            if (picker.update({}, {tap(x, y)}, kWidth, kHeight).audio_target_changed) ++sound;
+            if (picker.update({}, choose_at(x, y), kWidth, kHeight).audio_target_changed) ++sound;
         }
     }
     CHECK(sound > 0);
@@ -1148,7 +1152,7 @@ void test_a_button_only_answers_a_tap_aimed_at_it() {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker direct(registry);
             open_on(direct, state, MenuSection::Layout);
-            if (direct.update({}, {tap(x, y)}, kWidth, kHeight).selection_changed) ++aimed;
+            if (direct.update({}, choose_at(x, y), kWidth, kHeight).selection_changed) ++aimed;
 
             // Down in the far corner, up here.
             LayoutPicker onto(registry);

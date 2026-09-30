@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -212,10 +213,10 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
-                if (count > 0) focus_ = (focus_ + count - 1) % count;
+                if (count > 0) focus_ = std::max(0, focus_ - 1);
                 break;
             case UiAction::Down:
-                if (count > 0) focus_ = (focus_ + 1) % count;
+                if (count > 0) focus_ = std::min(count - 1, focus_ + 1);
                 break;
             case UiAction::PageUp:
             case UiAction::Left:
@@ -271,7 +272,9 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
         }
     }
     focus_ = std::max(0, std::min(focus_, std::max(0, count - 1)));
-    scroll_focus_into_view(visible);
+    // The view follows the cursor when it moves -- and only then, or a list
+    // dragged by a finger would be pulled straight back to it.
+    if (!actions.empty()) scroll_focus_into_view(visible);
 
     // Touch: press starts a potential drag, movement past the threshold turns
     // it into a scroll, and a release that never became a drag is a tap.
@@ -307,9 +310,10 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 const int row = row_under(pointer.y);
                 // The finger has to have come down on the same row it left on,
                 // not merely somewhere in the list.
+                // A first tap highlights the row; a second, on the same row,
+                // opens it.
                 if (row >= 0 && row < count && row == row_under(pointer.press_y)) {
-                    focus_ = row;
-                    activate(row, result);
+                    if (tap_chooses(focus_, row)) activate(row, result);
                     navigated = true;
                 }
             }

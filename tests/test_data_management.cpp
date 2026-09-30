@@ -99,9 +99,8 @@ DataManagementResult settle(DataManagementScreen& screen, const std::function<bo
 
 // Walks the game page's cursor to one of its four rows.
 void focus_row(DataManagementScreen& screen, int row) {
-    for (int step = 0; step < 8 && screen.action_focus() != row; ++step) {
-        press(screen, UiAction::Down);
-    }
+    for (int step = 0; step < 8 && screen.action_focus() > row; ++step) press(screen, UiAction::Up);
+    for (int step = 0; step < 8 && screen.action_focus() < row; ++step) press(screen, UiAction::Down);
 }
 
 bool has_line(const std::vector<std::string>& lines, const std::string& wanted) {

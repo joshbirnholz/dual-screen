@@ -561,6 +561,7 @@ void DataManagementScreen::activate(Action action, DataManagementResult& result)
         case Action::Earlier:
             earlier_ = store_.earlier(game_.game_id);
             earlier_focus_ = 0;
+            earlier_scroll_ = 0;
             page_ = Page::Earlier;
             break;
         case Action::Count: break;
@@ -1060,6 +1061,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
     if (overlay_ == Overlay::Busy) return result;
 
     std::vector<UiAction> actions = input_actions;
+    if (overlay_ == Overlay::None) drag_list(pointers, output_width, output_height);
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         const ButtonGlyph on_guide = guide_button_at(guide_hits_, pointer.x, pointer.y);
@@ -1067,28 +1069,38 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             handle_guide_tap(on_guide, actions);
             continue;
         }
+        // Everywhere here, a first tap highlights and a second, on the same
+        // thing, chooses it.
         if (overlay_ == Overlay::Choice) {
             for (std::size_t index = 0; index < choice_rects_.size(); ++index) {
                 if (!tapped(pointer, choice_rects_[index])) continue;
-                choice_focus_ = static_cast<int>(index);
-                actions.push_back(UiAction::Confirm);
+                if (tap_chooses(choice_focus_, static_cast<int>(index))) {
+                    actions.push_back(UiAction::Confirm);
+                }
             }
             continue;
         }
-        if (overlay_ != Overlay::None) continue;
+        if (overlay_ != Overlay::None || drag_.release_was_drag()) continue;
         for (std::size_t index = 0; index < row_rects_.size(); ++index) {
             if (!tapped(pointer, row_rects_[index])) continue;
-            if (page_ == Page::List) list_focus_ = list_scroll_ + static_cast<int>(index);
-            if (page_ == Page::Game) action_focus_ = static_cast<int>(index);
-            if (page_ == Page::Earlier) earlier_focus_ = static_cast<int>(index);
-            actions.push_back(UiAction::Confirm);
+            bool chosen = false;
+            if (page_ == Page::List) chosen = tap_chooses(list_focus_, list_scroll_ + static_cast<int>(index));
+            if (page_ == Page::Game) {
+                chosen = tap_chooses(action_focus_, static_cast<int>(index));
+                action_focus_chosen_ = true;
+            }
+            if (page_ == Page::Earlier) {
+                chosen = tap_chooses(earlier_focus_, earlier_scroll_ + static_cast<int>(index));
+            }
+            if (chosen) actions.push_back(UiAction::Confirm);
         }
     }
 
     for (const UiAction action : actions) {
         if (result.close_requested || result.restart_with) break;
         if (overlay_ == Overlay::Choice) {
-            if (action == UiAction::Up || action == UiAction::Down) choice_focus_ ^= 1;
+            if (action == UiAction::Up) choice_focus_ = 0;
+            if (action == UiAction::Down) choice_focus_ = 1;
             if (action == UiAction::Confirm) chosen(result);
             if (action == UiAction::Cancel) {
                 if (sync_all_) {
@@ -1126,8 +1138,8 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
         switch (page_) {
             case Page::List: {
                 const int count = static_cast<int>(saves_.size());
-                if (action == UiAction::Up && count > 0) list_focus_ = (list_focus_ + count - 1) % count;
-                if (action == UiAction::Down && count > 0) list_focus_ = (list_focus_ + 1) % count;
+                if (action == UiAction::Up && count > 0) list_focus_ = std::max(0, list_focus_ - 1);
+                if (action == UiAction::Down && count > 0) list_focus_ = std::min(count - 1, list_focus_ + 1);
                 if (action == UiAction::Confirm && count > 0) {
                     open_game(saves_[static_cast<std::size_t>(list_focus_)].game_id);
                 }
@@ -1137,8 +1149,8 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             }
             case Page::Game: {
                 const int count = static_cast<int>(Action::Count);
-                if (action == UiAction::Up) action_focus_ = (action_focus_ + count - 1) % count;
-                if (action == UiAction::Down) action_focus_ = (action_focus_ + 1) % count;
+                if (action == UiAction::Up) action_focus_ = std::max(0, action_focus_ - 1);
+                if (action == UiAction::Down) action_focus_ = std::min(count - 1, action_focus_ + 1);
                 if (action == UiAction::Up || action == UiAction::Down) action_focus_chosen_ = true;
                 if (action == UiAction::Confirm) activate(static_cast<Action>(action_focus_), result);
                 if (action == UiAction::MenuReset) start_search();
@@ -1162,8 +1174,8 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             }
             case Page::Earlier: {
                 const int count = static_cast<int>(earlier_.size());
-                if (action == UiAction::Up && count > 0) earlier_focus_ = (earlier_focus_ + count - 1) % count;
-                if (action == UiAction::Down && count > 0) earlier_focus_ = (earlier_focus_ + 1) % count;
+                if (action == UiAction::Up && count > 0) earlier_focus_ = std::max(0, earlier_focus_ - 1);
+                if (action == UiAction::Down && count > 0) earlier_focus_ = std::min(count - 1, earlier_focus_ + 1);
                 if (action == UiAction::Confirm && count > 0) {
                     pending_earlier_ = earlier_[static_cast<std::size_t>(earlier_focus_)].id;
                     ask(Pending::Restore);
@@ -1173,10 +1185,31 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             }
         }
     }
+    drag_.settle();
     if (result.close_requested) {
         open_ = false;
     }
     return result;
+}
+
+void DataManagementScreen::drag_list(const std::vector<PointerEvent>& pointers, float output_width,
+                                     float output_height) {
+    if (page_ == Page::Game) return;
+    const Frame frame = frame_for(output_width, output_height);
+    const float row_h = menu_two_line_row_height(frame.line);
+    const PixelRect list{frame.panel.x, frame.content_top, frame.panel.w,
+                         frame.content_bottom - frame.content_top};
+    const int visible = std::max(1, static_cast<int>(list.h / row_h));
+    int& first = page_ == Page::List ? list_scroll_ : earlier_scroll_;
+    int& focus = page_ == Page::List ? list_focus_ : earlier_focus_;
+    const int count = static_cast<int>(page_ == Page::List ? saves_.size() : earlier_.size());
+    float pixels = static_cast<float>(first) * row_h;
+    drag_.update(pointers, list, pixels, static_cast<float>(std::max(0, count - visible)) * row_h);
+    if (!drag_.dragging()) return;
+    first = static_cast<int>(std::lround(pixels / row_h));
+    // The cursor stays on a row that can be seen, or drawing would pull the
+    // list back to it.
+    focus = std::clamp(focus, first, std::max(first, std::min(count - 1, first + visible - 1)));
 }
 
 bool DataManagementScreen::ensure_icons() {
@@ -1397,7 +1430,10 @@ void DataManagementScreen::render(QuadRenderer& quads,
         }
         const int count = static_cast<int>(earlier_.size());
         const int visible = std::max(1, static_cast<int>(list.h / row_h));
-        const int first = std::max(0, earlier_focus_ - visible + 1);
+        if (earlier_focus_ < earlier_scroll_) earlier_scroll_ = earlier_focus_;
+        if (earlier_focus_ >= earlier_scroll_ + visible) earlier_scroll_ = earlier_focus_ - visible + 1;
+        earlier_scroll_ = std::clamp(earlier_scroll_, 0, std::max(0, count - visible));
+        const int first = earlier_scroll_;
         const bool scrolls = count > visible;
         const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
         for (int index = first; index < count && index < first + visible; ++index) {
@@ -1418,7 +1454,6 @@ void DataManagementScreen::render(QuadRenderer& quads,
             text.draw(quads, "Saved on " + (save.made_on.empty() ? own_name_ : save.made_on), row.x + row.w - pad,
                       row.y + (row.h - TextRenderer::line_height(scale * 0.85f)) * 0.5f, scale * 0.85f, dim, TextAlign::Right);
         }
-        if (first > 0) row_rects_.insert(row_rects_.begin(), static_cast<std::size_t>(first), PixelRect{});
         if (scrolls) {
             draw_scroll_bar(quads, list, static_cast<float>(first) / count, static_cast<float>(visible) / count,
                             line, scale);

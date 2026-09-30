@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -146,14 +147,14 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
                 if (holding_) {
                     move_held(-1);
                 } else {
-                    focus_ = (focus_ + row_count() - 1) % row_count();
+                    focus_ = std::max(0, focus_ - 1);
                 }
                 break;
             case UiAction::Down:
                 if (holding_) {
                     move_held(1);
                 } else {
-                    focus_ = (focus_ + 1) % row_count();
+                    focus_ = std::min(row_count() - 1, focus_ + 1);
                 }
                 break;
             case UiAction::Confirm: activate(); break;
@@ -190,11 +191,22 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
         }
     }
 
-    scroll_focus_into_view(output_width, output_height, row_count(), first_unused_row(rows));
+    // The view follows the cursor when it moves, and a finger otherwise.
+    if (!actions.empty()) {
+        scroll_focus_into_view(output_width, output_height, row_count(), first_unused_row(rows));
+    }
+    {
+        const Geometry before =
+            compute_geometry(output_width, output_height, row_count(), first_unused_row(rows));
+        const float view = before.view_bottom - before.view_top;
+        drag_.update(pointers,
+                     PixelRect{before.panel.x, before.view_top, before.panel.w, view}, scroll_,
+                     std::max(0.0f, before.content_height - view));
+    }
     const Geometry geometry =
         compute_geometry(output_width, output_height, row_count(), first_unused_row(rows));
     for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
+        if (!pointer.released || drag_.release_was_drag()) continue;
         for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
             if (!tapped(pointer, geometry.rows[index])) continue;
             if (holding_) {
@@ -207,13 +219,15 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
                 }
                 holding_ = false;
             } else {
-                focus_ = static_cast<int>(index);
-                activate();
+                // Highlighted by a first tap, and taken up or put down by a
+                // second on the same row.
+                if (tap_chooses(focus_, static_cast<int>(index))) activate();
             }
             break;
         }
     }
     focus_ = std::max(0, std::min(focus_, row_count() - 1));
+    drag_.settle();
 
     if (result.close_requested) {
         close();

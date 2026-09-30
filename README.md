@@ -51,6 +51,12 @@ one running the game.
 On a DS or 3DS game the quick menu is laid out like Nintendo Switch Online's:
 a list down the left, and whatever the highlighted entry holds on the right.
 
+Every list in the app — this menu, the main menu, Settings, the file picker,
+Data Management — stops at its first and last entries rather than going round.
+With a finger, a first tap highlights an entry and a second tap on it chooses
+it, so a touch that lands on the wrong thing only moves the highlight; a list
+longer than the screen scrolls when dragged.
+
 | entry | what it shows or does |
 | --- | --- |
 | **Continue** | back to the game, the same as B |

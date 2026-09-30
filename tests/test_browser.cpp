@@ -399,8 +399,9 @@ std::vector<LauncherChoice> launcher_choices(bool runs_games) {
             tap.press_x = x;
             tap.press_y = y;
             tap.released = true;
+            // Twice: the first tap highlights a row, the second chooses it.
             const LauncherChoice choice =
-                launcher.update({}, {tap}, kWidth, kHeight).choice;
+                launcher.update({}, {tap, tap}, kWidth, kHeight).choice;
             if (choice != LauncherChoice::None &&
                 std::find(found.begin(), found.end(), choice) == found.end()) {
                 found.push_back(choice);
@@ -460,10 +461,9 @@ void test_a_switch_that_plays_games_offers_data_management() {
     CHECK(!offers(seen, LauncherChoice::Settings));
 }
 
-// Moving down the list reaches every row and comes back round, whichever set
-// of rows this device has -- a wrap counted against the wrong number would
-// skip the last entry or stop on nothing.
-void test_the_opening_screen_wraps_around_its_own_rows() {
+// Moving down the list reaches every row and stops at the last, whichever set
+// of rows this device has: lists do not go round.
+void test_the_opening_screen_stops_at_its_last_row() {
     for (const bool runs_games : {true, false}) {
         LauncherScreen launcher;
         launcher.open(runs_games);
@@ -481,15 +481,51 @@ void test_the_opening_screen_wraps_around_its_own_rows() {
         }
         CHECK_EQ(seen.size(), rows);
 
-        // One more Down than there are rows lands back on the first.
-        LauncherScreen wrapped;
-        wrapped.open(runs_games);
-        for (std::size_t down = 0; down < rows; ++down) {
-            wrapped.update({UiAction::Down}, {}, 1280.0f, 800.0f);
+        // More Downs than there are rows stays on the last; Up from the
+        // first stays on the first.
+        LauncherScreen past_end;
+        past_end.open(runs_games);
+        for (std::size_t down = 0; down < rows + 3; ++down) {
+            past_end.update({UiAction::Down}, {}, 1280.0f, 800.0f);
         }
-        CHECK_MSG(wrapped.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice == seen.front(),
-                  "moving past the last row did not come back to the first");
+        CHECK_MSG(past_end.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice == seen.back(),
+                  "moving past the last row did not stay on it");
+        LauncherScreen before_start;
+        before_start.open(runs_games);
+        before_start.update({UiAction::Up}, {}, 1280.0f, 800.0f);
+        CHECK_MSG(before_start.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice == seen.front(),
+                  "moving up from the first row did not stay on it");
     }
+}
+
+// A single tap highlights a row and chooses nothing; a second on the same row
+// chooses it.
+void test_a_tap_highlights_before_it_chooses() {
+    LauncherScreen launcher;
+    launcher.open(true);
+    const std::size_t rows = launcher_choices(true).size();
+    CHECK(rows > 1);
+    // The cursor on the second row; then the first, found by tapping down the
+    // screen until the highlight moves.
+    launcher.update({UiAction::Down}, {}, 1280.0f, 800.0f);
+    bool found = false;
+    for (float y = 4.0f; y < 800.0f && !found; y += 8.0f) {
+        PointerEvent tap;
+        tap.x = 640.0f;
+        tap.y = y;
+        tap.press_x = tap.x;
+        tap.press_y = y;
+        tap.released = true;
+        const int before = launcher.focus();
+        const LauncherChoice once = launcher.update({}, {tap}, 1280.0f, 800.0f).choice;
+        if (launcher.focus() != before) {
+            CHECK_MSG(once == LauncherChoice::None, "one tap on a new row chose it");
+            CHECK_MSG(launcher.update({}, {tap}, 1280.0f, 800.0f).choice != LauncherChoice::None,
+                      "a second tap on the highlighted row did not choose it");
+            found = true;
+        }
+    }
+    CHECK_MSG(found, "no tap moved the highlight");
 }
 
 }  // namespace
@@ -508,6 +544,7 @@ int main() {
     test_plus_goes_to_the_main_menu_and_quit_is_not_here();
     test_the_opening_screen_offers_what_the_device_can_do();
     test_a_switch_that_plays_games_offers_data_management();
-    test_the_opening_screen_wraps_around_its_own_rows();
+    test_the_opening_screen_stops_at_its_last_row();
+    test_a_tap_highlights_before_it_chooses();
     return test::finish("browser");
 }

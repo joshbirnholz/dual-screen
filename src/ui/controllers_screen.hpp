@@ -8,6 +8,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/list_touch.hpp"
 
 namespace ds {
 
@@ -91,6 +92,7 @@ private:
     bool holding_ = false;
     std::string held_;
     float scroll_ = 0.0f;
+    ListDrag drag_;
 };
 
 }  // namespace ds

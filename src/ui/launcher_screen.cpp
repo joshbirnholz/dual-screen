@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 
 namespace ds {
 namespace {
@@ -87,10 +88,10 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
-                focus_ = (focus_ + count - 1) % count;
+                focus_ = std::max(0, focus_ - 1);
                 break;
             case UiAction::Down:
-                focus_ = (focus_ + 1) % count;
+                focus_ = std::min(count - 1, focus_ + 1);
                 break;
             case UiAction::Confirm:
                 result.choice = rows_[static_cast<std::size_t>(focus_)];
@@ -122,8 +123,9 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         for (std::size_t index = 0; index < rows.size(); ++index) {
-            if (tapped(pointer, rows[index])) {
-                focus_ = static_cast<int>(index);
+            // A first tap highlights a row; a second, on the same row,
+            // chooses it -- so a stray touch never starts anything.
+            if (tapped(pointer, rows[index]) && tap_chooses(focus_, static_cast<int>(index))) {
                 result.choice = rows_[index];
             }
         }
@@ -246,10 +248,10 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
-                if (count > 0) focus_ = (focus_ + count - 1) % count;
+                if (count > 0) focus_ = std::max(0, focus_ - 1);
                 break;
             case UiAction::Down:
-                if (count > 0) focus_ = (focus_ + 1) % count;
+                if (count > 0) focus_ = std::min(count - 1, focus_ + 1);
                 break;
             case UiAction::Confirm:
                 if (focus_ >= 0 && focus_ < count) {
@@ -272,8 +274,7 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
     for (const PointerEvent& pointer : pointers) {
         if (!pointer.released) continue;
         for (std::size_t index = 0; index < rows.size(); ++index) {
-            if (tapped(pointer, rows[index])) {
-                focus_ = static_cast<int>(index);
+            if (tapped(pointer, rows[index]) && tap_chooses(focus_, static_cast<int>(index))) {
                 result.chosen = true;
                 result.host = hosts[index];
             }

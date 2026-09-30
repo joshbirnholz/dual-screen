@@ -10,6 +10,7 @@
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -126,10 +127,9 @@ private:
     // rows, because what is below the rows -- the cores, then the BIOS files
     // -- is not made of rows and would jump past in whole-row steps.
     float scroll_ = 0.0f;
-    // No drag-scrolling here, deliberately. This screen belongs to the device
-    // running the game -- it is not in the companion's sources at all -- so it
-    // always has a controller or a keyboard and a mouse to work it with. A
-    // touch-only device reaches settings through the machine it is watching.
+    ListDrag drag_;
+    // Dragged by a finger on a device with a touch screen -- a Deck, a Switch
+    // -- the same as every list.
 };
 
 }  // namespace ds

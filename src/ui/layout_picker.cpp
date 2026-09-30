@@ -1,6 +1,7 @@
 #include "ui/layout_picker.hpp"
 
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 
 #include <algorithm>
 #include <string>
@@ -646,7 +647,8 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         const auto at = std::find(sections_.begin(), sections_.end(), section_);
         const int index = static_cast<int>(at - sections_.begin());
         const int size = static_cast<int>(sections_.size());
-        section_ = sections_[static_cast<std::size_t>((index + delta + size) % size)];
+        // Stopping at the ends, like every list in the app.
+        section_ = sections_[static_cast<std::size_t>(std::clamp(index + delta, 0, size - 1))];
     };
     switch (action) {
         case UiAction::Up:
@@ -668,7 +670,7 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
                     item_ = cells;
                 }
             } else if (count > 0) {
-                item_ = (item_ + delta + count) % count;
+                item_ = std::clamp(item_ + delta, 0, count - 1);
             }
             break;
         }
@@ -830,8 +832,9 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         for (const PointerEvent& pointer : pointers) {
             if (!pointer.released) continue;
             for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
-                if (tapped(pointer, geometry.footer[index])) {
-                    focus_ = static_cast<int>(index);
+                // A first tap highlights; a second on the same row chooses.
+                if (tapped(pointer, geometry.footer[index]) &&
+                    tap_chooses(focus_, static_cast<int>(index))) {
                     activate_focus(result);
                 }
             }
@@ -841,23 +844,27 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             handle_menu_action(action, result);
             if (confirming()) break;
         }
-        // Touch: a tap picks the thing under the finger directly.
+        // Touch: a first tap highlights the thing under the finger, and a
+        // second on the same thing chooses it -- so a finger landing on the
+        // wrong tile moves the cursor rather than changing the game.
         const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
         for (const PointerEvent& pointer : pointers) {
             if (!pointer.released || confirming()) continue;
             bool hit = false;
             for (std::size_t index = 0; index < geometry.sections.size() && !hit; ++index) {
                 if (!tapped(pointer, geometry.sections[index])) continue;
+                const bool highlighted = !on_content_ && section_ == sections_[index];
                 section_ = sections_[index];
                 on_content_ = false;
-                activate_section(result);
+                if (highlighted) activate_section(result);
                 hit = true;
             }
             for (std::size_t index = 0; index < geometry.items.size() && !hit; ++index) {
                 if (!tapped(pointer, geometry.items[index])) continue;
+                const bool highlighted = on_content_ && item_ == static_cast<int>(index);
                 on_content_ = true;
                 item_ = static_cast<int>(index);
-                activate_item(result);
+                if (highlighted) activate_item(result);
                 hit = true;
             }
         }

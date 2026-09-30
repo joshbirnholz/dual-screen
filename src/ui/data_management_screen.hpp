@@ -16,6 +16,7 @@
 #include "render/text_renderer.hpp"
 #include "render/texture.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 
 namespace ds {
 
@@ -191,6 +192,10 @@ private:
     // Whether the player has moved it, or it is still wherever it started.
     bool action_focus_chosen_ = false;
     int earlier_focus_ = 0;
+    int earlier_scroll_ = 0;
+    // A finger dragging the save list or Earlier Saves.
+    ListDrag drag_;
+    void drag_list(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
 
     std::vector<SaveInfo> saves_;
     SaveInfo game_;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/list_touch.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -219,5 +220,24 @@ float draw_control_guide(QuadRenderer& quads,
     }
     return height;
 }
+
+}  // namespace ds
+
+// ---------------------------------------------------------------------------
+// The live pointer -- see list_touch.hpp. Here with the prompt style, the other
+// fact about the machine every screen reads.
+
+namespace ds {
+namespace {
+LivePointer g_live_pointer;
+}  // namespace
+
+void set_live_pointer(bool down, float x, float y) {
+    g_live_pointer.down = down;
+    g_live_pointer.x = x;
+    g_live_pointer.y = y;
+}
+
+const LivePointer& live_pointer() { return g_live_pointer; }
 
 }  // namespace ds

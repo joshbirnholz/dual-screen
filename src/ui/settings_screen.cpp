@@ -5,6 +5,7 @@
 
 #include "core/libretro_core.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 
 namespace ds {
 namespace {
@@ -197,8 +198,8 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
 
     for (const UiAction action : actions) {
         switch (action) {
-            case UiAction::Up: focus_ = (focus_ + kRowCount - 1) % kRowCount; break;
-            case UiAction::Down: focus_ = (focus_ + 1) % kRowCount; break;
+            case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
+            case UiAction::Down: focus_ = std::min(kRowCount - 1, focus_ + 1); break;
             case UiAction::Left: adjust(-1, result); break;
             case UiAction::Right: adjust(1, result); break;
             case UiAction::Confirm:
@@ -228,18 +229,29 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
     // The cursor and the view are settled before anything is hit-tested: an
     // action may have moved either, and a row cannot be tapped where it was.
     scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
-    scroll_focus_into_view(compute_geometry(output_width, output_height));
+    // The cursor brings the view with it when it is moved -- and only then,
+    // so a page dragged by a finger stays where the finger left it.
+    if (!actions.empty()) scroll_focus_into_view(compute_geometry(output_width, output_height));
+    {
+        const float view_top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 4.2f;
+        drag_.update(pointers,
+                     PixelRect{geometry.panel.x, view_top, geometry.panel.w,
+                               geometry.panel.y + geometry.panel.h - view_top},
+                     scroll_, geometry.max_scroll());
+    }
     const Geometry settled = compute_geometry(output_width, output_height);
 
     for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
+        if (!pointer.released || drag_.release_was_drag()) continue;
         for (std::size_t index = 0; index < settled.rows.size(); ++index) {
-            if (tapped(pointer, settled.rows[index])) {
-                focus_ = static_cast<int>(index);
+            // A first tap highlights a row; a second changes its value.
+            if (tapped(pointer, settled.rows[index]) &&
+                tap_chooses(focus_, static_cast<int>(index))) {
                 adjust(1, result);
             }
         }
     }
+    drag_.settle();
 
     if (result.close_requested) {
         open_ = false;

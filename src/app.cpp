@@ -59,6 +59,7 @@
 #include "ui/data_management_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
 #include "util/child_process.hpp"
@@ -4501,6 +4502,8 @@ int App::run(const AppOptions& options) {
             impl.picker->set_focus(LayoutPicker::focus_of(MenuSection::Options, 0));
         }
 
+        set_live_pointer(impl.input.pointer_active(), impl.input.pointer_x(),
+                         impl.input.pointer_y());
         impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());
 
         // Emulation only advances while the game is actually in front; opening
