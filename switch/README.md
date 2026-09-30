@@ -261,16 +261,17 @@ Two things it needs that libretro's melonDS does not:
   too little for that; start Dualscreen through a game (hold R while starting
   one) instead. If there is not enough, the game says so rather than starting.
 
-Its JIT, and the JIT's fast memory, are on. To tell whether a problem in a game
-is the JIT's, `/switch/dualscreen/melonds.ini` turns either off:
+A few things about how it runs can be changed, for comparing a game here with
+melonDS's own Switch app, in `/switch/dualscreen/melonds.ini`:
 
 ```ini
-jit=0
-fastmem=0
+cpu_mhz=1020   # the CPU clock while playing; 1785 unless this says otherwise
+jit=0          # the JIT off (most 3D games then run well below full speed)
+fastmem=0      # the JIT's fast memory off
+pipeline=0     # each frame shown as soon as it is drawn, not a frame later
 ```
 
-The game log says which are in use when a game starts. Without the JIT most 3D
-games run well below full speed.
+Every line is optional. The game log says what is in use when a game starts.
 
 Cartridge saves go where libretro's melonDS put them,
 `/switch/dualscreen/saves/<game>.sav`, so a game saved with one plays on with

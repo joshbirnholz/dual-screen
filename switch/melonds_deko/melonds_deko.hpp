@@ -43,6 +43,9 @@ void gfx_read_screens(uint32_t* out);
 // Forgets the frame gfx_read_screens() is holding, so the next one it hands
 // over is the one just run rather than one from before a load or a reset.
 void gfx_reset_readback();
+// False: each frame is handed over as soon as it is drawn, the CPU waiting for
+// the GPU, rather than one frame behind. See melonds.ini in libretro.cpp.
+void gfx_set_pipelined(bool pipelined);
 // Waits for the GPU to finish everything asked of it so far -- before a
 // frame is emulated, since the renderers reuse memory the frame before may
 // still be drawing from. See the definition.

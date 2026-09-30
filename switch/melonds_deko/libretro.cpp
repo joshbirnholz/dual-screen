@@ -133,12 +133,16 @@ bool find_bios(std::string* missing) {
 //   fastmem=0
 //
 // -- for telling whether a problem in a game is the JIT's. Off is much
-// slower: most 3D games will not keep up without it.
+// slower: most 3D games will not keep up without it. pipeline=0 hands each
+// frame over as soon as the GPU has drawn it rather than a frame later, the
+// way melonDS's own app shows them. (cpu_mhz, in the same file, is read by the
+// app, which sets the clock.)
 constexpr const char* kTuningPath = "/switch/dualscreen/melonds.ini";
 
-void apply_cpu_tuning() {
+void apply_tuning() {
     bool jit = true;
     bool fastmem = true;
+    bool pipeline = true;
     bool from_file = false;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
         from_file = true;
@@ -157,6 +161,10 @@ void apply_cpu_tuning() {
                 jit = on;
             } else if (key == "fastmem") {
                 fastmem = on;
+            } else if (key == "pipeline") {
+                pipeline = on;
+            } else if (key == "cpu_mhz") {
+                // The app's.
             } else {
                 log_warn("melonDS (deko3d): " + std::string(kTuningPath) + " has a " + key +
                          " this core does not know");
@@ -169,8 +177,10 @@ void apply_cpu_tuning() {
     Config::JIT_BranchOptimisations = 1;
     Config::JIT_LiteralOptimisations = 1;
     Config::JIT_FastMemory = fastmem ? 1 : 0;
+    gfx_set_pipelined(pipeline);
     log_info(std::string("melonDS (deko3d): JIT ") + (jit ? "on" : "off") +
              (jit ? std::string(", fast memory ") + (fastmem ? "on" : "off") : std::string()) +
+             (pipeline ? ", frames handed over a frame behind" : ", each frame handed over once drawn") +
              (from_file ? std::string(", as ") + kTuningPath + " says" : std::string()));
 }
 
@@ -374,8 +384,8 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
         return false;
     }
 
-    // Before NDS::Init(), which sets the JIT up from these.
-    apply_cpu_tuning();
+    // Before NDS::Init(), which sets the JIT up from these, and after gfx_init().
+    apply_tuning();
     Config::DLDIEnable = 0;
     Config::DSiSDEnable = 0;
     Config::RandomizeMAC = 0;

@@ -151,6 +151,31 @@ u32 spare_cores() {
 // second as well, and sets it again whenever it has changed.
 constexpr u32 kPlayingCpuHz = 1785000000u;
 
+// The clock /switch/dualscreen/melonds.ini asks for instead, with a line like
+// cpu_mhz=1020 -- one of the speeds melonDS's own Switch app offers -- for
+// comparing a game here with that app at the same speed. 0 for none.
+u32 cpu_hz_asked() {
+    std::FILE* file = std::fopen("/switch/dualscreen/melonds.ini", "r");
+    if (file == nullptr) return 0;
+    u32 asked = 0;
+    char line[128];
+    while (std::fgets(line, sizeof(line), file) != nullptr) {
+        unsigned mhz = 0;
+        if (std::sscanf(line, " cpu_mhz = %u", &mhz) != 1) continue;
+        static const unsigned kOffered[] = {1785, 1581, 1224, 1020, 918, 816, 714};
+        for (const unsigned offered : kOffered) {
+            if (mhz == offered) asked = offered * 1000000u;
+        }
+        if (asked == 0) {
+            log_warn("melonds.ini asks for the CPU at " + std::to_string(mhz) +
+                     " MHz, which is not one of the speeds melonDS offers; staying at " +
+                     std::to_string(kPlayingCpuHz / 1000000));
+        }
+    }
+    std::fclose(file);
+    return asked;
+}
+
 class CpuBoost {
 public:
     CpuBoost() {
@@ -175,10 +200,13 @@ public:
             log_warn("cannot reach the CPU clock; the game runs at the speed the system chose");
             return;
         }
-        apply(kPlayingCpuHz);
+        const u32 asked = cpu_hz_asked();
+        target_hz_ = asked != 0 ? asked : kPlayingCpuHz;
+        apply(target_hz_);
         appletHook(&hook_, on_applet_event, this);
-        log_info("CPU at " + std::to_string(kPlayingCpuHz / 1000000) + " MHz while playing (was " +
-                 std::to_string(original_hz_ / 1000000) + " MHz)");
+        log_info("CPU at " + std::to_string(target_hz_ / 1000000) + " MHz while playing (was " +
+                 std::to_string(original_hz_ / 1000000) + " MHz)" +
+                 (asked != 0 ? ", as melonds.ini says" : ""));
         watchdog_ = std::thread([this] { watch(); });
     }
 
@@ -207,7 +235,8 @@ private:
     static void on_applet_event(AppletHookType hook, void* self) {
         if (hook == AppletHookType_OnOperationMode || hook == AppletHookType_OnPerformanceMode ||
             hook == AppletHookType_OnFocusState || hook == AppletHookType_OnResume) {
-            static_cast<CpuBoost*>(self)->apply(kPlayingCpuHz);
+            auto* boost = static_cast<CpuBoost*>(self);
+            boost->apply(boost->target_hz_);
         }
     }
 
@@ -222,10 +251,10 @@ private:
         std::unique_lock<std::mutex> lock(mutex_);
         while (!wake_.wait_for(lock, std::chrono::seconds(1), [this] { return stopping_; })) {
             const u32 hz = current();
-            if (hz == 0 || hz == kPlayingCpuHz) continue;
+            if (hz == 0 || hz == target_hz_) continue;
             log_info("the system put the CPU at " + std::to_string(hz / 1000000) +
-                     " MHz; back to " + std::to_string(kPlayingCpuHz / 1000000));
-            apply(kPlayingCpuHz);
+                     " MHz; back to " + std::to_string(target_hz_ / 1000000));
+            apply(target_hz_);
         }
     }
 
@@ -241,6 +270,7 @@ private:
     bool use_pcv_ = false;
     bool ready_ = false;
     u32 original_hz_ = 0;
+    u32 target_hz_ = kPlayingCpuHz;
     ClkrstSession session_{};
     AppletHookCookie hook_{};
     std::mutex mutex_;

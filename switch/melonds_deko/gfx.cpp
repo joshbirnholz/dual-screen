@@ -128,6 +128,7 @@ dk::Fence g_copied[2];
 int g_next_slot = 0;
 // The slot holding a frame copied but not yet handed over; -1 for none.
 int g_pending_slot = -1;
+bool g_pipelined = true;
 bool g_ready = false;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
@@ -259,6 +260,11 @@ void gfx_deinit() {
 
 void gfx_reset_readback() { g_pending_slot = -1; }
 
+void gfx_set_pipelined(bool pipelined) {
+    g_pipelined = pipelined;
+    g_pending_slot = -1;
+}
+
 void gfx_wait_for_gpu() {
     // The renderers assume the GPU has finished with a frame before the next
     // one is emulated. A texture the game changes is dropped from the 3D
@@ -310,8 +316,8 @@ void gfx_read_screens(uint32_t* out) {
     // keeping up and not, in its busiest stretches -- for a picture one frame
     // sooner. After a load or a reset there is no frame before, and this
     // one is waited for, once.
-    const int deliver = g_pending_slot >= 0 ? g_pending_slot : slot;
-    g_pending_slot = slot;
+    const int deliver = g_pipelined && g_pending_slot >= 0 ? g_pending_slot : slot;
+    g_pending_slot = g_pipelined ? slot : -1;
     const uint64_t wait_start = armGetSystemTick();
     g_copied[deliver].wait();
     const uint64_t convert_start = armGetSystemTick();
