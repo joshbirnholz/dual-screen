@@ -990,12 +990,15 @@ devkitPro's MSYS2 shell, without `sudo`.
 ```sh
 pacman -S switch-dev switch-sdl2 switch-zlib
 pacman -S switch-ffmpeg            # optional: H.264 video, found automatically
+pacman -S switch-curl              # optional: SteamGridDB icons for forwarders
 export DEVKITPRO=/opt/devkitpro
 cd switch && make
 ```
 
 That produces `switch/Dualscreen.nro`. Copy it to `/switch/` on the SD card
-and start it from the homebrew menu. More in [switch/README.md](switch/README.md).
+and start it from the homebrew menu. With a DS core built in, X on a ROM in
+its file browser makes the game a forwarder of its own on the HOME menu. More
+in [switch/README.md](switch/README.md).
 
 ### Android
 

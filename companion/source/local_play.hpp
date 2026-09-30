@@ -41,6 +41,8 @@ struct LocalPlayRequest {
     double exit_after_seconds = 0.0;
     double screenshot_at_seconds = 0.0;
     std::string screenshot_path;
+    // This program's own path, argv[0]: what a forwarder made here starts.
+    std::string self_path;
 
     bool wanted() const { return !game_path.empty() || browse; }
 };

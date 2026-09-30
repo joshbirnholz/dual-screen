@@ -142,6 +142,14 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp
 
+# Making forwarders -- X on a ROM in the file picker: the Switch's half, which
+# the desktop app has no use for. forwarder/ is Sphaira's forwarder code,
+# adapted, and GPL-3.0-or-later like melonds_deko/ (see THIRD_PARTY.md); it
+# puts hbloader, built from forwarder/hbl and embedded here, in each one.
+FORWARDER_CPPFILES := forwarder_nca.cpp forwarder_install.cpp switch_forwarder.cpp \
+               kForwarderHblMain.cpp kForwarderHblNpdm.cpp
+HBL_DIR := forwarder/hbl
+
 # What a libretro frontend supplies to a core linked into it. A core built as a
 # static library -- which is what `platform=libnx` builds -- leaves out
 # libretro-common's file, path and string helpers, because RetroArch, the
@@ -192,8 +200,8 @@ CORE_EXTRA_LIBS :=
 endif
 # Last, so the companion's main.cpp is the one found: src/ has a main.cpp of
 # its own, the desktop app's, which this program never uses.
-SOURCE_DIRS += $(SHARED)
-CPPFILES    += $(LOCAL_PLAY_CPPFILES)
+SOURCE_DIRS += forwarder $(SHARED)
+CPPFILES    += $(LOCAL_PLAY_CPPFILES) $(FORWARDER_CPPFILES)
 LOCAL_PLAY_DEFINES := -DDS_LOCAL_PLAY=1 -DDS_STATIC_LIBRETRO_CORE=1
 LOCAL_PLAY_LIBS := $(CORE_LIB_PATH) $(CORE_EXTRA_LIBS)
 # melonDS's GL function pointers are declared in a libretro-common header
@@ -217,7 +225,7 @@ LOCAL_PLAY_LIBS :=
 LOCAL_PLAY_LDFLAGS :=
 endif
 
-INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY)
+INCLUDES    := $(CLIENT) $(SHARED) $(THIRD_PARTY) forwarder
 
 #---------------------------------------------------------------------------------
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
@@ -242,9 +250,32 @@ else
 $(info video codec: switch-ffmpeg not installed, building without one)
 endif
 
+# switch-curl is optional too: without it Forwarder Creation cannot search
+# SteamGridDB for an icon, and offers only the ROM's own. Which TLS library
+# it was built on is found out at run time -- see switch_forwarder.cpp, which
+# gives an mbedTLS one the console's own trusted certificates.
+#
+#   pacman -S switch-curl
+#
+HAVE_CURL := $(if $(and $(filter 1,$(HAVE_CORE)),$(wildcard $(PORTLIBS)/lib/libcurl.a)),1,0)
+ifeq ($(HAVE_CURL),1)
+CURL_PKG_CONFIG := $(PORTLIBS)/bin/aarch64-none-elf-pkg-config
+CURL_LIBS := $(shell $(CURL_PKG_CONFIG) --libs --static libcurl 2>/dev/null)
+ifeq ($(strip $(CURL_LIBS)),)
+CURL_LIBS := -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz
+endif
+$(info forwarders: libcurl found, so SteamGridDB can be searched for icons)
+else
+CURL_LIBS :=
+ifeq ($(HAVE_CORE),1)
+$(info forwarders: switch-curl not installed, so icons come from the ROM alone)
+endif
+endif
+
 CFLAGS  := -g -Wall -Wextra -O2 -ffunction-sections $(ARCH) $(DEFINES) \
            $(shell $(SDL2_CONFIG) --cflags) \
-           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=$(HAVE_FFMPEG) $(LOCAL_PLAY_DEFINES) $(INCLUDE)
+           -D__SWITCH__ -DDS_HAVE_VIDEO_CODEC=$(HAVE_FFMPEG) -DDS_HAVE_CURL=$(HAVE_CURL) \
+           $(LOCAL_PLAY_DEFINES) $(INCLUDE)
 # The template's -fno-rtti -fno-exceptions are deliberately not here. The
 # shared code throws nothing and asks nothing its type, so neither flag would
 # change what the program does -- only what happens if the standard library
@@ -263,7 +294,7 @@ LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $
 # The core, when there is one, comes first: it is a static archive whose own
 # needs -- the C and C++ runtimes, and GL on a core built with its OpenGL
 # renderer -- are met by everything after it.
-LIBS    := $(LOCAL_PLAY_LIBS) $(shell $(SDL2_CONFIG) --libs) -lz -lnx
+LIBS    := $(LOCAL_PLAY_LIBS) $(CURL_LIBS) $(shell $(SDL2_CONFIG) --libs) -lz -lnx
 
 # switch-ffmpeg's own dependencies (switch-dav1d, switch-libass and what
 # *that* needs in turn) are still static archives this binary has to satisfy
@@ -377,7 +408,7 @@ DS_BUILD_STAMP := $(DS_GIT_HASH), built $(shell date -u '+%Y-%m-%d %H:%M') UTC
 
 .PHONY: all clean
 
-all: $(BUILD) assets stamp config deko-core
+all: $(BUILD) assets stamp config deko-core forwarder-hbl
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 # See BUILD_DEKO_CORE.
@@ -389,6 +420,24 @@ endif
 
 $(BUILD):
 	@mkdir -p $@
+
+# hbloader for the forwarders this build makes, built and then turned into
+# source like the assets below -- only when it changed, so an unchanged build
+# does not relink. Only a build that plays games here makes forwarders.
+.PHONY: forwarder-hbl
+forwarder-hbl:
+ifeq ($(HAVE_CORE),1)
+	@$(MAKE) --no-print-directory -C $(CURDIR)/$(HBL_DIR) VPATH=
+	@mkdir -p $(GENERATED)
+	@for part in Main:hbl.nso Npdm:hbl.npdm; do \
+	    symbol=kForwarderHbl$${part%%:*}; input=$(CURDIR)/$(HBL_DIR)/build/$${part#*:}; \
+	    if [ ! -f $(GENERATED)/$$symbol.cpp ] || [ $$input -nt $(GENERATED)/$$symbol.cpp ]; then \
+	        echo embedding hbloader\'s $${part#*:}; \
+	        $(CMAKE) -DINPUT=$$input -DOUTPUT=$(GENERATED)/$$symbol.cpp -DSYMBOL=$$symbol \
+	            -P $(CURDIR)/../tools/embed_asset.cmake || exit 1; \
+	    fi; \
+	done
+endif
 
 # Through a header rather than a -D on the command line: devkitPro's compile
 # rule re-quotes its flags for compile_commands.json, and a string with spaces
@@ -413,13 +462,13 @@ stamp: | $(BUILD)
 # menu. Everything is rebuilt instead, whenever the configuration changes.
 .PHONY: config
 config: | $(BUILD)
-	@printf '%s\n' 'core $(HAVE_CORE) codec $(HAVE_FFMPEG)' > $(BUILD)/configuration.new
+	@printf '%s\n' 'core $(HAVE_CORE) codec $(HAVE_FFMPEG) curl $(HAVE_CURL)' > $(BUILD)/configuration.new
 	@if cmp -s $(BUILD)/configuration.new $(BUILD)/configuration; then \
 	    rm -f $(BUILD)/configuration.new; \
 	else \
 	    rm -f $(BUILD)/*.o $(BUILD)/*.d; \
 	    mv $(BUILD)/configuration.new $(BUILD)/configuration; \
-	    echo 'configuration: core $(HAVE_CORE), codec $(HAVE_FFMPEG) -- compiling everything for it'; \
+	    echo 'configuration: core $(HAVE_CORE), codec $(HAVE_FFMPEG), curl $(HAVE_CURL) -- compiling everything for it'; \
 	fi
 
 .PHONY: assets
@@ -457,7 +506,7 @@ $(GENERATED)/kThreeDsBezelPng.cpp: $(CURDIR)/../assets/three_ds_bezel.png $(CURD
 
 clean:
 	@echo clean ...
-	@rm -rf $(BUILD) $(GENERATED) $(TARGET).nro $(TARGET).nacp $(TARGET).elf
+	@rm -rf $(BUILD) $(GENERATED) $(HBL_DIR)/build $(TARGET).nro $(TARGET).nacp $(TARGET).elf
 
 #---------------------------------------------------------------------------------
 else

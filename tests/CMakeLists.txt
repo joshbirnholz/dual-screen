@@ -255,6 +255,11 @@ dualscreen_add_test(test_data_management)
 dualscreen_add_test(test_browser)
 dualscreen_add_test(test_list_touch)
 dualscreen_add_test(test_forwarder)
+# The Switch's forwarder packer is portable, so it is tested here too. It is
+# GPL-3.0-or-later (see THIRD_PARTY.md); only this test, never shipped, links it.
+dualscreen_add_test(test_forwarder_nca)
+target_sources(test_forwarder_nca PRIVATE ${CMAKE_SOURCE_DIR}/switch/forwarder/forwarder_nca.cpp)
+target_include_directories(test_forwarder_nca PRIVATE ${CMAKE_SOURCE_DIR}/switch)
 dualscreen_add_test(test_quick_settings)
 dualscreen_add_test(test_touch_hints)
 dualscreen_add_test(test_pad_glyphs)

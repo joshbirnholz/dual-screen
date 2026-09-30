@@ -10,6 +10,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <thread>
@@ -17,6 +18,9 @@
 
 #include "app.hpp"
 #include "util/log.hpp"
+#ifdef __SWITCH__
+#include "switch_forwarder.hpp"
+#endif
 
 #ifdef __SWITCH__
 // libnx's: what the program does once main() returns -- 1 ends the process
@@ -295,6 +299,13 @@ int play_here(const LocalPlayRequest& request, bool* quit_chosen) {
     // brings it back. See AppOptions::leave_instead_of_launcher.
     options.leave_instead_of_launcher = true;
     options.keep_log_file = true;
+#ifdef __SWITCH__
+    // X on a ROM in the file picker makes it a forwarder on the HOME menu,
+    // which starts this program -- see switch_forwarder.hpp.
+    const std::unique_ptr<ForwarderPlatform> forwarders =
+        make_switch_forwarder_platform(request.self_path);
+    options.forwarder_platform = forwarders.get();
+#endif
     log_info(request.game_path.empty() ? "playing here: opening the game browser"
                                        : "playing here: " + request.game_path);
 #ifdef __SWITCH__

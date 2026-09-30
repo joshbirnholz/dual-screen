@@ -15,6 +15,13 @@ CMake still prefers a system-installed copy and uses this one otherwise.
 Copyright (C) 2013-2023 Niels Lohmann, MIT licensed — the licence is beside it
 in `third_party/nlohmann/LICENSE.MIT`.
 
+## `third_party/stb/stb_image.h`, `stb_image_write.h`, `stb_image_resize2.h`
+
+Sean Barrett's stb libraries, vendored verbatim from https://github.com/nothings/stb
+(commit 2c980bb): reading the PNG and JPEG pictures a forwarder's icon is made
+from, scaling them, and writing the JPEG the HOME menu shows. Public domain
+(or MIT, at your choice) — the notice is at the end of each file.
+
 ## SDL2
 
 A build and runtime dependency, not vendored. zlib licensed.
@@ -52,6 +59,26 @@ available -- this project's as well as the core's. This repository carries no
 licence of its own yet, which makes that impossible to do properly until it
 does. A build for your own console, not passed on, raises none of this. A Switch
 build without a core is the companion alone and links nothing of melonDS.
+
+### `switch/forwarder/` -- GPL-3.0-or-later
+
+What the Switch's **Create Forwarder** packs and installs a forwarder with:
+`forwarder_nca.cpp` builds the program, control and meta NCAs and
+`forwarder_install.cpp` writes them to the SD card's content storage and gives
+the HOME menu the title. Both are adapted from Sphaira's `owo.cpp` and its
+`yati/nx` helpers (https://github.com/ITotalJustice/sphaira, at commit
+72a94b9 of the NaGaa95 fork; GPL-3.0; Sphaira's romfs building is itself after
+hacbrewpack's), so they are GPL-3.0-or-later, as each file says. Compiled only
+into a Switch build with a DS core, which is already the combined work
+described above; `tests/test_forwarder_nca.cpp` links `forwarder_nca.cpp` to
+test it and is never distributed.
+
+### `switch/forwarder/hbl/` -- ISC
+
+The hbloader every forwarder carries, built by its own `Makefile` and embedded
+in the `.nro`: nx-hbloader (Copyright 2017-2018 nx-hbloader Authors, ISC
+licensed, the notice in `switch/forwarder/hbl/LICENSE.md`) as Sphaira
+modified it. `source/` and `hbl.json` are Sphaira's `hbl/`, unchanged.
 
 ## `assets/ds_bezel.png` and `assets/three_ds_bezel.png`
 

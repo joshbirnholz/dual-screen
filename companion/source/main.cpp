@@ -1788,7 +1788,9 @@ int main(int argc, char** argv) {
         // playing, in this process. Sent here from the menu, the menu comes
         // back when the game is over; started by a game's forwarder, leaving
         // the game leaves the program, as leaving any game does.
-        status = play_here(local_play_request(options), &quit_chosen);
+        LocalPlayRequest request = local_play_request(options);
+        request.self_path = self_path;
+        status = play_here(request, &quit_chosen);
         if (options.local_play.browse && !quit_chosen) {
             relaunch(self_path, "");
         }
@@ -1812,6 +1814,7 @@ int main(int argc, char** argv) {
             // there is no way back to the menu either.
             LocalPlayRequest browse = local_play_request(options);
             browse.browse = true;
+            browse.self_path = self_path;
             status = play_here(browse, &quit_chosen);
         }
 #endif

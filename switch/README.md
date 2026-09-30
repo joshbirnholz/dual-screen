@@ -149,6 +149,17 @@ cd switch && make
 That produces `Dualscreen.nro`. Copy it to `/switch/` on the console's
 SD card and start it from the homebrew menu.
 
+### SteamGridDB for forwarder icons
+
+Add `switch-curl` and Create Forwarder (below) can search SteamGridDB for a
+game's icon; without it, a forwarder's icon is the ROM's own:
+
+```sh
+pacman -S switch-curl
+```
+
+Optional and detected the same way as FFmpeg below.
+
 ### H.264 video
 
 Add `switch-ffmpeg` and the GamePad screen streams as H.264 through Averne's
@@ -188,9 +199,40 @@ Only DS games: a 3DS file is refused with a message saying so.
 
 ### A game's own forwarder
 
-Dualscreen goes straight into a game when started with its ROM as an argument,
-which is what makes a forwarder for one game possible. A forwarder that starts
-an `.nro` with arguments should start
+A game can have its own icon on the HOME menu, which starts Dualscreen
+straight into it. Highlight its ROM in the file browser and press **X**
+(Create Forwarder) — the same thing Sphaira does for any `.nro`, with the
+screen laid out the way Sphaira's is:
+
+- **App Title** — what the HOME menu will call it. It starts as the name the
+  ROM gives itself (the file's name if it gives none); select the box to type
+  another.
+- **Icon** — the ROM's own banner icon, enlarged; select it to choose between
+  that and **SteamGridDB**, which searches [SteamGridDB](https://www.steamgriddb.com)
+  by the title and shows the square pictures and icons it has for the game.
+- **Publisher** — the publisher the ROM's banner names, to type over.
+- **Screenshots** and **Video Capture** — whether the Capture button works in it.
+- **Create Forwarder** — installs it. It will be on the HOME menu once it is
+  done. Making one again for the same ROM replaces it.
+
+SteamGridDB needs an API key, free from the site's
+[preferences page](https://www.steamgriddb.com/profile/preferences/api) once
+signed in. The first search will ask for it with the console's keyboard, and
+it is kept in `settings.json` (`steamgriddb_api_key`) after that; a key the
+site turns down is forgotten, and the next search will ask again. The
+download checks the site's certificate against the certificates the console
+itself trusts; nothing is fetched unverified.
+
+A forwarder is an installed title, so it needs a console that runs unsigned
+titles (Atmosphère), and it installs to the SD card. Each one starts
+`hbloader` — built from `forwarder/hbl` into Dualscreen itself — which in
+turn starts `Dualscreen.nro` from wherever it was when the forwarder was made,
+with `--game` and the ROM's path. Move either, and make the forwarder again.
+Delete one as any other software, from its Options (+) on the HOME menu.
+
+A forwarder made some other way works too. Dualscreen goes straight into a
+game when started with its ROM as an argument, so one that starts an `.nro`
+with arguments should start
 
 ```
 sdmc:/switch/Dualscreen.nro
