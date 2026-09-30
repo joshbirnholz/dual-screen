@@ -4,6 +4,7 @@
 
 #include "config/paths.hpp"
 #include "config/settings.hpp"
+#include "layout/screen_id.hpp"
 
 namespace ds {
 
@@ -26,6 +27,11 @@ struct GameConfig {
     // whichever layouts offer the choice. Per game like the two above, though
     // it only ever matters while one of those is the one chosen.
     bool screen_gap = true;
+    // Which screen Separate Screens shows on this device when it is on its
+    // own -- and, with a second device connected, which of the two this one
+    // holds. Swapped from the quick menu or with L3, and kept per game, since
+    // which screen a game is played on is a fact about that game.
+    ScreenId separate_screen = ScreenId::Top;
     // What the right stick is read as. Per game because which of the answers a
     // 3DS game wants is a fact about that game -- see RightStickMode -- and
     // there is nothing in a ROM that says which.

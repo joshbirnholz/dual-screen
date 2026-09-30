@@ -64,7 +64,7 @@ std::vector<std::string> layouts_offered_for(const LayoutRegistry& registry,
     // use changes nothing, so one sweep can never see the layout it began on.
     // Neither has to actually be offered on this console -- opening on one
     // that is not just means focus lands on the first tile instead.
-    for (const char* opened_on : {"standard", "vertical"}) {
+    for (const char* opened_on : {"upper_focus", "vertical"}) {
         LayoutPickerState state;
         state.layout_id = opened_on;
         for (float y = 4.0f; y < kHeight; y += 8.0f) {
@@ -678,6 +678,38 @@ void test_the_stylus_button() {
             press(picker, UiAction::Up);
             CHECK(!press(picker, UiAction::Confirm).handedness_changed);
         }
+    }
+}
+
+// Separate Screens puts a swap button where the stylus button goes: tapped or
+// pressed, it asks for the screens to be swapped, never for a hand. Nothing
+// else offers it.
+void test_the_swap_screens_button() {
+    LayoutRegistry registry;
+    for (const char* id : {"upper_on_tv", "vertical", "upper_focus", "horizontal"}) {
+        const bool swaps = std::string(id) == "upper_on_tv";
+        LayoutPickerState state;
+        state.layout_id = id;
+        int swapped = 0;
+        int handed = 0;
+        for (float y = 4.0f; y < kHeight; y += 8.0f) {
+            for (float x = 4.0f; x < kWidth; x += 8.0f) {
+                LayoutPicker picker(registry);
+                open_on(picker, state, MenuSection::Layout);
+                const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
+                if (result.screens_swapped) ++swapped;
+                if (result.handedness_changed) ++handed;
+            }
+        }
+        CHECK_MSG((swapped > 0) == swaps, std::string(id) + (swaps ? " offered no swap button"
+                                                                   : " offered a swap button"));
+        if (swaps) CHECK_MSG(handed == 0, "Separate Screens offered a hand");
+
+        LayoutPicker picker(registry);
+        open_on(picker, state, MenuSection::Layout);
+        press(picker, UiAction::Right);
+        for (int step = 0; step < 6; ++step) press(picker, UiAction::Down);
+        CHECK_EQ(press(picker, UiAction::Confirm).screens_swapped, swaps);
     }
 }
 
@@ -1315,8 +1347,11 @@ void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
     const auto offers = [](const std::vector<std::string>& ids, const std::string& id) {
         return std::find(ids.begin(), ids.end(), id) != ids.end();
     };
-    CHECK_MSG(offers(handheld, "standard"),
-              "a console this app has a picture of stopped offering its own arrangement");
+    // Standard is hidden for now -- kept, but not offered. See Layout::hidden.
+    CHECK_MSG(!offers(handheld, "standard"), "the hidden Standard layout is still offered");
+    for (const char* offered : {"upper_on_tv", "horizontal"}) {
+        CHECK_MSG(offers(handheld, offered), std::string(offered) + " is not offered for a DS");
+    }
 
     // Vertical Screens and Side-by-Side stand in for a DS's hinge, so both are
     // offered there.
@@ -1496,6 +1531,7 @@ int main() {
     test_save_points_only_where_the_core_can_make_them();
     test_the_sections_that_end_something();
     test_the_stylus_button();
+    test_the_swap_screens_button();
     test_hands_are_remembered_per_layout();
     test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape();
     test_the_settings_prompt_is_there_and_is_leftmost();

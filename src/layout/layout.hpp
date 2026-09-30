@@ -194,6 +194,17 @@ struct Layout {
     // the menu. Empty means the press does nothing while this layout is on.
     std::string swap_layout_id;
 
+    // Kept, and still chosen by --layout, but not offered in the menu, and a
+    // game that remembered it starts on Vertical Screens instead. Standard,
+    // for now.
+    bool hidden = false;
+
+    // Whether this layout shows one screen of its own on a device and lets
+    // the player swap which -- Separate Screens. Its menu offers a swap
+    // button where others offer a hand, and L3 swaps rather than moving to
+    // swap_layout_id.
+    bool swaps_screens = false;
+
     // Which systems offer this layout. Empty means every one of them, which is
     // most layouts -- they compose their own screens and fit any console. A
     // layout that only makes sense for one names it here instead of a

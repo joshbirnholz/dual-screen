@@ -1,5 +1,7 @@
 #include "render/button_glyphs.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "render/embedded_assets.hpp"
@@ -98,6 +100,62 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
     return GlyphCell::LetterA;
 }
 
+namespace {
+
+// The swap symbol, drawn here rather than shipped as artwork: two strokes
+// with round ends -- an arrow up on the left, an arrow down on the right --
+// as coverage, smoothed by sampling each pixel sixteen times.
+std::vector<uint8_t> swap_arrows_coverage(int size) {
+    struct Stroke {
+        float x0, y0, x1, y1;
+    };
+    const float up_x = 0.36f;
+    const float down_x = 0.64f;
+    const float top = 0.25f;
+    const float bottom = 0.75f;
+    const float head = 0.13f;
+    const Stroke strokes[] = {
+        {up_x, bottom, up_x, top},
+        {up_x, top, up_x - head, top + head},
+        {up_x, top, up_x + head, top + head},
+        {down_x, top, down_x, bottom},
+        {down_x, bottom, down_x - head, bottom - head},
+        {down_x, bottom, down_x + head, bottom - head},
+    };
+    const float half_width = 0.035f;
+    std::vector<uint8_t> coverage(static_cast<std::size_t>(size) * size, 0);
+    constexpr int kSamples = 4;
+    for (int y = 0; y < size; ++y) {
+        for (int x = 0; x < size; ++x) {
+            int inside = 0;
+            for (int sy = 0; sy < kSamples; ++sy) {
+                for (int sx = 0; sx < kSamples; ++sx) {
+                    const float px = (x + (sx + 0.5f) / kSamples) / size;
+                    const float py = (y + (sy + 0.5f) / kSamples) / size;
+                    for (const Stroke& stroke : strokes) {
+                        const float dx = stroke.x1 - stroke.x0;
+                        const float dy = stroke.y1 - stroke.y0;
+                        const float t = std::clamp(((px - stroke.x0) * dx + (py - stroke.y0) * dy) /
+                                                       (dx * dx + dy * dy),
+                                                   0.0f, 1.0f);
+                        const float ex = px - (stroke.x0 + t * dx);
+                        const float ey = py - (stroke.y0 + t * dy);
+                        if (ex * ex + ey * ey <= half_width * half_width) {
+                            ++inside;
+                            break;
+                        }
+                    }
+                }
+            }
+            coverage[static_cast<std::size_t>(y) * size + x] =
+                static_cast<uint8_t>(inside * 255 / (kSamples * kSamples));
+        }
+    }
+    return coverage;
+}
+
+}  // namespace
+
 bool ButtonGlyphSheet::initialize(std::string* error) {
     DecodedImage image;
     if (!decode_png(assets::kButtonIconsPng, assets::kButtonIconsPng_size, image, error)) {
@@ -123,6 +181,10 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
         stylus_hand_.upload_alpha8(hand_coverage.data(), hand.width, hand.height);
         stylus_hand_.set_linear_filtering(true);
     }
+    constexpr int kSwapSize = 128;
+    const std::vector<uint8_t> arrows = swap_arrows_coverage(kSwapSize);
+    swap_screens_.upload_alpha8(arrows.data(), kSwapSize, kSwapSize);
+    swap_screens_.set_linear_filtering(true);
 
     cell_width_ = image.width / static_cast<int>(GlyphCell::Count);
     cell_height_ = image.height;
@@ -142,6 +204,11 @@ void ButtonGlyphSheet::draw_stylus_hand(QuadRenderer& quads, const PixelRect& re
     // layouts -- so a right hand reads the texture right to left.
     quads.draw_alpha_mask(rect, stylus_hand_, color, left_handed ? 0.0f : 1.0f, 0.0f,
                           left_handed ? 1.0f : 0.0f, 1.0f);
+}
+
+void ButtonGlyphSheet::draw_swap_screens(QuadRenderer& quads, const PixelRect& rect,
+                                         const Color& color) const {
+    if (swap_screens_.valid()) quads.draw_alpha_mask(rect, swap_screens_, color);
 }
 
 float ButtonGlyphSheet::width_for(float height) const {

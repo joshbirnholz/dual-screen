@@ -632,6 +632,7 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, !message.wants_resume_from_save_state ? 0u
                 : message.resume_from_save_state   ? 2u
                                                    : 1u);
+    put_u8(out, message.wants_screen_swap ? 1u : 0u);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -705,6 +706,13 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         if (resume > 2) return false;
         out.wants_resume_from_save_state = resume != 0;
         out.resume_from_save_state = resume == 2;
+    }
+    out.wants_screen_swap = false;
+    if (reader.remaining() > 0) {
+        uint8_t swap = 0;
+        reader.u8(swap);
+        if (swap > 1) return false;
+        out.wants_screen_swap = swap != 0;
     }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);

@@ -848,6 +848,18 @@ void test_companion_can_request_a_layout() {
         CHECK(swapped.handedness == Handedness::Left);
     }
 
+    // Separate Screens' swap: asked for by the companion, done by the host,
+    // and the companion told which screen it now holds.
+    CHECK(companion.granted_screen() == ScreenId::Bottom);
+    companion.request_screen_swap();
+    RequestMessage trade;
+    const bool trade_asked = spin(host, companion, [&] { return host.take_request(trade); });
+    CHECK_MSG(trade_asked && trade.wants_screen_swap, "the screen swap never reached the host");
+    host.set_host_screen(ScreenId::Bottom);
+    CHECK(host.companion_screen() == ScreenId::Top);
+    const bool traded = spin(host, companion, [&] { return companion.granted_screen() == ScreenId::Top; });
+    CHECK_MSG(traded, "the companion was never told it holds the other screen now");
+
     companion.disconnect();
     host.stop();
 }

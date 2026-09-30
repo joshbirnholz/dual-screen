@@ -94,6 +94,8 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.bilinear_filtering = get_bool(document, "bilinear_filtering", config.bilinear_filtering);
     config.render_scale = get_int(document, "render_scale", config.render_scale);
     config.screen_gap = get_bool(document, "screen_gap", config.screen_gap);
+    config.separate_screen =
+        get_string(document, "separate_screen", "top") == "bottom" ? ScreenId::Bottom : ScreenId::Top;
     config.right_stick_mode = right_stick_mode_from_key(
         get_string(document, "right_stick_mode", right_stick_mode_key(config.right_stick_mode)));
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
@@ -139,6 +141,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["bilinear_filtering"] = bilinear_filtering;
     document["render_scale"] = render_scale;
     document["screen_gap"] = screen_gap;
+    document["separate_screen"] = separate_screen == ScreenId::Bottom ? "bottom" : "top";
     document["right_stick_mode"] = right_stick_mode_key(right_stick_mode);
     document["rumble_pak"] = rumble_pak;
     document["resume_from_save_state"] = resume_from_save_state;

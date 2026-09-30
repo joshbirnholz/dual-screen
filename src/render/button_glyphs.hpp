@@ -128,10 +128,13 @@ public:
     // because it is tinted the same way and handed to the same places.
     void draw_stylus_hand(QuadRenderer& quads, const PixelRect& rect, const Color& color,
                           bool left_handed) const;
+    // And Separate Screens' swap button: an arrow up beside an arrow down.
+    void draw_swap_screens(QuadRenderer& quads, const PixelRect& rect, const Color& color) const;
 
 private:
     Texture texture_;
     Texture stylus_hand_;
+    Texture swap_screens_;
     PadGlyphStyle style_ = PadGlyphStyle::Nintendo;
     int cell_width_ = 0;
     int cell_height_ = 0;

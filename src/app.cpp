@@ -419,6 +419,14 @@ struct App::Impl {
     std::unique_ptr<net::HostSession> host_session;
     std::unique_ptr<net::CompanionSession> companion_session;
     ScreenId local_screen = ScreenId::Top;
+    // Which screen Separate Screens shows on this device alone, and which it
+    // holds with a second device connected -- see GameConfig::separate_screen.
+    ScreenId separate_screen = ScreenId::Top;
+    // Swaps it: here, or between the two devices, or -- on a companion --
+    // by asking the host to.
+    void swap_separate_screens();
+    // The screen this device shows in a layout that gives each device one.
+    ScreenId own_separate_screen() const;
     // Which single screen this device is when it is on its own and the
     // console's two are separate pictures -- see SoloScreens. Seeded from
     // Settings::wii_u_screen_alone, where the reasoning lives, and reseeded
@@ -1114,10 +1122,10 @@ Layout App::Impl::device_layout() const {
                         (companion_session &&
                          companion_session->status() == net::CompanionSession::Status::Connected);
     if (!paired) {
+        // Alone, Separate Screens is the one screen the game is being played
+        // on -- swapped with L3 or from the menu, and kept per game.
         if (system_profile(system).solo_screens == SoloScreens::Both) {
-            Layout both = chosen;
-            both.per_device = false;
-            return both;
+            return resolve_for_device(chosen, separate_screen);
         }
         // One screen, whichever the player is watching. Resolved exactly as a
         // paired device resolves its own, so what is drawn and where a touch
@@ -1691,6 +1699,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.handedness_changed) {
                 request_handedness(other_hand(current_handedness()));
             }
+            if (result.screens_swapped) {
+                swap_separate_screens();
+            }
             if (result.screen_gap_toggled) {
                 request_screen_gap(!screen_gap);
             }
@@ -1898,6 +1909,31 @@ void App::Impl::request_layout(const std::string& layout_id) {
         picker->set_selected_layout(active_layout_id);
     }
     log_info("layout: " + active_layout().display_name);
+}
+
+ScreenId App::Impl::own_separate_screen() const {
+    if (is_companion()) return local_screen;
+    if (host_session && host_session->has_companion()) return host_session->host_screen();
+    return separate_screen;
+}
+
+void App::Impl::swap_separate_screens() {
+    const auto other = [](ScreenId screen) { return screen == ScreenId::Top ? ScreenId::Bottom : ScreenId::Top; };
+    if (is_companion()) {
+        companion_session->request_screen_swap();
+        return;  // the host decides; it will tell us
+    }
+    if (host_session && host_session->has_companion()) {
+        // The two devices trade: the companion learns its new screen from the
+        // session state, and each draws the screen it now holds.
+        separate_screen = other(host_session->host_screen());
+        host_session->set_host_screen(separate_screen);
+        local_screen = separate_screen;
+    } else {
+        separate_screen = other(separate_screen);
+    }
+    persist_game_config();
+    log_info(std::string("Separate Screens: this device shows the ") + to_string(separate_screen) + " screen");
 }
 
 void App::Impl::swap_layout() {
@@ -2740,6 +2776,10 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         game_config = GameConfig::load_or_default(paths, settings, rom_sha1, game_title);
         have_game_config = true;
         active_layout_id = game_config.layout_id;
+        separate_screen = game_config.separate_screen;
+        // A layout the menu no longer offers -- Standard, for now -- is not
+        // one to be left on with no way back to it.
+        if (registry.resolve(active_layout_id).hidden) active_layout_id = kNewGameLayoutId;
         bilinear_filtering = game_config.bilinear_filtering;
         render_scale = game_config.render_scale;
         screen_gap = game_config.screen_gap;
@@ -3035,6 +3075,7 @@ void App::Impl::persist_game_config() {
     game_config.bilinear_filtering = bilinear_filtering;
     game_config.render_scale = render_scale;
     game_config.screen_gap = screen_gap;
+    game_config.separate_screen = separate_screen;
     game_config.right_stick_mode = right_stick_mode;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
@@ -3071,6 +3112,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                         solo_screen_swapped = !solo_screen_swapped;
                         update_solo_screen();
                     }
+                } else if (active_layout().swaps_screens) {
+                    // Separate Screens: the other screen, rather than another
+                    // layout.
+                    swap_separate_screens();
                 } else {
                     swap_layout();
                 }
@@ -3538,6 +3583,7 @@ void App::Impl::render() {
         if (state == State::Playing && picker && picker->embedded()) {
             quads.begin_frame(output_width, output_height);
             quads.clear(ui_theme().background);
+            picker->set_preview_screen(own_separate_screen());
             picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
         } else {
             const SystemProfile& profile = system_profile(system);
@@ -3587,6 +3633,7 @@ void App::Impl::render() {
     if (state == State::Menu) {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
+        picker->set_preview_screen(own_separate_screen());
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(show_menu_backdrop);
@@ -4367,6 +4414,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_reset) {
                     impl.request_reset();
+                }
+                if (request.wants_screen_swap && impl.active_layout().swaps_screens) {
+                    impl.swap_separate_screens();
                 }
                 // The companion asking for the menu, and then working it. Both
                 // land on the one picker this device holds, so a press over

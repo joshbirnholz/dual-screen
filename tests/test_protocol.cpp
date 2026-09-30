@@ -310,6 +310,7 @@ void test_request_round_trip() {
     sent.rumble_pak = true;
     sent.wants_resume_from_save_state = true;
     sent.resume_from_save_state = true;
+    sent.wants_screen_swap = true;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -345,18 +346,24 @@ void test_request_round_trip() {
     CHECK_EQ(received.rumble_pak, true);
     CHECK_EQ(received.wants_resume_from_save_state, true);
     CHECK_EQ(received.resume_from_save_state, true);
-    // Without its last byte: nothing asked about resuming.
+    CHECK_EQ(received.wants_screen_swap, true);
+    // From a companion from before Separate Screens' swap: asks for none.
+    RequestMessage unswapped;
+    CHECK(decode_request(payload.data(), payload.size() - 1, unswapped));
+    CHECK_EQ(unswapped.wants_screen_swap, false);
+    CHECK_EQ(unswapped.wants_resume_from_save_state, true);
+    // Without that and the byte before it: nothing asked about resuming.
     RequestMessage shorter;
-    CHECK(decode_request(payload.data(), payload.size() - 1, shorter));
+    CHECK(decode_request(payload.data(), payload.size() - 2, shorter));
     CHECK_EQ(shorter.wants_resume_from_save_state, false);
     CHECK_EQ(shorter.wants_rumble_pak, true);
     // From a companion from before the Rumble Pak: asks nothing about it.
     RequestMessage older;
-    CHECK(decode_request(payload.data(), payload.size() - 2, older));
+    CHECK(decode_request(payload.data(), payload.size() - 3, older));
     CHECK_EQ(older.wants_rumble_pak, false);
     CHECK_EQ(older.wants_left_stick_press, true);
     // And from before the left stick: nothing about that either.
-    CHECK(decode_request(payload.data(), payload.size() - 3, older));
+    CHECK(decode_request(payload.data(), payload.size() - 4, older));
     CHECK_EQ(older.wants_left_stick_press, false);
     CHECK_EQ(older.wants_right_stick_mode, true);
 
@@ -401,29 +408,30 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 24, 1u,
+        {"audio target", 25, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 22, 1u,
+        {"handedness", 23, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 8, 2u,
+        {"right stick mode", 9, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 3, 2u,
+        {"left stick click", 4, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
          }},
-        {"rumble pak", 2, 2u,
+        {"rumble pak", 3, 2u,
          [](const RequestMessage& message) {
              return message.wants_rumble_pak && message.rumble_pak;
          }},
-        {"resume from save state", 1, 2u,
+        {"resume from save state", 2, 2u,
          [](const RequestMessage& message) {
              return message.wants_resume_from_save_state && message.resume_from_save_state;
          }},
+        {"screen swap", 1, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
     };
 
     for (const EnumByte& field : kEnumBytes) {
@@ -462,7 +470,7 @@ void test_request_round_trip() {
     CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
 
     std::vector<uint8_t> impossible(payload);
-    impossible[impossible.size() - 6] = 200;
+    impossible[impossible.size() - 7] = 200;
     RequestMessage refused;
     CHECK_MSG(!decode_request(impossible.data(), impossible.size(), refused),
               "a press no button could have made was accepted");

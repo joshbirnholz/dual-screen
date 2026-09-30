@@ -24,7 +24,8 @@ set(SAVE_FILE "${WORK_DIR}/data/dualscreen/saves/fake.srm")
 # layout id -> expectations passed to check_screenshot. Expectations are joined
 # with '+': a semicolon would split the CMake list itself, and a comma appears
 # inside the crosshair expectations.
-# Every layout the picker offers, in its order. Where a screen lands somewhere
+# Every layout the picker offers, and Standard, which it hides but --layout
+# still shows. Where a screen lands somewhere
 # none of the named regions reach -- the small screen of the two focus layouts --
 # the point is given outright.
 set(CASES
@@ -37,7 +38,10 @@ set(CASES
     "touch_focus|right=green+at=0.216,0.333,blue"
     "vertical|upper=blue+lower=green+topleft=black"
     "side_by_side|left=blue+right=green"
-    "upper_on_tv|upper=blue+lower=green"
+    # Separate Screens with nobody else connected: one screen, the upper one
+    # until it is swapped, filling the window.
+    "upper_on_tv|upper=blue+lower=blue"
+    "horizontal|left=blue+right=green"
 )
 
 set(ANY_FAILED FALSE)

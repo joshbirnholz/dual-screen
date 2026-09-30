@@ -2131,6 +2131,12 @@ void CompanionSession::request_screen_gap(bool include_gap) {
     send_request(request);
 }
 
+void CompanionSession::request_screen_swap() {
+    RequestMessage request;
+    request.wants_screen_swap = true;
+    send_request(request);
+}
+
 void CompanionSession::request_menu_action(MenuAction action) {
     RequestMessage request;
     request.wants_menu_action = true;

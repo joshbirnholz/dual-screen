@@ -1114,6 +1114,12 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                         // stylus stays on the side it was -- see
                         // layout_swap_from().
                         const Layout& from = registry_.resolve(session_.host_layout_id());
+                        // Separate Screens: the two devices trade screens,
+                        // which the host does and then says.
+                        if (from.swaps_screens) {
+                            session_.request_screen_swap();
+                            break;
+                        }
                         const LayoutSwap swap = layout_swap_from(registry_, from);
                         if (swap.layout_id.empty()) break;
                         if (swap.keeps_hand) {
@@ -1610,6 +1616,7 @@ void Client::draw_scene() {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like -- the same as on
         // the other device, because it is the same picker.
+        picker_.set_preview_screen(session_.granted_screen());
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
     } else {

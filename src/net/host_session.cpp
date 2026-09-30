@@ -554,6 +554,9 @@ void HostSession::set_host_screen(ScreenId screen) {
     if (companion != companion_screen_) {
         companion_screen_ = companion;
         session_state_dirty_ = true;
+        // The companion now wants the other screen, whole and at once --
+        // Separate Screens' swap.
+        resend_screens_ = true;
         refresh_beacon();
     }
     config_.host_screen = screen;
@@ -884,6 +887,9 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             }
             if (have_request_ && !request.wants_reset && request_.wants_reset) {
                 request.wants_reset = true;
+            }
+            if (have_request_ && !request.wants_screen_swap && request_.wants_screen_swap) {
+                request.wants_screen_swap = true;
             }
             if (have_request_ && !request.wants_screen_gap && request_.wants_screen_gap) {
                 request.wants_screen_gap = true;

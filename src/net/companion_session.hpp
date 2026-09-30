@@ -619,6 +619,8 @@ public:
     bool host_wants_motion() const { return host_wants_motion_; }
 
     void request_screen_gap(bool include_gap);
+    // Separate Screens' swap: asks the host to trade the two devices' screens.
+    void request_screen_swap();
 
     // Stands in for a frame that arrived in pieces and never completed, which
     // is the one thing a test on a loopback link cannot make happen for real

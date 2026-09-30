@@ -62,7 +62,7 @@ without choosing anything.
 | entry | what it shows or does |
 | --- | --- |
 | **Continue** | back to the game, the same as B |
-| **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
+| **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Vertical Screens. Under Separate Screens the same place has an ↑↓ button instead, which swaps the screens |
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
 | **Save Sync** | this game's page in [Data Management](#data-management), to sync its save with another device or go back to an earlier one (DS). Leaving the page comes back to this menu |
@@ -87,14 +87,28 @@ under its names — that list is what this app is trying to be.
 A game starts in **Vertical Screens** the first time it is played, and after
 that in whatever it was last played in.
 
-| id | what it shows |
-| --- | --- |
-| `standard` | both screens inside a drawing of the console itself |
-| `upper_focus` | the upper screen large, the touch screen small in the corner |
-| `touch_focus` | the touch screen large, the upper screen small in the corner |
-| `vertical` | the DS's arrangement without the console around it |
-| `side_by_side` | held sideways: both screens turned a quarter turn |
-| `upper_on_tv` | one screen per device, each filling its own display |
+In the menu's order:
+
+| id | name | what it shows |
+| --- | --- | --- |
+| `vertical` | Vertical Screens | the DS's arrangement without the console around it |
+| `upper_focus` | Upper Screen Focus | the upper screen large, the touch screen small in the corner |
+| `touch_focus` | Touch Screen Focus | the touch screen large, the upper screen small in the corner |
+| `upper_on_tv` | Separate Screens | one screen per device, each filling its own display — and alone, one screen and nothing else |
+| `side_by_side` | Side-by-Side Screens | held sideways: both screens turned a quarter turn |
+| `horizontal` | Horizontal Screens | both screens upright at the same size, next to each other |
+
+`standard` — both screens inside a drawing of the console itself — is still
+there, and `--layout standard` still shows it, but it is hidden from the menu
+for now, and a game that remembered it starts on Vertical Screens instead.
+
+**Separate Screens** with nobody else connected shows just one screen, filling
+the display: the one to watch in a game where only one of the two matters. The
+↑↓ button beside the layouts swaps which, and so does **L3** while playing
+(with Left Stick Click set to swap, or **F3** on a keyboard); each game
+remembers which screen it was last shown on. With a second device connected
+it is one screen on each, and the same swap trades them between the two —
+from either device.
 
 The arrangements are measured off the Wii U's own output rather than eyeballed:
 the sizes, the gaps and the alignments all come from its Screen Settings shots.
@@ -104,14 +118,14 @@ and the other top-aligned.
 
 The two focus layouts are the same pair of screens with the emphasis reversed,
 and which one you want changes with what the game is doing, so **L3** swaps
-between them while playing — no menu, no pause — keeping whichever hand the
+between them while playing (under Separate Screens it swaps the screens instead) — no menu, no pause — keeping whichever hand the
 stylus is set for: a left-handed focus layout swaps to the other one
 left-handed too. On a DS that is one of two
 things L3 can be: **Left Stick Click** under Options in the quick menu chooses
 between that and holding the DS's microphone, for games that ask to be blown
 into. Like everything else on that menu it is the host's, and both devices'
 L3 follow it while they are connected. L3 does nothing under any other
-layout, and like everything else on that menu it is one choice for both devices:
+layout but Separate Screens, and like everything else on that menu it is one choice for both devices:
 pressing it on the companion asks the host, the same as picking the layout from
 the menu would. **F3** does the same from a keyboard.
 
@@ -120,8 +134,8 @@ the touch screen is under whichever hand holds the stylus. It is one toggle
 rather than a left-handed twin of every layout, and it turns the sideways
 screens the other way too.
 
-`vertical` and the two focus layouts have a **Gap** toggle in the menu, on by
-default, for the space between their screens. Side-by-Side is the one
+`vertical`, `horizontal` and the two focus layouts have a **Gap** toggle in
+the menu, on by default, for the space between their screens. Side-by-Side is the one
 exception — its gap stands in for the DS's own hinge, so it stays fixed —
 but everywhere else, screens flush against each other are a real option, not
 a broken one, so the gap is left up to the player. The layout previews update
@@ -588,7 +602,7 @@ trip, how long the send queue held things, keyframes and pieces asked for).
 
 If a companion still cannot keep up, in order of how much they buy:
 
-1. **Use the Upper Screen on TV layout.** One screen per device rather than
+1. **Use the Separate Screens layout.** One screen per device rather than
    both on each: half the bandwidth, immediately.
 2. **Get it onto a wire.** A USB Ethernet adapter in a Switch's dock is 100
    Mbit/s with none of the jitter, and needs nothing from this app — it is the

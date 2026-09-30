@@ -281,8 +281,10 @@ void test_game_config_round_trip() {
     CHECK_EQ(fresh.screen_gap, false);
     CHECK(fresh.right_stick_mode == RightStickMode::CirclePad);
     CHECK_STR_EQ(fresh.rom_sha1, sha1);
+    CHECK(fresh.separate_screen == ScreenId::Top);
 
     fresh.layout_id = "side_by_side";
+    fresh.separate_screen = ScreenId::Bottom;
     // Deliberately the opposite of the default, so a reload that quietly fell
     // back to the default would be visible rather than looking like a pass.
     fresh.bilinear_filtering = false;
@@ -295,6 +297,7 @@ void test_game_config_round_trip() {
     // Reloading gives back what was saved, not the defaults.
     const GameConfig reloaded = GameConfig::load_or_default(paths, settings, sha1, "Test Game");
     CHECK_STR_EQ(reloaded.layout_id, "side_by_side");
+    CHECK(reloaded.separate_screen == ScreenId::Bottom);
     CHECK_EQ(reloaded.bilinear_filtering, false);
     CHECK_EQ(reloaded.render_scale, 3);
     CHECK_EQ(reloaded.screen_gap, true);

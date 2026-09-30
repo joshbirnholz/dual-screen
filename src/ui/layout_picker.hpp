@@ -38,6 +38,9 @@ struct LayoutPickerResult {
     bool cursor_mode_changed = false;
     // Which hand holds the stylus was toggled, mirroring the handed layouts.
     bool handedness_changed = false;
+    // Separate Screens' swap button was pressed: the caller swaps which
+    // screen this device shows -- see Layout::swaps_screens.
+    bool screens_swapped = false;
     // The render scale was cycled. Like the pointer, it belongs to this device
     // alone -- it is a setting on the core, and only one device runs one.
     bool render_scale_changed = false;
@@ -221,6 +224,10 @@ public:
     // with it and a menu whose entries differed would put the two cursors on
     // different things.
     void set_session_active(bool active);
+    // Which screen this device shows in a layout that gives each device one
+    // -- Separate Screens -- so its tile shows that screen alone. Each
+    // device's own, rather than shared menu state.
+    void set_preview_screen(ScreenId screen) { preview_screen_ = screen; }
     // Whether a confirmation is up, which the app needs to know: while one is,
     // the menu is not what the player is answering.
     bool awaiting_confirmation() const { return confirm_ != MenuConfirm::None; }
@@ -432,6 +439,7 @@ private:
     void ask(MenuConfirm confirm);
     bool confirming() const { return confirm_ != MenuConfirm::None; }
     int tile_count() const { return static_cast<int>(tiles_.size()); }
+    ScreenId preview_screen_ = ScreenId::Top;
     // The layout behind a tile, and where a layout's tile is. Everything that
     // counts or numbers tiles goes through these rather than through the
     // registry, because not every layout is offered on every console.
@@ -459,6 +467,10 @@ private:
     // Whether the layout in use has a hand to choose -- see
     // layout_has_handedness(). Hidden, and passed over, where not.
     bool hand_button_usable() const;
+    // Or, in the same place, Separate Screens' button that swaps the screens.
+    bool swap_button_usable() const;
+    // Whichever of the two the layout in use has, if either.
+    bool corner_button_usable() const { return hand_button_usable() || swap_button_usable(); }
     bool slot_filled(int slot) const;
     void activate_section(LayoutPickerResult& result);
     void activate_item(LayoutPickerResult& result);

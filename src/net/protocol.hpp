@@ -275,6 +275,9 @@ struct RequestMessage {
     // see SessionStateMessage::resume_from_save_state.
     bool wants_resume_from_save_state = false;
     bool resume_from_save_state = false;
+    // Separate Screens' swap: the two devices trade screens. One-shot, like
+    // the reset above -- the result is SessionState's companion_screen.
+    bool wants_screen_swap = false;
 };
 
 struct RejectMessage {

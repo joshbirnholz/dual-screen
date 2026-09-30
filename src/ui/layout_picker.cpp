@@ -29,7 +29,7 @@ void LayoutPicker::rebuild_tiles() {
         return;
     }
     for (std::size_t index = 0; index < registry_->size(); ++index) {
-        if (layout_fits_system(registry_->at(index), system_, screens_)) {
+        if (!registry_->at(index).hidden && layout_fits_system(registry_->at(index), system_, screens_)) {
             tiles_.push_back(index);
         }
     }
@@ -197,7 +197,7 @@ bool LayoutPicker::has_section(MenuSection section) const {
 
 int LayoutPicker::content_count(MenuSection section) const {
     switch (section) {
-        case MenuSection::Layout: return tile_count() + (hand_button_usable() ? 1 : 0);
+        case MenuSection::Layout: return tile_count() + (corner_button_usable() ? 1 : 0);
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint: return kSavePointSlots;
         case MenuSection::Options: return static_cast<int>(options_.size());
@@ -232,6 +232,10 @@ int LayoutPicker::grid_count(MenuSection section) const {
 
 bool LayoutPicker::hand_button_usable() const {
     return tile_count() > 0 && layout_has_handedness(registry_->resolve(selected_layout_id_));
+}
+
+bool LayoutPicker::swap_button_usable() const {
+    return tile_count() > 0 && registry_->resolve(selected_layout_id_).swaps_screens;
 }
 
 std::string LayoutPicker::footer_label(Footer kind) const {
@@ -646,8 +650,13 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
     switch (section_) {
         case MenuSection::Layout: {
             if (item_ == tile_count()) {
-                // The stylus button: the caller swaps hands and says so.
-                if (hand_button_usable()) result.handedness_changed = true;
+                // The stylus button: the caller swaps hands and says so. Or,
+                // for Separate Screens, the screens.
+                if (swap_button_usable()) {
+                    result.screens_swapped = true;
+                } else if (hand_button_usable()) {
+                    result.handedness_changed = true;
+                }
                 return;
             }
             if (item_ >= tile_count()) return;
@@ -948,6 +957,8 @@ Layout LayoutPicker::resolved_layout_for_preview(const Layout& layout) const {
     Layout resolved = resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap),
                                              handedness_of(layout.id));
     resolved.fill_display = fill_display_;
+    // A screen of each device's own: this one's, alone.
+    if (resolved.per_device) resolved = resolve_for_device(resolved, preview_screen_);
     return resolved;
 }
 
@@ -1076,7 +1087,7 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
     // layout tile, and mirrored to show which hand the layout in use is
     // for. Not there at all where that layout has no hand to choose.
     const PixelRect& square = geometry.hand_button;
-    if (square.w <= 0.0f || !hand_button_usable()) return;
+    if (square.w <= 0.0f || !corner_button_usable()) return;
     const bool focused = on_content_ && item_ == tile_count();
     const float border = menu_border(scale);
     // Under the cursor its background takes a wash of white and the symbol
@@ -1088,6 +1099,14 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
         quads.draw_solid(square, wash);
     }
     quads.draw_outline(square, theme.text, border);
+    if (swap_button_usable()) {
+        // Separate Screens' swap button, in the same place.
+        glyphs.draw_swap_screens(quads,
+                                 PixelRect{square.x + border, square.y + border, square.w - border * 2.0f,
+                                           square.h - border * 2.0f},
+                                 theme.text);
+        return;
+    }
     glyphs.draw_stylus_hand(quads,
                             PixelRect{square.x + border, square.y + border,
                                       square.w - border * 2.0f, square.h - border * 2.0f},

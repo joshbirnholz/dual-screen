@@ -28,6 +28,9 @@ constexpr float kFocusMargin = 8.0f / 378.0f;        // 0.021
 // Vertical: two 126 x 94 screens 18 px apart, 3 px clear of a 212-tall picture.
 constexpr float kVerticalGap = 18.0f / 94.0f;        // 0.19 of a screen's height
 constexpr float kVerticalMargin = 3.0f / 212.0f;     // 0.014
+// Horizontal Screens: the same 18 px between the same 126 px wide screens,
+// measured along the row instead.
+constexpr float kHorizontalGap = 18.0f / 126.0f;     // 0.143 of a screen's width
 
 // Side-by-Side: two 154 x 204 screens 32 px apart, 4 px clear top and bottom.
 // The gap is measured against the same edge of the screen either way -- the one
@@ -78,14 +81,14 @@ LayoutComposition make_composition(LayoutAxis axis,
 
 }  // namespace
 
-const char* LayoutRegistry::fallback_id() { return "standard"; }
+const char* LayoutRegistry::fallback_id() { return "vertical"; }
 
 std::string LayoutRegistry::migrated_id(const std::string& id) {
     // The layout set was replaced wholesale with the Wii U's. These are the old
     // ids, mapped to whichever new layout is closest, so a game that already
     // remembered one does not silently jump back to the default.
     if (id == "vertical_swapped") return "vertical";
-    if (id == "horizontal" || id == "horizontal_swapped") return "side_by_side";
+    if (id == "horizontal_swapped") return "horizontal";
     if (id == "split_devices") return "upper_on_tv";
     if (id == "top_only") return "upper_focus";
     if (id == "bottom_only") return "touch_focus";
@@ -98,71 +101,9 @@ LayoutRegistry::LayoutRegistry() {
     // a left-handed variant there are one layout here plus a handedness toggle,
     // rather than two entries that differ only in which corner a screen is in.
 
-    // 0. Both screens arranged the way the console itself arranges them, inside
-    // a picture of it where there is one. The shape, the screen positions and
-    // whether there is any artwork all come from the system being played, so
-    // this entry says only that it is that layout.
-    {
-        Layout layout;
-        layout.id = "standard";
-        layout.display_name = "Standard";
-        layout.uses_console_frame = true;
-        // A Wii U's two screens are not one picture the way a DS's or a
-        // 3DS's are, and it no longer has both available to compose here at
-        // all -- see tv_only/gamepad_only below and docs/cemu-integration.md.
-        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
-        layouts_.push_back(layout);
-    }
-
-    // 1. The upper screen as large as it goes, the touch screen small beside it.
-    // The small one sits at the bottom, where the touch screen is on a DS and
-    // where a thumb can reach it; the two are bottom-aligned as a result.
-    {
-        Layout layout;
-        layout.id = "upper_focus";
-        layout.display_name = "Upper Screen Focus";
-        layout.composition = make_composition(
-            LayoutAxis::Horizontal,
-            {
-                make_item(ScreenId::Top),
-                make_item(ScreenId::Bottom, kFocusSmallScale, CrossAlign::End),
-            },
-            kFocusGap, kFocusMargin);
-        // A player's choice like Vertical Screens' below -- closing it just
-        // brings the small screen flush against the large one, which is a
-        // real arrangement rather than a broken one. See
-        // LayoutComposition::gap_toggleable.
-        layout.composition.gap_toggleable = true;
-        // L3 flips between the two focus layouts -- see Layout::swap_layout_id.
-        layout.swap_layout_id = "touch_focus";
-        // See "standard" above: a Wii U never has both screens to compose.
-        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
-        layouts_.push_back(layout);
-    }
-
-    // 2. The other way round: the touch screen large, the upper one small. That
-    // one sits at the top, again where it belongs on a DS, so this pair is
-    // top-aligned where the last was bottom-aligned.
-    {
-        Layout layout;
-        layout.id = "touch_focus";
-        layout.display_name = "Touch Screen Focus";
-        layout.composition = make_composition(
-            LayoutAxis::Horizontal,
-            {
-                make_item(ScreenId::Top, kFocusSmallScale, CrossAlign::Start),
-                make_item(ScreenId::Bottom),
-            },
-            kFocusGap, kFocusMargin);
-        layout.composition.gap_toggleable = true;
-        layout.swap_layout_id = "upper_focus";
-        // See "standard" above: a Wii U never has both screens to compose.
-        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
-        layouts_.push_back(layout);
-    }
-
-    // 3. The DS's own arrangement without the console around it, so both screens
-    // are as large as stacking them allows.
+    // 1. The DS's own arrangement without the console around it, so both screens
+    // are as large as stacking them allows. First, and what a new game starts
+    // on -- see kNewGameLayoutId.
     {
         Layout layout;
         layout.id = "vertical";
@@ -185,7 +126,80 @@ LayoutRegistry::LayoutRegistry() {
         layouts_.push_back(layout);
     }
 
-    // 4. The console held sideways, which turns both screens a quarter turn.
+    // 2. The upper screen as large as it goes, the touch screen small beside it.
+    // The small one sits at the bottom, where the touch screen is on a DS and
+    // where a thumb can reach it; the two are bottom-aligned as a result.
+    {
+        Layout layout;
+        layout.id = "upper_focus";
+        layout.display_name = "Upper Screen Focus";
+        layout.composition = make_composition(
+            LayoutAxis::Horizontal,
+            {
+                make_item(ScreenId::Top),
+                make_item(ScreenId::Bottom, kFocusSmallScale, CrossAlign::End),
+            },
+            kFocusGap, kFocusMargin);
+        // A player's choice like Vertical Screens' below -- closing it just
+        // brings the small screen flush against the large one, which is a
+        // real arrangement rather than a broken one. See
+        // LayoutComposition::gap_toggleable.
+        layout.composition.gap_toggleable = true;
+        // L3 flips between the two focus layouts -- see Layout::swap_layout_id.
+        layout.swap_layout_id = "touch_focus";
+        // See "standard" below: a Wii U never has both screens to compose.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
+        layouts_.push_back(layout);
+    }
+
+    // 3. The other way round: the touch screen large, the upper one small. That
+    // one sits at the top, again where it belongs on a DS, so this pair is
+    // top-aligned where the last was bottom-aligned.
+    {
+        Layout layout;
+        layout.id = "touch_focus";
+        layout.display_name = "Touch Screen Focus";
+        layout.composition = make_composition(
+            LayoutAxis::Horizontal,
+            {
+                make_item(ScreenId::Top, kFocusSmallScale, CrossAlign::Start),
+                make_item(ScreenId::Bottom),
+            },
+            kFocusGap, kFocusMargin);
+        layout.composition.gap_toggleable = true;
+        layout.swap_layout_id = "upper_focus";
+        // See "standard" below: a Wii U never has both screens to compose.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
+        layouts_.push_back(layout);
+    }
+
+    // 4. One screen on each device -- and, alone, one screen and nothing else,
+    // whichever the game is played on: a game where only one of the two
+    // matters is played without the other in the way. Which one is swapped
+    // from the quick menu (the button where a hand is chosen elsewhere) or
+    // with L3, and kept per game -- see GameConfig::separate_screen. With a
+    // second device connected, the swap trades the two devices' screens.
+    // Bottom left in a menu of three columns, where it was asked to be.
+    {
+        Layout layout;
+        layout.id = "upper_on_tv";  // its id from when it was "Upper Screen on TV"
+        layout.display_name = "Separate Screens";
+        layout.per_device = true;
+        layout.composition = make_composition(
+            LayoutAxis::Vertical,
+            {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
+            kVerticalGap, kVerticalMargin);
+        layout.composition.gap_toggleable = true;
+        layout.swaps_screens = true;
+        // A Wii U's own per-device split is Cemu keeping one screen to itself
+        // and this app only ever holding the other -- see tv_only/gamepad_only
+        // below -- rather than this app resolving a two-screen layout down to
+        // one side of it.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
+        layouts_.push_back(layout);
+    }
+
+    // 5. The console held sideways, which turns both screens a quarter turn.
     // Right-handed turns them anticlockwise and leaves the touch screen on the
     // right; the left-handed mirror falls out of resolve_for_handedness().
     {
@@ -207,30 +221,41 @@ LayoutRegistry::LayoutRegistry() {
         layouts_.push_back(layout);
     }
 
-    // 5. One screen on each device. With nobody on the other end it falls back
-    // to showing both stacked, since half a game is not useful.
+    // 6. Both screens at the same size, side by side and upright -- the
+    // touch screen on the right, or on the left for a left hand. Spaced like
+    // Vertical Screens when the gap is on, flush when it is off.
     {
         Layout layout;
-        layout.id = "upper_on_tv";
-        layout.display_name = "Upper Screen on TV";
-        layout.per_device = true;
+        layout.id = "horizontal";
+        layout.display_name = "Horizontal Screens";
         layout.composition = make_composition(
-            LayoutAxis::Vertical,
+            LayoutAxis::Horizontal,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
-            kVerticalGap, kVerticalMargin);
-        // Alone, this is Vertical Screens -- the same two screens stacked --
-        // so the gap is the same choice it is there. Split between two
-        // devices each has one screen and no gap to have.
+            kHorizontalGap, kVerticalMargin);
         layout.composition.gap_toggleable = true;
-        // A Wii U's own per-device split is Cemu keeping one screen to itself
-        // and this app only ever holding the other -- see tv_only/gamepad_only
-        // below -- rather than this app resolving a two-screen layout down to
-        // one side of it.
         layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
 
-    // 6. The television alone, filling whatever is showing it -- one device or
+    // 7. Both screens arranged the way the console itself arranges them, inside
+    // a picture of it where there is one. Hidden for now -- see Layout::hidden
+    // -- but kept whole, to be offered again by clearing that. The shape, the screen positions and
+    // whether there is any artwork all come from the system being played, so
+    // this entry says only that it is that layout.
+    {
+        Layout layout;
+        layout.id = "standard";
+        layout.display_name = "Standard";
+        layout.uses_console_frame = true;
+        layout.hidden = true;
+        // A Wii U's two screens are not one picture the way a DS's or a
+        // 3DS's are, and it no longer has both available to compose here at
+        // all -- see tv_only/gamepad_only below and docs/cemu-integration.md.
+        layout.systems = {SystemId::Ds, SystemId::ThreeDs};
+        layouts_.push_back(layout);
+    }
+
+    // 8. The television alone, filling whatever is showing it -- one device or
     // two. Only a Wii U has a screen that is ever the whole of the game rather
     // than half of one, so only a Wii U offers this.
     {
@@ -245,7 +270,7 @@ LayoutRegistry::LayoutRegistry() {
         layouts_.push_back(layout);
     }
 
-    // 7. The GamePad alone, the same way -- the other half of the same idea.
+    // 9. The GamePad alone, the same way -- the other half of the same idea.
     {
         Layout layout;
         layout.id = "gamepad_only";

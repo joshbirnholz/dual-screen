@@ -34,13 +34,13 @@ bool placed_screen(const Layout& layout,
 
 void test_registry_contents() {
     const LayoutRegistry registry;
-    // The Wii U Virtual Console's own Screen Settings, in its order, followed
-    // by TV Only and GamePad Only -- not part of that console's own menu, so
-    // appended rather than interleaved. The order is part of the point: it is
-    // the list this app is trying to be.
-    const char* const expected[] = {"standard",   "upper_focus", "touch_focus",
-                                    "vertical",   "side_by_side", "upper_on_tv",
-                                    "tv_only",    "gamepad_only"};
+    // Vertical Screens first, as a new game starts on it; the two focus
+    // layouts beside it; Separate Screens bottom left of a menu of three
+    // columns, then Side-by-Side and Horizontal. Standard is kept but hidden
+    // (see Layout::hidden), and TV Only and GamePad Only are a Wii U's.
+    const char* const expected[] = {"vertical",     "upper_focus", "touch_focus", "upper_on_tv",
+                                    "side_by_side", "horizontal",  "standard",    "tv_only",
+                                    "gamepad_only"};
     CHECK_EQ(registry.size(), sizeof(expected) / sizeof(expected[0]));
     for (std::size_t index = 0; index < registry.size(); ++index) {
         CHECK_STR_EQ(registry.at(index).id, expected[index]);
@@ -64,8 +64,14 @@ void test_registry_contents() {
     // Ids from before the layout set was replaced land on the nearest new one
     // rather than dropping the player back to the default.
     CHECK_STR_EQ(registry.resolve("split_devices").id, "upper_on_tv");
-    CHECK_STR_EQ(registry.resolve("horizontal").id, "side_by_side");
-    CHECK_STR_EQ(registry.resolve("horizontal_swapped").id, "side_by_side");
+    CHECK_STR_EQ(registry.resolve("horizontal").id, "horizontal");
+    CHECK_STR_EQ(registry.resolve("horizontal_swapped").id, "horizontal");
+    // Only Standard is hidden, and only Separate Screens swaps its screens.
+    for (const Layout& layout : registry.layouts()) {
+        CHECK_EQ(layout.hidden, layout.id == "standard");
+        CHECK_EQ(layout.swaps_screens, layout.id == "upper_on_tv");
+    }
+    CHECK_STR_EQ(registry.find("upper_on_tv")->display_name, "Separate Screens");
     CHECK_STR_EQ(registry.resolve("vertical_swapped").id, "vertical");
     CHECK_STR_EQ(registry.resolve("top_only").id, "upper_focus");
     CHECK_STR_EQ(registry.resolve("bottom_only").id, "touch_focus");
@@ -79,10 +85,10 @@ void test_registry_contents() {
 // stacked, or a console drawn face on, are the same either way round.
 void test_which_layouts_have_a_hand() {
     LayoutRegistry registry;
-    for (const char* id : {"upper_focus", "touch_focus", "side_by_side"}) {
+    for (const char* id : {"upper_focus", "touch_focus", "side_by_side", "horizontal"}) {
         CHECK_MSG(layout_has_handedness(*registry.find(id)), std::string(id) + " has no hand");
     }
-    for (const char* id : {"standard", "vertical"}) {
+    for (const char* id : {"standard", "vertical", "upper_on_tv"}) {
         CHECK_MSG(!layout_has_handedness(*registry.find(id)),
                   std::string(id) + " claims a hand it does not have");
     }
