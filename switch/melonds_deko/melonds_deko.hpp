@@ -43,6 +43,10 @@ void gfx_read_screens(uint32_t* out);
 // Forgets the frame gfx_read_screens() is holding, so the next one it hands
 // over is the one just run rather than one from before a load or a reset.
 void gfx_reset_readback();
+// Waits for the GPU to finish everything asked of it so far -- before a
+// frame is emulated, since the renderers reuse memory the frame before may
+// still be drawing from. See the definition.
+void gfx_wait_for_gpu();
 
 // Save states, which melonDS writes through a file: Platform::OpenLocalFile()
 // and Platform::OpenFile() answer this name with a stream in memory instead.

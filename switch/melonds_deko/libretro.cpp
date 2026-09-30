@@ -401,6 +401,7 @@ RETRO_API void retro_run(void) {
     if (!g_loaded) return;
     g_state_current = 0;
     apply_input();
+    gfx_wait_for_gpu();
     NDS::RunFrame();
     gfx_read_screens(g_framebuffer);
     if (g_video != nullptr) g_video(g_framebuffer, kWidth, kHeight, kWidth * sizeof(uint32_t));

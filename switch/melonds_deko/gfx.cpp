@@ -137,6 +137,8 @@ struct ReadbackTimes {
     uint64_t wait_ticks = 0;
     uint64_t worst_wait_ticks = 0;
     uint64_t convert_ticks = 0;
+    uint64_t idle_ticks = 0;
+    uint64_t worst_idle_ticks = 0;
 } g_times;
 constexpr uint64_t kTimesEvery = 600;
 
@@ -255,6 +257,25 @@ void gfx_deinit() {
 
 void gfx_reset_readback() { g_pending_slot = -1; }
 
+void gfx_wait_for_gpu() {
+    // The renderers assume the GPU has finished with a frame before the next
+    // one is emulated. A texture the game changes is dropped from the 3D
+    // renderer's cache and its image handed straight to the next texture
+    // uploaded, and that upload must not land while the frame before is
+    // still drawing with the old one -- which is what the game's graphics
+    // coming out with the wrong textures, on this device and the one it
+    // streams to alike, turned out to be. melonDS's own frontend never runs
+    // two frames without a display refresh between them, which leaves the GPU
+    // time to finish; this program can, when it runs a frame or two back to
+    // back to catch up, so here it waits. Almost always for nothing: frames
+    // are paced, and by the time the next one is due the GPU is long idle.
+    const uint64_t start = armGetSystemTick();
+    Gfx::EmuQueue.waitIdle();
+    const uint64_t idle = armGetSystemTick() - start;
+    g_times.idle_ticks += idle;
+    g_times.worst_idle_ticks = std::max(g_times.worst_idle_ticks, idle);
+}
+
 void gfx_read_screens(uint32_t* out) {
     auto* renderer = static_cast<GPU2D::DekoRenderer*>(GPU::GPU2D_Renderer.get());
     const int front = GPU::FrontBuffer;
@@ -314,7 +335,9 @@ void gfx_read_screens(uint32_t* out) {
         log_info("melonDS (deko3d): each frame waited " + ms_text(ticks_ms(g_times.wait_ticks) / frames) +
                  " ms for the GPU (at worst " + ms_text(ticks_ms(g_times.worst_wait_ticks)) +
                  " ms) and took " + ms_text(ticks_ms(g_times.convert_ticks) / frames) +
-                 " ms to convert");
+                 " ms to convert; the GPU was still busy with the frame before for " +
+                 ms_text(ticks_ms(g_times.idle_ticks) / frames) + " ms on average (at worst " +
+                 ms_text(ticks_ms(g_times.worst_idle_ticks)) + " ms)");
         g_times = {};
     }
 }
