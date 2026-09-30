@@ -3486,15 +3486,20 @@ void App::Impl::render() {
         quads.clear(compositor.style().background);
     }
 
-    // Settings gets the same blurred backdrop as the menu it was opened from,
-    // when that is where it was opened from: the game is still paused behind
-    // it either way, and a Settings reached from the Launcher has no game
-    // frame to blur at all.
+    // Every page over a game has the same background as the quick menu: the
+    // game, paused, blurred and darkened. A page with no game behind it has
+    // the app's own background -- and a page opened from the menu of a game
+    // that has since ended is one of those: what was there is gone, and a
+    // picture of it would say otherwise.
+    const bool game_behind =
+        local_game() != nullptr || companion_session != nullptr ||
+        (system == SystemId::WiiU && external_source && external_source->running());
     const bool show_menu_backdrop =
-        state == State::Menu ||
-        ((state == State::Settings || state == State::DataManagement) &&
-         settings_came_from == State::Menu) ||
-        (state == State::Controllers && controllers_came_from == State::Menu);
+        game_behind &&
+        (state == State::Menu || state == State::Message ||
+         ((state == State::Settings || state == State::DataManagement) &&
+          settings_came_from == State::Menu) ||
+         (state == State::Controllers && controllers_came_from == State::Menu));
     if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is
         // exactly the frame underneath it -- and taken again when that frame
@@ -3525,6 +3530,7 @@ void App::Impl::render() {
         data_screen->set_over_game(show_menu_backdrop);
         data_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
+        message.set_over_game(show_menu_backdrop);
         message.render(quads, text, button_glyphs, width, height);
     } else if (state == State::ResumeNotice ||
                (state == State::Companion && companion_session &&

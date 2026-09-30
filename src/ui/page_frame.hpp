@@ -63,13 +63,14 @@ inline Color page_rule_color() {
     return rule;
 }
 
-// The page's ground: the app's background, or, over a paused game, a scrim
-// that lets the game show through.
+// The page's ground: the app's background -- or, over a paused game, nothing,
+// since the app has already put the game down behind the page blurred and
+// darkened (see MenuBackdrop), exactly as it does behind the quick menu, and
+// every page over a game looks the same as that.
 inline void draw_page_background(QuadRenderer& quads, float output_width, float output_height,
                                  bool over_game = false) {
-    const UiTheme& theme = ui_theme();
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
-                     over_game ? theme.scrim : theme.background);
+    if (over_game) return;
+    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, ui_theme().background);
 }
 
 // The heading: the title at the left -- after `title_indent`, where a page

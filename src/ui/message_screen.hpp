@@ -24,6 +24,9 @@ public:
               const std::vector<std::string>& details = {});
     void clear();
     bool is_visible() const { return visible_; }
+    // Over a paused game, which shows through blurred; otherwise on the app's
+    // own background. See draw_page_background().
+    void set_over_game(bool over_game) { over_game_ = over_game; }
 
     const std::string& title() const { return title_; }
 
@@ -46,6 +49,7 @@ public:
 
 private:
     bool visible_ = false;
+    bool over_game_ = false;
     MessageKind kind_ = MessageKind::Info;
     std::string title_;
     std::string body_;

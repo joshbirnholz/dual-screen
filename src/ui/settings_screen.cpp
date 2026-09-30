@@ -279,7 +279,7 @@ void SettingsScreen::render(QuadRenderer& quads,
     // Over the paused game, dimmed, when opened from its menu; on the app's
     // own background otherwise, since there is nothing behind it to dim.
     draw_page_background(quads, output_width, output_height, over_game_);
-    draw_page_header(quads, text, frame, "Settings", "Left/Right changes a value");
+    draw_page_header(quads, text, frame, "Settings");
 
     // Everything below the heading scrolls, so everything below the heading is
     // clipped to the room there is for it. Without this a row pushed past the

@@ -65,9 +65,9 @@ void MessageScreen::render(QuadRenderer& quads,
     const float scale = frame.scale;
     const float line = frame.line;
 
-    // Drawn over whatever is already on screen: fatal messages sit on a cleared
-    // frame, a warning sits over the running game.
-    draw_page_background(quads, output_width, output_height, true);
+    // Over the paused game, like every page, when there is one; on the app's
+    // own background when there is not.
+    draw_page_background(quads, output_width, output_height, over_game_);
 
     // A bar in front of the title in the colour of what kind of message it is.
     const Color accent = (kind_ == MessageKind::Error) ? theme.danger : theme.accent;
