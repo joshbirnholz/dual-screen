@@ -575,6 +575,7 @@ public:
     bool host_rumble_pak() const { return host_rumble_pak_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
     bool host_save_points_available() const { return host_save_points_available_; }
+    bool host_save_sync_available() const { return host_save_sync_available_; }
     // Resume from Save State: offered, on, and whether the host has just
     // resumed that way and is waiting under the popup that says so -- see
     // SessionStateMessage::resume_notice.
@@ -1088,6 +1089,7 @@ private:
     bool host_rumble_pak_ = false;
     bool host_cursor_shown_ = true;
     bool host_save_points_available_ = false;
+    bool host_save_sync_available_ = false;
     bool host_resume_choosable_ = false;
     bool host_resume_from_save_state_ = false;
     bool host_resume_notice_ = false;

@@ -558,6 +558,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_rumble_pak_ = state.rumble_pak;
             host_cursor_shown_ = state.cursor_shown;
             host_save_points_available_ = state.save_points_available;
+            host_save_sync_available_ = state.save_sync_available;
             host_resume_choosable_ = state.resume_choosable;
             host_resume_from_save_state_ = state.resume_from_save_state;
             host_resume_notice_ = state.resume_notice;

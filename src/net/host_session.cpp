@@ -591,6 +591,7 @@ void HostSession::set_session_state(const SharedState& state) {
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
         state.save_points_available != shared_.save_points_available ||
+        state.save_sync_available != shared_.save_sync_available ||
         state.resume_choosable != shared_.resume_choosable ||
         state.resume_from_save_state != shared_.resume_from_save_state ||
         state.resume_notice != shared_.resume_notice ||
@@ -1209,6 +1210,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;
+        state.save_sync_available = shared_.save_sync_available;
         state.resume_choosable = shared_.resume_choosable;
         state.resume_from_save_state = shared_.resume_from_save_state;
         state.resume_notice = shared_.resume_notice;

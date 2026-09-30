@@ -62,6 +62,8 @@ struct LayoutPickerResult {
     // The same for the Controllers screen -- a Wii U's, which is the one
     // console whose controllers are each somebody's.
     bool controllers_requested = false;
+    // And for this game's page in Data Management.
+    bool save_sync_requested = false;
     // A save point slot to save into or to load, already confirmed where
     // that throws something away: the caller does it, and hands the slots
     // back with set_save_slots(). -1 for none. Loading is also the end of
@@ -146,6 +148,9 @@ struct LayoutPickerState {
     // LibretroCore::has_save_states(). Never for a Wii U, whose emulator is not
     // ours to ask.
     bool save_points_available = false;
+    // Whether the game has a save that Data Management can sync: a DS game
+    // played on the device holding the menu. Adds Save Sync.
+    bool save_sync_available = false;
     // Whether the game starts where it was left, from a save state kept up to
     // date while it plays, and whether that is on offer at all: only where
     // save states are. See GameConfig::resume_from_save_state.
@@ -188,6 +193,10 @@ enum class MenuSection : uint8_t {
     // First in the list, but numbered last: it came last, and the numbers
     // travel.
     Continue = 7,
+    // This game's page in Data Management. Past the last number a focus
+    // byte has room for, so it travels as a number of its own -- see
+    // LayoutPicker::kSaveSyncFocus.
+    SaveSync = 8,
 };
 
 // The quick menu. On a DS or a 3DS, two columns: the sections down the left
@@ -224,7 +233,11 @@ public:
     // A DS or 3DS focus: `section` on the left, or its `item` on the right.
     // Sections are 32 apart, so a focus fits the byte it travels in.
     static constexpr int kSectionStride = 32;
+    // Save Sync's focus: the last number Continue's stride holds, which no
+    // item of Continue's -- it has none -- will ever need.
+    static constexpr int kSaveSyncFocus = 255;
     static int focus_of(MenuSection section, int item = -1) {
+        if (section == MenuSection::SaveSync) return kSaveSyncFocus;
         return static_cast<int>(section) * kSectionStride + (item >= 0 ? item + 1 : 0);
     }
     MenuSection section() const { return section_; }

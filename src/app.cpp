@@ -723,6 +723,9 @@ struct App::Impl {
     // off the disk here and handed to the menu -- this device's, and the
     // companion's copy of it -- with one line about the last save.
     bool save_points_available() const;
+    // A DS game played here, whose save Data Management can sync: Save Sync
+    // on the quick menu.
+    bool save_sync_available() const;
     void refresh_save_points(const std::string& status = std::string(), bool failed = false);
     void make_save_point(int slot);
     void load_save_point(int slot);
@@ -1485,6 +1488,10 @@ void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
     }
 }
 
+bool App::Impl::save_sync_available() const {
+    return save_store && local_game() && source && !game_path.empty() && system == SystemId::Ds;
+}
+
 bool App::Impl::save_points_available() const {
     return source && !game_path.empty() && system_profile(system).offers_save_states &&
            source->supports_save_states();
@@ -1717,6 +1724,10 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 // The host's own screen, the same as Settings below: only it
                 // can see every controller on both devices.
                 open_controllers();
+            } else if (result.save_sync_requested) {
+                // The game's own page, on the device whose save it is --
+                // like Settings, whichever pad asked.
+                if (!is_companion() && save_sync_available()) open_data_management();
             } else if (result.settings_requested) {
                 // The settings belong to the device running the game, whichever
                 // pad asked: half of what they show is where this machine's
@@ -1781,6 +1792,8 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.save_points_available = is_companion()
                                              ? companion_session->host_save_points_available()
                                              : save_points_available();
+    picker_state.save_sync_available =
+        is_companion() ? companion_session->host_save_sync_available() : save_sync_available();
     picker_state.reset_available = system_profile(system).offers_reset;
     picker_state.smoothing_available = system_profile(system).offers_smoothing;
     picker->set_screens(screens_geometry(), system);
@@ -2386,8 +2399,13 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
         return;
     }
     if (result.close_requested) {
-        // Back to the main menu, which is where it is opened from.
-        open_launcher();
+        // Back to where it was opened from: the quick menu during a game,
+        // the main menu otherwise.
+        if (local_game() && source) {
+            set_menu_open(true);
+        } else {
+            open_launcher();
+        }
     }
 }
 
@@ -4113,6 +4131,7 @@ int App::run(const AppOptions& options) {
             shared.rumble_choosable = impl.source && impl.source->offers_rumble_pak();
             shared.rumble_pak = impl.source && impl.source->rumble_pak();
             shared.save_points_available = impl.save_points_available();
+            shared.save_sync_available = impl.save_sync_available();
             shared.resume_choosable = impl.save_points_available();
             shared.resume_from_save_state = impl.resume_in_effect();
             shared.resume_notice = impl.state == Impl::State::ResumeNotice;

@@ -142,10 +142,10 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.left_handed_layouts ==
           std::vector<std::string>({"upper_focus", "side_by_side"}));
-    // (The left stick's, the Rumble Pak's and resuming's two bytes go after
-    // the list, so a host from before the list stops four bytes earlier
-    // still.)
-    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 4;
+    // (The left stick's, the Rumble Pak's, resuming's two and Save Sync's
+    // bytes go after the list, so a host from before the list stops five
+    // bytes earlier still.)
+    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 5;
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes, received_state));
     CHECK(received_state.left_handed_layouts == std::vector<std::string>({"upper_on_tv"}));
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes - 1, received_state));
@@ -165,7 +165,7 @@ void test_welcome_and_session_round_trip() {
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK_EQ(received_state.left_stick_choosable, true);
         CHECK(received_state.left_stick_press == press);
-        CHECK(decode_session_state(payload.data(), payload.size() - 4, received_state));
+        CHECK(decode_session_state(payload.data(), payload.size() - 5, received_state));
         CHECK_EQ(received_state.left_stick_choosable, false);
         CHECK(received_state.left_handed_layouts ==
               std::vector<std::string>({"upper_focus", "side_by_side"}));
@@ -183,8 +183,9 @@ void test_welcome_and_session_round_trip() {
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK_EQ(received_state.rumble_choosable, true);
         CHECK_EQ(received_state.rumble_pak, in);
-        // Without the three bytes after it: the resume option and its popup.
-        CHECK(decode_session_state(payload.data(), payload.size() - 3, received_state));
+        // Without the bytes after it: the resume option, its popup and Save
+        // Sync.
+        CHECK(decode_session_state(payload.data(), payload.size() - 4, received_state));
         CHECK_EQ(received_state.rumble_choosable, false);
         CHECK_EQ(received_state.left_stick_choosable, true);
     }
@@ -215,6 +216,17 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(received_state.resume_choosable, false);
     CHECK_EQ(received_state.resume_from_save_state, false);
     CHECK_EQ(received_state.resume_notice, false);
+
+    // Save Sync, last of all, and none from a host from before it.
+    CHECK_EQ(received_state.save_sync_available, false);
+    state.save_sync_available = true;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK_EQ(received_state.save_sync_available, true);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK_EQ(received_state.save_sync_available, false);
 }
 
 // Everything a companion can ask the host for travels in one message, each

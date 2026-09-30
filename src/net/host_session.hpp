@@ -192,6 +192,7 @@ public:
         bool rumble_pak = false;
         bool cursor_shown = true;
         bool save_points_available = false;
+        bool save_sync_available = false;
         // See SessionStateMessage::resume_choosable and resume_notice.
         bool resume_choosable = false;
         bool resume_from_save_state = false;

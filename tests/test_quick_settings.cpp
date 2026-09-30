@@ -412,6 +412,7 @@ void test_the_sections_come_in_order() {
     state.layout_id = "standard";
     state.session_active = true;
     state.save_points_available = true;
+    state.save_sync_available = true;
 
     LayoutPicker picker(registry);
     picker.open(state);
@@ -421,6 +422,7 @@ void test_the_sections_come_in_order() {
 
     const MenuSection expected[] = {MenuSection::Continue,      MenuSection::Layout,
                                     MenuSection::CreateSavePoint, MenuSection::LoadSavePoint,
+                                    MenuSection::SaveSync,
                                     MenuSection::Options,       MenuSection::Disconnect,
                                     MenuSection::Reset,         MenuSection::Quit};
     for (const MenuSection section : expected) {
@@ -434,10 +436,12 @@ void test_the_sections_come_in_order() {
     LayoutPickerState bare = state;
     bare.session_active = false;
     bare.save_points_available = false;
+    bare.save_sync_available = false;
     bare.reset_available = false;
     LayoutPicker lean(registry);
     lean.open(bare);
     for (const MenuSection gone : {MenuSection::CreateSavePoint, MenuSection::LoadSavePoint,
+                                   MenuSection::SaveSync,
                                    MenuSection::Disconnect, MenuSection::Reset}) {
         lean.set_focus(LayoutPicker::focus_of(gone));
         CHECK_MSG(lean.section() == MenuSection::Continue,
@@ -449,6 +453,32 @@ void test_the_sections_come_in_order() {
     CHECK(lean.section() == MenuSection::Options);
     lean.update({UiAction::Down}, {}, kWidth, kHeight);
     CHECK(lean.section() == MenuSection::Quit);
+}
+
+// Save Sync asks for the game's page in Data Management, the way Options'
+// Settings asks for its screen, and its focus -- a number of its own, past
+// what the sections' stride fits in a byte -- survives the trip to the other
+// device.
+void test_save_sync_asks_for_the_game_page() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = "standard";
+    state.save_sync_available = true;
+
+    LayoutPicker picker(registry);
+    open_on(picker, state, MenuSection::SaveSync);
+    CHECK(picker.section() == MenuSection::SaveSync);
+    CHECK_EQ(picker.focus(), LayoutPicker::kSaveSyncFocus);
+    CHECK(picker.focus() <= 255);
+    const LayoutPickerResult result = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(result.save_sync_requested);
+    CHECK(!result.close_requested);
+    CHECK(!picker.on_content());
+
+    LayoutPicker other(registry);
+    other.show(state, picker.focus(), MenuConfirm::None);
+    CHECK(other.section() == MenuSection::SaveSync);
+    CHECK(!other.on_content());
 }
 
 // Moving between the list and what it shows: right (or A) goes across, onto
@@ -1457,6 +1487,7 @@ int main() {
     test_the_menu_reopens_on_the_section_it_was_closed_on();
     test_the_layout_swap_keeps_the_stylus_hand();
     test_the_sections_come_in_order();
+    test_save_sync_asks_for_the_game_page();
     test_moving_between_the_list_and_what_it_shows();
     test_loading_a_save_point_asks_first();
     test_saving_asks_only_before_overwriting();

@@ -289,6 +289,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     // And again: 0 when not offered, 1 off, 2 on.
     put_u8(out, !message.resume_choosable ? 0u : message.resume_from_save_state ? 2u : 1u);
     put_u8(out, message.resume_notice ? 1u : 0u);
+    put_u8(out, message.save_sync_available ? 1u : 0u);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -901,6 +902,12 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         uint8_t notice = 0;
         reader.u8(notice);
         out.resume_notice = notice != 0;
+    }
+    out.save_sync_available = false;
+    if (reader.remaining() > 0) {
+        uint8_t save_sync = 0;
+        reader.u8(save_sync);
+        out.save_sync_available = save_sync != 0;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

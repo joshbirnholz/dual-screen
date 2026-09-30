@@ -354,6 +354,9 @@ struct SessionStateMessage {
     // a popup that says so, for somebody to press OK. The companion shows
     // the same popup, and its OK is sent over as MenuAction::Confirm.
     bool resume_notice = false;
+    // Whether the menu offers Save Sync: the host's game has a save its Data
+    // Management can sync. Last, and optional: from an older host, none.
+    bool save_sync_available = false;
 };
 
 struct FrameMessage {

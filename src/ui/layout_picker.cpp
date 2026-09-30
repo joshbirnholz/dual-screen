@@ -144,6 +144,7 @@ void LayoutPicker::rebuild_footer() {
         sections_.push_back(MenuSection::CreateSavePoint);
         sections_.push_back(MenuSection::LoadSavePoint);
     }
+    if (state_.save_sync_available) sections_.push_back(MenuSection::SaveSync);
     sections_.push_back(MenuSection::Options);
     if (state_.session_active) sections_.push_back(MenuSection::Disconnect);
     if (state_.reset_available) sections_.push_back(MenuSection::Reset);
@@ -200,6 +201,7 @@ int LayoutPicker::content_count(MenuSection section) const {
         case MenuSection::LoadSavePoint: return kSavePointSlots;
         case MenuSection::Options: return static_cast<int>(options_.size());
         case MenuSection::Continue:
+        case MenuSection::SaveSync:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: break;
@@ -312,6 +314,7 @@ const char* section_label(MenuSection section) {
         case MenuSection::Layout: return "Screen Layout";
         case MenuSection::CreateSavePoint: return "Create Save State";
         case MenuSection::LoadSavePoint: return "Load Save State";
+        case MenuSection::SaveSync: return "Save Sync";
         case MenuSection::Options: return "Options";
         case MenuSection::Disconnect: return "Disconnect";
         case MenuSection::Reset: return "Reset Game";
@@ -415,6 +418,7 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             break;
         }
         case MenuSection::Continue:
+        case MenuSection::SaveSync:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: break;
@@ -435,6 +439,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.left_stick_choosable != state_.left_stick_choosable ||
                                  state.rumble_choosable != state_.rumble_choosable ||
                                  state.save_points_available != state_.save_points_available ||
+                                 state.save_sync_available != state_.save_sync_available ||
                                  state.resume_choosable != state_.resume_choosable ||
                                  state.reset_available != state_.reset_available ||
                                  state.smoothing_available != state_.smoothing_available;
@@ -468,8 +473,9 @@ void LayoutPicker::set_focus(int focus) {
         return;
     }
     if (focus < 0) return;
-    const auto section = static_cast<MenuSection>(focus / kSectionStride);
-    const int item = focus % kSectionStride - 1;
+    const auto section =
+        focus == kSaveSyncFocus ? MenuSection::SaveSync : static_cast<MenuSection>(focus / kSectionStride);
+    const int item = focus == kSaveSyncFocus ? -1 : focus % kSectionStride - 1;
     if (!has_section(section) || item >= content_count(section)) return;
     section_ = section;
     on_content_ = item >= 0;
@@ -576,6 +582,10 @@ void LayoutPicker::activate_section(LayoutPickerResult& result) {
         case MenuSection::Continue:
             if (!state_.embedded) result.close_requested = true;
             break;
+        // The caller puts the page up, the way it does Settings.
+        case MenuSection::SaveSync:
+            if (state_.save_sync_available) result.save_sync_requested = true;
+            break;
         // Not asked about: unlike resetting or quitting, reconnecting is a
         // menu away and costs nothing but the walk back.
         case MenuSection::Disconnect:
@@ -635,6 +645,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             }
             return;
         case MenuSection::Continue:
+        case MenuSection::SaveSync:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: return;
@@ -1209,6 +1220,7 @@ void LayoutPicker::render(QuadRenderer& quads,
             // Nothing to choose between, so nothing on the right: these are
             // only things to pick.
             case MenuSection::Continue:
+            case MenuSection::SaveSync:
             case MenuSection::Disconnect:
             case MenuSection::Reset:
             case MenuSection::Quit: break;

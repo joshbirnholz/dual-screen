@@ -65,6 +65,7 @@ without choosing anything.
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Standard and Vertical Screens |
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
+| **Save Sync** | this game's page in [Data Management](#data-management), to sync its save with another device or go back to an earlier one (DS). Leaving the page comes back to this menu |
 | **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
@@ -1200,7 +1201,9 @@ to date with every other device found: each game's newest save goes to the
 device without it, including games only the other device has, and a game
 both have changed since they last matched is asked about, one at a time.
 
-Choosing one opens its page, laid out like the Switch's save data cloud page:
+Choosing one opens its page, laid out like the Switch's save data cloud page.
+During a game, **Save Sync** on the quick menu opens that game's page directly,
+and leaving it goes back to the menu:
 
 - **Sync with _device_** gets or sends the save, whichever leaves the newest
   on both, without asking — unless both have changed since they last matched,
