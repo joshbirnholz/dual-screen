@@ -59,11 +59,7 @@ void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus
     focus_ = 0;
     settings_ = settings;
     cores_ = cores;
-    system_dir_candidates_ = candidate_system_dirs(paths_);
-    if (std::find(system_dir_candidates_.begin(), system_dir_candidates_.end(),
-                  settings_.system_dir) == system_dir_candidates_.end()) {
-        system_dir_candidates_.insert(system_dir_candidates_.begin(), settings_.system_dir);
-    }
+    scroll_ = 0.0f;
     refresh_bios();
 }
 
@@ -107,9 +103,9 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
 
     const float bios_top = core_top + core_height + line * 0.6f;
-    const float bios_height = std::max(line * 3.0f, line * (1.6f + 1.1f * static_cast<float>(
-                                                                       std::max<std::size_t>(
-                                                                           bios_.size(), 1))));
+    // Exactly what is drawn there -- a heading and one line per file -- so
+    // the page ends where its last line does and the scroll bar with it.
+    const float bios_height = line * (1.6f + 1.1f * static_cast<float>(bios_.size()));
     geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w, bios_height};
     // Measured from the top of the content rather than from the panel, so it
     // is the height of the thing being scrolled and not of the window onto it.
@@ -119,25 +115,6 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
 
 void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
     switch (static_cast<Row>(focus_)) {
-        case Row::DataManagement:
-            // A page of its own, opened rather than stepped through: only a
-            // press opens it, not left or right.
-            if (direction == 0) result.data_management_requested = true;
-            break;
-        case Row::SystemDir: {
-            if (system_dir_candidates_.empty()) break;
-            const auto it = std::find(system_dir_candidates_.begin(), system_dir_candidates_.end(),
-                                      settings_.system_dir);
-            int index = (it == system_dir_candidates_.end())
-                            ? 0
-                            : static_cast<int>(std::distance(system_dir_candidates_.begin(), it));
-            const int count = static_cast<int>(system_dir_candidates_.size());
-            index = ((index + direction) % count + count) % count;
-            settings_.system_dir = system_dir_candidates_[static_cast<std::size_t>(index)];
-            refresh_bios();
-            result.settings_changed = true;
-            break;
-        }
 #ifndef __SWITCH__
         case Row::PadGlyphs: {
             // Three values, so this one steps rather than flips -- and it
@@ -174,9 +151,6 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
             result.settings_changed = true;
             break;
-        case Row::Back:
-            result.close_requested = true;
-            break;
         case Row::Count:
             break;
     }
@@ -186,6 +160,17 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
     const std::size_t index = static_cast<std::size_t>(
         std::max(0, std::min(focus_, kRowCount - 1)));
     if (index >= geometry.rows.size()) {
+        return;
+    }
+    // The first row shows the top of the page, and the last the bottom of it
+    // -- the emulators and BIOS files under the rows -- so the cursor alone
+    // reaches everything, and the scroll bar ends where the page does.
+    if (focus_ == 0) {
+        scroll_ = 0.0f;
+        return;
+    }
+    if (focus_ == kRowCount - 1) {
+        scroll_ = geometry.max_scroll();
         return;
     }
     const PixelRect& row = geometry.rows[index];
@@ -217,7 +202,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::Left: adjust(-1, result); break;
             case UiAction::Right: adjust(1, result); break;
             case UiAction::Confirm:
-                adjust(focus_ == static_cast<int>(Row::DataManagement) ? 0 : 1, result);
+                adjust(1, result);
                 break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
@@ -251,7 +236,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
         for (std::size_t index = 0; index < settled.rows.size(); ++index) {
             if (tapped(pointer, settled.rows[index])) {
                 focus_ = static_cast<int>(index);
-                adjust(focus_ == static_cast<int>(Row::DataManagement) ? 0 : 1, result);
+                adjust(1, result);
             }
         }
     }
@@ -292,23 +277,20 @@ void SettingsScreen::render(QuadRenderer& quads,
                              geometry.panel.y + geometry.panel.h - view_top});
 
     const std::string rows[kRowCount][2] = {
-        {"Data Management", ""},
-        {"BIOS / system folder", settings_.system_dir},
 #ifndef __SWITCH__
-        {"Button prompts", to_string(settings_.pad_glyphs)},
+        {"Controller icons", to_string(settings_.pad_glyphs)},
         // Drawn as the two buttons themselves, below.
         {"Confirm/Cancel", ""},
 #endif
-        {"Streaming, when the link is uneven", video::to_string(settings_.video_hold)},
+        {"Streaming quality", video::to_string(settings_.video_hold)},
         {"Run ahead to hide a DS game's lag",
          settings_.run_ahead_ds == 0
              ? std::string("Off")
              : std::to_string(settings_.run_ahead_ds) +
                    (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
-        {"Wait for vsync", settings_.vsync ? "On" : "Off"},
+        {"Vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",
          to_string(settings_.wii_u_screen_alone)},
-        {"Back", ""},
     };
 
     for (int index = 0; index < kRowCount; ++index) {
@@ -381,24 +363,17 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     // BIOS file inventory.
     float pen_y = geometry.bios_panel.y;
-    text.draw(quads, "DS BIOS and firmware files found in that folder", geometry.bios_panel.x, pen_y,
+    text.draw(quads, "DS BIOS and firmware files", geometry.bios_panel.x, pen_y,
               scale, theme.text);
     pen_y += line * 1.6f;
 
-    const float column_width = geometry.bios_panel.w * 0.5f;
-    int column = 0;
-    float column_top = pen_y;
     for (const BiosFileStatus& status : bios_) {
-        const float x = geometry.bios_panel.x + column * column_width;
+        const float x = geometry.bios_panel.x;
         const std::string mark = status.present ? "[found]   " : "[missing] ";
         const Color color = status.present ? theme.success
                                            : (status.required ? theme.danger : theme.text_dim);
         text.draw(quads, mark + status.filename, x, pen_y, scale * 0.9f, color);
         pen_y += line * 1.1f;
-        if (pen_y > geometry.bios_panel.y + geometry.bios_panel.h - line * 2.0f && column == 0) {
-            column = 1;
-            pen_y = column_top;
-        }
     }
 
     // Everything above scrolled and was clipped to the panel. The footnote and

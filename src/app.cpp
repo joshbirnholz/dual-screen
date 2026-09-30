@@ -371,9 +371,6 @@ struct App::Impl {
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
     std::unique_ptr<DataManagementScreen> data_screen;
-    // Where Data Management was opened from -- Settings or the main menu --
-    // which is where it goes back to.
-    State data_came_from = State::Settings;
     // What the popup over a paused game says: that it was resumed, or that
     // Data Management restarted it on another save.
     std::string game_notice = kResumedNotice;
@@ -679,8 +676,6 @@ struct App::Impl {
     // from the main menu and, now, from a game's own menu -- and on a host,
     // possibly because the other device asked.
     void open_settings();
-    // Settings again, as it was left for Data Management.
-    void return_to_settings();
     void open_data_management();
     void apply_data_management_result(const DataManagementResult& result);
     // What to do about whatever that screen just decided -- called for a press
@@ -2343,12 +2338,6 @@ void App::Impl::open_settings() {
     log_info("the settings screen is up");
 }
 
-void App::Impl::return_to_settings() {
-    settings_screen->open(settings, resolve_core_statuses(options, settings));
-    state = State::Settings;
-    input.set_game_input_enabled(false);
-}
-
 void App::Impl::open_data_management() {
     if (!save_store) return;
     if (!data_screen) {
@@ -2365,7 +2354,6 @@ void App::Impl::open_data_management() {
     if (local_game() && source && system == SystemId::Ds && save_store->find_for_rom(game_path, info)) {
         game_id = info.game_id;
     }
-    data_came_from = state == State::Launcher ? State::Launcher : State::Settings;
     data_screen->open(game_id);
     state = State::DataManagement;
     input.set_game_input_enabled(false);
@@ -2397,11 +2385,8 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
         return;
     }
     if (result.close_requested) {
-        if (data_came_from == State::Launcher) {
-            open_launcher();
-        } else {
-            return_to_settings();
-        }
+        // Back to the main menu, which is where it is opened from.
+        open_launcher();
     }
 }
 
@@ -2433,10 +2418,6 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         if (source && system == SystemId::Ds) {
             source->set_run_ahead(settings.run_ahead_ds);
         }
-    }
-    if (result.data_management_requested) {
-        open_data_management();
-        return;
     }
     if (result.close_requested) {
         if (settings_came_from == State::Menu && local_game()) {

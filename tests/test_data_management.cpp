@@ -24,8 +24,10 @@ using namespace ds;
 
 namespace {
 
-constexpr uint16_t kQueryPort = 47943;
-constexpr uint16_t kExchangePort = 47944;
+// Below 32768, out of the range the system hands out for outgoing connections
+// -- see test_save_exchange.cpp.
+constexpr uint16_t kQueryPort = 29943;
+constexpr uint16_t kExchangePort = 29944;
 constexpr const char* kGameId = "AMCE-01-0-1a2b";
 
 std::string make_sandbox() {

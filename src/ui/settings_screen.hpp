@@ -30,14 +30,12 @@ std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir);
 struct SettingsScreenResult {
     bool close_requested = false;
     bool settings_changed = false;
-    // The Data Management row was chosen.
-    bool data_management_requested = false;
 };
 
 // Shows where the app is looking for the core and the BIOS files, and lets the
 // few settings that can be changed without a keyboard be changed with a pad.
-// Paths themselves are edited in settings.json; this screen cycles between
-// directories that actually exist, which is what a controller can do usefully.
+// Paths are edited in settings.json; the BIOS folder is the default one unless
+// that file names another.
 class SettingsScreen {
 public:
     explicit SettingsScreen(const AppPaths& paths) : paths_(paths) {}
@@ -80,10 +78,9 @@ private:
     // its menus confirm on A like every other Switch menu -- see
     // App::Impl::apply_button_style().
     enum class Row {
-        // First: of everything here, the one thing that is a place rather
-        // than a value.
-        DataManagement,
-        SystemDir,
+        // Every row is a value. Data Management is on the main menu, and
+        // leaving is the cancel button's -- a row that only did that would
+        // be a second way to do something already on the controller.
 #ifndef __SWITCH__
         PadGlyphs,
         ConfirmButtonRow,
@@ -92,7 +89,6 @@ private:
         RunAheadDs,
         Vsync,
         WiiUScreenAlone,
-        Back,
         Count
     };
     static constexpr int kRowCount = static_cast<int>(Row::Count);
@@ -121,7 +117,6 @@ private:
     AppPaths paths_;
     Settings settings_;
     std::vector<CoreStatus> cores_;
-    std::vector<std::string> system_dir_candidates_;
     std::vector<BiosFileStatus> bios_;
     int focus_ = 0;
     bool open_ = false;

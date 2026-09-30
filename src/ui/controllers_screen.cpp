@@ -47,13 +47,17 @@ ControllersScreen::Geometry ControllersScreen::compute_geometry(float output_wid
     const float row_height = menu_row_height(line);
     const float step = row_height + menu_row_gap(line);
     const float gap = line * 1.2f;
+    geometry.content_height = row_count * step + (gap_before >= 0 ? gap : 0.0f);
+    // Short of the scroll bar when there is one, which runs beside the rows.
+    const bool scrolls = geometry.content_height > geometry.view_bottom - geometry.view_top + 0.5f;
+    const float row_width =
+        geometry.panel.w - (scrolls ? scroll_bar_width(geometry.scale) + line * 0.6f : 0.0f);
     for (int index = 0; index < row_count; ++index) {
         const float before = (gap_before >= 0 && index >= gap_before) ? gap : 0.0f;
         geometry.rows.push_back(
             PixelRect{geometry.panel.x, geometry.view_top - scroll_ + index * step + before,
-                      geometry.panel.w, row_height});
+                      row_width, row_height});
     }
-    geometry.content_height = row_count * step + (gap_before >= 0 ? gap : 0.0f);
     return geometry;
 }
 
@@ -296,6 +300,15 @@ void ControllersScreen::render(QuadRenderer& quads,
                   TextAlign::Right);
     }
     quads.clear_clip();
+    // Only when the list runs past its window, and measured from what it holds.
+    {
+        const float view = geometry.view_bottom - geometry.view_top;
+        if (geometry.content_height > view + 0.5f) {
+            draw_scroll_bar(quads, PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w, view},
+                            scroll_ / geometry.content_height, view / geometry.content_height, line,
+                            scale);
+        }
+    }
     if (pads.empty()) {
         text.draw(quads, "No controllers found", geometry.panel.x,
                   geometry.view_bottom + line * 0.4f, scale * 0.9f, theme.text_dim);

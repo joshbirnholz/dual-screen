@@ -22,10 +22,13 @@ using namespace ds::net;
 
 namespace {
 
-constexpr uint16_t kDeckQueryPort = 47923;
-constexpr uint16_t kDeckExchangePort = 47924;
-constexpr uint16_t kSwitchQueryPort = 47933;
-constexpr uint16_t kSwitchExchangePort = 47934;
+// Below 32768, where the system never hands out a port for an outgoing
+// connection: a port in that range can be taken, at random, by another test's
+// connection at the moment this one wants to listen on it.
+constexpr uint16_t kDeckQueryPort = 29923;
+constexpr uint16_t kDeckExchangePort = 29924;
+constexpr uint16_t kSwitchQueryPort = 29933;
+constexpr uint16_t kSwitchExchangePort = 29934;
 constexpr const char* kGameId = "AMCE-01-0-1a2b";
 
 std::string make_sandbox() {
@@ -178,7 +181,7 @@ int main() {
 
     // Nobody there.
     SaveDevice nobody = deck_device;
-    nobody.port = 47999;
+    nobody.port = 29999;
     CHECK(!ask_save_status(nobody, "ds", kGameId, status, &error));
 
     deck.service.stop();

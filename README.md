@@ -628,7 +628,7 @@ is too long. What keeps it short:
   game's own rate shows one frame per refresh whatever happens, so the extra
   frame a Wi-Fi hiccup leaves queued would otherwise stay queued for the rest
   of the session. It is caught up on by letting one frame go unseen. How
-  promptly depends on **Streaming, when the link is uneven** in Settings:
+  promptly depends on **Streaming quality** in Settings:
   Responsive does it at once, Balanced (the default) after two frames, and
   Smooth after six.
 - **A tap quicker than a frame still counts.** A press and release that both
@@ -1109,7 +1109,7 @@ Full options:
 | Turn the pointer off entirely | **Pointer**, under **Options** in the quick menu |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
-| Change how button prompts are drawn | **Button prompts** in Settings: Nintendo letters, PlayStation symbols, Xbox letters, or **Positional** -- four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
+| Change how button prompts are drawn | **Controller icons** in Settings: Nintendo letters, PlayStation symbols, Xbox letters, or **Positional** -- four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
 | Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
 
 ### If it quits immediately in Game Mode
@@ -1185,7 +1185,7 @@ folder.
 
 ### Data Management
 
-**Data Management**, on the main menu and as the first row of **Settings**,
+**Data Management**, on the main menu,
 lists every DS save on this device with the game's own icon, title and
 publisher, read from the ROM, newest first. **X Sync All** brings every game up
 to date with every other device found: each game's newest save goes to the
@@ -1224,10 +1224,7 @@ by the game itself (the code, version and checksum in the ROM's header), so a
 renamed ROM still finds its save, and different regions stay separate.
 
 A resume point holds the save as it was, so replacing, restoring or deleting a
-save deletes the game's resume point too — and asks first. Opened from the
-quick menu during a game, Data Management goes straight to that game's page;
-getting, restoring or deleting its save there restarts the game on the new
-one.
+save deletes the game's resume point too — and asks first.
 
 A Switch keeps its saves as `<game>.srm` too now, like melonDS DS; a
 `<game>.sav` from before is renamed the first time the game starts.
@@ -1380,8 +1377,9 @@ a hand, once.
 See **Wii U games** above. It replaces `wii_u_screen_alone`, which is no
 longer read: every file that has it was written with the old version's guess
 from the machine's shape, whether or not anybody had chosen it. Paths are edited here
-rather than in the app: an on-screen keyboard is not something V1 builds. The Settings screen cycles between BIOS folders that
-actually exist and reports what it finds in them.
+rather than in the app: an on-screen keyboard is not something V1 builds. The BIOS folder
+is the default one above unless `system_dir` names another, and the Settings screen
+reports what it finds in it.
 
 ## How it fits together
 
