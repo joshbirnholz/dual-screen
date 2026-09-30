@@ -135,8 +135,8 @@ bool find_bios(std::string* missing) {
 // -- for telling whether a problem in a game is the JIT's. Off is much
 // slower: most 3D games will not keep up without it. pipeline=0 hands each
 // frame over as soon as the GPU has drawn it rather than a frame later, the
-// way melonDS's own app shows them. (cpu_mhz, in the same file, is read by the
-// app, which sets the clock.)
+// way melonDS's own app shows them. (cpu_mhz and gpu_alone, in the same file,
+// are read by the app: it sets the clock and does its own drawing.)
 constexpr const char* kTuningPath = "/switch/dualscreen/melonds.ini";
 
 void apply_tuning() {
@@ -163,7 +163,7 @@ void apply_tuning() {
                 fastmem = on;
             } else if (key == "pipeline") {
                 pipeline = on;
-            } else if (key == "cpu_mhz") {
+            } else if (key == "cpu_mhz" || key == "gpu_alone") {
                 // The app's.
             } else {
                 log_warn("melonDS (deko3d): " + std::string(kTuningPath) + " has a " + key +

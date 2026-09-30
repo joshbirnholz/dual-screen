@@ -269,7 +269,11 @@ cpu_mhz=1020   # the CPU clock while playing; 1785 unless this says otherwise
 jit=0          # the JIT off (most 3D games then run well below full speed)
 fastmem=0      # the JIT's fast memory off
 pipeline=0     # each frame shown as soon as it is drawn, not a frame later
+gpu_alone=1    # the app's own drawing finished before each frame of the game
 ```
+
+`pipeline=0` and `gpu_alone=1` together keep the emulator's GPU work and the
+app's from ever running at the same time.
 
 Every line is optional. The game log says what is in use when a game starts.
 

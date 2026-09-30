@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -20,6 +21,28 @@
 
 namespace ds {
 namespace {
+
+#ifdef __SWITCH__
+// gpu_alone=1 in /switch/dualscreen/melonds.ini: the GPU finishes drawing this
+// app's own screens before each frame of the game is run, so the emulator's
+// GPU work never shares the GPU with the app's. For finding out whether the
+// two running side by side is what spoils a DS game's graphics on the Switch,
+// where melonDS's own app -- which draws almost nothing of its own -- shows
+// the same game cleanly. Costs the time the app's drawing takes, every frame.
+bool gpu_alone_asked() {
+    std::FILE* file = std::fopen("/switch/dualscreen/melonds.ini", "r");
+    if (file == nullptr) return false;
+    bool asked = false;
+    char line[128];
+    while (std::fgets(line, sizeof(line), file) != nullptr) {
+        unsigned value = 0;
+        if (std::sscanf(line, " gpu_alone = %u", &value) == 1) asked = value != 0;
+    }
+    std::fclose(file);
+    if (asked) log_info("the GPU finishes this app's drawing before each frame of the game");
+    return asked;
+}
+#endif
 
 // melonDS DS core option keys and values, as declared by the core itself. We do
 // not trust these to exist: LibretroCore validates every forced option against
@@ -349,6 +372,10 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
         if (error != nullptr) *error = "no game is loaded";
         return false;
     }
+#ifdef __SWITCH__
+    static const bool gpu_alone = gpu_alone_asked();
+    if (gpu_alone && gl::Finish != nullptr) gl::Finish();
+#endif
     core_->run_frame();
     if (core_->video_frame().valid() && core_->video_frame().serial != last_presented_serial_) {
         last_presented_serial_ = core_->video_frame().serial;

@@ -48,6 +48,7 @@ PFN_Enable Enable = nullptr;
 PFN_Disable Disable = nullptr;
 PFN_BlendFunc BlendFunc = nullptr;
 PFN_GetError GetError = nullptr;
+PFN_Finish Finish = nullptr;
 PFN_GetString GetString = nullptr;
 PFN_PixelStorei PixelStorei = nullptr;
 PFN_ReadPixels ReadPixels = nullptr;
@@ -257,7 +258,7 @@ void unload() {
     // Everything the resolver can fill in, back to null in one sweep. Anything
     // added to load() has to be added here too, which is why they sit together.
     Viewport = nullptr; ClearColor = nullptr; Clear = nullptr; Enable = nullptr;
-    Disable = nullptr; BlendFunc = nullptr; GetError = nullptr; GetString = nullptr;
+    Disable = nullptr; BlendFunc = nullptr; GetError = nullptr; Finish = nullptr; GetString = nullptr;
     PixelStorei = nullptr; ReadPixels = nullptr; Scissor = nullptr; GenTextures = nullptr;
     DeleteTextures = nullptr; BindTexture = nullptr; TexImage2D = nullptr;
     TexSubImage2D = nullptr; TexParameteri = nullptr; ActiveTexture = nullptr;
@@ -294,6 +295,7 @@ bool load(bool gles_context, std::string* error) {
     resolve(Disable, "glDisable");
     resolve(BlendFunc, "glBlendFunc");
     resolve(GetError, "glGetError");
+    resolve(Finish, "glFinish");
     resolve(GetString, "glGetString");
     resolve(PixelStorei, "glPixelStorei");
     resolve(ReadPixels, "glReadPixels");
