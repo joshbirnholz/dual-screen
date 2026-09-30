@@ -103,7 +103,11 @@ private:
         // Everything the panel holds, laid out end to end, against the room
         // there is to show it in. The difference is how far this can scroll.
         float content_height = 0.0f;
+        // The window onto it: the page's content area.
+        float view_top = 0.0f;
         float view_height = 0.0f;
+        // Where the footnote under the BIOS files starts.
+        float footnote_top = 0.0f;
         float max_scroll() const { return std::max(0.0f, content_height - view_height); }
     };
 

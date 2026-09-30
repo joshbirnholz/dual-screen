@@ -2,6 +2,7 @@
 
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/page_frame.hpp"
 
 #include <algorithm>
 #include <string>
@@ -284,17 +285,16 @@ LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float 
     // A plain vertical list, laid out the same way LauncherScreen lays out the
     // main menu's rows -- see render()'s Wii U branch, which draws these with
     // draw_menu_row().
+    // On the same frame as every other page (see ui/page_frame.hpp), with
+    // rows the size of a DS game's menu's.
     Geometry geometry;
-    geometry.scale = UiTheme::base_scale(output_height);
-    const float margin = std::round(output_width * 0.12f);
-    geometry.panel = PixelRect{margin, std::round(output_height * 0.10f),
-                               output_width - margin * 2.0f,
-                               output_height - std::round(output_height * 0.20f)};
-    const float line = TextRenderer::line_height(geometry.scale);
-    const float row_height = line * 2.4f;
-    const float row_gap = line * 0.5f;
-    // Room for the game title above the list.
-    const float top = geometry.panel.y + line * 3.5f;
+    const PageFrame frame = page_frame(output_width, output_height);
+    geometry.scale = frame.scale;
+    geometry.panel = frame.panel;
+    const float line = frame.line;
+    const float row_height = line * 2.2f;
+    const float row_gap = line * 0.25f;
+    const float top = frame.content_top;
     for (std::size_t index = 0; index < footer_.size(); ++index) {
         geometry.footer.push_back(PixelRect{
             geometry.panel.x,
@@ -327,17 +327,15 @@ const char* section_label(MenuSection section) {
 
 LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_width,
                                                                float output_height) const {
+    // The same frame as every other page: see ui/page_frame.hpp.
     MenuGeometry geometry;
-    geometry.scale = UiTheme::base_scale(output_height);
+    const PageFrame frame = page_frame(output_width, output_height);
+    geometry.scale = frame.scale;
     const float scale = geometry.scale;
-    const float line = TextRenderer::line_height(scale);
-    const float margin = std::round(output_width * 0.06f);
-    geometry.panel = PixelRect{margin, std::round(output_height * 0.06f),
-                               output_width - margin * 2.0f,
-                               output_height - std::round(output_height * 0.12f)};
-    geometry.content_top = geometry.panel.y + line * 3.2f;
-    geometry.content_bottom = geometry.panel.y + geometry.panel.h -
-                              control_guide_height(scale * 0.9f) - line * 1.2f;
+    const float line = frame.line;
+    geometry.panel = frame.panel;
+    geometry.content_top = frame.content_top;
+    geometry.content_bottom = frame.content_bottom;
 
     // The list is as wide as its longest entry needs and no wider, so the
     // pictures get the rest.
@@ -1173,18 +1171,11 @@ void LayoutPicker::render(QuadRenderer& quads,
     const float scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(scale);
     const bool wii_u = system_ == SystemId::WiiU;
-    const PixelRect panel = wii_u ? compute_geometry(output_width, output_height).panel
-                                  : compute_menu_geometry(output_width, output_height).panel;
 
     // The game the menu was opened over, where the heading used to say what
-    // the screen already looks like.
-    if (!game_title.empty()) {
-        text.draw(quads, game_title, panel.x, panel.y, scale * 1.6f, theme.text);
-    }
-    if (!state_.subtitle.empty()) {
-        text.draw(quads, state_.subtitle, panel.x, panel.y + line * 1.9f, scale * 0.9f,
-                  theme.text_dim);
-    }
+    // the screen already looks like -- in the heading every page has.
+    const PageFrame frame = page_frame(output_width, output_height);
+    draw_page_header(quads, text, frame, game_title, state_.subtitle);
 
     std::vector<GuidePrompt> guide;
     if (wii_u) {
@@ -1198,8 +1189,7 @@ void LayoutPicker::render(QuadRenderer& quads,
 
             const float pad = line * 0.7f;
             text.draw(quads, footer_label(footer_[index]), row.x + pad,
-                      row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
-                      menu_row_text(focused));
+                      page_row_text_y(row, scale * 1.1f), scale * 1.1f, menu_row_text(focused));
         }
         // Everything this menu can do lives in the list above, reached by A.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
@@ -1236,9 +1226,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         // A tile is tapped directly, so this names a button nobody has.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     }
-    draw_control_guide(quads, text, glyphs, guide, panel.x + panel.w,
-                       panel.y + panel.h - control_guide_height(scale * 0.9f), scale * 0.9f,
-                       theme.text, TextAlign::Right, &guide_hits_);
+    draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 
     if (confirming()) {
         const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);
@@ -1279,7 +1267,7 @@ void LayoutPicker::render(QuadRenderer& quads,
                                scale * 1.05f, theme.background);
         } else {
             draw_control_guide(quads, text, glyphs,
-                               {{ButtonGlyph::A, "OK"}, {ButtonGlyph::B, "Back"}},
+                               {{ButtonGlyph::B, "Back"}, {ButtonGlyph::A, "OK"}},
                                confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
                                scale * 1.05f, theme.background);
         }

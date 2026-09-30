@@ -54,6 +54,8 @@ public:
     // Shortens `text` from the left to fit `max_width`, keeping the tail. Paths
     // are the common case and their last components are the informative part.
     static std::string elide_left(const std::string& text, float max_width, float scale);
+    // Shortens `text` from the end instead, for a title too long for its room.
+    static std::string elide_right(const std::string& text, float max_width, float scale);
 
 private:
     // One atlas per size actually drawn. A face rasterised for 24px cannot be

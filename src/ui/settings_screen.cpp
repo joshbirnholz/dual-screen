@@ -6,22 +6,16 @@
 #include "core/libretro_core.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/page_frame.hpp"
 
 namespace ds {
 namespace {
 
-// Said under everything, below the list rather than over it.
+// Said under the BIOS files, at the end of the page, where it scrolls with
+// them rather than taking room from every page's content.
 constexpr const char* kFootnote =
     "None of these ship with this app - they have to be your own dumps. DS games still boot "
     "without them, using the core's built-in BIOS replacement.";
-
-// Where the footnote starts: the list ends above it.
-float footnote_top(float output_height, float width, float scale) {
-    const float footnote_scale = scale * 0.85f;
-    const std::size_t lines = TextRenderer::wrap(kFootnote, width, footnote_scale).size();
-    return output_height - control_guide_height(scale * 0.9f) -
-           TextRenderer::wrapped_line_step(footnote_scale) * (static_cast<float>(lines) + 1.0f);
-}
 
 }  // namespace
 
@@ -69,18 +63,17 @@ void SettingsScreen::refresh_bios() { bios_ = check_bios_files(settings_.system_
 SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                                                           float output_height) const {
     Geometry geometry;
-    geometry.scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(geometry.scale);
-
-    const float margin = std::round(output_width * 0.07f);
-    const float panel_top = std::round(output_height * 0.08f);
-    const float panel_bottom =
-        footnote_top(output_height, output_width - margin * 2.0f, geometry.scale) - line * 0.6f;
-    geometry.panel = PixelRect{margin, panel_top, output_width - margin * 2.0f,
-                               panel_bottom - panel_top};
+    // The same frame as every other page: see ui/page_frame.hpp. The panel
+    // runs from the top margin to the bottom of the content area.
+    const PageFrame frame = page_frame(output_width, output_height);
+    geometry.scale = frame.scale;
+    const float line = frame.line;
+    geometry.panel = PixelRect{frame.panel.x, frame.panel.y, frame.panel.w,
+                               frame.content_bottom - frame.panel.y};
 
     // The heading stays put; everything under it moves with the scroll.
-    const float content_top = geometry.panel.y + line * 4.2f;
+    const float content_top = frame.content_top;
+    geometry.view_top = content_top;
     const float rows_top = content_top - scroll_;
     const float row_height = menu_row_height(line);
     const float gap = menu_row_gap(line);
@@ -108,9 +101,15 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     // the page ends where its last line does and the scroll bar with it.
     const float bios_height = line * (1.6f + 1.1f * static_cast<float>(bios_.size()));
     geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w, bios_height};
+    geometry.footnote_top = bios_top + bios_height + line * 0.4f;
+    const float footnote_scale = geometry.scale * 0.85f;
+    const float footnote_height =
+        TextRenderer::wrapped_line_step(footnote_scale) *
+        static_cast<float>(TextRenderer::wrap(kFootnote, geometry.panel.w, footnote_scale).size());
     // Measured from the top of the content rather than from the panel, so it
     // is the height of the thing being scrolled and not of the window onto it.
-    geometry.content_height = bios_top + bios_height + line * 0.6f - (content_top - scroll_);
+    geometry.content_height =
+        geometry.footnote_top + footnote_height + line * 0.4f - (content_top - scroll_);
     return geometry;
 }
 
@@ -175,7 +174,7 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
         return;
     }
     const PixelRect& row = geometry.rows[index];
-    const float top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 4.2f;
+    const float top = geometry.view_top;
     const float bottom = geometry.panel.y + geometry.panel.h;
     if (row.y < top) {
         scroll_ -= top - row.y;
@@ -236,7 +235,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
         scroll_focus_into_view(compute_geometry(output_width, output_height));
     }
     {
-        const float view_top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 4.2f;
+        const float view_top = geometry.view_top;
         drag_.update(pointers,
                      PixelRect{geometry.panel.x, view_top, geometry.panel.w,
                                geometry.panel.y + geometry.panel.h - view_top},
@@ -276,18 +275,16 @@ void SettingsScreen::render(QuadRenderer& quads,
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
 
+    const PageFrame frame = page_frame(output_width, output_height);
     // Over the paused game, dimmed, when opened from its menu; on the app's
     // own background otherwise, since there is nothing behind it to dim.
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
-                     over_game_ ? theme.scrim : theme.background);
-    text.draw(quads, "Settings", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
-    text.draw(quads, "Left/Right changes a value.   Paths are edited in settings.json",
-              geometry.panel.x, geometry.panel.y + line * 2.3f, scale * 0.9f, theme.text_dim);
+    draw_page_background(quads, output_width, output_height, over_game_);
+    draw_page_header(quads, text, frame, "Settings", "Left/Right changes a value");
 
     // Everything below the heading scrolls, so everything below the heading is
     // clipped to the room there is for it. Without this a row pushed past the
     // bottom carries on being drawn over whatever is under the panel.
-    const float view_top = geometry.panel.y + line * 4.2f;
+    const float view_top = geometry.view_top;
     quads.set_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
                              geometry.panel.y + geometry.panel.h - view_top});
 
@@ -317,7 +314,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         // value is elided rather than allowed to run past the row, which is
         // what a long BIOS path would otherwise do.
         const float pad = menu_row_pad(line);
-        const float baseline = row.y + (row.h - line) * 0.5f;
+        const float baseline = page_row_text_y(row, scale);
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
 #ifndef __SWITCH__
         if (index == static_cast<int>(Row::ConfirmButtonRow)) {
@@ -337,7 +334,8 @@ void SettingsScreen::render(QuadRenderer& quads,
             glyphs.draw(quads, confirm_glyph_for(settings_.confirm_button), pen_x, glyph_y, height,
                         value_color);
             pen_x += glyph_width + gap;
-            text.draw(quads, "/", pen_x, baseline, scale * 0.9f, value_color);
+            text.draw(quads, "/", pen_x, page_row_text_y(row, scale * 0.9f), scale * 0.9f,
+                      value_color);
             pen_x += slash_width + gap;
             glyphs.draw(quads, cancel_glyph_for(settings_.confirm_button), pen_x, glyph_y, height,
                         value_color);
@@ -350,8 +348,8 @@ void SettingsScreen::render(QuadRenderer& quads,
             const float available = row.w - label_width - pad * 4.0f;
             const std::string value =
                 TextRenderer::elide_left(rows[index][1], available, scale * 0.9f);
-            text.draw(quads, value, row.x + row.w - pad, baseline, scale * 0.9f, value_color,
-                      TextAlign::Right);
+            text.draw(quads, value, row.x + row.w - pad, page_row_text_y(row, scale * 0.9f),
+                      scale * 0.9f, value_color, TextAlign::Right);
         }
     }
 
@@ -391,22 +389,14 @@ void SettingsScreen::render(QuadRenderer& quads,
         pen_y += line * 1.1f;
     }
 
-    // Everything above scrolled and was clipped to the panel. The footnote and
-    // the prompts below it are fixed to the window, so the clip comes off
-    // here -- inside it they would be clipped away with whatever else had
-    // fallen off the bottom.
+    text.draw_wrapped(quads, kFootnote, geometry.panel.x, geometry.footnote_top, geometry.panel.w,
+                      scale * 0.85f, theme.text_dim);
+
+    // Everything above scrolled and was clipped to the panel. The prompts
+    // below it are fixed to the window, so the clip comes off here.
     quads.clear_clip();
 
-    const float footnote_scale = scale * 0.85f;
-    const float guide_height = control_guide_height(scale * 0.9f);
-    text.draw_wrapped(quads, kFootnote, output_width * 0.5f,
-                      footnote_top(output_height, geometry.panel.w, scale), geometry.panel.w,
-                      footnote_scale, theme.text_dim, TextAlign::Center);
-
-    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
-                       geometry.panel.x + geometry.panel.w,
-                       output_height - line * 0.6f - guide_height, scale * 0.9f, theme.text,
-                       TextAlign::Right);
+    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}});
 
     // Something has to say there is more, or a list that stops at the bottom
     // edge looks like a list that ends there.

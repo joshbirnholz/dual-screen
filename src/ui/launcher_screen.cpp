@@ -5,6 +5,7 @@
 
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/page_frame.hpp"
 
 namespace ds {
 namespace {
@@ -29,19 +30,16 @@ const char* title_for(LauncherChoice choice) {
 std::vector<PixelRect> LauncherScreen::compute_rows(float output_width,
                                                     float output_height,
                                                     float& out_scale) const {
-    out_scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(out_scale);
-    const float margin = std::round(output_width * 0.12f);
-    const float width = output_width - margin * 2.0f;
-    const float row_height = menu_row_height(line * 1.2f);
-    const float gap = menu_row_gap(line);
-    const float top = std::round(output_height * 0.25f);
+    const PageFrame frame = page_frame(output_width, output_height);
+    out_scale = frame.scale;
+    const float row_height = menu_row_height(frame.line);
+    const float gap = menu_row_gap(frame.line);
 
     std::vector<PixelRect> rows;
     for (std::size_t index = 0; index < rows_.size(); ++index) {
-        rows.push_back(PixelRect{margin,
-                                 top + static_cast<float>(index) * (row_height + gap),
-                                 width, row_height});
+        rows.push_back(PixelRect{frame.panel.x,
+                                 frame.content_top + static_cast<float>(index) * (row_height + gap),
+                                 frame.panel.w, row_height});
     }
     return rows;
 }
@@ -168,13 +166,12 @@ void LauncherScreen::render(QuadRenderer& quads,
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
     const float line = TextRenderer::line_height(scale);
+    const PageFrame frame = page_frame(output_width, output_height);
 
     quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
     quads.clear(theme.background);
 
-    const float margin = rows.empty() ? 0.0f : rows.front().x;
-    text.draw(quads, "Dualscreen", margin, std::round(output_height * 0.11f), scale * 2.0f,
-              theme.text);
+    draw_page_header(quads, text, frame, "Dualscreen");
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
@@ -184,8 +181,7 @@ void LauncherScreen::render(QuadRenderer& quads,
         const float pad = menu_row_pad(line);
         // Centred on the row, since there is nothing under it any more: the
         // names say what they do without a sentence explaining them.
-        text.draw(quads, title_for(rows_[index]), row.x + pad,
-                  row.y + (row.h - TextRenderer::line_height(scale * 1.2f)) * 0.5f, scale * 1.2f,
+        text.draw(quads, title_for(rows_[index]), row.x + pad, page_row_text_y(row, scale), scale,
                   menu_row_text(focused));
     }
 
@@ -196,12 +192,8 @@ void LauncherScreen::render(QuadRenderer& quads,
             ? std::to_string(hosts_found) + (hosts_found == 1 ? " device" : " devices") +
                   " running a game found nearby"
             : std::string("Looking for devices running a game...");
-    text.draw(quads, found, margin, rows.back().y + rows.back().h + line * 1.2f, scale * 0.9f,
-              hosts_found > 0 ? theme.success : theme.text_dim);
-
-    draw_control_guide(quads, text, glyphs, guide_prompts(), margin + rows[0].w,
-                       output_height - line * 1.2f - control_guide_height(scale * 0.9f),
-                       scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);
+    draw_page_status(quads, text, glyphs, frame, found, hosts_found > 0 ? theme.success : theme.text_dim);
+    draw_page_guide(quads, text, glyphs, frame, guide_prompts(), &guide_hits_);
 }
 
 // --- HostPickerScreen -------------------------------------------------------
@@ -216,17 +208,15 @@ std::vector<PixelRect> HostPickerScreen::compute_rows(std::size_t count,
                                                       float output_width,
                                                       float output_height,
                                                       float& out_scale) const {
-    out_scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(out_scale);
-    const float margin = std::round(output_width * 0.10f);
-    const float width = output_width - margin * 2.0f;
-    const float row_height = menu_two_line_row_height(line);
-    const float top = std::round(output_height * 0.28f);
+    const PageFrame frame = page_frame(output_width, output_height);
+    out_scale = frame.scale;
+    const float row_height = menu_two_line_row_height(frame.line);
 
     std::vector<PixelRect> rows;
     for (std::size_t index = 0; index < count; ++index) {
-        rows.push_back(PixelRect{margin, top + index * (row_height + menu_row_gap(line)), width,
-                                 row_height});
+        rows.push_back(PixelRect{frame.panel.x,
+                                 frame.content_top + index * (row_height + menu_row_gap(frame.line)),
+                                 frame.panel.w, row_height});
     }
     return rows;
 }
@@ -302,24 +292,21 @@ void HostPickerScreen::render(QuadRenderer& quads,
     float scale = 1.0f;
     const std::vector<PixelRect> rows = compute_rows(hosts.size(), output_width, output_height, scale);
     const float line = TextRenderer::line_height(scale);
-    const float margin = std::round(output_width * 0.10f);
+    const PageFrame frame = page_frame(output_width, output_height);
 
     quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
     quads.clear(theme.background);
 
     const std::string heading = std::string("Connect as the ") +
                                 (wanted_screen_ == ScreenId::Top ? "top" : "bottom") + " screen";
-    text.draw(quads, heading, margin, std::round(output_height * 0.13f), scale * 1.7f, theme.text);
-    if (!status.empty()) {
-        text.draw(quads, status, margin, std::round(output_height * 0.13f) + line * 2.2f,
-                  scale * 0.95f, theme.text_dim);
-    }
+    draw_page_header(quads, text, frame, heading);
+    draw_page_status(quads, text, glyphs, frame, status, theme.text_dim);
 
     if (hosts.empty()) {
-        text.draw(quads, "No devices found yet. Make sure a game is running on the other device,",
-                  margin, std::round(output_height * 0.34f), scale, theme.text_dim);
-        text.draw(quads, "and that both are on the same network.", margin,
-                  std::round(output_height * 0.34f) + line * 1.4f, scale, theme.text_dim);
+        text.draw_wrapped(quads,
+                          "No devices found yet. Make sure a game is running on the other device, "
+                          "and that both are on the same network.",
+                          frame.panel.x, frame.content_top, frame.panel.w, scale, theme.text_dim);
     }
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
@@ -331,20 +318,21 @@ void HostPickerScreen::render(QuadRenderer& quads,
         draw_menu_row(quads, row, focused, scale);
 
         const float pad = menu_row_pad(line);
-        const float block = line * 1.4f + TextRenderer::line_height(scale * 0.85f);
-        const float top = row.y + (row.h - block) * 0.5f;
+        // The same two lines as Data Management's rows: the name, and under
+        // it, smaller, what it is.
+        const float sub_scale = scale * 0.75f;
+        const float step = line * 1.3f;
+        const float top = row.y + (row.h - step - TextRenderer::line_height(sub_scale)) * 0.5f;
         text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad, top,
-                  scale * 1.1f, available ? menu_row_text(focused) : theme.text_dim);
-        text.draw(quads, host_row_detail(host, available), row.x + pad, top + line * 1.4f,
-                  scale * 0.85f, focused ? theme.panel : theme.text_dim);
+                  scale, available ? menu_row_text(focused) : theme.text_dim);
+        text.draw(quads, host_row_detail(host, available), row.x + pad, top + step, sub_scale,
+                  focused ? theme.panel : theme.text_dim);
     }
 
-    draw_control_guide(quads, text, glyphs,
-                       {{ButtonGlyph::A, "Connect", PromptRole::ActsOnSelection},
-                        {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
-                       rows.empty() ? output_width * 0.94f : rows[0].x + rows[0].w,
-                       output_height - line * 1.2f - control_guide_height(scale * 0.9f),
-                       scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);
+    draw_page_guide(quads, text, glyphs, frame,
+                    {{ButtonGlyph::A, "Connect", PromptRole::ActsOnSelection},
+                     {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
+                    &guide_hits_);
 }
 
 }  // namespace ds

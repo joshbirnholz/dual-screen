@@ -9,6 +9,7 @@
 #include "render/embedded_assets.hpp"
 #include "render/png_image.hpp"
 #include "ui/notice_popup.hpp"
+#include "ui/page_frame.hpp"
 #include "ui/ui_theme.hpp"
 #include "util/log.hpp"
 
@@ -67,50 +68,15 @@ std::string describe_time(int64_t when) {
     return std::string(day) + ", " + clock;
 }
 
-// Shortened from the end to fit, for a title too long for its row.
-std::string elide_right(const std::string& text, float max_width, float scale) {
-    if (TextRenderer::measure_width(text, scale) <= max_width) return text;
-    std::string cut = text;
-    while (!cut.empty() && TextRenderer::measure_width(cut + "...", scale) > max_width) {
-        cut.pop_back();
-        // Never half a character.
-        while (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0x80) cut.pop_back();
-        if (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0xC0) cut.pop_back();
-    }
-    while (!cut.empty() && cut.back() == ' ') cut.pop_back();
-    return cut + "...";
-}
-
 Color with_alpha(Color color, float alpha) {
     color.a = alpha;
     return color;
 }
 
-struct Frame {
-    float scale = 1.0f;
-    float line = 0.0f;
-    PixelRect panel;
-    float header_bottom = 0.0f;
-    float content_top = 0.0f;
-    float content_bottom = 0.0f;
-    float guide_y = 0.0f;
-};
+// The same frame as every other page: see ui/page_frame.hpp.
+using Frame = PageFrame;
 
-Frame frame_for(float output_width, float output_height) {
-    Frame frame;
-    frame.scale = UiTheme::base_scale(output_height);
-    frame.line = TextRenderer::line_height(frame.scale);
-    const float margin_x = std::round(output_width * 0.06f);
-    const float margin_y = std::round(output_height * 0.06f);
-    frame.panel = PixelRect{margin_x, margin_y, output_width - margin_x * 2.0f,
-                            output_height - margin_y * 2.0f};
-    frame.header_bottom = frame.panel.y + frame.line * 2.6f;
-    frame.content_top = frame.header_bottom + frame.line * 0.6f;
-    const float guide_height = control_guide_height(frame.scale * 0.9f);
-    frame.guide_y = frame.panel.y + frame.panel.h - guide_height;
-    frame.content_bottom = frame.guide_y - frame.line * 0.9f;
-    return frame;
-}
+Frame frame_for(float output_width, float output_height) { return page_frame(output_width, output_height); }
 
 // The part of a row inside the list, for a finger: a row half scrolled out of
 // sight can only be touched where it shows.
@@ -1289,12 +1255,12 @@ void DataManagementScreen::render(QuadRenderer& quads,
     };
     const Color rule = with_alpha(theme.text_dim, 0.3f);
 
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.background);
+    draw_page_background(quads, output_width, output_height, over_game_);
 
     // The heading: the game's icon and title on its pages, the screen's name
     // on the list.
-    const float title_scale = scale * 1.45f;
-    const float title_y = frame.panel.y + (frame.header_bottom - frame.panel.y - TextRenderer::line_height(title_scale)) * 0.5f;
+    const float title_scale = frame.title_scale();
+    const float title_y = std::round(frame.panel.y + (frame.header_bottom - frame.panel.y - TextRenderer::line_height(title_scale)) * 0.5f);
     float title_x = frame.panel.x;
     std::string heading = "Data Management";
     if (page_ != Page::List) {
@@ -1321,9 +1287,9 @@ void DataManagementScreen::render(QuadRenderer& quads,
                   pill_scale, theme.accent, TextAlign::Center);
         heading_room -= pill_w + line;
     }
-    text.draw(quads, elide_right(heading, heading_room, title_scale), title_x, title_y, title_scale, theme.text);
+    text.draw(quads, TextRenderer::elide_right(heading, heading_room, title_scale), title_x, title_y, title_scale, theme.text);
     quads.draw_solid(PixelRect{frame.panel.x, frame.header_bottom, frame.panel.w, 1.0f}, rule);
-    quads.draw_solid(PixelRect{frame.panel.x, frame.content_bottom + line * 0.45f, frame.panel.w, 1.0f}, rule);
+    quads.draw_solid(PixelRect{frame.panel.x, frame.footer_rule_y, frame.panel.w, 1.0f}, rule);
 
     row_rects_.clear();
     if (page_ == Page::List) {
@@ -1367,8 +1333,8 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const float step = line * 1.3f;
             const float block = step + TextRenderer::line_height(sub_scale);
             const float top = row.y + (row.h - block) * 0.5f;
-            text.draw(quads, elide_right(info.display_title(), room, scale), text_x, top, scale, ink);
-            text.draw(quads, elide_right(info.publisher, room, sub_scale), text_x, top + step, sub_scale, dim);
+            text.draw(quads, TextRenderer::elide_right(info.display_title(), room, scale), text_x, top, scale, ink);
+            text.draw(quads, TextRenderer::elide_right(info.publisher, room, sub_scale), text_x, top + step, sub_scale, dim);
             text.draw(quads, when, row.x + row.w - pad, row.y + (row.h - TextRenderer::line_height(date_scale)) * 0.5f,
                       date_scale, dim, TextAlign::Right);
         }
@@ -1394,7 +1360,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             draw_icon(action_icons[index], PixelRect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size}, ink);
             const float label_scale = scale * 1.05f;
             const float label_x = row.x + pad * 2.0f + icon_size;
-            text.draw(quads, elide_right(labels[static_cast<std::size_t>(index)], row.x + row.w - pad - label_x, label_scale),
+            text.draw(quads, TextRenderer::elide_right(labels[static_cast<std::size_t>(index)], row.x + row.w - pad - label_x, label_scale),
                       label_x, row.y + (row.h - TextRenderer::line_height(label_scale)) * 0.5f, label_scale, ink);
         }
         const float divider_x = frame.panel.x + left_w + line * 0.9f;
@@ -1406,7 +1372,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
         const float icon_size = std::min(line * 4.2f, right_w * 0.5f);
         // A device: its name, its picture, and when its save last changed.
         const auto draw_device = [&](const std::string& name, const std::string& kind, const std::string& date, float top) {
-            text.draw(quads, elide_right(name, right_w, scale * 0.95f), centre, top, scale * 0.95f, theme.text, TextAlign::Center);
+            text.draw(quads, TextRenderer::elide_right(name, right_w, scale * 0.95f), centre, top, scale * 0.95f, theme.text, TextAlign::Center);
             // The icon fills the band across the middle of its square cell.
             const float band_top = top + line * 1.5f;
             draw_icon(device_icon(kind), PixelRect{centre - icon_size * 0.5f, band_top - icon_size * 0.25f, icon_size, icon_size},
@@ -1428,7 +1394,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             quads.draw_rounded_rect(box, line * 0.35f, theme.panel);
             const std::string words = comparison_text();
             if (!words.empty()) {
-                text.draw(quads, elide_right(words, box.w - line, scale * 0.9f), box.x + box.w * 0.5f,
+                text.draw(quads, TextRenderer::elide_right(words, box.w - line, scale * 0.9f), box.x + box.w * 0.5f,
                           box.y + (box.h - TextRenderer::line_height(scale * 0.9f)) * 0.5f, scale * 0.9f,
                           comparison_is_conflict() ? theme.danger : theme.text, TextAlign::Center);
             }
@@ -1511,9 +1477,9 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const float right_c = band.x + band.w * 0.75f;
             const float date_step = line * 1.2f;
             const float name_y = band.y + (band.h - date_step - TextRenderer::line_height(scale * 0.75f)) * 0.5f;
-            text.draw(quads, elide_right(dialog_from_name_, band.w * 0.4f, scale * 0.85f), left_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
+            text.draw(quads, TextRenderer::elide_right(dialog_from_name_, band.w * 0.4f, scale * 0.85f), left_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
             text.draw(quads, dialog_from_date_, left_c, name_y + date_step, scale * 0.75f, theme.text_dim, TextAlign::Center);
-            text.draw(quads, elide_right(dialog_to_name_, band.w * 0.4f, scale * 0.85f), right_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
+            text.draw(quads, TextRenderer::elide_right(dialog_to_name_, band.w * 0.4f, scale * 0.85f), right_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
             text.draw(quads, dialog_to_date_, right_c, name_y + date_step, scale * 0.75f, theme.text_dim, TextAlign::Center);
             // An arrow from one to the other: a shaft and a head.
             const float mid_x = band.x + band.w * 0.5f;
@@ -1577,7 +1543,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             }
             const float row_pad = menu_row_pad(line);
             const float baseline = option.y + (option.h - line) * 0.5f;
-            text.draw(quads, elide_right(choice_names_[index], inner * 0.55f, scale), option.x + row_pad, baseline,
+            text.draw(quads, TextRenderer::elide_right(choice_names_[index], inner * 0.55f, scale), option.x + row_pad, baseline,
                       scale, menu_row_text(focused));
             text.draw(quads, choice_dates_[index], option.x + option.w - row_pad,
                       option.y + (option.h - TextRenderer::line_height(scale * 0.85f)) * 0.5f, scale * 0.85f,
@@ -1590,8 +1556,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
     if (overlay_ == Overlay::Notice) {
         render_notice_popup(quads, text, glyphs, output_width, output_height, notice_);
     } else {
-        draw_control_guide(quads, text, glyphs, guide_prompts(), frame.panel.x + frame.panel.w, frame.guide_y,
-                           scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);
+        draw_page_guide(quads, text, glyphs, frame, guide_prompts(), &guide_hits_);
     }
 }
 

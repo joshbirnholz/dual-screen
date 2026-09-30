@@ -6,6 +6,7 @@
 
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/page_frame.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -136,24 +137,15 @@ bool GameBrowser::navigate_to(std::string directory) {
 
 GameBrowser::Geometry GameBrowser::compute_geometry(float output_width, float output_height) const {
     Geometry geometry;
-    geometry.scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(geometry.scale);
-
-    const float margin = std::round(output_width * 0.06f);
-    geometry.panel = PixelRect{margin, std::round(output_height * 0.06f),
-                               output_width - margin * 2.0f,
-                               output_height - std::round(output_height * 0.12f)};
-
-    const float header = line * 4.0f;
-    const float footer = line * 3.0f;
-    geometry.list = PixelRect{geometry.panel.x, geometry.panel.y + header, geometry.panel.w,
-                              geometry.panel.h - header - footer};
-    geometry.row_height = menu_row_height(line);
+    // The same frame as every other page: see ui/page_frame.hpp.
+    const PageFrame frame = page_frame(output_width, output_height);
+    geometry.scale = frame.scale;
+    geometry.panel = frame.panel;
+    geometry.list = frame.content();
+    // A row and the gap under it: the rows are as tall as every other list's.
+    geometry.row_height = menu_row_height(frame.line) + menu_row_gap(frame.line);
     geometry.visible_rows =
         std::max(1, static_cast<int>(geometry.list.h / geometry.row_height));
-
-    geometry.footer = PixelRect{geometry.panel.x, geometry.panel.y + geometry.panel.h - footer,
-                                geometry.panel.w, footer};
     return geometry;
 }
 
@@ -333,18 +325,15 @@ void GameBrowser::render(QuadRenderer& quads,
 
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
+    const PageFrame frame = page_frame(output_width, output_height);
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
 
     quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
     quads.clear(theme.background);
 
-    text.draw(quads, "Choose a game", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
-    text.draw(quads,
-              TextRenderer::elide_left(directory_, geometry.panel.w, scale * 0.95f),
-              geometry.panel.x, geometry.panel.y + line * 2.1f, scale * 0.95f, theme.text_dim);
-
-    quads.draw_solid(geometry.list, Color{0.03f, 0.04f, 0.06f, 1.0f});
+    // The folder, at the right of the heading, keeping its end.
+    draw_page_header(quads, text, frame, "Choose a game", directory_, 0.0f, true);
 
     if (!error_.empty()) {
         text.draw_wrapped(quads, error_, geometry.list.x + line * 0.5f,
@@ -372,7 +361,7 @@ void GameBrowser::render(QuadRenderer& quads,
         draw_menu_row(quads, rect, focused, scale);
 
         const float pad = menu_row_pad(line);
-        const float baseline = rect.y + (rect.h - line) * 0.5f;
+        const float baseline = page_row_text_y(rect, scale);
         // Folders get a trailing slash and the accent colour, so the two kinds
         // of row are separable at a glance on a small screen.
         const std::string label =
@@ -398,15 +387,12 @@ void GameBrowser::render(QuadRenderer& quads,
     // quick menu's rows. Cancel goes up a folder while there is one to go up
     // to and out of the browser once there is not, which "Back" covers
     // either way.
-    const float guide_height = control_guide_height(scale * 0.9f);
     guide_hits_.clear();
-    draw_control_guide(quads, text, glyphs,
-                       {{ButtonGlyph::Plus, "Main Menu"},
-                        {ButtonGlyph::A, "Open", PromptRole::ActsOnSelection},
-                        {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
-                       geometry.footer.x + geometry.footer.w,
-                       geometry.footer.y + (geometry.footer.h - guide_height) * 0.5f,
-                       scale * 0.9f, theme.text, TextAlign::Right, &guide_hits_);
+    draw_page_guide(quads, text, glyphs, frame,
+                    {{ButtonGlyph::Plus, "Main Menu"},
+                     {ButtonGlyph::A, "Open", PromptRole::ActsOnSelection},
+                     {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
+                    &guide_hits_);
 }
 
 }  // namespace ds

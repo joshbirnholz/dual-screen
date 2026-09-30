@@ -121,7 +121,7 @@ fi
 if [ ! -f "$COMPANION_SHOT" ]; then
     echo "no screenshot from the companion" >&2
     FAILED=1
-elif ! "$CHECKER" "$COMPANION_SHOT" "text=0.1,0.35,0.9,0.55"; then
+elif ! "$CHECKER" "$COMPANION_SHOT" "text=0.06,0.05,0.9,0.30"; then
     echo "the companion did not say where to look while the host's settings were up" >&2
     FAILED=1
 fi

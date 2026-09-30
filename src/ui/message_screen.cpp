@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "ui/control_guide.hpp"
+#include "ui/page_frame.hpp"
 
 namespace ds {
 
@@ -59,34 +60,36 @@ void MessageScreen::render(QuadRenderer& quads,
     }
 
     const UiTheme& theme = ui_theme();
-    const float scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(scale);
+    // The same frame as every other page: see ui/page_frame.hpp.
+    const PageFrame frame = page_frame(output_width, output_height);
+    const float scale = frame.scale;
+    const float line = frame.line;
 
     // Drawn over whatever is already on screen: fatal messages sit on a cleared
     // frame, a warning sits over the running game.
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
+    draw_page_background(quads, output_width, output_height, true);
 
-    const float margin = std::round(output_width * 0.08f);
-    const float width = output_width - margin * 2.0f;
-    float pen_y = std::round(output_height * 0.14f);
-
+    // A bar in front of the title in the colour of what kind of message it is.
     const Color accent = (kind_ == MessageKind::Error) ? theme.danger : theme.accent;
-    quads.draw_solid(PixelRect{margin, pen_y - line, std::max(4.0f, scale * 3.0f), line * 2.2f}, accent);
+    const float bar_w = std::max(4.0f, scale * 3.0f);
+    const float bar_h = TextRenderer::line_height(frame.title_scale());
+    quads.draw_solid(PixelRect{frame.panel.x,
+                               std::round(frame.panel.y + (frame.header_bottom - frame.panel.y - bar_h) * 0.5f),
+                               bar_w, bar_h},
+                     accent);
+    draw_page_header(quads, text, frame, title_, std::string(), bar_w + line * 0.6f);
 
-    text.draw(quads, title_, margin + scale * 12.0f, pen_y, scale * 1.8f, theme.text);
-    pen_y += line * 3.0f;
-
-    pen_y += text.draw_wrapped(quads, body_, margin, pen_y, width, scale, theme.text);
+    float pen_y = frame.content_top;
+    pen_y += text.draw_wrapped(quads, body_, frame.panel.x, pen_y, frame.panel.w, scale, theme.text);
     pen_y += line;
 
     for (const std::string& detail : details_) {
-        pen_y += text.draw_wrapped(quads, detail, margin, pen_y, width, scale * 0.9f, theme.text_dim);
+        pen_y += text.draw_wrapped(quads, detail, frame.panel.x, pen_y, frame.panel.w, scale * 0.9f,
+                                   theme.text_dim);
         pen_y += line * 0.4f;
     }
 
-    draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "Continue"}}, output_width * 0.5f,
-                       output_height - line * 1.5f - control_guide_height(scale), scale,
-                       theme.text);
+    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::A, "Continue"}});
 }
 
 }  // namespace ds

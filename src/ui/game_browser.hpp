@@ -70,9 +70,6 @@ private:
     struct Geometry {
         PixelRect panel;
         PixelRect list;
-        // The strip under the list the button prompts sit in, right-aligned
-        // like everywhere else in the app.
-        PixelRect footer;
         float row_height = 0.0f;
         float scale = 1.0f;
         int visible_rows = 1;

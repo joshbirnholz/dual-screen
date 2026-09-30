@@ -52,6 +52,9 @@ public:
     void open(const std::string& game_in_play = std::string());
     void close();
     bool is_open() const { return open_; }
+    // Over a paused game, which shows through dimmed; otherwise on the app's
+    // own background. See draw_page_background().
+    void set_over_game(bool over_game) { over_game_ = over_game; }
 
     // For tests: where the searches go.
     void set_search_for_test(const net::SaveSearch& search) { search_ = search; }
@@ -183,6 +186,7 @@ private:
     net::SaveSearch search_;
 
     bool open_ = false;
+    bool over_game_ = false;
     std::string game_in_play_;
     Page page_ = Page::List;
     Overlay overlay_ = Overlay::None;

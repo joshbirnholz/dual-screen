@@ -5,6 +5,7 @@
 
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/page_frame.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -37,14 +38,13 @@ ControllersScreen::Geometry ControllersScreen::compute_geometry(float output_wid
                                                                 int row_count,
                                                                 int gap_before) const {
     Geometry geometry;
-    geometry.scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(geometry.scale);
-    const float margin = std::round(output_width * 0.07f);
-    geometry.panel = PixelRect{margin, std::round(output_height * 0.08f),
-                               output_width - margin * 2.0f,
-                               output_height - std::round(output_height * 0.16f)};
-    geometry.view_top = geometry.panel.y + line * 2.6f;
-    geometry.view_bottom = geometry.panel.y + geometry.panel.h - line * 2.2f;
+    // The same frame as every other page: see ui/page_frame.hpp.
+    const PageFrame frame = page_frame(output_width, output_height);
+    geometry.scale = frame.scale;
+    const float line = frame.line;
+    geometry.panel = frame.panel;
+    geometry.view_top = frame.content_top;
+    geometry.view_bottom = frame.content_bottom;
     const float row_height = menu_row_height(line);
     const float step = row_height + menu_row_gap(line);
     const float gap = line * 1.2f;
@@ -258,9 +258,9 @@ void ControllersScreen::render(QuadRenderer& quads,
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
 
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
-    text.draw(quads, "Controller Order", geometry.panel.x, geometry.panel.y, scale * 1.6f,
-              theme.text);
+    const PageFrame frame = page_frame(output_width, output_height);
+    draw_page_background(quads, output_width, output_height, over_game_);
+    draw_page_header(quads, text, frame, "Controller Order");
 
     quads.set_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
                              geometry.view_bottom - geometry.view_top});
@@ -271,7 +271,7 @@ void ControllersScreen::render(QuadRenderer& quads,
     for (int index = 0; index < row_count; ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = index == focus_;
-        const float baseline = row.y + (row.h - line) * 0.5f;
+        const float baseline = page_row_text_y(row, scale);
         const int line_rows = static_cast<int>(rows.size());
         if (index >= line_rows) {
             draw_menu_row(quads, row, focused, scale);
@@ -297,7 +297,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         const float name_x = row.x + slot_column;
         if (entry.pad < 0) {
             text.draw(quads, "No controller - its screen's touch and motion only", name_x,
-                      baseline, scale * 0.9f, dim);
+                      page_row_text_y(row, scale * 0.9f), scale * 0.9f, dim);
             continue;
         }
         const KnownPad& known = pads[static_cast<std::size_t>(entry.pad)];
@@ -311,8 +311,8 @@ void ControllersScreen::render(QuadRenderer& quads,
         if (known.slot >= 0) {
             where += "  P" + std::to_string(known.slot + 1);
         }
-        text.draw(quads, where, row.x + row.w - pad, baseline, scale * 0.8f, dim,
-                  TextAlign::Right);
+        text.draw(quads, where, row.x + row.w - pad, page_row_text_y(row, scale * 0.8f),
+                  scale * 0.8f, dim, TextAlign::Right);
     }
     quads.clear_clip();
     // Only when the list runs past its window, and measured from what it holds.
@@ -325,8 +325,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         }
     }
     if (pads.empty()) {
-        text.draw(quads, "No controllers found", geometry.panel.x,
-                  geometry.view_bottom + line * 0.4f, scale * 0.9f, theme.text_dim);
+        draw_page_status(quads, text, glyphs, frame, "No controllers found", theme.text_dim);
     }
 
     std::vector<GuidePrompt> guide;
@@ -337,10 +336,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         guide.push_back({ButtonGlyph::A, "Reorder", PromptRole::ActsOnSelection});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     }
-    const float guide_height = control_guide_height(scale * 0.9f);
-    draw_control_guide(quads, text, glyphs, guide, geometry.panel.x + geometry.panel.w,
-                       output_height - line * 0.6f - guide_height, scale * 0.9f, theme.text,
-                       TextAlign::Right);
+    draw_page_guide(quads, text, glyphs, frame, guide);
 }
 
 }  // namespace ds

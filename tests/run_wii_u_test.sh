@@ -114,8 +114,9 @@ run_session() {
         echo "$name: no screenshot" >&2
         FAILED=1
     # What is on screen is the Wii U menu, shown in place of a "Playing on
-    # Cemu" notice -- its rows, Settings and Quit, sit in this band.
-    elif ! "$CHECKER" "$shot" "text=0.1,0.26,0.4,0.40"; then
+    # Cemu" notice -- its rows, Settings and Quit, sit in this band, under the
+    # heading every page has.
+    elif ! "$CHECKER" "$shot" "text=0.06,0.21,0.4,0.32"; then
         echo "$name: the shell showed something other than its menu beside the game with "\
 "nothing connected" >&2
         FAILED=1
@@ -161,7 +162,7 @@ run_session solo
     if [ ! -f "$shot" ]; then
         echo "waiting: no screenshot" >&2
         FAILED=1
-    elif ! "$CHECKER" "$shot" "text=0.1,0.35,0.9,0.60"; then
+    elif ! "$CHECKER" "$shot" "text=0.06,0.05,0.9,0.30"; then
         echo "waiting: the shell showed a blank window rather than saying what it was waiting "\
 "for" >&2
         FAILED=1

@@ -159,6 +159,19 @@ std::string TextRenderer::elide_left(const std::string& text, float max_width, f
     return marker;
 }
 
+std::string TextRenderer::elide_right(const std::string& text, float max_width, float scale) {
+    if (measure_width(text, scale) <= max_width) return text;
+    std::string cut = text;
+    while (!cut.empty() && measure_width(cut + "...", scale) > max_width) {
+        cut.pop_back();
+        // Never half a character.
+        while (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0x80) cut.pop_back();
+        if (!cut.empty() && (static_cast<unsigned char>(cut.back()) & 0xC0) == 0xC0) cut.pop_back();
+    }
+    while (!cut.empty() && cut.back() == ' ') cut.pop_back();
+    return cut + "...";
+}
+
 std::vector<std::string> TextRenderer::wrap(const std::string& text, float max_width, float scale) {
     std::vector<std::string> lines;
     if (max_width <= 0.0f || scale <= 0.0f) {

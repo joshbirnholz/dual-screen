@@ -38,6 +38,9 @@ public:
         holding_ = false;
     }
     bool is_open() const { return open_; }
+    // Over a paused game, which shows through dimmed; otherwise on the app's
+    // own background. See draw_page_background().
+    void set_over_game(bool over_game) { over_game_ = over_game; }
 
     // `pads` is every controller as it stands this frame; `gamepad_here`
     // whether this device is the one holding the GamePad. Both are asked for
@@ -87,6 +90,7 @@ private:
 
     int focus_ = 0;
     bool open_ = false;
+    bool over_game_ = false;
     // Whether a controller is picked up, and which: by identity, so it stays
     // in hand while the rows move around it.
     bool holding_ = false;

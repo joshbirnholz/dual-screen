@@ -3512,6 +3512,7 @@ void App::Impl::render() {
         // tile shows what picking it will actually look like.
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
     } else if (state == State::Controllers) {
+        controllers_screen.set_over_game(show_menu_backdrop);
         controllers_screen.render(quads, text, button_glyphs, width, height,
                                   gather_pads(companion_joined()), holds_gamepad(), pad_order,
                                   settings.device_name,
@@ -3521,6 +3522,7 @@ void App::Impl::render() {
         settings_screen->set_over_game(show_menu_backdrop);
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::DataManagement) {
+        data_screen->set_over_game(show_menu_backdrop);
         data_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
         message.render(quads, text, button_glyphs, width, height);
@@ -3837,6 +3839,10 @@ int App::run(const AppOptions& options) {
         impl.open_launcher();
     } else if (options.start_screen == "hosts") {
         impl.start_companion(ScreenId::Bottom);
+    } else if (options.start_screen == "settings") {
+        impl.open_settings();
+    } else if (options.start_screen == "controllers") {
+        impl.open_controllers();
     } else if (options.start_screen == "data") {
         impl.settings_came_from = Impl::State::Launcher;
         impl.open_data_management();

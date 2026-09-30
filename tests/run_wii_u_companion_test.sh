@@ -224,7 +224,7 @@ fi
     if [ ! -f "$shot" ]; then
         echo "waiting: no screenshot from the companion" >&2
         FAILED=1
-    elif ! "$CHECKER" "$shot" "text=0.1,0.35,0.9,0.60"; then
+    elif ! "$CHECKER" "$shot" "text=0.06,0.05,0.9,0.30"; then
         echo "waiting: the companion showed a blank window rather than saying what the session "\
 "was waiting for" >&2
         FAILED=1
