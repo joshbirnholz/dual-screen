@@ -26,6 +26,12 @@ extern const unsigned long kButtonIconsPng_size;
 extern const unsigned char kStylusHandPng[];
 extern const unsigned long kStylusHandPng_size;
 
+// Data Management's icons -- get, send, earlier saves, delete, and the kinds of
+// device -- as one strip of equal square cells. See assets/make_ui_icons.py.
+// Only in the builds that play games.
+extern const unsigned char kUiIconsPng[];
+extern const unsigned long kUiIconsPng_size;
+
 // The shell's own sounds, resampled to one rate and packed into one blob with
 // an index -- see decode_ui_sound_pack().
 

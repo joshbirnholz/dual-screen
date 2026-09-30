@@ -1183,6 +1183,47 @@ save behind.
 DSi NAND and firmware saves are the core's own business and live in the system
 folder.
 
+### Data Management
+
+The first row of **Settings** — and, on a Switch with its own emulator, a
+row of its own on the main menu — lists every DS save on this device with the
+game's own icon, title and publisher, read from the ROM, newest first.
+
+Choosing one opens its page, laid out like the Switch's save data cloud page:
+
+- **Get Save from _device_** and **Send Save to _device_** move the save
+  between this device and another one on the network. Each asks first,
+  showing both saves and their dates, and says when the save being replaced
+  has progress the other doesn't.
+- **Earlier Saves** holds the last 10 saves replaced or deleted here, each
+  with where it was made and what replaced it. Any of them can be restored.
+- **Delete Save Data** moves the save to Earlier Saves.
+
+On the right are the other device's save above and this device's below, with
+a box saying how they compare: *Up to date*, *Newer on …*, *Only on …*,
+*Currently playing on …* (nothing is offered for a game being played there),
+or *Save file conflict* when both have changed since they last matched.
+Which save is newer comes from each save's history of versions, not from the
+two devices' clocks. **L**/**R** changes device when more than one is found;
+**Y** searches again. With nothing found, only this device's save is shown.
+
+Nothing happens on its own: saves only move when you choose. Every device
+that plays games answers — a Steam Deck, a PC, a Switch with melonDS — and
+any Dualscreen on the network is trusted, with no pairing. Devices that only
+show another's screens have no saves and are never offered. Devices are found
+on UDP port 47823 and saves move on TCP port 47824. Saves are matched
+by the game itself (the code, version and checksum in the ROM's header), so a
+renamed ROM still finds its save, and different regions stay separate.
+
+A resume point holds the save as it was, so replacing, restoring or deleting a
+save deletes the game's resume point too — and asks first. Opened from the
+quick menu during a game, Data Management goes straight to that game's page;
+getting, restoring or deleting its save there restarts the game on the new
+one.
+
+A Switch keeps its saves as `<game>.srm` too now, like melonDS DS; a
+`<game>.sav` from before is renamed the first time the game starts.
+
 ### Save states
 
 The quick menu of a DS game has **Create Save State** and **Load Save
@@ -1297,6 +1338,8 @@ V1 does not script `shortcuts.vdf` for you.
 ~/.config/dualscreen/games/<rom-sha1>.json  per-game layout
 ~/.local/share/dualscreen/saves/<rom>.srm   cartridge saves
 ~/.local/share/dualscreen/saves/<rom>.savestate1..4   save states
+~/.local/share/dualscreen/saves/<rom>.srm.sync  which game a save is, and its versions
+~/.local/share/dualscreen/saves/earlier/<rom>/  Earlier Saves, the newest 10
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
 ```
 

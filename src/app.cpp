@@ -56,6 +56,7 @@
 #include "net/save_exchange.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
+#include "ui/data_management_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/message_screen.hpp"
@@ -304,7 +305,9 @@ struct App::Impl {
         // The game has just been started from its resume point and is held
         // there, paused, under a popup saying so, until OK is pressed -- on
         // either device. See resume_game().
-        ResumeNotice
+        ResumeNotice,
+        // Settings > Data Management.
+        DataManagement
     };
 
     AppOptions options;
@@ -367,6 +370,10 @@ struct App::Impl {
     ChildProcess external_program;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
+    std::unique_ptr<DataManagementScreen> data_screen;
+    // What the popup over a paused game says: that it was resumed, or that
+    // Data Management restarted it on another save.
+    std::string game_notice = kResumedNotice;
     // Opened from Settings, and drawn over it -- see ControllersScreen.
     ControllersScreen controllers_screen;
     // The game running here, which its save points are named after.
@@ -669,6 +676,12 @@ struct App::Impl {
     // from the main menu and, now, from a game's own menu -- and on a host,
     // possibly because the other device asked.
     void open_settings();
+    // Settings again, as it was left for Data Management.
+    void return_to_settings();
+    void open_data_management();
+    void apply_data_management_result(const DataManagementResult& result);
+    // How many saves Data Management has to show.
+    std::size_t save_count() const;
     // What to do about whatever that screen just decided -- called for a press
     // made here and for one the companion sent, the same way the menu is.
     void apply_settings_result(const SettingsScreenResult& result);
@@ -2037,6 +2050,7 @@ bool App::Impl::resume_game() {
 
 void App::Impl::dismiss_resume_notice() {
     if (state != State::ResumeNotice) return;
+    game_notice = kResumedNotice;
     state = State::Playing;
     input.set_game_input_enabled(true);
     frame_accumulator = 0.0;
@@ -2322,10 +2336,74 @@ void App::Impl::open_settings() {
         // they cannot see.
         picker->close();
     }
+    settings_screen->set_save_count(save_count());
     settings_screen->open(settings, resolve_core_statuses(options, settings));
     state = State::Settings;
     input.set_game_input_enabled(false);
     log_info("the settings screen is up");
+}
+
+std::size_t App::Impl::save_count() const {
+    if (!save_store) return 0;
+    std::size_t count = 0;
+    for (const SaveInfo& info : save_store->list()) {
+        if (info.has_save && !info.game_id.empty()) ++count;
+    }
+    return count;
+}
+
+void App::Impl::return_to_settings() {
+    settings_screen->set_save_count(save_count());
+    settings_screen->open(settings, resolve_core_statuses(options, settings));
+    state = State::Settings;
+    input.set_game_input_enabled(false);
+}
+
+void App::Impl::open_data_management() {
+    if (!save_store) return;
+    if (!data_screen) {
+        data_screen.reset(new DataManagementScreen(
+            *save_store, save_service ? save_service->instance() : new_save_version_id()));
+    }
+    // During a DS game, its own page and nothing else.
+    std::string game_id;
+    SaveInfo info;
+    if (local_game() && source && system == SystemId::Ds && save_store->find_for_rom(game_path, info)) {
+        game_id = info.game_id;
+    }
+    data_screen->open(game_id);
+    state = State::DataManagement;
+    input.set_game_input_enabled(false);
+}
+
+void App::Impl::apply_data_management_result(const DataManagementResult& result) {
+    if (result.restart_with) {
+        // The game has its save open, so it is closed first -- without a
+        // resume point, which would hold the save being replaced -- the save
+        // changed, and the game started again from it.
+        data_screen->close();
+        const std::string rom = game_path;
+        log_info("Data Management is restarting " + game_title + " on a changed save");
+        resume_writer.finish();
+        audio.close();
+        if (source) {
+            source->close();
+            source.reset();
+            note_game_closed();
+        }
+        std::string error;
+        const bool changed = result.restart_with(&error);
+        if (!changed) log_warn("the save was not changed: " + error);
+        if (start_game(rom, false)) {
+            game_notice = changed ? result.restart_notice : "The save could not be changed: " + error;
+            state = State::ResumeNotice;
+            input.set_game_input_enabled(false);
+        }
+        return;
+    }
+    if (result.close_requested) {
+        return_to_settings();
+    }
 }
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
@@ -2356,6 +2434,10 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         if (source && system == SystemId::Ds) {
             source->set_run_ahead(settings.run_ahead_ds);
         }
+    }
+    if (result.data_management_requested) {
+        open_data_management();
+        return;
     }
     if (result.close_requested) {
         if (settings_came_from == State::Menu && local_game()) {
@@ -2997,8 +3079,14 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     start_companion(ScreenId::Bottom);
                     break;
                 case LauncherChoice::Settings:
+                    settings_came_from = State::Launcher;
+                    settings_screen->set_save_count(save_count());
                     settings_screen->open(settings, resolve_core_statuses(options, settings));
                     state = State::Settings;
+                    break;
+                case LauncherChoice::DataManagement:
+                    settings_came_from = State::Launcher;
+                    open_data_management();
                     break;
                 case LauncherChoice::Quit:
                     running = false;
@@ -3174,6 +3262,13 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             apply_settings_result(
                 settings_screen->update(actions, pointers, static_cast<float>(output_width),
                                         static_cast<float>(output_height)));
+            break;
+        }
+
+        case State::DataManagement: {
+            apply_data_management_result(
+                data_screen->update(actions, pointers, static_cast<float>(output_width),
+                                    static_cast<float>(output_height)));
             break;
         }
 
@@ -3398,7 +3493,9 @@ void App::Impl::render() {
     // it either way, and a Settings reached from the Launcher has no game
     // frame to blur at all.
     const bool show_menu_backdrop =
-        state == State::Menu || (state == State::Settings && settings_came_from == State::Menu) ||
+        state == State::Menu ||
+        ((state == State::Settings || state == State::DataManagement) &&
+         settings_came_from == State::Menu) ||
         (state == State::Controllers && controllers_came_from == State::Menu);
     if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is
@@ -3424,12 +3521,15 @@ void App::Impl::render() {
                                                      : std::string("other device"));
     } else if (state == State::Settings) {
         settings_screen->render(quads, text, button_glyphs, width, height);
+    } else if (state == State::DataManagement) {
+        data_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::Message) {
         message.render(quads, text, button_glyphs, width, height);
     } else if (state == State::ResumeNotice ||
                (state == State::Companion && companion_session &&
                 companion_session->host_resume_notice())) {
-        render_notice_popup(quads, text, button_glyphs, width, height, kResumedNotice);
+        render_notice_popup(quads, text, button_glyphs, width, height,
+                            state == State::ResumeNotice ? game_notice : std::string(kResumedNotice));
     }
 
     swap();
@@ -3738,6 +3838,9 @@ int App::run(const AppOptions& options) {
         impl.open_launcher();
     } else if (options.start_screen == "hosts") {
         impl.start_companion(ScreenId::Bottom);
+    } else if (options.start_screen == "data") {
+        impl.settings_came_from = Impl::State::Launcher;
+        impl.open_data_management();
     }
 
     // --- main loop -----------------------------------------------------------
@@ -4010,7 +4113,8 @@ int App::run(const AppOptions& options) {
             // The Controllers screen is the host's own too, and the other
             // device is told to look over here for it the same way.
             shared.settings_open = impl.state == Impl::State::Settings ||
-                                   impl.state == Impl::State::Controllers;
+                                   impl.state == Impl::State::Controllers ||
+                                   impl.state == Impl::State::DataManagement;
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
@@ -4211,7 +4315,8 @@ int App::run(const AppOptions& options) {
                 // closed is not a press at the game.
                 const bool for_menu = impl.state == Impl::State::Menu && impl.picker;
                 const bool for_settings = impl.state == Impl::State::Settings ||
-                                          impl.state == Impl::State::Controllers;
+                                          impl.state == Impl::State::Controllers ||
+                                          impl.state == Impl::State::DataManagement;
                 if (!for_menu && !for_settings) continue;
                 if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
@@ -4220,6 +4325,12 @@ int App::run(const AppOptions& options) {
                 const UiAction action = ui_action_for(press.action);
                 if (impl.state == Impl::State::Controllers) {
                     impl.update_controllers_screen({action}, {});
+                    continue;
+                }
+                if (impl.state == Impl::State::DataManagement) {
+                    impl.apply_data_management_result(impl.data_screen->update(
+                        {action}, {}, static_cast<float>(impl.output_width),
+                        static_cast<float>(impl.output_height)));
                     continue;
                 }
                 if (for_settings) {

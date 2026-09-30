@@ -30,6 +30,8 @@ std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir);
 struct SettingsScreenResult {
     bool close_requested = false;
     bool settings_changed = false;
+    // The Data Management row was chosen.
+    bool data_management_requested = false;
 };
 
 // Shows where the app is looking for the core and the BIOS files, and lets the
@@ -48,6 +50,8 @@ public:
     };
 
     void open(const Settings& settings, const std::vector<CoreStatus>& cores);
+    // What the Data Management row says: how many saves this device holds.
+    void set_save_count(std::size_t count) { save_count_ = count; }
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
@@ -76,6 +80,9 @@ private:
     // its menus confirm on A like every other Switch menu -- see
     // App::Impl::apply_button_style().
     enum class Row {
+        // First: of everything here, the one thing that is a place rather
+        // than a value.
+        DataManagement,
         SystemDir,
 #ifndef __SWITCH__
         PadGlyphs,
@@ -118,6 +125,7 @@ private:
     std::vector<BiosFileStatus> bios_;
     int focus_ = 0;
     bool open_ = false;
+    std::size_t save_count_ = 0;
 
     // How far down the list has been pushed, in pixels. Pixels rather than
     // rows, because what is below the rows -- the cores, then the BIOS files

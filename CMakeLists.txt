@@ -89,6 +89,8 @@ dualscreen_embed_asset(three_ds_bezel.png kThreeDsBezelPng BEZEL_SOURCES)
 dualscreen_embed_asset(inter.ttf kUiFont BEZEL_SOURCES)
 dualscreen_embed_asset(stylus_hand.png kStylusHandPng BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
+# Data Management's icons: only the app that plays games draws them.
+dualscreen_embed_asset(ui_icons.png kUiIconsPng BEZEL_SOURCES)
 
 set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.cmake)
@@ -160,6 +162,7 @@ add_library(dualscreen_core STATIC
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
     src/ui/controllers_screen.cpp
+    src/ui/data_management_screen.cpp
     src/util/build_stamp.cpp
     src/util/child_process.cpp
     src/util/log.cpp

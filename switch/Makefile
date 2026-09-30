@@ -62,7 +62,8 @@ GENERATED   := generated
 # The assets that travel inside the binary. One list, so what gets generated
 # and what gets compiled cannot drift apart -- a generated file that nothing
 # compiles is an undefined symbol at link time and nothing sooner.
-EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kUiFont.cpp kButtonIconsPng.cpp kStylusHandPng.cpp
+EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kUiFont.cpp kButtonIconsPng.cpp kStylusHandPng.cpp \
+                    kUiIconsPng.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -136,6 +137,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                pad_routing.cpp retro_keymap.cpp \
                host_session.cpp save_exchange.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp controllers_screen.cpp \
+               data_management_screen.cpp \
                child_process.cpp
 
 # What a libretro frontend supplies to a core linked into it. A core built as a
@@ -435,6 +437,11 @@ $(GENERATED)/kStylusHandPng.cpp: $(CURDIR)/../assets/stylus_hand.png $(CURDIR)/.
 	@mkdir -p $(GENERATED)
 	@echo Embedding assets/stylus_hand.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kStylusHandPng -P $(CURDIR)/../tools/embed_asset.cmake
+
+$(GENERATED)/kUiIconsPng.cpp: $(CURDIR)/../assets/ui_icons.png $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo Embedding assets/ui_icons.png
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kUiIconsPng -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kUiFont.cpp: $(CURDIR)/../assets/inter.ttf $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

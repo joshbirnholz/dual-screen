@@ -110,6 +110,7 @@ extern "C" {
 #if DS_LOCAL_PLAY
 #include "core/save_store.hpp"
 #include "net/save_exchange.hpp"
+#include "ui/data_management_screen.hpp"
 #endif
 
 #if defined(__APPLE__)
@@ -344,7 +345,8 @@ private:
     // Launcher is the opening screen -- which screen to be; Browsing is the
     // host picker; Playing is a live session, with or without this device's
     // own menu up over it.
-    enum class State { Launcher, Browsing, Connecting, Playing, Failed };
+    // DataManagement only where this device plays games itself.
+    enum class State { Launcher, Browsing, Connecting, Playing, Failed, DataManagement };
 
     void open_launcher();
     void begin_search(ScreenId wanted);
@@ -476,6 +478,7 @@ private:
     // the same as the desktop app does.
     std::unique_ptr<SaveStore> save_store_;
     std::unique_ptr<net::SaveExchangeService> save_service_;
+    std::unique_ptr<DataManagementScreen> data_screen_;
 #endif
 };
 
@@ -644,7 +647,9 @@ bool Client::start() {
 
 void Client::stop() {
 #if DS_LOCAL_PLAY
-    // Before a game here starts answering in its place.
+    // Before a game here starts answering in its place. The screen first: it
+    // may be waiting on a search, and holds textures the context below owns.
+    data_screen_.reset();
     save_service_.reset();
 #endif
     session_.disconnect();
@@ -911,6 +916,8 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
         // draws prompts but routes them itself, since a press there is
         // forwarded to the host rather than acted on here.
         case State::Playing: return none;
+        // Its prompts are its own, and so are taps on them.
+        case State::DataManagement: return none;
     }
     return none;
 }
@@ -978,6 +985,20 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         return;
     }
 
+    if (state_ == State::DataManagement) {
+#if DS_LOCAL_PLAY
+        // Nothing is being played here while this is up -- the menu is this
+        // program and the game is the desktop app's -- so nothing restarts.
+        if (data_screen_ &&
+            data_screen_->update(actions, pointers, static_cast<float>(output_width_),
+                                 static_cast<float>(output_height_))
+                .close_requested) {
+            open_launcher();
+        }
+#endif
+        return;
+    }
+
     if (state_ == State::Launcher) {
         const LauncherResult result =
             launcher_.update(actions, pointers, static_cast<float>(output_width_),
@@ -988,6 +1009,19 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 break;
             case LauncherChoice::ConnectAsBottomScreen:
                 begin_search(ScreenId::Bottom);
+                break;
+            case LauncherChoice::DataManagement:
+#if DS_LOCAL_PLAY
+                if (save_store_) {
+                    if (!data_screen_) {
+                        data_screen_.reset(new DataManagementScreen(
+                            *save_store_, save_service_ ? save_service_->instance()
+                                                        : new_save_version_id()));
+                    }
+                    data_screen_->open();
+                    state_ = State::DataManagement;
+                }
+#endif
                 break;
             case LauncherChoice::Quit:
                 log_info("leaving: the launcher's Quit row was chosen");
@@ -1032,6 +1066,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 }
                 break;
             case State::Launcher:
+            case State::DataManagement:
                 break;
             case State::Playing:
                 // On a Siri Remote, back opens the quick menu.
@@ -1259,6 +1294,7 @@ void Client::run() {
 
         switch (state_) {
             case State::Launcher:
+            case State::DataManagement:
                 break;
             case State::Browsing:
                 if (options_.auto_connect) {
@@ -1509,6 +1545,12 @@ void Client::draw_scene() {
     gl::log_error_once("something in the last frame was rejected by OpenGL");
     gl::bind_window_framebuffer();
 
+    if (state_ == State::DataManagement) {
+#if DS_LOCAL_PLAY
+        if (data_screen_) data_screen_->render(quads_, text_, button_glyphs_, width, height);
+#endif
+        return;
+    }
     if (state_ == State::Launcher) {
         // The app's own opening screen, so choosing which screen to be looks
         // the same here as picking it there does.

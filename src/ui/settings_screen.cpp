@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "core/libretro_core.hpp"
+#include "ui/data_management_screen.hpp"
 #include "ui/control_guide.hpp"
 
 namespace ds {
@@ -97,6 +98,11 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
 
 void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
     switch (static_cast<Row>(focus_)) {
+        case Row::DataManagement:
+            // A page of its own, opened rather than stepped through: only a
+            // press opens it, not left or right.
+            if (direction == 0) result.data_management_requested = true;
+            break;
         case Row::SystemDir: {
             if (system_dir_candidates_.empty()) break;
             const auto it = std::find(system_dir_candidates_.begin(), system_dir_candidates_.end(),
@@ -189,7 +195,9 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
             case UiAction::Down: focus_ = (focus_ + 1) % kRowCount; break;
             case UiAction::Left: adjust(-1, result); break;
             case UiAction::Right: adjust(1, result); break;
-            case UiAction::Confirm: adjust(1, result); break;
+            case UiAction::Confirm:
+                adjust(focus_ == static_cast<int>(Row::DataManagement) ? 0 : 1, result);
+                break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu: result.close_requested = true; break;
             // A menu's face buttons. Nothing here answers them, and a bare
@@ -222,7 +230,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
         for (std::size_t index = 0; index < settled.rows.size(); ++index) {
             if (tapped(pointer, settled.rows[index])) {
                 focus_ = static_cast<int>(index);
-                adjust(1, result);
+                adjust(focus_ == static_cast<int>(Row::DataManagement) ? 0 : 1, result);
             }
         }
     }
@@ -260,6 +268,7 @@ void SettingsScreen::render(QuadRenderer& quads,
                              geometry.panel.y + geometry.panel.h - view_top});
 
     const std::string rows[kRowCount][2] = {
+        {"Data Management", DataManagementScreen::describe_count(save_count_)},
         {"BIOS / system folder", settings_.system_dir},
 #ifndef __SWITCH__
         {"Button prompts", to_string(settings_.pad_glyphs)},

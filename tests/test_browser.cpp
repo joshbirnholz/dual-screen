@@ -435,6 +435,29 @@ void test_the_opening_screen_offers_what_the_device_can_do() {
     CHECK(offers(companion, LauncherChoice::ConnectAsTopScreen));
     CHECK(offers(companion, LauncherChoice::ConnectAsBottomScreen));
     CHECK(offers(companion, LauncherChoice::Quit));
+    CHECK_MSG(!offers(companion, LauncherChoice::DataManagement),
+              "a companion with no games of its own offered Data Management");
+    // In Settings on a device with Settings, not beside it.
+    CHECK(!offers(full, LauncherChoice::DataManagement));
+}
+
+// A Switch with its own emulator plays games but keeps no Settings here: its
+// saves are managed from a row of their own.
+void test_a_switch_that_plays_games_offers_data_management() {
+    LauncherScreen launcher;
+    launcher.set_offers_load_game(true);
+    launcher.open(/*runs_games=*/false);
+    std::vector<LauncherChoice> seen;
+    for (int step = 0; step < 8; ++step) {
+        LauncherScreen walker;
+        walker.set_offers_load_game(true);
+        walker.open(false);
+        for (int down = 0; down < step; ++down) walker.update({UiAction::Down}, {}, 1280.0f, 800.0f);
+        seen.push_back(walker.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice);
+    }
+    CHECK(offers(seen, LauncherChoice::LoadGame));
+    CHECK(offers(seen, LauncherChoice::DataManagement));
+    CHECK(!offers(seen, LauncherChoice::Settings));
 }
 
 // Moving down the list reaches every row and comes back round, whichever set
@@ -484,6 +507,7 @@ int main() {
     test_confirm_on_a_rom_chooses_it();
     test_plus_goes_to_the_main_menu_and_quit_is_not_here();
     test_the_opening_screen_offers_what_the_device_can_do();
+    test_a_switch_that_plays_games_offers_data_management();
     test_the_opening_screen_wraps_around_its_own_rows();
     return test::finish("browser");
 }

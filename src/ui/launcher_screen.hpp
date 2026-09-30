@@ -20,6 +20,10 @@ enum class LauncherChoice {
     ConnectAsTopScreen,
     ConnectAsBottomScreen,
     Settings,
+    // Data Management on its own, for a device that plays games but keeps
+    // no Settings on this screen -- a Switch with its own emulator. Elsewhere
+    // it is the first row of Settings.
+    DataManagement,
     Quit,
 };
 

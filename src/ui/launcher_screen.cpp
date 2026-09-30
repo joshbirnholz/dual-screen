@@ -16,6 +16,7 @@ const char* title_for(LauncherChoice choice) {
         case LauncherChoice::ConnectAsTopScreen: return "Connect as top screen";
         case LauncherChoice::ConnectAsBottomScreen: return "Connect as bottom screen";
         case LauncherChoice::Settings: return "Settings";
+        case LauncherChoice::DataManagement: return "Data Management";
         case LauncherChoice::Quit: return "Quit";
         case LauncherChoice::None: break;
     }
@@ -55,6 +56,9 @@ void LauncherScreen::open(bool runs_games) {
     rows_.push_back(LauncherChoice::ConnectAsBottomScreen);
     if (runs_games) {
         rows_.push_back(LauncherChoice::Settings);
+    } else if (offers_load_game_) {
+        // It keeps saves of its own, so it can manage them.
+        rows_.push_back(LauncherChoice::DataManagement);
     }
     if (offers_quit_) {
         rows_.push_back(LauncherChoice::Quit);
