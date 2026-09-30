@@ -1131,7 +1131,7 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     for (std::size_t index = 0; index < geometry.items.size() && index < options_.size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
-        draw_menu_row(quads, row, focused, scale);
+        draw_quick_menu_row(quads, row, focused, scale);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, option_name(options_[index]), row.x + line * 0.8f, baseline, row_scale,
                   menu_row_text(focused));
@@ -1176,7 +1176,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
             const PixelRect& row = geometry.footer[index];
             const bool focused = (static_cast<int>(index) == focus_);
-            draw_menu_row(quads, row, focused, scale);
+            draw_quick_menu_row(quads, row, focused, scale);
 
             const float pad = line * 0.7f;
             text.draw(quads, footer_label(footer_[index]), row.x + pad,

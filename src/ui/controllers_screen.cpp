@@ -44,8 +44,8 @@ ControllersScreen::Geometry ControllersScreen::compute_geometry(float output_wid
                                output_height - std::round(output_height * 0.16f)};
     geometry.view_top = geometry.panel.y + line * 2.6f;
     geometry.view_bottom = geometry.panel.y + geometry.panel.h - line * 2.2f;
-    const float row_height = line * 1.9f;
-    const float step = row_height + line * 0.3f;
+    const float row_height = menu_row_height(line);
+    const float step = row_height + menu_row_gap(line);
     const float gap = line * 1.2f;
     for (int index = 0; index < row_count; ++index) {
         const float before = (gap_before >= 0 && index >= gap_before) ? gap : 0.0f;
@@ -245,7 +245,7 @@ void ControllersScreen::render(QuadRenderer& quads,
 
     quads.set_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
                              geometry.view_bottom - geometry.view_top});
-    const float pad = line * 0.5f;
+    const float pad = menu_row_pad(line);
     const float slot_column = std::max(TextRenderer::measure_width("Player 8", scale),
                                        TextRenderer::measure_width("Not used", scale)) +
                               pad * 3.0f;

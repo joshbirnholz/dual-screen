@@ -437,8 +437,8 @@ void test_the_opening_screen_offers_what_the_device_can_do() {
     CHECK(offers(companion, LauncherChoice::Quit));
     CHECK_MSG(!offers(companion, LauncherChoice::DataManagement),
               "a companion with no games of its own offered Data Management");
-    // In Settings on a device with Settings, not beside it.
-    CHECK(!offers(full, LauncherChoice::DataManagement));
+    // Anything that plays games manages its saves from here too.
+    CHECK(offers(full, LauncherChoice::DataManagement));
 }
 
 // A Switch with its own emulator plays games but keeps no Settings here: its

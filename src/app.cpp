@@ -371,6 +371,9 @@ struct App::Impl {
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
     std::unique_ptr<DataManagementScreen> data_screen;
+    // Where Data Management was opened from -- Settings or the main menu --
+    // which is where it goes back to.
+    State data_came_from = State::Settings;
     // What the popup over a paused game says: that it was resumed, or that
     // Data Management restarted it on another save.
     std::string game_notice = kResumedNotice;
@@ -680,8 +683,6 @@ struct App::Impl {
     void return_to_settings();
     void open_data_management();
     void apply_data_management_result(const DataManagementResult& result);
-    // How many saves Data Management has to show.
-    std::size_t save_count() const;
     // What to do about whatever that screen just decided -- called for a press
     // made here and for one the companion sent, the same way the menu is.
     void apply_settings_result(const SettingsScreenResult& result);
@@ -2336,24 +2337,13 @@ void App::Impl::open_settings() {
         // they cannot see.
         picker->close();
     }
-    settings_screen->set_save_count(save_count());
     settings_screen->open(settings, resolve_core_statuses(options, settings));
     state = State::Settings;
     input.set_game_input_enabled(false);
     log_info("the settings screen is up");
 }
 
-std::size_t App::Impl::save_count() const {
-    if (!save_store) return 0;
-    std::size_t count = 0;
-    for (const SaveInfo& info : save_store->list()) {
-        if (info.has_save && !info.game_id.empty()) ++count;
-    }
-    return count;
-}
-
 void App::Impl::return_to_settings() {
-    settings_screen->set_save_count(save_count());
     settings_screen->open(settings, resolve_core_statuses(options, settings));
     state = State::Settings;
     input.set_game_input_enabled(false);
@@ -2364,6 +2354,10 @@ void App::Impl::open_data_management() {
     if (!data_screen) {
         data_screen.reset(new DataManagementScreen(
             *save_store, save_service ? save_service->instance() : new_save_version_id()));
+        if (save_service) {
+            net::SaveExchangeService* service = save_service.get();
+            data_screen->set_change_source([service] { return service->saves_received(); });
+        }
     }
     // During a DS game, its own page and nothing else.
     std::string game_id;
@@ -2371,6 +2365,7 @@ void App::Impl::open_data_management() {
     if (local_game() && source && system == SystemId::Ds && save_store->find_for_rom(game_path, info)) {
         game_id = info.game_id;
     }
+    data_came_from = state == State::Launcher ? State::Launcher : State::Settings;
     data_screen->open(game_id);
     state = State::DataManagement;
     input.set_game_input_enabled(false);
@@ -2402,7 +2397,11 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
         return;
     }
     if (result.close_requested) {
-        return_to_settings();
+        if (data_came_from == State::Launcher) {
+            open_launcher();
+        } else {
+            return_to_settings();
+        }
     }
 }
 
@@ -3080,8 +3079,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     break;
                 case LauncherChoice::Settings:
                     settings_came_from = State::Launcher;
-                    settings_screen->set_save_count(save_count());
-                    settings_screen->open(settings, resolve_core_statuses(options, settings));
+                                    settings_screen->open(settings, resolve_core_statuses(options, settings));
                     state = State::Settings;
                     break;
                 case LauncherChoice::DataManagement:
@@ -3520,6 +3518,7 @@ void App::Impl::render() {
                                   companion_joined() ? host_session->companion_name()
                                                      : std::string("other device"));
     } else if (state == State::Settings) {
+        settings_screen->set_over_game(show_menu_backdrop);
         settings_screen->render(quads, text, button_glyphs, width, height);
     } else if (state == State::DataManagement) {
         data_screen->render(quads, text, button_glyphs, width, height);

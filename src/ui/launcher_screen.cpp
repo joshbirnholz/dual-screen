@@ -32,13 +32,14 @@ std::vector<PixelRect> LauncherScreen::compute_rows(float output_width,
     const float line = TextRenderer::line_height(out_scale);
     const float margin = std::round(output_width * 0.12f);
     const float width = output_width - margin * 2.0f;
-    const float row_height = line * 2.4f;
-    const float top = std::round(output_height * 0.30f);
+    const float row_height = menu_row_height(line * 1.2f);
+    const float gap = menu_row_gap(line);
+    const float top = std::round(output_height * 0.25f);
 
     std::vector<PixelRect> rows;
     for (std::size_t index = 0; index < rows_.size(); ++index) {
         rows.push_back(PixelRect{margin,
-                                 top + static_cast<float>(index) * (row_height + line * 0.5f),
+                                 top + static_cast<float>(index) * (row_height + gap),
                                  width, row_height});
     }
     return rows;
@@ -54,11 +55,13 @@ void LauncherScreen::open(bool runs_games) {
     }
     rows_.push_back(LauncherChoice::ConnectAsTopScreen);
     rows_.push_back(LauncherChoice::ConnectAsBottomScreen);
+    // Anything that plays games keeps saves of its own, and manages them
+    // from here as well as from Settings.
+    if (runs_games || offers_load_game_) {
+        rows_.push_back(LauncherChoice::DataManagement);
+    }
     if (runs_games) {
         rows_.push_back(LauncherChoice::Settings);
-    } else if (offers_load_game_) {
-        // It keeps saves of its own, so it can manage them.
-        rows_.push_back(LauncherChoice::DataManagement);
     }
     if (offers_quit_) {
         rows_.push_back(LauncherChoice::Quit);
@@ -168,21 +171,15 @@ void LauncherScreen::render(QuadRenderer& quads,
     quads.clear(theme.background);
 
     const float margin = rows.empty() ? 0.0f : rows.front().x;
-    text.draw(quads, "Dualscreen", margin, std::round(output_height * 0.14f), scale * 2.0f,
+    text.draw(quads, "Dualscreen", margin, std::round(output_height * 0.11f), scale * 2.0f,
               theme.text);
-    text.draw(quads,
-              runs_games_ || offers_load_game_
-                  ? "Play a DS game here, or be a screen for one running on another device"
-                  : "Be a screen for a game running on another device",
-              margin, std::round(output_height * 0.14f) + line * 2.4f, scale * 0.95f,
-              theme.text_dim);
 
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
         const bool focused = (static_cast<int>(index) == focus_);
         draw_menu_row(quads, row, focused, scale);
 
-        const float pad = line * 0.7f;
+        const float pad = menu_row_pad(line);
         // Centred on the row, since there is nothing under it any more: the
         // names say what they do without a sentence explaining them.
         text.draw(quads, title_for(rows_[index]), row.x + pad,
@@ -221,13 +218,13 @@ std::vector<PixelRect> HostPickerScreen::compute_rows(std::size_t count,
     const float line = TextRenderer::line_height(out_scale);
     const float margin = std::round(output_width * 0.10f);
     const float width = output_width - margin * 2.0f;
-    const float row_height = line * 3.0f;
+    const float row_height = menu_two_line_row_height(line);
     const float top = std::round(output_height * 0.28f);
 
     std::vector<PixelRect> rows;
     for (std::size_t index = 0; index < count; ++index) {
-        rows.push_back(
-            PixelRect{margin, top + index * (row_height + line * 0.4f), width, row_height});
+        rows.push_back(PixelRect{margin, top + index * (row_height + menu_row_gap(line)), width,
+                                 row_height});
     }
     return rows;
 }
@@ -332,12 +329,13 @@ void HostPickerScreen::render(QuadRenderer& quads,
 
         draw_menu_row(quads, row, focused, scale);
 
-        const float pad = line * 0.6f;
-        text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad,
-                  row.y + pad * 0.7f, scale * 1.1f,
-                  available ? menu_row_text(focused) : theme.text_dim);
-        text.draw(quads, host_row_detail(host, available), row.x + pad, row.y + pad * 0.7f + line * 1.4f, scale * 0.85f,
-                  focused ? theme.panel : (available ? theme.text_dim : theme.warning));
+        const float pad = menu_row_pad(line);
+        const float block = line * 1.4f + TextRenderer::line_height(scale * 0.85f);
+        const float top = row.y + (row.h - block) * 0.5f;
+        text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad, top,
+                  scale * 1.1f, available ? menu_row_text(focused) : theme.text_dim);
+        text.draw(quads, host_row_detail(host, available), row.x + pad, top + line * 1.4f,
+                  scale * 0.85f, focused ? theme.panel : theme.text_dim);
     }
 
     draw_control_guide(quads, text, glyphs,

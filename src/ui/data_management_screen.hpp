@@ -54,6 +54,9 @@ public:
 
     // For tests: where the searches go.
     void set_search_for_test(const net::SaveSearch& search) { search_ = search; }
+    // Something that goes up whenever another device sends a save here, so
+    // what is on screen can be read again -- SaveExchangeService's count.
+    void set_change_source(std::function<uint64_t()> source) { change_source_ = std::move(source); }
 
     DataManagementResult update(const std::vector<UiAction>& actions,
                                 const std::vector<PointerEvent>& pointers,
@@ -67,7 +70,7 @@ public:
 
     // What is on screen, for tests and the log.
     enum class Page { List, Game, Earlier };
-    enum class Overlay { None, Confirm, ResumeConfirm, Busy, Notice };
+    enum class Overlay { None, Confirm, ResumeConfirm, Busy, Notice, Choice };
     Page page() const { return page_; }
     Overlay overlay() const { return overlay_; }
     const std::vector<SaveInfo>& saves() const { return saves_; }
@@ -80,7 +83,11 @@ public:
     const std::string& dialog_title() const { return dialog_title_; }
     const std::vector<std::string>& dialog_lines() const { return dialog_lines_; }
     const std::string& notice() const { return notice_; }
-    // The game page's four actions, as they read now.
+    // A conflict's question: which save to keep.
+    const std::string& choice_title() const { return choice_title_; }
+    int choice_focus() const { return choice_focus_; }
+    bool syncing_all() const { return sync_all_; }
+    // The game page's actions, as they read now.
     std::vector<std::string> action_labels() const;
     std::vector<bool> actions_enabled() const;
     // Which of them the cursor is on.
@@ -90,7 +97,7 @@ public:
     static std::string describe_count(std::size_t count);
 
 private:
-    enum class Action { Get, Send, Earlier, Delete, Count };
+    enum class Action { Sync, Get, Send, Earlier, Delete, Count };
     enum class Pending { None, Get, Send, Delete, Restore };
 
     struct RemoteState {
@@ -101,11 +108,13 @@ private:
     // One piece of work off this thread: a search, then how each device's
     // save for a game stands; or one transfer.
     struct Job {
-        enum class Kind { Search, Status, Fetch, Send } kind = Kind::Search;
+        enum class Kind { Search, Status, Fetch, Send, Plan } kind = Kind::Search;
         std::atomic<bool> done{false};
         std::string game_id;
         std::vector<net::SaveDevice> devices;
         std::map<std::string, RemoteState> remote;  // by instance
+        // Sync All's: every device, and every save on it.
+        std::vector<std::pair<net::SaveDevice, std::vector<net::RemoteSave>>> lists;
         net::SaveDevice device;
         SaveInfo info;
         std::vector<uint8_t> bytes;
@@ -113,8 +122,23 @@ private:
         std::string error;
     };
 
+    // Which way a save has to go for both devices to have the newest.
+    enum class SyncWay { Nothing, Get, Send, Conflict, Busy };
+    static SyncWay sync_way(const SaveVersionState& here, const net::RemoteSaveStatus& there);
+
+    // One game on one device, for Sync All.
+    struct SyncItem {
+        net::SaveDevice device;
+        std::string game_id;
+        std::string title;
+        net::RemoteSaveStatus remote;
+    };
+
     void reload_saves();
     void open_game(const std::string& game_id);
+    // This game's save read again, after something here changed it.
+    void refresh_game();
+    void check_for_changes();
     void settle_action_focus();
     void start_job(std::unique_ptr<Job> job);
     void start_search();
@@ -127,6 +151,18 @@ private:
     bool this_game_in_play() const { return in_game() && game_.game_id == game_in_play_; }
 
     void activate(Action action, DataManagementResult& result);
+    void start_sync(DataManagementResult& result);
+    void show_choice(const std::string& title, const std::string& there_name,
+                     const std::string& there_date, const std::string& here_date);
+    void chosen(DataManagementResult& result);
+    void start_sync_all();
+    void advance_sync_all();
+    void begin_sync_transfer(SyncWay way);
+    void start_sync_job(SyncWay way);
+    void skip_sync_item();
+    void finish_sync_all();
+    void start_transfer(Job::Kind kind, const net::SaveDevice& device, const std::string& game_id,
+                        const std::string& busy);
     void ask(Pending pending);
     void confirmed(DataManagementResult& result);
     void carry_out(DataManagementResult& result);
@@ -176,6 +212,30 @@ private:
     std::string notice_;
     std::string busy_;
 
+    // Sync: set while a Get or Send comes from it rather than from its own
+    // row, so no second question is asked before it goes.
+    bool sync_mode_ = false;
+    std::string choice_title_;
+    std::string choice_line_;
+    std::string choice_names_[2];
+    std::string choice_dates_[2];
+    int choice_focus_ = 0;
+
+    // Sync All, while it runs.
+    bool sync_all_ = false;
+    // Sync All asked for while something else was being asked.
+    bool plan_queued_ = false;
+    std::vector<SyncItem> sync_items_;
+    std::size_t sync_index_ = 0;
+    SyncWay sync_pending_way_ = SyncWay::Nothing;
+    int sync_done_ = 0;
+    int sync_skipped_ = 0;
+    int sync_failed_ = 0;
+    std::vector<std::string> sync_device_names_;
+
+    std::function<uint64_t()> change_source_;
+    uint64_t seen_changes_ = 0;
+
     std::unique_ptr<Job> job_;
     std::thread worker_;
     // A search asked for while another job was running, and a status wanted
@@ -186,6 +246,7 @@ private:
     std::vector<GuideHit> guide_hits_;
     // Where the rows were drawn, for a finger.
     std::vector<PixelRect> row_rects_;
+    std::vector<PixelRect> choice_rects_;
 
     Texture ui_icons_;
     bool ui_icons_tried_ = false;

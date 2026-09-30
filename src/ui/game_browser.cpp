@@ -153,7 +153,7 @@ GameBrowser::Geometry GameBrowser::compute_geometry(float output_width, float ou
     const float footer = line * 3.0f;
     geometry.list = PixelRect{geometry.panel.x, geometry.panel.y + header, geometry.panel.w,
                               geometry.panel.h - header - footer};
-    geometry.row_height = line * 1.8f;
+    geometry.row_height = menu_row_height(line);
     geometry.visible_rows =
         std::max(1, static_cast<int>(geometry.list.h / geometry.row_height));
 
@@ -371,15 +371,15 @@ void GameBrowser::render(QuadRenderer& quads,
     const int last = std::min(count, scroll_ + geometry.visible_rows);
     for (int index = scroll_; index < last; ++index) {
         const Row& row = rows_[static_cast<std::size_t>(index)];
+        // Short of the scroll bar, which runs beside the rows.
         const PixelRect rect{geometry.list.x,
                              geometry.list.y + (index - scroll_) * geometry.row_height,
-                             geometry.list.w, geometry.row_height};
+                             geometry.list.w - scroll_bar_width(scale) - line * 0.4f,
+                             geometry.row_height - menu_row_gap(line)};
         const bool focused = (index == focus_);
-        if (focused) {
-            draw_menu_row(quads, rect, true, scale);
-        }
+        draw_menu_row(quads, rect, focused, scale);
 
-        const float pad = line * 0.5f;
+        const float pad = menu_row_pad(line);
         const float baseline = rect.y + (rect.h - line) * 0.5f;
         // Folders get a trailing slash and the accent colour, so the two kinds
         // of row are separable at a glance on a small screen.
@@ -395,16 +395,8 @@ void GameBrowser::render(QuadRenderer& quads,
 
     // Scrollbar, drawn only when the list actually overflows.
     if (count > geometry.visible_rows) {
-        const float track_width = std::max(3.0f, scale * 2.0f);
-        const PixelRect track{geometry.list.x + geometry.list.w - track_width, geometry.list.y,
-                              track_width, geometry.list.h};
-        quads.draw_solid(track, Color{0.10f, 0.12f, 0.16f, 1.0f});
-        const float fraction = static_cast<float>(geometry.visible_rows) / count;
-        const float thumb_height = std::max(line, geometry.list.h * fraction);
-        const float travel = geometry.list.h - thumb_height;
-        const float offset = static_cast<float>(scroll_) / (count - geometry.visible_rows);
-        quads.draw_solid(PixelRect{track.x, track.y + travel * offset, track.w, thumb_height},
-                         theme.accent);
+        draw_scroll_bar(quads, geometry.list, static_cast<float>(scroll_) / count,
+                        static_cast<float>(geometry.visible_rows) / count, line, scale);
     }
 
     // Right-aligned to the panel's edge, as every other screen's are. Main

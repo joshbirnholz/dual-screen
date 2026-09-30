@@ -16,7 +16,7 @@ namespace ds {
 namespace {
 
 // The cells of assets/ui_icons.png, in order.
-enum class UiIcon { Get, Send, History, Delete, SteamDeck, Switch, Pc, Count };
+enum class UiIcon { Get, Send, History, Delete, SteamDeck, Switch, Pc, Sync, Count };
 
 UiIcon device_icon(const std::string& kind) {
     if (kind == net::kDeviceKindSteamDeck) return UiIcon::SteamDeck;
@@ -49,7 +49,13 @@ std::string describe_time(int64_t when) {
         return a.tm_year == b.tm_year && a.tm_yday == b.tm_yday;
     };
     const char* day = same_day(then, today) ? "Today" : same_day(then, yesterday) ? "Yesterday" : nullptr;
-    if (day == nullptr) return format_save_time(when, style);
+    if (day == nullptr) {
+        // "09/24/2026, 11:50 PM": a comma between the two, as a list reads.
+        std::string text = format_save_time(when, style);
+        const std::size_t dash = text.find(" - ");
+        if (dash != std::string::npos) text.replace(dash, 3, ", ");
+        return text;
+    }
     char clock[32];
     if (style.twelve_hour) {
         const int hour = then.tm_hour % 12 == 0 ? 12 : then.tm_hour % 12;
@@ -78,26 +84,6 @@ std::string elide_right(const std::string& text, float max_width, float scale) {
 Color with_alpha(Color color, float alpha) {
     color.a = alpha;
     return color;
-}
-
-// A row of one of these lists, in the menus' new look: under the cursor, a
-// light rounded fill inside a ring of the accent colour; elsewhere nothing but
-// a faint rule beneath it.
-void draw_list_row(QuadRenderer& quads, const PixelRect& rect, bool focused, bool ruled,
-                   float scale) {
-    const UiTheme& theme = ui_theme();
-    const float line = TextRenderer::line_height(scale);
-    const float radius = line * 0.35f;
-    if (focused) {
-        const float ring = menu_border(scale);
-        quads.draw_rounded_rect(rect, radius, theme.accent);
-        quads.draw_rounded_rect(PixelRect{rect.x + ring, rect.y + ring, rect.w - ring * 2.0f,
-                                          rect.h - ring * 2.0f},
-                                std::max(0.0f, radius - ring), theme.text);
-    } else if (ruled) {
-        quads.draw_solid(PixelRect{rect.x, rect.y + rect.h - 1.0f, rect.w, 1.0f},
-                         with_alpha(theme.text_dim, 0.25f));
-    }
 }
 
 struct Frame {
@@ -150,13 +136,15 @@ void DataManagementScreen::open(const std::string& game_in_play) {
     page_ = Page::List;
     list_focus_ = 0;
     list_scroll_ = 0;
+    sync_all_ = false;
+    plan_queued_ = false;
+    seen_changes_ = change_source_ ? change_source_() : 0;
     reload_saves();
+    // A game's page looks for devices as it opens; the list waits to be
+    // asked, by Sync All.
     if (in_game()) {
         open_game(game_in_play_);
     }
-    // Every device worth offering, looked for once as the screen opens. Y
-    // looks again.
-    start_search();
     log_info(in_game() ? "Data Management is up, on the page for the game being played"
                        : "Data Management is up");
 }
@@ -186,11 +174,38 @@ void DataManagementScreen::open_game(const std::string& game_id) {
         action_focus_ = 0;
         action_focus_chosen_ = false;
     }
-    settle_action_focus();
     if (status_game_id_ != game_id) {
         remote_.clear();
         status_game_id_.clear();
-        if (searched_) start_status();
+    }
+    // Who is around is looked at afresh each time a page opens, so a device
+    // switched on since is there without being asked for.
+    start_search();
+    settle_action_focus();
+}
+
+void DataManagementScreen::refresh_game() {
+    SaveInfo fresh;
+    if (store_.find(game_.game_id, fresh)) game_ = fresh;
+    settle_action_focus();
+}
+
+void DataManagementScreen::check_for_changes() {
+    if (!change_source_) return;
+    const uint64_t now = change_source_();
+    if (now == seen_changes_) return;
+    seen_changes_ = now;
+    // Another device has just sent a save here: whatever is on screen is
+    // read again, and the other devices asked again about this game.
+    log_info("Data Management: a save arrived from another device; looking again");
+    reload_saves();
+    if (page_ == Page::Game) {
+        refresh_game();
+        start_status();
+    } else if (page_ == Page::Earlier) {
+        refresh_game();
+        earlier_ = store_.earlier(game_.game_id);
+        earlier_focus_ = std::min(earlier_focus_, std::max(0, static_cast<int>(earlier_.size()) - 1));
     }
 }
 
@@ -249,6 +264,19 @@ void DataManagementScreen::start_job(std::unique_ptr<Job> job) {
                 statuses();
                 running->ok = true;
                 break;
+            case Job::Kind::Plan:
+                for (net::SaveDevice& device : net::search_save_devices(search)) {
+                    if (!device.keeps(kSaveSystemDs)) continue;
+                    std::vector<net::RemoteSave> saves;
+                    std::string error;
+                    if (net::list_remote_saves(device, saves, &error)) {
+                        running->lists.emplace_back(device, std::move(saves));
+                    } else {
+                        log_info("Data Management: " + device.name + " did not say what it has: " + error);
+                    }
+                }
+                running->ok = true;
+                break;
             case Job::Kind::Fetch:
                 running->ok = net::fetch_save(running->device, running->game_id, running->info,
                                               running->bytes, &running->error);
@@ -271,6 +299,8 @@ void DataManagementScreen::start_search() {
         search_queued_ = true;
         return;
     }
+    remote_.clear();
+    status_game_id_.clear();
     std::unique_ptr<Job> job(new Job());
     job->kind = Job::Kind::Search;
     if (page_ != Page::List) job->game_id = game_.game_id;
@@ -334,7 +364,8 @@ bool DataManagementScreen::comparison_is_conflict() const {
 
 std::vector<std::string> DataManagementScreen::action_labels() const {
     const net::SaveDevice* shown = remote() != nullptr ? device() : nullptr;
-    return {shown != nullptr ? "Get Save from " + shown->name : std::string("Get Save"),
+    return {shown != nullptr ? "Sync with " + shown->name : std::string("Sync"),
+            shown != nullptr ? "Get Save from " + shown->name : std::string("Get Save"),
             shown != nullptr ? "Send Save to " + shown->name : std::string("Send Save"),
             "Earlier Saves", "Delete Save Data"};
 }
@@ -342,7 +373,8 @@ std::vector<std::string> DataManagementScreen::action_labels() const {
 std::vector<bool> DataManagementScreen::actions_enabled() const {
     const RemoteState* there = remote();
     const bool reachable = there != nullptr && !there->status.playing_now && !job_;
-    return {reachable && there->status.versions.has_save, reachable && game_.has_save, true,
+    return {reachable && (there->status.versions.has_save || game_.has_save),
+            reachable && there->status.versions.has_save, reachable && game_.has_save, true,
             game_.has_save};
 }
 
@@ -396,7 +428,63 @@ void DataManagementScreen::finish_job(DataManagementResult& result) {
             if (page_ != Page::List && status_game_id_ != game_.game_id) status_queued_ = true;
             break;
         }
+        case Job::Kind::Plan: {
+            reload_saves();
+            sync_items_.clear();
+            sync_device_names_.clear();
+            for (auto& [device, saves] : job->lists) {
+                sync_device_names_.push_back(device.name);
+                // Every game either side has a save for: this device's, and
+                // the other's -- including a game this one has never had.
+                std::vector<std::string> seen;
+                for (const net::RemoteSave& save : saves) {
+                    SyncItem item;
+                    item.device = device;
+                    item.game_id = save.game_id;
+                    item.title = save.title;
+                    item.remote = save.status;
+                    for (const SaveInfo& here : saves_) {
+                        if (here.game_id == save.game_id) item.title = here.display_title();
+                    }
+                    sync_items_.push_back(item);
+                    seen.push_back(save.game_id);
+                }
+                for (const SaveInfo& here : saves_) {
+                    if (!here.has_save ||
+                        std::find(seen.begin(), seen.end(), here.game_id) != seen.end()) {
+                        continue;
+                    }
+                    SyncItem item;
+                    item.device = device;
+                    item.game_id = here.game_id;
+                    item.title = here.display_title();
+                    sync_items_.push_back(item);
+                }
+            }
+            if (job->lists.empty()) {
+                sync_all_ = false;
+                show_notice("No other devices were found.");
+                break;
+            }
+            sync_index_ = 0;
+            overlay_ = Overlay::None;
+            advance_sync_all();
+            break;
+        }
         case Job::Kind::Fetch: {
+            if (sync_all_) {
+                std::string error;
+                if (job->ok && store_.accept(job->info, job->bytes, job->device.name, &error)) {
+                    ++sync_done_;
+                } else {
+                    ++sync_failed_;
+                    log_warn("Sync All: could not get " + job->device.name + "'s save for " +
+                             job->game_id + ": " + (job->ok ? error : job->error));
+                }
+                ++sync_index_;
+                advance_sync_all();
+                break;
+            }
             if (!job->ok) {
                 show_notice("Could not get " + job->device.name + "'s save: " + job->error);
                 break;
@@ -420,11 +508,23 @@ void DataManagementScreen::finish_job(DataManagementResult& result) {
                 show_notice("Could not replace the save: " + error);
             }
             reload_saves();
-            open_game(game_.game_id);
+            refresh_game();
             status_queued_ = true;
             break;
         }
         case Job::Kind::Send:
+            if (sync_all_) {
+                if (job->ok) {
+                    ++sync_done_;
+                } else {
+                    ++sync_failed_;
+                    log_warn("Sync All: could not send " + job->game_id + " to " + job->device.name +
+                             ": " + job->error);
+                }
+                ++sync_index_;
+                advance_sync_all();
+                break;
+            }
             if (job->ok) {
                 show_notice("Sent " + title + " to " + job->device.name + ".");
             } else {
@@ -434,6 +534,12 @@ void DataManagementScreen::finish_job(DataManagementResult& result) {
             break;
     }
     if (page_ == Page::Game) settle_action_focus();
+    if (plan_queued_ && !job_) {
+        plan_queued_ = false;
+        sync_all_ = false;
+        start_sync_all();
+        return;
+    }
     if (search_queued_) {
         search_queued_ = false;
         status_queued_ = false;
@@ -445,10 +551,10 @@ void DataManagementScreen::finish_job(DataManagementResult& result) {
 }
 
 void DataManagementScreen::activate(Action action, DataManagementResult& result) {
-    (void)result;
     const std::vector<bool> enabled = actions_enabled();
     if (!enabled[static_cast<std::size_t>(action)]) return;
     switch (action) {
+        case Action::Sync: start_sync(result); break;
         case Action::Get: ask(Pending::Get); break;
         case Action::Send: ask(Pending::Send); break;
         case Action::Delete: ask(Pending::Delete); break;
@@ -617,23 +723,14 @@ void DataManagementScreen::carry_out(DataManagementResult& result) {
         case Pending::Get: {
             const net::SaveDevice* shown = device();
             if (shown == nullptr || job_) break;
-            std::unique_ptr<Job> job(new Job());
-            job->kind = Job::Kind::Fetch;
-            job->device = *shown;
-            job->game_id = game_id;
-            show_busy("Getting " + shown->name + "'s save...");
-            start_job(std::move(job));
+            start_transfer(Job::Kind::Fetch, *shown, game_id, "Getting " + shown->name + "'s save...");
             break;
         }
         case Pending::Send: {
             const net::SaveDevice* shown = device();
             if (shown == nullptr || job_) break;
-            std::unique_ptr<Job> job(new Job());
-            job->kind = Job::Kind::Send;
-            job->device = *shown;
-            job->game_id = game_id;
-            show_busy("Sending " + title + " to " + shown->name + "...");
-            start_job(std::move(job));
+            start_transfer(Job::Kind::Send, *shown, game_id,
+                           "Sending " + title + " to " + shown->name + "...");
             break;
         }
         case Pending::Delete: {
@@ -652,7 +749,7 @@ void DataManagementScreen::carry_out(DataManagementResult& result) {
                 show_notice("Could not delete the save: " + error);
             }
             reload_saves();
-            open_game(game_id);
+            refresh_game();
             break;
         }
         case Pending::Restore: {
@@ -672,12 +769,219 @@ void DataManagementScreen::carry_out(DataManagementResult& result) {
                 show_notice("Could not restore the save: " + error);
             }
             reload_saves();
-            open_game(game_id);
+            refresh_game();
+            page_ = Page::Game;
+            status_queued_ = true;
+            if (!job_) {
+                status_queued_ = false;
+                start_status();
+            }
             break;
         }
         case Pending::None: break;
     }
     pending_ = Pending::None;
+    sync_mode_ = false;
+}
+
+void DataManagementScreen::start_transfer(Job::Kind kind, const net::SaveDevice& device,
+                                          const std::string& game_id, const std::string& busy) {
+    std::unique_ptr<Job> job(new Job());
+    job->kind = kind;
+    job->device = device;
+    job->game_id = game_id;
+    show_busy(busy);
+    start_job(std::move(job));
+}
+
+DataManagementScreen::SyncWay DataManagementScreen::sync_way(const SaveVersionState& here,
+                                                             const net::RemoteSaveStatus& there) {
+    if (there.playing_now) return SyncWay::Busy;
+    switch (compare_saves(here, there.versions)) {
+        case SaveComparison::UpToDate:
+        case SaveComparison::Neither: return SyncWay::Nothing;
+        case SaveComparison::NewerHere:
+        case SaveComparison::OnlyHere: return SyncWay::Send;
+        case SaveComparison::NewerThere:
+        case SaveComparison::OnlyThere: return SyncWay::Get;
+        case SaveComparison::Conflict: return SyncWay::Conflict;
+    }
+    return SyncWay::Nothing;
+}
+
+void DataManagementScreen::start_sync(DataManagementResult& result) {
+    const net::SaveDevice* shown = device();
+    const RemoteState* there = remote();
+    if (shown == nullptr || there == nullptr) return;
+    const std::string title = game_.display_title();
+    switch (sync_way(version_state(game_), there->status)) {
+        case SyncWay::Nothing:
+            show_notice(title + " is already up to date on " + own_name_ + " and " + shown->name + ".");
+            return;
+        case SyncWay::Busy: return;
+        case SyncWay::Send:
+            // The newer one goes where it is not, without a second question:
+            // that is what Sync is for. The one it replaces is kept there.
+            pending_ = Pending::Send;
+            sync_mode_ = true;
+            confirmed(result);
+            return;
+        case SyncWay::Get:
+            if (this_game_in_play()) {
+                // Which restarts the game, so that is still asked about.
+                ask(Pending::Get);
+                return;
+            }
+            pending_ = Pending::Get;
+            sync_mode_ = true;
+            confirmed(result);
+            return;
+        case SyncWay::Conflict:
+            show_choice("Which save do you want to keep?", shown->name,
+                        there->status.versions.has_save ? describe_time(there->status.saved_at) : "No save",
+                        game_.has_save ? describe_time(game_.saved_at) : "No save");
+            return;
+    }
+}
+
+void DataManagementScreen::show_choice(const std::string& title, const std::string& there_name,
+                                       const std::string& there_date, const std::string& here_date) {
+    choice_title_ = title;
+    choice_line_ = "Each save has progress the other doesn't. The one you don't keep will be moved to "
+                   "Earlier Saves on its device.";
+    choice_names_[0] = there_name + "'s save";
+    choice_dates_[0] = there_date;
+    choice_names_[1] = own_name_ + "'s save";
+    choice_dates_[1] = here_date;
+    choice_focus_ = 0;
+    overlay_ = Overlay::Choice;
+}
+
+void DataManagementScreen::chosen(DataManagementResult& result) {
+    // The first choice is the other device's save, which comes here; the
+    // second is this one's, which goes there.
+    const bool get = choice_focus_ == 0;
+    overlay_ = Overlay::None;
+    if (sync_all_) {
+        begin_sync_transfer(get ? SyncWay::Get : SyncWay::Send);
+        return;
+    }
+    if (get && this_game_in_play()) {
+        ask(Pending::Get);
+        return;
+    }
+    pending_ = get ? Pending::Get : Pending::Send;
+    sync_mode_ = true;
+    confirmed(result);
+}
+
+void DataManagementScreen::start_sync_all() {
+    if (sync_all_) return;
+    sync_all_ = true;
+    sync_done_ = sync_skipped_ = sync_failed_ = 0;
+    sync_items_.clear();
+    if (job_) {
+        // Once whatever is being asked now has its answer.
+        plan_queued_ = true;
+        show_busy("Looking for devices...");
+        return;
+    }
+    std::unique_ptr<Job> job(new Job());
+    job->kind = Job::Kind::Plan;
+    show_busy("Looking for devices...");
+    start_job(std::move(job));
+    log_info("Sync All: looking for devices and what they have");
+}
+
+void DataManagementScreen::advance_sync_all() {
+    while (sync_all_ && sync_index_ < sync_items_.size()) {
+        const SyncItem& item = sync_items_[sync_index_];
+        SaveInfo here;
+        const SaveVersionState versions = store_.find(item.game_id, here) ? version_state(here)
+                                                                          : SaveVersionState();
+        switch (sync_way(versions, item.remote)) {
+            case SyncWay::Nothing:
+                ++sync_index_;
+                continue;
+            case SyncWay::Busy:
+                ++sync_skipped_;
+                ++sync_index_;
+                continue;
+            case SyncWay::Conflict:
+                // Asked one at a time, naming the game.
+                show_choice(item.title + ": which save do you want to keep?", item.device.name,
+                            item.remote.versions.has_save ? describe_time(item.remote.saved_at) : "No save",
+                            here.has_save ? describe_time(here.saved_at) : "No save");
+                return;
+            case SyncWay::Get:
+            case SyncWay::Send:
+                begin_sync_transfer(sync_way(versions, item.remote));
+                return;
+        }
+    }
+    if (sync_all_) finish_sync_all();
+}
+
+void DataManagementScreen::begin_sync_transfer(SyncWay way) {
+    const SyncItem& item = sync_items_[sync_index_];
+    // The resume point's question, the same as anywhere else a save is
+    // replaced -- once per game that has one.
+    const bool resume_point = way == SyncWay::Get ? store_.has_resume_point(item.game_id)
+                                                  : item.remote.has_resume_point;
+    if (!resume_point) {
+        start_sync_job(way);
+        return;
+    }
+    sync_pending_way_ = way;
+    dialog_from_name_.clear();
+    dialog_lines_.clear();
+    dialog_plain_lines_ = 1;
+    if (way == SyncWay::Get) {
+        dialog_title_ = item.title + ": replace this save file?";
+        dialog_lines_.push_back(
+            "Replacing this save file will delete the resume point. Are you sure you want to "
+            "replace it?");
+    } else {
+        dialog_title_ = item.title + ": replace " + item.device.name + "'s save file?";
+        dialog_lines_.push_back("Replacing " + item.device.name +
+                                "'s save file will delete its resume point. Are you sure you want "
+                                "to replace it?");
+    }
+    dialog_accept_ = "Replace";
+    overlay_ = Overlay::ResumeConfirm;
+}
+
+void DataManagementScreen::start_sync_job(SyncWay way) {
+    const SyncItem& item = sync_items_[sync_index_];
+    start_transfer(way == SyncWay::Get ? Job::Kind::Fetch : Job::Kind::Send, item.device, item.game_id,
+                   "Syncing " + item.title + " with " + item.device.name + "...");
+}
+
+void DataManagementScreen::skip_sync_item() {
+    ++sync_skipped_;
+    ++sync_index_;
+    overlay_ = Overlay::None;
+    advance_sync_all();
+}
+
+void DataManagementScreen::finish_sync_all() {
+    sync_all_ = false;
+    reload_saves();
+    std::string with;
+    if (sync_device_names_.size() == 1) with = " with " + sync_device_names_.front();
+    std::string message;
+    if (sync_done_ == 0 && sync_failed_ == 0) {
+        message = sync_skipped_ == 0 ? "Every save is already up to date" + with + "."
+                                     : "Nothing was synced" + with + ".";
+    } else {
+        message = "Synced " + std::to_string(sync_done_) + (sync_done_ == 1 ? " save" : " saves") + with + ".";
+    }
+    if (sync_skipped_ > 0) message += " Skipped " + std::to_string(sync_skipped_) + ".";
+    if (sync_failed_ > 0) {
+        message += " " + std::to_string(sync_failed_) + (sync_failed_ == 1 ? " save" : " saves") +
+                   " could not be synced.";
+    }
+    show_notice(message);
 }
 
 std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
@@ -686,6 +990,9 @@ std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
         case Overlay::ResumeConfirm:
             return {{ButtonGlyph::B, "Cancel", PromptRole::LeavesScreen},
                     {ButtonGlyph::A, dialog_accept_}};
+        case Overlay::Choice:
+            return {{ButtonGlyph::B, sync_all_ ? "Skip" : "Cancel", PromptRole::LeavesScreen},
+                    {ButtonGlyph::A, "Keep", PromptRole::ActsOnSelection}};
         case Overlay::Busy:
         case Overlay::Notice:
             return {};
@@ -694,6 +1001,7 @@ std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
     switch (page_) {
         case Page::List: {
             std::vector<GuidePrompt> prompts;
+            prompts.push_back({ButtonGlyph::X, "Sync All"});
             if (!saves_.empty()) prompts.push_back({ButtonGlyph::A, "Open", PromptRole::ActsOnSelection});
             prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
             return prompts;
@@ -727,6 +1035,7 @@ void DataManagementScreen::handle_guide_tap(ButtonGlyph glyph, std::vector<UiAct
         case ButtonGlyph::A: actions.push_back(UiAction::Confirm); break;
         case ButtonGlyph::B: actions.push_back(UiAction::Cancel); break;
         case ButtonGlyph::Y: actions.push_back(UiAction::MenuReset); break;
+        case ButtonGlyph::X: actions.push_back(UiAction::MenuQuit); break;
         case ButtonGlyph::L: actions.push_back(UiAction::PageDown); break;
         default: break;
     }
@@ -739,6 +1048,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
     DataManagementResult result;
     if (!open_) return result;
     finish_job(result);
+    if (overlay_ == Overlay::None && !sync_all_) check_for_changes();
     if (result.restart_with) return result;
 
     if (overlay_ == Overlay::Notice) {
@@ -757,6 +1067,14 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             handle_guide_tap(on_guide, actions);
             continue;
         }
+        if (overlay_ == Overlay::Choice) {
+            for (std::size_t index = 0; index < choice_rects_.size(); ++index) {
+                if (!tapped(pointer, choice_rects_[index])) continue;
+                choice_focus_ = static_cast<int>(index);
+                actions.push_back(UiAction::Confirm);
+            }
+            continue;
+        }
         if (overlay_ != Overlay::None) continue;
         for (std::size_t index = 0; index < row_rects_.size(); ++index) {
             if (!tapped(pointer, row_rects_[index])) continue;
@@ -769,6 +1087,27 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
 
     for (const UiAction action : actions) {
         if (result.close_requested || result.restart_with) break;
+        if (overlay_ == Overlay::Choice) {
+            if (action == UiAction::Up || action == UiAction::Down) choice_focus_ ^= 1;
+            if (action == UiAction::Confirm) chosen(result);
+            if (action == UiAction::Cancel) {
+                if (sync_all_) {
+                    skip_sync_item();
+                } else {
+                    overlay_ = Overlay::None;
+                }
+            }
+            continue;
+        }
+        if (overlay_ == Overlay::ResumeConfirm && sync_all_) {
+            if (action == UiAction::Confirm) {
+                overlay_ = Overlay::None;
+                start_sync_job(sync_pending_way_);
+            } else if (action == UiAction::Cancel) {
+                skip_sync_item();
+            }
+            continue;
+        }
         if (overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm) {
             if (action == UiAction::Confirm) {
                 if (overlay_ == Overlay::Confirm) {
@@ -779,6 +1118,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             } else if (action == UiAction::Cancel) {
                 overlay_ = Overlay::None;
                 pending_ = Pending::None;
+                sync_mode_ = false;
             }
             continue;
         }
@@ -792,7 +1132,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
                     open_game(saves_[static_cast<std::size_t>(list_focus_)].game_id);
                 }
                 if (action == UiAction::Cancel) result.close_requested = true;
-                if (action == UiAction::MenuReset) start_search();
+                if (action == UiAction::MenuQuit) start_sync_all();
                 break;
             }
             case Page::Game: {
@@ -936,33 +1276,39 @@ void DataManagementScreen::render(QuadRenderer& quads,
 
     row_rects_.clear();
     if (page_ == Page::List) {
-        const float row_h = line * 2.9f;
-        const int visible = std::max(1, static_cast<int>((frame.content_bottom - frame.content_top) / row_h));
+        const float row_h = menu_two_line_row_height(line);
+        const PixelRect list{frame.panel.x, frame.content_top, frame.panel.w,
+                             frame.content_bottom - frame.content_top};
+        const int visible = std::max(1, static_cast<int>(list.h / row_h));
         if (list_focus_ < list_scroll_) list_scroll_ = list_focus_;
         if (list_focus_ >= list_scroll_ + visible) list_scroll_ = list_focus_ - visible + 1;
+        const int count = static_cast<int>(saves_.size());
+        const bool scrolls = count > visible;
+        const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
         if (saves_.empty()) {
             text.draw(quads, "There are no saves on " + own_name_ + " yet.", output_width * 0.5f,
                       (frame.content_top + frame.content_bottom) * 0.5f - line * 0.5f, scale, theme.text_dim,
                       TextAlign::Center);
         }
-        for (int index = list_scroll_; index < static_cast<int>(saves_.size()) && index < list_scroll_ + visible; ++index) {
+        for (int index = list_scroll_; index < count && index < list_scroll_ + visible; ++index) {
             const SaveInfo& info = saves_[static_cast<std::size_t>(index)];
-            const PixelRect row{frame.panel.x, frame.content_top + (index - list_scroll_) * row_h, frame.panel.w, row_h - line * 0.15f};
+            const PixelRect row{list.x, list.y + (index - list_scroll_) * row_h, row_w, row_h - menu_row_gap(line)};
             row_rects_.push_back(row);
-            const bool focused = index == list_focus_;
-            draw_list_row(quads, row, focused, true, scale);
+            const bool focused = index == list_focus_ && overlay_ == Overlay::None;
+            draw_menu_row(quads, row, focused, scale);
+            if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
             const Color dim = focused ? with_alpha(theme.background, 0.7f) : theme.text_dim;
-            const float icon_size = line * 1.6f;
-            const float pad = line * 0.5f;
+            const float icon_size = line * 2.0f;
+            const float pad = menu_row_pad(line);
             draw_game_icon(info, PixelRect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size});
             const std::string when = info.has_save ? describe_time(info.saved_at) : "No save";
-            const float date_scale = scale * 0.8f;
+            const float date_scale = scale * 0.85f;
             const float date_w = TextRenderer::measure_width(when, date_scale);
-            const float text_x = row.x + pad * 2.0f + icon_size;
-            const float room = row.x + row.w - pad * 3.0f - date_w - text_x;
-            const float sub_scale = scale * 0.72f;
-            const float step = line * 1.25f;
+            const float text_x = row.x + pad * 1.8f + icon_size;
+            const float room = row.x + row.w - pad * 2.0f - date_w - text_x;
+            const float sub_scale = scale * 0.75f;
+            const float step = line * 1.3f;
             const float block = step + TextRenderer::line_height(sub_scale);
             const float top = row.y + (row.h - block) * 0.5f;
             text.draw(quads, elide_right(info.display_title(), room, scale), text_x, top, scale, ink);
@@ -970,26 +1316,27 @@ void DataManagementScreen::render(QuadRenderer& quads,
             text.draw(quads, when, row.x + row.w - pad, row.y + (row.h - TextRenderer::line_height(date_scale)) * 0.5f,
                       date_scale, dim, TextAlign::Right);
         }
-        // On the line the prompts' buttons sit on.
-        text.draw(quads, "Saves on " + own_name_, frame.panel.x,
-                  frame.guide_y + control_guide_height(scale * 0.9f) * glyphs.button_centre() -
-                      TextRenderer::line_height(scale * 0.75f) * 0.5f,
-                  scale * 0.75f, theme.text_dim);
+        if (scrolls) {
+            draw_scroll_bar(quads, list, static_cast<float>(list_scroll_) / count,
+                            static_cast<float>(visible) / count, line, scale);
+        }
     } else if (page_ == Page::Game) {
         const float left_w = std::round(frame.panel.w * 0.55f);
-        const float row_h = line * 2.4f;
+        const float row_h = std::min(menu_row_height(line),
+                                     (frame.content_bottom - frame.content_top) / static_cast<float>(Action::Count));
         const std::vector<std::string> labels = action_labels();
         const std::vector<bool> enabled = actions_enabled();
-        const UiIcon action_icons[] = {UiIcon::Get, UiIcon::Send, UiIcon::History, UiIcon::Delete};
+        const UiIcon action_icons[] = {UiIcon::Sync, UiIcon::Get, UiIcon::Send, UiIcon::History, UiIcon::Delete};
         for (int index = 0; index < static_cast<int>(Action::Count); ++index) {
-            const PixelRect row{frame.panel.x, frame.content_top + index * row_h, left_w, row_h - line * 0.15f};
+            const PixelRect row{frame.panel.x, frame.content_top + index * row_h, left_w, row_h - menu_row_gap(line)};
             row_rects_.push_back(row);
             const bool focused = index == action_focus_ && overlay_ == Overlay::None;
-            draw_list_row(quads, row, focused, true, scale);
+            draw_menu_row(quads, row, focused, scale);
+            if (!focused) draw_menu_rule(quads, row);
             Color ink = menu_row_text(focused);
             if (!enabled[static_cast<std::size_t>(index)]) ink = with_alpha(focused ? theme.background : theme.text_dim, 0.55f);
             const float icon_size = line * 1.35f;
-            const float pad = line * 0.6f;
+            const float pad = menu_row_pad(line);
             draw_icon(action_icons[index], PixelRect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size}, ink);
             const float label_scale = scale * 1.05f;
             const float label_x = row.x + pad * 2.0f + icon_size;
@@ -1041,31 +1388,41 @@ void DataManagementScreen::render(QuadRenderer& quads,
                       TextAlign::Center);
         }
     } else {
-        const float row_h = line * 2.9f;
+        const float row_h = menu_two_line_row_height(line);
+        const PixelRect list{frame.panel.x, frame.content_top, frame.panel.w,
+                             frame.content_bottom - frame.content_top};
         if (earlier_.empty()) {
             text.draw(quads, "No earlier saves.", output_width * 0.5f,
                       (frame.content_top + frame.content_bottom) * 0.5f - line * 0.5f, scale, theme.text_dim, TextAlign::Center);
         }
-        const int visible = std::max(1, static_cast<int>((frame.content_bottom - frame.content_top) / row_h));
+        const int count = static_cast<int>(earlier_.size());
+        const int visible = std::max(1, static_cast<int>(list.h / row_h));
         const int first = std::max(0, earlier_focus_ - visible + 1);
-        for (int index = first; index < static_cast<int>(earlier_.size()) && index < first + visible; ++index) {
+        const bool scrolls = count > visible;
+        const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
+        for (int index = first; index < count && index < first + visible; ++index) {
             const EarlierSave& save = earlier_[static_cast<std::size_t>(index)];
-            const PixelRect row{frame.panel.x, frame.content_top + (index - first) * row_h, frame.panel.w, row_h - line * 0.15f};
+            const PixelRect row{list.x, list.y + (index - first) * row_h, row_w, row_h - menu_row_gap(line)};
             row_rects_.push_back(row);
             const bool focused = index == earlier_focus_ && overlay_ == Overlay::None;
-            draw_list_row(quads, row, focused, true, scale);
+            draw_menu_row(quads, row, focused, scale);
+            if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
             const Color dim = focused ? with_alpha(theme.background, 0.7f) : theme.text_dim;
-            const float pad = line * 0.5f;
-            const float sub_scale = scale * 0.72f;
-            const float step = line * 1.25f;
+            const float pad = menu_row_pad(line);
+            const float sub_scale = scale * 0.75f;
+            const float step = line * 1.3f;
             const float top = row.y + (row.h - step - TextRenderer::line_height(sub_scale)) * 0.5f;
             text.draw(quads, describe_time(save.saved_at), row.x + pad, top, scale, ink);
             text.draw(quads, save.reason, row.x + pad, top + step, sub_scale, dim);
             text.draw(quads, "Saved on " + (save.made_on.empty() ? own_name_ : save.made_on), row.x + row.w - pad,
-                      row.y + (row.h - TextRenderer::line_height(scale * 0.8f)) * 0.5f, scale * 0.8f, dim, TextAlign::Right);
+                      row.y + (row.h - TextRenderer::line_height(scale * 0.85f)) * 0.5f, scale * 0.85f, dim, TextAlign::Right);
         }
         if (first > 0) row_rects_.insert(row_rects_.begin(), static_cast<std::size_t>(first), PixelRect{});
+        if (scrolls) {
+            draw_scroll_bar(quads, list, static_cast<float>(first) / count, static_cast<float>(visible) / count,
+                            line, scale);
+        }
     }
 
     // The dialogs: the page stays where it is behind them, dimmed.
@@ -1125,6 +1482,52 @@ void DataManagementScreen::render(QuadRenderer& quads,
                 pen_y += text.draw_wrapped(quads, dialog_lines_[index], dialog.x + pad, pen_y, inner, body_scale,
                                            index < dialog_plain_lines_ ? theme.text : theme.text_dim);
             }
+        }
+    }
+
+    choice_rects_.clear();
+    if (overlay_ == Overlay::Choice) {
+        // A conflict: which of the two saves both devices keep. The two are
+        // rows to pick between, each with its date.
+        quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, Color{0.0f, 0.0f, 0.0f, 0.62f});
+        const float width = std::round(std::min(output_width * 0.62f, line * 30.0f));
+        const float pad = line * 1.0f;
+        const float inner = width - pad * 2.0f;
+        const float title_scale_d = scale * 1.2f;
+        const float body_scale = scale * 0.85f;
+        const float option_h = menu_row_height(line);
+        const float height = pad * 2.0f +
+                             TextRenderer::wrapped_line_step(title_scale_d) *
+                                 TextRenderer::wrap(choice_title_, inner, title_scale_d).size() +
+                             line * 0.5f +
+                             TextRenderer::wrapped_line_step(body_scale) *
+                                 TextRenderer::wrap(choice_line_, inner, body_scale).size() +
+                             line * 0.8f + option_h * 2.0f + menu_row_gap(line);
+        const PixelRect dialog{std::round((output_width - width) * 0.5f), std::round((output_height - height) * 0.45f),
+                               width, height};
+        quads.draw_rounded_rect(dialog, line * 0.5f, theme.panel);
+        float pen_y = dialog.y + pad;
+        pen_y += text.draw_wrapped(quads, choice_title_, dialog.x + pad, pen_y, inner, title_scale_d, theme.text);
+        pen_y += line * 0.5f;
+        pen_y += text.draw_wrapped(quads, choice_line_, dialog.x + pad, pen_y, inner, body_scale, theme.text_dim);
+        pen_y += line * 0.8f;
+        for (int index = 0; index < 2; ++index) {
+            const PixelRect option{dialog.x + pad, pen_y, inner, option_h};
+            choice_rects_.push_back(option);
+            const bool focused = index == choice_focus_;
+            if (focused) {
+                draw_menu_row(quads, option, true, scale);
+            } else {
+                quads.draw_rounded_rect(option, line * 0.35f, theme.background);
+            }
+            const float row_pad = menu_row_pad(line);
+            const float baseline = option.y + (option.h - line) * 0.5f;
+            text.draw(quads, elide_right(choice_names_[index], inner * 0.55f, scale), option.x + row_pad, baseline,
+                      scale, menu_row_text(focused));
+            text.draw(quads, choice_dates_[index], option.x + option.w - row_pad,
+                      option.y + (option.h - TextRenderer::line_height(scale * 0.85f)) * 0.5f, scale * 0.85f,
+                      focused ? with_alpha(theme.background, 0.7f) : theme.text_dim, TextAlign::Right);
+            pen_y += option_h + menu_row_gap(line);
         }
     }
 

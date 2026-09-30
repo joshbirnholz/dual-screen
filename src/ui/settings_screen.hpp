@@ -50,12 +50,12 @@ public:
     };
 
     void open(const Settings& settings, const std::vector<CoreStatus>& cores);
-    // What the Data Management row says: how many saves this device holds.
-    void set_save_count(std::size_t count) { save_count_ = count; }
     void close() { open_ = false; }
     bool is_open() const { return open_; }
 
     const Settings& settings() const { return settings_; }
+    // Whether a paused game is behind it, to be dimmed rather than covered.
+    void set_over_game(bool over_game) { over_game_ = over_game; }
 
     SettingsScreenResult update(const std::vector<UiAction>& actions,
                                 const std::vector<PointerEvent>& pointers,
@@ -125,7 +125,7 @@ private:
     std::vector<BiosFileStatus> bios_;
     int focus_ = 0;
     bool open_ = false;
-    std::size_t save_count_ = 0;
+    bool over_game_ = false;
 
     // How far down the list has been pushed, in pixels. Pixels rather than
     // rows, because what is below the rows -- the cores, then the BIOS files

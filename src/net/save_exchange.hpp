@@ -116,6 +116,15 @@ std::vector<SaveDevice> search_save_devices(const SaveSearch& search);
 // does not.
 bool ask_save_status(const SaveDevice& device, const std::string& system,
                      const std::string& game_id, RemoteSaveStatus& out, std::string* error);
+// One game's save on another device, as a list of them gives it.
+struct RemoteSave {
+    std::string game_id;
+    std::string system;
+    std::string title;
+    RemoteSaveStatus status;
+};
+// Every game with a save on `device`, for Sync All.
+bool list_remote_saves(const SaveDevice& device, std::vector<RemoteSave>& out, std::string* error);
 bool fetch_save(const SaveDevice& device, const std::string& game_id, SaveInfo& info,
                 std::vector<uint8_t>& bytes, std::string* error);
 bool send_save(const SaveDevice& device, const SaveInfo& info, const std::vector<uint8_t>& bytes,

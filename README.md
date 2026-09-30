@@ -1185,12 +1185,18 @@ folder.
 
 ### Data Management
 
-The first row of **Settings** — and, on a Switch with its own emulator, a
-row of its own on the main menu — lists every DS save on this device with the
-game's own icon, title and publisher, read from the ROM, newest first.
+**Data Management**, on the main menu and as the first row of **Settings**,
+lists every DS save on this device with the game's own icon, title and
+publisher, read from the ROM, newest first. **X Sync All** brings every game up
+to date with every other device found: each game's newest save goes to the
+device without it, including games only the other device has, and a game
+both have changed since they last matched is asked about, one at a time.
 
 Choosing one opens its page, laid out like the Switch's save data cloud page:
 
+- **Sync with _device_** gets or sends the save, whichever leaves the newest
+  on both, without asking — unless both have changed since they last matched,
+  when it asks which save to keep.
 - **Get Save from _device_** and **Send Save to _device_** move the save
   between this device and another one on the network. Each asks first,
   showing both saves and their dates, and says when the save being replaced
@@ -1204,8 +1210,10 @@ a box saying how they compare: *Up to date*, *Newer on …*, *Only on …*,
 *Currently playing on …* (nothing is offered for a game being played there),
 or *Save file conflict* when both have changed since they last matched.
 Which save is newer comes from each save's history of versions, not from the
-two devices' clocks. **L**/**R** changes device when more than one is found;
-**Y** searches again. With nothing found, only this device's save is shown.
+two devices' clocks. The page looks for devices each time it opens;
+**L**/**R** changes device when more than one is found, and **Y** searches
+again. With nothing found, only this device's save is shown. A save another
+device sends here shows up at once on whatever this device has on screen.
 
 Nothing happens on its own: saves only move when you choose. Every device
 that plays games answers — a Steam Deck, a PC, a Switch with melonDS — and

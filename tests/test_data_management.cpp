@@ -153,11 +153,15 @@ int main() {
     CHECK_STR_EQ(screen.comparison_text(), "Newer on Switch Lite");
     CHECK(!screen.comparison_is_conflict());
     std::vector<std::string> labels = screen.action_labels();
-    CHECK_STR_EQ(labels[0], "Get Save from steamdeck");
-    CHECK_STR_EQ(labels[1], "Send Save to steamdeck");
-    CHECK(screen.actions_enabled()[0] && screen.actions_enabled()[1]);
+    CHECK_STR_EQ(labels[0], "Sync with steamdeck");
+    CHECK_STR_EQ(labels[1], "Get Save from steamdeck");
+    CHECK_STR_EQ(labels[2], "Send Save to steamdeck");
+    CHECK(screen.actions_enabled()[0] && screen.actions_enabled()[1] && screen.actions_enabled()[2]);
+    // The cursor starts on Sync.
+    CHECK_EQ(screen.action_focus(), 0);
 
     // Get: asked first, with the warning that this one is further along.
+    focus_row(screen, 1);
     press(screen, UiAction::Confirm);
     CHECK(screen.overlay() == DataManagementScreen::Overlay::Confirm);
     CHECK_STR_EQ(screen.dialog_title(), "Replace Switch Lite's save with steamdeck's?");
@@ -192,7 +196,7 @@ int main() {
     CHECK(screen.page() == DataManagementScreen::Page::List);
     press(screen, UiAction::Confirm);
     settle(screen, [&] { return idle() && screen.comparison_text() == "Newer on Switch Lite"; });
-    focus_row(screen, 1);
+    focus_row(screen, 2);
     press(screen, UiAction::Confirm);
     CHECK_STR_EQ(screen.dialog_title(), "Replace steamdeck's save with Switch Lite's?");
     CHECK(has_line(screen.dialog_lines(), "steamdeck's current save will be moved to Earlier Saves."));
@@ -216,14 +220,14 @@ int main() {
     press(screen, UiAction::MenuReset);
     settle(screen, [&] { return idle() && screen.comparison_text() == "Currently playing on steamdeck"; });
     CHECK_STR_EQ(screen.comparison_text(), "Currently playing on steamdeck");
-    CHECK(!screen.actions_enabled()[0] && !screen.actions_enabled()[1]);
+    CHECK(!screen.actions_enabled()[0] && !screen.actions_enabled()[1] && !screen.actions_enabled()[2]);
     deck.store.note_game_stopped(deck.rom);
 
     // Delete: into Earlier Saves.
     press(screen, UiAction::MenuReset);
     settle(screen, idle);
     const std::size_t earlier_before = here.store.earlier(kGameId).size();
-    focus_row(screen, 3);
+    focus_row(screen, 4);
     press(screen, UiAction::Confirm);
     CHECK_STR_EQ(screen.dialog_title(), "Delete Switch Lite's save for Mario Kart DS?");
     press(screen, UiAction::Confirm);
@@ -231,11 +235,11 @@ int main() {
     CHECK(!file_exists(here.save_path()));
     CHECK_EQ(here.store.earlier(kGameId).size(), earlier_before + 1);
     press(screen, UiAction::Confirm);
-    CHECK(!screen.actions_enabled()[3]);
+    CHECK(!screen.actions_enabled()[4]);
     CHECK_STR_EQ(screen.comparison_text(), "Only on steamdeck");
 
     // Earlier Saves, and putting the deleted one back.
-    focus_row(screen, 2);
+    focus_row(screen, 3);
     press(screen, UiAction::Confirm);
     CHECK(screen.page() == DataManagementScreen::Page::Earlier);
     press(screen, UiAction::Confirm);
@@ -252,7 +256,7 @@ int main() {
     screen.open(kGameId);
     CHECK(screen.page() == DataManagementScreen::Page::Game);
     settle(screen, [&] { return idle() && !screen.comparison_text().empty(); });
-    focus_row(screen, 0);
+    focus_row(screen, 1);
     press(screen, UiAction::Confirm);
     CHECK_STR_EQ(screen.dialog_title(), "Restart Mario Kart DS with steamdeck's save?");
     CHECK(has_line(screen.dialog_lines(),
@@ -281,6 +285,113 @@ int main() {
     here.store.note_game_stopped(here.rom);
     settle(screen, idle);
 
+    const auto notice_up = [&] { return screen.overlay() == DataManagementScreen::Overlay::Notice; };
+    const auto read_save = [](const std::string& path) {
+        std::vector<uint8_t> bytes;
+        read_file(path, bytes, nullptr);
+        return bytes;
+    };
+
+    // Sync: the newer save goes where it is not, with no question asked.
+    here.play(6);
+    screen.open();
+    press(screen, UiAction::Confirm);
+    settle(screen, [&] { return idle() && screen.comparison_text() == "Newer on Switch Lite"; });
+    focus_row(screen, 0);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.overlay() == DataManagementScreen::Overlay::Busy);
+    settle(screen, notice_up);
+    CHECK_STR_EQ(screen.notice(), "Sent Mario Kart DS to steamdeck.");
+    CHECK(read_save(deck.save_path()) == std::vector<uint8_t>(8192, 6));
+    press(screen, UiAction::Confirm);
+    settle(screen, [&] { return idle() && screen.comparison_text() == "Up to date"; });
+    // And when there is nothing to do, says so.
+    focus_row(screen, 0);
+    press(screen, UiAction::Confirm);
+    CHECK_STR_EQ(screen.notice(), "Mario Kart DS is already up to date on Switch Lite and steamdeck.");
+    press(screen, UiAction::Confirm);
+
+    // A conflict asks which to keep; this device's is the second choice.
+    here.play(7);
+    deck.play(8);
+    press(screen, UiAction::MenuReset);
+    settle(screen, [&] { return idle() && screen.comparison_is_conflict(); });
+    focus_row(screen, 0);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.overlay() == DataManagementScreen::Overlay::Choice);
+    CHECK_STR_EQ(screen.choice_title(), "Which save do you want to keep?");
+    press(screen, UiAction::Down);
+    CHECK_EQ(screen.choice_focus(), 1);
+    press(screen, UiAction::Confirm);
+    settle(screen, notice_up);
+    CHECK_STR_EQ(screen.notice(), "Sent Mario Kart DS to steamdeck.");
+    CHECK(read_save(deck.save_path()) == std::vector<uint8_t>(8192, 7));
+    press(screen, UiAction::Confirm);
+
+    // Sync All, from the list with X: this device's newer save goes over,
+    // and a game only the Deck has comes here.
+    here.play(9);
+    {
+        SaveInfo quest;
+        quest.stem = "Dragon Quest IX";
+        quest.game_id = "YDTE-01-0-0000";
+        quest.title = "Dragon Quest IX";
+        SaveVersion version;
+        version.id = "quest-1";
+        version.hash = "unused";
+        version.made_on = "steamdeck";
+        version.made_at = 1000;
+        quest.history.push_back(version);
+        CHECK(deck.store.accept(quest, std::vector<uint8_t>(512, 3), "PC", nullptr));
+    }
+    press(screen, UiAction::Cancel);
+    CHECK(screen.page() == DataManagementScreen::Page::List);
+    press(screen, UiAction::MenuQuit);
+    CHECK(screen.syncing_all());
+    settle(screen, notice_up);
+    CHECK_STR_EQ(screen.notice(), "Synced 2 saves with steamdeck.");
+    CHECK(read_save(deck.save_path()) == std::vector<uint8_t>(8192, 9));
+    SaveInfo quest_here;
+    CHECK(here.store.find("YDTE-01-0-0000", quest_here) && quest_here.has_save);
+    CHECK_EQ(screen.saves().size(), static_cast<std::size_t>(2));
+    press(screen, UiAction::Confirm);
+
+    // A conflict during Sync All is asked about, naming the game; skipped here.
+    here.play(10);
+    deck.play(11);
+    press(screen, UiAction::MenuQuit);
+    settle(screen, [&] { return screen.overlay() == DataManagementScreen::Overlay::Choice; });
+    CHECK_STR_EQ(screen.choice_title(), "Mario Kart DS: which save do you want to keep?");
+    press(screen, UiAction::Cancel);
+    settle(screen, notice_up);
+    CHECK_STR_EQ(screen.notice(), "Nothing was synced with steamdeck. Skipped 1.");
+    press(screen, UiAction::Confirm);
+    CHECK(!screen.syncing_all());
+
+    // A save that arrives from another device is shown at once.
+    uint64_t arrivals = 0;
+    screen.close();
+    screen.set_change_source([&] { return arrivals; });
+    screen.open();
+    const std::size_t before = screen.saves().size();
+    {
+        SaveInfo arrived;
+        arrived.stem = "Arrived";
+        arrived.game_id = "ZZZE-01-0-0000";
+        arrived.title = "Arrived";
+        SaveVersion version;
+        version.id = "arrived-1";
+        version.hash = "unused";
+        arrived.history.push_back(version);
+        CHECK(here.store.accept(arrived, std::vector<uint8_t>(64, 1), "steamdeck", nullptr));
+    }
+    screen.update({}, {}, 1280.0f, 800.0f);
+    CHECK_EQ(screen.saves().size(), before);
+    ++arrivals;
+    screen.update({}, {}, 1280.0f, 800.0f);
+    CHECK_EQ(screen.saves().size(), before + 1);
+    screen.set_change_source(nullptr);
+
     // Nobody there: only this device, and nothing to get or send.
     deck_service.stop();
     screen.open();
@@ -289,9 +400,10 @@ int main() {
     CHECK(screen.devices().empty());
     CHECK(screen.comparison_text().empty());
     labels = screen.action_labels();
-    CHECK_STR_EQ(labels[0], "Get Save");
-    CHECK_STR_EQ(labels[1], "Send Save");
-    CHECK(!screen.actions_enabled()[0] && !screen.actions_enabled()[1]);
+    CHECK_STR_EQ(labels[0], "Sync");
+    CHECK_STR_EQ(labels[1], "Get Save");
+    CHECK_STR_EQ(labels[2], "Send Save");
+    CHECK(!screen.actions_enabled()[0] && !screen.actions_enabled()[1] && !screen.actions_enabled()[2]);
 
     CHECK_STR_EQ(DataManagementScreen::describe_count(1), "1 save");
     CHECK_STR_EQ(DataManagementScreen::describe_count(5), "5 saves");

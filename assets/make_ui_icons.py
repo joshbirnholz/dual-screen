@@ -4,19 +4,21 @@
 Like the button strip, only coverage is kept -- each cell is white where the
 icon is -- so every icon is tinted for whatever it is drawn on.
 
-The cells, in UiIcon order (see src/render/ui_icons.hpp):
+The cells, in UiIcon order (see src/ui/data_management_screen.cpp):
 
-    get, send, history, delete     the game page's four actions, drawn here:
+    get, send, history, delete     the game page's actions, drawn here:
                                    send is an arrow up out of a tray, and get
                                    the same turned upside down
     steam-deck, switch, pc         the devices, in a band across the middle
                                    of the cell, from open icon sets:
-                                   assets/ui_icons/steamdeck.png and switch.png
-                                   are Kenney's Input Prompts (CC0); pc.png is
+                                   assets/ui_icons/steamdeck.png is Kenney's
+                                   Input Prompts (CC0); switch.png is the
+                                   console's outline as the user gave it; pc.png is
                                    Phosphor's desktop-tower-fill (MIT), drawn
                                    from pc.svg beside it
+    sync                           last: two arrows round a circle
 
-There is no open icon of a Switch Lite, so a Lite is drawn as a Switch.
+A Switch and a Switch Lite are drawn alike.
 
 Run from the repository root:  python3 assets/make_ui_icons.py
 """
@@ -62,6 +64,25 @@ def in_action(name, x, y):
         return (abs(math.hypot(x - 18, y - 18) - 13) <= half or
                 near_segment(x, y, 18, 10, 18, 18) <= half or
                 near_segment(x, y, 18, 18, 23, 22) <= half)
+    if name == "sync":
+        # Two arrows chasing each other round a circle.
+        r = 11.0
+        d = math.hypot(x - 18, y - 18)
+        angle = math.degrees(math.atan2(y - 18, x - 18)) % 360
+        on_arc = abs(d - r) <= half and (20 <= angle <= 160 or 200 <= angle <= 340)
+        heads = False
+        for end in (160.0, 340.0):
+            # The arrowhead at the end of each arc, pointing on round it.
+            a = math.radians(end)
+            px, py = 18 + r * math.cos(a), 18 + r * math.sin(a)
+            tx, ty = -math.sin(a), math.cos(a)          # the way round
+            nx, ny = math.cos(a), math.sin(a)           # outward
+            for side in (1, -1):
+                bx = px - tx * 4.5 + nx * 4.5 * side
+                by = py - ty * 4.5 + ny * 4.5 * side
+                if near_segment(x, y, px, py, bx, by) <= half:
+                    heads = True
+        return on_arc or heads
     if name == "delete":
         return (near_segment(x, y, 8, 10, 28, 10) <= half or
                 near_segment(x, y, 14, 10, 14, 6) <= half or
@@ -140,6 +161,7 @@ def render_device(name):
 def main():
     cells = [render_action(name) for name in ["get", "send", "history", "delete"]]
     cells += [render_device(name) for name in DEVICES]
+    cells += [render_action("sync")]
     width = CELL * len(cells)
     out = bytearray(width * CELL * 4)
     for index, cell in enumerate(cells):

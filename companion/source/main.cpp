@@ -1017,6 +1017,11 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                         data_screen_.reset(new DataManagementScreen(
                             *save_store_, save_service_ ? save_service_->instance()
                                                         : new_save_version_id()));
+                        if (save_service_) {
+                            net::SaveExchangeService* service = save_service_.get();
+                            data_screen_->set_change_source(
+                                [service] { return service->saves_received(); });
+                        }
                     }
                     data_screen_->open();
                     state_ = State::DataManagement;

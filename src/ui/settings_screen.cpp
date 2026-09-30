@@ -4,10 +4,25 @@
 #include <cmath>
 
 #include "core/libretro_core.hpp"
-#include "ui/data_management_screen.hpp"
 #include "ui/control_guide.hpp"
 
 namespace ds {
+namespace {
+
+// Said under everything, below the list rather than over it.
+constexpr const char* kFootnote =
+    "None of these ship with this app - they have to be your own dumps. DS games still boot "
+    "without them, using the core's built-in BIOS replacement.";
+
+// Where the footnote starts: the list ends above it.
+float footnote_top(float output_height, float width, float scale) {
+    const float footnote_scale = scale * 0.85f;
+    const std::size_t lines = TextRenderer::wrap(kFootnote, width, footnote_scale).size();
+    return output_height - control_guide_height(scale * 0.9f) -
+           TextRenderer::wrapped_line_step(footnote_scale) * (static_cast<float>(lines) + 1.0f);
+}
+
+}  // namespace
 
 std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir) {
     // melonDS DS can boot DS games with its own open-source BIOS replacement,
@@ -61,19 +76,25 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     const float line = TextRenderer::line_height(geometry.scale);
 
     const float margin = std::round(output_width * 0.07f);
-    geometry.panel = PixelRect{margin, std::round(output_height * 0.08f),
-                               output_width - margin * 2.0f,
-                               output_height - std::round(output_height * 0.16f)};
+    const float panel_top = std::round(output_height * 0.08f);
+    const float panel_bottom =
+        footnote_top(output_height, output_width - margin * 2.0f, geometry.scale) - line * 0.6f;
+    geometry.panel = PixelRect{margin, panel_top, output_width - margin * 2.0f,
+                               panel_bottom - panel_top};
 
     // The heading stays put; everything under it moves with the scroll.
-    const float content_top = geometry.panel.y + line * 3.5f;
+    const float content_top = geometry.panel.y + line * 4.2f;
     const float rows_top = content_top - scroll_;
-    const float row_height = line * 1.9f;
+    const float row_height = menu_row_height(line);
+    const float gap = menu_row_gap(line);
+    // Short of the panel's right edge by the scroll bar, which runs beside
+    // the rows rather than over them.
+    const float row_width = geometry.panel.w - scroll_bar_width(geometry.scale) - line * 0.6f;
     for (int index = 0; index < kRowCount; ++index) {
         geometry.rows.push_back(PixelRect{
             geometry.panel.x,
-            rows_top + index * (row_height + line * 0.3f),
-            geometry.panel.w,
+            rows_top + index * (row_height + gap),
+            row_width,
             row_height,
         });
     }
@@ -81,7 +102,7 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
 
     // The cores get their own block: a heading plus one line per console, so
     // the space it takes follows the list rather than a remembered count.
-    const float core_top = rows_top + kRowCount * (row_height + line * 0.3f) + line;
+    const float core_top = rows_top + kRowCount * (row_height + gap) + line;
     const float core_height = line * (1.6f + 1.1f * static_cast<float>(cores_.size()));
     geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
 
@@ -168,7 +189,7 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
         return;
     }
     const PixelRect& row = geometry.rows[index];
-    const float top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 3.5f;
+    const float top = geometry.panel.y + TextRenderer::line_height(geometry.scale) * 4.2f;
     const float bottom = geometry.panel.y + geometry.panel.h;
     if (row.y < top) {
         scroll_ -= top - row.y;
@@ -255,20 +276,23 @@ void SettingsScreen::render(QuadRenderer& quads,
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
 
-    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, theme.scrim);
+    // Over the paused game, dimmed, when opened from its menu; on the app's
+    // own background otherwise, since there is nothing behind it to dim.
+    quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
+                     over_game_ ? theme.scrim : theme.background);
     text.draw(quads, "Settings", geometry.panel.x, geometry.panel.y, scale * 1.6f, theme.text);
     text.draw(quads, "Left/Right changes a value.   Paths are edited in settings.json",
-              geometry.panel.x, geometry.panel.y + line * 1.8f, scale * 0.9f, theme.text_dim);
+              geometry.panel.x, geometry.panel.y + line * 2.3f, scale * 0.9f, theme.text_dim);
 
     // Everything below the heading scrolls, so everything below the heading is
     // clipped to the room there is for it. Without this a row pushed past the
     // bottom carries on being drawn over whatever is under the panel.
-    const float view_top = geometry.panel.y + line * 3.5f;
+    const float view_top = geometry.panel.y + line * 4.2f;
     quads.set_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
                              geometry.panel.y + geometry.panel.h - view_top});
 
     const std::string rows[kRowCount][2] = {
-        {"Data Management", DataManagementScreen::describe_count(save_count_)},
+        {"Data Management", ""},
         {"BIOS / system folder", settings_.system_dir},
 #ifndef __SWITCH__
         {"Button prompts", to_string(settings_.pad_glyphs)},
@@ -295,7 +319,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         // Label on the left, value on the right, both on one baseline. The
         // value is elided rather than allowed to run past the row, which is
         // what a long BIOS path would otherwise do.
-        const float pad = line * 0.5f;
+        const float pad = menu_row_pad(line);
         const float baseline = row.y + (row.h - line) * 0.5f;
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
 #ifndef __SWITCH__
@@ -305,11 +329,13 @@ void SettingsScreen::render(QuadRenderer& quads,
             // pad's symbols are chosen above, rather than a name for a
             // position that nobody reads a button by.
             const Color value_color = focused ? theme.panel : theme.text_dim;
-            const float height = line;
+            const float height = line * 1.5f;
             const float glyph_width = glyphs.width_for(height);
             const float slash_width = TextRenderer::measure_width("/", scale * 0.9f);
             const float gap = line * 0.15f;
-            const float glyph_y = row.y + (row.h - height) * 0.5f;
+            // The button itself centred on the row, not the box it is drawn
+            // in, which has headroom above it.
+            const float glyph_y = row.y + row.h * 0.5f - height * glyphs.button_centre();
             float pen_x = row.x + row.w - pad - (glyph_width * 2.0f + slash_width + gap * 2.0f);
             glyphs.draw(quads, confirm_glyph_for(settings_.confirm_button), pen_x, glyph_y, height,
                         value_color);
@@ -381,19 +407,11 @@ void SettingsScreen::render(QuadRenderer& quads,
     // fallen off the bottom.
     quads.clear_clip();
 
-    const std::string footnote =
-        "None of these ship with this app - they have to be your own dumps. DS games still boot "
-        "without them, using the core's built-in BIOS replacement.";
     const float footnote_scale = scale * 0.85f;
-    const float footnote_width = geometry.panel.w;
-    const std::size_t footnote_lines =
-        TextRenderer::wrap(footnote, footnote_width, footnote_scale).size();
     const float guide_height = control_guide_height(scale * 0.9f);
-    text.draw_wrapped(quads, footnote, output_width * 0.5f,
-                      output_height - guide_height -
-                          TextRenderer::wrapped_line_step(footnote_scale) *
-                              (footnote_lines + 1.0f),
-                      footnote_width, footnote_scale, theme.text_dim, TextAlign::Center);
+    text.draw_wrapped(quads, kFootnote, output_width * 0.5f,
+                      footnote_top(output_height, geometry.panel.w, scale), geometry.panel.w,
+                      footnote_scale, theme.text_dim, TextAlign::Center);
 
     draw_control_guide(quads, text, glyphs, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                        geometry.panel.x + geometry.panel.w,
@@ -403,13 +421,10 @@ void SettingsScreen::render(QuadRenderer& quads,
     // Something has to say there is more, or a list that stops at the bottom
     // edge looks like a list that ends there.
     if (geometry.max_scroll() > 0.5f) {
-        const float bar_x = geometry.panel.x + geometry.panel.w + line * 0.3f;
         const float view = geometry.panel.y + geometry.panel.h - view_top;
-        const float span = geometry.content_height;
-        const float thumb = std::max(line, view * view / std::max(view, span));
-        const float travel = (view - thumb) * (scroll_ / geometry.max_scroll());
-        quads.draw_capsule(PixelRect{bar_x, view_top + travel, line * 0.22f, thumb},
-                           theme.text_dim);
+        const float span = std::max(view, geometry.content_height);
+        draw_scroll_bar(quads, PixelRect{geometry.panel.x, view_top, geometry.panel.w, view},
+                        scroll_ / span, view / span, line, scale);
     }
 }
 

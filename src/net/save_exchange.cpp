@@ -25,7 +25,7 @@ constexpr char kQueryMagic[4] = {'D', 'S', 'S', 'Q'};
 constexpr char kReplyMagic[4] = {'D', 'S', 'S', 'R'};
 constexpr char kFrameMagic[4] = {'D', 'S', 'S', 'V'};
 constexpr int kExchangeVersion = 1;
-constexpr uint32_t kMaxFrameJson = 256u * 1024u;
+constexpr uint32_t kMaxFrameJson = 4u * 1024u * 1024u;
 constexpr std::size_t kFrameHeaderBytes = 12;
 // A request that has not arrived whole by then is not going to.
 constexpr uint64_t kServerRequestTimeoutMs = 20000;
@@ -307,21 +307,42 @@ bool SaveExchangeService::start(std::string* error) {
                 const std::string op = get_or<std::string>(request, "op", "");
                 const std::string game_id = get_or<std::string>(request, "game_id", "");
                 const std::string peer = connection.stream.peer_address();
-                if (op == "status") {
+                // How one game's save stands here.
+                const auto status_of = [this](const std::string& id) {
                     SaveInfo info;
-                    const bool known = store_.find(game_id, info);
+                    const bool known = store_.find(id, info);
                     const SaveVersionState versions = known ? version_state(info) : SaveVersionState();
-                    reply = {{"ok", true},
-                             {"has_save", versions.has_save},
-                             {"current_id", versions.current_id},
-                             {"current_hash", versions.current_hash},
-                             {"history_ids", versions.history_ids},
-                             {"saved_at", known ? info.saved_at : 0},
-                             {"made_on", known && info.current() != nullptr ? info.current()->made_on
-                                                                            : std::string()},
-                             {"size", known ? info.size : 0},
-                             {"playing_now", !game_id.empty() && store_.game_in_play() == game_id},
-                             {"has_resume_point", known && store_.has_resume_point(game_id)}};
+                    return json{{"has_save", versions.has_save},
+                                {"current_id", versions.current_id},
+                                {"current_hash", versions.current_hash},
+                                {"history_ids", versions.history_ids},
+                                {"saved_at", known ? info.saved_at : 0},
+                                {"made_on", known && info.current() != nullptr ? info.current()->made_on
+                                                                               : std::string()},
+                                {"size", known ? info.size : 0},
+                                {"playing_now", !id.empty() && store_.game_in_play() == id},
+                                {"has_resume_point", known && store_.has_resume_point(id)}};
+                };
+                if (op == "status") {
+                    reply = status_of(game_id);
+                    reply["ok"] = true;
+                } else if (op == "list") {
+                    // Every game with a save here, for Sync All: which game,
+                    // what it is called, and how its save stands.
+                    json saves = json::array();
+                    for (const SaveInfo& info : store_.list()) {
+                        if (!info.has_save || info.game_id.empty()) continue;
+                        if (!config_.systems.empty() &&
+                            std::find(config_.systems.begin(), config_.systems.end(), info.system) ==
+                                config_.systems.end()) {
+                            continue;
+                        }
+                        saves.push_back({{"game_id", info.game_id},
+                                         {"system", info.system},
+                                         {"title", info.display_title()},
+                                         {"status", status_of(info.game_id)}});
+                    }
+                    reply = {{"ok", true}, {"saves", saves}};
                 } else if (op == "get") {
                     std::string error;
                     SaveInfo info;
@@ -438,13 +459,10 @@ std::vector<SaveDevice> search_save_devices(const SaveSearch& search) {
     return found;
 }
 
-bool ask_save_status(const SaveDevice& device, const std::string& system,
-                     const std::string& game_id, RemoteSaveStatus& out, std::string* error) {
-    out = RemoteSaveStatus();
-    json reply;
-    std::vector<uint8_t> blob;
-    const json request = {{"op", "status"}, {"system", system}, {"game_id", game_id}};
-    if (!exchange(device, request, {}, kStatusTimeoutMs, reply, blob, error)) return false;
+namespace {
+
+RemoteSaveStatus read_status(const json& reply) {
+    RemoteSaveStatus out;
     out.versions.has_save = get_or<bool>(reply, "has_save", false);
     out.versions.current_id = get_or<std::string>(reply, "current_id", "");
     out.versions.current_hash = get_or<std::string>(reply, "current_hash", "");
@@ -454,6 +472,41 @@ bool ask_save_status(const SaveDevice& device, const std::string& system,
     out.size = get_or<uint64_t>(reply, "size", 0);
     out.playing_now = get_or<bool>(reply, "playing_now", false);
     out.has_resume_point = get_or<bool>(reply, "has_resume_point", false);
+    return out;
+}
+
+}  // namespace
+
+bool ask_save_status(const SaveDevice& device, const std::string& system,
+                     const std::string& game_id, RemoteSaveStatus& out, std::string* error) {
+    out = RemoteSaveStatus();
+    json reply;
+    std::vector<uint8_t> blob;
+    const json request = {{"op", "status"}, {"system", system}, {"game_id", game_id}};
+    if (!exchange(device, request, {}, kStatusTimeoutMs, reply, blob, error)) return false;
+    out = read_status(reply);
+    return true;
+}
+
+bool list_remote_saves(const SaveDevice& device, std::vector<RemoteSave>& out, std::string* error) {
+    out.clear();
+    json reply;
+    std::vector<uint8_t> blob;
+    if (!exchange(device, json{{"op", "list"}}, {}, kTransferTimeoutMs, reply, blob, error)) {
+        return false;
+    }
+    const auto saves = reply.find("saves");
+    if (saves == reply.end() || !saves->is_array()) return true;
+    for (const json& entry : *saves) {
+        if (!entry.is_object()) continue;
+        RemoteSave save;
+        save.game_id = get_or<std::string>(entry, "game_id", "");
+        save.system = get_or<std::string>(entry, "system", kSaveSystemDs);
+        save.title = get_or<std::string>(entry, "title", "");
+        const auto status = entry.find("status");
+        if (status != entry.end() && status->is_object()) save.status = read_status(*status);
+        if (!save.game_id.empty()) out.push_back(save);
+    }
     return true;
 }
 
