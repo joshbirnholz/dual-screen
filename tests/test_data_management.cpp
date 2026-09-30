@@ -222,6 +222,13 @@ int main() {
     settle(screen, [&] { return idle() && screen.comparison_text() == "Currently playing on steamdeck"; });
     CHECK_STR_EQ(screen.comparison_text(), "Currently playing on steamdeck");
     CHECK(!screen.actions_enabled()[0] && !screen.actions_enabled()[1] && !screen.actions_enabled()[2]);
+    // And the cursor where the player left it, rather than moved to Earlier
+    // Saves for them because nothing else can be done -- after searching
+    // again, too.
+    focus_row(screen, 0);
+    press(screen, UiAction::MenuReset);
+    settle(screen, idle);
+    CHECK_EQ(screen.action_focus(), 0);
     deck.store.note_game_stopped(deck.rom);
 
     // Delete: into Earlier Saves.

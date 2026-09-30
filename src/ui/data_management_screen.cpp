@@ -146,7 +146,6 @@ void DataManagementScreen::open_game(const std::string& game_id) {
     page_ = Page::Game;
     if (!same_game) {
         action_focus_ = 0;
-        action_focus_chosen_ = false;
     }
     if (status_game_id_ != game_id) {
         remote_.clear();
@@ -184,26 +183,11 @@ void DataManagementScreen::check_for_changes() {
 }
 
 void DataManagementScreen::settle_action_focus() {
-    // Until the player moves it, the cursor is on the first thing that can be
-    // done -- which changes as the other device answers.
-    // While the network is still being asked, where it will most likely
-    // end up: on Get Save, which does nothing until an answer comes. Moved
-    // to the first thing that can be done only once there is an answer, so
-    // a press made early never lands on something else.
-    if (job_ && !action_focus_chosen_) {
-        action_focus_ = 0;
-        return;
-    }
-    const std::vector<bool> enabled = actions_enabled();
-    if (action_focus_chosen_) {
-        if (enabled[static_cast<std::size_t>(action_focus_)]) return;
-    }
-    for (std::size_t index = 0; index < enabled.size(); ++index) {
-        if (enabled[index]) {
-            action_focus_ = static_cast<int>(index);
-            return;
-        }
-    }
+    // The cursor stays wherever it is -- on Sync when the page opens -- and
+    // is never moved for the player, even when what it is on cannot be done
+    // yet or at all: an answer from the network arriving (or not) is no
+    // reason for it to jump somewhere the player did not put it.
+    action_focus_ = std::clamp(action_focus_, 0, static_cast<int>(Action::Count) - 1);
 }
 
 void DataManagementScreen::start_job(std::unique_ptr<Job> job) {
@@ -1103,10 +1087,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             if (!tapped(pointer, row_rects_[index])) continue;
             bool chosen = false;
             if (page_ == Page::List) chosen = tap_chooses(list_focus_, row_first_ + static_cast<int>(index));
-            if (page_ == Page::Game) {
-                chosen = tap_chooses(action_focus_, static_cast<int>(index));
-                action_focus_chosen_ = true;
-            }
+            if (page_ == Page::Game) chosen = tap_chooses(action_focus_, static_cast<int>(index));
             if (page_ == Page::Earlier) {
                 chosen = tap_chooses(earlier_focus_, row_first_ + static_cast<int>(index));
             }
@@ -1167,7 +1148,6 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
                 const int count = static_cast<int>(Action::Count);
                 if (action == UiAction::Up) action_focus_ = std::max(0, action_focus_ - 1);
                 if (action == UiAction::Down) action_focus_ = std::min(count - 1, action_focus_ + 1);
-                if (action == UiAction::Up || action == UiAction::Down) action_focus_chosen_ = true;
                 if (action == UiAction::Confirm) activate(static_cast<Action>(action_focus_), result);
                 if (action == UiAction::MenuReset) start_search();
                 if ((action == UiAction::PageUp || action == UiAction::PageDown) && devices_.size() > 1) {
@@ -1314,21 +1294,6 @@ void DataManagementScreen::render(QuadRenderer& quads,
         if (page_ == Page::Earlier) heading += " \xC2\xB7 Earlier Saves";
     }
     float heading_room = frame.panel.x + frame.panel.w - title_x;
-    if (this_game_in_play()) {
-        // Said beside the title, the way the mockup has it: this is the
-        // save the game has open.
-        const float pill_scale = scale * 0.75f;
-        const std::string pill = "Playing now";
-        const float pill_w = TextRenderer::measure_width(pill, pill_scale) + line * 1.2f;
-        const float pill_h = TextRenderer::line_height(pill_scale) * 1.5f;
-        const PixelRect box{frame.panel.x + frame.panel.w - pill_w,
-                            frame.panel.y + (frame.header_bottom - frame.panel.y - pill_h) * 0.5f, pill_w, pill_h};
-        quads.draw_capsule(box, theme.accent);
-        quads.draw_capsule(PixelRect{box.x + 1.5f, box.y + 1.5f, box.w - 3.0f, box.h - 3.0f}, theme.background);
-        text.draw(quads, pill, box.x + box.w * 0.5f, box.y + (box.h - TextRenderer::line_height(pill_scale)) * 0.5f,
-                  pill_scale, theme.accent, TextAlign::Center);
-        heading_room -= pill_w + line;
-    }
     text.draw(quads, TextRenderer::elide_right(heading, heading_room, title_scale), title_x, title_y, title_scale, theme.text);
     quads.draw_solid(PixelRect{frame.panel.x, frame.header_bottom, frame.panel.w, 1.0f}, rule);
     quads.draw_solid(PixelRect{frame.panel.x, frame.footer_rule_y, frame.panel.w, 1.0f}, rule);

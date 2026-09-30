@@ -203,8 +203,6 @@ private:
     // finger moves them by the pixel.
     float list_scroll_ = 0.0f;
     int action_focus_ = 0;
-    // Whether the player has moved it, or it is still wherever it started.
-    bool action_focus_chosen_ = false;
     int earlier_focus_ = 0;
     float earlier_scroll_ = 0.0f;
     // The first row drawn, which row_rects_ start from.
