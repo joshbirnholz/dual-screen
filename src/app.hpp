@@ -5,12 +5,20 @@
 #include <vector>
 
 namespace ds {
+class ForwarderPlatform;
+}
+
+namespace ds {
 
 // Everything the command line can say. Kept as plain data so the launch path is
 // testable without starting SDL.
 struct AppOptions {
     std::string game_path;
     std::string core_path;    // overrides settings.json / the search paths
+    // What makes forwarders on this device, where it can: the file picker
+    // offers Create Forwarder only when there is one. Set by the Switch's
+    // local play; outlives the App.
+    ForwarderPlatform* forwarder_platform = nullptr;
     std::string layout_id;    // overrides the game's saved layout for this run
     // Logs every OpenGL call a GPU-rendering core makes, and which of them the
     // driver rejected. Slow, and only useful when such a core is drawing

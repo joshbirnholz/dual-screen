@@ -70,6 +70,7 @@ SOURCE_DIRS := $(CLIENT) \
                $(SHARED)/audio \
                $(SHARED)/config \
                $(SHARED)/core \
+               $(SHARED)/forwarder \
                $(SHARED)/input \
                $(SHARED)/layout \
                $(SHARED)/net \
@@ -138,6 +139,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                host_session.cpp save_exchange.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp controllers_screen.cpp \
                data_management_screen.cpp \
+               forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp
 
 # What a libretro frontend supplies to a core linked into it. A core built as a

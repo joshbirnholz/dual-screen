@@ -241,7 +241,16 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 break;  // nothing is being drawn from a game here
             // A menu's face buttons. Nothing here answers them, and a bare
             // fallthrough into Quit would make pressing X leave the screen.
-            case UiAction::MenuQuit:
+            // X: a forwarder for the ROM under the cursor, where there is one.
+            case UiAction::MenuQuit: {
+                std::string path;
+                if (!navigated && forwarder_target(path)) {
+                    result.forwarder_requested = true;
+                    result.chosen_path = path;
+                    navigated = true;
+                }
+                break;
+            }
             case UiAction::MenuReset:
             // Settings is reached from the main menu and from a game's own
             // menu; a file browser is neither.
@@ -279,8 +288,12 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
         const ButtonGlyph under = guide_button_at(guide_hits_, pointer.x, pointer.y);
         if (!navigated && under != ButtonGlyph::Count &&
             under == guide_button_at(guide_hits_, pointer.press_x, pointer.press_y)) {
+            std::string path;
             if (under == ButtonGlyph::Plus) {
                 result.back_requested = true;
+            } else if (under == ButtonGlyph::X && forwarder_target(path)) {
+                result.forwarder_requested = true;
+                result.chosen_path = path;
             } else if (under == ButtonGlyph::A) {
                 activate(focus_, result);
             } else if (under == ButtonGlyph::B) {
@@ -388,11 +401,20 @@ void GameBrowser::render(QuadRenderer& quads,
     // to and out of the browser once there is not, which "Back" covers
     // either way.
     guide_hits_.clear();
-    draw_page_guide(quads, text, glyphs, frame,
-                    {{ButtonGlyph::Plus, "Main Menu"},
-                     {ButtonGlyph::A, "Open", PromptRole::ActsOnSelection},
-                     {ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
-                    &guide_hits_);
+    std::vector<GuidePrompt> prompts{{ButtonGlyph::Plus, "Main Menu"}};
+    std::string target;
+    if (forwarder_target(target)) prompts.push_back({ButtonGlyph::X, "Create Forwarder"});
+    prompts.push_back({ButtonGlyph::A, "Open", PromptRole::ActsOnSelection});
+    prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+    draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
+}
+
+bool GameBrowser::forwarder_target(std::string& path) const {
+    if (!offers_forwarders_ || focus_ < 0 || focus_ >= static_cast<int>(rows_.size())) return false;
+    const Row& row = rows_[static_cast<std::size_t>(focus_)];
+    if (row.is_directory || row.is_parent) return false;
+    path = row.path;
+    return true;
 }
 
 }  // namespace ds

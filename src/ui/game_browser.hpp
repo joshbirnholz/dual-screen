@@ -30,6 +30,9 @@ struct GameBrowserResult {
     // Back to where the browser was opened from, rather than up a folder:
     // Main Menu, on plus. There is no Quit here -- the main menu has one.
     bool back_requested = false;
+    // X on a ROM, where forwarders can be made: Forwarder Creation for
+    // `chosen_path`.
+    bool forwarder_requested = false;
 };
 
 // A file browser for picking a ROM, used when the app is launched with no
@@ -42,6 +45,9 @@ public:
     bool is_open() const { return open_; }
 
     const std::string& current_directory() const { return directory_; }
+    // Whether X makes a forwarder for the ROM under the cursor: only where
+    // one can be installed -- a Switch.
+    void set_offers_forwarders(bool offers) { offers_forwarders_ = offers; }
 
     GameBrowserResult update(const InputManager& input,
                              const std::vector<UiAction>& actions,
@@ -80,6 +86,8 @@ private:
     // actually moved, so a refused directory is not reported as a change.
     bool navigate_to(std::string directory);
     void activate(int index, GameBrowserResult& result);
+    // The ROM under the cursor, when there is one a forwarder can be made for.
+    bool forwarder_target(std::string& path) const;
     void scroll_focus_into_view(const Geometry& geometry);
     float max_scroll(const Geometry& geometry) const;
 
@@ -91,6 +99,7 @@ private:
     // pixel, not a row at a time.
     float scroll_ = 0.0f;
     bool open_ = false;
+    bool offers_forwarders_ = false;
 
     // A finger dragging the list, and the glide after it lets go.
     ListDrag drag_;

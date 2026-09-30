@@ -79,6 +79,9 @@ struct Settings {
     // Directory the in-app game browser opens in. Updated as the player
     // navigates, so launching with no ROM picks up where they left off.
     std::string last_browse_dir;
+    // SteamGridDB's API key, asked for the first time a forwarder's icon is
+    // searched for there, and kept.
+    std::string steamgriddb_api_key;
 
     // Directory handed to the core as its libretro "system" directory; this is
     // where the user's own BIOS/firmware dumps live. Nothing Nintendo-owned is

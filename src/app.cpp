@@ -57,6 +57,7 @@
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/data_management_screen.hpp"
+#include "ui/forwarder_screen.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/list_touch.hpp"
@@ -69,6 +70,26 @@
 
 namespace ds {
 namespace {
+
+// Forwarder Creation on a machine that cannot make forwarders, for looking at
+// it: --start-screen forwarder-preview. No keyboard, no network and no
+// install, each of which says so.
+class PreviewForwarderPlatform : public ForwarderPlatform {
+public:
+    bool edit_text(const std::string&, const std::string&, const std::string&, std::size_t,
+                   std::string&) override {
+        return false;
+    }
+    HttpResponse http_get(const std::string&, const std::string&) override {
+        HttpResponse response;
+        response.error = "the preview has no network";
+        return response;
+    }
+    bool install(const ForwarderRequest&, std::string* error) override {
+        if (error != nullptr) *error = "forwarders are installed on a Switch";
+        return false;
+    }
+};
 
 // Anything longer than this between frames means the machine was asleep (or the
 // process was stopped), not that we ran slow. The frame clock is restarted and
@@ -308,7 +329,9 @@ struct App::Impl {
         // either device. See resume_game().
         ResumeNotice,
         // Settings > Data Management.
-        DataManagement
+        DataManagement,
+        // A ROM's forwarder, from the file picker.
+        Forwarder
     };
 
     AppOptions options;
@@ -380,6 +403,13 @@ struct App::Impl {
     // The game running here, which its save points are named after.
     std::string game_path;
     std::unique_ptr<GameBrowser> browser;
+    std::unique_ptr<ForwarderScreen> forwarder_screen;
+    std::unique_ptr<ForwarderPlatform> preview_forwarders;
+    ForwarderPlatform* forwarder_platform() const {
+        return options.forwarder_platform != nullptr ? options.forwarder_platform
+                                                     : preview_forwarders.get();
+    }
+    void open_forwarder(const std::string& rom_path);
     std::unique_ptr<LauncherScreen> launcher;
     std::unique_ptr<HostPickerScreen> host_picker;
     MessageScreen message;
@@ -2549,9 +2579,27 @@ void App::Impl::open_browser() {
     if (!browser) {
         browser.reset(new GameBrowser());
     }
+    browser->set_offers_forwarders(forwarder_platform() != nullptr);
     browser->open(settings.last_browse_dir);
     state = State::Browser;
     input.set_game_input_enabled(false);
+}
+
+void App::Impl::open_forwarder(const std::string& rom_path) {
+    ForwarderPlatform* platform = forwarder_platform();
+    if (platform == nullptr) return;
+    if (!forwarder_screen) forwarder_screen.reset(new ForwarderScreen(*platform));
+    // What the ROM says it is; the file's own name when it says nothing.
+    DsRomInfo info;
+    std::string error;
+    if (!read_ds_rom_info(rom_path, info, &error)) {
+        log_info("forwarder: " + rom_path + " is not a DS ROM that names itself (" + error + ")");
+        info = DsRomInfo();
+    }
+    forwarder_screen->open(rom_path, info, settings.steamgriddb_api_key);
+    state = State::Forwarder;
+    input.set_game_input_enabled(false);
+    log_info("Forwarder Creation is up for " + rom_path);
 }
 
 bool App::Impl::open_core(const std::string& rom_path, std::string* error,
@@ -3173,7 +3221,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     log_warn("could not remember the browsed folder");
                 }
             }
-            if (result.back_requested) {
+            if (result.forwarder_requested) {
+                open_forwarder(result.chosen_path);
+            } else if (result.back_requested) {
                 open_launcher();
             } else if (result.game_chosen) {
                 settings.last_browse_dir = browser->current_directory();
@@ -3260,6 +3310,21 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             apply_settings_result(
                 settings_screen->update(actions, pointers, static_cast<float>(output_width),
                                         static_cast<float>(output_height)));
+            break;
+        }
+
+        case State::Forwarder: {
+            const ForwarderScreenResult result = forwarder_screen->update(
+                actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+            if (result.api_key_changed) {
+                settings.steamgriddb_api_key = result.api_key;
+                if (!settings.save(paths)) log_warn("could not keep the SteamGridDB API key");
+            }
+            if (result.close_requested) {
+                // Back to the file it was made for, the cursor still on it.
+                state = State::Browser;
+                if (!browser->is_open()) browser->open(browser->current_directory());
+            }
             break;
         }
 
@@ -3351,6 +3416,13 @@ void App::Impl::render() {
     gl::log_error_once("something in the last frame was rejected by OpenGL");
     gl::bind_window_framebuffer();
 
+    if (state == State::Forwarder) {
+        quads.begin_frame(output_width, output_height);
+        forwarder_screen->render(quads, text, button_glyphs, width, height);
+        swap();
+        ++frames_rendered;
+        return;
+    }
     if (state == State::Browser) {
         browser->render(quads, text, button_glyphs, width, height);
         swap();
@@ -3845,6 +3917,9 @@ int App::run(const AppOptions& options) {
         impl.open_launcher();
     } else if (options.start_screen == "hosts") {
         impl.start_companion(ScreenId::Bottom);
+    } else if (options.start_screen == "forwarder-preview") {
+        impl.preview_forwarders.reset(new PreviewForwarderPlatform());
+        impl.open_browser();
     } else if (options.start_screen == "settings") {
         impl.open_settings();
     } else if (options.start_screen == "controllers") {
