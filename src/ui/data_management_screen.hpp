@@ -17,6 +17,7 @@
 #include "render/texture.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/popup.hpp"
 
 namespace ds {
 
@@ -174,6 +175,13 @@ private:
     void show_busy(const std::string& message);
 
     std::vector<GuidePrompt> guide_prompts() const;
+    // The dialog up now, as a popup (see ui/popup.hpp): its words, its
+    // buttons -- Cancel and the thing asked about; the two saves and Cancel
+    // or Skip; none while busy -- and where they all go.
+    std::vector<PopupButton> dialog_buttons() const;
+    float dialog_body_height(float output_width, float output_height) const;
+    PopupGeometry dialog_popup(float output_width, float output_height) const;
+    PopupCursor popup_cursor_;
     void handle_guide_tap(ButtonGlyph glyph, std::vector<UiAction>& actions) const;
 
     const Texture* game_icon(const SaveInfo& info);
@@ -262,7 +270,6 @@ private:
     std::vector<GuideHit> guide_hits_;
     // Where the rows were drawn, for a finger.
     std::vector<PixelRect> row_rects_;
-    std::vector<PixelRect> choice_rects_;
 
     Texture ui_icons_;
     bool ui_icons_tried_ = false;

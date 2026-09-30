@@ -1465,21 +1465,22 @@ void test_the_layout_swap_keeps_the_stylus_hand() {
 void test_the_resume_popup_is_put_away_with_ok() {
     constexpr float kWidth = 1280.0f;
     constexpr float kHeight = 800.0f;
-    CHECK(notice_popup_answered({UiAction::Confirm}, {}, kWidth, kHeight));
-    CHECK(notice_popup_answered({UiAction::Cancel}, {}, kWidth, kHeight));
-    CHECK(!notice_popup_answered({}, {}, kWidth, kHeight));
+    const std::string said = kResumedNotice;
+    CHECK(notice_popup_answered({UiAction::Confirm}, {}, kWidth, kHeight, said));
+    CHECK(notice_popup_answered({UiAction::Cancel}, {}, kWidth, kHeight, said));
+    CHECK(!notice_popup_answered({}, {}, kWidth, kHeight, said));
     CHECK(!notice_popup_answered({UiAction::Up, UiAction::ToggleMenu, UiAction::SwapLayout}, {},
-                                 kWidth, kHeight));
-    const NoticePopupGeometry geometry = notice_popup_geometry(kWidth, kHeight);
+                                 kWidth, kHeight, said));
+    const NoticePopupGeometry geometry = notice_popup_geometry(kWidth, kHeight, said);
     // Inside the window, centred, with its OK along the bottom of the box.
     CHECK(geometry.dialog.x > 0.0f && geometry.dialog.x + geometry.dialog.w < kWidth);
     CHECK(geometry.accept.y > geometry.dialog.y);
     CHECK(geometry.accept.y + geometry.accept.h <= geometry.dialog.y + geometry.dialog.h);
     const float ok_x = geometry.accept.x + geometry.accept.w * 0.5f;
     const float ok_y = geometry.accept.y + geometry.accept.h * 0.5f;
-    CHECK(notice_popup_answered({}, {tap(ok_x, ok_y)}, kWidth, kHeight));
-    CHECK(!notice_popup_answered({}, {tap(ok_x, geometry.dialog.y - 20.0f)}, kWidth, kHeight));
-    CHECK(!notice_popup_answered({}, {slide_onto(10.0f, 10.0f, ok_x, ok_y)}, kWidth, kHeight));
+    CHECK(notice_popup_answered({}, {tap(ok_x, ok_y)}, kWidth, kHeight, said));
+    CHECK(!notice_popup_answered({}, {tap(ok_x, geometry.dialog.y - 20.0f)}, kWidth, kHeight, said));
+    CHECK(!notice_popup_answered({}, {slide_onto(10.0f, 10.0f, ok_x, ok_y)}, kWidth, kHeight, said));
 }
 
 int main() {

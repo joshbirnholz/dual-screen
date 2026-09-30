@@ -131,9 +131,9 @@ bool matches_colour(const std::string& expected, double r, double g, double b) {
         return (r > 150.0) && (g > 60.0) && (g < 200.0) && (b < 80.0);
     }
     if (expected == "dialog") {
-        // A popup's box: the theme's text colour, #EBF0F7, which nothing a
-        // mock core draws comes near.
-        return (r > 215.0) && (g > 220.0) && (b > 225.0);
+        // A popup's box: the Switch's dark grey, #252628 (see ui/popup.hpp),
+        // grey enough that no dimmed colour a mock core draws matches it.
+        return std::fabs(r - 37.0) < 6.0 && std::fabs(g - 38.0) < 6.0 && std::fabs(b - 40.0) < 6.0;
     }
     if (expected == "black") {
         // The letterbox around the screens has to be genuinely black, not

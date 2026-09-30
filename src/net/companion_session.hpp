@@ -566,6 +566,7 @@ public:
     bool host_quit_for_this_device() const { return host_quit_for_this_device_; }
     int host_menu_focus() const { return host_menu_focus_; }
     uint8_t host_menu_confirm() const { return host_menu_confirm_; }
+    uint8_t host_menu_confirm_focus() const { return host_menu_confirm_focus_; }
     int host_max_render_scale() const { return host_max_render_scale_; }
     bool host_cursor_choosable() const { return host_cursor_choosable_; }
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
@@ -1080,6 +1081,7 @@ private:
     bool host_settings_open_ = false;
     int host_menu_focus_ = 0;
     uint8_t host_menu_confirm_ = 0;
+    uint8_t host_menu_confirm_focus_ = 0;
     int host_max_render_scale_ = 1;
     bool host_cursor_choosable_ = false;
     bool host_right_stick_choosable_ = false;

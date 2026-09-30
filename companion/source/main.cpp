@@ -980,7 +980,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     // remote, back included, which would otherwise open the menu.
     if (state_ == State::Playing && session_.host_resume_notice()) {
         if (notice_popup_answered(actions, pointers, static_cast<float>(output_width_),
-                                  static_cast<float>(output_height_))) {
+                                  static_cast<float>(output_height_), kResumedNotice)) {
             session_.request_menu_action(net::MenuAction::Confirm);
         }
         return;
@@ -1359,7 +1359,8 @@ void Client::run() {
                     // menu and holds no copy of its own to drift.
                     picker_.set_smoothing(session_.host_filtering());
                     picker_.show(menu_state_from_host(), session_.host_menu_focus(),
-                                 static_cast<MenuConfirm>(session_.host_menu_confirm()));
+                                 static_cast<MenuConfirm>(session_.host_menu_confirm()),
+                                 session_.host_menu_confirm_focus());
                     show_host_save_slots();
                 }
                 // The host owns all of this and can change any of it from its

@@ -424,7 +424,8 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
     return geometry;
 }
 
-void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm confirm) {
+void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm confirm,
+                        int confirm_focus_wire) {
     // What the menu has depends on what is being offered, and the layout in
     // use decides whether one option is there at all, so it is rebuilt before
     // the cursor is placed -- a focus means nothing until the entries it
@@ -447,7 +448,21 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
         rebuild_footer();
     }
     set_focus(focus);
-    confirm_ = confirm;
+    if (confirm != confirm_) {
+        if (confirm == MenuConfirm::None) {
+            confirm_ = MenuConfirm::None;
+        } else {
+            ask(confirm);
+        }
+    }
+    // The host's cursor, on the host's popup.
+    if (confirming()) {
+        if (confirm_focus_wire > 0) {
+            confirm_cursor_.set_focus(confirm_focus_wire - 1);
+        } else {
+            confirm_cursor_.hide();
+        }
+    }
 }
 
 void LayoutPicker::set_session_active(bool active) {
@@ -464,6 +479,12 @@ int LayoutPicker::focus() const {
 }
 
 void LayoutPicker::set_focus(int focus) {
+    // One of the popup's buttons, from the other device's finger.
+    if (confirming() && focus >= kPopupFocusBase &&
+        focus < kPopupFocusBase + confirm_cursor_.count()) {
+        confirm_cursor_.set_focus(focus - kPopupFocusBase);
+        return;
+    }
     if (system_ == SystemId::WiiU) {
         if (focus >= 0 && focus < footer_count()) {
             focus_ = focus;
@@ -490,6 +511,10 @@ ButtonGlyph LayoutPicker::guide_button_at(float x, float y) const {
 }
 
 int LayoutPicker::entry_at(float x, float y, float output_width, float output_height) const {
+    if (confirming()) {
+        const int button = popup_button_at(confirm_popup(output_width, output_height), x, y);
+        return button >= 0 ? kPopupFocusBase + button : -1;
+    }
     if (system_ == SystemId::WiiU) {
         const Geometry geometry = compute_geometry(output_width, output_height);
         for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
@@ -509,32 +534,53 @@ int LayoutPicker::entry_at(float x, float y, float output_width, float output_he
     return -1;
 }
 
-LayoutPicker::ConfirmGeometry LayoutPicker::compute_confirm_geometry(float output_width,
-                                                                    float output_height) const {
-    const float scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(scale);
-    const float dialog_width = std::round(output_width * 0.58f);
-    // Shorter for a notice, which has one answer rather than two.
-    const float dialog_height = std::round(line * (confirm_ == MenuConfirm::Notice ? 7.0f : 8.0f));
+void LayoutPicker::ask(MenuConfirm confirm) {
+    confirm_ = confirm;
+    const int count = static_cast<int>(confirm_buttons().size());
+    // On the answer, so A then A does what was asked, as it always has; B is
+    // always the way back out.
+    confirm_cursor_.reset(count, count - 1);
+}
 
-    ConfirmGeometry geometry;
-    geometry.dialog = PixelRect{std::round((output_width - dialog_width) * 0.5f),
-                                std::round((output_height - dialog_height) * 0.5f), dialog_width,
-                                dialog_height};
-    // Two halves of the prompt row, so a finger has somewhere to land on a
-    // device with no buttons to press instead -- or, for a notice, the whole
-    // row, since there is only the one answer.
-    const float row_height = line * 2.4f;
-    const float row_y = geometry.dialog.y + geometry.dialog.h - row_height - line * 0.4f;
-    if (confirm_ == MenuConfirm::Notice) {
-        geometry.accept = PixelRect{geometry.dialog.x, row_y, geometry.dialog.w, row_height};
-        geometry.dismiss = PixelRect{};
-        return geometry;
+PopupText LayoutPicker::confirm_text() const {
+    PopupText words;
+    // With Resume from Save State on, quitting loses nothing: the game
+    // starts from right here next time, so the warning would be untrue.
+    const bool quitting_keeps_progress = state_.resume_choosable && state_.resume_from_save_state;
+    switch (confirm_) {
+        case MenuConfirm::Quit:
+            words.message = "Are you sure you want to quit?";
+            if (!quitting_keeps_progress) words.lines.push_back("Unsaved progress will be lost.");
+            break;
+        case MenuConfirm::Reset:
+            words.message = "Are you sure you want to reset?";
+            words.lines.push_back("Unsaved progress will be lost.");
+            break;
+        case MenuConfirm::LoadSavePoint: words.message = "Load this save state?"; break;
+        case MenuConfirm::OverwriteSavePoint: words.message = "Overwrite this save state?"; break;
+        case MenuConfirm::Notice: words.message = save_status_; break;
+        case MenuConfirm::None: break;
     }
-    geometry.accept = PixelRect{geometry.dialog.x, row_y, geometry.dialog.w * 0.5f, row_height};
-    geometry.dismiss = PixelRect{geometry.dialog.x + geometry.dialog.w * 0.5f, row_y,
-                                 geometry.dialog.w * 0.5f, row_height};
-    return geometry;
+    return words;
+}
+
+std::vector<PopupButton> LayoutPicker::confirm_buttons() const {
+    switch (confirm_) {
+        case MenuConfirm::Quit: return {{"Cancel", ""}, {"Quit", ""}};
+        case MenuConfirm::Reset: return {{"Cancel", ""}, {"Reset", ""}};
+        case MenuConfirm::LoadSavePoint: return {{"Cancel", ""}, {"Load", ""}};
+        case MenuConfirm::OverwriteSavePoint: return {{"Cancel", ""}, {"Overwrite", ""}};
+        case MenuConfirm::Notice: return {{"OK", ""}};
+        case MenuConfirm::None: break;
+    }
+    return {};
+}
+
+PopupGeometry LayoutPicker::confirm_popup(float output_width, float output_height) const {
+    const float width = popup_body_width(output_width, output_height);
+    return popup_geometry(output_width, output_height,
+                          popup_text_height(confirm_text(), width, output_height),
+                          confirm_buttons());
 }
 
 void LayoutPicker::move_focus(int delta_y) {
@@ -559,7 +605,7 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             if (state_.session_active) result.disconnect_requested = true;
             return true;
         case Footer::Quit:
-            confirm_ = MenuConfirm::Quit;
+            ask(MenuConfirm::Quit);
             return true;
     }
     return false;
@@ -590,9 +636,9 @@ void LayoutPicker::activate_section(LayoutPickerResult& result) {
             if (state_.session_active) result.disconnect_requested = true;
             break;
         case MenuSection::Reset:
-            if (state_.reset_available) confirm_ = MenuConfirm::Reset;
+            if (state_.reset_available) ask(MenuConfirm::Reset);
             break;
-        case MenuSection::Quit: confirm_ = MenuConfirm::Quit; break;
+        case MenuSection::Quit: ask(MenuConfirm::Quit); break;
     }
 }
 
@@ -616,14 +662,14 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             // Saving into an empty slot loses nothing, so it is not asked
             // about; saving over one does.
             if (slot_filled(item_)) {
-                confirm_ = MenuConfirm::OverwriteSavePoint;
+                ask(MenuConfirm::OverwriteSavePoint);
             } else {
                 result.save_slot = item_;
             }
             return;
         case MenuSection::LoadSavePoint:
             // An empty slot has nothing to load, and says Empty.
-            if (slot_filled(item_)) confirm_ = MenuConfirm::LoadSavePoint;
+            if (slot_filled(item_)) ask(MenuConfirm::LoadSavePoint);
             return;
         case MenuSection::Options:
             if (item_ >= static_cast<int>(options_.size())) return;
@@ -731,9 +777,9 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         case UiAction::Quit: result.quit_requested = true; break;
         // The face buttons that used to be these entries still are them,
         // for hands that remember where they were.
-        case UiAction::MenuQuit: confirm_ = MenuConfirm::Quit; break;
+        case UiAction::MenuQuit: ask(MenuConfirm::Quit); break;
         case UiAction::MenuReset:
-            if (state_.reset_available) confirm_ = MenuConfirm::Reset;
+            if (state_.reset_available) ask(MenuConfirm::Reset);
             break;
         case UiAction::MenuDisconnect:
             if (state_.session_active) result.disconnect_requested = true;
@@ -768,18 +814,14 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     // A confirmation takes the whole menu: while one is up it is the only
     // question on screen, so nothing behind it moves, cycles or opens.
     if (confirming()) {
-        const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);
-        bool accepted = false;
-        bool dismissed = false;
-        for (const UiAction action : actions) {
-            if (action == UiAction::Confirm) accepted = true;
-            if (action == UiAction::Cancel) dismissed = true;
-        }
-        for (const PointerEvent& pointer : pointers) {
-            if (tapped(pointer, confirm.accept)) accepted = true;
-            else if (tapped(pointer, confirm.dismiss)) dismissed = true;
-        }
-        // A notice has one answer, and B is as good a way to give it as A.
+        const PopupGeometry popup = confirm_popup(output_width, output_height);
+        const int answer = confirm_cursor_.update(actions, pointers, popup);
+        const int count = static_cast<int>(popup.buttons.size());
+        // The last button is the thing asked about -- a notice's only one,
+        // its OK -- and the first, where there are two, is Cancel. B is
+        // Cancel, and for a notice, with only the one answer, is OK.
+        bool accepted = answer == count - 1;
+        bool dismissed = answer == PopupCursor::kCancelled || (answer == 0 && count > 1);
         if (confirm_ == MenuConfirm::Notice && dismissed) {
             accepted = true;
         }
@@ -1167,7 +1209,6 @@ void LayoutPicker::render(QuadRenderer& quads,
         return;
     }
 
-    const UiTheme& theme = ui_theme();
     const float scale = UiTheme::base_scale(output_height);
     const float line = TextRenderer::line_height(scale);
     const bool wii_u = system_ == SystemId::WiiU;
@@ -1229,48 +1270,12 @@ void LayoutPicker::render(QuadRenderer& quads,
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 
     if (confirming()) {
-        const ConfirmGeometry confirm = compute_confirm_geometry(output_width, output_height);
-        // Everything the confirmation is asking about goes back another step,
-        // so there is one thing on screen to answer.
-        quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
-                         Color{0.0f, 0.0f, 0.0f, 0.5f});
-        quads.draw_solid(confirm.dialog, theme.text);
-
-        // With Resume from Save State on, quitting loses nothing: the game
-        // starts from right here next time, so the warning would be untrue.
-        const bool quitting_keeps_progress =
-            state_.resume_choosable && state_.resume_from_save_state;
-        const char* question = quitting_keeps_progress
-                                   ? "Are you sure you want to quit?"
-                                   : "Are you sure you want to quit?\nUnsaved progress will be lost.";
-        switch (confirm_) {
-            case MenuConfirm::Reset:
-                question = "Are you sure you want to reset?\nUnsaved progress will be lost.";
-                break;
-            case MenuConfirm::LoadSavePoint: question = "Load this save state?"; break;
-            case MenuConfirm::OverwriteSavePoint: question = "Overwrite this save state?"; break;
-            case MenuConfirm::Notice: question = save_status_.c_str(); break;
-            case MenuConfirm::Quit:
-            case MenuConfirm::None: break;
-        }
-        text.draw_wrapped(quads, question, confirm.dialog.x + confirm.dialog.w * 0.5f,
-                          confirm.dialog.y + line * 1.2f, confirm.dialog.w - line * 2.0f,
-                          scale * 1.15f, theme.background, TextAlign::Center);
-
-        // Both halves keep the default role, and must. Everywhere else Back
-        // is the way out of a screen and a remote has a button for it; here
-        // the two prompts *are* the two answers, and dropping one would leave
-        // the question above a lone OK.
-        if (confirm_ == MenuConfirm::Notice) {
-            draw_control_guide(quads, text, glyphs, {{ButtonGlyph::A, "OK"}},
-                               confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
-                               scale * 1.05f, theme.background);
-        } else {
-            draw_control_guide(quads, text, glyphs,
-                               {{ButtonGlyph::B, "Back"}, {ButtonGlyph::A, "OK"}},
-                               confirm.dialog.x + confirm.dialog.w * 0.5f, confirm.accept.y,
-                               scale * 1.05f, theme.background);
-        }
+        // The popup every question in the app is asked in: see ui/popup.hpp.
+        const PopupGeometry popup = confirm_popup(output_width, output_height);
+        draw_popup(quads, text, output_width, output_height, popup, confirm_buttons(),
+                   confirm_cursor_.focus(), confirm_cursor_.shown());
+        draw_popup_text(quads, text, confirm_text(), popup.body.x, popup.body.y, popup.body.w,
+                        output_height);
     }
 }
 

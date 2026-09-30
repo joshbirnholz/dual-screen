@@ -14,6 +14,7 @@
 #include "render/compositor.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/popup.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -260,15 +261,25 @@ public:
     // Puts the save status up as a popup with an OK to dismiss it -- see
     // MenuConfirm::Notice.
     void show_notice() {
-        if (!save_status_.empty()) confirm_ = MenuConfirm::Notice;
+        if (!save_status_.empty()) ask(MenuConfirm::Notice);
     }
     MenuConfirm confirmation() const { return confirm_; }
+    // Which of the popup's buttons the cursor is on, plus one, or 0 when it
+    // is not showing: what the other device is told, to draw the same.
+    int confirm_focus_wire() const {
+        return confirming() && confirm_cursor_.shown() ? confirm_cursor_.focus() + 1 : 0;
+    }
+    // A focus that stands for one of the popup's buttons rather than for
+    // anything in the menu: see entry_at(). In the part of Continue's range
+    // no item of Continue's -- it has none -- will ever use.
+    static constexpr int kPopupFocusBase = 240;
 
     // Everything the menu shows, applied in one go, for the device that is not
     // holding it. Called every frame from what the host broadcast: one copy of
     // the state rather than a copy on each device kept in step by a scattering
     // of setters, which is the only way the two can be relied on to agree.
-    void show(const LayoutPickerState& state, int focus, MenuConfirm confirm);
+    void show(const LayoutPickerState& state, int focus, MenuConfirm confirm,
+              int confirm_focus_wire = 0);
     // Which entry a tap landed on, or -1 for none. Resolved on the device the
     // finger touched, since only that one knows how its own menu is laid out.
     int entry_at(float x, float y, float output_width, float output_height) const;
@@ -411,14 +422,14 @@ private:
         PixelRect hand_button;
     };
     MenuGeometry compute_menu_geometry(float output_width, float output_height) const;
-    // Where the confirmation sits, and the two prompts inside it a finger can
-    // land on. Only meaningful while one is up.
-    struct ConfirmGeometry {
-        PixelRect dialog;
-        PixelRect accept;
-        PixelRect dismiss;
-    };
-    ConfirmGeometry compute_confirm_geometry(float output_width, float output_height) const;
+    // The popup a question is asked in: what it says, its buttons -- Cancel
+    // and the thing asked about, or a notice's one OK -- and where they go.
+    // Only meaningful while one is up.
+    PopupText confirm_text() const;
+    std::vector<PopupButton> confirm_buttons() const;
+    PopupGeometry confirm_popup(float output_width, float output_height) const;
+    // Puts a question up, the cursor on its answer.
+    void ask(MenuConfirm confirm);
     bool confirming() const { return confirm_ != MenuConfirm::None; }
     int tile_count() const { return static_cast<int>(tiles_.size()); }
     // The layout behind a tile, and where a layout's tile is. Everything that
@@ -498,6 +509,7 @@ private:
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;
     MenuConfirm confirm_ = MenuConfirm::None;
+    PopupCursor confirm_cursor_;
     // Where the control prompts landed when they were last drawn, so a tap can
     // find them. Laid out from the glyph artwork, which only drawing knows.
     std::vector<GuideHit> guide_hits_;

@@ -175,6 +175,7 @@ public:
         bool menu_open = false;
         int menu_focus = 0;
         uint8_t menu_confirm = 0;
+        uint8_t menu_confirm_focus = 0;
         // The settings screen, which is this device's own rather than shared:
         // the companion is told only that it is up. See
         // SessionStateMessage::settings_open.

@@ -357,6 +357,9 @@ struct SessionStateMessage {
     // Whether the menu offers Save Sync: the host's game has a save its Data
     // Management can sync. Last, and optional: from an older host, none.
     bool save_sync_available = false;
+    // Which button of the menu's popup the cursor is on, plus one; 0 when
+    // the cursor is not showing, or there is no popup. Last, and optional.
+    uint8_t menu_confirm_focus = 0;
 };
 
 struct FrameMessage {

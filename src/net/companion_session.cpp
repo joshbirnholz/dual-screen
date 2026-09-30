@@ -549,6 +549,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_settings_open_ = state.settings_open;
             host_menu_focus_ = state.menu_focus;
             host_menu_confirm_ = state.menu_confirm;
+            host_menu_confirm_focus_ = state.menu_confirm_focus;
             host_max_render_scale_ = state.max_render_scale;
             host_cursor_choosable_ = state.cursor_choosable;
             host_right_stick_choosable_ = state.right_stick_choosable;

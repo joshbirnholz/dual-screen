@@ -640,6 +640,7 @@ void DataManagementScreen::ask(Pending pending) {
         case Pending::None: return;
     }
     overlay_ = Overlay::Confirm;
+    popup_cursor_.reset(2, 1);
 }
 
 void DataManagementScreen::confirmed(DataManagementResult& result) {
@@ -688,6 +689,7 @@ void DataManagementScreen::confirmed(DataManagementResult& result) {
         dialog_accept_ = "Replace";
     }
     overlay_ = Overlay::ResumeConfirm;
+    popup_cursor_.reset(2, 1);
 }
 
 void DataManagementScreen::carry_out(DataManagementResult& result) {
@@ -830,6 +832,7 @@ void DataManagementScreen::show_choice(const std::string& title, const std::stri
     choice_dates_[1] = here_date;
     choice_focus_ = 0;
     overlay_ = Overlay::Choice;
+    popup_cursor_.reset(3, 0);
 }
 
 void DataManagementScreen::chosen(DataManagementResult& result) {
@@ -924,6 +927,7 @@ void DataManagementScreen::begin_sync_transfer(SyncWay way) {
     }
     dialog_accept_ = "Replace";
     overlay_ = Overlay::ResumeConfirm;
+    popup_cursor_.reset(2, 1);
 }
 
 void DataManagementScreen::start_sync_job(SyncWay way) {
@@ -959,18 +963,49 @@ void DataManagementScreen::finish_sync_all() {
     show_notice(message);
 }
 
-std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
+std::vector<PopupButton> DataManagementScreen::dialog_buttons() const {
     switch (overlay_) {
         case Overlay::Confirm:
-        case Overlay::ResumeConfirm:
-            return {{ButtonGlyph::B, "Cancel", PromptRole::LeavesScreen},
-                    {ButtonGlyph::A, dialog_accept_}};
+        case Overlay::ResumeConfirm: return {{"Cancel", ""}, {dialog_accept_, ""}};
         case Overlay::Choice:
-            return {{ButtonGlyph::B, sync_all_ ? "Skip" : "Cancel", PromptRole::LeavesScreen},
-                    {ButtonGlyph::A, "Keep", PromptRole::ActsOnSelection}};
+            return {{choice_names_[0], choice_dates_[0]},
+                    {choice_names_[1], choice_dates_[1]},
+                    {sync_all_ ? "Skip" : "Cancel", ""}};
+        default: return {};
+    }
+}
+
+float DataManagementScreen::dialog_body_height(float output_width, float output_height) const {
+    const float width = popup_body_width(output_width, output_height);
+    const float line = TextRenderer::line_height(popup_scale(output_height));
+    switch (overlay_) {
+        case Overlay::Busy: return popup_text_height(PopupText{busy_, {}, 0}, width, output_height);
+        case Overlay::Choice:
+            return popup_text_height(PopupText{choice_title_, {choice_line_}, 0}, width, output_height);
+        case Overlay::Confirm:
+        case Overlay::ResumeConfirm: {
+            float height = popup_text_height(PopupText{dialog_title_, dialog_lines_, 0}, width, output_height);
+            if (overlay_ == Overlay::Confirm && !dialog_from_name_.empty()) height += line * 0.8f + line * 3.0f;
+            return height;
+        }
+        default: return 0.0f;
+    }
+}
+
+PopupGeometry DataManagementScreen::dialog_popup(float output_width, float output_height) const {
+    return popup_geometry(output_width, output_height, dialog_body_height(output_width, output_height),
+                          dialog_buttons());
+}
+
+std::vector<GuidePrompt> DataManagementScreen::guide_prompts() const {
+    switch (overlay_) {
+        // A popup's answers are its own buttons; the page's prompts stay
+        // where they are behind it, dimmed with the rest of the page.
+        case Overlay::Confirm:
+        case Overlay::ResumeConfirm:
+        case Overlay::Choice:
         case Overlay::Busy:
         case Overlay::Notice:
-            return {};
         case Overlay::None: break;
     }
     switch (page_) {
@@ -1027,7 +1062,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
     if (result.restart_with) return result;
 
     if (overlay_ == Overlay::Notice) {
-        if (notice_popup_answered(input_actions, pointers, output_width, output_height)) {
+        if (notice_popup_answered(input_actions, pointers, output_width, output_height, notice_)) {
             overlay_ = Overlay::None;
         }
         return result;
@@ -1035,9 +1070,27 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
     if (overlay_ == Overlay::Busy) return result;
 
     std::vector<UiAction> actions = input_actions;
+    // A dialog is answered with its buttons, and the answer handed on below
+    // as the press it stands for: its last button, or a save, as A; Cancel or
+    // Skip, or B, as B.
+    const bool dialog = overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm ||
+                        overlay_ == Overlay::Choice;
+    if (dialog) {
+        const PopupGeometry popup = dialog_popup(output_width, output_height);
+        const int answer = popup_cursor_.update(input_actions, pointers, popup);
+        const int cancel = overlay_ == Overlay::Choice ? 2 : 0;
+        if (overlay_ == Overlay::Choice && popup_cursor_.focus() < 2) choice_focus_ = popup_cursor_.focus();
+        actions.clear();
+        if (answer == PopupCursor::kCancelled || answer == cancel) {
+            actions.push_back(UiAction::Cancel);
+        } else if (answer >= 0) {
+            if (overlay_ == Overlay::Choice) choice_focus_ = answer;
+            actions.push_back(UiAction::Confirm);
+        }
+    }
     if (overlay_ == Overlay::None) drag_list(pointers, output_width, output_height);
     for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
+        if (!pointer.released || dialog) continue;
         const ButtonGlyph on_guide = guide_button_at(guide_hits_, pointer.x, pointer.y);
         if (on_guide != ButtonGlyph::Count) {
             handle_guide_tap(on_guide, actions);
@@ -1045,15 +1098,6 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
         }
         // Everywhere here, a first tap highlights and a second, on the same
         // thing, chooses it.
-        if (overlay_ == Overlay::Choice) {
-            for (std::size_t index = 0; index < choice_rects_.size(); ++index) {
-                if (!tapped(pointer, choice_rects_[index])) continue;
-                if (tap_chooses(choice_focus_, static_cast<int>(index))) {
-                    actions.push_back(UiAction::Confirm);
-                }
-            }
-            continue;
-        }
         if (overlay_ != Overlay::None || drag_.release_was_drag()) continue;
         for (std::size_t index = 0; index < row_rects_.size(); ++index) {
             if (!tapped(pointer, row_rects_[index])) continue;
@@ -1073,8 +1117,6 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
     for (const UiAction action : actions) {
         if (result.close_requested || result.restart_with) break;
         if (overlay_ == Overlay::Choice) {
-            if (action == UiAction::Up) choice_focus_ = 0;
-            if (action == UiAction::Down) choice_focus_ = 1;
             if (action == UiAction::Confirm) chosen(result);
             if (action == UiAction::Cancel) {
                 if (sync_all_) {
@@ -1446,117 +1488,63 @@ void DataManagementScreen::render(QuadRenderer& quads,
         if (scrolls) draw_scroll_bar(quads, list, earlier_scroll_ / content, list.h / content, line, scale);
     }
 
-    // The dialogs: the page stays where it is behind them, dimmed.
-    if (overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm || overlay_ == Overlay::Busy) {
-        quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, Color{0.0f, 0.0f, 0.0f, 0.62f});
-        const float width = std::round(std::min(output_width * 0.62f, line * 30.0f));
-        const float pad = line * 1.0f;
-        const float inner = width - pad * 2.0f;
-        const float title_scale_d = scale * 1.2f;
-        const std::string& heading_d = overlay_ == Overlay::Busy ? busy_ : dialog_title_;
-        const std::size_t title_lines = TextRenderer::wrap(heading_d, inner, title_scale_d).size();
-        float height = pad * 2.0f + TextRenderer::wrapped_line_step(title_scale_d) * title_lines;
-        const bool strip = overlay_ == Overlay::Confirm && !dialog_from_name_.empty();
-        const float strip_h = line * 3.0f;
-        if (strip) height += line * 0.8f + strip_h;
-        const float body_scale = scale * 0.85f;
-        if (overlay_ != Overlay::Busy) {
-            for (const std::string& body : dialog_lines_) {
-                height += line * 0.5f + TextRenderer::wrapped_line_step(body_scale) * TextRenderer::wrap(body, inner, body_scale).size();
-            }
-        }
-        const PixelRect dialog{std::round((output_width - width) * 0.5f), std::round((output_height - height) * 0.45f), width, height};
-        quads.draw_rounded_rect(dialog, line * 0.5f, theme.panel);
-        float pen_y = dialog.y + pad;
-        pen_y += text.draw_wrapped(quads, heading_d, dialog.x + pad, pen_y, inner, title_scale_d, theme.text);
-        if (strip) {
-            pen_y += line * 0.8f;
-            const PixelRect band{dialog.x + pad, pen_y, inner, strip_h};
-            quads.draw_rounded_rect(band, line * 0.35f, theme.background);
-            const float left_c = band.x + band.w * 0.25f;
-            const float right_c = band.x + band.w * 0.75f;
-            const float date_step = line * 1.2f;
-            const float name_y = band.y + (band.h - date_step - TextRenderer::line_height(scale * 0.75f)) * 0.5f;
-            text.draw(quads, TextRenderer::elide_right(dialog_from_name_, band.w * 0.4f, scale * 0.85f), left_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
-            text.draw(quads, dialog_from_date_, left_c, name_y + date_step, scale * 0.75f, theme.text_dim, TextAlign::Center);
-            text.draw(quads, TextRenderer::elide_right(dialog_to_name_, band.w * 0.4f, scale * 0.85f), right_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
-            text.draw(quads, dialog_to_date_, right_c, name_y + date_step, scale * 0.75f, theme.text_dim, TextAlign::Center);
-            // An arrow from one to the other: a shaft and a head.
-            const float mid_x = band.x + band.w * 0.5f;
-            const float mid_y = band.y + band.h * 0.5f;
-            const float shaft = line * 0.9f;
-            const float thick = std::max(2.0f, std::round(scale * 0.6f));
-            quads.draw_solid(PixelRect{mid_x - shaft * 0.5f, mid_y - thick * 0.5f, shaft, thick}, theme.accent);
-            // The head, as thin slices narrowing to its point.
-            const int slices = 8;
-            const float head = line * 0.4f;
-            for (int step = 0; step < slices; ++step) {
-                const float size = line * 0.7f * (1.0f - static_cast<float>(step) / slices);
-                quads.draw_solid(PixelRect{mid_x + shaft * 0.5f - head * 0.5f + step * head / slices, mid_y - size * 0.5f,
-                                           head / slices + 0.5f, size}, theme.accent);
-            }
-            pen_y += strip_h;
-        }
-        if (overlay_ != Overlay::Busy) {
-            for (std::size_t index = 0; index < dialog_lines_.size(); ++index) {
-                pen_y += line * 0.5f;
-                pen_y += text.draw_wrapped(quads, dialog_lines_[index], dialog.x + pad, pen_y, inner, body_scale,
-                                           index < dialog_plain_lines_ ? theme.text : theme.text_dim);
-            }
-        }
-    }
-
-    choice_rects_.clear();
-    if (overlay_ == Overlay::Choice) {
-        // A conflict: which of the two saves both devices keep. The two are
-        // rows to pick between, each with its date.
-        quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height}, Color{0.0f, 0.0f, 0.0f, 0.62f});
-        const float width = std::round(std::min(output_width * 0.62f, line * 30.0f));
-        const float pad = line * 1.0f;
-        const float inner = width - pad * 2.0f;
-        const float title_scale_d = scale * 1.2f;
-        const float body_scale = scale * 0.85f;
-        const float option_h = menu_row_height(line);
-        const float height = pad * 2.0f +
-                             TextRenderer::wrapped_line_step(title_scale_d) *
-                                 TextRenderer::wrap(choice_title_, inner, title_scale_d).size() +
-                             line * 0.5f +
-                             TextRenderer::wrapped_line_step(body_scale) *
-                                 TextRenderer::wrap(choice_line_, inner, body_scale).size() +
-                             line * 0.8f + option_h * 2.0f + menu_row_gap(line);
-        const PixelRect dialog{std::round((output_width - width) * 0.5f), std::round((output_height - height) * 0.45f),
-                               width, height};
-        quads.draw_rounded_rect(dialog, line * 0.5f, theme.panel);
-        float pen_y = dialog.y + pad;
-        pen_y += text.draw_wrapped(quads, choice_title_, dialog.x + pad, pen_y, inner, title_scale_d, theme.text);
-        pen_y += line * 0.5f;
-        pen_y += text.draw_wrapped(quads, choice_line_, dialog.x + pad, pen_y, inner, body_scale, theme.text_dim);
-        pen_y += line * 0.8f;
-        for (int index = 0; index < 2; ++index) {
-            const PixelRect option{dialog.x + pad, pen_y, inner, option_h};
-            choice_rects_.push_back(option);
-            const bool focused = index == choice_focus_;
-            if (focused) {
-                draw_menu_row(quads, option, true, scale);
-            } else {
-                quads.draw_rounded_rect(option, line * 0.35f, theme.background);
-            }
-            const float row_pad = menu_row_pad(line);
-            const float baseline = option.y + (option.h - line) * 0.5f;
-            text.draw(quads, TextRenderer::elide_right(choice_names_[index], inner * 0.55f, scale), option.x + row_pad, baseline,
-                      scale, menu_row_text(focused));
-            text.draw(quads, choice_dates_[index], option.x + option.w - row_pad,
-                      option.y + (option.h - TextRenderer::line_height(scale * 0.85f)) * 0.5f, scale * 0.85f,
-                      focused ? with_alpha(theme.background, 0.7f) : theme.text_dim, TextAlign::Right);
-            pen_y += option_h + menu_row_gap(line);
-        }
-    }
-
+    // The prompts, before any popup, which dims them with the rest of the page.
     guide_hits_.clear();
+    draw_page_guide(quads, text, glyphs, frame, guide_prompts(), &guide_hits_);
+
+    // The dialogs, as popups: the page stays where it is behind them, dimmed.
+    if (overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm ||
+        overlay_ == Overlay::Busy || overlay_ == Overlay::Choice) {
+        const PopupGeometry popup = dialog_popup(output_width, output_height);
+        draw_popup(quads, text, output_width, output_height, popup, dialog_buttons(),
+                   popup_cursor_.focus(), popup_cursor_.shown());
+        const PixelRect& body = popup.body;
+        if (overlay_ == Overlay::Busy) {
+            draw_popup_text(quads, text, PopupText{busy_, {}, 0}, body.x, body.y, body.w, output_height);
+        } else if (overlay_ == Overlay::Choice) {
+            draw_popup_text(quads, text, PopupText{choice_title_, {choice_line_}, 0}, body.x, body.y,
+                            body.w, output_height);
+        } else {
+            float pen_y = draw_popup_text(quads, text, PopupText{dialog_title_, {}, 0}, body.x, body.y,
+                                          body.w, output_height);
+            if (overlay_ == Overlay::Confirm && !dialog_from_name_.empty()) {
+                // From one device to the other: both names and dates, with an
+                // arrow between them.
+                const float strip_h = line * 3.0f;
+                pen_y += line * 0.8f;
+                const PixelRect band{body.x, pen_y, body.w, strip_h};
+                quads.draw_rounded_rect(band, line * 0.35f, theme.background);
+                const float left_c = band.x + band.w * 0.25f;
+                const float right_c = band.x + band.w * 0.75f;
+                const float date_step = line * 1.2f;
+                const float name_y = band.y + (band.h - date_step - TextRenderer::line_height(scale * 0.75f)) * 0.5f;
+                text.draw(quads, TextRenderer::elide_right(dialog_from_name_, band.w * 0.4f, scale * 0.85f), left_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
+                text.draw(quads, dialog_from_date_, left_c, name_y + date_step, scale * 0.75f, theme.text_dim, TextAlign::Center);
+                text.draw(quads, TextRenderer::elide_right(dialog_to_name_, band.w * 0.4f, scale * 0.85f), right_c, name_y, scale * 0.85f, theme.text, TextAlign::Center);
+                text.draw(quads, dialog_to_date_, right_c, name_y + date_step, scale * 0.75f, theme.text_dim, TextAlign::Center);
+                // An arrow from one to the other: a shaft and a head.
+                const float mid_x = band.x + band.w * 0.5f;
+                const float mid_y = band.y + band.h * 0.5f;
+                const float shaft = line * 0.9f;
+                const float thick = std::max(2.0f, std::round(scale * 0.6f));
+                quads.draw_solid(PixelRect{mid_x - shaft * 0.5f, mid_y - thick * 0.5f, shaft, thick}, theme.accent);
+                // The head, as thin slices narrowing to its point.
+                const int slices = 8;
+                const float head = line * 0.4f;
+                for (int step = 0; step < slices; ++step) {
+                    const float size = line * 0.7f * (1.0f - static_cast<float>(step) / slices);
+                    quads.draw_solid(PixelRect{mid_x + shaft * 0.5f - head * 0.5f + step * head / slices, mid_y - size * 0.5f,
+                                               head / slices + 0.5f, size}, theme.accent);
+                }
+                pen_y += strip_h;
+            }
+            draw_popup_text(quads, text, PopupText{std::string(), dialog_lines_, dialog_plain_lines_}, body.x,
+                            pen_y, body.w, output_height);
+        }
+    }
+
     if (overlay_ == Overlay::Notice) {
         render_notice_popup(quads, text, glyphs, output_width, output_height, notice_);
-    } else {
-        draw_page_guide(quads, text, glyphs, frame, guide_prompts(), &guide_hits_);
     }
 }
 

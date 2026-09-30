@@ -3142,7 +3142,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             if (companion_session->host_resume_notice()) {
                 input.set_game_input_enabled(false);
                 if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
-                                          static_cast<float>(output_height))) {
+                                          static_cast<float>(output_height), kResumedNotice)) {
                     companion_session->request_menu_action(net::MenuAction::Confirm);
                 }
                 break;
@@ -3249,7 +3249,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 
         case State::ResumeNotice: {
             if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
-                                      static_cast<float>(output_height))) {
+                                      static_cast<float>(output_height), game_notice)) {
                 dismiss_resume_notice();
             }
             break;
@@ -4129,6 +4129,8 @@ int App::run(const AppOptions& options) {
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
+            shared.menu_confirm_focus =
+                impl.picker ? static_cast<uint8_t>(impl.picker->confirm_focus_wire()) : 0;
             shared.max_render_scale =
                 impl.local_game() ? system_profile(impl.system).max_render_scale : 1;
             shared.cursor_choosable = impl.pointer_choosable();
@@ -4466,7 +4468,8 @@ int App::run(const AppOptions& options) {
                 if (impl.state == Impl::State::Menu && impl.picker) {
                     impl.picker->show(
                         impl.menu_state_from_host(), impl.companion_session->host_menu_focus(),
-                        static_cast<MenuConfirm>(impl.companion_session->host_menu_confirm()));
+                        static_cast<MenuConfirm>(impl.companion_session->host_menu_confirm()),
+                        impl.companion_session->host_menu_confirm_focus());
                     impl.show_host_save_slots();
                 }
                 if (impl.companion_session->host_filtering() != impl.bilinear_filtering) {
