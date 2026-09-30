@@ -101,14 +101,16 @@ constexpr uint32_t align_up(uint32_t value, uint32_t alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
-// How much the renderers draw from. Each renderer keeps three 16 MB upload
-// buffers and the 3D one about 30 MB of tiles, which is what sets the data
-// heap; textures are the DS's own, cached in arrays of up to 8 MB a size.
-// melonDS's frontend asks for 388 MB between them, most of it for its own
-// menus, which this program does not have.
-constexpr uint32_t kDataHeapSize = 160u << 20;
-constexpr uint32_t kTextureHeapSize = 96u << 20;
-constexpr uint32_t kShaderHeapSize = 4u << 20;
+// How much the renderers draw from: exactly what melonDS's own Switch
+// frontend gives them, 388 MB between the three, so nothing about the memory
+// the renderers work in differs from the program they were written for. Each
+// renderer keeps three 16 MB upload buffers and the 3D one about 30 MB of
+// tiles; textures are the DS's own, cached in arrays of up to 8 MB a size and
+// never given back while a game runs, so a game with many of them needs the
+// room.
+constexpr uint32_t kDataHeapSize = 256u << 20;
+constexpr uint32_t kTextureHeapSize = 120u << 20;
+constexpr uint32_t kShaderHeapSize = 12u << 20;
 // Room for everything else in the program once the heaps are taken: SDL, Mesa
 // and the window this program draws its own screens in.
 constexpr uint64_t kHeadroom = 96ull << 20;

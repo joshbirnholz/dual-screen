@@ -256,10 +256,21 @@ Two things it needs that libretro's melonDS does not:
   for in `/switch/dualscreen/system/` and then `/switch/melonds/`, where
   melonDS's own Switch app keeps them -- so with that app set up, there is
   nothing more to do.
-- **Memory.** Its GPU renderer wants about 260 MB of its own. Started from the
-  album, a program gets too little for that; start Dualscreen through a game
-  (hold R while starting one) instead. If there is not enough, the game says
-  so rather than starting.
+- **Memory.** Its GPU renderer wants about 390 MB of its own -- the same as
+  melonDS's own Switch app gives it. Started from the album, a program gets
+  too little for that; start Dualscreen through a game (hold R while starting
+  one) instead. If there is not enough, the game says so rather than starting.
+
+Its JIT, and the JIT's fast memory, are on. To tell whether a problem in a game
+is the JIT's, `/switch/dualscreen/melonds.ini` turns either off:
+
+```ini
+jit=0
+fastmem=0
+```
+
+The game log says which are in use when a game starts. Without the JIT most 3D
+games run well below full speed.
 
 Cartridge saves go where libretro's melonDS put them,
 `/switch/dualscreen/saves/<game>.sav`, so a game saved with one plays on with

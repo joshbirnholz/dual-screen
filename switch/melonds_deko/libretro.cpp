@@ -125,6 +125,55 @@ bool find_bios(std::string* missing) {
     return all;
 }
 
+// How the emulated CPUs are run, which melonDS's own Switch frontend lets its
+// player choose and this program does not: its JIT, and the JIT's fast memory,
+// both on unless /switch/dualscreen/melonds.ini says otherwise --
+//
+//   jit=0
+//   fastmem=0
+//
+// -- for telling whether a problem in a game is the JIT's. Off is much
+// slower: most 3D games will not keep up without it.
+constexpr const char* kTuningPath = "/switch/dualscreen/melonds.ini";
+
+void apply_cpu_tuning() {
+    bool jit = true;
+    bool fastmem = true;
+    bool from_file = false;
+    if (std::FILE* file = std::fopen(kTuningPath, "r")) {
+        from_file = true;
+        char line[128];
+        while (std::fgets(line, sizeof(line), file) != nullptr) {
+            std::string text(line);
+            text.erase(std::remove_if(text.begin(), text.end(),
+                                      [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }),
+                       text.end());
+            if (text.empty() || text[0] == '#' || text[0] == ';') continue;
+            const std::size_t equals = text.find('=');
+            if (equals == std::string::npos) continue;
+            const std::string key = text.substr(0, equals);
+            const bool on = text.substr(equals + 1) != "0";
+            if (key == "jit") {
+                jit = on;
+            } else if (key == "fastmem") {
+                fastmem = on;
+            } else {
+                log_warn("melonDS (deko3d): " + std::string(kTuningPath) + " has a " + key +
+                         " this core does not know");
+            }
+        }
+        std::fclose(file);
+    }
+    Config::JIT_Enable = jit ? 1 : 0;
+    Config::JIT_MaxBlockSize = 32;
+    Config::JIT_BranchOptimisations = 1;
+    Config::JIT_LiteralOptimisations = 1;
+    Config::JIT_FastMemory = fastmem ? 1 : 0;
+    log_info(std::string("melonDS (deko3d): JIT ") + (jit ? "on" : "off") +
+             (jit ? std::string(", fast memory ") + (fastmem ? "on" : "off") : std::string()) +
+             (from_file ? std::string(", as ") + kTuningPath + " says" : std::string()));
+}
+
 void declare_options() {
     // Only what the app sets, and only the values it sets them to: this core
     // does one layout, one kind of touch and one kind of microphone, and
@@ -326,11 +375,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
     }
 
     // Before NDS::Init(), which sets the JIT up from these.
-    Config::JIT_Enable = 1;
-    Config::JIT_MaxBlockSize = 32;
-    Config::JIT_BranchOptimisations = 1;
-    Config::JIT_LiteralOptimisations = 1;
-    Config::JIT_FastMemory = 1;
+    apply_cpu_tuning();
     Config::DLDIEnable = 0;
     Config::DSiSDEnable = 0;
     Config::RandomizeMAC = 0;
