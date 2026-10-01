@@ -329,18 +329,23 @@ struct Shadow {
     uint32_t size = 0;
     std::vector<uint8_t> bytes;
     std::vector<uint64_t> asked_frame;  // per block
+    std::vector<uint32_t> asked_sequence;  // per block: the upload that last asked
 };
+GpuMemHeap::Allocation g_markers;
+constexpr uint32_t kMarkers = 1u << 16;
 Shadow g_shadows[4];
 // Uploads whose staging memory did not hold the bytes just written to it.
 uint64_t g_staging_mismatches = 0;
 
-void observe_upload(uint64_t destination, const uint8_t* data, uint32_t size, const uint8_t* staged) {
+void observe_upload(uint64_t destination, const uint8_t* data, uint32_t size, const uint8_t* staged,
+                    uint32_t sequence) {
     for (Shadow& shadow : g_shadows) {
         if (shadow.size == 0 || destination < shadow.base || destination + size > shadow.base + shadow.size) continue;
         const uint32_t offset = static_cast<uint32_t>(destination - shadow.base);
         std::memcpy(shadow.bytes.data() + offset, data, size);
         for (uint32_t block = offset / kBlock; block <= (offset + size - 1) / kBlock; ++block) {
             shadow.asked_frame[block] = g_frames;
+            shadow.asked_sequence[block] = sequence;
         }
         if (std::memcmp(staged, data, size) != 0) {
             if (g_staging_mismatches++ < 5) {
@@ -435,8 +440,14 @@ void init() {
         shadow.size = renderer != nullptr ? sizes[i] : 0;
         shadow.bytes.assign(shadow.size, 0);
         shadow.asked_frame.assign(shadow.size / kBlock, 0);
+        shadow.asked_sequence.assign(shadow.size / kBlock, 0);
     }
     g_staging_mismatches = 0;
+    g_markers = Gfx::DataHeap->Alloc(kMarkers * sizeof(uint32_t), 64);
+    std::memset(Gfx::DataHeap->CpuAddr<void>(g_markers), 0, kMarkers * sizeof(uint32_t));
+    g_upload_markers_gpu = Gfx::DataHeap->GpuAddr(g_markers);
+    g_upload_markers = Gfx::DataHeap->CpuAddr<uint32_t>(g_markers);
+    g_upload_marker_count = kMarkers;
     g_upload_observer = observe_upload;
     constexpr uint32_t kReadback = 1024 * 1024;  // ABG 512K, BBG 128K, AOBJ 256K, BOBJ 128K
     g_readback = dk::MemBlockMaker{Gfx::Device, kReadback}
@@ -458,6 +469,9 @@ void deinit() {
     if (!g_set_up) return;
     g_set_up = false;
     g_upload_observer = nullptr;
+    g_upload_marker_count = 0;
+    g_upload_markers = nullptr;
+    Gfx::DataHeap->Free(g_markers);
     g_cmd.destroy();
     g_cmd_memory.destroy();
     g_readback.destroy();
@@ -514,11 +528,15 @@ void run(dk::Queue& queue) {
             const Shadow& shadow = g_shadows[index];
             uint32_t never_asked = 0;
             uint32_t asked_not_there = 0;
+            uint32_t not_reached = 0;
             uint64_t newest_ask = 0;
             for (uint32_t at = 0; at < area.size; at += kBlock) {
                 if (std::memcmp(gpu.data() + at, area.flat + at, kBlock) == 0) continue;
                 if (std::memcmp(shadow.bytes.data() + at, area.flat + at, kBlock) == 0) {
                     ++asked_not_there;
+                    // Whether the GPU reached that upload's commands at all.
+                    const uint32_t sequence = shadow.asked_sequence[at / kBlock];
+                    if (sequence != 0 && g_upload_markers[sequence % kMarkers] != sequence) ++not_reached;
                 } else {
                     ++never_asked;
                 }
@@ -526,7 +544,8 @@ void run(dk::Queue& queue) {
             }
             ++g_reports;
             log_warn("melonDS (deko3d): vramcheck: of those, " + std::to_string(asked_not_there) +
-                     " were uploaded with these bytes and are not on the GPU, and " + std::to_string(never_asked) +
+                     " were uploaded with these bytes and are not on the GPU (" + std::to_string(not_reached) +
+                     " of them in commands the GPU never reached), and " + std::to_string(never_asked) +
                      " were never uploaded with them; the newest upload to any of them was " +
                      (newest_ask == 0 ? std::string("never")
                                       : std::to_string(g_frames - newest_ask) + " frames ago") +

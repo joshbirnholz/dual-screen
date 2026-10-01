@@ -18,6 +18,10 @@
 namespace melonds_deko {
 UploadObserver g_upload_observer = nullptr;
 bool g_flush_l2_after_uploads = false;
+uint64_t g_upload_markers_gpu = 0;
+const volatile uint32_t* g_upload_markers = nullptr;
+uint32_t g_upload_marker_count = 0;
+static uint32_t g_upload_sequence = 0;
 }  // namespace melonds_deko
 
 UploadBuffer::UploadBuffer()
@@ -51,14 +55,22 @@ DkGpuAddr UploadBuffer::UploadData(dk::CmdBuf cmdbuf, u32 size, u8* data)
 void UploadBuffer::UploadAndCopyData(dk::CmdBuf cmdbuf, DkGpuAddr dst, u8* data, u32 size)
 {
     const DkGpuAddr src = UploadData(cmdbuf, size, data);
+    const u32 sequence = ++melonds_deko::g_upload_sequence;
     if (melonds_deko::g_upload_observer != nullptr)
     {
         // Where UploadData() just put it, for the CPU.
         const u8* staged = Gfx::DataHeap->CpuAddr<u8>(Buffers[CurBuffer]) +
                            (src - Gfx::DataHeap->GpuAddr(Buffers[CurBuffer]));
-        melonds_deko::g_upload_observer(dst, data, size, staged);
+        melonds_deko::g_upload_observer(dst, data, size, staged, sequence);
     }
     cmdbuf.copyBuffer(src, dst, size);
+    if (melonds_deko::g_upload_marker_count != 0)
+    {
+        // The GPU says it got this far, in the same stream as the copy.
+        cmdbuf.pushData(melonds_deko::g_upload_markers_gpu +
+                            (sequence % melonds_deko::g_upload_marker_count) * sizeof(u32),
+                        &sequence, sizeof(sequence));
+    }
     if (melonds_deko::g_flush_l2_after_uploads)
     {
         // Once the copy is done, out of the GPU's L2 cache and into memory,

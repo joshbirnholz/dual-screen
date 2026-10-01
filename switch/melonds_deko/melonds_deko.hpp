@@ -59,9 +59,16 @@ void gfx_set_vram_check(bool check);
 // Told of each buffer upload a renderer records (upload_buffer.cpp): where on
 // the GPU it goes, the bytes it was asked to send, and the bytes in the
 // staging memory the GPU will copy them from. For vramcheck; none otherwise.
+// `sequence` numbers each upload; when g_upload_markers is set, the GPU writes
+// it to g_upload_markers[sequence % g_upload_marker_count] (CPU-readable) as
+// it reaches that upload's commands, so vramcheck can tell an upload the GPU
+// never got to from one it did.
 using UploadObserver = void (*)(uint64_t destination, const uint8_t* data, uint32_t size,
-                                const uint8_t* staged);
+                                const uint8_t* staged, uint32_t sequence);
 extern UploadObserver g_upload_observer;
+extern uint64_t g_upload_markers_gpu;
+extern const volatile uint32_t* g_upload_markers;
+extern uint32_t g_upload_marker_count;
 // gpucache=0: the renderers' GPU memory kept out of the GPU's L2 cache. Before
 // gfx_init(), which makes it.
 void gfx_set_gpu_cache(bool cached);
