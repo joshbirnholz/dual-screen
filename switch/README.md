@@ -346,9 +346,13 @@ from melonDS's own app:
 
 - `make -C melonds_deko standalone` builds melonDS's own Switch app from the
   same checkout, with today's devkitPro, as `cores/melonDS-today.nro`. The
-  release that draws correctly was built years ago with an older compiler and
-  an older deko3d. If this build draws the same wrong textures, the toolchain
-  is the cause, not Dualscreen.
+  build that draws correctly is Gheovgos's release 7.2.1, which is this same
+  checkout -- RSDuck's `switch-new` -- with RetroAchievements and button
+  remapping added to the app around it, and nothing in the emulator or its
+  renderers changed; 7.2.1 is that, built with a current devkitPro. So if
+  this build draws wrong textures too, the difference is in how it is built
+  (7.2.1 uses link-time optimisation, this does not); if it draws correctly,
+  the difference is in Dualscreen.
 - `make OPTIMISE=-O1` builds the core, and Dualscreen with it, with fewer
   compiler optimisations. If the textures come out right, today's compiler at
   `-O3` is what breaks them. A plain `make` afterwards puts `-O3` back.

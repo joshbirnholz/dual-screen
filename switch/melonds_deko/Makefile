@@ -168,10 +168,11 @@ clean:
 #   make -C melonds_deko standalone
 #
 # and copy ../cores/melonDS-today.nro to the SD card beside the melonDS.nro
-# already there. The release that runs cleanly was built years ago, with an
-# older compiler and an older deko3d; if this one draws the same wrong
-# textures as Dualscreen does, those are the difference, and nothing in
-# Dualscreen is. Link-time optimisation is left off, as this core has it --
+# already there. The build that runs cleanly, Gheovgos's 7.2.1, is this same
+# emulator and renderer code with more in the app around it, built with a
+# current devkitPro; if this one draws the same wrong textures as Dualscreen
+# does, how it is built is the difference, and nothing in Dualscreen is.
+# Link-time optimisation is left off, as this core has it --
 # its CMake runs the host's gcc-ar for it, which cannot read these objects --
 # and two headers are included up front that newer compilers no longer bring
 # in on their own: <utility> for teakra, <unordered_map> for the app's ROM
