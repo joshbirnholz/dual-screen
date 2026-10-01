@@ -19,11 +19,8 @@ enum class LauncherChoice {
     LoadGame,
     ConnectAsTopScreen,
     ConnectAsBottomScreen,
+    // Data Management is in here, as its first row.
     Settings,
-    // Data Management on its own, for a device that plays games but keeps
-    // no Settings on this screen -- a Switch with its own emulator. Elsewhere
-    // it is the first row of Settings.
-    DataManagement,
     Quit,
 };
 
@@ -62,9 +59,8 @@ public:
     bool offers_quit() const { return offers_quit_; }
 
     // Whether a companion client that also plays games itself offers to load
-    // one: a Switch carrying its own DS emulator. Its Settings stay out --
-    // they belong to the game once one is running, in its own menu. Read by
-    // open(), like the flag above.
+    // one, and Settings with it: a Switch carrying its own DS emulator. Read
+    // by open(), like the flag above.
     void set_offers_load_game(bool offers) { offers_load_game_ = offers; }
     bool offers_load_game() const { return offers_load_game_; }
 

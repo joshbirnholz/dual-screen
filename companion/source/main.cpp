@@ -111,7 +111,10 @@ extern "C" {
 #if DS_LOCAL_PLAY
 #include "core/save_store.hpp"
 #include "net/save_exchange.hpp"
+#include "config/melonds_tuning.hpp"
+#include "core/libretro_core.hpp"
 #include "ui/data_management_screen.hpp"
+#include "ui/settings_screen.hpp"
 #endif
 
 #if defined(__APPLE__)
@@ -347,9 +350,15 @@ private:
     // host picker; Playing is a live session, with or without this device's
     // own menu up over it.
     // DataManagement only where this device plays games itself.
-    enum class State { Launcher, Browsing, Connecting, Playing, Failed, DataManagement };
+    // Settings, and Data Management from there, only on a build that plays
+    // games here -- see local_play.hpp.
+    enum class State { Launcher, Browsing, Connecting, Playing, Failed, DataManagement, Settings };
 
     void open_launcher();
+#if DS_LOCAL_PLAY
+    void open_settings();
+    void open_data_management();
+#endif
     void begin_search(ScreenId wanted);
     void join(const net::DiscoveredHost& host);
     void leave(const std::string& reason);
@@ -480,6 +489,10 @@ private:
     std::unique_ptr<SaveStore> save_store_;
     std::unique_ptr<net::SaveExchangeService> save_service_;
     std::unique_ptr<DataManagementScreen> data_screen_;
+    // The same Settings a game's menu opens, from the main menu, kept in the
+    // same settings.json; Data Management is its first row.
+    std::unique_ptr<SettingsScreen> settings_screen_;
+    Settings settings_;
 #endif
 };
 
@@ -581,6 +594,7 @@ bool Client::start() {
 
     input_.initialize(Settings());
     input_.set_game_input_enabled(false);
+    picker_.set_repeat_source([this](UiAction direction) { return input_.direction_repeating(direction); });
 
     session_.set_audio_callback(
         [this](const int16_t* samples, std::size_t frames, uint32_t rate) {
@@ -651,6 +665,7 @@ void Client::stop() {
     // Before a game here starts answering in its place. The screen first: it
     // may be waiting on a search, and holds textures the context below owns.
     data_screen_.reset();
+    settings_screen_.reset();
     save_service_.reset();
 #endif
     session_.disconnect();
@@ -697,6 +712,42 @@ void Client::open_launcher() {
     launcher_.set_offers_load_game(DS_LOCAL_PLAY != 0);
     launcher_.open(/*runs_games=*/false);
 }
+
+#if DS_LOCAL_PLAY
+void Client::open_settings() {
+    const AppPaths paths = AppPaths::resolve();
+    settings_ = Settings::load(paths);
+    if (!settings_screen_) {
+        settings_screen_.reset(new SettingsScreen(paths));
+        settings_screen_->set_offers_data_management(save_store_ != nullptr);
+#ifdef __SWITCH__
+#ifdef DS_DEKO_CORE
+        settings_screen_->set_melonds_page(true, kMelonDsTuningPath);
+#else
+        settings_screen_->set_melonds_page(false, kMelonDsTuningPath);
+#endif
+#endif
+    }
+    // The one emulator this build has, linked in.
+    settings_screen_->open(settings_, {{"Nintendo DS", kBuiltInCorePath}});
+    state_ = State::Settings;
+    log_info("the settings screen is up");
+}
+
+void Client::open_data_management() {
+    if (!save_store_) return;
+    if (!data_screen_) {
+        data_screen_.reset(new DataManagementScreen(
+            *save_store_, save_service_ ? save_service_->instance() : new_save_version_id()));
+        if (save_service_) {
+            net::SaveExchangeService* service = save_service_.get();
+            data_screen_->set_change_source([service] { return service->saves_received(); });
+        }
+    }
+    data_screen_->open();
+    state_ = State::DataManagement;
+}
+#endif
 
 void Client::begin_search(ScreenId wanted) {
     state_ = State::Browsing;
@@ -918,7 +969,8 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
         // forwarded to the host rather than acted on here.
         case State::Playing: return none;
         // Its prompts are its own, and so are taps on them.
-        case State::DataManagement: return none;
+        case State::DataManagement:
+        case State::Settings: return none;
     }
     return none;
 }
@@ -990,10 +1042,34 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
 #if DS_LOCAL_PLAY
         // Nothing is being played here while this is up -- the menu is this
         // program and the game is the desktop app's -- so nothing restarts.
+        // Back to Settings, where it was opened from, on its row.
         if (data_screen_ &&
             data_screen_->update(actions, pointers, static_cast<float>(output_width_),
                                  static_cast<float>(output_height_))
                 .close_requested) {
+            if (settings_screen_) {
+                settings_screen_->return_from_data_management();
+                state_ = State::Settings;
+            } else {
+                open_launcher();
+            }
+        }
+#endif
+        return;
+    }
+
+    if (state_ == State::Settings) {
+#if DS_LOCAL_PLAY
+        const SettingsScreenResult result =
+            settings_screen_->update(actions, pointers, static_cast<float>(output_width_),
+                                     static_cast<float>(output_height_));
+        if (result.settings_changed) {
+            settings_ = settings_screen_->settings();
+            if (!settings_.save(AppPaths::resolve())) log_warn("could not save settings.json");
+        }
+        if (result.open_data_management) {
+            open_data_management();
+        } else if (result.close_requested) {
             open_launcher();
         }
 #endif
@@ -1011,22 +1087,9 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             case LauncherChoice::ConnectAsBottomScreen:
                 begin_search(ScreenId::Bottom);
                 break;
-            case LauncherChoice::DataManagement:
+            case LauncherChoice::Settings:
 #if DS_LOCAL_PLAY
-                if (save_store_) {
-                    if (!data_screen_) {
-                        data_screen_.reset(new DataManagementScreen(
-                            *save_store_, save_service_ ? save_service_->instance()
-                                                        : new_save_version_id()));
-                        if (save_service_) {
-                            net::SaveExchangeService* service = save_service_.get();
-                            data_screen_->set_change_source(
-                                [service] { return service->saves_received(); });
-                        }
-                    }
-                    data_screen_->open();
-                    state_ = State::DataManagement;
-                }
+                open_settings();
 #endif
                 break;
             case LauncherChoice::Quit:
@@ -1073,6 +1136,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 break;
             case State::Launcher:
             case State::DataManagement:
+            case State::Settings:
                 break;
             case State::Playing:
                 // On a Siri Remote, back opens the quick menu.
@@ -1307,6 +1371,7 @@ void Client::run() {
         switch (state_) {
             case State::Launcher:
             case State::DataManagement:
+            case State::Settings:
                 break;
             case State::Browsing:
                 if (options_.auto_connect) {
@@ -1562,6 +1627,12 @@ void Client::draw_scene() {
     if (state_ == State::DataManagement) {
 #if DS_LOCAL_PLAY
         if (data_screen_) data_screen_->render(quads_, text_, button_glyphs_, width, height);
+#endif
+        return;
+    }
+    if (state_ == State::Settings) {
+#if DS_LOCAL_PLAY
+        if (settings_screen_) settings_screen_->render(quads_, text_, button_glyphs_, width, height);
 #endif
         return;
     }

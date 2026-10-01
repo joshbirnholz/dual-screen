@@ -96,6 +96,7 @@ SettingsScreenResult press(SettingsScreen& screen, UiAction action, int times = 
         const SettingsScreenResult step = screen.update({action}, {}, 1280.0f, 720.0f);
         result.close_requested = result.close_requested || step.close_requested;
         result.settings_changed = result.settings_changed || step.settings_changed;
+        result.open_data_management = result.open_data_management || step.open_data_management;
     }
     return result;
 }
@@ -159,6 +160,24 @@ void test_page(const std::string& sandbox) {
     CHECK(plain.on_melonds_page());
     press(plain, UiAction::Down, 20);
     CHECK_EQ(plain.focus(), 1);
+
+    // Data Management first, on a device with saves: chosen, it asks to be
+    // opened; come back from, the cursor is on it again. The melonDS row is
+    // still last.
+    SettingsScreen with_saves(paths);
+    with_saves.set_offers_data_management(true);
+    with_saves.set_melonds_page(true, path);
+    with_saves.open(Settings(), {});
+    CHECK_EQ(with_saves.focus(), 0);
+    CHECK(press(with_saves, UiAction::Confirm).open_data_management);
+    CHECK(!press(with_saves, UiAction::Left).open_data_management);
+    press(with_saves, UiAction::Down, 20);
+    CHECK_EQ(with_saves.focus(), melonds_row + 1);
+    press(with_saves, UiAction::Confirm);
+    CHECK(with_saves.on_melonds_page());
+    press(with_saves, UiAction::Cancel);
+    with_saves.return_from_data_management();
+    CHECK_EQ(with_saves.focus(), 0);
 
     // Without it, no row at all.
     SettingsScreen none(paths);

@@ -32,6 +32,9 @@ std::vector<BiosFileStatus> check_bios_files(const std::string& system_dir);
 struct SettingsScreenResult {
     bool close_requested = false;
     bool settings_changed = false;
+    // Its Data Management row was chosen: the app opens it, and comes back
+    // here when it is left.
+    bool open_data_management = false;
 };
 
 // Shows where the app is looking for the core and the BIOS files, and lets the
@@ -57,6 +60,10 @@ public:
     // whether the core is RSDuck's, which reads all of it; libretro's melonDS
     // has only the CPU clock and the app's own drawing to set.
     void set_melonds_page(bool deko, std::string path);
+    // A Data Management row, first, on a device that keeps saves of its own.
+    void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
+    // Back from Data Management: the cursor where it was, on its row.
+    void return_from_data_management();
     bool on_melonds_page() const { return page_ == Page::MelonDs; }
     bool is_open() const { return open_; }
 
@@ -87,9 +94,10 @@ private:
     // its menus confirm on A like every other Switch menu -- see
     // App::Impl::apply_button_style().
     enum class Row {
-        // Every row is a value. Data Management is on the main menu, and
-        // leaving is the cancel button's -- a row that only did that would
-        // be a second way to do something already on the controller.
+        // Every row is a value -- but the ways into Data Management and
+        // melonDS's page, which come before and after these -- and leaving
+        // is the cancel button's: a row that only did that would be a second
+        // way to do something already on the controller.
 #ifndef __SWITCH__
         PadGlyphs,
         ConfirmButtonRow,
@@ -131,10 +139,13 @@ private:
     enum class MelonRow { CpuClock, Jit, FastMemory, Pipeline, GpuAlone, TextureCache, Shaders, VramCheck };
     enum class Page { Main, MelonDs };
     std::vector<MelonRow> melon_rows() const;
-    // Rows on the page showing: the main page's, and the melonDS row after
-    // them when there is one.
+    // Rows on the page showing: Data Management's first when there is one,
+    // then the main page's, and the melonDS row after them when there is one.
     int row_count() const;
-    int melonds_row() const { return kRowCount; }
+    int data_management_row() const { return offers_data_management_ ? 0 : -1; }
+    // Where the rows of Row start: after Data Management's.
+    int first_setting_row() const { return offers_data_management_ ? 1 : 0; }
+    int melonds_row() const { return first_setting_row() + kRowCount; }
     void open_melonds_page();
     void adjust_melonds(MelonRow row, int direction);
     static std::string melon_label(MelonRow row);
@@ -149,6 +160,7 @@ private:
     bool open_ = false;
     bool over_game_ = false;
 
+    bool offers_data_management_ = false;
     bool melonds_available_ = false;
     bool melonds_deko_ = false;
     std::string melonds_path_;

@@ -436,15 +436,11 @@ void test_the_opening_screen_offers_what_the_device_can_do() {
     CHECK(offers(companion, LauncherChoice::ConnectAsTopScreen));
     CHECK(offers(companion, LauncherChoice::ConnectAsBottomScreen));
     CHECK(offers(companion, LauncherChoice::Quit));
-    CHECK_MSG(!offers(companion, LauncherChoice::DataManagement),
-              "a companion with no games of its own offered Data Management");
-    // Anything that plays games manages its saves from here too.
-    CHECK(offers(full, LauncherChoice::DataManagement));
 }
 
-// A Switch with its own emulator plays games but keeps no Settings here: its
-// saves are managed from a row of their own.
-void test_a_switch_that_plays_games_offers_data_management() {
+// A Switch with its own emulator plays games, so it has Settings here too --
+// and Data Management inside them, as everywhere.
+void test_a_switch_that_plays_games_offers_settings() {
     LauncherScreen launcher;
     launcher.set_offers_load_game(true);
     launcher.open(/*runs_games=*/false);
@@ -457,8 +453,7 @@ void test_a_switch_that_plays_games_offers_data_management() {
         seen.push_back(walker.update({UiAction::Confirm}, {}, 1280.0f, 800.0f).choice);
     }
     CHECK(offers(seen, LauncherChoice::LoadGame));
-    CHECK(offers(seen, LauncherChoice::DataManagement));
-    CHECK(!offers(seen, LauncherChoice::Settings));
+    CHECK(offers(seen, LauncherChoice::Settings));
 }
 
 // Moving down the list reaches every row and stops at the last, whichever set
@@ -543,7 +538,7 @@ int main() {
     test_confirm_on_a_rom_chooses_it();
     test_plus_goes_to_the_main_menu_and_quit_is_not_here();
     test_the_opening_screen_offers_what_the_device_can_do();
-    test_a_switch_that_plays_games_offers_data_management();
+    test_a_switch_that_plays_games_offers_settings();
     test_the_opening_screen_stops_at_its_last_row();
     test_a_tap_highlights_before_it_chooses();
     return test::finish("browser");

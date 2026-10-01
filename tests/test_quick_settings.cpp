@@ -429,8 +429,17 @@ void test_the_sections_come_in_order() {
         CHECK_MSG(picker.section() == section, "the sections are not in the order they should be");
         picker.update({UiAction::Down}, {}, kWidth, kHeight);
     }
-    // And no further than the bottom: the list does not go round.
+    // A press past the bottom goes round to the top, and one past the top
+    // back to the bottom -- the one list that does. With no repeat source,
+    // every Up and Down is a press.
+    CHECK(picker.section() == MenuSection::Continue);
+    picker.update({UiAction::Up}, {}, kWidth, kHeight);
     CHECK(picker.section() == MenuSection::Quit);
+    // Held, it stops at the end instead of spinning past.
+    picker.set_repeat_source([](UiAction) { return true; });
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK(picker.section() == MenuSection::Quit);
+    picker.set_repeat_source(nullptr);
 
     // Without save points, a second device or a reset of our own, those go.
     LayoutPickerState bare = state;

@@ -51,8 +51,12 @@ one running the game.
 On a DS or 3DS game the quick menu is laid out like Nintendo Switch Online's:
 a list down the left, and whatever the highlighted entry holds on the right.
 
-Every list in the app — this menu, the main menu, Settings, the file picker,
-Data Management — stops at its first and last entries rather than going round.
+Every list in the app — the main menu, Settings, the file picker, Data
+Management, this menu's options — stops at its first and last entries rather
+than going round. The one exception is this menu's list down the left: a
+press past its bottom goes to its top and back, though holding a direction
+still stops at the end. Holding a direction anywhere keeps moving, about 13
+steps a second after the first.
 With a finger, a first tap highlights an entry and a second tap on it chooses
 it, so a touch that lands on the wrong thing only moves the highlight. A list
 longer than the screen follows the finger smoothly when dragged, keeps gliding
@@ -1211,7 +1215,7 @@ folder.
 
 ### Data Management
 
-**Data Management**, on the main menu,
+**Data Management**, the first row of Settings,
 lists every DS, 3DS and Wii U save on this device with the game's own icon,
 title and publisher, newest first, each marked with its console. **X Sync All** brings every game up
 to date with every other device found: each game's newest save goes to the

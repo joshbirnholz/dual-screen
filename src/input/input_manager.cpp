@@ -1072,24 +1072,37 @@ void InputManager::repeat_held_directions(const bool held[4]) {
     // Long enough that one press is one step for anybody who meant one, short
     // enough that running down a long list does not feel like waiting.
     constexpr uint32_t kRepeatDelayMs = 400;
-    constexpr uint32_t kRepeatEveryMs = 90;
+    constexpr uint32_t kRepeatEveryMs = 75;
     static const UiAction kActions[4] = {UiAction::Up, UiAction::Down, UiAction::Left,
                                          UiAction::Right};
     const uint32_t now = SDL_GetTicks();
     for (int direction = 0; direction < 4; ++direction) {
         if (!held[direction]) {
             direction_held_[direction] = false;
+            direction_repeated_[direction] = false;
             continue;
         }
         if (!direction_held_[direction]) {
             direction_held_[direction] = true;
+            direction_repeated_[direction] = false;
             direction_next_repeat_[direction] = now + kRepeatDelayMs;
             continue;
         }
         if (static_cast<int32_t>(now - direction_next_repeat_[direction]) >= 0) {
+            direction_repeated_[direction] = true;
             push_action(kActions[direction]);
             direction_next_repeat_[direction] = now + kRepeatEveryMs;
         }
+    }
+}
+
+bool InputManager::direction_repeating(UiAction direction) const {
+    switch (direction) {
+        case UiAction::Up: return direction_repeated_[0];
+        case UiAction::Down: return direction_repeated_[1];
+        case UiAction::Left: return direction_repeated_[2];
+        case UiAction::Right: return direction_repeated_[3];
+        default: return false;
     }
 }
 

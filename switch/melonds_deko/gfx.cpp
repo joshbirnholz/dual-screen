@@ -419,6 +419,18 @@ void run(dk::Queue& queue) {
     if (!g_set_up) init();
     auto* renderer = static_cast<GPU2D::DekoRenderer*>(GPU::GPU2D_Renderer.get());
     if (renderer == nullptr || ++g_frames < kWarmupFrames || g_frames % kEveryFrames != 0) return;
+    // A frame ends after line 262, where the renderer has just recorded the
+    // sprites' uploads for the next frame's line 0 -- recorded, not sent: it
+    // sends everything at line 191. Those are sent now, so that what is on the
+    // GPU is everything melonDS has uploaded. The renderer opens its commands
+    // again at the next line it draws, as it would after line 191.
+    if (renderer->CmdBufOpen) {
+        Gfx::EmuQueue.submitCommands(renderer->CmdMem.End(Gfx::EmuCmdBuf));
+        Gfx::EmuQueue.flush();
+        renderer->UploadBuf.LastFlushBuffer = 0;
+        renderer->CmdBufOpen = false;
+        Gfx::EmuQueue.waitIdle();
+    }
     const Area areas[] = {
         {"upper engine backgrounds", GPU2D::DekoRenderer::textureVRAM_ABG, GPU::VRAMFlat_ABG, 512 * 1024},
         {"lower engine backgrounds", GPU2D::DekoRenderer::textureVRAM_BBG, GPU::VRAMFlat_BBG, 128 * 1024},

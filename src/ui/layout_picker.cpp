@@ -711,8 +711,14 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         const auto at = std::find(sections_.begin(), sections_.end(), section_);
         const int index = static_cast<int>(at - sections_.begin());
         const int size = static_cast<int>(sections_.size());
-        // Stopping at the ends, like every list in the app.
-        section_ = sections_[static_cast<std::size_t>(std::clamp(index + delta, 0, size - 1))];
+        if (size == 0) return;
+        // Round from one end to the other on a press -- the one list in the
+        // app that does, being short and always the same -- but stopping at
+        // the end while a direction is held, so holding it to get to the
+        // bottom leaves the cursor there rather than spinning past.
+        const bool held = repeating_ && repeating_(delta < 0 ? UiAction::Up : UiAction::Down);
+        const int next = held ? std::clamp(index + delta, 0, size - 1) : ((index + delta) % size + size) % size;
+        section_ = sections_[static_cast<std::size_t>(next)];
     };
     switch (action) {
         case UiAction::Up:

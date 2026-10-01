@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -310,6 +311,11 @@ public:
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
     void set_left_stick_press(LeftStickPress press) { state_.left_stick_press = press; }
+    // Whether an Up or Down is a held direction repeating rather than a
+    // press: the list of sections goes round from one end to the other on a
+    // press, and stops at the end while held. Everything is a press without
+    // one.
+    void set_repeat_source(std::function<bool(UiAction)> repeating) { repeating_ = std::move(repeating); }
     void set_rumble_pak(bool inserted) { state_.rumble_pak = inserted; }
     void set_resume_from_save_state(bool on) { state_.resume_from_save_state = on; }
     // The console artwork, drawn inside the Standard layout's tile.
@@ -505,6 +511,7 @@ private:
     std::vector<MenuSection> sections_;
     std::vector<Option> options_;
     MenuSection section_ = MenuSection::Layout;
+    std::function<bool(UiAction)> repeating_;
     // Whether this menu has been opened before in this run, so the next open
     // goes back to the section it was closed on -- see open().
     bool opened_before_ = false;

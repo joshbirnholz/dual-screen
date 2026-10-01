@@ -116,8 +116,7 @@ void test_leaving_is_not_offered_where_the_system_does_it() {
 }
 
 // A Switch carrying its own DS emulator: a companion that can also play a game
-// itself offers to, and still offers nothing in the way of Settings -- those
-// belong to the game, in its own menu, once there is one.
+// itself offers to, and offers Settings too.
 void test_a_companion_that_plays_games_offers_to_load_one() {
     LauncherScreen plain;
     plain.open(/*runs_games=*/false);
@@ -132,8 +131,11 @@ void test_a_companion_that_plays_games_offers_to_load_one() {
     CHECK_MSG(offers(rows, LauncherChoice::ConnectAsTopScreen) &&
                   offers(rows, LauncherChoice::ConnectAsBottomScreen),
               "offering to load a game took the connect rows away");
-    CHECK_MSG(!offers(rows, LauncherChoice::Settings),
-              "Settings appeared on a companion's opening screen");
+    // And Settings, with Data Management inside, as a device that plays games
+    // has everywhere.
+    CHECK_MSG(offers(rows, LauncherChoice::Settings), "Settings was not offered");
+    CHECK_MSG(!offers(rows_you_can_reach(plain), LauncherChoice::Settings),
+              "Settings appeared on the opening screen of a companion with no emulator");
 }
 
 // Not through a keyboard either. An iPad with a keyboard attached is still an

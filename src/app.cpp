@@ -459,6 +459,9 @@ struct App::Impl {
     // there. It used to be reachable only before a game was running, when the
     // answer could not be anything but the main menu.
     State settings_came_from = State::Launcher;
+    // Data Management was opened from its row in Settings, and goes back
+    // there when it is left.
+    bool data_from_settings = false;
     // Whether this app started the program playing an external console, so
     // that one which exits without ever connecting is noticed rather than
     // waited for indefinitely. Cleared once that has been reported.
@@ -2449,6 +2452,7 @@ void App::Impl::open_data_management() {
         game_id = info.game_id;
     }
     data_screen->open(game_id);
+    data_from_settings = false;
     state = State::DataManagement;
     input.set_game_input_enabled(false);
 }
@@ -2479,9 +2483,13 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
         return;
     }
     if (result.close_requested) {
-        // Back to where it was opened from: the quick menu during a game,
-        // the main menu otherwise.
-        if (local_game() && source) {
+        // Back to where it was opened from: Settings, from its row there; the
+        // quick menu during a game; the main menu otherwise.
+        if (data_from_settings) {
+            data_from_settings = false;
+            settings_screen->return_from_data_management();
+            state = State::Settings;
+        } else if (local_game() && source) {
             set_menu_open(true);
         } else {
             open_launcher();
@@ -2490,6 +2498,11 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
 }
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
+    if (result.open_data_management) {
+        open_data_management();
+        data_from_settings = state == State::DataManagement;
+        return;
+    }
     if (result.settings_changed) {
         settings = settings_screen->settings();
         if (!settings.save(paths)) {
@@ -3221,10 +3234,6 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                                     settings_screen->open(settings, resolve_core_statuses(options, settings));
                     state = State::Settings;
                     break;
-                case LauncherChoice::DataManagement:
-                    settings_came_from = State::Launcher;
-                    open_data_management();
-                    break;
                 case LauncherChoice::Quit:
                     running = false;
                     break;
@@ -3934,8 +3943,11 @@ int App::run(const AppOptions& options) {
 
     impl.input.initialize(impl.settings);
     impl.picker.reset(new LayoutPicker(impl.registry));
+    impl.picker->set_repeat_source(
+        [&input = impl.input](UiAction direction) { return input.direction_repeating(direction); });
     impl.apply_system();
     impl.settings_screen.reset(new SettingsScreen(impl.paths));
+    impl.settings_screen->set_offers_data_management(impl.save_store != nullptr);
     // Settings > melonDS: how the Switch's melonDS runs, in its melonds.ini.
     // Elsewhere only when DUALSCREEN_MELONDS_INI names a file to show it
     // with, for working on the page away from a Switch.

@@ -68,7 +68,7 @@ void SettingsScreen::set_melonds_page(bool deko, std::string path) {
 
 int SettingsScreen::row_count() const {
     if (page_ == Page::MelonDs) return static_cast<int>(melon_rows().size());
-    return kRowCount + (melonds_available_ ? 1 : 0);
+    return first_setting_row() + kRowCount + (melonds_available_ ? 1 : 0);
 }
 
 std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
@@ -139,6 +139,12 @@ void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
     } else {
         melonds_error_ = "Could not save " + melonds_path_ + (error.empty() ? "" : ": " + error);
     }
+}
+
+void SettingsScreen::return_from_data_management() {
+    page_ = Page::Main;
+    focus_ = std::max(0, data_management_row());
+    scroll_ = 0.0f;
 }
 
 std::string SettingsScreen::footnote() const {
@@ -232,7 +238,11 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
         if (direction > 0) open_melonds_page();
         return;
     }
-    switch (static_cast<Row>(focus_)) {
+    if (focus_ == data_management_row()) {
+        if (direction > 0) result.open_data_management = true;
+        return;
+    }
+    switch (static_cast<Row>(focus_ - first_setting_row())) {
 #ifndef __SWITCH__
         case Row::PadGlyphs: {
             // Three values, so this one steps rather than flips -- and it
@@ -435,6 +445,7 @@ void SettingsScreen::render(QuadRenderer& quads,
          to_string(settings_.wii_u_screen_alone)},
     };
     if (page_ == Page::Main) {
+        if (offers_data_management_) rows.push_back({"Data Management", ""});
         for (const auto& row : main_rows) rows.push_back({row[0], row[1]});
         if (melonds_available_) rows.push_back({"melonDS", ""});
     }
@@ -451,7 +462,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float baseline = page_row_text_y(row, scale);
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
 #ifndef __SWITCH__
-        if (page_ == Page::Main && index == static_cast<int>(Row::ConfirmButtonRow)) {
+        if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::ConfirmButtonRow)) {
             // The yes button, then the no one, as the prompts everywhere else
             // draw them -- so the row reads (A)/(B) or (B)/(A) in whichever
             // pad's symbols are chosen above, rather than a name for a

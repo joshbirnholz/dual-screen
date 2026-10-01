@@ -264,6 +264,10 @@ public:
 
     // Letters printed on the menu confirm/cancel buttons for the connected pad,
     // for on-screen prompts. Display only -- it never changes what a button does.
+    // Whether `direction` (Up, Down, Left or Right) is being held long
+    // enough to repeat: the press itself is false, the steps after it true.
+    bool direction_repeating(UiAction direction) const;
+
     MenuButtonLabels menu_labels() const;
 
 private:
@@ -405,6 +409,10 @@ private:
     // are the ones after it. Up, down, left, right.
     uint32_t direction_next_repeat_[4] = {};
     bool direction_held_[4] = {};
+    // Whether a held direction has started repeating: the steps after the
+    // first, which a list that goes round stops at its end rather than
+    // going round on -- see direction_repeating().
+    bool direction_repeated_[4] = {};
     void repeat_held_directions(const bool held[4]);
 };
 

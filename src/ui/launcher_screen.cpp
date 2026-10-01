@@ -18,7 +18,6 @@ const char* title_for(LauncherChoice choice) {
         case LauncherChoice::ConnectAsTopScreen: return "Connect as top screen";
         case LauncherChoice::ConnectAsBottomScreen: return "Connect as bottom screen";
         case LauncherChoice::Settings: return "Settings";
-        case LauncherChoice::DataManagement: return "Data Management";
         case LauncherChoice::Quit: return "Quit";
         case LauncherChoice::None: break;
     }
@@ -54,12 +53,9 @@ void LauncherScreen::open(bool runs_games) {
     }
     rows_.push_back(LauncherChoice::ConnectAsTopScreen);
     rows_.push_back(LauncherChoice::ConnectAsBottomScreen);
-    // Anything that plays games keeps saves of its own, and manages them
-    // from here as well as from Settings.
+    // Anything that plays games has Settings, and Data Management is in
+    // there, as its first row.
     if (runs_games || offers_load_game_) {
-        rows_.push_back(LauncherChoice::DataManagement);
-    }
-    if (runs_games) {
         rows_.push_back(LauncherChoice::Settings);
     }
     if (offers_quit_) {
