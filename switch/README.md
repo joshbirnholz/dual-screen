@@ -344,7 +344,13 @@ of it, and the 2D renderer's copy of that on the GPU; apart from what the
 emulator has marked as changed and not yet uploaded, they must be identical.
 Each difference goes in the game log as a `vramcheck:` line saying which copy
 of what disagrees, where, and the bytes expected and found, and every 20
-checks a line counts them.
+checks a line counts them. For a copy on the GPU found stale after an upload
+with the right bytes, it also says what the GPU's copy held right after that
+upload's copy ran (a second copy, recorded straight after each upload, keeps
+it), which upload the GPU ran last for that block, and whether the staging
+memory the copy read from still holds the right bytes: a copy that landed and
+was lost later, one that copied old bytes, or an older upload run again after
+the newer one.
 
 `pipeline=0` and `gpu_alone=1` together keep the emulator's GPU work and the
 app's from ever running at the same time.

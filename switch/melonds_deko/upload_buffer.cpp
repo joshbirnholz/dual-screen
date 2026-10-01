@@ -4,7 +4,8 @@
 // upload through -- the same, line for line, but for telling vramcheck (see
 // gfx.cpp) about each upload as it is recorded: where it goes, the bytes it
 // was asked to send, and the bytes now sitting in the staging memory the GPU
-// copies from. Built in its place; see Makefile.
+// copies from -- and for letting it record its witness after each copy.
+// Built in its place; see Makefile.
 
 #include "frontend/switch/UploadBuffer.h"
 
@@ -17,6 +18,7 @@
 
 namespace melonds_deko {
 UploadObserver g_upload_observer = nullptr;
+UploadWitness g_upload_witness = nullptr;
 bool g_flush_l2_after_uploads = false;
 uint64_t g_upload_markers_gpu = 0;
 const volatile uint32_t* g_upload_markers = nullptr;
@@ -71,6 +73,8 @@ void UploadBuffer::UploadAndCopyData(dk::CmdBuf cmdbuf, DkGpuAddr dst, u8* data,
                             (sequence % melonds_deko::g_upload_marker_count) * sizeof(u32),
                         &sequence, sizeof(sequence));
     }
+    if (melonds_deko::g_upload_witness != nullptr)
+        melonds_deko::g_upload_witness(cmdbuf, dst, size, sequence);
     if (melonds_deko::g_flush_l2_after_uploads)
     {
         // Once the copy is done, out of the GPU's L2 cache and into memory,

@@ -21,6 +21,8 @@
 #include <cstdint>
 #include <string>
 
+#include <deko3d.h>
+
 namespace melonds_deko {
 
 // The libretro log, once the frontend has given one.
@@ -69,6 +71,10 @@ extern UploadObserver g_upload_observer;
 extern uint64_t g_upload_markers_gpu;
 extern const volatile uint32_t* g_upload_markers;
 extern uint32_t g_upload_marker_count;
+// Called after each upload's copy is recorded, to record more after it in the
+// same command stream: vramcheck's witness of what the copy left behind.
+using UploadWitness = void (*)(DkCmdBuf cmdbuf, uint64_t destination, uint32_t size, uint32_t sequence);
+extern UploadWitness g_upload_witness;
 // gpucache=0: the renderers' GPU memory kept out of the GPU's L2 cache. Before
 // gfx_init(), which makes it.
 void gfx_set_gpu_cache(bool cached);
