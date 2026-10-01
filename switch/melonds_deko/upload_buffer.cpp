@@ -4,8 +4,8 @@
 // upload through -- the same, line for line, but for telling vramcheck (see
 // gfx.cpp) about each upload as it is recorded: where it goes, the bytes it
 // was asked to send, and the bytes now sitting in the staging memory the GPU
-// copies from -- and for letting it record its witness after each copy.
-// Built in its place; see Makefile.
+// copies from -- for letting it record its note after each copy, and for
+// settle (see melonds_deko.hpp). Built in its place; see Makefile.
 
 #include "frontend/switch/UploadBuffer.h"
 
@@ -19,6 +19,9 @@
 namespace melonds_deko {
 UploadObserver g_upload_observer = nullptr;
 UploadWitness g_upload_witness = nullptr;
+int g_upload_settle = 0;
+uint64_t g_settle_scratch = 0;
+uint32_t g_settle_scratch_size = 0;
 bool g_flush_l2_after_uploads = false;
 uint64_t g_upload_markers_gpu = 0;
 const volatile uint32_t* g_upload_markers = nullptr;
@@ -30,6 +33,23 @@ UploadBuffer::UploadBuffer()
 {
     for (u32 i = 0; i < 3; i++)
         Buffers[i] = Gfx::DataHeap->Alloc(SegmentSize, 64);
+}
+
+// settle=1|2 (see melonds_deko.hpp): a second copy that waits for the one
+// before it.
+static void settle(dk::CmdBuf cmdbuf, DkGpuAddr src, DkGpuAddr dst, u32 size)
+{
+    if (melonds_deko::g_settle_scratch == 0)
+        return;
+    if (melonds_deko::g_upload_settle == 2 && dst != 0)
+    {
+        const u32 back = size < melonds_deko::g_settle_scratch_size ? size : melonds_deko::g_settle_scratch_size;
+        cmdbuf.copyBuffer(dst, melonds_deko::g_settle_scratch, back);
+    }
+    else if (melonds_deko::g_upload_settle != 0)
+    {
+        cmdbuf.copyBuffer(src, melonds_deko::g_settle_scratch, size < 64 ? size : 64);
+    }
 }
 
 DkGpuAddr UploadBuffer::UploadData(dk::CmdBuf cmdbuf, u32 size, u8* data)
@@ -66,6 +86,7 @@ void UploadBuffer::UploadAndCopyData(dk::CmdBuf cmdbuf, DkGpuAddr dst, u8* data,
         melonds_deko::g_upload_observer(dst, data, size, staged, sequence);
     }
     cmdbuf.copyBuffer(src, dst, size);
+    settle(cmdbuf, src, dst, size);
     if (melonds_deko::g_upload_marker_count != 0)
     {
         // The GPU says it got this far, in the same stream as the copy.
@@ -90,6 +111,8 @@ void UploadBuffer::UploadAndCopyTexture(dk::CmdBuf cmdbuf, dk::Image& image,
     DkCopyBuf src {UploadData(cmdbuf, pitch*height, data)};
     dk::ImageView dst{image};
     cmdbuf.copyBufferToImage(src, dst, {0, 0, layer, width, height, 1});
+    // An image is not a buffer to read back; the small copy for either.
+    settle(cmdbuf, src.addr, 0, pitch*height);
     if (melonds_deko::g_flush_l2_after_uploads)
         cmdbuf.barrier(DkBarrier_Full, DkInvalidateFlags_L2Cache);
 }

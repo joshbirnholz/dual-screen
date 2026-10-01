@@ -219,6 +219,10 @@ bool g_keep_texture_cache = true;
 bool g_vram_check = false;
 bool g_gpu_cache = true;
 bool g_ready = false;
+// settle's scratch: big enough to read back the largest of the 2D renderer's
+// video memory copies whole.
+GpuMemHeap::Allocation g_settle;
+constexpr uint32_t kSettleBytes = 512 * 1024;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
 // out, and how long turning it into libretro's format takes, told every
@@ -331,22 +335,20 @@ struct Shadow {
     std::vector<uint64_t> asked_frame;  // per block
     std::vector<uint32_t> asked_sequence;  // per block: the upload that last asked
     std::vector<const uint8_t*> asked_staged;  // per block: where that upload staged it
-    uint32_t witness_offset = 0;   // where this area's witness starts in g_witness
-    uint32_t sequence_offset = 0;  // and its blocks' sequence numbers, in words
+    uint32_t sequence_offset = 0;  // where its blocks' sequence numbers start in g_witness, in words
 };
 GpuMemHeap::Allocation g_markers;
 constexpr uint32_t kMarkers = 1u << 16;
 Shadow g_shadows[4];
-// The witness, recorded after each upload's copy in the same command stream
-// (witness_upload()): a second copy, of what the first left on the GPU, into
-// a mirror of the four areas -- what the GPU's copy held right after the
-// upload landed -- and the upload's sequence number written over each block it
+// Recorded after each upload's copy in the same command stream
+// (witness_upload()): the upload's sequence number written over each block it
 // covered, so that afterwards each block says which upload the GPU ran last
-// for it. Mirror first, then the sequence numbers.
+// for it. Only that: a copy of what the upload left behind, recorded there as
+// well once, made the lost uploads go away (see settle).
 GpuMemHeap::Allocation g_witness;
 constexpr uint32_t kAreaBytes = 1024 * 1024;  // ABG 512K, BBG 128K, AOBJ 256K, BOBJ 128K
 constexpr uint32_t kAreaBlocks = kAreaBytes / kBlock;
-constexpr uint32_t kWitnessBytes = kAreaBytes + kAreaBlocks * sizeof(uint32_t);
+constexpr uint32_t kWitnessBytes = kAreaBlocks * sizeof(uint32_t);
 // Uploads whose staging memory did not hold the bytes just written to it.
 uint64_t g_staging_mismatches = 0;
 
@@ -376,12 +378,11 @@ void witness_upload(DkCmdBuf cmdbuf, uint64_t destination, uint32_t size, uint32
         if (shadow.size == 0 || destination < shadow.base || destination + size > shadow.base + shadow.size) continue;
         const uint32_t offset = static_cast<uint32_t>(destination - shadow.base);
         const DkGpuAddr witness = Gfx::DataHeap->GpuAddr(g_witness);
-        dkCmdBufCopyBuffer(cmdbuf, destination, witness + shadow.witness_offset + offset, size);
         const uint32_t first = offset / kBlock;
         const uint32_t last = (offset + size - 1) / kBlock;
         static std::vector<uint32_t> words;
         words.assign(last - first + 1, sequence);
-        dkCmdBufPushData(cmdbuf, witness + kAreaBytes + (shadow.sequence_offset + first) * sizeof(uint32_t),
+        dkCmdBufPushData(cmdbuf, witness + (shadow.sequence_offset + first) * sizeof(uint32_t),
                          words.data(), static_cast<uint32_t>(words.size() * sizeof(uint32_t)));
         return;
     }
@@ -464,7 +465,7 @@ void init() {
     const uint32_t sizes[4] = {512 * 1024, 128 * 1024, 256 * 1024, 128 * 1024};
     const int textures[4] = {GPU2D::DekoRenderer::textureVRAM_ABG, GPU2D::DekoRenderer::textureVRAM_BBG,
                              GPU2D::DekoRenderer::textureVRAM_AOBJ, GPU2D::DekoRenderer::textureVRAM_BOBJ};
-    uint32_t witness_offset = 0;
+    uint32_t area_offset = 0;
     for (int i = 0; i < 4; ++i) {
         Shadow& shadow = g_shadows[i];
         shadow.base = renderer != nullptr ? Gfx::TextureHeap->GpuAddr(renderer->VRAMTextureMemory[textures[i]]) : 0;
@@ -473,9 +474,8 @@ void init() {
         shadow.asked_frame.assign(shadow.size / kBlock, 0);
         shadow.asked_sequence.assign(shadow.size / kBlock, 0);
         shadow.asked_staged.assign(shadow.size / kBlock, nullptr);
-        shadow.witness_offset = witness_offset;
-        shadow.sequence_offset = witness_offset / kBlock;
-        witness_offset += sizes[i];
+        shadow.sequence_offset = area_offset / kBlock;
+        area_offset += sizes[i];
     }
     g_witness = Gfx::DataHeap->Alloc(kWitnessBytes, 64);
     std::memset(Gfx::DataHeap->CpuAddr<void>(g_witness), 0, kWitnessBytes);
@@ -487,7 +487,7 @@ void init() {
     g_upload_markers = Gfx::DataHeap->CpuAddr<uint32_t>(g_markers);
     g_upload_marker_count = kMarkers;
     g_upload_observer = observe_upload;
-    // The four areas, then the witness.
+    // The four areas, then which upload ran last for each block.
     constexpr uint32_t kReadback = (kAreaBytes + kWitnessBytes + DK_MEMBLOCK_ALIGNMENT - 1) &
                                    ~(DK_MEMBLOCK_ALIGNMENT - 1);
     g_readback = dk::MemBlockMaker{Gfx::Device, kReadback}
@@ -570,14 +570,11 @@ void run(dk::Queue& queue) {
             // asked for, or asked for and not on the GPU.
             const Shadow& shadow = g_shadows[index];
             const uint8_t* const readback = static_cast<const uint8_t*>(g_readback.getCpuAddr());
-            const uint8_t* const witness = readback + kAreaBytes + shadow.witness_offset;
             // Which upload the GPU ran last for each block.
-            const uint8_t* const ran = readback + kAreaBytes + kAreaBytes + shadow.sequence_offset * sizeof(uint32_t);
+            const uint8_t* const ran = readback + kAreaBytes + shadow.sequence_offset * sizeof(uint32_t);
             uint32_t never_asked = 0;
             uint32_t asked_not_there = 0;
             uint32_t not_reached = 0;
-            uint32_t landed = 0;        // right after the copy, the GPU's copy held the new bytes
-            uint32_t copied_old = 0;    // right after it, the bytes found now
             uint32_t ran_last = 0;      // the upload the GPU ran last for the block was that one
             uint32_t ran_older = 0;     // an older one ran after it, or it never did
             uint32_t staging_kept = 0;  // the staging memory still holds the new bytes
@@ -591,10 +588,6 @@ void run(dk::Queue& queue) {
                     // Whether the GPU reached that upload's commands at all.
                     const uint32_t sequence = shadow.asked_sequence[block];
                     if (sequence != 0 && g_upload_markers[sequence % kMarkers] != sequence) ++not_reached;
-                    const bool witness_new = std::memcmp(witness + at, area.flat + at, kBlock) == 0;
-                    const bool witness_old = std::memcmp(witness + at, gpu.data() + at, kBlock) == 0;
-                    if (witness_new) ++landed;
-                    else if (witness_old) ++copied_old;
                     uint32_t ran_sequence = 0;
                     std::memcpy(&ran_sequence, ran + block * sizeof(uint32_t), sizeof(ran_sequence));
                     if (ran_sequence == sequence) ++ran_last;
@@ -602,12 +595,9 @@ void run(dk::Queue& queue) {
                     const uint8_t* staged = shadow.asked_staged[block];
                     if (staged != nullptr && std::memcmp(staged, area.flat + at, kBlock) == 0) ++staging_kept;
                     if (first_detail.empty()) {
-                        uint64_t right_after = 0;
-                        std::memcpy(&right_after, witness + at, sizeof(right_after));
                         first_detail = "; the first, at 0x" + hex(at, 5) + ", was upload " +
-                                       std::to_string(sequence) + ", the GPU ran upload " +
-                                       std::to_string(ran_sequence) + " for it last, and right after that " +
-                                       "it held " + hex(right_after, 16);
+                                       std::to_string(sequence) + ", and the GPU ran upload " +
+                                       std::to_string(ran_sequence) + " for it last";
                     }
                 } else {
                     ++never_asked;
@@ -624,10 +614,7 @@ void run(dk::Queue& queue) {
                      "; staging memory mismatches so far: " + std::to_string(g_staging_mismatches));
             if (asked_not_there != 0) {
                 log_warn("melonDS (deko3d): vramcheck: of the " + std::to_string(asked_not_there) +
-                         " uploaded and not there, right after their copy " + std::to_string(landed) +
-                         " held the new bytes and " + std::to_string(copied_old) + " the bytes found now (" +
-                         std::to_string(asked_not_there - landed - copied_old) + " neither); the upload the " +
-                         "GPU ran last for the block was that one for " + std::to_string(ran_last) +
+                         " uploaded and not there, the upload the GPU ran last for the block was that one for " + std::to_string(ran_last) +
                          " and an older one for " + std::to_string(ran_older) +
                          "; their staging memory still holds the new bytes for " +
                          std::to_string(staging_kept) + first_detail);
@@ -729,6 +716,13 @@ bool gfx_init(std::string* error) {
                                 64);
     Gfx::DataHeap.emplace(Gfx::Device, kDataHeapSize, DkMemBlockFlags_CpuUncached | gpu_access, 128);
     Gfx::EmuCmdBuf = dk::CmdBufMaker{Gfx::Device}.create();
+    if (g_upload_settle != 0) {
+        g_settle = Gfx::DataHeap->Alloc(kSettleBytes, 64);
+        g_settle_scratch = Gfx::DataHeap->GpuAddr(g_settle);
+        g_settle_scratch_size = kSettleBytes;
+        log_info(std::string("melonDS (deko3d): each upload is followed by ") +
+                 (g_upload_settle == 2 ? "reading what it wrote back" : "a small copy"));
+    }
 
     g_copy_queue = dk::QueueMaker{Gfx::Device}.setFlags(DkQueueFlags_Graphics).create();
     constexpr uint32_t kCopyCmdSize = 0x10000;
@@ -759,6 +753,11 @@ void gfx_deinit() {
     g_readback.destroy();
     Gfx::EmuCmdBuf.destroy();
     Gfx::EmuQueue.destroy();
+    if (g_settle_scratch != 0) {
+        Gfx::DataHeap->Free(g_settle);
+        g_settle_scratch = 0;
+        g_settle_scratch_size = 0;
+    }
     Gfx::DataHeap.reset();
     Gfx::ShaderCodeHeap.reset();
     Gfx::TextureHeap.reset();

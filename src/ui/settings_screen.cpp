@@ -75,7 +75,7 @@ std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
     if (!melonds_deko_) return {MelonRow::CpuClock, MelonRow::GpuAlone};
     return {MelonRow::CpuClock,  MelonRow::Jit,          MelonRow::FastMemory, MelonRow::Pipeline,
             MelonRow::GpuAlone,  MelonRow::TextureCache, MelonRow::Shaders,    MelonRow::VramCheck,
-            MelonRow::GpuCache,  MelonRow::L2Flush};
+            MelonRow::GpuCache,  MelonRow::L2Flush,      MelonRow::Settle};
 }
 
 void SettingsScreen::open_melonds_page() {
@@ -99,6 +99,7 @@ std::string SettingsScreen::melon_label(MelonRow row) {
         case MelonRow::VramCheck: return "Video memory check";
         case MelonRow::GpuCache: return "GPU cache";
         case MelonRow::L2Flush: return "Uploads out of the GPU cache";
+        case MelonRow::Settle: return "After each upload";
     }
     return std::string();
 }
@@ -119,6 +120,10 @@ std::string SettingsScreen::melon_value(MelonRow row) const {
         case MelonRow::VramCheck: return on_off(tuning_.vramcheck);
         case MelonRow::GpuCache: return tuning_.gpucache ? "On" : "Bypassed";
         case MelonRow::L2Flush: return tuning_.l2flush ? "At once" : "In time";
+        case MelonRow::Settle:
+            if (tuning_.settle == 1) return "A small copy";
+            if (tuning_.settle == 2) return "Read it back";
+            return "Nothing";
     }
     return std::string();
 }
@@ -139,6 +144,7 @@ void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
         case MelonRow::VramCheck: tuning_.vramcheck = !tuning_.vramcheck; break;
         case MelonRow::GpuCache: tuning_.gpucache = !tuning_.gpucache; break;
         case MelonRow::L2Flush: tuning_.l2flush = !tuning_.l2flush; break;
+        case MelonRow::Settle: tuning_.settle = (tuning_.settle + (direction < 0 ? 2 : 1)) % 3; break;
     }
     std::string error;
     if (write_melonds_tuning(tuning_, melonds_path_, &error)) {

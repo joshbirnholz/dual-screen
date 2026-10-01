@@ -72,9 +72,18 @@ extern uint64_t g_upload_markers_gpu;
 extern const volatile uint32_t* g_upload_markers;
 extern uint32_t g_upload_marker_count;
 // Called after each upload's copy is recorded, to record more after it in the
-// same command stream: vramcheck's witness of what the copy left behind.
+// same command stream: vramcheck's note, over each block the upload covered,
+// of which upload the GPU ran last for it.
 using UploadWitness = void (*)(DkCmdBuf cmdbuf, uint64_t destination, uint32_t size, uint32_t sequence);
 extern UploadWitness g_upload_witness;
+// settle=1|2: after each upload's copy, another copy on the GPU's copy engine,
+// which starts only once the upload's has finished -- 1 a few bytes of the
+// staging memory, 2 the whole destination read back -- into
+// g_settle_scratch (g_settle_scratch_size bytes, made by gfx_init()).
+// vramcheck found uploads lost without one and none with the second.
+extern int g_upload_settle;
+extern uint64_t g_settle_scratch;
+extern uint32_t g_settle_scratch_size;
 // gpucache=0: the renderers' GPU memory kept out of the GPU's L2 cache. Before
 // gfx_init(), which makes it.
 void gfx_set_gpu_cache(bool cached);

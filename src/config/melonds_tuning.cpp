@@ -29,7 +29,8 @@ bool parse_line(const std::string& line, std::string& key, std::string& value) {
 
 bool known_key(const std::string& key) {
     static const char* const kKeys[] = {"cpu_mhz",  "jit",       "fastmem",  "pipeline", "gpu_alone",
-                                        "texcache", "shaders",   "vramcheck", "gpucache", "l2flush"};
+                                        "texcache", "shaders",   "vramcheck", "gpucache", "l2flush",
+                                        "settle"};
     return std::any_of(std::begin(kKeys), std::end(kKeys), [&](const char* known) { return key == known; });
 }
 
@@ -50,6 +51,9 @@ std::string line_for(const std::string& key, const MelonDsTuning& tuning) {
     if (key == "vramcheck") return flag(tuning.vramcheck, defaults.vramcheck);
     if (key == "gpucache") return flag(tuning.gpucache, defaults.gpucache);
     if (key == "l2flush") return flag(tuning.l2flush, defaults.l2flush);
+    if (key == "settle") {
+        return tuning.settle == defaults.settle ? std::string() : key + "=" + std::to_string(tuning.settle);
+    }
     if (key == "shaders") return tuning.shaders.empty() ? std::string() : key + "=" + tuning.shaders;
     return std::string();
 }
@@ -60,7 +64,7 @@ bool MelonDsTuning::operator==(const MelonDsTuning& other) const {
     return cpu_mhz == other.cpu_mhz && jit == other.jit && fastmem == other.fastmem &&
            pipeline == other.pipeline && gpu_alone == other.gpu_alone && texcache == other.texcache &&
            shaders == other.shaders && vramcheck == other.vramcheck && gpucache == other.gpucache &&
-           l2flush == other.l2flush;
+           l2flush == other.l2flush && settle == other.settle;
 }
 
 MelonDsTuning read_melonds_tuning(const std::string& path) {
@@ -93,6 +97,9 @@ MelonDsTuning read_melonds_tuning(const std::string& path) {
             tuning.gpucache = on;
         } else if (key == "l2flush") {
             tuning.l2flush = on;
+        } else if (key == "settle") {
+            const int settle = std::atoi(value.c_str());
+            if (settle >= 0 && settle <= 2) tuning.settle = settle;
         } else if (key == "shaders") {
             // "ours" is the core's word for the default.
             tuning.shaders = value == "ours" ? std::string() : value;
@@ -125,7 +132,7 @@ bool write_melonds_tuning(const MelonDsTuning& tuning, const std::string& path, 
         out += line + "\n";
     }
     for (const char* key : {"cpu_mhz", "jit", "fastmem", "pipeline", "gpu_alone", "texcache", "shaders",
-                            "vramcheck", "gpucache", "l2flush"}) {
+                            "vramcheck", "gpucache", "l2flush", "settle"}) {
         if (std::find(written.begin(), written.end(), key) != written.end()) continue;
         const std::string line = line_for(key, tuning);
         if (!line.empty()) out += line + "\n";

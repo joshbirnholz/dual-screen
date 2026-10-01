@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -147,6 +148,7 @@ void apply_tuning() {
     bool vram_check = false;
     bool gpu_cache = true;
     bool flush_l2 = false;
+    int settle = 0;
     std::string shaders;
     bool from_file = false;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
@@ -176,6 +178,9 @@ void apply_tuning() {
                 gpu_cache = on;
             } else if (key == "l2flush") {
                 flush_l2 = on;
+            } else if (key == "settle") {
+                settle = std::atoi(text.substr(equals + 1).c_str());
+                if (settle < 0 || settle > 2) settle = 0;
             } else if (key == "shaders") {
                 shaders = text.substr(equals + 1);
             } else if (key == "cpu_mhz" || key == "gpu_alone") {
@@ -197,6 +202,7 @@ void apply_tuning() {
     gfx_set_vram_check(vram_check);
     gfx_set_gpu_cache(gpu_cache);
     g_flush_l2_after_uploads = flush_l2;
+    g_upload_settle = settle;
     if (flush_l2) log_info("melonDS (deko3d): every upload is written out of the GPU's L2 cache");
     if (!texture_cache) log_info("melonDS (deko3d): the 3D texture cache is emptied every frame, as " +
                                  std::string(kTuningPath) + " says");

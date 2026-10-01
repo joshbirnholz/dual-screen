@@ -326,7 +326,15 @@ shaders=standalone  # the GPU shaders from inside melonDS's own .nro
 vramcheck=1    # video memory checked twice a second; differences logged
 gpucache=0     # the renderers' GPU memory kept out of the GPU's L2 cache
 l2flush=1      # each upload written out of the GPU's L2 cache at once
+settle=2       # after each upload: 1 a small copy, 2 what it wrote read back
 ```
+
+`settle` is the likeliest fix for the wrong sprites. With vramcheck recording
+a second copy straight after each upload -- of what the upload had just
+written -- every upload arrived; without it, some were lost. `settle=2` does
+that second copy on its own, with or without vramcheck; `settle=1` only a
+few bytes, which still makes the GPU's copy engine finish the upload first.
+In Settings > melonDS it is "After each upload".
 
 `gpucache=0` and `l2flush=1` are for the wrong sprites and textures
 vramcheck found: uploads recorded with the right bytes, which the GPU then
@@ -345,12 +353,9 @@ emulator has marked as changed and not yet uploaded, they must be identical.
 Each difference goes in the game log as a `vramcheck:` line saying which copy
 of what disagrees, where, and the bytes expected and found, and every 20
 checks a line counts them. For a copy on the GPU found stale after an upload
-with the right bytes, it also says what the GPU's copy held right after that
-upload's copy ran (a second copy, recorded straight after each upload, keeps
-it), which upload the GPU ran last for that block, and whether the staging
-memory the copy read from still holds the right bytes: a copy that landed and
-was lost later, one that copied old bytes, or an older upload run again after
-the newer one.
+with the right bytes, it also says which upload the GPU ran last for that
+block, and whether the staging memory the copy read from still holds the
+right bytes.
 
 `pipeline=0` and `gpu_alone=1` together keep the emulator's GPU work and the
 app's from ever running at the same time.

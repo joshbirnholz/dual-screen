@@ -53,6 +53,10 @@ void test_file(const std::string& sandbox) {
     write_text(path + ".odd", "cpu_mhz=1000\ngpucache=0\nl2flush=1\n");
     CHECK(!read_melonds_tuning(path + ".odd").gpucache);
     CHECK(read_melonds_tuning(path + ".odd").l2flush);
+    write_text(path + ".settle", "settle=2\n");
+    CHECK_EQ(read_melonds_tuning(path + ".settle").settle, 2);
+    write_text(path + ".settle", "settle=7\n");
+    CHECK_EQ(read_melonds_tuning(path + ".settle").settle, 0);
     CHECK_EQ(read_melonds_tuning(path + ".odd").cpu_mhz, 1785);
 
     // Changed: each setting's line rewritten where it was, one back at its
@@ -132,7 +136,18 @@ void test_page(const std::string& sandbox) {
 
     // Every row reachable, and no further.
     press(screen, UiAction::Down, 20);
-    CHECK_EQ(screen.focus(), 9);
+    CHECK_EQ(screen.focus(), 10);
+    // After each upload: three choices, round in either direction.
+    press(screen, UiAction::Confirm);
+    CHECK_EQ(read_melonds_tuning(path).settle, 1);
+    press(screen, UiAction::Right);
+    CHECK_EQ(read_melonds_tuning(path).settle, 2);
+    press(screen, UiAction::Right);
+    CHECK_EQ(read_melonds_tuning(path).settle, 0);
+    press(screen, UiAction::Left);
+    CHECK_EQ(read_melonds_tuning(path).settle, 2);
+    CHECK(read_text(path).find("settle=2\n") != std::string::npos);
+    press(screen, UiAction::Up);
     press(screen, UiAction::Confirm);
     CHECK(read_melonds_tuning(path).l2flush);
     press(screen, UiAction::Up);
