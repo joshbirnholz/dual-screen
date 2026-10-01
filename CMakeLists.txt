@@ -121,6 +121,8 @@ add_library(dualscreen_core STATIC
     src/core/libretro_screen_source.cpp
     src/core/save_points.cpp
     src/core/save_store.cpp
+    src/core/save_folder.cpp
+    src/core/console_title_info.cpp
     src/core/core_input_sink.cpp
     src/core/system.cpp
     src/input/controller_mapping.cpp

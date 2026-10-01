@@ -4,6 +4,7 @@
 #include <cmath>
 #include <ctime>
 
+#include "core/console_title_info.hpp"
 #include "core/ds_rom_info.hpp"
 #include "core/save_points.hpp"
 #include "render/embedded_assets.hpp"
@@ -201,7 +202,7 @@ void DataManagementScreen::start_job(std::unique_ptr<Job> job) {
             for (const net::SaveDevice& device : running->devices) {
                 RemoteState state;
                 std::string error;
-                state.answered = net::ask_save_status(device, kSaveSystemDs, running->game_id,
+                state.answered = net::ask_save_status(device, running->systems.front(), running->game_id,
                                                       state.status, &error);
                 if (!state.answered) {
                     log_info("Data Management: " + device.name + " did not answer: " + error);
@@ -209,10 +210,15 @@ void DataManagementScreen::start_job(std::unique_ptr<Job> job) {
                 running->remote[device.instance] = state;
             }
         };
+        // A device that keeps any of the systems asked about.
+        const auto wanted = [running](const net::SaveDevice& device) {
+            return std::any_of(running->systems.begin(), running->systems.end(),
+                               [&](const std::string& system) { return device.keeps(system); });
+        };
         switch (running->kind) {
             case Job::Kind::Search: {
                 for (net::SaveDevice& device : net::search_save_devices(search)) {
-                    if (device.keeps(kSaveSystemDs)) running->devices.push_back(device);
+                    if (wanted(device)) running->devices.push_back(device);
                 }
                 if (!running->game_id.empty()) statuses();
                 running->ok = true;
@@ -224,7 +230,7 @@ void DataManagementScreen::start_job(std::unique_ptr<Job> job) {
                 break;
             case Job::Kind::Plan:
                 for (net::SaveDevice& device : net::search_save_devices(search)) {
-                    if (!device.keeps(kSaveSystemDs)) continue;
+                    if (!wanted(device)) continue;
                     std::vector<net::RemoteSave> saves;
                     std::string error;
                     if (net::list_remote_saves(device, saves, &error)) {
@@ -261,7 +267,11 @@ void DataManagementScreen::start_search() {
     status_game_id_.clear();
     std::unique_ptr<Job> job(new Job());
     job->kind = Job::Kind::Search;
-    if (page_ != Page::List) job->game_id = game_.game_id;
+    job->systems = systems_;
+    if (page_ != Page::List) {
+        job->game_id = game_.game_id;
+        job->systems = {game_.system};
+    }
     start_job(std::move(job));
 }
 
@@ -274,6 +284,7 @@ void DataManagementScreen::start_status() {
     std::unique_ptr<Job> job(new Job());
     job->kind = Job::Kind::Status;
     job->game_id = game_.game_id;
+    job->systems = {game_.system};
     job->devices = devices_;
     start_job(std::move(job));
 }
@@ -395,7 +406,13 @@ void DataManagementScreen::finish_job(DataManagementResult& result) {
                 // Every game either side has a save for: this device's, and
                 // the other's -- including a game this one has never had.
                 std::vector<std::string> seen;
+                // Only what both keep: a Switch has nowhere to put a Wii U save.
+                const auto shared = [&, &device = device](const std::string& system) {
+                    return device.keeps(system) &&
+                           std::find(systems_.begin(), systems_.end(), system) != systems_.end();
+                };
                 for (const net::RemoteSave& save : saves) {
+                    if (!shared(save.system)) continue;
                     SyncItem item;
                     item.device = device;
                     item.game_id = save.game_id;
@@ -408,7 +425,7 @@ void DataManagementScreen::finish_job(DataManagementResult& result) {
                     seen.push_back(save.game_id);
                 }
                 for (const SaveInfo& here : saves_) {
-                    if (!here.has_save ||
+                    if (!here.has_save || !shared(here.system) ||
                         std::find(seen.begin(), seen.end(), here.game_id) != seen.end()) {
                         continue;
                     }
@@ -850,6 +867,7 @@ void DataManagementScreen::start_sync_all() {
     }
     std::unique_ptr<Job> job(new Job());
     job->kind = Job::Kind::Plan;
+    job->systems = systems_;
     show_busy("Looking for devices...");
     start_job(std::move(job));
     log_info("Sync All: looking for devices and what they have");
@@ -1237,17 +1255,22 @@ bool DataManagementScreen::ensure_icons() {
     return ui_icons_.valid();
 }
 
+std::string DataManagementScreen::subtitle(const SaveInfo& info) const {
+    // Which console it is, once there is more than one it could be.
+    if (systems_.size() < 2) return info.publisher;
+    const std::string system = save_system_name(info.system);
+    return info.publisher.empty() ? system : system + " \xC2\xB7 " + info.publisher;
+}
+
 const Texture* DataManagementScreen::game_icon(const SaveInfo& info) {
     const auto found = game_icons_.find(info.game_id);
     if (found != game_icons_.end()) return found->second.valid() ? &found->second : nullptr;
     Texture& texture = game_icons_[info.game_id];
-    std::vector<uint32_t> pixels = decode_ds_icon(info.icon);
-    if (pixels.empty()) return nullptr;
-    // 0xAARRGGBB to the bytes R, G, B, A.
-    for (uint32_t& pixel : pixels) {
-        pixel = (pixel & 0xFF00FF00u) | ((pixel >> 16) & 0xFFu) | ((pixel & 0xFFu) << 16);
-    }
-    texture.upload_rgba8888(pixels.data(), kDsIconSize, kDsIconSize, kDsIconSize);
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+    if (!save_icon_rgba(info.system, info.icon, width, height, rgba)) return nullptr;
+    texture.upload_rgba8888(reinterpret_cast<const uint32_t*>(rgba.data()), width, height, width);
     return texture.valid() ? &texture : nullptr;
 }
 
@@ -1341,7 +1364,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const float block = step + TextRenderer::line_height(sub_scale);
             const float top = row.y + (row.h - block) * 0.5f;
             text.draw(quads, TextRenderer::elide_right(info.display_title(), room, scale), text_x, top, scale, ink);
-            text.draw(quads, TextRenderer::elide_right(info.publisher, room, sub_scale), text_x, top + step, sub_scale, dim);
+            text.draw(quads, TextRenderer::elide_right(subtitle(info), room, sub_scale), text_x, top + step, sub_scale, dim);
             text.draw(quads, when, row.x + row.w - pad, row.y + (row.h - TextRenderer::line_height(date_scale)) * 0.5f,
                       date_scale, dim, TextAlign::Right);
         }

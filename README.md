@@ -65,7 +65,7 @@ without choosing anything.
 | **Screen Layout** | the layouts below, each drawn as a picture of the paused game in it, and under them a square button with the Wii U's own stylus-hand symbol: press it to flip the layout in use for the other hand, and the symbol flips to show which. Each layout remembers its own hand. The button is hidden for layouts that are the same either way round, like Vertical Screens. Under Separate Screens the same place has an ↑↓ button instead, which swaps the screens |
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
-| **Save Sync** | this game's page in [Data Management](#data-management), to sync its save with another device or go back to an earlier one (DS). Leaving the page comes back to this menu |
+| **Save Sync** | this game's page in [Data Management](#data-management), to sync its save with another device or go back to an earlier one (DS and 3DS). Leaving the page comes back to this menu |
 | **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
@@ -1212,8 +1212,8 @@ folder.
 ### Data Management
 
 **Data Management**, on the main menu,
-lists every DS save on this device with the game's own icon, title and
-publisher, read from the ROM, newest first. **X Sync All** brings every game up
+lists every DS, 3DS and Wii U save on this device with the game's own icon,
+title and publisher, newest first, each marked with its console. **X Sync All** brings every game up
 to date with every other device found: each game's newest save goes to the
 device without it, including games only the other device has, and a game
 both have changed since they last matched is asked about, one at a time.
@@ -1256,6 +1256,37 @@ save deletes the game's resume point too — and asks first.
 
 A Switch keeps its saves as `<game>.srm` too now, like melonDS DS; a
 `<game>.sav` from before is renamed the first time the game starts.
+
+#### 3DS and Wii U saves
+
+A 3DS or Wii U game's save is a folder rather than a file, kept where the
+emulator keeps it, and Data Management does everything with it that it does
+with a DS game's `.srm`: versions, Earlier Saves, Sync, Get, Send, Delete and
+Sync All. It is known by the game's title ID, so the same game matches on
+every device whatever its file is called.
+
+- **3DS**: Azahar (or Citra) keeps a game's save in
+  `saves/Azahar/sdmc/Nintendo 3DS/<zeros>/<zeros>/title/<high>/<low>/data`
+  under this app's saves folder, since that is the folder the core is given.
+  The title, publisher and icon come from the ROM (`.3ds`, `.cci`, `.cxi` or
+  `.cia`) when it is decrypted, as Azahar needs it to be; the save is matched
+  to its ROM in the folders the file picker looks in. Extra data (`extdata`),
+  which a few games keep beside their save, is not included.
+- **Wii U**: Cemu keeps a game's save in `mlc01/usr/save/<high>/<low>`, and
+  its title, publisher and icon in `mlc01/usr/title/<high>/<low>/meta`. The
+  `mlc01` folder is found from Cemu's own `settings.xml` — a portable Cemu
+  beside `wii_u_program`, then `~/.config/Cemu`, the Flatpak's and a Mac's —
+  or its default place beside it; set `"wii_u_mlc_path"` in `settings.json`
+  to name it outright. Without it, no Wii U saves are listed and none are
+  accepted from other devices. A game started from here is known by its
+  folder's `code/*.rpx`; one started from a `.wud`, `.wux` or `.wua` is not
+  identified at launch, but its save is still listed from Cemu's folder.
+
+A save changed in the emulator on its own is seen as a new version the next
+time Data Management lists it. A Switch keeps DS saves only, so it is never
+offered a 3DS or Wii U save, and Sync All leaves those games out between it
+and another device. Saves only move between devices running this version or
+later; an older one is only ever asked about DS saves.
 
 ### Save states
 
@@ -1373,6 +1404,9 @@ V1 does not script `shortcuts.vdf` for you.
 ~/.local/share/dualscreen/saves/<rom>.savestate1..4   save states
 ~/.local/share/dualscreen/saves/<rom>.srm.sync  which game a save is, and its versions
 ~/.local/share/dualscreen/saves/earlier/<rom>/  Earlier Saves, the newest 10
+~/.local/share/dualscreen/saves/CTR-<title id>.srm.sync  a 3DS game's save record
+~/.local/share/dualscreen/saves/WUP-<title id>.srm.sync  a Wii U game's save record
+~/.local/share/dualscreen/saves/Azahar/sdmc/   Azahar's 3DS saves
 ~/.local/share/dualscreen/system/           where BIOS/firmware files are looked for
 ```
 

@@ -362,7 +362,12 @@ bool SaveExchangeService::start(std::string* error) {
                         reply["error"] = "no save came with the request";
                     } else {
                         const SaveInfo info = read_save_description(*about);
-                        if (store_.accept(info, blob, from_device, &error)) {
+                        if (!config_.systems.empty() &&
+                            std::find(config_.systems.begin(), config_.systems.end(), info.system) ==
+                                config_.systems.end()) {
+                            reply["error"] = store_.device_name() + " does not keep " +
+                                             save_system_name(info.system) + " saves";
+                        } else if (store_.accept(info, blob, from_device, &error)) {
                             reply = {{"ok", true}};
                             ++saves_received_;
                             log_info("took " + from_device + "'s save for " + info.display_title());

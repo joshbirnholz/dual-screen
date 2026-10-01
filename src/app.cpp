@@ -451,6 +451,9 @@ struct App::Impl {
     // Where such a console hands its screens over, for the waiting screen to
     // name while nothing has.
     std::string external_socket_path;
+    // The game that program is playing, for its save -- see
+    // note_external_game_closed().
+    std::string external_save_rom;
     // Where the settings screen was opened from, so closing it goes back
     // there. It used to be reachable only before a game was running, when the
     // answer could not be anything but the main menu.
@@ -883,9 +886,14 @@ struct App::Impl {
     bool start_game(const std::string& rom_path, bool fatal_on_failure);
     // The game that was playing has closed, and its save may have changed.
     void note_game_closed();
+    // The same for a game another program plays: Cemu writes its saves
+    // while it runs, and they are a new version once it stops.
+    void note_external_game_closed();
     // Where Data Management looks for the ROM of a save it has never seen
     // played: the folders the file picker would show.
     void update_save_rom_dirs();
+    // The systems whose saves this device keeps and trades.
+    std::vector<std::string> save_systems() const;
     // The libretro half of the above: the core, its callbacks and its
     // settings, for the game at `rom_path` on `system`. `details` gets lines
     // worth showing the player if it fails.
@@ -1527,7 +1535,11 @@ void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
 }
 
 bool App::Impl::save_sync_available() const {
-    return save_store && local_game() && source && !game_path.empty() && system == SystemId::Ds;
+    // A 3DS game's too: Azahar keeps its save in a folder it reads when the
+    // game starts, the same as a DS game's .srm. Not a Wii U game's -- Cemu
+    // is another program, and is not restarted from here.
+    return save_store && local_game() && source && !game_path.empty() &&
+           (system == SystemId::Ds || system == SystemId::ThreeDs);
 }
 
 bool App::Impl::save_points_available() const {
@@ -2423,15 +2435,16 @@ void App::Impl::open_data_management() {
     if (!data_screen) {
         data_screen.reset(new DataManagementScreen(
             *save_store, save_service ? save_service->instance() : new_save_version_id()));
+        data_screen->set_systems(save_systems());
         if (save_service) {
             net::SaveExchangeService* service = save_service.get();
             data_screen->set_change_source([service] { return service->saves_received(); });
         }
     }
-    // During a DS game, its own page and nothing else.
+    // During a DS or 3DS game, its own page and nothing else.
     std::string game_id;
     SaveInfo info;
-    if (local_game() && source && system == SystemId::Ds && save_store->find_for_rom(game_path, info)) {
+    if (save_sync_available() && save_store->find_for_rom(game_path, info)) {
         game_id = info.game_id;
     }
     data_screen->open(game_id);
@@ -2709,12 +2722,38 @@ void App::Impl::note_game_closed() {
     if (save_store && !game_path.empty()) save_store->note_game_stopped(game_path);
 }
 
+void App::Impl::note_external_game_closed() {
+    if (save_store && !external_save_rom.empty()) save_store->note_game_stopped(external_save_rom);
+    external_save_rom.clear();
+}
+
+std::vector<std::string> App::Impl::save_systems() const {
+    std::vector<std::string> systems{kSaveSystemDs};
+#ifndef __SWITCH__
+    // A 3DS game's save goes in Azahar's folder under this app's saves, which
+    // is always here to put it in; a Wii U game's in Cemu's, if there is one.
+    systems.push_back(kSaveSystem3ds);
+    if (save_store && !save_store->folder_roots().wii_u_mlc.empty()) systems.push_back(kSaveSystemWiiU);
+#endif
+    return systems;
+}
+
 void App::Impl::update_save_rom_dirs() {
     if (!save_store) return;
     std::vector<std::string> directories;
     if (!settings.last_browse_dir.empty()) directories.push_back(settings.last_browse_dir);
     for (const std::string& directory : default_browse_dirs()) directories.push_back(directory);
     save_store->set_rom_dirs(std::move(directories));
+    // And where the 3DS and Wii U saves are: Azahar's under the saves folder
+    // as the store already knows, Cemu's wherever Cemu keeps them.
+    FolderSaveRoots roots = save_store->folder_roots();
+    const char* home = std::getenv("HOME");
+    roots.wii_u_mlc = find_cemu_mlc(settings.wii_u_mlc_path, settings.wii_u_program, home != nullptr ? home : "");
+    if (roots.wii_u_mlc != save_store->folder_roots().wii_u_mlc) {
+        log_info(roots.wii_u_mlc.empty() ? std::string("Cemu's mlc01 folder was not found; no Wii U saves")
+                                         : "Wii U saves are in " + roots.wii_u_mlc);
+    }
+    save_store->set_folder_roots(std::move(roots));
 }
 
 bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
@@ -2731,6 +2770,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     }
     external_program.stop();
     external_source.reset();
+    note_external_game_closed();
     // A motor the last game left on has nobody left to turn it off.
     stop_pad_rumble();
     have_game_config = false;
@@ -2940,6 +2980,11 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
             // desktop to start it from, which is the whole reason this app
             // exists. Not fatal when it fails -- the socket is open either way
             // and a player on a desktop can still start one by hand.
+            if (save_store) {
+                save_store->set_device_name(settings.device_name);
+                save_store->note_game_started(rom_path);
+                external_save_rom = rom_path;
+            }
             const std::string& program = settings.external_program_for(system);
             if (!program.empty()) {
                 std::vector<std::string> arguments;
@@ -3757,8 +3802,9 @@ int App::run(const AppOptions& options) {
     ensure_directory(impl.settings.system_dir);
     impl.save_store.reset(new SaveStore(impl.paths.saves_dir, impl.settings.device_name));
     impl.update_save_rom_dirs();
-    impl.save_service.reset(
-        new net::SaveExchangeService(*impl.save_store, net::SaveExchangeService::Config{}));
+    net::SaveExchangeService::Config save_config;
+    save_config.systems = impl.save_systems();
+    impl.save_service.reset(new net::SaveExchangeService(*impl.save_store, save_config));
     {
         std::string error;
         if (!impl.save_service->start(&error)) {
@@ -5058,6 +5104,7 @@ int App::run(const AppOptions& options) {
     }
     impl.external_program.stop();
     impl.external_source.reset();
+    impl.note_external_game_closed();
     watchdog.at("letting go of the controllers");
     impl.input.shutdown();
     watchdog.at("closing the window");

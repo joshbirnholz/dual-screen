@@ -62,6 +62,9 @@ public:
     // Something that goes up whenever another device sends a save here, so
     // what is on screen can be read again -- SaveExchangeService's count.
     void set_change_source(std::function<uint64_t()> source) { change_source_ = std::move(source); }
+    // The systems whose saves this device keeps and trades -- its
+    // SaveExchangeService's. Only the DS's unless told otherwise.
+    void set_systems(std::vector<std::string> systems) { systems_ = std::move(systems); }
 
     DataManagementResult update(const std::vector<UiAction>& actions,
                                 const std::vector<PointerEvent>& pointers,
@@ -116,6 +119,8 @@ private:
         enum class Kind { Search, Status, Fetch, Send, Plan } kind = Kind::Search;
         std::atomic<bool> done{false};
         std::string game_id;
+        // The game's system; or, with no game, every one kept here.
+        std::vector<std::string> systems;
         std::vector<net::SaveDevice> devices;
         std::map<std::string, RemoteState> remote;  // by instance
         // Sync All's: every device, and every save on it.
@@ -185,6 +190,8 @@ private:
     void handle_guide_tap(ButtonGlyph glyph, std::vector<UiAction>& actions) const;
 
     const Texture* game_icon(const SaveInfo& info);
+    // Under a game's name in the list: its publisher, and its console.
+    std::string subtitle(const SaveInfo& info) const;
     bool ensure_icons();
 
     SaveStore& store_;
@@ -256,6 +263,7 @@ private:
     std::vector<std::string> sync_device_names_;
 
     std::function<uint64_t()> change_source_;
+    std::vector<std::string> systems_{kSaveSystemDs};
     uint64_t seen_changes_ = 0;
 
     std::unique_ptr<Job> job_;

@@ -179,6 +179,16 @@ int main() {
     CHECK(!status.versions.has_save);
     CHECK(!fetch_save(deck_device, "ZZZZ-01-0-0000", fetched, bytes, &error));
 
+    // A save for a system the Deck here does not keep: refused, as a
+    // Switch refuses a Wii U game's.
+    SaveInfo three_ds;
+    three_ds.stem = "CTR-0004000000055D00";
+    three_ds.system = kSaveSystem3ds;
+    three_ds.game_id = "CTR-0004000000055D00";
+    error.clear();
+    CHECK(!send_save(deck_device, three_ds, bytes, "Switch Lite", &error));
+    CHECK(error.find("3DS") != std::string::npos);
+
     // Nobody there.
     SaveDevice nobody = deck_device;
     nobody.port = 29999;

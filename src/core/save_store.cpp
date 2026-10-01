@@ -13,7 +13,9 @@
 
 #include "config/paths.hpp"
 #include "config/sha1.hpp"
+#include "core/console_title_info.hpp"
 #include "core/ds_rom_info.hpp"
+#include "core/save_folder.hpp"
 #include "util/log.hpp"
 
 namespace ds {
@@ -121,7 +123,89 @@ std::string find_rom_named(const std::string& directory, const std::string& stem
     return std::string();
 }
 
+// A save's system from its name, for one without a record yet: a folder
+// save's name is its game ID.
+std::string system_for_stem(const std::string& stem) {
+    if (stem.compare(0, 4, "CTR-") == 0 && title_id_from_game_id(stem) != 0) return kSaveSystem3ds;
+    if (stem.compare(0, 4, "WUP-") == 0 && title_id_from_game_id(stem) != 0) return kSaveSystemWiiU;
+    return kSaveSystemDs;
+}
+
+std::string hex8(uint32_t value) {
+    char text[9];
+    std::snprintf(text, sizeof(text), "%08x", value);
+    return text;
+}
+
+constexpr const char* kThreeDsIds = "00000000000000000000000000000000";
+
+bool is_3ds_rom(const std::string& path) {
+    const std::string extension = path_extension_lower(path);
+    return extension == "3ds" || extension == "cci" || extension == "cxi" || extension == "cia" ||
+           extension == "app";
+}
+
+// A 3DS ROM with this title ID in `directory` or one folder down.
+std::string find_3ds_rom(const std::string& directory, uint64_t title_id, int depth) {
+    std::vector<DirectoryEntry> entries;
+    if (!list_directory(directory, entries, nullptr)) return std::string();
+    for (const DirectoryEntry& entry : entries) {
+        if (entry.is_directory || !is_3ds_rom(entry.name)) continue;
+        ConsoleTitleInfo info;
+        if (read_3ds_title_info(entry.path, info, nullptr) && info.title_id == title_id) return entry.path;
+    }
+    if (depth <= 0) return std::string();
+    for (const DirectoryEntry& entry : entries) {
+        if (!entry.is_directory) continue;
+        const std::string found = find_3ds_rom(entry.path, title_id, depth - 1);
+        if (!found.empty()) return found;
+    }
+    return std::string();
+}
+
 }  // namespace
+
+std::string find_cemu_mlc(const std::string& configured, const std::string& cemu_program,
+                          const std::string& home) {
+    if (!configured.empty()) return configured;
+    // Each folder Cemu might keep settings.xml in, with the mlc01 it makes
+    // there when the settings do not name another.
+    std::vector<std::pair<std::string, std::string>> places;  // settings folder, default mlc01
+    if (!cemu_program.empty() && cemu_program.find('/') != std::string::npos) {
+        const std::string beside = path_dirname(cemu_program);
+        places.push_back({path_join(beside, "portable"), path_join(path_join(beside, "portable"), "mlc01")});
+        places.push_back({beside, path_join(beside, "mlc01")});
+    }
+    if (!home.empty()) {
+        places.push_back({path_join(path_join(home, ".config"), "Cemu"),
+                          path_join(path_join(path_join(home, ".local"), "share"), "Cemu/mlc01")});
+        const std::string flatpak = path_join(path_join(path_join(home, ".var"), "app"), "info.cemu.Cemu");
+        places.push_back({path_join(flatpak, "config/Cemu"), path_join(flatpak, "data/Cemu/mlc01")});
+        const std::string mac = path_join(home, "Library/Application Support/Cemu");
+        places.push_back({mac, path_join(mac, "mlc01")});
+    }
+    for (const auto& place : places) {
+        std::vector<uint8_t> bytes;
+        if (!read_file(path_join(place.first, "settings.xml"), bytes, nullptr)) continue;
+        const std::string named = xml_text(std::string(bytes.begin(), bytes.end()), "mlc_path");
+        if (!named.empty() && directory_exists(named)) return named;
+        if (directory_exists(place.second)) return place.second;
+    }
+    for (const auto& place : places) {
+        if (directory_exists(place.second)) return place.second;
+    }
+    return std::string();
+}
+
+std::string save_system_name(const std::string& system) {
+    if (system == kSaveSystem3ds) return "3DS";
+    if (system == kSaveSystemWiiU) return "Wii U";
+    return "DS";
+}
+
+bool save_is_folder(const std::string& system) {
+    return system == kSaveSystem3ds || system == kSaveSystemWiiU;
+}
 
 std::string new_save_version_id() {
     static std::mt19937_64 generator{std::random_device{}() ^
@@ -164,7 +248,91 @@ SaveComparison compare_saves(const SaveVersionState& here, const SaveVersionStat
 }
 
 SaveStore::SaveStore(std::string saves_dir, std::string device_name)
-    : saves_dir_(std::move(saves_dir)), device_name_(std::move(device_name)) {}
+    : saves_dir_(std::move(saves_dir)), device_name_(std::move(device_name)) {
+    roots_.three_ds_sdmc = {path_join(path_join(saves_dir_, "Azahar"), "sdmc"),
+                            path_join(path_join(saves_dir_, "Citra"), "sdmc")};
+}
+
+void SaveStore::set_folder_roots(FolderSaveRoots roots) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    roots_ = std::move(roots);
+}
+
+FolderSaveRoots SaveStore::folder_roots() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return roots_;
+}
+
+std::string SaveStore::save_folder(const std::string& system, uint64_t title_id) const {
+    const std::string high = hex8(static_cast<uint32_t>(title_id >> 32));
+    const std::string low = hex8(static_cast<uint32_t>(title_id));
+    if (system == kSaveSystemWiiU) {
+        if (roots_.wii_u_mlc.empty()) return std::string();
+        return path_join(path_join(path_join(path_join(roots_.wii_u_mlc, "usr"), "save"), high), low);
+    }
+    if (system != kSaveSystem3ds || roots_.three_ds_sdmc.empty()) return std::string();
+    const auto under = [&](const std::string& sdmc) {
+        std::string path = path_join(path_join(sdmc, "Nintendo 3DS"), kThreeDsIds);
+        path = path_join(path_join(path_join(path, kThreeDsIds), "title"), high);
+        return path_join(path_join(path, low), "data");
+    };
+    // Wherever the game already has one; else in the emulator that has been
+    // run here; else the first.
+    for (const std::string& sdmc : roots_.three_ds_sdmc) {
+        if (directory_exists(under(sdmc))) return under(sdmc);
+    }
+    for (const std::string& sdmc : roots_.three_ds_sdmc) {
+        if (directory_exists(sdmc)) return under(sdmc);
+    }
+    return under(roots_.three_ds_sdmc.front());
+}
+
+std::string SaveStore::folder_for(const SaveInfo& info) const {
+    return save_folder(info.system, title_id_from_game_id(info.game_id.empty() ? info.stem : info.game_id));
+}
+
+bool SaveStore::save_present(const SaveInfo& info) const {
+    if (!save_is_folder(info.system)) return file_exists(save_path(info.stem));
+    const std::string folder = folder_for(info);
+    return !folder.empty() && save_folder_has_files(folder);
+}
+
+bool SaveStore::read_save(const SaveInfo& info, std::vector<uint8_t>& bytes, std::string* error) const {
+    if (!save_is_folder(info.system)) return read_file(save_path(info.stem), bytes, error);
+    const std::string folder = folder_for(info);
+    if (folder.empty()) {
+        if (error != nullptr) *error = "there is nowhere here for that game's save";
+        return false;
+    }
+    return pack_save_folder(folder, bytes, error);
+}
+
+bool SaveStore::write_save(const SaveInfo& info, const std::vector<uint8_t>& bytes, std::string* error) const {
+    if (!save_is_folder(info.system)) {
+        return write_file_atomically(save_path(info.stem), bytes.data(), bytes.size(), error);
+    }
+    const std::string folder = folder_for(info);
+    if (folder.empty()) {
+        if (error != nullptr) {
+            *error = info.system == kSaveSystemWiiU ? "Cemu's mlc01 folder was not found here"
+                                                    : "there is nowhere here for that game's save";
+        }
+        return false;
+    }
+    return unpack_save_folder(bytes, folder, error);
+}
+
+bool SaveStore::delete_save(const SaveInfo& info, std::string* error) const {
+    const std::string path = save_is_folder(info.system) ? folder_for(info) : save_path(info.stem);
+    const bool gone = save_is_folder(info.system) ? remove_save_folder(path) : std::remove(path.c_str()) == 0;
+    if (!gone && error != nullptr) *error = "could not delete " + path;
+    return gone;
+}
+
+int64_t SaveStore::save_modified_at(const SaveInfo& info) const {
+    if (!save_is_folder(info.system)) return modified_at(save_path(info.stem));
+    return save_folder_modified_at(folder_for(info));
+}
 
 std::string SaveStore::device_name() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -206,11 +374,13 @@ std::string SaveStore::earlier_dir(const std::string& stem) const {
 bool SaveStore::load_record(const std::string& stem, SaveInfo& out) const {
     out = SaveInfo();
     out.stem = stem;
+    out.system = system_for_stem(stem);
+    if (save_is_folder(out.system)) out.game_id = stem;
     json record;
     const bool known = read_json(record_path(stem), record);
     if (known) {
-        out.system = get_or<std::string>(record, "system", kSaveSystemDs);
-        out.game_id = get_or<std::string>(record, "game_id", "");
+        out.system = get_or<std::string>(record, "system", system_for_stem(stem));
+        out.game_id = get_or<std::string>(record, "game_id", out.game_id);
         out.title = get_or<std::string>(record, "title", "");
         out.publisher = get_or<std::string>(record, "publisher", "");
         out.icon = from_hex(get_or<std::string>(record, "icon", ""));
@@ -253,13 +423,16 @@ bool SaveStore::store_record(const SaveInfo& info) const {
 }
 
 void SaveStore::refresh_file_state(SaveInfo& info) const {
-    const std::string path = save_path(info.stem);
-    info.has_save = file_exists(path);
-    info.size = info.has_save ? size_of(path) : 0;
+    info.has_save = save_present(info);
+    if (!info.has_save) {
+        info.size = 0;
+    } else {
+        info.size = save_is_folder(info.system) ? save_folder_size(folder_for(info)) : size_of(save_path(info.stem));
+    }
     if (const SaveVersion* current = info.current(); current != nullptr && current->made_at > 0) {
         info.saved_at = current->made_at;
     } else {
-        info.saved_at = info.has_save ? modified_at(path) : 0;
+        info.saved_at = info.has_save ? save_modified_at(info) : 0;
     }
 }
 
@@ -267,14 +440,14 @@ void SaveStore::note_current_version(SaveInfo& info) {
     refresh_file_state(info);
     if (!info.has_save) return;
     std::vector<uint8_t> bytes;
-    if (!read_file(save_path(info.stem), bytes, nullptr)) return;
+    if (!read_save(info, bytes, nullptr)) return;
     const std::string hash = Sha1::hash_bytes(bytes.data(), bytes.size());
     if (!info.history.empty() && info.history.back().hash == hash) return;
     SaveVersion version;
     version.id = new_save_version_id();
     version.hash = hash;
     version.made_on = device_name_;
-    version.made_at = modified_at(save_path(info.stem));
+    version.made_at = save_modified_at(info);
     if (version.made_at == 0) version.made_at = now_seconds();
     info.history.push_back(version);
     if (info.history.size() > kSaveHistoryKept) {
@@ -286,6 +459,24 @@ void SaveStore::note_current_version(SaveInfo& info) {
 }
 
 bool SaveStore::match_unknown(SaveInfo& info) {
+    if (save_is_folder(info.system)) {
+        // Known by its title ID already; a 3DS ROM here with that ID names it.
+        if (!info.title.empty() || info.system != kSaveSystem3ds) return true;
+        const uint64_t title_id = title_id_from_game_id(info.game_id);
+        for (const std::string& directory : rom_dirs_) {
+            const std::string rom = find_3ds_rom(directory, title_id, 1);
+            ConsoleTitleInfo title;
+            if (rom.empty() || !read_3ds_title_info(rom, title, nullptr)) continue;
+            info.title = title.title;
+            info.publisher = title.publisher;
+            info.icon = title.icon;
+            info.rom_path = rom;
+            store_record(info);
+            log_info("matched the save " + info.stem + " to " + rom);
+            return true;
+        }
+        return false;
+    }
     if (!info.game_id.empty()) return true;
     for (const std::string& directory : rom_dirs_) {
         const std::string rom = find_rom_named(directory, info.stem, 1);
@@ -305,8 +496,63 @@ bool SaveStore::match_unknown(SaveInfo& info) {
     return false;
 }
 
+void SaveStore::discover_folder_saves() {
+    // Every title with a save in the emulators' folders that has no record
+    // here yet -- played before this app knew of it, or in the emulator on
+    // its own -- written down, so it is listed and has a version to compare.
+    const auto note = [this](const std::string& system, uint64_t title_id) {
+        const std::string game_id =
+            system == kSaveSystem3ds ? three_ds_game_id(title_id) : wii_u_game_id(title_id);
+        if (file_exists(record_path(game_id))) return;
+        SaveInfo info;
+        info.stem = game_id;
+        info.system = system;
+        info.game_id = game_id;
+        if (!save_present(info)) return;
+        if (system == kSaveSystemWiiU) {
+            // An installed title says what it is in Cemu's own folders.
+            ConsoleTitleInfo title;
+            const std::string meta =
+                path_join(path_join(path_join(path_join(path_join(roots_.wii_u_mlc, "usr"), "title"),
+                                              hex8(static_cast<uint32_t>(title_id >> 32))),
+                                    hex8(static_cast<uint32_t>(title_id))),
+                          "meta");
+            if (read_wii_u_meta(meta, title, nullptr)) {
+                info.title = title.title;
+                info.publisher = title.publisher;
+                info.icon = title.icon;
+            }
+        }
+        store_record(info);
+        note_current_version(info);
+        log_info("found a " + std::string(system == kSaveSystem3ds ? "3DS" : "Wii U") + " save for " + game_id);
+    };
+    const auto each_title = [](const std::string& high_dir, uint32_t high, const auto& visit) {
+        std::vector<DirectoryEntry> lows;
+        if (!list_directory(high_dir, lows, nullptr)) return;
+        for (const DirectoryEntry& low : lows) {
+            if (!low.is_directory || low.name.size() != 8) continue;
+            char* end = nullptr;
+            const uint32_t value = static_cast<uint32_t>(std::strtoul(low.name.c_str(), &end, 16));
+            if (end == nullptr || *end != '\0') continue;
+            visit(uint64_t(high) << 32 | value);
+        }
+    };
+    for (const std::string& sdmc : roots_.three_ds_sdmc) {
+        const std::string titles = path_join(
+            path_join(path_join(path_join(sdmc, "Nintendo 3DS"), kThreeDsIds), kThreeDsIds), "title");
+        each_title(path_join(titles, "00040000"), 0x00040000u,
+                   [&](uint64_t title_id) { note(kSaveSystem3ds, title_id); });
+    }
+    if (!roots_.wii_u_mlc.empty()) {
+        each_title(path_join(path_join(path_join(roots_.wii_u_mlc, "usr"), "save"), "00050000"), 0x00050000u,
+                   [&](uint64_t title_id) { note(kSaveSystemWiiU, title_id); });
+    }
+}
+
 std::vector<SaveInfo> SaveStore::list() {
     std::lock_guard<std::mutex> lock(mutex_);
+    discover_folder_saves();
     std::set<std::string> stems;
     std::vector<DirectoryEntry> entries;
     if (list_directory(saves_dir_, entries, nullptr)) {
@@ -323,7 +569,16 @@ std::vector<SaveInfo> SaveStore::list() {
     for (const std::string& stem : stems) {
         SaveInfo info;
         if (!load_record(stem, info)) continue;
-        if (info.game_id.empty()) match_unknown(info);
+        if (info.game_id.empty() || (save_is_folder(info.system) && info.title.empty())) match_unknown(info);
+        if (save_is_folder(info.system) && info.has_save) {
+            // Played in the emulator on its own as often as from here: a
+            // folder changed since it was last looked at is a new version.
+            const int64_t changed = save_modified_at(info);
+            int64_t& seen = folder_seen_at_[stem];
+            const SaveVersion* current = info.current();
+            if (current == nullptr || (changed > current->made_at && changed > seen)) note_current_version(info);
+            seen = changed;
+        }
         if (!info.has_save) {
             // Kept for its earlier saves, which are still there to go back to.
             std::vector<DirectoryEntry> earlier;
@@ -364,12 +619,58 @@ bool SaveStore::find(const std::string& game_id, SaveInfo& out) {
     return find_locked(game_id, out);
 }
 
+bool SaveStore::identify(const std::string& rom_path, SaveInfo& out) const {
+    out = SaveInfo();
+    ConsoleTitleInfo title;
+    if (is_3ds_rom(rom_path) && read_3ds_title_info(rom_path, title, nullptr)) {
+        out.system = kSaveSystem3ds;
+        out.game_id = three_ds_game_id(title.title_id);
+    } else if (path_extension_lower(rom_path) == "rpx" && read_wii_u_title_info(rom_path, title, nullptr)) {
+        out.system = kSaveSystemWiiU;
+        out.game_id = wii_u_game_id(title.title_id);
+    } else {
+        return false;
+    }
+    out.stem = out.game_id;
+    out.title = title.title;
+    out.publisher = title.publisher;
+    out.icon = title.icon;
+    out.rom_path = rom_path;
+    return true;
+}
+
 bool SaveStore::find_for_rom(const std::string& rom_path, SaveInfo& out) {
     std::lock_guard<std::mutex> lock(mutex_);
+    SaveInfo identified;
+    if (identify(rom_path, identified)) {
+        load_record(identified.stem, out);
+        if (out.title.empty()) out.title = identified.title;
+        return true;
+    }
     return load_record(path_stem(rom_path), out) && !out.game_id.empty();
 }
 
 void SaveStore::note_game_started(const std::string& rom_path) {
+    SaveInfo identified;
+    if (identify(rom_path, identified)) {
+        // A 3DS or Wii U game: its save is wherever the emulator keeps it,
+        // under its title ID, so there is nothing to bring under another name.
+        std::lock_guard<std::mutex> lock(mutex_);
+        SaveInfo info;
+        load_record(identified.stem, info);
+        info.stem = identified.stem;
+        info.system = identified.system;
+        info.game_id = identified.game_id;
+        if (!identified.title.empty()) info.title = identified.title;
+        if (!identified.publisher.empty()) info.publisher = identified.publisher;
+        if (!identified.icon.empty()) info.icon = identified.icon;
+        info.rom_path = rom_path;
+        store_record(info);
+        note_current_version(info);
+        game_in_play_ = info.game_id;
+        started_stem_ = info.stem;
+        return;
+    }
     if (path_extension_lower(rom_path) != "nds") return;
     DsRomInfo rom;
     if (!read_ds_rom_info(rom_path, rom, nullptr)) return;
@@ -402,15 +703,18 @@ void SaveStore::note_game_started(const std::string& rom_path) {
     store_record(info);
     note_current_version(info);
     game_in_play_ = rom.game_id;
+    started_stem_ = stem;
 }
 
 void SaveStore::note_game_stopped(const std::string& rom_path) {
     std::lock_guard<std::mutex> lock(mutex_);
     SaveInfo info;
-    if (load_record(path_stem(rom_path), info) && !info.game_id.empty()) {
+    const std::string stem = started_stem_.empty() ? path_stem(rom_path) : started_stem_;
+    if (load_record(stem, info) && !info.game_id.empty()) {
         note_current_version(info);
     }
     game_in_play_.clear();
+    started_stem_.clear();
 }
 
 bool SaveStore::read_for_sending(const std::string& game_id, SaveInfo& info,
@@ -421,8 +725,7 @@ bool SaveStore::read_for_sending(const std::string& game_id, SaveInfo& info,
         return false;
     }
     note_current_version(info);
-    if (!read_file(save_path(info.stem), bytes, error)) return false;
-    return true;
+    return read_save(info, bytes, error);
 }
 
 std::string SaveStore::free_stem(const std::string& wanted, const std::string& game_code) const {
@@ -447,7 +750,7 @@ bool SaveStore::set_aside(const SaveInfo& info, const std::string& reason, std::
         return false;
     }
     std::vector<uint8_t> bytes;
-    if (!read_file(save_path(info.stem), bytes, error)) return false;
+    if (!read_save(info, bytes, error)) return false;
     // Named for when it was set aside, to the millisecond, so that the names
     // sort in that order however many land in one second.
     char stamp[20];
@@ -546,13 +849,24 @@ bool SaveStore::accept(const SaveInfo& incoming, const std::vector<uint8_t>& byt
     }
     SaveInfo local;
     const bool known = find_locked(incoming.game_id, local);
-    if (!known) {
+    if (!known && save_is_folder(incoming.system)) {
+        // Named by its game ID, and perhaps in the emulator's folder already
+        // without this app having written it down.
+        load_record(incoming.game_id, local);
+        local.stem = incoming.game_id;
+        local.system = incoming.system;
+        local.game_id = incoming.game_id;
+        refresh_file_state(local);
+    } else if (!known) {
         const std::string code = incoming.game_id.substr(0, incoming.game_id.find('-'));
         local = SaveInfo();
         local.stem = free_stem(incoming.stem, code);
     }
     if (!set_aside(local, "Replaced by " + from_device + "'s save", error)) return false;
-    if (!write_file_atomically(save_path(local.stem), bytes.data(), bytes.size(), error)) return false;
+    SaveInfo target = local;
+    target.system = incoming.system;
+    target.game_id = incoming.game_id;
+    if (!write_save(target, bytes, error)) return false;
     SaveInfo updated = incoming;
     updated.stem = local.stem;
     updated.rom_path = local.rom_path;
@@ -578,10 +892,7 @@ bool SaveStore::remove(const std::string& game_id, std::string* error) {
         return false;
     }
     if (!set_aside(info, "Deleted", error)) return false;
-    if (std::remove(save_path(info.stem).c_str()) != 0) {
-        if (error != nullptr) *error = "could not delete " + save_path(info.stem);
-        return false;
-    }
+    if (!delete_save(info, error)) return false;
     delete_resume_point(info.stem);
     log_info("deleted the save for " + info.display_title() + "; it is in Earlier Saves");
     return true;
@@ -609,7 +920,7 @@ bool SaveStore::restore(const std::string& game_id, const std::string& earlier_i
         return false;
     }
     if (!set_aside(info, "Replaced by a restored save", error)) return false;
-    if (!write_file_atomically(save_path(info.stem), bytes.data(), bytes.size(), error)) return false;
+    if (!write_save(info, bytes, error)) return false;
     std::remove(earlier_save.c_str());
     std::remove(earlier_about.c_str());
     // A version of its own, although its contents were seen before: put back,

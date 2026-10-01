@@ -121,6 +121,9 @@ struct Settings {
     // The fork's own flags, so that setting the program is enough on its own.
     // See docs/cemu-integration.md.
     std::vector<std::string> wii_u_arguments{"--dualscreen-socket", "{socket}", "--game", "{game}"};
+    // Cemu's mlc01 folder, where it keeps Wii U saves, for Data Management.
+    // Empty means wherever Cemu says it is -- see find_cemu_mlc().
+    std::string wii_u_mlc_path;
 
     const std::string& external_program_for(SystemId system) const {
         switch (system) {

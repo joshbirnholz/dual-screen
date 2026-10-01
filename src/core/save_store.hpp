@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -17,11 +18,37 @@ namespace ds {
 // to earlier/<game>/ in the same folder, the newest kEarlierSavesKept of them,
 // so every change made here can be undone.
 //
-// DS only for now, but nothing below is about the DS except where the ID,
-// title and icon come from: a save is tagged with its system, so 3DS and Wii U
-// saves can join it later.
+// A 3DS or Wii U game's save is a folder instead -- where Azahar (or Citra)
+// and Cemu keep it -- known by the game's title ID and packed into one run of
+// bytes (save_folder.hpp) wherever a DS save would be a file's contents: its
+// versions are those bytes' hashes, its earlier saves those bytes, and it is
+// sent between devices as them. Its record is <saves>/<game ID>.srm.sync, the
+// same as a DS game's, and its earlier saves are in earlier/<game ID>/.
 
 inline constexpr const char* kSaveSystemDs = "ds";
+inline constexpr const char* kSaveSystem3ds = "3ds";
+inline constexpr const char* kSaveSystemWiiU = "wiiu";
+
+// Whether a system's saves are folders rather than files.
+bool save_is_folder(const std::string& system);
+// A system as the player knows it: "DS", "3DS", "Wii U".
+std::string save_system_name(const std::string& system);
+
+// Where the emulators keep the folder saves. Azahar keeps a 3DS game's in
+// <its user folder>/sdmc/Nintendo 3DS/<32 zeros>/<32 zeros>/title/<high>/<low>/data,
+// and this app gives cores its saves folder, so the user folder is
+// <saves>/Azahar (Citra's, <saves>/Citra). Cemu keeps a Wii U game's in
+// <mlc01>/usr/save/<high>/<low>.
+struct FolderSaveRoots {
+    std::vector<std::string> three_ds_sdmc;  // each an sdmc folder, first preferred
+    std::string wii_u_mlc;                   // empty when there is no Cemu here
+};
+// Where Cemu keeps its mlc01 folder: `configured` when it names one; else
+// what Cemu's settings.xml says, or the mlc01 beside it -- portable beside
+// `cemu_program`, then its usual places for a desktop, a Flatpak and a Mac
+// under `home`. Empty when none of them is there.
+std::string find_cemu_mlc(const std::string& configured, const std::string& cemu_program, const std::string& home);
+
 inline constexpr std::size_t kEarlierSavesKept = 10;
 inline constexpr std::size_t kSaveHistoryKept = 64;
 
@@ -100,6 +127,12 @@ public:
     // Folders to look in for the ROM of a save this device has not seen
     // played -- one copied in by hand -- so it can still be matched.
     void set_rom_dirs(std::vector<std::string> directories);
+    // Where the folder saves are. Azahar's and Citra's under the saves
+    // folder unless this says otherwise; no Wii U saves until it names one.
+    void set_folder_roots(FolderSaveRoots roots);
+    FolderSaveRoots folder_roots() const;
+    // The folder a 3DS or Wii U game's save is in, or would be.
+    std::string save_folder(const std::string& system, uint64_t title_id) const;
 
     // The game at `rom_path` is starting here: its save is brought under this
     // ROM's name if it is kept under another name with the same game ID (a
@@ -140,6 +173,14 @@ public:
 
 private:
     std::string save_path(const std::string& stem) const;
+    std::string folder_for(const SaveInfo& info) const;
+    bool save_present(const SaveInfo& info) const;
+    bool read_save(const SaveInfo& info, std::vector<uint8_t>& bytes, std::string* error) const;
+    bool write_save(const SaveInfo& info, const std::vector<uint8_t>& bytes, std::string* error) const;
+    bool delete_save(const SaveInfo& info, std::string* error) const;
+    int64_t save_modified_at(const SaveInfo& info) const;
+    void discover_folder_saves();
+    bool identify(const std::string& rom_path, SaveInfo& out) const;
     std::string earlier_dir(const std::string& stem) const;
     bool load_record(const std::string& stem, SaveInfo& out) const;
     bool store_record(const SaveInfo& info) const;
@@ -156,7 +197,12 @@ private:
     std::string saves_dir_;
     std::string device_name_;
     std::vector<std::string> rom_dirs_;
+    FolderSaveRoots roots_;
     std::string game_in_play_;
+    // The game note_game_started() last saw start, under its save's name.
+    std::string started_stem_;
+    // When list() last looked at each folder save, by the newest file in it.
+    std::map<std::string, int64_t> folder_seen_at_;
 };
 
 // A fresh, unguessable version ID.

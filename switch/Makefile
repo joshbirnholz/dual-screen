@@ -132,7 +132,8 @@ BUILD_DEKO_CORE := $(if $(and $(filter $(DEKO_CORE_LIB),$(CORE_LIB)),$(wildcard 
 # the two with the desktop build's own, since nothing here can run this link.
 LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                game_config.cpp settings.cpp sha1.cpp \
-               ds_rom_info.cpp game_title.cpp save_store.cpp gl_call_trace.cpp hw_render_target.cpp \
+               ds_rom_info.cpp game_title.cpp save_store.cpp save_folder.cpp console_title_info.cpp \
+               gl_call_trace.cpp hw_render_target.cpp \
                external_frame_link.cpp external_screen_source.cpp \
                libretro_core.cpp libretro_screen_source.cpp core_input_sink.cpp \
                pad_routing.cpp retro_keymap.cpp \
