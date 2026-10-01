@@ -144,6 +144,7 @@ void apply_tuning() {
     bool fastmem = true;
     bool pipeline = true;
     bool texture_cache = true;
+    bool vram_check = false;
     std::string shaders;
     bool from_file = false;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
@@ -167,6 +168,8 @@ void apply_tuning() {
                 pipeline = on;
             } else if (key == "texcache") {
                 texture_cache = on;
+            } else if (key == "vramcheck") {
+                vram_check = on;
             } else if (key == "shaders") {
                 shaders = text.substr(equals + 1);
             } else if (key == "cpu_mhz" || key == "gpu_alone") {
@@ -185,6 +188,7 @@ void apply_tuning() {
     Config::JIT_FastMemory = fastmem ? 1 : 0;
     gfx_set_pipelined(pipeline);
     gfx_set_texture_cache(texture_cache);
+    gfx_set_vram_check(vram_check);
     if (!texture_cache) log_info("melonDS (deko3d): the 3D texture cache is emptied every frame, as " +
                                  std::string(kTuningPath) + " says");
     // The shaders melonDS's own release was built with, from inside its .nro,

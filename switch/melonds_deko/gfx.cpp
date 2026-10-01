@@ -20,9 +20,16 @@
 #include <vector>
 
 #include "GPU.h"
-#include "GPU2D_Deko.h"
 #include "GPU3D.h"
+#include "frontend/switch/CmdMemRing.h"
 #include "frontend/switch/Gfx.h"
+#include "frontend/switch/UploadBuffer.h"
+// vramcheck=1 reads where the 2D renderer keeps its copy of video memory on
+// the GPU, which it keeps to itself. A diagnostic only; nothing else here
+// looks inside it.
+#define private public
+#include "GPU2D_Deko.h"
+#undef private
 
 namespace melonds_deko {
 namespace {
@@ -209,6 +216,7 @@ int g_next_slot = 0;
 int g_pending_slot = -1;
 bool g_pipelined = true;
 bool g_keep_texture_cache = true;
+bool g_vram_check = false;
 bool g_ready = false;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
@@ -251,6 +259,232 @@ uint64_t memory_available() {
                                    : 0;
     return unclaimed + static_cast<uint64_t>(mallinfo().fordblks);
 }
+
+// vramcheck=1: whether what the renderers draw from is what the DS has.
+//
+// Between frames, with the GPU idle, three things must agree. The DS's video
+// memory; melonDS's flat copy of it (GPU::VRAMFlat_*), which it brings up to
+// date from the DS's wherever its dirty tracking says something changed; and
+// the 2D renderer's copy of that on the GPU, which it uploads from the flat
+// copy as it changes. A frame ends just after the renderer has submitted
+// everything it uploaded, so once the GPU is idle all three must match, but
+// for blocks the dirty tracking says changed since and are not uploaded yet.
+// Anything else is the cause of wrong graphics found: memory written that the
+// emulator never wrote.
+namespace vramcheck {
+
+constexpr uint32_t kBlock = GPU::VRAMDirtyGranularity;  // 512
+constexpr uint32_t kBankMask[9] = {0x1FFFF, 0x1FFFF, 0x1FFFF, 0x1FFFF, 0xFFFF, 0x3FFF, 0x3FFF, 0x7FFF, 0x3FFF};
+constexpr uint64_t kEveryFrames = 30;
+constexpr uint64_t kWarmupFrames = 120;
+constexpr int kMostReports = 40;
+
+dk::MemBlock g_readback;   // the GPU's copies of 2D video memory, read back
+dk::MemBlock g_cmd_memory;
+dk::CmdBuf g_cmd;
+dk::Fence g_done;
+uint64_t g_frames = 0;
+uint64_t g_checks = 0;
+uint64_t g_checks_with_differences = 0;
+int g_reports = 0;
+bool g_set_up = false;
+
+struct Difference {
+    uint32_t blocks = 0;
+    uint32_t first = UINT32_MAX;
+    uint64_t expected = 0;
+    uint64_t found = 0;
+    void note(uint32_t offset, uint64_t want, uint64_t got) {
+        if (first == UINT32_MAX) {
+            first = offset;
+            expected = want;
+            found = got;
+        }
+    }
+};
+
+std::string hex(uint64_t value, int digits) {
+    char text[24];
+    std::snprintf(text, sizeof(text), "%0*llx", digits, static_cast<unsigned long long>(value));
+    return text;
+}
+
+void report(const std::string& what, const Difference& difference, uint32_t blocks) {
+    if (difference.blocks == 0 || g_reports >= kMostReports) return;
+    ++g_reports;
+    log_warn("melonDS (deko3d): vramcheck: " + what + " in " + std::to_string(difference.blocks) + " of " +
+             std::to_string(blocks) + " blocks, first at 0x" + hex(difference.first, 5) + " (" +
+             hex(difference.expected, 16) + " expected, " + hex(difference.found, 16) + " found)");
+}
+
+// The flat copy against the DS's own video memory, wherever the dirty
+// tracking says nothing has changed since the flat copy was brought up to
+// date: what DeriveState() would find, without using it up.
+template <uint32_t Size, uint32_t Granularity>
+Difference flat_against_vram(const uint8_t* flat, const uint32_t* maps,
+                             const GPU::VRAMTrackingSet<Size, Granularity>& tracking, uint64_t (*read)(uint32_t)) {
+    Difference difference;
+    const uint32_t per_mapping = Granularity / kBlock;
+    for (uint32_t block = 0; block < Size / kBlock; ++block) {
+        const uint32_t slot = block / per_mapping;
+        if (maps[slot] != tracking.Mapping[slot]) continue;  // remapped since: all of it pending
+        bool pending = false;
+        for (uint32_t banks = maps[slot]; banks != 0 && !pending;) {
+            const uint32_t bank = static_cast<uint32_t>(__builtin_ctz(banks));
+            banks &= ~(1u << bank);
+            if (bank >= 9) continue;
+            uint32_t bit;
+            if (Granularity == 16 * 1024) {
+                bit = block % 32 + (slot & (kBankMask[bank] >> 14)) * 32;
+            } else if (Granularity == 8 * 1024) {
+                bit = block % 16 + (slot & (kBankMask[bank] >> 13)) * 16;
+            } else {
+                bit = block % 256;
+            }
+            pending = GPU::VRAMDirty[bank][bit];
+        }
+        if (pending) continue;
+        const uint32_t offset = block * kBlock;
+        bool same = true;
+        for (uint32_t at = 0; at < kBlock; at += 8) {
+            uint64_t have;
+            std::memcpy(&have, flat + offset + at, sizeof(have));
+            const uint64_t want = read(offset + at);
+            if (have != want) {
+                difference.note(offset + at, want, have);
+                same = false;
+                break;
+            }
+        }
+        if (!same) ++difference.blocks;
+    }
+    return difference;
+}
+
+// The renderer's copy on the GPU, read back, against the flat copy it was
+// uploaded from: every byte.
+Difference gpu_against_flat(const uint8_t* gpu, const uint8_t* flat, uint32_t size) {
+    Difference difference;
+    for (uint32_t offset = 0; offset < size; offset += kBlock) {
+        if (std::memcmp(gpu + offset, flat + offset, kBlock) == 0) continue;
+        ++difference.blocks;
+        for (uint32_t at = 0; at < kBlock; at += 8) {
+            uint64_t want;
+            uint64_t got;
+            std::memcpy(&want, flat + offset + at, sizeof(want));
+            std::memcpy(&got, gpu + offset + at, sizeof(got));
+            if (want != got) {
+                difference.note(offset + at, want, got);
+                break;
+            }
+        }
+    }
+    return difference;
+}
+
+struct Area {
+    const char* name;
+    int texture;  // the renderer's VRAMTextureMemory index
+    const uint8_t* flat;
+    uint32_t size;
+};
+
+void init() {
+    constexpr uint32_t kReadback = 1024 * 1024;  // ABG 512K, BBG 128K, AOBJ 256K, BOBJ 128K
+    g_readback = dk::MemBlockMaker{Gfx::Device, kReadback}
+                     .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+                     .create();
+    g_cmd_memory = dk::MemBlockMaker{Gfx::Device, DK_MEMBLOCK_ALIGNMENT}
+                       .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+                       .create();
+    g_cmd = dk::CmdBufMaker{Gfx::Device}.create();
+    g_cmd.addMemory(g_cmd_memory, 0, DK_MEMBLOCK_ALIGNMENT);
+    g_frames = g_checks = g_checks_with_differences = 0;
+    g_reports = 0;
+    g_set_up = true;
+    log_info("melonDS (deko3d): vramcheck is on: video memory is checked every " +
+             std::to_string(kEveryFrames) + " frames");
+}
+
+void deinit() {
+    if (!g_set_up) return;
+    g_set_up = false;
+    g_cmd.destroy();
+    g_cmd_memory.destroy();
+    g_readback.destroy();
+}
+
+// With the GPU idle.
+void run(dk::Queue& queue) {
+    if (!g_set_up) init();
+    auto* renderer = static_cast<GPU2D::DekoRenderer*>(GPU::GPU2D_Renderer.get());
+    if (renderer == nullptr || ++g_frames < kWarmupFrames || g_frames % kEveryFrames != 0) return;
+    const Area areas[] = {
+        {"upper engine backgrounds", GPU2D::DekoRenderer::textureVRAM_ABG, GPU::VRAMFlat_ABG, 512 * 1024},
+        {"lower engine backgrounds", GPU2D::DekoRenderer::textureVRAM_BBG, GPU::VRAMFlat_BBG, 128 * 1024},
+        {"upper engine sprites", GPU2D::DekoRenderer::textureVRAM_AOBJ, GPU::VRAMFlat_AOBJ, 256 * 1024},
+        {"lower engine sprites", GPU2D::DekoRenderer::textureVRAM_BOBJ, GPU::VRAMFlat_BOBJ, 128 * 1024},
+    };
+    g_cmd.clear();
+    uint32_t offset = 0;
+    for (const Area& area : areas) {
+        g_cmd.copyBuffer(Gfx::TextureHeap->GpuAddr(renderer->VRAMTextureMemory[area.texture]),
+                         g_readback.getGpuAddr() + offset, area.size);
+        offset += area.size;
+    }
+    g_cmd.signalFence(g_done);
+    queue.submitCommands(g_cmd.finishList());
+    queue.flush();
+    g_done.wait();
+
+    bool differs = false;
+    offset = 0;
+    for (const Area& area : areas) {
+        std::vector<uint8_t> gpu(area.size);
+        std::memcpy(gpu.data(), static_cast<const uint8_t*>(g_readback.getCpuAddr()) + offset, area.size);
+        const Difference difference = gpu_against_flat(gpu.data(), area.flat, area.size);
+        report(std::string("the GPU's copy of the ") + area.name + " differs from what melonDS uploaded",
+               difference, area.size / kBlock);
+        differs = differs || difference.blocks != 0;
+        offset += area.size;
+    }
+
+    const auto flat = [&](const char* name, const Difference& difference, uint32_t size) {
+        report(std::string("melonDS's flat copy of the ") + name +
+                   " differs from the DS's video memory, with nothing pending",
+               difference, size / kBlock);
+        differs = differs || difference.blocks != 0;
+    };
+    flat("upper engine backgrounds",
+         flat_against_vram(GPU::VRAMFlat_ABG, GPU::VRAMMap_ABG, GPU::VRAMDirty_ABG, GPU::ReadVRAM_ABG<u64>),
+         512 * 1024);
+    flat("lower engine backgrounds",
+         flat_against_vram(GPU::VRAMFlat_BBG, GPU::VRAMMap_BBG, GPU::VRAMDirty_BBG, GPU::ReadVRAM_BBG<u64>),
+         128 * 1024);
+    flat("upper engine sprites",
+         flat_against_vram(GPU::VRAMFlat_AOBJ, GPU::VRAMMap_AOBJ, GPU::VRAMDirty_AOBJ, GPU::ReadVRAM_AOBJ<u64>),
+         256 * 1024);
+    flat("lower engine sprites",
+         flat_against_vram(GPU::VRAMFlat_BOBJ, GPU::VRAMMap_BOBJ, GPU::VRAMDirty_BOBJ, GPU::ReadVRAM_BOBJ<u64>),
+         128 * 1024);
+    flat("3D textures",
+         flat_against_vram(GPU::VRAMFlat_Texture, GPU::VRAMMap_Texture, GPU::VRAMDirty_Texture,
+                           GPU::ReadVRAM_Texture<u64>),
+         512 * 1024);
+    flat("3D texture palettes",
+         flat_against_vram(GPU::VRAMFlat_TexPal, GPU::VRAMMap_TexPal, GPU::VRAMDirty_TexPal,
+                           GPU::ReadVRAM_TexPal<u64>),
+         128 * 1024);
+
+    ++g_checks;
+    if (differs) ++g_checks_with_differences;
+    if (g_checks % 20 == 0) {
+        log_info("melonDS (deko3d): vramcheck: " + std::to_string(g_checks) + " checks, " +
+                 std::to_string(g_checks_with_differences) + " of them with differences");
+    }
+}
+
+}  // namespace vramcheck
 
 }  // namespace
 
@@ -325,6 +559,7 @@ void gfx_deinit() {
     if (!g_ready) return;
     g_copy_queue.waitIdle();
     Gfx::EmuQueue.waitIdle();
+    vramcheck::deinit();
     g_copy_queue.destroy();
     g_copy_cmd.destroy();
     g_copy_cmd_memory.destroy();
@@ -341,6 +576,8 @@ void gfx_deinit() {
 void gfx_reset_readback() { g_pending_slot = -1; }
 
 void gfx_set_texture_cache(bool keep) { g_keep_texture_cache = keep; }
+
+void gfx_set_vram_check(bool check) { g_vram_check = check; }
 
 bool gfx_use_shaders_from(const std::string& nro_path, std::string* why) {
     g_shader_romfs.clear();
@@ -398,6 +635,7 @@ void gfx_wait_for_gpu() {
     // and only for finding out whether the cache is what goes wrong -- the GPU
     // is idle, so nothing is still reading what this frees.
     if (!g_keep_texture_cache && GPU3D::CurrentRenderer) GPU3D::CurrentRenderer->Reset();
+    if (g_vram_check) vramcheck::run(g_copy_queue);
     g_times.idle_ticks += idle;
     g_times.worst_idle_ticks = std::max(g_times.worst_idle_ticks, idle);
 }
@@ -413,6 +651,11 @@ void gfx_read_screens(uint32_t* out) {
     // the images back to the renderer, which waits for exactly this before it
     // draws into them again. The same handshake melonDS's own frontend does
     // around putting them on the screen.
+    // The commands of the copy still being held are in the memory about to
+    // be written over, and with frames handed over one behind it may not have
+    // run yet: it is waited for first, which costs nothing, as it is the one
+    // this frame hands over anyway.
+    if (g_pending_slot >= 0) g_copied[g_pending_slot].wait();
     g_copy_cmd.clear();
     g_copy_cmd.waitFence(renderer->FramebufferReady[front]);
     for (uint32_t screen = 0; screen < 2; ++screen) {

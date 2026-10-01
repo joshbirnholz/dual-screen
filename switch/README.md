@@ -320,7 +320,16 @@ pipeline=0     # each frame shown as soon as it is drawn, not a frame later
 gpu_alone=1    # the app's own drawing finished before each frame of the game
 texcache=0     # the 3D renderer's texture cache emptied before every frame
 shaders=standalone  # the GPU shaders from inside melonDS's own .nro
+vramcheck=1    # video memory checked twice a second; differences logged
 ```
+
+`vramcheck=1` looks for memory written that the emulator never wrote. Between
+frames, with the GPU idle, it compares the DS's video memory, melonDS's copy
+of it, and the 2D renderer's copy of that on the GPU; apart from what the
+emulator has marked as changed and not yet uploaded, they must be identical.
+Each difference goes in the game log as a `vramcheck:` line saying which copy
+of what disagrees, where, and the bytes expected and found, and every 20
+checks a line counts them.
 
 `pipeline=0` and `gpu_alone=1` together keep the emulator's GPU work and the
 app's from ever running at the same time.

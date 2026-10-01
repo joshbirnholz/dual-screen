@@ -53,6 +53,9 @@ void gfx_wait_for_gpu();
 // Diagnostics, from /switch/dualscreen/melonds.ini -- see libretro.cpp.
 // texcache=0: the 3D renderer's texture cache thrown away before every frame.
 void gfx_set_texture_cache(bool keep);
+// vramcheck=1: between frames, the video memory the renderers draw from is
+// checked against the DS's, and any difference logged.
+void gfx_set_vram_check(bool check);
 // shaders=<.nro>: the renderers' shaders read from that .nro's romfs -- the
 // standalone melonDS release's, compiled by its own build -- rather than this
 // build's. Before gfx_init()'s renderers load them; false, with why, when the
