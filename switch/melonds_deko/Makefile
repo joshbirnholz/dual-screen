@@ -175,13 +175,18 @@ clean:
 # its CMake runs the host's gcc-ar for it, which cannot read these objects --
 # and two headers are included up front that newer compilers no longer bring
 # in on their own: <utility> for teakra, <unordered_map> for the app's ROM
-# database.
+# database. Its C files are older still: mm_vec.c calls sqrt() and the rest
+# without <math.h>, and GCC 14 made that, and the other old C habits below,
+# errors rather than warnings.
 STANDALONE_BUILD := $(BUILD)/standalone
+STANDALONE_C_LENIENCE := -Wno-error=implicit-function-declaration -Wno-error=implicit-int \
+    -Wno-error=int-conversion -Wno-error=incompatible-pointer-types
 standalone:
 	@$(CMAKE) -S $(MELONDS) -B $(STANDALONE_BUILD) \
 	    -DCMAKE_TOOLCHAIN_FILE=$(abspath $(MELONDS))/cmake/Toolchain-cross-Switch.cmake \
 	    -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_SDL=OFF -DENABLE_OGLRENDERER=OFF -DENABLE_LTO=OFF \
 	    '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -include utility -include unordered_map' \
+	    '-DCMAKE_C_FLAGS_RELEASE=-O3 -DNDEBUG -include math.h $(STANDALONE_C_LENIENCE)' \
 	    -DELF2NRO=$(DEVKITPRO)/tools/bin/elf2nro -DNACPTOOL=$(DEVKITPRO)/tools/bin/nacptool \
 	    -DUAM=$(UAM)
 	@$(MAKE) -C $(STANDALONE_BUILD)
