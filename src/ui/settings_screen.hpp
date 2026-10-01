@@ -136,7 +136,9 @@ private:
     void refresh_bios();
 
     // The melonDS page's rows, in order.
-    enum class MelonRow { CpuClock, Jit, FastMemory, Pipeline, GpuAlone, TextureCache, Shaders, VramCheck };
+    enum class MelonRow {
+        CpuClock, Jit, FastMemory, Pipeline, GpuAlone, TextureCache, Shaders, VramCheck, GpuCache, L2Flush
+    };
     enum class Page { Main, MelonDs };
     std::vector<MelonRow> melon_rows() const;
     // Rows on the page showing: Data Management's first when there is one,

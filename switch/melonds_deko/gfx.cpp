@@ -217,6 +217,7 @@ int g_pending_slot = -1;
 bool g_pipelined = true;
 bool g_keep_texture_cache = true;
 bool g_vram_check = false;
+bool g_gpu_cache = true;
 bool g_ready = false;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
@@ -612,14 +613,20 @@ bool gfx_init(std::string* error) {
                         .setCommandMemorySize(DK_QUEUE_MIN_CMDMEM_SIZE * 4)
                         .setFlushThreshold(DK_QUEUE_MIN_CMDMEM_SIZE)
                         .create();
-    Gfx::TextureHeap.emplace(Gfx::Device, kTextureHeapSize,
-                             DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image, 1024 * 8);
+    // gpucache=0: what the renderers write -- textures, video memory, the
+    // pictures they draw -- kept out of the GPU's L2 cache, and what they
+    // stage it from with it. The GPU's L2 is shared with Mesa, which draws this
+    // app's own screens; written data waiting in it can be lost to an
+    // invalidation from there, which melonDS's own app, the GPU's only user,
+    // never meets. Slower, if that is what is wrong.
+    const uint32_t gpu_access = g_gpu_cache ? DkMemBlockFlags_GpuCached : DkMemBlockFlags_GpuUncached;
+    if (!g_gpu_cache) log_info("melonDS (deko3d): the renderers' GPU memory bypasses the GPU's L2 cache");
+    Gfx::TextureHeap.emplace(Gfx::Device, kTextureHeapSize, gpu_access | DkMemBlockFlags_Image, 1024 * 8);
     Gfx::ShaderCodeHeap.emplace(Gfx::Device, kShaderHeapSize,
                                 DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached |
                                     DkMemBlockFlags_Code,
                                 64);
-    Gfx::DataHeap.emplace(Gfx::Device, kDataHeapSize,
-                          DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached, 128);
+    Gfx::DataHeap.emplace(Gfx::Device, kDataHeapSize, DkMemBlockFlags_CpuUncached | gpu_access, 128);
     Gfx::EmuCmdBuf = dk::CmdBufMaker{Gfx::Device}.create();
 
     g_copy_queue = dk::QueueMaker{Gfx::Device}.setFlags(DkQueueFlags_Graphics).create();
@@ -663,6 +670,8 @@ void gfx_reset_readback() { g_pending_slot = -1; }
 void gfx_set_texture_cache(bool keep) { g_keep_texture_cache = keep; }
 
 void gfx_set_vram_check(bool check) { g_vram_check = check; }
+
+void gfx_set_gpu_cache(bool cached) { g_gpu_cache = cached; }
 
 bool gfx_use_shaders_from(const std::string& nro_path, std::string* why) {
     g_shader_romfs.clear();

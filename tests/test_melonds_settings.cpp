@@ -50,7 +50,9 @@ void test_file(const std::string& sandbox) {
     CHECK_EQ(tuning.cpu_mhz, 1020);
     CHECK(tuning.shaders.empty());
     CHECK(tuning.pipeline && tuning.texcache && !tuning.gpu_alone && !tuning.vramcheck);
-    write_text(path + ".odd", "cpu_mhz=1000\n");
+    write_text(path + ".odd", "cpu_mhz=1000\ngpucache=0\nl2flush=1\n");
+    CHECK(!read_melonds_tuning(path + ".odd").gpucache);
+    CHECK(read_melonds_tuning(path + ".odd").l2flush);
     CHECK_EQ(read_melonds_tuning(path + ".odd").cpu_mhz, 1785);
 
     // Changed: each setting's line rewritten where it was, one back at its
@@ -130,7 +132,13 @@ void test_page(const std::string& sandbox) {
 
     // Every row reachable, and no further.
     press(screen, UiAction::Down, 20);
-    CHECK_EQ(screen.focus(), 7);
+    CHECK_EQ(screen.focus(), 9);
+    press(screen, UiAction::Confirm);
+    CHECK(read_melonds_tuning(path).l2flush);
+    press(screen, UiAction::Up);
+    press(screen, UiAction::Confirm);
+    CHECK(!read_melonds_tuning(path).gpucache);
+    press(screen, UiAction::Up);
     press(screen, UiAction::Confirm);
     CHECK(read_melonds_tuning(path).vramcheck);
 

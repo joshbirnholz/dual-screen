@@ -25,6 +25,8 @@ struct MelonDsTuning {
     bool texcache = true;   // texcache: the 3D renderer's texture cache kept
     std::string shaders;    // shaders: empty for this build's, "standalone", or an .nro
     bool vramcheck = false; // vramcheck: video memory checked between frames
+    bool gpucache = true;   // gpucache: the renderers' GPU memory in the GPU's L2 cache
+    bool l2flush = false;   // l2flush: each upload written out of the L2 cache at once
 
     bool operator==(const MelonDsTuning& other) const;
 };

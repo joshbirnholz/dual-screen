@@ -73,8 +73,9 @@ int SettingsScreen::row_count() const {
 
 std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
     if (!melonds_deko_) return {MelonRow::CpuClock, MelonRow::GpuAlone};
-    return {MelonRow::CpuClock, MelonRow::Jit,          MelonRow::FastMemory, MelonRow::Pipeline,
-            MelonRow::GpuAlone, MelonRow::TextureCache, MelonRow::Shaders,    MelonRow::VramCheck};
+    return {MelonRow::CpuClock,  MelonRow::Jit,          MelonRow::FastMemory, MelonRow::Pipeline,
+            MelonRow::GpuAlone,  MelonRow::TextureCache, MelonRow::Shaders,    MelonRow::VramCheck,
+            MelonRow::GpuCache,  MelonRow::L2Flush};
 }
 
 void SettingsScreen::open_melonds_page() {
@@ -96,6 +97,8 @@ std::string SettingsScreen::melon_label(MelonRow row) {
         case MelonRow::TextureCache: return "3D texture cache";
         case MelonRow::Shaders: return "GPU shaders";
         case MelonRow::VramCheck: return "Video memory check";
+        case MelonRow::GpuCache: return "GPU cache";
+        case MelonRow::L2Flush: return "Uploads out of the GPU cache";
     }
     return std::string();
 }
@@ -114,6 +117,8 @@ std::string SettingsScreen::melon_value(MelonRow row) const {
             if (tuning_.shaders == "standalone") return "melonDS app's";
             return "From " + path_basename(tuning_.shaders);
         case MelonRow::VramCheck: return on_off(tuning_.vramcheck);
+        case MelonRow::GpuCache: return tuning_.gpucache ? "On" : "Bypassed";
+        case MelonRow::L2Flush: return tuning_.l2flush ? "At once" : "In time";
     }
     return std::string();
 }
@@ -132,6 +137,8 @@ void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
             tuning_.shaders = tuning_.shaders.empty() ? "standalone" : std::string();
             break;
         case MelonRow::VramCheck: tuning_.vramcheck = !tuning_.vramcheck; break;
+        case MelonRow::GpuCache: tuning_.gpucache = !tuning_.gpucache; break;
+        case MelonRow::L2Flush: tuning_.l2flush = !tuning_.l2flush; break;
     }
     std::string error;
     if (write_melonds_tuning(tuning_, melonds_path_, &error)) {

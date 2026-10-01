@@ -62,6 +62,12 @@ void gfx_set_vram_check(bool check);
 using UploadObserver = void (*)(uint64_t destination, const uint8_t* data, uint32_t size,
                                 const uint8_t* staged);
 extern UploadObserver g_upload_observer;
+// gpucache=0: the renderers' GPU memory kept out of the GPU's L2 cache. Before
+// gfx_init(), which makes it.
+void gfx_set_gpu_cache(bool cached);
+// l2flush=1: each upload the renderers record followed by writing the GPU's L2
+// cache back to memory (upload_buffer.cpp).
+extern bool g_flush_l2_after_uploads;
 // shaders=<.nro>: the renderers' shaders read from that .nro's romfs -- the
 // standalone melonDS release's, compiled by its own build -- rather than this
 // build's. Before gfx_init()'s renderers load them; false, with why, when the

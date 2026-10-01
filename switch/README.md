@@ -324,7 +324,19 @@ gpu_alone=1    # the app's own drawing finished before each frame of the game
 texcache=0     # the 3D renderer's texture cache emptied before every frame
 shaders=standalone  # the GPU shaders from inside melonDS's own .nro
 vramcheck=1    # video memory checked twice a second; differences logged
+gpucache=0     # the renderers' GPU memory kept out of the GPU's L2 cache
+l2flush=1      # each upload written out of the GPU's L2 cache at once
 ```
+
+`gpucache=0` and `l2flush=1` are for the wrong sprites and textures
+vramcheck found: uploads recorded with the right bytes, which the GPU then
+holds the version before of. The GPU's L2 cache is shared with Mesa, which
+draws this app's own screens, and written data still waiting in it can be lost
+to an invalidation from there -- which melonDS's own app, the GPU's only user,
+never meets. `gpucache=0` keeps the renderers' memory out of that cache
+altogether (and may cost speed); `l2flush=1` keeps the cache but writes each
+upload out of it straight away. Both are in Settings > melonDS as "GPU cache"
+and "Uploads out of the GPU cache".
 
 `vramcheck=1` looks for memory written that the emulator never wrote. Between
 frames, with the GPU idle, it compares the DS's video memory, melonDS's copy

@@ -145,6 +145,8 @@ void apply_tuning() {
     bool pipeline = true;
     bool texture_cache = true;
     bool vram_check = false;
+    bool gpu_cache = true;
+    bool flush_l2 = false;
     std::string shaders;
     bool from_file = false;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
@@ -170,6 +172,10 @@ void apply_tuning() {
                 texture_cache = on;
             } else if (key == "vramcheck") {
                 vram_check = on;
+            } else if (key == "gpucache") {
+                gpu_cache = on;
+            } else if (key == "l2flush") {
+                flush_l2 = on;
             } else if (key == "shaders") {
                 shaders = text.substr(equals + 1);
             } else if (key == "cpu_mhz" || key == "gpu_alone") {
@@ -189,6 +195,9 @@ void apply_tuning() {
     gfx_set_pipelined(pipeline);
     gfx_set_texture_cache(texture_cache);
     gfx_set_vram_check(vram_check);
+    gfx_set_gpu_cache(gpu_cache);
+    g_flush_l2_after_uploads = flush_l2;
+    if (flush_l2) log_info("melonDS (deko3d): every upload is written out of the GPU's L2 cache");
     if (!texture_cache) log_info("melonDS (deko3d): the 3D texture cache is emptied every frame, as " +
                                  std::string(kTuningPath) + " says");
     // The shaders melonDS's own release was built with, from inside its .nro,
@@ -414,14 +423,15 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
         return false;
     }
 
+    // Before gfx_init(), which makes the GPU's memory as gpucache says, and
+    // NDS::Init(), which sets the JIT up from these.
+    apply_tuning();
+
     std::string error;
     if (!gfx_init(&error)) {
         log_error("melonDS (deko3d): " + error);
         return false;
     }
-
-    // Before NDS::Init(), which sets the JIT up from these, and after gfx_init().
-    apply_tuning();
     Config::DLDIEnable = 0;
     Config::DSiSDEnable = 0;
     Config::RandomizeMAC = 0;

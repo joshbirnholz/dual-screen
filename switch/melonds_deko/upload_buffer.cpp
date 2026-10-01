@@ -17,6 +17,7 @@
 
 namespace melonds_deko {
 UploadObserver g_upload_observer = nullptr;
+bool g_flush_l2_after_uploads = false;
 }  // namespace melonds_deko
 
 UploadBuffer::UploadBuffer()
@@ -58,6 +59,12 @@ void UploadBuffer::UploadAndCopyData(dk::CmdBuf cmdbuf, DkGpuAddr dst, u8* data,
         melonds_deko::g_upload_observer(dst, data, size, staged);
     }
     cmdbuf.copyBuffer(src, dst, size);
+    if (melonds_deko::g_flush_l2_after_uploads)
+    {
+        // Once the copy is done, out of the GPU's L2 cache and into memory,
+        // where nothing that invalidates the cache can lose it.
+        cmdbuf.barrier(DkBarrier_Full, DkInvalidateFlags_L2Cache);
+    }
 }
 
 void UploadBuffer::UploadAndCopyTexture(dk::CmdBuf cmdbuf, dk::Image& image,
@@ -67,4 +74,6 @@ void UploadBuffer::UploadAndCopyTexture(dk::CmdBuf cmdbuf, dk::Image& image,
     DkCopyBuf src {UploadData(cmdbuf, pitch*height, data)};
     dk::ImageView dst{image};
     cmdbuf.copyBufferToImage(src, dst, {0, 0, layer, width, height, 1});
+    if (melonds_deko::g_flush_l2_after_uploads)
+        cmdbuf.barrier(DkBarrier_Full, DkInvalidateFlags_L2Cache);
 }
