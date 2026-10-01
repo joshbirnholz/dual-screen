@@ -289,6 +289,7 @@ uint64_t g_checks_with_differences = 0;
 int g_reports = 0;
 bool g_set_up = false;
 
+
 struct Difference {
     uint32_t blocks = 0;
     uint32_t first = UINT32_MAX;
@@ -315,6 +316,39 @@ void report(const std::string& what, const Difference& difference, uint32_t bloc
     log_warn("melonDS (deko3d): vramcheck: " + what + " in " + std::to_string(difference.blocks) + " of " +
              std::to_string(blocks) + " blocks, first at 0x" + hex(difference.first, 5) + " (" +
              hex(difference.expected, 16) + " expected, " + hex(difference.found, 16) + " found)");
+}
+
+// What the renderer recorded for upload into each of its four copies of 2D
+// video memory, as it recorded it, from upload_buffer.cpp: the bytes it asked
+// to send, and which frame it last asked. Against the GPU's copy and the flat
+// one, a stale block on the GPU is either never asked for or asked for and
+// not there.
+struct Shadow {
+    DkGpuAddr base = 0;
+    uint32_t size = 0;
+    std::vector<uint8_t> bytes;
+    std::vector<uint64_t> asked_frame;  // per block
+};
+Shadow g_shadows[4];
+// Uploads whose staging memory did not hold the bytes just written to it.
+uint64_t g_staging_mismatches = 0;
+
+void observe_upload(uint64_t destination, const uint8_t* data, uint32_t size, const uint8_t* staged) {
+    for (Shadow& shadow : g_shadows) {
+        if (shadow.size == 0 || destination < shadow.base || destination + size > shadow.base + shadow.size) continue;
+        const uint32_t offset = static_cast<uint32_t>(destination - shadow.base);
+        std::memcpy(shadow.bytes.data() + offset, data, size);
+        for (uint32_t block = offset / kBlock; block <= (offset + size - 1) / kBlock; ++block) {
+            shadow.asked_frame[block] = g_frames;
+        }
+        if (std::memcmp(staged, data, size) != 0) {
+            if (g_staging_mismatches++ < 5) {
+                log_warn("melonDS (deko3d): vramcheck: an upload's staging memory did not hold the bytes just "
+                         "written to it (" + std::to_string(size) + " bytes for offset 0x" + hex(offset, 5) + ")");
+            }
+        }
+        return;
+    }
 }
 
 // The flat copy against the DS's own video memory, wherever the dirty
@@ -390,6 +424,19 @@ struct Area {
 };
 
 void init() {
+    auto* renderer = static_cast<GPU2D::DekoRenderer*>(GPU::GPU2D_Renderer.get());
+    const uint32_t sizes[4] = {512 * 1024, 128 * 1024, 256 * 1024, 128 * 1024};
+    const int textures[4] = {GPU2D::DekoRenderer::textureVRAM_ABG, GPU2D::DekoRenderer::textureVRAM_BBG,
+                             GPU2D::DekoRenderer::textureVRAM_AOBJ, GPU2D::DekoRenderer::textureVRAM_BOBJ};
+    for (int i = 0; i < 4; ++i) {
+        Shadow& shadow = g_shadows[i];
+        shadow.base = renderer != nullptr ? Gfx::TextureHeap->GpuAddr(renderer->VRAMTextureMemory[textures[i]]) : 0;
+        shadow.size = renderer != nullptr ? sizes[i] : 0;
+        shadow.bytes.assign(shadow.size, 0);
+        shadow.asked_frame.assign(shadow.size / kBlock, 0);
+    }
+    g_staging_mismatches = 0;
+    g_upload_observer = observe_upload;
     constexpr uint32_t kReadback = 1024 * 1024;  // ABG 512K, BBG 128K, AOBJ 256K, BOBJ 128K
     g_readback = dk::MemBlockMaker{Gfx::Device, kReadback}
                      .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
@@ -409,6 +456,7 @@ void init() {
 void deinit() {
     if (!g_set_up) return;
     g_set_up = false;
+    g_upload_observer = nullptr;
     g_cmd.destroy();
     g_cmd_memory.destroy();
     g_readback.destroy();
@@ -451,13 +499,38 @@ void run(dk::Queue& queue) {
 
     bool differs = false;
     offset = 0;
-    for (const Area& area : areas) {
+    for (std::size_t index = 0; index < 4; ++index) {
+        const Area& area = areas[index];
         std::vector<uint8_t> gpu(area.size);
         std::memcpy(gpu.data(), static_cast<const uint8_t*>(g_readback.getCpuAddr()) + offset, area.size);
         const Difference difference = gpu_against_flat(gpu.data(), area.flat, area.size);
         report(std::string("the GPU's copy of the ") + area.name + " differs from what melonDS uploaded",
                difference, area.size / kBlock);
         differs = differs || difference.blocks != 0;
+        if (difference.blocks != 0 && g_reports < kMostReports) {
+            // Which of the two it is, block by block: the newest bytes never
+            // asked for, or asked for and not on the GPU.
+            const Shadow& shadow = g_shadows[index];
+            uint32_t never_asked = 0;
+            uint32_t asked_not_there = 0;
+            uint64_t newest_ask = 0;
+            for (uint32_t at = 0; at < area.size; at += kBlock) {
+                if (std::memcmp(gpu.data() + at, area.flat + at, kBlock) == 0) continue;
+                if (std::memcmp(shadow.bytes.data() + at, area.flat + at, kBlock) == 0) {
+                    ++asked_not_there;
+                } else {
+                    ++never_asked;
+                }
+                newest_ask = std::max(newest_ask, shadow.asked_frame[at / kBlock]);
+            }
+            ++g_reports;
+            log_warn("melonDS (deko3d): vramcheck: of those, " + std::to_string(asked_not_there) +
+                     " were uploaded with these bytes and are not on the GPU, and " + std::to_string(never_asked) +
+                     " were never uploaded with them; the newest upload to any of them was " +
+                     (newest_ask == 0 ? std::string("never")
+                                      : std::to_string(g_frames - newest_ask) + " frames ago") +
+                     "; staging memory mismatches so far: " + std::to_string(g_staging_mismatches));
+        }
         offset += area.size;
     }
 

@@ -56,6 +56,12 @@ void gfx_set_texture_cache(bool keep);
 // vramcheck=1: between frames, the video memory the renderers draw from is
 // checked against the DS's, and any difference logged.
 void gfx_set_vram_check(bool check);
+// Told of each buffer upload a renderer records (upload_buffer.cpp): where on
+// the GPU it goes, the bytes it was asked to send, and the bytes in the
+// staging memory the GPU will copy them from. For vramcheck; none otherwise.
+using UploadObserver = void (*)(uint64_t destination, const uint8_t* data, uint32_t size,
+                                const uint8_t* staged);
+extern UploadObserver g_upload_observer;
 // shaders=<.nro>: the renderers' shaders read from that .nro's romfs -- the
 // standalone melonDS release's, compiled by its own build -- rather than this
 // build's. Before gfx_init()'s renderers load them; false, with why, when the

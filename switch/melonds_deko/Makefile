@@ -76,7 +76,9 @@ CFLAGS   := $(OPTIMISE) -std=gnu11 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
 
 # RSDuck's src/CMakeLists.txt for a Switch build: the core, the deko3d
 # renderers, the ARM64 JIT -- and from the frontend, only the pieces the
-# renderers are built on and the microphone's recorded blow.
+# renderers are built on and the microphone's recorded blow. Its
+# UploadBuffer.cpp is upload_buffer.cpp here: the same, with a hook for
+# vramcheck.
 CORE_SOURCES := \
     ARCodeFile.cpp AREngine.cpp ARM.cpp ARMInterpreter.cpp ARMInterpreter_ALU.cpp \
     ARMInterpreter_Branch.cpp ARMInterpreter_LoadStore.cpp Config.cpp CP15.cpp CRC32.cpp \
@@ -90,14 +92,14 @@ CORE_SOURCES := \
     dolphin/Arm64Emitter.cpp dolphin/MathUtil.cpp \
     ARMJIT_A64/ARMJIT_Compiler.cpp ARMJIT_A64/ARMJIT_ALU.cpp ARMJIT_A64/ARMJIT_LoadStore.cpp \
     ARMJIT_A64/ARMJIT_Branch.cpp ARMJIT_A64/ARMJIT_Linkage.S \
-    frontend/Util_Audio.cpp frontend/switch/GpuMemHeap.cpp frontend/switch/UploadBuffer.cpp
+    frontend/Util_Audio.cpp frontend/switch/GpuMemHeap.cpp
 
 # The DSi's DSP, which melonDS links as the teakra library.
 TEAKRA_SOURCES := $(addprefix teakra/src/,ahbm.cpp apbp.cpp btdmp.cpp disassembler.cpp dma.cpp \
     timer.cpp memory_interface.cpp mmio.cpp parser.cpp processor.cpp teakra.cpp \
     test_generator.cpp)
 
-ADAPTER_SOURCES := gfx.cpp platform.cpp libretro.cpp
+ADAPTER_SOURCES := gfx.cpp platform.cpp libretro.cpp upload_buffer.cpp
 
 object_of = $(BUILD)/core/$(basename $(1)).o
 CORE_OBJECTS    := $(foreach source,$(CORE_SOURCES) $(TEAKRA_SOURCES),$(call object_of,$(source)))

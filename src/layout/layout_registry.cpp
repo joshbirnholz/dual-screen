@@ -28,9 +28,11 @@ constexpr float kFocusMargin = 8.0f / 378.0f;        // 0.021
 // Vertical: two 126 x 94 screens 18 px apart, 3 px clear of a 212-tall picture.
 constexpr float kVerticalGap = 18.0f / 94.0f;        // 0.19 of a screen's height
 constexpr float kVerticalMargin = 3.0f / 212.0f;     // 0.014
-// Horizontal Screens: the same 18 px between the same 126 px wide screens,
-// measured along the row instead.
-constexpr float kHorizontalGap = 18.0f / 126.0f;     // 0.143 of a screen's width
+// Horizontal Screens: as little apart as the focus layouts' screens, 12 px in
+// a picture 378 wide -- two equal screens filling it are 183 wide each. The
+// Vertical layout's 18 px against a 126-wide screen, which this had, read as
+// a wide gutter down the middle of the pair.
+constexpr float kHorizontalGap = 12.0f / 183.0f;     // 0.066 of a screen's width
 
 // Side-by-Side: two 154 x 204 screens 32 px apart, 4 px clear top and bottom.
 // The gap is measured against the same edge of the screen either way -- the one
