@@ -340,6 +340,19 @@ memory's byte arrays through wider pointers, which a newer GCC at `-O3` may
 compile into reads of stale values. A core built before this is rebuilt
 automatically the next time `make` runs.
 
+Two builds narrow down wrong textures further, since none of the settings
+above clear them and nothing in how Dualscreen drives the renderer differs
+from melonDS's own app:
+
+- `make -C melonds_deko standalone` builds melonDS's own Switch app from the
+  same checkout, with today's devkitPro, as `cores/melonDS-today.nro`. The
+  release that draws correctly was built years ago with an older compiler and
+  an older deko3d. If this build draws the same wrong textures, the toolchain
+  is the cause, not Dualscreen.
+- `make OPTIMISE=-O1` builds the core, and Dualscreen with it, with fewer
+  compiler optimisations. If the textures come out right, today's compiler at
+  `-O3` is what breaks them. A plain `make` afterwards puts `-O3` back.
+
 Every line is optional. The game log says what is in use when a game starts.
 
 Cartridge saves go where libretro's melonDS puts them,

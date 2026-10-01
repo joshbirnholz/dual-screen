@@ -65,7 +65,12 @@ INCLUDE := -I$(SRC) -I$(SRC)/teakra/include -I$(DEVKITPRO)/libnx/include \
 # to compile into something that reads stale or reordered values. melonDS's
 # own Switch release was built years ago with an older GCC that happened not
 # to; this build uses today's.
-OPTIMISE := -O3 -fno-strict-aliasing
+#
+# Overridable, for finding out whether today's compiler is what draws the
+# wrong textures: make OPTIMISE=-O1 in the switch directory, which passes it
+# down to this one. The flags stamp below rebuilds the core when it changes,
+# and again when a plain make goes back to the default.
+OPTIMISE ?= -O3 -fno-strict-aliasing
 CXXFLAGS := $(OPTIMISE) -std=gnu++17 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
 CFLAGS   := $(OPTIMISE) -std=gnu11 $(ARCH) $(DEFINES) $(INCLUDE) -MMD -MP
 
@@ -103,7 +108,7 @@ ARCHIVE := $(OUT)/melonds_deko_libnx.a
 ROMFS   := $(OUT)/melonds_deko_romfs
 SHADERS_STAMP := $(BUILD)/shaders.stamp
 
-.PHONY: all clean
+.PHONY: all clean standalone
 all: $(ARCHIVE) $(SHADERS_STAMP)
 
 # The flags every object was compiled with, rewritten only when they change:
@@ -156,5 +161,32 @@ $(SHADERS_STAMP): compile_shaders.cmake $(wildcard $(SRC)/shaders/*.glsl) \
 
 clean:
 	@rm -rf $(BUILD) $(ARCHIVE) $(ROMFS)
+
+# melonDS's own Switch app, built from this same checkout with this same
+# devkitPro, the way its CMake build makes it:
+#
+#   make -C melonds_deko standalone
+#
+# and copy ../cores/melonDS-today.nro to the SD card beside the melonDS.nro
+# already there. The release that runs cleanly was built years ago, with an
+# older compiler and an older deko3d; if this one draws the same wrong
+# textures as Dualscreen does, those are the difference, and nothing in
+# Dualscreen is. Link-time optimisation is left off, as this core has it --
+# its CMake runs the host's gcc-ar for it, which cannot read these objects --
+# and two headers are included up front that newer compilers no longer bring
+# in on their own: <utility> for teakra, <unordered_map> for the app's ROM
+# database.
+STANDALONE_BUILD := $(BUILD)/standalone
+standalone:
+	@$(CMAKE) -S $(MELONDS) -B $(STANDALONE_BUILD) \
+	    -DCMAKE_TOOLCHAIN_FILE=$(abspath $(MELONDS))/cmake/Toolchain-cross-Switch.cmake \
+	    -DCMAKE_BUILD_TYPE=Release -DBUILD_QT_SDL=OFF -DENABLE_OGLRENDERER=OFF -DENABLE_LTO=OFF \
+	    '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -include utility -include unordered_map' \
+	    -DELF2NRO=$(DEVKITPRO)/tools/bin/elf2nro -DNACPTOOL=$(DEVKITPRO)/tools/bin/nacptool \
+	    -DUAM=$(UAM)
+	@$(MAKE) -C $(STANDALONE_BUILD)
+	@mkdir -p $(OUT)
+	@cp $(STANDALONE_BUILD)/melonDS.nro $(OUT)/melonDS-today.nro
+	@echo made $(OUT)/melonDS-today.nro
 
 -include $(CORE_OBJECTS:.o=.d) $(ADAPTER_OBJECTS:.o=.d)
