@@ -1,6 +1,7 @@
 #include "ui/settings_screen.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "core/libretro_core.hpp"
@@ -55,7 +56,100 @@ void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus
     settings_ = settings;
     cores_ = cores;
     scroll_ = 0.0f;
+    page_ = Page::Main;
     refresh_bios();
+}
+
+void SettingsScreen::set_melonds_page(bool deko, std::string path) {
+    melonds_available_ = true;
+    melonds_deko_ = deko;
+    melonds_path_ = std::move(path);
+}
+
+int SettingsScreen::row_count() const {
+    if (page_ == Page::MelonDs) return static_cast<int>(melon_rows().size());
+    return kRowCount + (melonds_available_ ? 1 : 0);
+}
+
+std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
+    if (!melonds_deko_) return {MelonRow::CpuClock, MelonRow::GpuAlone};
+    return {MelonRow::CpuClock, MelonRow::Jit,          MelonRow::FastMemory, MelonRow::Pipeline,
+            MelonRow::GpuAlone, MelonRow::TextureCache, MelonRow::Shaders,    MelonRow::VramCheck};
+}
+
+void SettingsScreen::open_melonds_page() {
+    // Read afresh each time, so a file edited by hand since is what shows.
+    tuning_ = read_melonds_tuning(melonds_path_);
+    melonds_error_.clear();
+    page_ = Page::MelonDs;
+    focus_ = 0;
+    scroll_ = 0.0f;
+}
+
+std::string SettingsScreen::melon_label(MelonRow row) {
+    switch (row) {
+        case MelonRow::CpuClock: return "CPU clock while playing";
+        case MelonRow::Jit: return "JIT recompiler";
+        case MelonRow::FastMemory: return "JIT fast memory";
+        case MelonRow::Pipeline: return "Each frame shown";
+        case MelonRow::GpuAlone: return "App drawing finished first";
+        case MelonRow::TextureCache: return "3D texture cache";
+        case MelonRow::Shaders: return "GPU shaders";
+        case MelonRow::VramCheck: return "Video memory check";
+    }
+    return std::string();
+}
+
+std::string SettingsScreen::melon_value(MelonRow row) const {
+    const auto on_off = [](bool on) { return std::string(on ? "On" : "Off"); };
+    switch (row) {
+        case MelonRow::CpuClock: return std::to_string(tuning_.cpu_mhz) + " MHz";
+        case MelonRow::Jit: return on_off(tuning_.jit);
+        case MelonRow::FastMemory: return on_off(tuning_.fastmem);
+        case MelonRow::Pipeline: return tuning_.pipeline ? "A frame later" : "As soon as drawn";
+        case MelonRow::GpuAlone: return on_off(tuning_.gpu_alone);
+        case MelonRow::TextureCache: return tuning_.texcache ? "On" : "Emptied every frame";
+        case MelonRow::Shaders:
+            if (tuning_.shaders.empty()) return "This build's";
+            if (tuning_.shaders == "standalone") return "melonDS app's";
+            return "From " + path_basename(tuning_.shaders);
+        case MelonRow::VramCheck: return on_off(tuning_.vramcheck);
+    }
+    return std::string();
+}
+
+void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
+    switch (row) {
+        case MelonRow::CpuClock: tuning_.cpu_mhz = next_melonds_cpu_mhz(tuning_.cpu_mhz, direction); break;
+        case MelonRow::Jit: tuning_.jit = !tuning_.jit; break;
+        case MelonRow::FastMemory: tuning_.fastmem = !tuning_.fastmem; break;
+        case MelonRow::Pipeline: tuning_.pipeline = !tuning_.pipeline; break;
+        case MelonRow::GpuAlone: tuning_.gpu_alone = !tuning_.gpu_alone; break;
+        case MelonRow::TextureCache: tuning_.texcache = !tuning_.texcache; break;
+        case MelonRow::Shaders:
+            // This build's and the app's; one named by hand goes back to
+            // this build's, and is written in by hand again if wanted.
+            tuning_.shaders = tuning_.shaders.empty() ? "standalone" : std::string();
+            break;
+        case MelonRow::VramCheck: tuning_.vramcheck = !tuning_.vramcheck; break;
+    }
+    std::string error;
+    if (write_melonds_tuning(tuning_, melonds_path_, &error)) {
+        melonds_error_.clear();
+    } else {
+        melonds_error_ = "Could not save " + melonds_path_ + (error.empty() ? "" : ": " + error);
+    }
+}
+
+std::string SettingsScreen::footnote() const {
+    if (page_ != Page::MelonDs) return kFootnote;
+    std::string note = "These take effect the next time a game starts. They are kept in " + melonds_path_ +
+                       ", which can be edited by hand as well.";
+    if (melonds_deko_) {
+        note += " Apart from the CPU clock, they are for comparing a game here with melonDS's own app: "
+                "the defaults are the fastest.";
+    }
+    return note;
 }
 
 void SettingsScreen::refresh_bios() { bios_ = check_bios_files(settings_.system_dir); }
@@ -80,7 +174,8 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     // Short of the panel's right edge by the scroll bar, which runs beside
     // the rows rather than over them.
     const float row_width = geometry.panel.w - scroll_bar_width(geometry.scale) - line * 0.6f;
-    for (int index = 0; index < kRowCount; ++index) {
+    const int rows = row_count();
+    for (int index = 0; index < rows; ++index) {
         geometry.rows.push_back(PixelRect{
             geometry.panel.x,
             rows_top + index * (row_height + gap),
@@ -89,10 +184,25 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
         });
     }
     geometry.view_height = geometry.panel.y + geometry.panel.h - content_top;
+    const float rows_bottom = rows_top + rows * (row_height + gap);
+    const float footnote_scale = geometry.scale * 0.85f;
+    const std::string note = footnote();
+    const float footnote_height =
+        TextRenderer::wrapped_line_step(footnote_scale) *
+        static_cast<float>(TextRenderer::wrap(note, geometry.panel.w, footnote_scale).size());
+
+    if (page_ == Page::MelonDs) {
+        // Its rows and what they are, and nothing else.
+        geometry.footnote_top = rows_bottom + line * 0.4f;
+        const float error_height = melonds_error_.empty() ? 0.0f : line * 1.4f;
+        geometry.content_height =
+            geometry.footnote_top + footnote_height + error_height + line * 0.4f - (content_top - scroll_);
+        return geometry;
+    }
 
     // The cores get their own block: a heading plus one line per console, so
     // the space it takes follows the list rather than a remembered count.
-    const float core_top = rows_top + kRowCount * (row_height + gap) + line;
+    const float core_top = rows_bottom + line;
     const float core_height = line * (1.6f + 1.1f * static_cast<float>(cores_.size()));
     geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
 
@@ -102,10 +212,6 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     const float bios_height = line * (1.6f + 1.1f * static_cast<float>(bios_.size()));
     geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w, bios_height};
     geometry.footnote_top = bios_top + bios_height + line * 0.4f;
-    const float footnote_scale = geometry.scale * 0.85f;
-    const float footnote_height =
-        TextRenderer::wrapped_line_step(footnote_scale) *
-        static_cast<float>(TextRenderer::wrap(kFootnote, geometry.panel.w, footnote_scale).size());
     // Measured from the top of the content rather than from the panel, so it
     // is the height of the thing being scrolled and not of the window onto it.
     geometry.content_height =
@@ -114,6 +220,18 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
 }
 
 void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
+    if (page_ == Page::MelonDs) {
+        const std::vector<MelonRow> rows = melon_rows();
+        if (focus_ >= 0 && focus_ < static_cast<int>(rows.size())) {
+            adjust_melonds(rows[static_cast<std::size_t>(focus_)], direction);
+        }
+        return;
+    }
+    if (melonds_available_ && focus_ == melonds_row()) {
+        // A way in, not a value: forwards opens it, back does nothing.
+        if (direction > 0) open_melonds_page();
+        return;
+    }
     switch (static_cast<Row>(focus_)) {
 #ifndef __SWITCH__
         case Row::PadGlyphs: {
@@ -157,8 +275,8 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
 }
 
 void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
-    const std::size_t index = static_cast<std::size_t>(
-        std::max(0, std::min(focus_, kRowCount - 1)));
+    const int rows = row_count();
+    const std::size_t index = static_cast<std::size_t>(std::max(0, std::min(focus_, rows - 1)));
     if (index >= geometry.rows.size()) {
         return;
     }
@@ -169,7 +287,7 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
         scroll_ = 0.0f;
         return;
     }
-    if (focus_ == kRowCount - 1) {
+    if (focus_ == rows - 1) {
         scroll_ = geometry.max_scroll();
         return;
     }
@@ -198,14 +316,22 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
-            case UiAction::Down: focus_ = std::min(kRowCount - 1, focus_ + 1); break;
+            case UiAction::Down: focus_ = std::min(row_count() - 1, focus_ + 1); break;
             case UiAction::Left: adjust(-1, result); break;
             case UiAction::Right: adjust(1, result); break;
             case UiAction::Confirm:
                 adjust(1, result);
                 break;
             case UiAction::Cancel:
-            case UiAction::ToggleMenu: result.close_requested = true; break;
+            case UiAction::ToggleMenu:
+                if (page_ == Page::MelonDs) {
+                    // Back to Settings, on the row it was opened from.
+                    page_ = Page::Main;
+                    focus_ = melonds_row();
+                } else {
+                    result.close_requested = true;
+                }
+                break;
             // A menu's face buttons. Nothing here answers them, and a bare
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
@@ -279,7 +405,7 @@ void SettingsScreen::render(QuadRenderer& quads,
     // Over the paused game, dimmed, when opened from its menu; on the app's
     // own background otherwise, since there is nothing behind it to dim.
     draw_page_background(quads, output_width, output_height, over_game_);
-    draw_page_header(quads, text, frame, "Settings");
+    draw_page_header(quads, text, frame, page_ == Page::MelonDs ? "Settings \xC2\xB7 melonDS" : "Settings");
 
     // Everything below the heading scrolls, so everything below the heading is
     // clipped to the room there is for it. Without this a row pushed past the
@@ -288,7 +414,11 @@ void SettingsScreen::render(QuadRenderer& quads,
     quads.set_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
                              geometry.panel.y + geometry.panel.h - view_top});
 
-    const std::string rows[kRowCount][2] = {
+    std::vector<std::array<std::string, 2>> rows;
+    if (page_ == Page::MelonDs) {
+        for (const MelonRow row : melon_rows()) rows.push_back({melon_label(row), melon_value(row)});
+    }
+    const std::string main_rows[kRowCount][2] = {
 #ifndef __SWITCH__
         {"Controller icons", to_string(settings_.pad_glyphs)},
         // Drawn as the two buttons themselves, below.
@@ -304,8 +434,12 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"This device alone is a Wii U's",
          to_string(settings_.wii_u_screen_alone)},
     };
+    if (page_ == Page::Main) {
+        for (const auto& row : main_rows) rows.push_back({row[0], row[1]});
+        if (melonds_available_) rows.push_back({"melonDS", ""});
+    }
 
-    for (int index = 0; index < kRowCount; ++index) {
+    for (int index = 0; index < static_cast<int>(rows.size()); ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = (index == focus_);
         draw_menu_row(quads, row, focused, scale);
@@ -317,7 +451,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float baseline = page_row_text_y(row, scale);
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
 #ifndef __SWITCH__
-        if (index == static_cast<int>(Row::ConfirmButtonRow)) {
+        if (page_ == Page::Main && index == static_cast<int>(Row::ConfirmButtonRow)) {
             // The yes button, then the no one, as the prompts everywhere else
             // draw them -- so the row reads (A)/(B) or (B)/(A) in whichever
             // pad's symbols are chosen above, rather than a name for a
@@ -353,6 +487,20 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
     }
 
+    if (page_ == Page::MelonDs) {
+        text.draw_wrapped(quads, footnote(), geometry.panel.x, geometry.footnote_top, geometry.panel.w,
+                          scale * 0.85f, theme.text_dim);
+        if (!melonds_error_.empty()) {
+            const float note_height =
+                TextRenderer::wrapped_line_step(scale * 0.85f) *
+                static_cast<float>(TextRenderer::wrap(footnote(), geometry.panel.w, scale * 0.85f).size());
+            text.draw(quads, TextRenderer::elide_right(melonds_error_, geometry.panel.w, scale * 0.85f),
+                      geometry.panel.x, geometry.footnote_top + note_height + line * 0.4f, scale * 0.85f,
+                      theme.danger);
+        }
+    }
+
+    if (page_ == Page::Main) {
     // One line per console, saying where its emulator was found -- which for
     // most of them is a core this app loads and for a Wii U is a program it
     // starts. A machine set up for one and not another says so before a game is
@@ -391,6 +539,7 @@ void SettingsScreen::render(QuadRenderer& quads,
 
     text.draw_wrapped(quads, kFootnote, geometry.panel.x, geometry.footnote_top, geometry.panel.w,
                       scale * 0.85f, theme.text_dim);
+    }
 
     // Everything above scrolled and was clipped to the panel. The prompts
     // below it are fixed to the window, so the clip comes off here.

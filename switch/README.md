@@ -310,7 +310,10 @@ Two things it needs that libretro's melonDS does not:
   one) instead. If there is not enough, the game says so rather than starting.
 
 A few things about how it runs can be changed, for comparing a game here with
-melonDS's own Switch app, in `/switch/dualscreen/melonds.ini`:
+melonDS's own Switch app, in **Settings > melonDS**. Each takes effect the next
+time a game starts. They are kept in `/switch/dualscreen/melonds.ini`, which
+can be edited by hand as well -- Settings keeps any comments and lines of its
+own -- and has a line for each one not at its default:
 
 ```ini
 cpu_mhz=1020   # the CPU clock while playing; 1785 unless this says otherwise

@@ -196,6 +196,8 @@ private:
     // not a core that has stopped presenting.
     int quiet_frames_ = 0;
     uint64_t last_presented_serial_ = 0;
+    // gpu_alone in melonds.ini, read as each game opens: Switch only.
+    bool gpu_alone_ = false;
     // Says what the framebuffer was cut into, which is the first thing worth
     // knowing when a core turns out not to be arranged the way we asked.
     void log_split();

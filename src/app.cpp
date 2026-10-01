@@ -22,6 +22,7 @@
 #include "input/motion.hpp"
 #include "input/motion_compare.hpp"
 #include "config/game_config.hpp"
+#include "config/melonds_tuning.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
@@ -3935,6 +3936,20 @@ int App::run(const AppOptions& options) {
     impl.picker.reset(new LayoutPicker(impl.registry));
     impl.apply_system();
     impl.settings_screen.reset(new SettingsScreen(impl.paths));
+    // Settings > melonDS: how the Switch's melonDS runs, in its melonds.ini.
+    // Elsewhere only when DUALSCREEN_MELONDS_INI names a file to show it
+    // with, for working on the page away from a Switch.
+#ifdef __SWITCH__
+#ifdef DS_DEKO_CORE
+    impl.settings_screen->set_melonds_page(true, kMelonDsTuningPath);
+#else
+    impl.settings_screen->set_melonds_page(false, kMelonDsTuningPath);
+#endif
+#else
+    if (const char* ini = std::getenv("DUALSCREEN_MELONDS_INI"); ini != nullptr && *ini != '\0') {
+        impl.settings_screen->set_melonds_page(true, ini);
+    }
+#endif
     impl.active_layout_id = kNewGameLayoutId;
     // A starting guess for the settings screen. Loading a game replaces it with
     // the core for whichever console that game is for.

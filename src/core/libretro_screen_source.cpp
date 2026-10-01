@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "config/melonds_tuning.hpp"
 #include "config/paths.hpp"
 #include "core/gl_call_trace.hpp"
 #include "render/gl_loader.hpp"
@@ -23,22 +24,15 @@ namespace ds {
 namespace {
 
 #ifdef __SWITCH__
-// gpu_alone=1 in /switch/dualscreen/melonds.ini: the GPU finishes drawing this
-// app's own screens before each frame of the game is run, so the emulator's
-// GPU work never shares the GPU with the app's. For finding out whether the
-// two running side by side is what spoils a DS game's graphics on the Switch,
-// where melonDS's own app -- which draws almost nothing of its own -- shows
-// the same game cleanly. Costs the time the app's drawing takes, every frame.
+// gpu_alone=1 in /switch/dualscreen/melonds.ini (Settings > melonDS > App
+// drawing finished first): the GPU finishes drawing this app's own screens
+// before each frame of the game is run, so the emulator's GPU work never
+// shares the GPU with the app's. For finding out whether the two running side
+// by side is what spoils a DS game's graphics on the Switch, where melonDS's
+// own app -- which draws almost nothing of its own -- shows the same game
+// cleanly. Costs the time the app's drawing takes, every frame.
 bool gpu_alone_asked() {
-    std::FILE* file = std::fopen("/switch/dualscreen/melonds.ini", "r");
-    if (file == nullptr) return false;
-    bool asked = false;
-    char line[128];
-    while (std::fgets(line, sizeof(line), file) != nullptr) {
-        unsigned value = 0;
-        if (std::sscanf(line, " gpu_alone = %u", &value) == 1) asked = value != 0;
-    }
-    std::fclose(file);
+    const bool asked = read_melonds_tuning().gpu_alone;
     if (asked) log_info("the GPU finishes this app's drawing before each frame of the game");
     return asked;
 }
@@ -197,6 +191,10 @@ void LibretroCoreScreenSource::set_audio_callback(AudioCallback callback) {
 }
 
 bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::string* error) {
+#ifdef __SWITCH__
+    // Each game, so a change in Settings is taken up by the next one.
+    gpu_alone_ = gpu_alone_asked();
+#endif
     warnings_.clear();
 
     system_ = config.system;
@@ -373,8 +371,7 @@ bool LibretroCoreScreenSource::advance_frame(std::string* error) {
         return false;
     }
 #ifdef __SWITCH__
-    static const bool gpu_alone = gpu_alone_asked();
-    if (gpu_alone && gl::Finish != nullptr) gl::Finish();
+    if (gpu_alone_ && gl::Finish != nullptr) gl::Finish();
 #endif
     core_->run_frame();
     if (core_->video_frame().valid() && core_->video_frame().serial != last_presented_serial_) {

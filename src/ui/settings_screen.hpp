@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "config/melonds_tuning.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "input/input_manager.hpp"
@@ -50,6 +51,13 @@ public:
 
     void open(const Settings& settings, const std::vector<CoreStatus>& cores);
     void close() { open_ = false; }
+
+    // A melonDS row, opening a page of how the Switch's melonDS runs, kept in
+    // the melonds.ini at `path` -- see config/melonds_tuning.hpp. `deko` is
+    // whether the core is RSDuck's, which reads all of it; libretro's melonDS
+    // has only the CPU clock and the app's own drawing to set.
+    void set_melonds_page(bool deko, std::string path);
+    bool on_melonds_page() const { return page_ == Page::MelonDs; }
     bool is_open() const { return open_; }
 
     const Settings& settings() const { return settings_; }
@@ -119,6 +127,20 @@ private:
     void adjust(int direction, SettingsScreenResult& result);
     void refresh_bios();
 
+    // The melonDS page's rows, in order.
+    enum class MelonRow { CpuClock, Jit, FastMemory, Pipeline, GpuAlone, TextureCache, Shaders, VramCheck };
+    enum class Page { Main, MelonDs };
+    std::vector<MelonRow> melon_rows() const;
+    // Rows on the page showing: the main page's, and the melonDS row after
+    // them when there is one.
+    int row_count() const;
+    int melonds_row() const { return kRowCount; }
+    void open_melonds_page();
+    void adjust_melonds(MelonRow row, int direction);
+    static std::string melon_label(MelonRow row);
+    std::string melon_value(MelonRow row) const;
+    std::string footnote() const;
+
     AppPaths paths_;
     Settings settings_;
     std::vector<CoreStatus> cores_;
@@ -126,6 +148,13 @@ private:
     int focus_ = 0;
     bool open_ = false;
     bool over_game_ = false;
+
+    bool melonds_available_ = false;
+    bool melonds_deko_ = false;
+    std::string melonds_path_;
+    MelonDsTuning tuning_;
+    std::string melonds_error_;
+    Page page_ = Page::Main;
 
     // How far down the list has been pushed, in pixels. Pixels rather than
     // rows, because what is below the rows -- the cores, then the BIOS files

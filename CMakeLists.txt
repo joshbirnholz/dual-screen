@@ -108,6 +108,7 @@ add_library(dualscreen_core STATIC
     src/config/game_config.cpp
     src/config/paths.cpp
     src/config/settings.cpp
+    src/config/melonds_tuning.cpp
     src/config/sha1.cpp
     src/core/ds_rom_info.cpp
     src/forwarder/forwarder_icon.cpp

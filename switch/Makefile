@@ -131,7 +131,7 @@ BUILD_DEKO_CORE := $(if $(and $(filter $(DEKO_CORE_LIB),$(CORE_LIB)),$(wildcard 
 # above, and checked the same way: tests/run_switch_sources_test.cmake compares
 # the two with the desktop build's own, since nothing here can run this link.
 LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
-               game_config.cpp settings.cpp sha1.cpp \
+               game_config.cpp settings.cpp melonds_tuning.cpp sha1.cpp \
                ds_rom_info.cpp game_title.cpp save_store.cpp save_folder.cpp console_title_info.cpp \
                gl_call_trace.cpp hw_render_target.cpp \
                external_frame_link.cpp external_screen_source.cpp \
@@ -204,6 +204,11 @@ endif
 SOURCE_DIRS += forwarder $(SHARED)
 CPPFILES    += $(LOCAL_PLAY_CPPFILES) $(FORWARDER_CPPFILES)
 LOCAL_PLAY_DEFINES := -DDS_LOCAL_PLAY=1 -DDS_STATIC_LIBRETRO_CORE=1
+# Which DS core it is, for Settings > melonDS: RSDuck's reads every setting
+# there, libretro's only the two the app itself acts on.
+ifeq ($(CORE_IS_DEKO),1)
+LOCAL_PLAY_DEFINES += -DDS_DEKO_CORE=1
+endif
 LOCAL_PLAY_LIBS := $(CORE_LIB_PATH) $(CORE_EXTRA_LIBS)
 # melonDS's GL function pointers are declared in a libretro-common header
 # (glsym/switch/nx_glsym.h) without `extern`, so every C file that includes it
