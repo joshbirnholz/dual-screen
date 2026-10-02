@@ -329,22 +329,21 @@ l2flush=1      # each upload written out of the GPU's L2 cache at once
 settle=2       # after each upload: 1 a small copy, 2 what it wrote read back
 ```
 
-`settle` is the likeliest fix for the wrong sprites. With vramcheck recording
-a second copy straight after each upload -- of what the upload had just
-written -- every upload arrived; without it, some were lost. `settle=2` does
-that second copy on its own, with or without vramcheck; `settle=1` only a
-few bytes, which still makes the GPU's copy engine finish the upload first.
-In Settings > melonDS it is "After each upload".
+The wrong graphics -- patches of other pictures in sprites, text boxes and
+walls -- were not the renderers': it was the copy that takes each finished
+frame off the GPU for this app to show. Its memory was in the GPU's L2 cache,
+and the CPU reads memory, not the cache, so parts of a frame could still be
+in the cache when the CPU read it, or be thrown out of it unwritten by the
+cache invalidation each of the renderers' own submissions starts with. The
+CPU then had those parts from two frames before. The readback now bypasses
+the cache and is flushed before the CPU is told it is done. melonDS's own
+app puts its frames on the screen with the GPU and never reads one back, so
+never met it.
 
-`gpucache=0` and `l2flush=1` are for the wrong sprites and textures
-vramcheck found: uploads recorded with the right bytes, which the GPU then
-holds the version before of. The GPU's L2 cache is shared with Mesa, which
-draws this app's own screens, and written data still waiting in it can be lost
-to an invalidation from there -- which melonDS's own app, the GPU's only user,
-never meets. `gpucache=0` keeps the renderers' memory out of that cache
-altogether (and may cost speed); `l2flush=1` keeps the cache but writes each
-upload out of it straight away. Both are in Settings > melonDS as "GPU cache"
-and "Uploads out of the GPU cache".
+vramcheck's reports of sprite memory "uploaded and not on the GPU" came from
+the same mistake in its own readback: what it read was partly the check
+before's. `gpucache`, `l2flush` and `settle` were tried against those, and
+are left in for now.
 
 `vramcheck=1` looks for memory written that the emulator never wrote. Between
 frames, with the GPU idle, it compares the DS's video memory, melonDS's copy

@@ -490,8 +490,10 @@ void init() {
     // The four areas, then which upload ran last for each block.
     constexpr uint32_t kReadback = (kAreaBytes + kWitnessBytes + DK_MEMBLOCK_ALIGNMENT - 1) &
                                    ~(DK_MEMBLOCK_ALIGNMENT - 1);
+    // Written by the GPU for the CPU to read: kept out of the GPU's L2 cache,
+    // as the frame readback is (see gfx_init()).
     g_readback = dk::MemBlockMaker{Gfx::Device, kReadback}
-                     .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+                     .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuUncached)
                      .create();
     g_cmd_memory = dk::MemBlockMaker{Gfx::Device, DK_MEMBLOCK_ALIGNMENT}
                        .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
@@ -550,7 +552,7 @@ void run(dk::Queue& queue) {
         offset += area.size;
     }
     g_cmd.copyBuffer(Gfx::DataHeap->GpuAddr(g_witness), g_readback.getGpuAddr() + kAreaBytes, kWitnessBytes);
-    g_cmd.signalFence(g_done);
+    g_cmd.signalFence(g_done, true);  // flushed: the CPU reads what it copied
     queue.submitCommands(g_cmd.finishList());
     queue.flush();
     g_done.wait();
@@ -731,8 +733,17 @@ bool gfx_init(std::string* error) {
                             .create();
     g_copy_cmd = dk::CmdBufMaker{Gfx::Device}.create();
     g_copy_cmd.addMemory(g_copy_cmd_memory, 0, kCopyCmdSize);
+    // The CPU reads what the GPU copies here, so the GPU's writes go straight
+    // to memory rather than into its L2 cache. Cached, a frame's lines could
+    // still be in the cache when the CPU read them -- it reads memory, not the
+    // cache -- or be thrown out of it unwritten by the cache invalidation each
+    // of the renderers' submissions starts with, made while this queue's copy
+    // was still writing: either way the CPU got that part of the frame from
+    // two frames before, in patches. That was the game's graphics coming out
+    // with bits of other pictures in them. melonDS's own app never reads a
+    // frame back, so never met it.
     g_readback = dk::MemBlockMaker{Gfx::Device, align_up(kScreenBytes * 4, DK_MEMBLOCK_ALIGNMENT)}
-                     .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached)
+                     .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuUncached)
                      .create();
 
     g_next_slot = 0;
@@ -859,7 +870,8 @@ void gfx_read_screens(uint32_t* out) {
         g_copy_cmd.copyImageToBuffer(view, {0, 0, 0, kScreenWidth, kScreenHeight, 1}, destination);
     }
     g_copy_cmd.signalFence(renderer->FramebufferPresented[front]);
-    g_copy_cmd.signalFence(g_copied[slot]);
+    // Flushed, so that once it signals, what the copy wrote is in memory.
+    g_copy_cmd.signalFence(g_copied[slot], true);
     g_copy_queue.submitCommands(g_copy_cmd.finishList());
     g_copy_queue.flush();
 
