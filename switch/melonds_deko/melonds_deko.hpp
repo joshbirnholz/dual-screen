@@ -87,6 +87,12 @@ extern uint32_t g_settle_scratch_size;
 // gpucache=0: the renderers' GPU memory kept out of the GPU's L2 cache. Before
 // gfx_init(), which makes it.
 void gfx_set_gpu_cache(bool cached);
+// renderer=soft: melonDS's own software renderers draw both the 2D and the 3D,
+// on the CPU, in place of the deko3d ones -- for finding out whether wrong
+// graphics come from drawing on the GPU at all. gfx_read_screens() then takes
+// the frame from melonDS's framebuffers. Before the game loads.
+void gfx_set_software(bool software);
+bool gfx_software();
 // l2flush=1: each upload the renderers record followed by writing the GPU's L2
 // cache back to memory (upload_buffer.cpp).
 extern bool g_flush_l2_after_uploads;

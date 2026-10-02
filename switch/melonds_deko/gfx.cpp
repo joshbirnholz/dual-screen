@@ -218,6 +218,7 @@ bool g_pipelined = true;
 bool g_keep_texture_cache = true;
 bool g_vram_check = false;
 bool g_gpu_cache = true;
+bool g_software = false;
 bool g_ready = false;
 // settle's scratch: big enough to read back the largest of the 2D renderer's
 // video memory copies whole.
@@ -784,6 +785,10 @@ void gfx_set_vram_check(bool check) { g_vram_check = check; }
 
 void gfx_set_gpu_cache(bool cached) { g_gpu_cache = cached; }
 
+void gfx_set_software(bool software) { g_software = software; }
+
+bool gfx_software() { return g_software; }
+
 bool gfx_use_shaders_from(const std::string& nro_path, std::string* why) {
     g_shader_romfs.clear();
     const auto fail = [&](const std::string& reason) {
@@ -839,13 +844,28 @@ void gfx_wait_for_gpu() {
     // texcache=0: every texture decoded and uploaded afresh, each frame. Slow,
     // and only for finding out whether the cache is what goes wrong -- the GPU
     // is idle, so nothing is still reading what this frees.
-    if (!g_keep_texture_cache && GPU3D::CurrentRenderer) GPU3D::CurrentRenderer->Reset();
-    if (g_vram_check) vramcheck::run(g_copy_queue);
+    if (!g_keep_texture_cache && !g_software && GPU3D::CurrentRenderer) GPU3D::CurrentRenderer->Reset();
+    if (g_vram_check && !g_software) vramcheck::run(g_copy_queue);
     g_times.idle_ticks += idle;
     g_times.worst_idle_ticks = std::max(g_times.worst_idle_ticks, idle);
 }
 
 void gfx_read_screens(uint32_t* out) {
+    if (g_software) {
+        // Drawn on the CPU, into the framebuffers melonDS has just swapped:
+        // the upper screen then the lower, RGBA as the GPU's would be.
+        const uint32_t* const screens[2] = {GPU::Framebuffer[GPU::FrontBuffer][0],
+                                            GPU::Framebuffer[GPU::FrontBuffer][1]};
+        for (uint32_t screen = 0; screen < 2; ++screen) {
+            const uint32_t* in = screens[screen];
+            uint32_t* to = out + screen * kScreenWidth * kScreenHeight;
+            for (uint32_t i = 0; i < kScreenWidth * kScreenHeight; ++i) {
+                const uint32_t rgba = in[i];
+                to[i] = ((rgba & 0xFFu) << 16) | (rgba & 0xFF00u) | ((rgba >> 16) & 0xFFu);
+            }
+        }
+        return;
+    }
     auto* renderer = static_cast<GPU2D::DekoRenderer*>(GPU::GPU2D_Renderer.get());
     const int front = GPU::FrontBuffer;
     const int slot = g_next_slot;

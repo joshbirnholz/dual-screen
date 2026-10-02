@@ -136,7 +136,15 @@ void test_page(const std::string& sandbox) {
 
     // Every row reachable, and no further.
     press(screen, UiAction::Down, 20);
-    CHECK_EQ(screen.focus(), 10);
+    CHECK_EQ(screen.focus(), 11);
+    // Last, who draws: the software renderers written as renderer=soft.
+    press(screen, UiAction::Confirm);
+    CHECK(read_melonds_tuning(path).software);
+    CHECK(read_text(path).find("renderer=soft\n") != std::string::npos);
+    press(screen, UiAction::Confirm);
+    CHECK(!read_melonds_tuning(path).software);
+    CHECK(read_text(path).find("renderer") == std::string::npos);
+    press(screen, UiAction::Up);
     // After each upload: three choices, round in either direction.
     press(screen, UiAction::Confirm);
     CHECK_EQ(read_melonds_tuning(path).settle, 1);

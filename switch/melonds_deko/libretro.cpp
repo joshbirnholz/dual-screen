@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,9 @@
 
 #include "Config.h"
 #include "GPU.h"
+#include "GPU2D_Soft.h"
+#include "GPU3D.h"
+#include "GPU3D_Soft.h"
 #include "NDS.h"
 #include "Platform.h"
 #include "SPU.h"
@@ -149,6 +153,7 @@ void apply_tuning() {
     bool gpu_cache = true;
     bool flush_l2 = false;
     int settle = 0;
+    bool software = false;
     std::string shaders;
     bool from_file = false;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
@@ -178,6 +183,8 @@ void apply_tuning() {
                 gpu_cache = on;
             } else if (key == "l2flush") {
                 flush_l2 = on;
+            } else if (key == "renderer") {
+                software = text.substr(equals + 1) == "soft";
             } else if (key == "settle") {
                 settle = std::atoi(text.substr(equals + 1).c_str());
                 if (settle < 0 || settle > 2) settle = 0;
@@ -203,6 +210,8 @@ void apply_tuning() {
     gfx_set_gpu_cache(gpu_cache);
     g_flush_l2_after_uploads = flush_l2;
     g_upload_settle = settle;
+    gfx_set_software(software);
+    if (software) log_info("melonDS (deko3d): drawing on the CPU with melonDS's software renderers");
     if (flush_l2) log_info("melonDS (deko3d): every upload is written out of the GPU's L2 cache");
     if (!texture_cache) log_info("melonDS (deko3d): the 3D texture cache is emptied every frame, as " +
                                  std::string(kTuningPath) + " says");
@@ -449,6 +458,15 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
     }
     GPU::InitRenderer(0);
     GPU::RenderSettings settings{true, 1, false};
+    if (gfx_software()) {
+        // renderer=soft: the deko3d renderers NDS::Init() made, swapped for
+        // the software ones before anything is drawn. The GPU is idle: each
+        // deko3d renderer waits for its own set-up to finish.
+        GPU::GPU2D_Renderer = std::make_unique<GPU2D::SoftRenderer>();
+        GPU3D::CurrentRenderer->DeInit();
+        GPU3D::CurrentRenderer = std::make_unique<GPU3D::SoftRenderer>();
+        GPU3D::CurrentRenderer->Init();
+    }
     GPU::SetRenderSettings(0, settings);
 
     g_rom_path = game->path;

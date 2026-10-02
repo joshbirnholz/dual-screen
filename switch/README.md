@@ -327,18 +327,20 @@ vramcheck=1    # video memory checked twice a second; differences logged
 gpucache=0     # the renderers' GPU memory kept out of the GPU's L2 cache
 l2flush=1      # each upload written out of the GPU's L2 cache at once
 settle=2       # after each upload: 1 a small copy, 2 what it wrote read back
+renderer=soft  # melonDS's software renderers draw everything, on the CPU
 ```
 
-The wrong graphics -- patches of other pictures in sprites, text boxes and
-walls -- were not the renderers': it was the copy that takes each finished
-frame off the GPU for this app to show. Its memory was in the GPU's L2 cache,
-and the CPU reads memory, not the cache, so parts of a frame could still be
-in the cache when the CPU read it, or be thrown out of it unwritten by the
-cache invalidation each of the renderers' own submissions starts with. The
-CPU then had those parts from two frames before. The readback now bypasses
-the cache and is flushed before the CPU is told it is done. melonDS's own
-app puts its frames on the screen with the GPU and never reads one back, so
-never met it.
+`renderer=soft` ("Graphics drawn by" in Settings > melonDS) is for the wrong
+graphics -- patches of garbage in sprites, text boxes and walls -- that
+melonDS's own app does not show with the same code. It swaps the deko3d
+renderers for melonDS's software ones, which draw on the CPU: if the patches
+go with it, they come from drawing on the GPU in this app; if they stay, from
+the emulation. Slower, especially in 3D.
+
+The copy that takes each finished frame off the GPU used to read some of it
+from memory the GPU had not yet written back from its L2 cache; it now
+bypasses that cache, and the fence the CPU waits on flushes it. That was a
+real mistake, but not the patches: they were still there after it.
 
 vramcheck's reports of sprite memory "uploaded and not on the GPU" came from
 the same mistake in its own readback: what it read was partly the check

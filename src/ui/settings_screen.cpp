@@ -75,7 +75,7 @@ std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
     if (!melonds_deko_) return {MelonRow::CpuClock, MelonRow::GpuAlone};
     return {MelonRow::CpuClock,  MelonRow::Jit,          MelonRow::FastMemory, MelonRow::Pipeline,
             MelonRow::GpuAlone,  MelonRow::TextureCache, MelonRow::Shaders,    MelonRow::VramCheck,
-            MelonRow::GpuCache,  MelonRow::L2Flush,      MelonRow::Settle};
+            MelonRow::GpuCache,  MelonRow::L2Flush,      MelonRow::Settle,     MelonRow::Renderer};
 }
 
 void SettingsScreen::open_melonds_page() {
@@ -100,6 +100,7 @@ std::string SettingsScreen::melon_label(MelonRow row) {
         case MelonRow::GpuCache: return "GPU cache";
         case MelonRow::L2Flush: return "Uploads out of the GPU cache";
         case MelonRow::Settle: return "After each upload";
+        case MelonRow::Renderer: return "Graphics drawn by";
     }
     return std::string();
 }
@@ -120,6 +121,7 @@ std::string SettingsScreen::melon_value(MelonRow row) const {
         case MelonRow::VramCheck: return on_off(tuning_.vramcheck);
         case MelonRow::GpuCache: return tuning_.gpucache ? "On" : "Bypassed";
         case MelonRow::L2Flush: return tuning_.l2flush ? "At once" : "In time";
+        case MelonRow::Renderer: return tuning_.software ? "The CPU (software)" : "The GPU";
         case MelonRow::Settle:
             if (tuning_.settle == 1) return "A small copy";
             if (tuning_.settle == 2) return "Read it back";
@@ -144,6 +146,7 @@ void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
         case MelonRow::VramCheck: tuning_.vramcheck = !tuning_.vramcheck; break;
         case MelonRow::GpuCache: tuning_.gpucache = !tuning_.gpucache; break;
         case MelonRow::L2Flush: tuning_.l2flush = !tuning_.l2flush; break;
+        case MelonRow::Renderer: tuning_.software = !tuning_.software; break;
         case MelonRow::Settle: tuning_.settle = (tuning_.settle + (direction < 0 ? 2 : 1)) % 3; break;
     }
     std::string error;

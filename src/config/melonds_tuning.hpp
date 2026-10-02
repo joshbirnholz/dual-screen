@@ -28,6 +28,7 @@ struct MelonDsTuning {
     bool gpucache = true;   // gpucache: the renderers' GPU memory in the GPU's L2 cache
     bool l2flush = false;   // l2flush: each upload written out of the L2 cache at once
     int settle = 0;         // settle: after each upload's copy, 0 nothing, 1 a small copy, 2 it read back
+    bool software = false;  // renderer=soft: melonDS's software renderers, on the CPU, instead of deko3d
 
     bool operator==(const MelonDsTuning& other) const;
 };
