@@ -1,14 +1,139 @@
-# Handoff: the deko3d core's graphics glitches
+# Handoff: the deko3d core's graphics glitches, and Switch frame pacing
 
-Notes for a Claude Code session running on the owner's PC, on the same network
-as their Switch, picking up an investigation started in a cloud session that
-could not touch the console. Everything below was learned from the owner's
-logs and screenshots, one round trip at a time. Read all of it before
-changing anything.
+These notes started as a handoff from a cloud session (which could not touch
+the console) to a session on the owner's Mac, on the same network as their
+Switch. That local session has since fixed the graphics glitches, the
+Mario Kart DS hitches and the resume-notice picture; "Latest: the local
+session" below says what it did and what state it left everything in, for
+whichever session picks this up next. The sections after it are the older
+history of the graphics search, kept because they say what was ruled out.
 
-Branch: `claude/emulator-display-streaming-xnfjj0`. Newest commit at handoff:
-`1ce7d15` (renderer=soft). Commit to this branch; do not open a pull request
-unless the owner asks.
+Branch: `claude/emulator-display-streaming-xnfjj0` (also pushed as
+`claude/affectionate-planck-3sv0qo`, the cloud session's branch; same
+commits). Newest commit before this note: `650f846`. Do not open a pull
+request unless the owner asks. No model names in commits, code or docs.
+
+## Latest: the local session (2026-10-03)
+
+### Commits, oldest first
+
+- `5c5302e` -- `renderer=soft` handed melonDS's frames over with red and blue
+  swapped (GPU2D_Soft already writes XRGB8888). Fixed; README notes that the
+  patches went away with the software renderer.
+- `7ace66a` -- **the 16x8 patches of garbage, fixed.** See "Resolved" below.
+  Adds `patches/` (applied by the Makefile to copies of RSDuck's files, so
+  `cores/melonds-deko` stays as cloned) and the `dump=N` key in
+  melonds.ini (libretro.cpp: frames N..N+7 after the game starts and after
+  each state load, raw 256x384 XRGB8888, to `/switch/dualscreen/dump/`).
+- `a733942` -- **save states 25 ms to ~6 ms.**
+  `patches/Savestate-memory-stream.patch` lets melonDS's `Savestate` read
+  and write a memory buffer directly (`SavestateUseMemory()`, called from
+  `platform.cpp` `open_state_stream()`), instead of an `fwrite` through
+  fmemopen for each of the 3D engine's tens of thousands of fields (20 of
+  the 25 ms were the `GP3D` section). With Resume from Save State on, the
+  app takes a resume point every 30 s between two frames
+  (`App::Impl::write_resume_point`); at 28 ms that was a dropped frame each
+  time ("a slow pass: 29ms ... everything else" in the log). Now ~9 ms in
+  all. Loading uses the same fast path.
+- `650f846` -- **Vsync locks a game to the display; resume shows a whole
+  picture.** All in `src/app.cpp` (+ comment in `src/config/settings.hpp`,
+  README section on `vsync`):
+  - The app's own pacing runs a DS game at 59.83 fps; on a 60 Hz display
+    with vsync off that shows a frame twice every few seconds, and frames
+    finishing near a refresh land on either side of it -- the owner's
+    "occasional short hitches" in Mario Kart, at 100% speed. With `vsync`
+    on, no companion connected (`companion_joined()`), not an external
+    game, and the game's rate within 1.5% of the display's
+    (`display_refresh_hz`, from SDL, via `note_display_refresh()`), the main
+    loop runs one frame per refresh (`display_locked`, `frame_step`).
+  - Switch only: Mesa's EGL gives the window **three** buffers
+    (`drivers_switch_egl_switch.c`, loop to 3), so plain vsync let two
+    frames wait -- a refresh more input lag than melonDS's own app (two
+    buffers). Instead: the display period is learned from 120 consecutive
+    frames whose draw+present waited >4 ms (Mesa waits for a free buffer
+    when the next frame starts drawing, not in the swap), then each pass is
+    started by the clock at 99.8% of that period (`locked_next_pass_us`,
+    `std::this_thread::sleep_for`), one frame per pass; a frame that waits
+    for a buffer again sets `locked_queue_full`, and the next pass runs no
+    frame (the waiting one fills that refresh). Measured: 601 frames in 602
+    passes per 10 s, 1-2 such refreshes per 10 s, no catch-ups.
+    Things that did not work, so nobody tries them again: the vi vsync
+    event (`viGetDisplayVsyncEvent` is refused, 0x1272, under Application,
+    System and Manager); NWindow's `consumer_running_behind` (never set,
+    the compositor takes buffers at once); a timer without the learned
+    period (the display is not exactly 60.000 Hz); counting frames from
+    elapsed time while paced by the timer (left empty passes = repeats).
+    `FrameDelay` (render/frame_delay.cpp, used for the companion) was looked
+    at and is not suited: Mario Kart's passes leave it nothing to wait.
+  - The `speed:` log line now also counts frames shown late, refreshes left
+    to a waiting frame, and frames that waited for a buffer.
+  - `resume_game()` runs 4 frames after loading the resume point instead of
+    2: the deko3d core draws a frame's 3D during the frame before and hands
+    each picture over a frame late, so the picture behind "Resuming from save
+    state" was a race's 2D HUD over black. Verified whole on the console.
+
+### Measured, Mario Kart DS race (slot 2), build 650f846, vsync on
+
+Core 8.2-9.1 ms a frame (of 16.7), 600-601 frames in 602 passes every 10 s,
+0 catch-ups, no slow passes during play. Without vsync (the default) the
+resume-point fix still applies; the display beat does not go away.
+
+### The console and the owner's setup
+
+- **Switch at 192.168.1.72** (not .0.72). sys-botbase 2.5 on port 6000.
+  Sphaira is the launcher; its FTP server is port 5000 and **only answers
+  while Sphaira is in front** -- with the home menu up it accepts the
+  connection and then hangs, so check with a real FTP listing, not a port
+  probe. Home-menu tiles (order changes with use): sphaira, Dualscreen,
+  Mario Kart DS and Bowser's Inside Story forwarders, others.
+- **Save states** (Dualscreen quick menu: L3+R3, Load Save State):
+  Bowser's Inside Story slot 3 = overworld just before a battle, slot 4 =
+  in that battle at the command menu; Mario Kart DS slot 2 = a paused race
+  with a wall in view (slot 1 = end of a race). Mario Kart has Resume from
+  Save State on. Never delete saves; back them up before touching them.
+- **Now on the card:** `/switch/Dualscreen.nro` = `650f846` (verified by
+  md5). `/switch/dualscreen/settings.json` has **`"vsync": true`** (set for
+  testing and left on; the owner knows). `/switch/dualscreen/melonds.ini` is
+  empty (it was `vramcheck=1`). Left over from testing, safe to delete:
+  `/switch/melonds/melonDS-today.nro` (melonDS's own app from this source)
+  and `/roms/DS/Mario and Luigi Bowser's Inside Story.ml8` (slot 4's state
+  for that app). Mario Kart's resume point is wherever testing last left it.
+- **Building** on the Mac: devkitPro at `/opt/devkitpro`; `make` in
+  `switch/` (it rebuilds the core too). The log's third line names the
+  build (`this build is <hash>`; "with local changes" if uncommitted).
+
+### Driving the console remotely -- lessons
+
+- **Keep it awake.** The console auto-slept after ~40 min with no input
+  while desktop builds ran, and sys-botbase cannot wake it. A 3% stick nudge
+  does not count as input. A full right-stick flick every ~45 s does, and is
+  harmless in a DS game, but moves the cursor on the home menu and in
+  Sphaira -- pause it while a script navigates, and stop it when finished.
+- **After the console has slept, `pixelPeek` hangs sys-botbase** (it then
+  answers nothing, not even `getVersion`) until the Switch is restarted.
+- Pressing HOME while already on the home menu returns to the running app.
+- What worked well: scripts that check each step against a screenshot
+  before pressing A (confirm dialogs, highlighted slot), find home-menu
+  tiles by picture, and compare `dump=N` frames between builds or against
+  `renderer=soft` (deterministic from a save state with no input). These
+  scripts lived in the local session's scratch space and are not in the
+  repo.
+
+### Not done / open
+
+- One 19 ms stall in ~15 min of racing was `host_session->poll()` (network)
+  on the main thread; not looked into.
+- `gpucache`, `l2flush`, `settle` (melonds.ini) are leftovers from a wrong
+  theory and could be removed; left in, documented as not the cause.
+- RSDuck's `GPU2D_Deko` never initialises `OBJWindowEmpty[2]` (and others);
+  tried, not the cause of anything seen, not patched.
+- Desktop tests: on the Mac the app builds, but the suite assumes Linux
+  (`mkdtemp`/`TCP_KEEPIDLE`, config paths, `-static-libgcc` under
+  `DUALSCREEN_PORTABLE`, VideoToolbox not linked): 33/48 pass, the rest
+  fail for those reasons. Not run on a Linux machine since these changes.
+- The card's `/switch/melonds/melonDS.nro` ("switch fast alpha release 6")
+  exits at once when started from Sphaira, so "Gheovgos 7.2.1 is clean" was
+  never re-checked.
 
 ## Resolved (2026-10-03)
 
@@ -37,7 +162,7 @@ Found and fixed; the rest of this file is the history of the search.
   patches in the same battle menu. They are in 3D, not sprites: the battle
   screen and the "Jump"/"Punch" box are engine A's 3D layer.
 
-## Start here
+## Start here (the original handoff, now done)
 
 1. Check the tools below work: build, send the build to the console, launch a
    game, press buttons, take a screenshot, read the game log.
