@@ -335,7 +335,10 @@ graphics -- patches of garbage in sprites, text boxes and walls -- that
 melonDS's own app does not show with the same code. It swaps the deko3d
 renderers for melonDS's software ones, which draw on the CPU: if the patches
 go with it, they come from drawing on the GPU in this app; if they stay, from
-the emulation. Slower, especially in 3D.
+the emulation. Slower, especially in 3D. In Bowser's Inside Story the patches
+went with it -- on Bowser in the overworld and in the battle command menu,
+both places they always showed -- so they come from the deko3d renderers as
+this app runs them, not from the emulation.
 
 The copy that takes each finished frame off the GPU used to read some of it
 from memory the GPU had not yet written back from its L2 cache; it now

@@ -853,16 +853,13 @@ void gfx_wait_for_gpu() {
 void gfx_read_screens(uint32_t* out) {
     if (g_software) {
         // Drawn on the CPU, into the framebuffers melonDS has just swapped:
-        // the upper screen then the lower, RGBA as the GPU's would be.
+        // the upper screen then the lower. GPU2D_Soft already writes
+        // 0xAARRGGBB, which is libretro's XRGB8888, so unlike the GPU's RGBA
+        // it needs no swapping.
         const uint32_t* const screens[2] = {GPU::Framebuffer[GPU::FrontBuffer][0],
                                             GPU::Framebuffer[GPU::FrontBuffer][1]};
         for (uint32_t screen = 0; screen < 2; ++screen) {
-            const uint32_t* in = screens[screen];
-            uint32_t* to = out + screen * kScreenWidth * kScreenHeight;
-            for (uint32_t i = 0; i < kScreenWidth * kScreenHeight; ++i) {
-                const uint32_t rgba = in[i];
-                to[i] = ((rgba & 0xFFu) << 16) | (rgba & 0xFF00u) | ((rgba >> 16) & 0xFFu);
-            }
+            std::memcpy(out + screen * kScreenWidth * kScreenHeight, screens[screen], kScreenBytes);
         }
         return;
     }
