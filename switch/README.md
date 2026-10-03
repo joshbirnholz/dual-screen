@@ -281,7 +281,9 @@ through deko3d, where libretro's melonDS draws them in software on a CPU core
 -- which a 3D game's races, Mario Kart DS's for one, are more than it can keep
 up with. It is not a libretro core, so `melonds_deko/` here wraps it in the
 libretro interface this app talks to; the emulator itself is compiled from
-RSDuck's tree, unchanged. (It is the same emulator Gheovgos's melonDS for
+RSDuck's tree, unchanged but for the fixes in `melonds_deko/patches/`, which
+the build applies to copies of the files they change (see below). (It is the
+same emulator Gheovgos's melonDS for
 Switch, release 7.x, is built on.)
 
 From this `switch` directory — `cores/` is ignored by git:
@@ -328,17 +330,33 @@ gpucache=0     # the renderers' GPU memory kept out of the GPU's L2 cache
 l2flush=1      # each upload written out of the GPU's L2 cache at once
 settle=2       # after each upload: 1 a small copy, 2 what it wrote read back
 renderer=soft  # melonDS's software renderers draw everything, on the CPU
+dump=300       # frames 300 to 307 after each load written to the SD card, raw
 ```
 
-`renderer=soft` ("Graphics drawn by" in Settings > melonDS) is for the wrong
-graphics -- patches of garbage in sprites, text boxes and walls -- that
-melonDS's own app does not show with the same code. It swaps the deko3d
-renderers for melonDS's software ones, which draw on the CPU: if the patches
-go with it, they come from drawing on the GPU in this app; if they stay, from
-the emulation. Slower, especially in 3D. In Bowser's Inside Story the patches
-went with it -- on Bowser in the overworld and in the battle command menu,
-both places they always showed -- so they come from the deko3d renderers as
-this app runs them, not from the emulation.
+**The patches of garbage** -- 16x8 pixels, in Bowser's Inside Story's battle
+menus and on Bowser in the overworld, in Mario Kart DS's track walls -- were
+3D textures uploaded to the wrong place, and are fixed by
+`melonds_deko/patches/GPU3D_Deko-texture-tile-size.patch`. The 3D renderer
+keeps each texture in a layer of an array of textures its size. deko3d lays
+out an image 8 to 64 texels tall with a tile taller than the image; the GPU's
+texture unit shrinks that tile to fit, but deko3d's copy into the image does
+not, so in a texture at least 32 texels wide everything past its first 16
+texels across was written into the next layer, while the GPU drew from
+memory nothing had written. The patch gives those arrays a tile that fits.
+melonDS's own Switch app has the same fault: built from this checkout
+(`make -C melonds_deko standalone`), it draws the same patches in the same
+battle menu. It was never anything Dualscreen does around the emulator.
+
+`renderer=soft` ("Graphics drawn by" in Settings > melonDS) swaps the deko3d
+renderers for melonDS's software ones, which draw on the CPU -- slower,
+especially in 3D, but a reference for what the GPU should draw: the patches
+went with it, which put them in the deko3d renderers. `dump=N` writes the
+frames N to N+7 after the game starts and after each save state is loaded to
+`/switch/dualscreen/dump/`, raw (256x384, XRGB8888, the upper screen first).
+Played on from a save state with no input, a game draws the same frames every
+time, so the same frames from the two renderers can be compared pixel for
+pixel: with the fix, Bowser's Inside Story's battle and overworld come out
+identical from both, where before 16x8 blocks differed.
 
 The copy that takes each finished frame off the GPU used to read some of it
 from memory the GPU had not yet written back from its L2 cache; it now
@@ -364,8 +382,9 @@ right bytes.
 `pipeline=0` and `gpu_alone=1` together keep the emulator's GPU work and the
 app's from ever running at the same time.
 
-`texcache=0` and `shaders=standalone` are for finding out where wrong 3D
-textures come from. `texcache=0` is slow -- every texture is decoded and
+`texcache=0` and `shaders=standalone` were for finding out where wrong 3D
+textures came from, before the cause above was found; they stay for
+comparisons. `texcache=0` is slow -- every texture is decoded and
 uploaded again each frame -- but if the textures come out right with it, the
 cache is what goes wrong. `shaders=standalone` loads the renderer's GPU
 programs from melonDS's own Switch release, found at `/switch/melonDS.nro`
@@ -379,22 +398,15 @@ memory's byte arrays through wider pointers, which a newer GCC at `-O3` may
 compile into reads of stale values. A core built before this is rebuilt
 automatically the next time `make` runs.
 
-Two builds narrow down wrong textures further, since none of the settings
-above clear them and nothing in how Dualscreen drives the renderer differs
-from melonDS's own app:
+Two builds are for comparing with melonDS's own app and with the compiler:
 
 - `make -C melonds_deko standalone` builds melonDS's own Switch app from the
-  same checkout, with today's devkitPro, as `cores/melonDS-today.nro`. The
-  build that draws correctly is Gheovgos's release 7.2.1, which is this same
-  checkout -- RSDuck's `switch-new` -- with RetroAchievements and button
-  remapping added to the app around it, and nothing in the emulator or its
-  renderers changed; 7.2.1 is that, built with a current devkitPro. So if
-  this build draws wrong textures too, the difference is in how it is built
-  (7.2.1 uses link-time optimisation, this does not); if it draws correctly,
-  the difference is in Dualscreen.
+  same checkout, with today's devkitPro and without the fixes in `patches/`,
+  as `cores/melonDS-today.nro`. It draws the patches above just as Dualscreen
+  did before the fix.
 - `make OPTIMISE=-O1` builds the core, and Dualscreen with it, with fewer
-  compiler optimisations. If the textures come out right, today's compiler at
-  `-O3` is what breaks them. A plain `make` afterwards puts `-O3` back.
+  compiler optimisations. It made no difference to the patches. A plain
+  `make` afterwards puts `-O3` back.
 
 Every line is optional. The game log says what is in use when a game starts.
 

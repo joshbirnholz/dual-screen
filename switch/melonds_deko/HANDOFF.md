@@ -10,6 +10,33 @@ Branch: `claude/emulator-display-streaming-xnfjj0`. Newest commit at handoff:
 `1ce7d15` (renderer=soft). Commit to this branch; do not open a pull request
 unless the owner asks.
 
+## Resolved (2026-10-03)
+
+Found and fixed; the rest of this file is the history of the search.
+
+- **Cause:** 3D textures uploaded to the wrong place. The deko3d 3D renderer
+  keeps each texture in a layer of a 2D array texture. deko3d (0.5.0) picks
+  the tile height of an image 8 to 64 texels tall from 1.5 times its height,
+  so the tile is taller than the image. The texture unit, and the image's own
+  size, shrink that tile to fit; deko3d's copy into the image
+  (`ImageInfo::fromImageView`, `TransferCopy`) only does for mip levels past
+  the first. So in a texture 32 or more texels wide, every GOB past the first
+  column was copied into the next layer, and the GPU sampled memory nothing
+  had written: 16x8 texel patches of garbage.
+- **Fix:** `patches/GPU3D_Deko-texture-tile-size.patch`, which the Makefile
+  applies to a copy of RSDuck's `GPU3D_Deko.cpp`: the arrays get a tile
+  height that fits the texture (`DkImageFlags_CustomTileSize`).
+- **Verified on the console:** with `dump=N` (libretro.cpp) frames from a save
+  state compared pixel for pixel against `renderer=soft`. Bowser's Inside
+  Story's battle menu (463 pixels in 16x8 blocks before) and overworld (128)
+  are identical after; Mario Kart DS's paused race went from 1361 differing
+  pixels, black blocks along the foot of a wall, to 83 scattered single
+  pixels of ordinary GPU-versus-CPU rasterising difference.
+- **Wrong earlier:** the patches were never specific to Dualscreen. melonDS's
+  own app built from the same checkout (`melonDS-today.nro`) draws the same
+  patches in the same battle menu. They are in 3D, not sprites: the battle
+  screen and the "Jump"/"Punch" box are engine A's 3D layer.
+
 ## Start here
 
 1. Check the tools below work: build, send the build to the console, launch a

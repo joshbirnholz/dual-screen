@@ -67,6 +67,34 @@ std::vector<uint8_t> g_state_scratch;
 // be a copy of the first.
 std::size_t g_state_current = 0;
 
+// dump=N in melonds.ini: the frames N to N+kDumpFrames-1 after the game
+// starts and after each save state is loaded, written raw (XRGB8888, the
+// upper screen then the lower) to kDumpDirectory. A save state played on from
+// with no input runs the same every time, so the same frames drawn by two
+// different renderers can be compared pixel for pixel -- which screenshots
+// of the console's screen, blurred by JPEG, cannot settle.
+constexpr const char* kDumpDirectory = "/switch/dualscreen/dump";
+constexpr uint64_t kDumpFrames = 8;
+uint64_t g_dump_at = 0;
+uint64_t g_frames_since_load = 0;
+uint32_t g_loads = 0;
+
+void dump_frame() {
+    if (g_dump_at == 0) return;
+    const uint64_t frame = g_frames_since_load++;
+    if (frame < g_dump_at || frame >= g_dump_at + kDumpFrames) return;
+    mkdir(kDumpDirectory, 0777);
+    char path[128];
+    std::snprintf(path, sizeof(path), "%s/load%u_frame%llu.rgba", kDumpDirectory, g_loads,
+                  static_cast<unsigned long long>(frame));
+    if (std::FILE* file = std::fopen(path, "wb")) {
+        std::fwrite(g_framebuffer, sizeof(g_framebuffer), 1, file);
+        std::fclose(file);
+    } else {
+        log_warn(std::string("melonDS (deko3d): could not write ") + path);
+    }
+}
+
 void log_at(retro_log_level level, const std::string& message) {
     if (g_log != nullptr) {
         g_log(level, "%s\n", message.c_str());
@@ -156,6 +184,7 @@ void apply_tuning() {
     bool software = false;
     std::string shaders;
     bool from_file = false;
+    g_dump_at = 0;
     if (std::FILE* file = std::fopen(kTuningPath, "r")) {
         from_file = true;
         char line[128];
@@ -190,6 +219,8 @@ void apply_tuning() {
                 if (settle < 0 || settle > 2) settle = 0;
             } else if (key == "shaders") {
                 shaders = text.substr(equals + 1);
+            } else if (key == "dump") {
+                g_dump_at = std::strtoull(text.substr(equals + 1).c_str(), nullptr, 10);
             } else if (key == "cpu_mhz" || key == "gpu_alone") {
                 // The app's.
             } else {
@@ -496,6 +527,12 @@ RETRO_API bool retro_load_game(const struct retro_game_info* game) {
         return false;
     }
     log_info("melonDS (deko3d): playing " + g_rom_path + ", saving to " + g_sram_path);
+    g_frames_since_load = 0;
+    g_loads = 0;
+    if (g_dump_at != 0) {
+        log_info("melonDS (deko3d): frames " + std::to_string(g_dump_at) + " to " +
+                 std::to_string(g_dump_at + kDumpFrames - 1) + " after each load go to " + kDumpDirectory);
+    }
     g_lid_closed = false;
     g_loaded = true;
     return true;
@@ -529,6 +566,7 @@ RETRO_API void retro_run(void) {
     gfx_wait_for_gpu();
     NDS::RunFrame();
     gfx_read_screens(g_framebuffer);
+    dump_frame();
     if (g_video != nullptr) g_video(g_framebuffer, kWidth, kHeight, kWidth * sizeof(uint32_t));
     send_audio();
 }
@@ -566,6 +604,8 @@ RETRO_API bool retro_unserialize(const void* data, size_t size) {
             NDS::DoSavestate(&state);
             ok = true;
             gfx_reset_readback();
+            g_frames_since_load = 0;
+            ++g_loads;
         }
     }
     state_source(nullptr, 0);

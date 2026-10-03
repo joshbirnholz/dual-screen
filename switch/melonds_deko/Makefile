@@ -139,6 +139,24 @@ $(BUILD)/core/%.o: $(SRC)/%.cpp
 	@echo $*.cpp
 	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
+# RSDuck's sources this directory carries a fix for, each in patches/ under
+# its name: compiled from a copy with the fix applied, so the checkout stays
+# exactly as cloned. patches/GPU3D_Deko-texture-tile-size.patch is the one so
+# far -- see it for what it fixes.
+PATCHED_SOURCES := $(patsubst patches/%.patch,%,$(wildcard patches/*.patch))
+define patched_source
+$(BUILD)/patched/$(1).cpp: $(SRC)/$(1).cpp patches/$(2).patch
+	@mkdir -p $$(dir $$@)
+	@echo patching $(1).cpp with $(2).patch
+	@cp $$< $$@
+	@patch --quiet $$@ < patches/$(2).patch
+$(BUILD)/core/$(1).o: $(BUILD)/patched/$(1).cpp
+	@mkdir -p $$(dir $$@)
+	@echo $(1).cpp
+	@$$(CXX) $$(CXXFLAGS) -c $$< -o $$@
+endef
+$(foreach patch,$(PATCHED_SOURCES),$(eval $(call patched_source,$(firstword $(subst -, ,$(patch))),$(patch))))
+
 $(BUILD)/core/%.o: $(SRC)/%.c
 	@mkdir -p $(dir $@)
 	@echo $*.c
@@ -170,10 +188,9 @@ clean:
 #   make -C melonds_deko standalone
 #
 # and copy ../cores/melonDS-today.nro to the SD card beside the melonDS.nro
-# already there. The build that runs cleanly, Gheovgos's 7.2.1, is this same
-# emulator and renderer code with more in the app around it, built with a
-# current devkitPro; if this one draws the same wrong textures as Dualscreen
-# does, how it is built is the difference, and nothing in Dualscreen is.
+# already there. It is built without the fixes in patches/, so it draws what
+# RSDuck's code draws: in Bowser's Inside Story, the same patches of garbage
+# Dualscreen drew before GPU3D_Deko-texture-tile-size.patch.
 # Link-time optimisation is left off, as this core has it --
 # its CMake runs the host's gcc-ar for it, which cannot read these objects --
 # and two headers are included up front that newer compilers no longer bring

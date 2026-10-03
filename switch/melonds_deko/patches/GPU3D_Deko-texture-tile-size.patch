@@ -1,0 +1,30 @@
+--- a/src/GPU3D_Deko.cpp
++++ b/src/GPU3D_Deko.cpp
+@@ -761,9 +761,27 @@
+         u32 layers = std::min<u32>((8*1024*1024) / (width*height*4), 64);
+ 
+         // allocate new array texture
++        //
++        // With a tile no taller than the texture. Left to itself, deko3d
++        // picks the tile height from one and a half times the image's
++        // height, so a texture 8 to 64 texels tall gets a tile taller than
++        // the texture. The texture unit and the image's size shrink such a
++        // tile to fit, but deko3d's copy into the image does not (it only
++        // does for mip levels past the first), so every GOB past the first
++        // column of a texture 32 or more texels wide was uploaded to the
++        // wrong place -- into the next layer, while the place the GPU
++        // sampled kept whatever was there before. That was 16x8 patches of
++        // garbage in 3D graphics, wherever such a texture was drawn.
++        DkTileSize tileSize = height >= 128 ? DkTileSize_SixteenGobs
++            : height >= 64 ? DkTileSize_EightGobs
++            : height >= 32 ? DkTileSize_FourGobs
++            : height >= 16 ? DkTileSize_TwoGobs
++            : DkTileSize_OneGob;
+         dk::ImageLayout imageLayout;
+         dk::ImageLayoutMaker{Gfx::Device}
+             .setType(DkImageType_2DArray)
++            .setFlags(DkImageFlags_CustomTileSize)
++            .setTileSize(tileSize)
+             .setFormat(DkImageFormat_RGBA8_Uint)
+             .setDimensions(width, height, layers)
+             .initialize(imageLayout);
