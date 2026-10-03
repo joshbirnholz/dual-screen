@@ -282,7 +282,11 @@ through deko3d, where libretro's melonDS draws them in software on a CPU core
 up with. It is not a libretro core, so `melonds_deko/` here wraps it in the
 libretro interface this app talks to; the emulator itself is compiled from
 RSDuck's tree, unchanged but for the fixes in `melonds_deko/patches/`, which
-the build applies to copies of the files they change (see below). (It is the
+the build applies to copies of the files they change: one for the 3D
+textures (see below), and `Savestate-memory-stream.patch`, which lets a save
+state kept in memory be written and read without a stdio call for every one
+of its tens of thousands of fields -- 25 ms down to about 6 for a Mario Kart
+DS race, which was a dropped frame every time the app wrote a resume point. (It is the
 same emulator Gheovgos's melonDS for
 Switch, release 7.x, is built on.)
 

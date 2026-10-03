@@ -20,6 +20,9 @@
 #include "Platform.h"
 #include "frontend/switch/Profiler.h"
 
+// patches/Savestate-memory-stream.patch
+void SavestateUseMemory(std::FILE* file, uint8_t* data, uint32_t capacity, uint32_t size);
+
 namespace melonds_deko {
 
 const char* const kStateStreamName = "dualscreen:state-in-memory";
@@ -36,16 +39,28 @@ bool is_state_stream(const char* path) {
     return path != nullptr && std::strcmp(path, kStateStreamName) == 0;
 }
 
-// A stream over the state buffer rather than a file. Writing, SEEK_END is the
-// end of what has been written, which melonDS's Savestate relies on when it
-// fills in the total length.
+// A stream over the state buffer rather than a file. Savestate, patched (see
+// patches/Savestate-memory-stream.patch), then reads and writes the buffer
+// itself rather than through the stream, which made saving a state take over
+// 20 ms -- a dropped frame every time the app wrote a resume point. The
+// stream is still opened, so that anything that does go through it works.
 std::FILE* open_state_stream(const char* mode) {
     if (mode != nullptr && mode[0] == 'w') {
         if (g_state_target == nullptr || g_state_target_capacity == 0) return nullptr;
-        return fmemopen(g_state_target, g_state_target_capacity, "wb");
+        std::FILE* file = fmemopen(g_state_target, g_state_target_capacity, "wb");
+        if (file != nullptr) {
+            SavestateUseMemory(file, g_state_target, static_cast<uint32_t>(g_state_target_capacity), 0);
+        }
+        return file;
     }
     if (g_state_source == nullptr || g_state_source_size == 0) return nullptr;
-    return fmemopen(const_cast<uint8_t*>(g_state_source), g_state_source_size, "rb");
+    uint8_t* source = const_cast<uint8_t*>(g_state_source);
+    std::FILE* file = fmemopen(source, g_state_source_size, "rb");
+    if (file != nullptr) {
+        SavestateUseMemory(file, source, static_cast<uint32_t>(g_state_source_size),
+                           static_cast<uint32_t>(g_state_source_size));
+    }
+    return file;
 }
 
 }  // namespace
