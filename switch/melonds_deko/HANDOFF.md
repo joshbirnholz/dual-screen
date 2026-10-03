@@ -204,18 +204,11 @@ CmdMemRing.h}` (how melonDS's own app does it). deko3d's
 `source/dk_queue.cpp` and `source/maxwell/gpu_base.cpp` show what a submit
 and a fence actually do.
 
-## The other open problem: a freeze after sleep
+## Not in scope: the freeze after sleep
 
-The owner put the console to sleep while a game was **still starting**. The
-game log stopped right after `hosting MARIO & LUIGI ... on port 47821`, never
-logged its first frame (no `this window waits for its refresh` line, which
-the first pass of the main loop writes), and next said `the console asked
-this app to close` when the owner closed it from HOME. Not investigated
-further. Sleep needs the power button, so the owner has to do that step.
-Find out first whether it also happens when sleeping mid-game. Relevant:
-`src/app.cpp` main loop (`appletMainLoop`, `kSuspendGapSeconds`),
-`companion/source/local_play.cpp` (`CpuBoost` applet hook and clock
-watchdog; `appletLockExit`).
+The owner has also seen the app freeze when the console was put to sleep while
+a game was starting. Leave it alone for now: the owner will raise it again
+when they want it looked at.
 
 ## Tooling on the PC and the console
 
