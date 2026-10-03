@@ -137,8 +137,7 @@ private:
 
     // The melonDS page's rows, in order.
     enum class MelonRow {
-        CpuClock, Jit, FastMemory, Pipeline, GpuAlone, TextureCache, Shaders, VramCheck, GpuCache, L2Flush,
-        Settle, Renderer
+        CpuClock, Pipeline
     };
     enum class Page { Main, MelonDs };
     std::vector<MelonRow> melon_rows() const;

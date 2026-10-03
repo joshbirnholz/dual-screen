@@ -41,46 +41,42 @@ void test_file(const std::string& sandbox) {
     // Nothing there: every default.
     CHECK(read_melonds_tuning(path) == MelonDsTuning());
 
-    // As the core reads it: spaces anywhere, comments, "ours" for the default
-    // shaders, a clock melonDS does not offer ignored.
-    write_text(path, "# for Mario Kart\n jit = 0\nfastmem=0\n; old\ncpu_mhz=1020\nshaders=ours\nmystery=7\n");
+    // As the core reads it: spaces anywhere, comments, a clock melonDS does
+    // not offer ignored. The core's diagnostic keys are not this file's to
+    // know, and stay as they are written.
+    write_text(path, "# for Mario Kart\n jit = 0\n; old\ncpu_mhz=1020\npipeline=0\nmystery=7\n");
     MelonDsTuning tuning = read_melonds_tuning(path);
-    CHECK(!tuning.jit);
-    CHECK(!tuning.fastmem);
     CHECK_EQ(tuning.cpu_mhz, 1020);
-    CHECK(tuning.shaders.empty());
-    CHECK(tuning.pipeline && tuning.texcache && !tuning.gpu_alone && !tuning.vramcheck);
-    write_text(path + ".odd", "cpu_mhz=1000\ngpucache=0\nl2flush=1\n");
-    CHECK(!read_melonds_tuning(path + ".odd").gpucache);
-    CHECK(read_melonds_tuning(path + ".odd").l2flush);
-    write_text(path + ".settle", "settle=2\n");
-    CHECK_EQ(read_melonds_tuning(path + ".settle").settle, 2);
-    write_text(path + ".settle", "settle=7\n");
-    CHECK_EQ(read_melonds_tuning(path + ".settle").settle, 0);
+    CHECK(!tuning.pipeline);
+    CHECK(!tuning.gpu_alone);
+    write_text(path + ".odd", "cpu_mhz=1000\n");
     CHECK_EQ(read_melonds_tuning(path + ".odd").cpu_mhz, 1785);
 
     // Changed: each setting's line rewritten where it was, one back at its
     // default gone, new ones added at the end, and the rest kept.
-    tuning.jit = true;
-    tuning.vramcheck = true;
-    tuning.shaders = "standalone";
+    tuning.pipeline = true;
+    tuning.gpu_alone = true;
     std::string error;
     CHECK_MSG(write_melonds_tuning(tuning, path, &error), error);
-    CHECK_STR_EQ(read_text(path),
-                 "# for Mario Kart\nfastmem=0\n; old\ncpu_mhz=1020\nshaders=standalone\nmystery=7\nvramcheck=1\n");
+    CHECK_STR_EQ(read_text(path), "# for Mario Kart\n jit = 0\n; old\ncpu_mhz=1020\nmystery=7\ngpu_alone=1\n");
     CHECK(read_melonds_tuning(path) == tuning);
 
     // All back to the defaults: only what this does not know is left.
     CHECK(write_melonds_tuning(MelonDsTuning(), path, nullptr));
-    CHECK_STR_EQ(read_text(path), "# for Mario Kart\n; old\nmystery=7\n");
+    CHECK_STR_EQ(read_text(path), "# for Mario Kart\n jit = 0\n; old\nmystery=7\n");
+
+    // Settings retired since go when the file is next written.
+    write_text(path, "gpucache=0\nl2flush=1\nsettle=2\nvramcheck=1\n");
+    CHECK(write_melonds_tuning(MelonDsTuning(), path, nullptr));
+    CHECK_STR_EQ(read_text(path), "vramcheck=1\n");
 
     // A second line for the same setting would only contradict the first.
-    write_text(path, "jit=0\njit=1\n");
+    write_text(path, "cpu_mhz=1020\ncpu_mhz=714\n");
     tuning = read_melonds_tuning(path);
-    CHECK(tuning.jit);
-    tuning.jit = false;
+    CHECK_EQ(tuning.cpu_mhz, 714);
+    tuning.cpu_mhz = 816;
     CHECK(write_melonds_tuning(tuning, path, nullptr));
-    CHECK_STR_EQ(read_text(path), "jit=0\n");
+    CHECK_STR_EQ(read_text(path), "cpu_mhz=816\n");
 
     // Made where nothing was, folder and all.
     const std::string fresh = path_join(path_join(sandbox, "dualscreen"), "melonds.ini");
@@ -126,44 +122,18 @@ void test_page(const std::string& sandbox) {
     CHECK(screen.on_melonds_page());
     CHECK_EQ(screen.focus(), 0);
 
-    // The clock, one step slower; then the JIT off. Each is in the file at once.
+    // The clock, one step slower; then each frame shown as soon as drawn.
+    // Each is in the file at once.
     press(screen, UiAction::Left);
     CHECK_EQ(read_melonds_tuning(path).cpu_mhz, 1581);
     press(screen, UiAction::Down);
     press(screen, UiAction::Confirm);
-    CHECK(!read_melonds_tuning(path).jit);
-    CHECK_STR_EQ(read_text(path), "# mine\ncpu_mhz=1581\njit=0\n");
+    CHECK(!read_melonds_tuning(path).pipeline);
+    CHECK_STR_EQ(read_text(path), "# mine\ncpu_mhz=1581\npipeline=0\n");
 
-    // Every row reachable, and no further.
+    // Only those two, and no further.
     press(screen, UiAction::Down, 20);
-    CHECK_EQ(screen.focus(), 11);
-    // Last, who draws: the software renderers written as renderer=soft.
-    press(screen, UiAction::Confirm);
-    CHECK(read_melonds_tuning(path).software);
-    CHECK(read_text(path).find("renderer=soft\n") != std::string::npos);
-    press(screen, UiAction::Confirm);
-    CHECK(!read_melonds_tuning(path).software);
-    CHECK(read_text(path).find("renderer") == std::string::npos);
-    press(screen, UiAction::Up);
-    // After each upload: three choices, round in either direction.
-    press(screen, UiAction::Confirm);
-    CHECK_EQ(read_melonds_tuning(path).settle, 1);
-    press(screen, UiAction::Right);
-    CHECK_EQ(read_melonds_tuning(path).settle, 2);
-    press(screen, UiAction::Right);
-    CHECK_EQ(read_melonds_tuning(path).settle, 0);
-    press(screen, UiAction::Left);
-    CHECK_EQ(read_melonds_tuning(path).settle, 2);
-    CHECK(read_text(path).find("settle=2\n") != std::string::npos);
-    press(screen, UiAction::Up);
-    press(screen, UiAction::Confirm);
-    CHECK(read_melonds_tuning(path).l2flush);
-    press(screen, UiAction::Up);
-    press(screen, UiAction::Confirm);
-    CHECK(!read_melonds_tuning(path).gpucache);
-    press(screen, UiAction::Up);
-    press(screen, UiAction::Confirm);
-    CHECK(read_melonds_tuning(path).vramcheck);
+    CHECK_EQ(screen.focus(), 1);
 
     // Back leaves the page, not Settings, onto the row it was opened from.
     SettingsScreenResult result = press(screen, UiAction::Cancel);
@@ -175,14 +145,14 @@ void test_page(const std::string& sandbox) {
     CHECK(result.close_requested);
 
     // Edited by hand while closed: what shows is the file.
-    write_text(path, "jit=1\ncpu_mhz=714\n");
+    write_text(path, "pipeline=1\ncpu_mhz=714\n");
     screen.open(Settings(), {});
     press(screen, UiAction::Down, 20);
     press(screen, UiAction::Confirm);
     press(screen, UiAction::Right);  // 714 -> 816
     CHECK_EQ(read_melonds_tuning(path).cpu_mhz, 816);
 
-    // With libretro's melonDS, only the two settings the app acts on.
+    // With libretro's melonDS, only the clock.
     SettingsScreen plain(paths);
     plain.set_melonds_page(false, path);
     plain.open(Settings(), {});
@@ -190,7 +160,7 @@ void test_page(const std::string& sandbox) {
     press(plain, UiAction::Confirm);
     CHECK(plain.on_melonds_page());
     press(plain, UiAction::Down, 20);
-    CHECK_EQ(plain.focus(), 1);
+    CHECK_EQ(plain.focus(), 0);
 
     // Data Management first, on a device with saves: chosen, it asks to be
     // opened; come back from, the cursor is on it again. The melonDS row is

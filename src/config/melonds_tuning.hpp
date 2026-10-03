@@ -9,7 +9,10 @@ namespace ds {
 // playing one; Settings > melonDS reads and writes it. Each setting is a line
 // key=value, and a setting with no line is at its default -- so a file nobody
 // has touched is an empty one, and one written by hand keeps its comments and
-// any lines this does not know when Settings changes it.
+// any lines this does not know when Settings changes it. Those include the
+// core's diagnostic keys (jit, texcache, vramcheck, renderer, dump and the
+// rest, in switch/README.md), which are for finding faults, not for playing,
+// and so are only ever written by hand.
 inline constexpr const char* kMelonDsTuningPath = "/switch/dualscreen/melonds.ini";
 
 // The speeds melonDS's own Switch app offers, fastest first; the first is the
@@ -18,17 +21,8 @@ inline constexpr int kMelonDsCpuMhz[] = {1785, 1581, 1224, 1020, 918, 816, 714};
 
 struct MelonDsTuning {
     int cpu_mhz = 1785;     // cpu_mhz
-    bool jit = true;        // jit
-    bool fastmem = true;    // fastmem: the JIT's fast memory
     bool pipeline = true;   // pipeline: each frame handed over a frame behind
-    bool gpu_alone = false; // gpu_alone: the app's drawing finished before each frame
-    bool texcache = true;   // texcache: the 3D renderer's texture cache kept
-    std::string shaders;    // shaders: empty for this build's, "standalone", or an .nro
-    bool vramcheck = false; // vramcheck: video memory checked between frames
-    bool gpucache = true;   // gpucache: the renderers' GPU memory in the GPU's L2 cache
-    bool l2flush = false;   // l2flush: each upload written out of the L2 cache at once
-    int settle = 0;         // settle: after each upload's copy, 0 nothing, 1 a small copy, 2 it read back
-    bool software = false;  // renderer=soft: melonDS's software renderers, on the CPU, instead of deko3d
+    bool gpu_alone = false; // gpu_alone (by hand): the app's drawing finished before each frame
 
     bool operator==(const MelonDsTuning& other) const;
 };

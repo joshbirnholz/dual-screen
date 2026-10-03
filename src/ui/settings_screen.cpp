@@ -72,10 +72,9 @@ int SettingsScreen::row_count() const {
 }
 
 std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
-    if (!melonds_deko_) return {MelonRow::CpuClock, MelonRow::GpuAlone};
-    return {MelonRow::CpuClock,  MelonRow::Jit,          MelonRow::FastMemory, MelonRow::Pipeline,
-            MelonRow::GpuAlone,  MelonRow::TextureCache, MelonRow::Shaders,    MelonRow::VramCheck,
-            MelonRow::GpuCache,  MelonRow::L2Flush,      MelonRow::Settle,     MelonRow::Renderer};
+    // libretro's melonDS has no frames to hand over late: only the clock.
+    if (!melonds_deko_) return {MelonRow::CpuClock};
+    return {MelonRow::CpuClock, MelonRow::Pipeline};
 }
 
 void SettingsScreen::open_melonds_page() {
@@ -90,42 +89,15 @@ void SettingsScreen::open_melonds_page() {
 std::string SettingsScreen::melon_label(MelonRow row) {
     switch (row) {
         case MelonRow::CpuClock: return "CPU clock while playing";
-        case MelonRow::Jit: return "JIT recompiler";
-        case MelonRow::FastMemory: return "JIT fast memory";
         case MelonRow::Pipeline: return "Each frame shown";
-        case MelonRow::GpuAlone: return "App drawing finished first";
-        case MelonRow::TextureCache: return "3D texture cache";
-        case MelonRow::Shaders: return "GPU shaders";
-        case MelonRow::VramCheck: return "Video memory check";
-        case MelonRow::GpuCache: return "GPU cache";
-        case MelonRow::L2Flush: return "Uploads out of the GPU cache";
-        case MelonRow::Settle: return "After each upload";
-        case MelonRow::Renderer: return "Graphics drawn by";
     }
     return std::string();
 }
 
 std::string SettingsScreen::melon_value(MelonRow row) const {
-    const auto on_off = [](bool on) { return std::string(on ? "On" : "Off"); };
     switch (row) {
         case MelonRow::CpuClock: return std::to_string(tuning_.cpu_mhz) + " MHz";
-        case MelonRow::Jit: return on_off(tuning_.jit);
-        case MelonRow::FastMemory: return on_off(tuning_.fastmem);
         case MelonRow::Pipeline: return tuning_.pipeline ? "A frame later" : "As soon as drawn";
-        case MelonRow::GpuAlone: return on_off(tuning_.gpu_alone);
-        case MelonRow::TextureCache: return tuning_.texcache ? "On" : "Emptied every frame";
-        case MelonRow::Shaders:
-            if (tuning_.shaders.empty()) return "This build's";
-            if (tuning_.shaders == "standalone") return "melonDS app's";
-            return "From " + path_basename(tuning_.shaders);
-        case MelonRow::VramCheck: return on_off(tuning_.vramcheck);
-        case MelonRow::GpuCache: return tuning_.gpucache ? "On" : "Bypassed";
-        case MelonRow::L2Flush: return tuning_.l2flush ? "At once" : "In time";
-        case MelonRow::Renderer: return tuning_.software ? "The CPU (software)" : "The GPU";
-        case MelonRow::Settle:
-            if (tuning_.settle == 1) return "A small copy";
-            if (tuning_.settle == 2) return "Read it back";
-            return "Nothing";
     }
     return std::string();
 }
@@ -133,21 +105,7 @@ std::string SettingsScreen::melon_value(MelonRow row) const {
 void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
     switch (row) {
         case MelonRow::CpuClock: tuning_.cpu_mhz = next_melonds_cpu_mhz(tuning_.cpu_mhz, direction); break;
-        case MelonRow::Jit: tuning_.jit = !tuning_.jit; break;
-        case MelonRow::FastMemory: tuning_.fastmem = !tuning_.fastmem; break;
         case MelonRow::Pipeline: tuning_.pipeline = !tuning_.pipeline; break;
-        case MelonRow::GpuAlone: tuning_.gpu_alone = !tuning_.gpu_alone; break;
-        case MelonRow::TextureCache: tuning_.texcache = !tuning_.texcache; break;
-        case MelonRow::Shaders:
-            // This build's and the app's; one named by hand goes back to
-            // this build's, and is written in by hand again if wanted.
-            tuning_.shaders = tuning_.shaders.empty() ? "standalone" : std::string();
-            break;
-        case MelonRow::VramCheck: tuning_.vramcheck = !tuning_.vramcheck; break;
-        case MelonRow::GpuCache: tuning_.gpucache = !tuning_.gpucache; break;
-        case MelonRow::L2Flush: tuning_.l2flush = !tuning_.l2flush; break;
-        case MelonRow::Renderer: tuning_.software = !tuning_.software; break;
-        case MelonRow::Settle: tuning_.settle = (tuning_.settle + (direction < 0 ? 2 : 1)) % 3; break;
     }
     std::string error;
     if (write_melonds_tuning(tuning_, melonds_path_, &error)) {
@@ -168,8 +126,8 @@ std::string SettingsScreen::footnote() const {
     std::string note = "These take effect the next time a game starts. They are kept in " + melonds_path_ +
                        ", which can be edited by hand as well.";
     if (melonds_deko_) {
-        note += " Apart from the CPU clock, they are for comparing a game here with melonDS's own app: "
-                "the defaults are the fastest.";
+        note += " Each frame shown a frame later lets the emulator run on while the GPU draws, which keeps "
+                "busy 3D games at full speed; as soon as drawn shows each picture a frame sooner.";
     }
     return note;
 }

@@ -123,8 +123,13 @@ resume-point fix still applies; the display beat does not go away.
 
 - One 19 ms stall in ~15 min of racing was `host_session->poll()` (network)
   on the main thread; not looked into.
-- `gpucache`, `l2flush`, `settle` (melonds.ini) are leftovers from a wrong
-  theory and could be removed; left in, documented as not the cause.
+- Done since (cloud session): `gpucache`, `l2flush` and `settle` are removed
+  from the core and the app (the core ignores them in an old file; Settings
+  drops their lines when it saves). Settings > melonDS now shows only the CPU
+  clock and "Each frame shown" (`pipeline`); every other key -- `jit`,
+  `fastmem`, `gpu_alone`, `texcache`, `shaders`, `vramcheck`,
+  `renderer=soft`, `dump` -- is still honoured, but only written by hand,
+  and Settings leaves those lines as they are.
 - RSDuck's `GPU2D_Deko` never initialises `OBJWindowEmpty[2]` (and others);
   tried, not the cause of anything seen, not patched.
 - Desktop tests: on the Mac the app builds, but the suite assumes Linux

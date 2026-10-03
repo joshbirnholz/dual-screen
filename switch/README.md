@@ -315,24 +315,33 @@ Two things it needs that libretro's melonDS does not:
   too little for that; start Dualscreen through a game (hold R while starting
   one) instead. If there is not enough, the game says so rather than starting.
 
-A few things about how it runs can be changed, for comparing a game here with
-melonDS's own Switch app, in **Settings > melonDS**. Each takes effect the next
-time a game starts. They are kept in `/switch/dualscreen/melonds.ini`, which
-can be edited by hand as well -- Settings keeps any comments and lines of its
-own -- and has a line for each one not at its default:
+Two things about how it runs are in **Settings > melonDS**, and take effect the
+next time a game starts:
+
+- **CPU clock while playing**: 1785 MHz unless set lower, for a cooler
+  console or a longer battery in games that do not need it all.
+- **Each frame shown**: *a frame later* (the default) lets the emulator run on
+  while the GPU draws, which is what keeps busy 3D games such as Mario Kart DS
+  at full speed; *as soon as drawn* shows each picture a frame sooner, for
+  games with time to spare.
+
+They are kept in `/switch/dualscreen/melonds.ini`, a line for each one not at
+its default, which can be edited by hand as well -- Settings keeps any
+comments and lines of its own. A few more keys are only ever written by hand:
+they are for finding faults in the emulator, not for playing, and are left
+as they are by Settings.
 
 ```ini
-cpu_mhz=1020   # the CPU clock while playing; 1785 unless this says otherwise
+cpu_mhz=1020   # Settings: the CPU clock while playing
+pipeline=0     # Settings: each frame shown as soon as it is drawn
+
+# Diagnostics, by hand only
 jit=0          # the JIT off (most 3D games then run well below full speed)
 fastmem=0      # the JIT's fast memory off
-pipeline=0     # each frame shown as soon as it is drawn, not a frame later
 gpu_alone=1    # the app's own drawing finished before each frame of the game
 texcache=0     # the 3D renderer's texture cache emptied before every frame
 shaders=standalone  # the GPU shaders from inside melonDS's own .nro
 vramcheck=1    # video memory checked twice a second; differences logged
-gpucache=0     # the renderers' GPU memory kept out of the GPU's L2 cache
-l2flush=1      # each upload written out of the GPU's L2 cache at once
-settle=2       # after each upload: 1 a small copy, 2 what it wrote read back
 renderer=soft  # melonDS's software renderers draw everything, on the CPU
 dump=300       # frames 300 to 307 after each load written to the SD card, raw
 ```
@@ -351,7 +360,7 @@ melonDS's own Switch app has the same fault: built from this checkout
 (`make -C melonds_deko standalone`), it draws the same patches in the same
 battle menu. It was never anything Dualscreen does around the emulator.
 
-`renderer=soft` ("Graphics drawn by" in Settings > melonDS) swaps the deko3d
+`renderer=soft` swaps the deko3d
 renderers for melonDS's software ones, which draw on the CPU -- slower,
 especially in 3D, but a reference for what the GPU should draw: the patches
 went with it, which put them in the deko3d renderers. `dump=N` writes the
@@ -369,8 +378,9 @@ real mistake, but not the patches: they were still there after it.
 
 vramcheck's reports of sprite memory "uploaded and not on the GPU" came from
 the same mistake in its own readback: what it read was partly the check
-before's. `gpucache`, `l2flush` and `settle` were tried against those, and
-are left in for now.
+before's. `gpucache`, `l2flush` and `settle`, tried against those, are gone;
+the core ignores them in an old file, and Settings takes them out of it the
+next time it saves.
 
 `vramcheck=1` looks for memory written that the emulator never wrote. Between
 frames, with the GPU idle, it compares the DS's video memory, melonDS's copy

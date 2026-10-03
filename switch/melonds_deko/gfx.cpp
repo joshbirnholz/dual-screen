@@ -217,13 +217,8 @@ int g_pending_slot = -1;
 bool g_pipelined = true;
 bool g_keep_texture_cache = true;
 bool g_vram_check = false;
-bool g_gpu_cache = true;
 bool g_software = false;
 bool g_ready = false;
-// settle's scratch: big enough to read back the largest of the 2D renderer's
-// video memory copies whole.
-GpuMemHeap::Allocation g_settle;
-constexpr uint32_t kSettleBytes = 512 * 1024;
 
 // How long each frame waits for the GPU to finish drawing it and copying it
 // out, and how long turning it into libretro's format takes, told every
@@ -344,8 +339,7 @@ Shadow g_shadows[4];
 // Recorded after each upload's copy in the same command stream
 // (witness_upload()): the upload's sequence number written over each block it
 // covered, so that afterwards each block says which upload the GPU ran last
-// for it. Only that: a copy of what the upload left behind, recorded there as
-// well once, made the lost uploads go away (see settle).
+// for it.
 GpuMemHeap::Allocation g_witness;
 constexpr uint32_t kAreaBytes = 1024 * 1024;  // ABG 512K, BBG 128K, AOBJ 256K, BOBJ 128K
 constexpr uint32_t kAreaBlocks = kAreaBytes / kBlock;
@@ -704,28 +698,15 @@ bool gfx_init(std::string* error) {
                         .setCommandMemorySize(DK_QUEUE_MIN_CMDMEM_SIZE * 4)
                         .setFlushThreshold(DK_QUEUE_MIN_CMDMEM_SIZE)
                         .create();
-    // gpucache=0: what the renderers write -- textures, video memory, the
-    // pictures they draw -- kept out of the GPU's L2 cache, and what they
-    // stage it from with it. The GPU's L2 is shared with Mesa, which draws this
-    // app's own screens; written data waiting in it can be lost to an
-    // invalidation from there, which melonDS's own app, the GPU's only user,
-    // never meets. Slower, if that is what is wrong.
-    const uint32_t gpu_access = g_gpu_cache ? DkMemBlockFlags_GpuCached : DkMemBlockFlags_GpuUncached;
-    if (!g_gpu_cache) log_info("melonDS (deko3d): the renderers' GPU memory bypasses the GPU's L2 cache");
-    Gfx::TextureHeap.emplace(Gfx::Device, kTextureHeapSize, gpu_access | DkMemBlockFlags_Image, 1024 * 8);
+    Gfx::TextureHeap.emplace(Gfx::Device, kTextureHeapSize, DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image,
+                             1024 * 8);
     Gfx::ShaderCodeHeap.emplace(Gfx::Device, kShaderHeapSize,
                                 DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached |
                                     DkMemBlockFlags_Code,
                                 64);
-    Gfx::DataHeap.emplace(Gfx::Device, kDataHeapSize, DkMemBlockFlags_CpuUncached | gpu_access, 128);
+    Gfx::DataHeap.emplace(Gfx::Device, kDataHeapSize, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached,
+                          128);
     Gfx::EmuCmdBuf = dk::CmdBufMaker{Gfx::Device}.create();
-    if (g_upload_settle != 0) {
-        g_settle = Gfx::DataHeap->Alloc(kSettleBytes, 64);
-        g_settle_scratch = Gfx::DataHeap->GpuAddr(g_settle);
-        g_settle_scratch_size = kSettleBytes;
-        log_info(std::string("melonDS (deko3d): each upload is followed by ") +
-                 (g_upload_settle == 2 ? "reading what it wrote back" : "a small copy"));
-    }
 
     g_copy_queue = dk::QueueMaker{Gfx::Device}.setFlags(DkQueueFlags_Graphics).create();
     constexpr uint32_t kCopyCmdSize = 0x10000;
@@ -739,10 +720,9 @@ bool gfx_init(std::string* error) {
     // still be in the cache when the CPU read them -- it reads memory, not the
     // cache -- or be thrown out of it unwritten by the cache invalidation each
     // of the renderers' submissions starts with, made while this queue's copy
-    // was still writing: either way the CPU got that part of the frame from
-    // two frames before, in patches. That was the game's graphics coming out
-    // with bits of other pictures in them. melonDS's own app never reads a
-    // frame back, so never met it.
+    // was still writing: either way the CPU would get that part of the frame
+    // from two frames before. melonDS's own app never reads a frame back, so
+    // never needs this.
     g_readback = dk::MemBlockMaker{Gfx::Device, align_up(kScreenBytes * 4, DK_MEMBLOCK_ALIGNMENT)}
                      .setFlags(DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuUncached)
                      .create();
@@ -765,11 +745,6 @@ void gfx_deinit() {
     g_readback.destroy();
     Gfx::EmuCmdBuf.destroy();
     Gfx::EmuQueue.destroy();
-    if (g_settle_scratch != 0) {
-        Gfx::DataHeap->Free(g_settle);
-        g_settle_scratch = 0;
-        g_settle_scratch_size = 0;
-    }
     Gfx::DataHeap.reset();
     Gfx::ShaderCodeHeap.reset();
     Gfx::TextureHeap.reset();
@@ -782,8 +757,6 @@ void gfx_reset_readback() { g_pending_slot = -1; }
 void gfx_set_texture_cache(bool keep) { g_keep_texture_cache = keep; }
 
 void gfx_set_vram_check(bool check) { g_vram_check = check; }
-
-void gfx_set_gpu_cache(bool cached) { g_gpu_cache = cached; }
 
 void gfx_set_software(bool software) { g_software = software; }
 
