@@ -225,7 +225,10 @@ struct Settings {
     // it, the loop is still correctly paced to the emulator's own frame rate
     // rather than spinning uselessly (same comment), so this is not trading
     // smooth video for a busy-loop -- only for the tear a player who wants it
-    // back can still opt into from Settings.
+    // back can still opt into from Settings. On, a game played alone runs one
+    // frame to each refresh (see display_locked in the main loop), which
+    // takes away the frame shown twice every few seconds that pacing by the
+    // game's own clock leaves; on a Switch, without costing a refresh of input.
     bool vsync = false;
 
     // Which of a Wii U's two screens this device is, when it is the only one

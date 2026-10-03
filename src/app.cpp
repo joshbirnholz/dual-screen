@@ -601,6 +601,9 @@ struct App::Impl {
         speed_slowest_frame = 0.0;
         speed_long_frames = 0;
         speed_catch_ups = 0;
+        speed_frame_gaps = 0;
+        speed_queue_waits = 0;
+        speed_swap_waits = 0;
     }
 
     uint64_t last_counter = 0;
@@ -627,6 +630,32 @@ struct App::Impl {
     double speed_slowest_frame = 0.0;
     int speed_long_frames = 0;
     int speed_catch_ups = 0;
+    // Frames that reached the window further apart than a refresh and a half:
+    // a picture held on screen twice as long as it should be, which is what a
+    // hitch looks like whatever its cause. The core's frames only.
+    int speed_frame_gaps = 0;
+    uint64_t last_frame_presented_us = 0;
+    // Locked to the display (see display_locked in the main loop): refreshes
+    // given to a frame already waiting, and frames that found the queue full.
+    int speed_queue_waits = 0;
+    int speed_swap_waits = 0;
+    // The display's refresh rate, where the system says; 0 where it does not.
+    double display_refresh_hz = 0.0;
+    double display_refresh_said = -1.0;
+    SDL_Window* display_refresh_window = nullptr;
+    // Reads display_refresh_hz from the system, once for each window.
+    void note_display_refresh();
+    // Whether this pass's frames were run one to a refresh, and, on a Switch,
+    // when the next pass is due and whether the last frame found two waiting
+    // to be shown -- see the end of the main loop.
+    bool display_locked_now = false;
+    uint64_t locked_next_pass_us = 0;
+    bool locked_queue_full = false;
+    // The display's real refresh period, measured from frames that waited for
+    // it; 0 until then.
+    uint64_t locked_period_us = 0;
+    uint64_t locked_learn_start_us = 0;
+    int locked_learn_count = 0;
     double save_flush_accumulator = 0.0;
     // Played time since the resume point was last written -- see
     // kResumePointIntervalSeconds.
@@ -1251,6 +1280,27 @@ void App::Impl::update_swap_pacing() {
                            (wanted ? "yes" : "no"));
     }
     swap_interval_applied = wanted;
+}
+
+void App::Impl::note_display_refresh() {
+    if (window == nullptr || window == display_refresh_window) return;
+    display_refresh_window = window;
+    // A new window may be on another display: measured again.
+    locked_period_us = 0;
+    locked_learn_count = 0;
+    SDL_DisplayMode mode{};
+    const int display = SDL_GetWindowDisplayIndex(window);
+    display_refresh_hz =
+        SDL_GetCurrentDisplayMode(display < 0 ? 0 : display, &mode) == 0 && mode.refresh_rate > 0
+            ? mode.refresh_rate
+            : 0.0;
+    if (display_refresh_hz != display_refresh_said) {
+        display_refresh_said = display_refresh_hz;
+        log_info(display_refresh_hz > 0.0
+                     ? "the display refreshes " + std::to_string(static_cast<int>(display_refresh_hz)) +
+                           " times a second"
+                     : std::string("the display does not say how often it refreshes"));
+    }
 }
 
 void App::Impl::report_external_frames() {
@@ -2120,12 +2170,16 @@ bool App::Impl::resume_game() {
         source->reset();
         return false;
     }
-    // A couple of frames from there, so what is paused behind the popup is
-    // the moment resumed, whole -- a single frame can still show some of what
-    // the console was drawing before the state went in. A core that cannot
-    // run from the state it was handed is started again from the beginning,
-    // rather than left to fail in front of the player a moment later.
-    constexpr int kFramesAfterResuming = 2;
+    // A few frames from there, so what is paused behind the popup is the
+    // moment resumed, whole -- a single frame can still show some of what the
+    // console was drawing before the state went in. Four: the deko3d melonDS
+    // draws a frame's 3D during the frame before and hands over each picture
+    // a frame late, so after two the picture behind the popup was a race's
+    // 2D alone over black, and only the third has all of it. A core that
+    // cannot run from the state it was handed is started again from the
+    // beginning, rather than left to fail in front of the player a moment
+    // later.
+    constexpr int kFramesAfterResuming = 4;
     for (int frame = 0; frame < kFramesAfterResuming; ++frame) {
         std::string frame_error;
         if (!source->advance_frame(&frame_error)) {
@@ -3114,14 +3168,16 @@ void App::Impl::report_speed() {
     const double core_ms = speed_frames > 0 ? 1000.0 * speed_core_seconds / speed_frames : 0.0;
     const double rest_ms =
         speed_passes > 0 ? 1000.0 * (speed_seconds - speed_core_seconds) / speed_passes : 0.0;
-    char line[384];
+    char line[512];
     std::snprintf(line, sizeof(line),
                   "speed: %d frames in %.1fs, %.0f%% of full speed; the core took %.1f ms a frame "
                   "(a frame is %.1f ms), and each of %d passes spent %.1f ms more drawing, "
                   "reading input and waiting; slowest frame %.1f ms, %d longer than a frame, "
-                  "%d passes catching up",
+                  "%d passes catching up, %d frames shown late, %d refreshes left to a waiting "
+                  "frame, %d frames waited for a buffer",
                   speed_frames, speed_seconds, percent, core_ms, 1000.0 * frame_period, speed_passes,
-                  rest_ms, 1000.0 * speed_slowest_frame, speed_long_frames, speed_catch_ups);
+                  rest_ms, 1000.0 * speed_slowest_frame, speed_long_frames, speed_catch_ups,
+                  speed_frame_gaps, speed_queue_waits, speed_swap_waits);
     log_info(line);
     reset_speed_window();
 }
@@ -4856,8 +4912,59 @@ int App::run(const AppOptions& options) {
             if (impl.external_source && impl.frame_accumulator < impl.frame_period) {
                 impl.frame_accumulator = impl.frame_period;
             }
+            // With the window waiting for each refresh, a refresh is the
+            // clock: one frame for each, the way melonDS's own Switch app runs
+            // a DS game, rather than frames at the game's own rate -- a DS's
+            // is 59.83 a second, a display's 60, and paced by the game's own
+            // clock one refresh in every few hundred had no new frame and
+            // showed the last again. The game runs that much fast; the audio
+            // already follows its queue (see AudioOutput). Only where the two
+            // rates are that close, never for a game paced by another
+            // program, and not while another device is connected: this loop
+            // carries its input too, and once a refresh is too seldom for it.
+            impl.note_display_refresh();
+            const bool display_locked =
+                impl.settings.vsync && !impl.external_source && impl.display_refresh_hz > 0.0 &&
+                std::abs(impl.display_refresh_hz * impl.frame_period - 1.0) < 0.015 &&
+                !impl.companion_joined();
+            const double frame_step =
+                display_locked ? 1.0 / impl.display_refresh_hz : impl.frame_period;
+            // Locked, refreshes are counted, not thresholded: a pass that came
+            // round a little early is still a refresh, and one that came round
+            // twice as late is two.
+            int frames_due =
+                display_locked ? static_cast<int>(std::floor(impl.frame_accumulator / frame_step + 0.5))
+                               : max_frames_per_iteration;
+#ifdef __SWITCH__
+            // Paced by the clock (see the end of the loop), each pass is a
+            // refresh: one frame, and more only for a pass that came round a
+            // refresh or more late. Counted from the time that passed
+            // instead, the clock's few passes a minute more than the display
+            // were empty ones -- the display showing a frame again.
+            if (display_locked && impl.locked_period_us != 0) {
+                const double late = impl.frame_accumulator / frame_step;
+                frames_due = late > 1.5 ? static_cast<int>(std::floor(late + 0.5)) : 1;
+                impl.frame_accumulator = static_cast<double>(frames_due) * frame_step;
+            }
+#endif
+            impl.display_locked_now = display_locked;
+            if (display_locked && impl.locked_queue_full) {
+                // The last frame went up with one still waiting to be shown:
+                // the display is a refresh behind this loop, and every press
+                // a refresh later on screen for it. One refresh without a new
+                // frame -- the one waiting fills it -- puts that right, and
+                // the game is a frame later for it, never a frame shown twice.
+                impl.locked_queue_full = false;
+                frames_due = 0;
+                impl.frame_accumulator = std::max(0.0, impl.frame_accumulator - frame_step);
+                ++impl.speed_queue_waits;
+                // Not a frame shown late: the one waiting is shown meanwhile.
+                impl.last_frame_presented_us = 0;
+            }
             const uint64_t core_started = SDL_GetPerformanceCounter();
-            while (impl.frame_accumulator >= impl.frame_period && advanced < max_frames_per_iteration) {
+            while ((display_locked ? advanced < frames_due
+                                   : impl.frame_accumulator >= impl.frame_period) &&
+                   advanced < max_frames_per_iteration) {
                 std::string frame_error;
                 const uint64_t frame_started = SDL_GetPerformanceCounter();
                 const bool ran = playing->advance_frame(&frame_error);
@@ -4879,7 +4986,7 @@ int App::run(const AppOptions& options) {
                     }
                     break;
                 }
-                impl.frame_accumulator -= impl.frame_period;
+                impl.frame_accumulator -= frame_step;
                 ++advanced;
             }
             if (impl.frame_accumulator > impl.frame_period * max_frames_per_iteration) {
@@ -5038,7 +5145,13 @@ int App::run(const AppOptions& options) {
         // shrugs that off; a Switch, running the core on the same cores the
         // GPU driver is using, ran the game well short of full speed.
         const uint64_t render_now_us = steady_micros();
-        const bool core_paced = !impl.settings.vsync && !impl.paced_by_external_game() &&
+        // Locked to the display and paced by the clock (see below), the
+        // same: a pass with no new frame draws nothing, so nothing but new
+        // frames waits to be shown. Until the display's period is known, every
+        // pass draws, so that the swap waits for the refresh that measures it.
+        const bool core_paced = (!impl.settings.vsync ||
+                                 (impl.display_locked_now && impl.locked_period_us != 0)) &&
+                                !impl.paced_by_external_game() &&
                                 impl.state == Impl::State::Playing && impl.source != nullptr;
         const bool draw_this_pass =
             core_paced ? impl.core_frame_undrawn
@@ -5046,16 +5159,86 @@ int App::run(const AppOptions& options) {
                 render_now_us - impl.last_render_us >=
                     static_cast<uint64_t>(impl.frame_period * 1'000'000.0 * 0.9);
         if (draw_this_pass) {
+            const bool new_core_frame = impl.core_frame_undrawn;
             impl.last_render_us = render_now_us;
             impl.core_frame_undrawn = false;
             impl.render();
-            impl.pass_times.draw_us += steady_micros() - render_now_us;
+            const uint64_t presented_us = steady_micros();
+            impl.pass_times.draw_us += presented_us - render_now_us;
+            if (new_core_frame && impl.state == Impl::State::Playing && impl.source != nullptr) {
+                const double refresh_us = 1'000'000.0 / (impl.display_refresh_hz > 0.0
+                                                             ? impl.display_refresh_hz
+                                                             : 1.0 / impl.frame_period);
+                if (impl.last_frame_presented_us != 0 && impl.speed_window_start != 0 &&
+                    static_cast<double>(presented_us - impl.last_frame_presented_us) > refresh_us * 1.5) {
+                    ++impl.speed_frame_gaps;
+                }
+                impl.last_frame_presented_us = presented_us;
+            }
+#ifdef __SWITCH__
+            // A frame that waited for a buffer found the queue full: one frame
+            // on the display and two more waiting. Until the display's period is known, those
+            // waits are what measures it -- the time across a run of them,
+            // each held to a refresh. After, one means the loop has got a
+            // frame ahead (see locked_queue_full).
+            if (new_core_frame && impl.display_locked_now) {
+                // Mesa waits for a free buffer when a frame starts drawing,
+                // not in the swap: the whole of drawing and presenting is
+                // what waits.
+                const bool waited = presented_us - render_now_us > 4000;
+                if (impl.locked_period_us == 0) {
+                    constexpr int kLearnRefreshes = 120;
+                    if (!waited) {
+                        impl.locked_learn_count = 0;
+                    } else if (impl.locked_learn_count++ == 0) {
+                        impl.locked_learn_start_us = presented_us;
+                    } else if (impl.locked_learn_count > kLearnRefreshes) {
+                        impl.locked_period_us =
+                            (presented_us - impl.locked_learn_start_us) / kLearnRefreshes;
+                        char text[128];
+                        std::snprintf(text, sizeof(text),
+                                      "the display refreshes every %.3f ms; a frame goes up "
+                                      "each refresh, with no more than one waiting",
+                                      impl.locked_period_us / 1000.0);
+                        log_info(text);
+                    }
+                } else if (waited) {
+                    impl.locked_queue_full = true;
+                    ++impl.speed_swap_waits;
+                }
+            }
+#endif
         }
 
         if (!impl.settings.vsync) {
             // Without vsync, hand the CPU back rather than spinning.
             SDL_Delay(1);
         }
+#ifdef __SWITCH__
+        // Locked to the display, a pass starts every refresh by the clock,
+        // not when the swap lets go: three buffers let the swap return with
+        // two frames still waiting to be shown, every press two refreshes
+        // late. A fifth of a percent faster than the display, as measured, so
+        // the loop is never the one behind; when it gets a frame ahead, see
+        // locked_queue_full.
+        if (impl.display_locked_now && impl.state == Impl::State::Playing &&
+            impl.locked_period_us != 0) {
+            const uint64_t period_us = impl.locked_period_us * 998 / 1000;
+            const uint64_t now_us = steady_micros();
+            if (impl.locked_next_pass_us == 0 || now_us > impl.locked_next_pass_us + period_us) {
+                impl.locked_next_pass_us = now_us + period_us;
+            } else {
+                if (impl.locked_next_pass_us > now_us) {
+                    std::this_thread::sleep_for(
+                        std::chrono::microseconds(impl.locked_next_pass_us - now_us));
+                }
+                impl.locked_next_pass_us += period_us;
+            }
+        } else {
+            impl.locked_next_pass_us = 0;
+            impl.locked_queue_full = false;
+        }
+#endif
         if (impl.state == Impl::State::Playing && impl.source != nullptr) {
             impl.report_slow_pass(steady_micros() - impl.pass_began_us);
         }

@@ -1355,8 +1355,11 @@ Switch Online's suspend point, it does not matter how the app was left:
 It is kept beside the cartridge save as `<rom name>.resume`, separate from the
 four slots, and written the same all-or-nothing way, so a power cut while one
 is being written leaves the one before it. The game only pauses long enough to
-take the snapshot; compressing it and writing it happen on a thread of their
-own. Turning the option off deletes it, so an old one can never be resumed by
+take the snapshot -- about 9 ms for a Mario Kart DS race with the deko3d
+melonDS on a Switch, inside the time a frame has to spare, where it was 28 ms
+and a dropped frame every half minute before
+`switch/melonds_deko/patches/Savestate-memory-stream.patch`; compressing it
+and writing it happen on a thread of their own. Turning the option off deletes it, so an old one can never be resumed by
 surprise later. If it will not load -- a much newer core, say -- the game
 starts from the beginning and the log says why.
 
@@ -1438,6 +1441,25 @@ V1 does not script `shortcuts.vdf` for you.
 stylus button under the layouts; every other layout is drawn right-handed. An
 older file's single `"handedness": "left"` is turned into every layout that has
 a hand, once.
+
+`vsync` (**Vsync** in Settings) is off unless turned on. Off, a game played
+here runs at its own rate -- a DS's is 59.83 frames a second -- and each
+frame goes to the display as soon as it is drawn, which keeps input as quick
+as it can be, above all a companion's. But a display refreshes 60 times a
+second, so every few seconds a refresh has no new frame and shows the last
+one again, and frames finishing near a refresh land on either side of it: a
+small hitch every so often, however fast the game is running. On, and while
+no other device is connected, a game whose rate is that close to the
+display's runs one frame for each refresh, the way melonDS's own Switch app
+does -- 0.3% fast for a DS game, which the sound follows without being heard
+-- so every refresh shows a new frame. On a Switch that does not cost a
+refresh of input either: the window has three buffers, which would let two
+finished frames wait to be shown, so each frame is started by the clock
+rather than whenever a buffer is free -- the display's period measured from
+the first couple of seconds, a hair faster -- and when one does find another
+still waiting, the next refresh is left to it. The game log's `speed:` lines
+count frames shown late, and, locked to the display, refreshes left to a
+waiting frame and frames that waited for a buffer.
 
 `wii_u_alone` is `"auto"`, `"tv"` or `"gamepad"`, and starts as `"auto"`.
 See **Wii U games** above. It replaces `wii_u_screen_alone`, which is no
