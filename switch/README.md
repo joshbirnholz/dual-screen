@@ -290,6 +290,19 @@ DS race, which was a dropped frame every time the app wrote a resume point. (It 
 same emulator Gheovgos's melonDS for
 Switch, release 7.x, is built on.)
 
+deko3d itself has a fault this build works around, in `melonds_deko/gfx.cpp`:
+clearing a command buffer (`dkCmdBufClear`, deko3d 0.5.0 and upstream to date)
+keeps only one of the kilobyte chunks of control memory it was using and loses
+the rest. Every compute shader the 3D renderer binds or dispatches takes some,
+so its list for each frame lost a kilobyte -- a leak that fragmented the heap
+until everything in the program ran slower: drawing a frame went from under 2
+ms to over 4 within minutes, and a game that started at full speed slowed down
+the longer it was played (most noticed after coming back to it from the HOME
+menu or sleep, after a long session). The link sends `dkCmdBufClear` through
+`__wrap_dkCmdBufClear` (`-Wl,--wrap` in `switch/Makefile`), which puts the lost
+chunks on the free list first; on the console the heap now stays flat for as
+long as a game runs.
+
 From this `switch` directory — `cores/` is ignored by git:
 
 ```sh

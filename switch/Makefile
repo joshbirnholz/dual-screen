@@ -189,7 +189,10 @@ endif
 # RSDuck's melonDS needs nothing of libretro-common: it was never a libretro
 # core, and melonds_deko/ gives it what its own frontend gave it.
 CFILES      :=
-CORE_EXTRA_LIBS := -ldeko3d
+# deko3d's dkCmdBufClear loses all but one of a command buffer's control
+# memory chunks; melonds_deko/gfx.cpp puts the rest back first -- see
+# __wrap_dkCmdBufClear there.
+CORE_EXTRA_LIBS := -Wl,--wrap=dkCmdBufClear -ldeko3d
 else
 ifeq ($(wildcard $(CORE_COMMON)/file/file_path.c),)
 $(error Cannot find the core's source at $(CORE_SRC_PATH), which the link needs \

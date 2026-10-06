@@ -94,6 +94,69 @@ bool romfs_lookup(const std::vector<uint8_t>& romfs, const std::string& path, co
 }  // namespace
 }  // namespace melonds_deko
 
+// deko3d's dkCmdBufClear (deko3d 0.5.0, and upstream to date) keeps only one
+// of a command buffer's control memory chunks: the chunks in use form a list,
+// newest first, and clear() moves the newest to the free list by pointing it at
+// the free list -- dropping its link to every older one. Those are never used or
+// freed again. A command list needs more than one chunk -- each holds about a
+// kilobyte -- when it has more control commands than that, and every compute
+// shader bound or dispatched is one: the 3D renderer's list for each frame was
+// over a kilobyte of them. So each frame lost a kilobyte, which over a few
+// minutes of play fragmented the heap until every allocation in the program was
+// slower, and drawing a frame went from under 2 ms to over 4 and kept going: a
+// game that ran at full speed at first slowed down the longer it was played.
+//
+// The linker sends every dkCmdBufClear here (-Wl,--wrap in switch/Makefile).
+// The older chunks go on the free list first; deko3d's own clear() then moves
+// the newest, which it gets right. Done by hand on deko3d's own layout of its
+// command buffer -- the device, three more pointers, a word and two flags, then
+// the two chunk lists; each chunk starts with its next pointer and its size --
+// so only for one of this core's own command buffers whose chunks are the size
+// deko3d makes, and otherwise left entirely to deko3d.
+namespace {
+struct DekoCtrlChunk {
+    DekoCtrlChunk* next;
+    size_t size;
+};
+struct DekoCmdBufLayout {
+    DkDevice device;
+    void* user_data;
+    DkCmdBufAddMemFunc add_mem;
+    uint32_t reserved_words;
+    bool has_flush_func;
+    bool is_capturing;
+    DekoCtrlChunk* chunks_in_use;
+    DekoCtrlChunk* chunks_free;
+};
+}  // namespace
+
+extern "C" void __real_dkCmdBufClear(DkCmdBuf obj);
+
+extern "C" void __wrap_dkCmdBufClear(DkCmdBuf obj) {
+    auto* const buffer = reinterpret_cast<DekoCmdBufLayout*>(obj);
+    if (buffer != nullptr && buffer->device == static_cast<DkDevice>(Gfx::Device) &&
+        !buffer->has_flush_func && buffer->chunks_in_use != nullptr &&
+        buffer->chunks_in_use->next != nullptr) {
+        // deko3d's chunks hold 1 KB, header and all, unless one command alone
+        // needed more.
+        const auto plausible = [](const DekoCtrlChunk* chunk) {
+            return chunk->size >= 1024 - sizeof(DekoCtrlChunk) && chunk->size < (1u << 20);
+        };
+        DekoCtrlChunk* last = buffer->chunks_in_use;
+        bool sane = plausible(last);
+        for (int count = 0; sane && last->next != nullptr; ++count) {
+            last = last->next;
+            sane = plausible(last) && count < 100000;
+        }
+        if (sane) {
+            last->next = buffer->chunks_free;
+            buffer->chunks_free = buffer->chunks_in_use->next;
+            buffer->chunks_in_use->next = nullptr;
+        }
+    }
+    __real_dkCmdBufClear(obj);
+}
+
 namespace Gfx {
 
 // Declared by the fork's Gfx.h, and all that the renderers and the helpers
