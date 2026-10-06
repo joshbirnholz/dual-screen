@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -84,7 +85,63 @@ void test_utf8_is_read_as_characters_rather_than_bytes() {
 
 }  // namespace
 
+// A Japanese game's name -- Ouendan 2, here -- drawn from a fallback font: the
+// embedded one is Latin only. Wherever this runs has to have one for there to
+// be anything to check, as a desktop with a CJK font installed (or a Switch,
+// with its own) does.
+void test_names_the_ui_font_lacks_come_from_a_fallback() {
+    const FontFace& face = font_face(26.0f);
+    const Glyph* a = face.glyph(0x3042);  // あ
+    if (a == nullptr) {
+        std::printf("note: no Japanese font on this machine; the fallback was not checked\n");
+        return;
+    }
+    CHECK_MSG(a->font != 0, "あ came from the embedded font, which has no kana");
+    CHECK_MSG(a->width > 0 && a->height > 0, "あ was drawn as nothing");
+    const std::string name = "\xE6\x8A\xBC\xE5\xBF\x8D\xEF\xBC\x81\xE9\x97\x98\xE3\x81\x88\xEF\xBC\x81"
+                             "\xE5\xBF\x9C\xE6\x8F\xB4\xE5\x9B\xA3 2";  // 押忍！闘え！応援団 2
+    const float width = TextRenderer::measure_width(name, 3.0f);
+    CHECK_MSG(width > TextRenderer::measure_width(" 2", 3.0f) * 4.0f,
+              "the name measured " + std::to_string(width) + "px, as if its kanji were not there");
+    // As wide as the Latin letters beside it would suggest: about an em each.
+    const Glyph* kanji = face.glyph(0x95D8);  // 闘
+    const Glyph* capital = face.glyph('H');
+    CHECK(kanji != nullptr && capital != nullptr);
+    if (kanji != nullptr && capital != nullptr) {
+        CHECK_MSG(kanji->height > capital->height && kanji->height < capital->height * 2,
+                  "闘 is " + std::to_string(kanji->height) + "px tall beside an H of " +
+                      std::to_string(capital->height) + "px");
+    }
+
+    // Thousands of them grow the atlas, and what was in it stays where it was.
+    const Glyph* h = face.glyph('H');
+    std::vector<uint8_t> before;
+    for (int y = 0; y < h->height; ++y) {
+        const uint8_t* row = face.pixels().data() + static_cast<std::size_t>(h->atlas_y + y) * face.atlas_width();
+        before.insert(before.end(), row + h->atlas_x, row + h->atlas_x + h->width);
+    }
+    const int width_before = face.atlas_width();
+    const int revision_before = face.revision();
+    for (uint32_t codepoint = 0x4E00; codepoint < 0x4E00 + 1500; ++codepoint) face.glyph(codepoint);
+    CHECK_MSG(face.atlas_width() > width_before, "1500 kanji fitted in the atlas they started in");
+    CHECK(face.revision() > revision_before);
+    std::vector<uint8_t> after;
+    for (int y = 0; y < h->height; ++y) {
+        const uint8_t* row = face.pixels().data() + static_cast<std::size_t>(h->atlas_y + y) * face.atlas_width();
+        after.insert(after.end(), row + h->atlas_x, row + h->atlas_x + h->width);
+    }
+    CHECK_MSG(before == after, "growing the atlas moved or spoiled the glyphs already in it");
+    const Glyph* last = face.glyph(0x4E00 + 1499);
+    if (last != nullptr) {
+        CHECK(last->atlas_x + last->width <= face.atlas_width());
+        CHECK(last->atlas_y + last->height <= face.atlas_height());
+    }
+    // A codepoint no font has is still nothing.
+    CHECK(face.glyph(0x10FFFD) == nullptr);
+}
+
 int main() {
+    test_names_the_ui_font_lacks_come_from_a_fallback();
     test_letters_take_the_width_of_their_own_shape();
     test_a_wider_scale_draws_wider_text();
     test_a_pair_that_kerns_sits_closer_than_its_advances();

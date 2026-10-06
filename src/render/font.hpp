@@ -26,19 +26,29 @@ struct Glyph {
     float left = 0.0f;
     float top = 0.0f;
     float advance = 0.0f;
+    // Which font drew it: 0 the embedded one, else a fallback (see below).
+    int font = 0;
 };
 
 // Every glyph the UI can draw, rasterised at one em size into a single 8-bit
-// coverage atlas.
+// coverage atlas. The embedded font's Latin set is baked at once; anything it
+// does not have -- a Japanese game's name, Chinese, Korean -- is drawn from a
+// fallback font the first time it is asked for and added to the atlas, which
+// grows to fit. The fallbacks are the system's own: the console's shared fonts
+// on a Switch, Hiragino on a Mac, whatever fontconfig offers for Japanese on
+// Linux (Noto Sans CJK, Droid Sans Fallback and the like). A codepoint none of
+// them has is drawn as nothing.
 class FontFace {
 public:
     const std::vector<uint8_t>& pixels() const { return pixels_; }
     int atlas_width() const { return atlas_width_; }
     int atlas_height() const { return atlas_height_; }
     bool valid() const { return !pixels_.empty(); }
+    // Goes up each time a glyph is added, so an uploaded copy of the atlas
+    // knows to upload it again.
+    int revision() const { return revision_; }
 
-    // Null for a codepoint the font does not cover, which callers draw as
-    // nothing rather than as a substitute box.
+    // Null for a codepoint no font covers. May add the glyph to the atlas.
     const Glyph* glyph(uint32_t codepoint) const;
     // How much closer this pair sits than their advances alone would put them.
     float kerning(uint32_t left, uint32_t right) const;
@@ -48,12 +58,23 @@ public:
     static FontFace bake(float em_pixels);
 
 private:
-    std::vector<uint8_t> pixels_;
-    int atlas_width_ = 0;
-    int atlas_height_ = 0;
+    bool place(int font, int glyph_index, uint32_t codepoint) const;
+    bool grow() const;
+
+    // Filled in as text needs it, from behind a const face: drawing a string
+    // is what discovers which glyphs it wants.
+    mutable std::vector<uint8_t> pixels_;
+    mutable int atlas_width_ = 0;
+    mutable int atlas_height_ = 0;
+    mutable int pen_x_ = 1;
+    mutable int pen_y_ = 1;
+    mutable int row_height_ = 0;
+    mutable int revision_ = 0;
+    mutable std::unordered_map<uint32_t, Glyph> glyphs_;
+    mutable std::unordered_map<uint32_t, bool> missing_;
+    mutable std::vector<float> scales_;  // per font, 0 until first used
+    float em_pixels_ = 0.0f;
     float baseline_ = 0.0f;
-    float scale_ = 0.0f;
-    std::unordered_map<uint32_t, Glyph> glyphs_;
 };
 
 // Baked on first use and kept: a UI asks for a handful of sizes and asks for

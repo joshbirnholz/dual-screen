@@ -55,20 +55,22 @@ void TextRenderer::shutdown() {
         entry.second.destroy();
     }
     atlases_.clear();
+    atlas_revisions_.clear();
 }
 
 const Texture* TextRenderer::atlas_for(float scale) {
     const int key = static_cast<int>(std::lround(em_pixels_for(scale)));
+    const FontFace& face = font_face(em_pixels_for(scale));
     const auto found = atlases_.find(key);
-    if (found != atlases_.end()) {
+    if (found != atlases_.end() && atlas_revisions_[key] == face.revision()) {
         return found->second.valid() ? &found->second : nullptr;
     }
 
-    const FontFace& face = font_face(em_pixels_for(scale));
     Texture& texture = atlases_[key];
     if (face.valid()) {
         texture.upload_alpha8(face.pixels().data(), face.atlas_width(), face.atlas_height());
     }
+    atlas_revisions_[key] = face.revision();
     return texture.valid() ? &texture : nullptr;
 }
 
@@ -93,12 +95,15 @@ void TextRenderer::draw(QuadRenderer& quads,
     if (text.empty() || scale <= 0.0f) {
         return;
     }
+    const FontFace& face = font_face(em_pixels_for(scale));
+    const std::vector<uint32_t> codepoints = decode_utf8(text);
+    // Every glyph found first, so one drawn for the first time -- from a
+    // fallback font, into the atlas -- is in the copy uploaded below.
+    for (const uint32_t codepoint : codepoints) face.glyph(codepoint);
     const Texture* atlas = atlas_for(scale);
     if (atlas == nullptr) {
         return;
     }
-    const FontFace& face = font_face(em_pixels_for(scale));
-    const std::vector<uint32_t> codepoints = decode_utf8(text);
 
     float pen_x = x;
     if (align == TextAlign::Center) {

@@ -62,6 +62,9 @@ private:
     // stretched to 48px without the softness this whole change is meant to
     // remove, so each size gets its own.
     std::map<int, Texture> atlases_;
+    // The face's revision each was uploaded at: a glyph added since (a
+    // Japanese name's, say) means uploading it again.
+    std::map<int, int> atlas_revisions_;
     const Texture* atlas_for(float scale);
     int default_atlas_width_ = 0;
     int default_atlas_height_ = 0;

@@ -1109,6 +1109,14 @@ likely are — the EmuDeck and RetroDECK paths, the SD card, then home). Useful
 for one catch-all shortcut; per-game shortcuts with `--game` stay the fastest
 way in.
 
+Names in Japanese, Chinese or Korean — a ROM's file name, a game's title in
+Data Management — are drawn with the system's own font for them, since the
+font the app carries has only Latin letters: whatever fontconfig picks for
+Japanese on Linux (most desktops have Noto Sans CJK; where there is none,
+install `fonts-noto-cjk` or similar), Hiragino on a Mac, and the console's own
+fonts on a Switch. The log says which it found. With none, those characters
+are left out.
+
 Full options:
 
 ```
