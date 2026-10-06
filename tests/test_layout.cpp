@@ -35,11 +35,11 @@ bool placed_screen(const Layout& layout,
 void test_registry_contents() {
     const LayoutRegistry registry;
     // Vertical Screens first, as a new game starts on it; the two focus
-    // layouts beside it; Separate Screens bottom left of a menu of three
-    // columns, then Side-by-Side and Horizontal. Standard is kept but hidden
+    // layouts beside it; Horizontal bottom left of a menu of three columns,
+    // then Side-by-Side and Separate Screens. Standard is kept but hidden
     // (see Layout::hidden), and TV Only and GamePad Only are a Wii U's.
-    const char* const expected[] = {"vertical",     "upper_focus", "touch_focus", "upper_on_tv",
-                                    "side_by_side", "horizontal",  "standard",    "tv_only",
+    const char* const expected[] = {"vertical",     "upper_focus", "touch_focus", "horizontal",
+                                    "side_by_side", "upper_on_tv", "standard",    "tv_only",
                                     "gamepad_only"};
     CHECK_EQ(registry.size(), sizeof(expected) / sizeof(expected[0]));
     for (std::size_t index = 0; index < registry.size(); ++index) {

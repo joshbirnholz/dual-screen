@@ -120,9 +120,9 @@ In the menu's order:
 | `vertical` | Vertical Screens | the DS's arrangement without the console around it |
 | `upper_focus` | Upper Screen Focus | the upper screen large, the touch screen small in the corner |
 | `touch_focus` | Touch Screen Focus | the touch screen large, the upper screen small in the corner |
-| `upper_on_tv` | Separate Screens | one screen per device, each filling its own display — and alone, one screen and nothing else |
-| `side_by_side` | Side-by-Side Screens | held sideways: both screens turned a quarter turn |
 | `horizontal` | Horizontal Screens | both screens upright at the same size, next to each other |
+| `side_by_side` | Side-by-Side Screens | held sideways: both screens turned a quarter turn |
+| `upper_on_tv` | Separate Screens | one screen per device, each filling its own display — and alone, one screen and nothing else |
 
 `standard` — both screens inside a drawing of the console itself — is still
 there, and `--layout standard` still shows it, but it is hidden from the menu

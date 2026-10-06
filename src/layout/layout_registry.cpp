@@ -175,28 +175,18 @@ LayoutRegistry::LayoutRegistry() {
         layouts_.push_back(layout);
     }
 
-    // 4. One screen on each device -- and, alone, one screen and nothing else,
-    // whichever the game is played on: a game where only one of the two
-    // matters is played without the other in the way. Which one is swapped
-    // from the quick menu (the button where a hand is chosen elsewhere) or
-    // with L3, and kept per game -- see GameConfig::separate_screen. With a
-    // second device connected, the swap trades the two devices' screens.
-    // Bottom left in a menu of three columns, where it was asked to be.
+    // 4. Both screens at the same size, side by side and upright -- the
+    // touch screen on the right, or on the left for a left hand. Spaced like
+    // Vertical Screens when the gap is on, flush when it is off.
     {
         Layout layout;
-        layout.id = "upper_on_tv";  // its id from when it was "Upper Screen on TV"
-        layout.display_name = "Separate Screens";
-        layout.per_device = true;
+        layout.id = "horizontal";
+        layout.display_name = "Horizontal Screens";
         layout.composition = make_composition(
-            LayoutAxis::Vertical,
+            LayoutAxis::Horizontal,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
-            kVerticalGap, kVerticalMargin);
+            kHorizontalGap, kVerticalMargin);
         layout.composition.gap_toggleable = true;
-        layout.swaps_screens = true;
-        // A Wii U's own per-device split is Cemu keeping one screen to itself
-        // and this app only ever holding the other -- see tv_only/gamepad_only
-        // below -- rather than this app resolving a two-screen layout down to
-        // one side of it.
         layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
@@ -223,18 +213,28 @@ LayoutRegistry::LayoutRegistry() {
         layouts_.push_back(layout);
     }
 
-    // 6. Both screens at the same size, side by side and upright -- the
-    // touch screen on the right, or on the left for a left hand. Spaced like
-    // Vertical Screens when the gap is on, flush when it is off.
+    // 6. One screen on each device -- and, alone, one screen and nothing else,
+    // whichever the game is played on: a game where only one of the two
+    // matters is played without the other in the way. Which one is swapped
+    // from the quick menu (the button where a hand is chosen elsewhere) or
+    // with L3, and kept per game -- see GameConfig::separate_screen. With a
+    // second device connected, the swap trades the two devices' screens.
+    // Bottom right in a menu of three columns, where it was asked to be.
     {
         Layout layout;
-        layout.id = "horizontal";
-        layout.display_name = "Horizontal Screens";
+        layout.id = "upper_on_tv";  // its id from when it was "Upper Screen on TV"
+        layout.display_name = "Separate Screens";
+        layout.per_device = true;
         layout.composition = make_composition(
-            LayoutAxis::Horizontal,
+            LayoutAxis::Vertical,
             {make_item(ScreenId::Top), make_item(ScreenId::Bottom)},
-            kHorizontalGap, kVerticalMargin);
+            kVerticalGap, kVerticalMargin);
         layout.composition.gap_toggleable = true;
+        layout.swaps_screens = true;
+        // A Wii U's own per-device split is Cemu keeping one screen to itself
+        // and this app only ever holding the other -- see tv_only/gamepad_only
+        // below -- rather than this app resolving a two-screen layout down to
+        // one side of it.
         layout.systems = {SystemId::Ds, SystemId::ThreeDs};
         layouts_.push_back(layout);
     }
