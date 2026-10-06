@@ -208,6 +208,10 @@ public:
         target_hz_ = asked != 0 ? asked : kPlayingCpuHz;
         apply(target_hz_);
         appletHook(&hook_, on_applet_event, this);
+        if (!use_pcv_) {
+            gpu_open_ = R_SUCCEEDED(clkrstOpenSession(&gpu_session_, PcvModuleId_GPU, 3));
+            memory_open_ = R_SUCCEEDED(clkrstOpenSession(&memory_session_, PcvModuleId_EMC, 3));
+        }
         log_info("CPU at " + std::to_string(target_hz_ / 1000000) + " MHz while playing (was " +
                  std::to_string(original_hz_ / 1000000) + " MHz)" +
                  (asked != 0 ? ", as melonds.ini says" : ""));
@@ -224,6 +228,8 @@ public:
         if (watchdog_.joinable()) watchdog_.join();
         appletUnhook(&hook_);
         apply(original_hz_ != 0 ? original_hz_ : 1020000000u);
+        if (gpu_open_) clkrstCloseSession(&gpu_session_);
+        if (memory_open_) clkrstCloseSession(&memory_session_);
         if (use_pcv_) {
             pcvExit();
         } else {
@@ -254,12 +260,26 @@ private:
     void watch() {
         std::unique_lock<std::mutex> lock(mutex_);
         while (!wake_.wait_for(lock, std::chrono::seconds(1), [this] { return stopping_; })) {
+            note_gpu_clocks();
             const u32 hz = current();
             if (hz == 0 || hz == target_hz_) continue;
             log_info("the system put the CPU at " + std::to_string(hz / 1000000) +
                      " MHz; back to " + std::to_string(target_hz_ / 1000000));
             apply(target_hz_);
         }
+    }
+
+    // The GPU's and the memory's clocks, said when they change: the system
+    // sets those too, and a game drawn on the GPU is as fast as they are.
+    void note_gpu_clocks() {
+        u32 gpu = 0, memory = 0;
+        if (gpu_open_) clkrstGetClockRate(&gpu_session_, &gpu);
+        if (memory_open_) clkrstGetClockRate(&memory_session_, &memory);
+        if (gpu == said_gpu_hz_ && memory == said_memory_hz_) return;
+        said_gpu_hz_ = gpu;
+        said_memory_hz_ = memory;
+        log_info("GPU at " + std::to_string(gpu / 1000000) + " MHz, memory at " +
+                 std::to_string(memory / 1000000) + " MHz");
     }
 
     void apply(u32 hz) {
@@ -276,6 +296,12 @@ private:
     u32 original_hz_ = 0;
     u32 target_hz_ = kPlayingCpuHz;
     ClkrstSession session_{};
+    ClkrstSession gpu_session_{};
+    ClkrstSession memory_session_{};
+    bool gpu_open_ = false;
+    bool memory_open_ = false;
+    u32 said_gpu_hz_ = 0;
+    u32 said_memory_hz_ = 0;
     AppletHookCookie hook_{};
     std::mutex mutex_;
     std::condition_variable wake_;

@@ -1457,9 +1457,13 @@ refresh of input either: the window has three buffers, which would let two
 finished frames wait to be shown, so each frame is started by the clock
 rather than whenever a buffer is free -- the display's period measured from
 the first couple of seconds, a hair faster -- and when one does find another
-still waiting, the next refresh is left to it. The game log's `speed:` lines
-count frames shown late, and, locked to the display, refreshes left to a
-waiting frame and frames that waited for a buffer.
+still waiting, the next refresh is left to it. If the display stops keeping
+up -- a frame held a tenth of a second, or several finding the queue full in
+one second -- vsync is held off for ten seconds (twice as long each time it
+happens again soon after, up to two minutes), so that the picture suffers
+rather than the game. The game log's `speed:` lines count frames shown late,
+how long drawing a frame took, and, locked to the display, refreshes left to
+a waiting frame and frames that waited for a buffer.
 
 `wii_u_alone` is `"auto"`, `"tv"` or `"gamepad"`, and starts as `"auto"`.
 See **Wii U games** above. It replaces `wii_u_screen_alone`, which is no

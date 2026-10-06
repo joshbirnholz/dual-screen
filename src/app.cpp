@@ -604,6 +604,9 @@ struct App::Impl {
         speed_frame_gaps = 0;
         speed_queue_waits = 0;
         speed_swap_waits = 0;
+        speed_draw_us = 0;
+        speed_slowest_draw_us = 0;
+        speed_draws = 0;
     }
 
     uint64_t last_counter = 0;
@@ -639,6 +642,10 @@ struct App::Impl {
     // given to a frame already waiting, and frames that found the queue full.
     int speed_queue_waits = 0;
     int speed_swap_waits = 0;
+    // Drawing and presenting each of the core's frames: total and slowest.
+    uint64_t speed_draw_us = 0;
+    uint64_t speed_slowest_draw_us = 0;
+    int speed_draws = 0;
     // The display's refresh rate, where the system says; 0 where it does not.
     double display_refresh_hz = 0.0;
     double display_refresh_said = -1.0;
@@ -656,6 +663,20 @@ struct App::Impl {
     uint64_t locked_period_us = 0;
     uint64_t locked_learn_start_us = 0;
     int locked_learn_count = 0;
+    // Vsync held off: the display fell behind (see the end of the main loop),
+    // and until vsync_held_off_until_us this loop runs as with vsync off --
+    // the game's own clock, never waiting for the display -- so that a
+    // display that takes frames late or not at all slows only the picture,
+    // not the game. Each time it happens again soon after, it holds off for
+    // twice as long, up to two minutes.
+    bool vsync_held_off = false;
+    uint64_t vsync_held_off_until_us = 0;
+    uint64_t vsync_hold_off_us = 10'000'000;
+    uint64_t locked_since_us = 0;
+    uint64_t locked_waits_window_us = 0;
+    int locked_waits_in_window = 0;
+    // Vsync as it is right now: the setting, unless held off.
+    bool vsync_in_effect() const { return settings.vsync && !vsync_held_off; }
     double save_flush_accumulator = 0.0;
     // Played time since the resume point was last written -- see
     // kResumePointIntervalSeconds.
@@ -1266,7 +1287,7 @@ void App::Impl::adopt_external_timing() {
 }
 
 void App::Impl::update_swap_pacing() {
-    const int wanted = paced_by_external_game() ? 0 : (settings.vsync ? 1 : 0);
+    const int wanted = paced_by_external_game() ? 0 : (vsync_in_effect() ? 1 : 0);
     if (wanted == swap_interval_applied || window == nullptr) return;
     SDL_GL_SetSwapInterval(wanted);
     // Said when it changes, not each time it is applied again: every change
@@ -3174,10 +3195,13 @@ void App::Impl::report_speed() {
                   "(a frame is %.1f ms), and each of %d passes spent %.1f ms more drawing, "
                   "reading input and waiting; slowest frame %.1f ms, %d longer than a frame, "
                   "%d passes catching up, %d frames shown late, %d refreshes left to a waiting "
-                  "frame, %d frames waited for a buffer",
+                  "frame, %d frames waited for a buffer; drawing a frame took %.1f ms, at "
+                  "most %.1f",
                   speed_frames, speed_seconds, percent, core_ms, 1000.0 * frame_period, speed_passes,
                   rest_ms, 1000.0 * speed_slowest_frame, speed_long_frames, speed_catch_ups,
-                  speed_frame_gaps, speed_queue_waits, speed_swap_waits);
+                  speed_frame_gaps, speed_queue_waits, speed_swap_waits,
+                  speed_draws > 0 ? speed_draw_us / 1000.0 / speed_draws : 0.0,
+                  speed_slowest_draw_us / 1000.0);
     log_info(line);
     reset_speed_window();
 }
@@ -4161,6 +4185,10 @@ int App::run(const AppOptions& options) {
         // a window in the background was only ever as regular as the
         // compositor made it: every frame that arrived twice within one of
         // its passes was one this app never took.
+        if (impl.vsync_held_off && steady_micros() >= impl.vsync_held_off_until_us) {
+            impl.vsync_held_off = false;
+            log_info("waiting for the display again; measuring its refresh first");
+        }
         impl.update_swap_pacing();
         if (impl.paced_by_external_game()) {
             const int longest_ms = std::max(
@@ -4181,6 +4209,11 @@ int App::run(const AppOptions& options) {
             log_info("resumed after a " + std::to_string(elapsed) + "s gap; resetting the frame clock");
             elapsed = impl.frame_period;
             impl.frame_accumulator = 0.0;
+            // Away, the display may have been doing anything: its period is
+            // measured again before frames are paced by it.
+            impl.locked_period_us = 0;
+            impl.locked_learn_count = 0;
+            impl.locked_queue_full = false;
             impl.audio.flush();
             impl.refresh_output_size();
             impl.flush_saves();
@@ -4924,7 +4957,7 @@ int App::run(const AppOptions& options) {
             // carries its input too, and once a refresh is too seldom for it.
             impl.note_display_refresh();
             const bool display_locked =
-                impl.settings.vsync && !impl.external_source && impl.display_refresh_hz > 0.0 &&
+                impl.vsync_in_effect() && !impl.external_source && impl.display_refresh_hz > 0.0 &&
                 std::abs(impl.display_refresh_hz * impl.frame_period - 1.0) < 0.015 &&
                 !impl.companion_joined();
             const double frame_step =
@@ -5149,7 +5182,7 @@ int App::run(const AppOptions& options) {
         // same: a pass with no new frame draws nothing, so nothing but new
         // frames waits to be shown. Until the display's period is known, every
         // pass draws, so that the swap waits for the refresh that measures it.
-        const bool core_paced = (!impl.settings.vsync ||
+        const bool core_paced = (!impl.vsync_in_effect() ||
                                  (impl.display_locked_now && impl.locked_period_us != 0)) &&
                                 !impl.paced_by_external_game() &&
                                 impl.state == Impl::State::Playing && impl.source != nullptr;
@@ -5169,6 +5202,10 @@ int App::run(const AppOptions& options) {
                 const double refresh_us = 1'000'000.0 / (impl.display_refresh_hz > 0.0
                                                              ? impl.display_refresh_hz
                                                              : 1.0 / impl.frame_period);
+                const uint64_t draw_us = presented_us - render_now_us;
+                impl.speed_draw_us += draw_us;
+                impl.speed_slowest_draw_us = std::max(impl.speed_slowest_draw_us, draw_us);
+                ++impl.speed_draws;
                 if (impl.last_frame_presented_us != 0 && impl.speed_window_start != 0 &&
                     static_cast<double>(presented_us - impl.last_frame_presented_us) > refresh_us * 1.5) {
                     ++impl.speed_frame_gaps;
@@ -5185,8 +5222,44 @@ int App::run(const AppOptions& options) {
                 // Mesa waits for a free buffer when a frame starts drawing,
                 // not in the swap: the whole of drawing and presenting is
                 // what waits.
-                const bool waited = presented_us - render_now_us > 4000;
-                if (impl.locked_period_us == 0) {
+                const uint64_t waited_us = presented_us - render_now_us;
+                const bool waited = waited_us > 4000;
+                // A display that is not taking frames at its own pace -- one
+                // held a tenth of a second, or several finding the queue full
+                // within a second -- would hold the game to whatever pace it
+                // is managing, in fits and starts. Vsync is held off instead,
+                // and tried again later: whatever makes the display fall
+                // behind -- or drawing slow enough to look like it, which a
+                // leak in deko3d once did (see melonds_deko/gfx.cpp) -- costs
+                // the picture, not the game. A wait of a second or more is
+                // the app being put away mid-frame, not the display, and the
+                // frame clock already starts over for that.
+                if (waited) {
+                    if (presented_us - impl.locked_waits_window_us > 1'000'000) {
+                        impl.locked_waits_window_us = presented_us;
+                        impl.locked_waits_in_window = 0;
+                    }
+                    ++impl.locked_waits_in_window;
+                }
+                const bool falling_behind =
+                    (waited_us > 100'000 && waited_us < 1'000'000) ||
+                    (impl.locked_period_us != 0 && impl.locked_waits_in_window >= 3);
+                if (falling_behind) {
+                    impl.vsync_held_off = true;
+                    impl.vsync_held_off_until_us = presented_us + impl.vsync_hold_off_us;
+                    char text[200];
+                    std::snprintf(text, sizeof(text),
+                                  "the display is not keeping up (a frame waited %.1f ms, %d "
+                                  "waits in a second); not waiting for it for %d s",
+                                  waited_us / 1000.0, impl.locked_waits_in_window,
+                                  static_cast<int>(impl.vsync_hold_off_us / 1'000'000));
+                    log_info(text);
+                    impl.vsync_hold_off_us = std::min<uint64_t>(impl.vsync_hold_off_us * 2, 120'000'000);
+                    impl.locked_period_us = 0;
+                    impl.locked_learn_count = 0;
+                    impl.locked_queue_full = false;
+                    impl.locked_waits_in_window = 0;
+                } else if (impl.locked_period_us == 0) {
                     constexpr int kLearnRefreshes = 120;
                     if (!waited) {
                         impl.locked_learn_count = 0;
@@ -5195,6 +5268,11 @@ int App::run(const AppOptions& options) {
                     } else if (impl.locked_learn_count > kLearnRefreshes) {
                         impl.locked_period_us =
                             (presented_us - impl.locked_learn_start_us) / kLearnRefreshes;
+                        impl.locked_since_us = presented_us;
+                        // Every frame waited while measuring; none of that is
+                        // the display falling behind.
+                        impl.locked_waits_in_window = 0;
+                        impl.locked_waits_window_us = presented_us;
                         char text[128];
                         std::snprintf(text, sizeof(text),
                                       "the display refreshes every %.3f ms; a frame goes up "
@@ -5206,11 +5284,16 @@ int App::run(const AppOptions& options) {
                     impl.locked_queue_full = true;
                     ++impl.speed_swap_waits;
                 }
+                // A minute locked without trouble: the next hold-off, if any,
+                // starts short again.
+                if (impl.locked_period_us != 0 && presented_us - impl.locked_since_us > 60'000'000) {
+                    impl.vsync_hold_off_us = 10'000'000;
+                }
             }
 #endif
         }
 
-        if (!impl.settings.vsync) {
+        if (!impl.vsync_in_effect()) {
             // Without vsync, hand the CPU back rather than spinning.
             SDL_Delay(1);
         }
