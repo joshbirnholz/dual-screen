@@ -87,7 +87,11 @@ u32 svcGetCurrentProcessorNumber(void);
 
 // The CPU clock: pcv before system version 8.0.0, clkrst from it on.
 typedef enum { PcvModule_CpuBus = 0 } PcvModule;
-typedef enum { PcvModuleId_CpuBus = 0x40000001 } PcvModuleId;
+typedef enum {
+    PcvModuleId_CpuBus = 0x40000001,
+    PcvModuleId_GPU = 0x40000002,
+    PcvModuleId_EMC = 0x40000039,
+} PcvModuleId;
 Result pcvInitialize(void);
 void pcvExit(void);
 Result pcvGetClockRate(PcvModule module, u32* out_hz);
