@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "audio/audio_output.hpp"
+#include "audio/ui_sounds.hpp"
 #include "input/motion.hpp"
 #include "input/motion_compare.hpp"
 #include "config/game_config.hpp"
@@ -961,6 +962,12 @@ struct App::Impl {
                        bool fatal);
     void persist_game_config();
     void handle_ui(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers);
+    // The menus' own sounds: which one a press has earned, decided from what
+    // is on screen before and after it, and a device of their own to play
+    // them on -- see UiSoundJudge and UiSoundPlayer.
+    UiSoundPlayer ui_sounds;
+    UiSoundJudge ui_sound_judge;
+    UiSoundView sound_view() const;
     // How long the last frame took, so screens that need a clock have one.
     double last_delta_seconds = 0.0;
     CursorVisibility cursor;
@@ -2580,6 +2587,7 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     }
     if (result.settings_changed) {
         settings = settings_screen->settings();
+        ui_sounds.set_enabled(settings.ui_sounds);
         if (!settings.save(paths)) {
             log_warn("could not save settings.json");
         }
@@ -3229,6 +3237,45 @@ void App::Impl::persist_game_config() {
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
     }
+}
+
+UiSoundView App::Impl::sound_view() const {
+    UiSoundView view;
+    view.screen = static_cast<int>(state);
+    // A companion's game is the host's, and on screen here once connected.
+    const bool game_here = local_game() != nullptr || is_companion();
+    view.in_game = state == State::Playing || (state == State::Companion && is_companion());
+    view.menu = game_here && (state == State::Menu || state == State::Settings ||
+                              state == State::Controllers || state == State::DataManagement);
+    switch (state) {
+        case State::Menu:
+            if (picker) picker->describe_for_sound(view);
+            break;
+        case State::Settings:
+            if (settings_screen) settings_screen->describe_for_sound(view);
+            break;
+        case State::Controllers: controllers_screen.describe_for_sound(view); break;
+        case State::Message: message.describe_for_sound(view); break;
+        case State::Browser:
+            if (browser) browser->describe_for_sound(view);
+            break;
+        case State::Launcher:
+            if (launcher) launcher->describe_for_sound(view);
+            break;
+        case State::HostPicker:
+            if (host_picker) host_picker->describe_for_sound(view);
+            break;
+        case State::DataManagement:
+            if (data_screen) data_screen->describe_for_sound(view);
+            break;
+        case State::Forwarder:
+            if (forwarder_screen) forwarder_screen->describe_for_sound(view);
+            break;
+        case State::Playing:
+        case State::Companion:
+        case State::ResumeNotice: break;
+    }
+    return view;
 }
 
 void App::Impl::handle_ui(const std::vector<UiAction>& actions,
@@ -4138,6 +4185,16 @@ int App::run(const AppOptions& options) {
         impl.open_data_management();
     }
 
+    {
+        std::string sound_error;
+        if (impl.ui_sounds.open(&sound_error)) {
+            log_info(std::string("menu sounds ready") + (impl.settings.ui_sounds ? "" : ", but turned off in Settings"));
+        } else {
+            log_info("no menu sounds: " + sound_error);
+        }
+        impl.ui_sounds.set_enabled(impl.settings.ui_sounds);
+    }
+
     // --- main loop -----------------------------------------------------------
     const uint64_t counter_frequency = SDL_GetPerformanceFrequency();
     impl.last_counter = SDL_GetPerformanceCounter();
@@ -4834,7 +4891,18 @@ int App::run(const AppOptions& options) {
 
         set_live_pointer(impl.input.pointer_active(), impl.input.pointer_x(),
                          impl.input.pointer_y());
-        impl.handle_ui(impl.input.ui_actions(), impl.input.pointer_events());
+        {
+            const std::vector<PointerEvent>& pointers = impl.input.pointer_events();
+            const bool tapped = std::any_of(pointers.begin(), pointers.end(),
+                                            [](const PointerEvent& pointer) { return pointer.released; });
+            const double now_seconds = static_cast<double>(SDL_GetPerformanceCounter() - started_counter) /
+                                       static_cast<double>(counter_frequency);
+            impl.ui_sound_judge.note_input(impl.input.ui_actions(), tapped, now_seconds);
+            impl.handle_ui(impl.input.ui_actions(), pointers);
+            if (const std::optional<UiSound> sound = impl.ui_sound_judge.observe(impl.sound_view(), now_seconds)) {
+                impl.ui_sounds.play(*sound);
+            }
+        }
 
         // Emulation only advances while the game is actually in front; opening
         // the layout menu pauses it, which is what makes comparing layouts easy.
@@ -5398,6 +5466,7 @@ int App::run(const AppOptions& options) {
     }
     watchdog.at("closing the audio device");
     impl.audio.close();
+    impl.ui_sounds.close();
     // Before the window goes away rather than with everything else at the end:
     // the emulator has a window of its own, and the tidy order to close two is
     // the one the player would have chosen.

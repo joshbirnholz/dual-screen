@@ -70,10 +70,12 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "audio/audio_output.hpp"
+#include "audio/ui_sounds.hpp"
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "core/system.hpp"
@@ -432,6 +434,11 @@ private:
     uint64_t cursor_updated_ms_ = 0;
     AudioOutput audio_;
     uint32_t audio_rate_ = 0;
+    // The menus' own sounds, the same as the desktop app's -- see
+    // UiSoundJudge and UiSoundPlayer.
+    UiSoundPlayer ui_sounds_;
+    UiSoundJudge ui_sound_judge_;
+    UiSoundView sound_view() const;
     bool disconnect_asked_ = false;
     // Whether opening it has already been reported, so a device that will not
     // open is said once rather than on every packet that arrives.
@@ -670,6 +677,8 @@ void Client::stop() {
 #endif
     session_.disconnect();
     audio_.close();
+    // Before a game played here opens its own: see play_here().
+    ui_sounds_.close();
     // Before the context that owns them.
     bezel_art_.destroy();
     compositor_.set_bezel_art(nullptr);
@@ -1065,6 +1074,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                                      static_cast<float>(output_height_));
         if (result.settings_changed) {
             settings_ = settings_screen_->settings();
+            ui_sounds_.set_enabled(settings_.ui_sounds);
             if (!settings_.save(AppPaths::resolve())) log_warn("could not save settings.json");
         }
         if (result.open_data_management) {
@@ -1269,9 +1279,54 @@ uint64_t steady_micros() {
 }
 }  // namespace
 
+UiSoundView Client::sound_view() const {
+    UiSoundView view;
+    view.screen = static_cast<int>(state_);
+    if (state_ == State::Playing) {
+        // The host's Settings, opened from its quick menu, count as the menu
+        // too: they are drawn there, not here, but they are over the game.
+        const bool host_page = session_.host_settings_open();
+        view.menu = menu_open_ || host_page;
+        view.in_game = !view.menu && !session_.host_resume_notice();
+        if (menu_open_) picker_.describe_for_sound(view);
+        mix_sound_state(view.rest, host_page ? 1u : 0u);
+        return view;
+    }
+    switch (state_) {
+        case State::Launcher: launcher_.describe_for_sound(view); break;
+        case State::Browsing: host_picker_.describe_for_sound(view); break;
+        case State::Failed: view.error = true; break;
+#if DS_LOCAL_PLAY
+        case State::DataManagement:
+            if (data_screen_) data_screen_->describe_for_sound(view);
+            break;
+        case State::Settings:
+            if (settings_screen_) settings_screen_->describe_for_sound(view);
+            break;
+#endif
+        default: break;
+    }
+    return view;
+}
+
 void Client::run() {
     const uint64_t started_ms = net::monotonic_millis();
     bool screenshot_taken = false;
+    {
+        // Only a build that plays games here has Settings to turn them off in.
+#if DS_LOCAL_PLAY
+        const bool wanted = Settings::load(AppPaths::resolve()).ui_sounds;
+#else
+        const bool wanted = true;
+#endif
+        std::string sound_error;
+        if (ui_sounds_.open(&sound_error)) {
+            log_info(std::string("menu sounds ready") + (wanted ? "" : ", but turned off in Settings"));
+        } else {
+            log_info("no menu sounds: " + sound_error);
+        }
+        ui_sounds_.set_enabled(wanted);
+    }
 
     while (running_) {
 #ifdef __SWITCH__
@@ -1529,7 +1584,14 @@ void Client::run() {
         std::vector<PointerEvent> pointers = input_.pointer_events();
         set_live_pointer(input_.pointer_active(), input_.pointer_x(), input_.pointer_y());
         route_guide_taps(actions, pointers);
+        const bool tapped = std::any_of(pointers.begin(), pointers.end(),
+                                        [](const PointerEvent& pointer) { return pointer.released; });
+        const double now_seconds = static_cast<double>(net::monotonic_millis() - started_ms) / 1000.0;
+        ui_sound_judge_.note_input(actions, tapped, now_seconds);
         handle_actions(actions, pointers);
+        if (const std::optional<UiSound> sound = ui_sound_judge_.observe(sound_view(), now_seconds)) {
+            ui_sounds_.play(*sound);
+        }
 
         if (state_ == State::Playing && !menu_open_ && !session_.host_settings_open() &&
             !session_.host_resume_notice()) {

@@ -17,6 +17,7 @@
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/popup.hpp"
+#include "ui/sound_view.hpp"
 
 namespace ds {
 
@@ -36,6 +37,8 @@ struct ForwarderScreenResult {
 // the ROM's own, or one found on SteamGridDB instead.
 class ForwarderScreen {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     explicit ForwarderScreen(ForwarderPlatform& platform);
     ~ForwarderScreen();
     ForwarderScreen(const ForwarderScreen&) = delete;

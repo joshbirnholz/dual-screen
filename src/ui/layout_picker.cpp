@@ -1304,4 +1304,33 @@ void LayoutPicker::render(QuadRenderer& quads,
     }
 }
 
+void LayoutPicker::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(section_));
+    mix_sound_state(view.focus, on_content_ ? 1u : 0u);
+    mix_sound_state(view.focus, static_cast<uint64_t>(item_));
+    if (confirm_ != MenuConfirm::None) mix_sound_state(view.focus, static_cast<uint64_t>(confirm_cursor_.focus()));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(confirm_));
+    mix_sound_state(view.rest, selected_layout_id_);
+    mix_sound_state(view.rest, smoothing_ ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(preview_screen_));
+    mix_sound_state(view.rest, state_.layout_id);
+    mix_sound_state(view.rest, state_.bilinear_filtering ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(state_.audio_target));
+    mix_sound_state(view.rest, static_cast<uint64_t>(state_.cursor_mode));
+    for (const std::string& id : state_.left_handed_layouts) mix_sound_state(view.rest, id);
+    mix_sound_state(view.rest, static_cast<uint64_t>(state_.render_scale));
+    mix_sound_state(view.rest, state_.screen_gap ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(state_.right_stick_mode));
+    mix_sound_state(view.rest, static_cast<uint64_t>(state_.left_stick_press));
+    mix_sound_state(view.rest, state_.rumble_pak ? 1u : 0u);
+    mix_sound_state(view.rest, state_.resume_from_save_state ? 1u : 0u);
+    mix_sound_state(view.rest, save_status_);
+    for (const SavePointInfo& slot : save_slots_) {
+        mix_sound_state(view.rest, static_cast<uint64_t>(slot.exists ? slot.saved_at : -1));
+    }
+    view.error = view.error || (!save_status_.empty() && save_status_failed_);
+}
+
 }  // namespace ds

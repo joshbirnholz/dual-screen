@@ -33,6 +33,8 @@ extern const unsigned char kUiIconsPng[];
 extern const unsigned long kUiIconsPng_size;
 
 // The shell's own sounds, resampled to one rate and packed into one blob with
-// an index -- see decode_ui_sound_pack().
+// an index -- see decode_ui_sound_pack() and assets/make_ui_sounds.py.
+extern const unsigned char kUiSounds[];
+extern const unsigned long kUiSounds_size;
 
 }  // namespace ds::assets

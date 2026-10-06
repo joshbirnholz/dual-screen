@@ -98,6 +98,8 @@ dualscreen_embed_asset(stylus_hand.png kStylusHandPng BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 # Data Management's icons: only the app that plays games draws them.
 dualscreen_embed_asset(ui_icons.png kUiIconsPng BEZEL_SOURCES)
+# The menus' sounds: see assets/make_ui_sounds.py.
+dualscreen_embed_asset(ui_sounds.bin kUiSounds BEZEL_SOURCES)
 
 set(DUALSCREEN_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build_stamp.cmake)
@@ -107,6 +109,7 @@ add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
     src/app.cpp
     src/audio/audio_output.cpp
+    src/audio/ui_sounds.cpp
     src/video/video_decoder.cpp
     src/video/color_convert.cpp
     src/video/h264_bitstream.cpp

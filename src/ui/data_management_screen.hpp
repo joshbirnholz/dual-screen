@@ -18,6 +18,7 @@
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/popup.hpp"
+#include "ui/sound_view.hpp"
 
 namespace ds {
 
@@ -43,6 +44,8 @@ struct DataManagementResult {
 // asked; the store's own operations are quick file moves and run here.
 class DataManagementScreen {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     // `own_instance` is this app's answer to a search, left out of its own.
     DataManagementScreen(SaveStore& store, std::string own_instance);
     ~DataManagementScreen();

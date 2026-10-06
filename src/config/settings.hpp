@@ -251,6 +251,10 @@ struct Settings {
     // Auto unless somebody chose otherwise -- see WiiUScreenAlone.
     WiiUScreenAlone wii_u_screen_alone = WiiUScreenAlone::Auto;
 
+    // The menus' own sounds -- a cursor moving, something chosen, the quick
+    // menu opening -- on this device. See UiSoundPlayer.
+    bool ui_sounds = true;
+
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;
 };

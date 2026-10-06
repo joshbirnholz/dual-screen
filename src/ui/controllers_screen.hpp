@@ -9,6 +9,7 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/sound_view.hpp"
 
 namespace ds {
 
@@ -32,6 +33,8 @@ struct ControllersScreenResult {
 // controller on the focused row gives a short buzz.
 class ControllersScreen {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     void open();
     void close() {
         open_ = false;

@@ -1536,4 +1536,20 @@ void DataManagementScreen::render(QuadRenderer& quads,
     }
 }
 
+void DataManagementScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(list_focus_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(action_focus_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(earlier_focus_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(choice_focus_));
+    if (overlay_ != Overlay::None) mix_sound_state(view.focus, static_cast<uint64_t>(popup_cursor_.focus()));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(page_));
+    mix_sound_state(view.rest, static_cast<uint64_t>(overlay_));
+    mix_sound_state(view.rest, static_cast<uint64_t>(pending_));
+    mix_sound_state(view.rest, device_index_);
+    mix_sound_state(view.rest, sync_mode_ ? 1u : 0u);
+    mix_sound_state(view.rest, notice_);
+    mix_sound_state(view.rest, busy_.empty() ? 0u : 1u);
+}
+
 }  // namespace ds

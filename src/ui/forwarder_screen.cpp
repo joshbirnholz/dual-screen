@@ -828,4 +828,17 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
     }
 }
 
+void ForwarderScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(zone_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(list_focus_));
+    mix_sound_state(view.focus, static_cast<uint64_t>(grid_focus_));
+    if (overlay_ != Overlay::None) mix_sound_state(view.focus, static_cast<uint64_t>(popup_cursor_.focus()));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(page_));
+    mix_sound_state(view.rest, static_cast<uint64_t>(overlay_));
+    mix_sound_state(view.rest, icon_source_);
+    mix_sound_state(view.rest, notice_);
+    mix_sound_state(view.rest, busy_.empty() ? 0u : 1u);
+}
+
 }  // namespace ds

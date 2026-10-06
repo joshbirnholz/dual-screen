@@ -331,4 +331,15 @@ void HostPickerScreen::render(QuadRenderer& quads,
                     &guide_hits_);
 }
 
+void LauncherScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, rows_.size());
+}
+
+void HostPickerScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+}
+
 }  // namespace ds

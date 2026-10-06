@@ -10,6 +10,7 @@
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -40,6 +41,8 @@ struct GameBrowserResult {
 // because on a Deck in Game Mode both are the only inputs there are.
 class GameBrowser {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     void open(const std::string& directory);
     void close() { open_ = false; }
     bool is_open() const { return open_; }

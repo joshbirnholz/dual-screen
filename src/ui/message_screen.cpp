@@ -92,4 +92,10 @@ void MessageScreen::render(QuadRenderer& quads,
     draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::A, "Continue"}});
 }
 
+void MessageScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.rest, visible_ ? 1u : 0u);
+    mix_sound_state(view.rest, title_);
+    view.error = view.error || (visible_ && kind_ == MessageKind::Error);
+}
+
 }  // namespace ds

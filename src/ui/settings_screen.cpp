@@ -253,6 +253,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
             result.settings_changed = true;
             break;
+        case Row::UiSounds:
+            settings_.ui_sounds = !settings_.ui_sounds;
+            result.settings_changed = true;
+            break;
         case Row::Count:
             break;
     }
@@ -417,6 +421,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Vsync", settings_.vsync ? "On" : "Off"},
         {"This device alone is a Wii U's",
          to_string(settings_.wii_u_screen_alone)},
+        {"Sound effects", settings_.ui_sounds ? "On" : "Off"},
     };
     if (page_ == Page::Main) {
         if (offers_data_management_) rows.push_back({"Data Management", ""});
@@ -540,6 +545,23 @@ void SettingsScreen::render(QuadRenderer& quads,
         draw_scroll_bar(quads, PixelRect{geometry.panel.x, view_top, geometry.panel.w, view},
                         scroll_ / span, view / span, line, scale);
     }
+}
+
+void SettingsScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(page_));
+#ifndef __SWITCH__
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.pad_glyphs));
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.confirm_button));
+#endif
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.video_hold));
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.run_ahead_ds));
+    mix_sound_state(view.rest, settings_.vsync ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_screen_alone));
+    mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
+    mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
 }
 
 }  // namespace ds

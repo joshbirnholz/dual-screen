@@ -63,7 +63,7 @@ GENERATED   := generated
 # and what gets compiled cannot drift apart -- a generated file that nothing
 # compiles is an undefined symbol at link time and nothing sooner.
 EMBEDDED_SOURCES := kDsBezelPng.cpp kThreeDsBezelPng.cpp kUiFont.cpp kButtonIconsPng.cpp kStylusHandPng.cpp \
-                    kUiIconsPng.cpp
+                    kUiIconsPng.cpp kUiSounds.cpp
 
 SOURCE_DIRS := $(CLIENT) \
                $(GENERATED) \
@@ -81,6 +81,7 @@ SOURCE_DIRS := $(CLIENT) \
 
 CPPFILES    := main.cpp \
                audio_output.cpp \
+               ui_sounds.cpp \
                paths.cpp \
                save_points.cpp system.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp switch_motion.cpp \
@@ -502,6 +503,11 @@ $(GENERATED)/kUiIconsPng.cpp: $(CURDIR)/../assets/ui_icons.png $(CURDIR)/../tool
 	@mkdir -p $(GENERATED)
 	@echo Embedding assets/ui_icons.png
 	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kUiIconsPng -P $(CURDIR)/../tools/embed_asset.cmake
+
+$(GENERATED)/kUiSounds.cpp: $(CURDIR)/../assets/ui_sounds.bin $(CURDIR)/../tools/embed_asset.cmake
+	@mkdir -p $(GENERATED)
+	@echo Embedding assets/ui_sounds.bin
+	@$(CMAKE) -DINPUT=$< -DOUTPUT=$@ -DSYMBOL=kUiSounds -P $(CURDIR)/../tools/embed_asset.cmake
 
 $(GENERATED)/kUiFont.cpp: $(CURDIR)/../assets/inter.ttf $(CURDIR)/../tools/embed_asset.cmake
 	@mkdir -p $(GENERATED)

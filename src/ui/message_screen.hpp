@@ -6,6 +6,7 @@
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -18,6 +19,8 @@ enum class MessageKind { Error, Info };
 // nothing to go on.
 class MessageScreen {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     void show(MessageKind kind,
               const std::string& title,
               const std::string& body,

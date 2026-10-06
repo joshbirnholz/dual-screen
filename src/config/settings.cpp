@@ -163,6 +163,7 @@ Settings Settings::load(const AppPaths& paths) {
     settings.stick_deadzone = get_or<float>(document, "stick_deadzone", settings.stick_deadzone);
     settings.trigger_deadzone = get_or<float>(document, "trigger_deadzone", settings.trigger_deadzone);
     settings.vsync = get_or<bool>(document, "vsync", settings.vsync);
+    settings.ui_sounds = get_or<bool>(document, "ui_sounds", settings.ui_sounds);
 
     if (settings.system_dir.empty()) {
         settings.system_dir = paths.default_system_dir;
@@ -201,6 +202,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["stick_deadzone"] = stick_deadzone;
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;
+    document["ui_sounds"] = ui_sounds;
 
     const std::string temporary = paths.settings_file + ".tmp";
     {

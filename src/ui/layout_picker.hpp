@@ -16,6 +16,7 @@
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/popup.hpp"
+#include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -217,6 +218,8 @@ enum class MenuSection : uint8_t {
 // while looking at either screen.
 class LayoutPicker {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     explicit LayoutPicker(const LayoutRegistry& registry);
 
     void open(const LayoutPickerState& state);

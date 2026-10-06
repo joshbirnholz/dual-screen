@@ -12,6 +12,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -43,6 +44,8 @@ struct SettingsScreenResult {
 // that file names another.
 class SettingsScreen {
 public:
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     explicit SettingsScreen(const AppPaths& paths) : paths_(paths) {}
 
     // One entry per system, in the order they should be listed: the console's
@@ -106,6 +109,7 @@ private:
         RunAheadDs,
         Vsync,
         WiiUScreenAlone,
+        UiSounds,
         Count
     };
     static constexpr int kRowCount = static_cast<int>(Row::Count);

@@ -339,4 +339,11 @@ void ControllersScreen::render(QuadRenderer& quads,
     draw_page_guide(quads, text, glyphs, frame, guide);
 }
 
+void ControllersScreen::describe_for_sound(UiSoundView& view) const {
+    mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
+    mix_sound_state(view.rest, open_ ? 1u : 0u);
+    mix_sound_state(view.rest, holding_ ? 1u : 0u);
+    mix_sound_state(view.rest, held_);
+}
+
 }  // namespace ds

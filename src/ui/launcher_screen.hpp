@@ -9,6 +9,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -40,6 +41,8 @@ public:
     void open(bool runs_games = true);
     void close() { open_ = false; }
     bool is_open() const { return open_; }
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
 
     // Whether plus leaves the app, which the guide then says. Set on the
     // Switch, where every piece of homebrew exits that way and a player will
@@ -128,6 +131,8 @@ public:
     void open(ScreenId wanted_screen);
     void close() { open_ = false; }
     bool is_open() const { return open_; }
+    // What a press here could have changed -- see UiSoundJudge.
+    void describe_for_sound(UiSoundView& view) const;
     ScreenId wanted_screen() const { return wanted_screen_; }
 
     HostPickerResult update(const std::vector<ds::net::DiscoveredHost>& hosts,
