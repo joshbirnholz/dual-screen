@@ -42,12 +42,21 @@ std::string save_system_name(const std::string& system);
 struct FolderSaveRoots {
     std::vector<std::string> three_ds_sdmc;  // each an sdmc folder, first preferred
     std::string wii_u_mlc;                   // empty when there is no Cemu here
+    // Cemu's title_list_cache.xml, its game list remembered: what a Wii U game
+    // is called, and where it is when it is not installed in mlc01.
+    std::vector<std::string> wii_u_title_lists;
 };
 // Where Cemu keeps its mlc01 folder: `configured` when it names one; else
 // what Cemu's settings.xml says, or the mlc01 beside it -- portable beside
 // `cemu_program`, then its usual places for a desktop, a Flatpak and a Mac
 // under `home`. Empty when none of them is there.
 std::string find_cemu_mlc(const std::string& configured, const std::string& cemu_program, const std::string& home);
+// Where Cemu keeps title_list_cache.xml: its user-data folder -- portable
+// beside `cemu_program`, or its usual place for a desktop, a Flatpak and a
+// Mac under `home` -- which is also where its own mlc01 goes, so beside `mlc`
+// too. Only those that are there, the likeliest first.
+std::vector<std::string> find_cemu_title_lists(const std::string& cemu_program, const std::string& home,
+                                               const std::string& mlc);
 
 inline constexpr std::size_t kEarlierSavesKept = 10;
 inline constexpr std::size_t kSaveHistoryKept = 64;
@@ -180,6 +189,9 @@ private:
     bool delete_save(const SaveInfo& info, std::string* error) const;
     int64_t save_modified_at(const SaveInfo& info) const;
     void discover_folder_saves();
+    // Wii U games already listed without a name or an icon, looked up again
+    // once each run: the game may have been added to Cemu since.
+    std::vector<std::string> wii_u_looked_up_;
     bool identify(const std::string& rom_path, SaveInfo& out) const;
     std::string earlier_dir(const std::string& stem) const;
     bool load_record(const std::string& stem, SaveInfo& out) const;

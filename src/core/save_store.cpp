@@ -163,7 +163,78 @@ std::string find_3ds_rom(const std::string& directory, uint64_t title_id, int de
     return std::string();
 }
 
+// What a Wii U title is called, and its icon, from wherever this machine has
+// the game: installed in Cemu's mlc01 (the game, else its update, which says
+// the same), else as Cemu's game list remembers it -- a folder or a .wua
+// somewhere else, read for its meta folder, or for a disc image only the name
+// the list kept. `lists` are the parsed title_list_cache.xml files.
+bool find_wii_u_title(const FolderSaveRoots& roots, const std::vector<CemuTitleListEntry>& lists, uint64_t title_id,
+                      ConsoleTitleInfo& out) {
+    const uint32_t low = static_cast<uint32_t>(title_id);
+    const std::string low_dir = hex8(low);
+    if (!roots.wii_u_mlc.empty()) {
+        for (const std::string& high : {hex8(static_cast<uint32_t>(title_id >> 32)), std::string("0005000e")}) {
+            const std::string meta = path_join(
+                path_join(path_join(path_join(path_join(roots.wii_u_mlc, "usr"), "title"), high), low_dir), "meta");
+            if (read_wii_u_meta(meta, out, nullptr) && !out.title.empty()) {
+                out.title_id = title_id;
+                return true;
+            }
+        }
+    }
+    // The game itself first, then its update, then its downloadable content.
+    std::vector<const CemuTitleListEntry*> matches;
+    for (const uint32_t high : {static_cast<uint32_t>(title_id >> 32), 0x0005000eu, 0x0005000cu}) {
+        for (const CemuTitleListEntry& entry : lists) {
+            if (entry.title_id == (uint64_t(high) << 32 | low)) matches.push_back(&entry);
+        }
+    }
+    std::string name;
+    for (const CemuTitleListEntry* entry : matches) {
+        ConsoleTitleInfo found;
+        bool read = false;
+        if (entry->format == kCemuTitleFolder) {
+            read = read_wii_u_meta(path_join(entry->path, "meta"), found, nullptr);
+        } else if (entry->format == kCemuTitleArchive) {
+            read = read_wii_u_archive_title_info(entry->path, entry->sub_path, entry->title_id, found, nullptr);
+        }
+        if (read && !found.title.empty()) {
+            out = found;
+            out.title_id = title_id;
+            return true;
+        }
+        if (name.empty()) name = entry->name;
+    }
+    if (name.empty()) return false;
+    out = ConsoleTitleInfo();
+    out.title_id = title_id;
+    out.title = name;
+    return true;
+}
+
 }  // namespace
+
+std::vector<std::string> find_cemu_title_lists(const std::string& cemu_program, const std::string& home,
+                                               const std::string& mlc) {
+    std::vector<std::string> folders;
+    if (!cemu_program.empty() && cemu_program.find('/') != std::string::npos) {
+        const std::string beside = path_dirname(cemu_program);
+        folders.push_back(path_join(beside, "portable"));
+        folders.push_back(beside);
+    }
+    if (!mlc.empty()) folders.push_back(path_dirname(mlc));
+    if (!home.empty()) {
+        folders.push_back(path_join(path_join(path_join(home, ".local"), "share"), "Cemu"));
+        folders.push_back(path_join(path_join(path_join(home, ".var"), "app"), "info.cemu.Cemu/data/Cemu"));
+        folders.push_back(path_join(home, "Library/Application Support/Cemu"));
+    }
+    std::vector<std::string> out;
+    for (const std::string& folder : folders) {
+        const std::string list = path_join(folder, "title_list_cache.xml");
+        if (file_exists(list) && std::find(out.begin(), out.end(), list) == out.end()) out.push_back(list);
+    }
+    return out;
+}
 
 std::string find_cemu_mlc(const std::string& configured, const std::string& cemu_program,
                           const std::string& home) {
@@ -500,28 +571,59 @@ void SaveStore::discover_folder_saves() {
     // Every title with a save in the emulators' folders that has no record
     // here yet -- played before this app knew of it, or in the emulator on
     // its own -- written down, so it is listed and has a version to compare.
-    const auto note = [this](const std::string& system, uint64_t title_id) {
+    // Cemu's game lists, read when a Wii U game first needs one.
+    bool lists_read = false;
+    std::vector<CemuTitleListEntry> lists;
+    const auto wii_u_title = [&](uint64_t title_id, ConsoleTitleInfo& title) {
+        if (!lists_read) {
+            lists_read = true;
+            for (const std::string& path : roots_.wii_u_title_lists) {
+                std::vector<CemuTitleListEntry> entries = read_cemu_title_list(path);
+                lists.insert(lists.end(), entries.begin(), entries.end());
+            }
+        }
+        return find_wii_u_title(roots_, lists, title_id, title);
+    };
+    const auto note = [&](const std::string& system, uint64_t title_id) {
         const std::string game_id =
             system == kSaveSystem3ds ? three_ds_game_id(title_id) : wii_u_game_id(title_id);
-        if (file_exists(record_path(game_id))) return;
+        if (file_exists(record_path(game_id))) {
+            // Listed before, perhaps without a name or an icon: when the game
+            // was not in Cemu yet, or this app did not yet know where else to
+            // look. Looked up again once each run until it has both.
+            if (system != kSaveSystemWiiU ||
+                std::find(wii_u_looked_up_.begin(), wii_u_looked_up_.end(), game_id) != wii_u_looked_up_.end()) {
+                return;
+            }
+            wii_u_looked_up_.push_back(game_id);
+            SaveInfo known;
+            if (!load_record(game_id, known) || (!known.title.empty() && !known.icon.empty())) return;
+            ConsoleTitleInfo title;
+            if (!wii_u_title(title_id, title)) return;
+            const bool better = (known.title.empty() && !title.title.empty()) ||
+                                (known.icon.empty() && !title.icon.empty());
+            if (!better) return;
+            if (!title.title.empty()) known.title = title.title;
+            if (!title.publisher.empty()) known.publisher = title.publisher;
+            if (!title.icon.empty()) known.icon = title.icon;
+            store_record(known);
+            log_info("found what " + game_id + " is: " + known.title +
+                     (known.icon.empty() ? " (no icon)" : ""));
+            return;
+        }
         SaveInfo info;
         info.stem = game_id;
         info.system = system;
         info.game_id = game_id;
         if (!save_present(info)) return;
         if (system == kSaveSystemWiiU) {
-            // An installed title says what it is in Cemu's own folders.
             ConsoleTitleInfo title;
-            const std::string meta =
-                path_join(path_join(path_join(path_join(path_join(roots_.wii_u_mlc, "usr"), "title"),
-                                              hex8(static_cast<uint32_t>(title_id >> 32))),
-                                    hex8(static_cast<uint32_t>(title_id))),
-                          "meta");
-            if (read_wii_u_meta(meta, title, nullptr)) {
+            if (wii_u_title(title_id, title)) {
                 info.title = title.title;
                 info.publisher = title.publisher;
                 info.icon = title.icon;
             }
+            wii_u_looked_up_.push_back(game_id);
         }
         store_record(info);
         note_current_version(info);

@@ -1276,15 +1276,23 @@ every device whatever its file is called.
   `.cia`) when it is decrypted, as Azahar needs it to be; the save is matched
   to its ROM in the folders the file picker looks in. Extra data (`extdata`),
   which a few games keep beside their save, is not included.
-- **Wii U**: Cemu keeps a game's save in `mlc01/usr/save/<high>/<low>`, and
-  its title, publisher and icon in `mlc01/usr/title/<high>/<low>/meta`. The
+- **Wii U**: Cemu keeps a game's save in `mlc01/usr/save/<high>/<low>`. The
   `mlc01` folder is found from Cemu's own `settings.xml` — a portable Cemu
   beside `wii_u_program`, then `~/.config/Cemu`, the Flatpak's and a Mac's —
   or its default place beside it; set `"wii_u_mlc_path"` in `settings.json`
   to name it outright. Without it, no Wii U saves are listed and none are
-  accepted from other devices. A game started from here is known by its
-  folder's `code/*.rpx`; one started from a `.wud`, `.wux` or `.wua` is not
-  identified at launch, but its save is still listed from Cemu's folder.
+  accepted from other devices. The game's title, publisher and icon come from
+  its `meta` folder, wherever the game is: installed in `mlc01/usr/title`
+  (the game's, or its update's); else wherever Cemu's game list says it is,
+  from the list Cemu keeps of it (`title_list_cache.xml`, in its user-data
+  folder) — a folder with `code`, `content` and `meta` in it, or a `.wua`,
+  read from inside (that needs this app built with zstd, which `cmake` finds
+  on its own and says whether it did). A `.wud` or `.wux` is encrypted, so for
+  one of those Data Management shows the name Cemu's list kept, and no icon.
+  A game listed before its name was found is looked up again the next time
+  the app starts. A game started from here is known by its folder's
+  `code/*.rpx`; one started from a `.wud`, `.wux` or `.wua` is not identified
+  at launch, but its save is still listed from Cemu's folder.
 
 A save changed in the emulator on its own is seen as a new version the next
 time Data Management lists it. A Switch keeps DS saves only, so it is never

@@ -10,6 +10,10 @@
 #include "core/ds_rom_info.hpp"
 #include "core/save_store.hpp"
 
+#ifdef DUALSCREEN_HAVE_ZSTD
+#include <zstd.h>
+#endif
+
 namespace ds {
 namespace {
 
@@ -307,6 +311,211 @@ bool read_3ds_title_info(const std::string& path, ConsoleTitleInfo& out, std::st
     return true;
 }
 
+namespace {
+
+// meta.xml and iconTex.tga, wherever they were read from (`where`, for the
+// error): the title ID, the English name and publisher, the icon.
+bool parse_wii_u_meta(const std::vector<uint8_t>& xml_bytes, const std::vector<uint8_t>& tga,
+                      const std::string& where, ConsoleTitleInfo& out, std::string* error) {
+    out = ConsoleTitleInfo();
+    const std::string xml(xml_bytes.begin(), xml_bytes.end());
+    const std::string id = xml_text(xml, "title_id");
+    if (id.size() != 16) {
+        if (error != nullptr) *error = "no title ID in " + where;
+        return false;
+    }
+    out.title_id = std::strtoull(id.c_str(), nullptr, 16);
+    out.title = xml_text(xml, "longname_en");
+    if (out.title.empty()) out.title = xml_text(xml, "shortname_en");
+    out.publisher = xml_text(xml, "publisher_en");
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+    if (!tga.empty() && read_tga(tga, width, height, rgba)) {
+        shrink(width, height, rgba, 64);
+        out.icon = encode_rgba_icon(width, height, rgba);
+    }
+    return out.title_id != 0;
+}
+
+// Cemu's single-file archive of a Wii U title, .wua: Exzap's ZArchive. At its
+// end a footer, big-endian like every number in it, gives the sections: the
+// data, cut into 64 KiB blocks each compressed with zstd on its own (one that
+// would not shrink is kept as it is); a record per 16 blocks of where they
+// start; the names; and the tree of files and folders, the root first.
+class WuaArchive {
+public:
+    ~WuaArchive() {
+        if (file_ != nullptr) std::fclose(file_);
+    }
+
+    bool open(const std::string& path, std::string* error) {
+        const auto fail = [&](const std::string& why) {
+            if (error != nullptr) *error = why;
+            return false;
+        };
+        file_ = std::fopen(path.c_str(), "rb");
+        if (file_ == nullptr) return fail("cannot open " + path);
+        if (std::fseek(file_, 0, SEEK_END) != 0) return fail("cannot read " + path);
+        const long end = std::ftell(file_);
+        constexpr std::size_t kFooterSize = 16 * 6 + 32 + 8 + 4 + 4;
+        uint8_t footer[kFooterSize];
+        if (end < static_cast<long>(kFooterSize) ||
+            !read_at(file_, static_cast<uint64_t>(end) - kFooterSize, footer, kFooterSize)) {
+            return fail(path + " is too short to be a Wii U archive");
+        }
+        const uint64_t size = static_cast<uint64_t>(end);
+        if (be32(footer + kFooterSize - 4) != 0x169f52d6u || be32(footer + kFooterSize - 8) != 0x61bf3a01u ||
+            be64(footer + kFooterSize - 16) != size) {
+            return fail(path + " is not a Wii U archive (.wua)");
+        }
+        struct Section {
+            uint64_t offset;
+            uint64_t size;
+        } sections[6];
+        for (int i = 0; i < 6; ++i) {
+            sections[i] = {be64(footer + i * 16), be64(footer + i * 16 + 8)};
+            if (sections[i].offset > size || sections[i].size > size - sections[i].offset) {
+                return fail(path + " is damaged");
+            }
+        }
+        const Section& data = sections[0];
+        const Section& records = sections[1];
+        const Section& names = sections[2];
+        const Section& tree = sections[3];
+        // Only the tables: the data stays on the disk.
+        if (records.size % 40 != 0 || tree.size % 16 != 0 || tree.size == 0 || records.size > (64u << 20) ||
+            names.size > (64u << 20) || tree.size > (64u << 20)) {
+            return fail(path + " is damaged");
+        }
+        data_offset_ = data.offset;
+        data_size_ = data.size;
+        records_.resize(records.size);
+        names_.resize(names.size);
+        tree_.resize(tree.size);
+        if (!read_at(file_, records.offset, records_.data(), records_.size()) ||
+            (!names_.empty() && !read_at(file_, names.offset, names_.data(), names_.size())) ||
+            !read_at(file_, tree.offset, tree_.data(), tree_.size()) || is_file(0)) {
+            return fail("cannot read " + path);
+        }
+        return true;
+    }
+
+    std::size_t node_count() const { return tree_.size() / 16; }
+    bool is_file(uint32_t node) const { return node < node_count() && (field(node, 0) & 0x80000000u) != 0; }
+
+    std::string name(uint32_t node) const {
+        uint32_t at = field(node, 0) & 0x7FFFFFFFu;
+        if (at >= names_.size()) return std::string();
+        std::size_t length = names_[at] & 0x7F;
+        if ((names_[at] & 0x80) != 0) {
+            if (at + 1 >= names_.size()) return std::string();
+            length |= std::size_t(names_[at + 1]) << 7;
+            at += 2;
+        } else {
+            at += 1;
+        }
+        if (at + length > names_.size()) return std::string();
+        return std::string(reinterpret_cast<const char*>(names_.data()) + at, length);
+    }
+
+    std::vector<uint32_t> children(uint32_t folder) const {
+        std::vector<uint32_t> out;
+        if (folder >= node_count() || is_file(folder)) return out;
+        const uint64_t first = field(folder, 1);
+        const uint64_t count = field(folder, 2);
+        for (uint64_t node = first; node < first + count && node < node_count(); ++node) {
+            out.push_back(static_cast<uint32_t>(node));
+        }
+        return out;
+    }
+
+    // A folder's child by name, compared as ZArchive does, ignoring case.
+    bool child(uint32_t folder, const std::string& wanted, uint32_t& out) const {
+        for (const uint32_t node : children(folder)) {
+            const std::string have = name(node);
+            if (have.size() != wanted.size()) continue;
+            bool same = true;
+            for (std::size_t i = 0; i < have.size() && same; ++i) {
+                same = std::tolower(static_cast<unsigned char>(have[i])) ==
+                       std::tolower(static_cast<unsigned char>(wanted[i]));
+            }
+            if (same) {
+                out = node;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // A file's contents, when it is no bigger than `most`.
+    bool read(uint32_t node, std::vector<uint8_t>& out, uint64_t most) {
+        if (!is_file(node)) return false;
+        const uint32_t high = field(node, 3);
+        const uint64_t offset = field(node, 1) | uint64_t(high & 0xFFFF) << 32;
+        const uint64_t size = field(node, 2) | uint64_t(high & 0xFFFF0000u) << 16;
+        if (size > most) return false;
+        out.resize(static_cast<std::size_t>(size));
+        uint64_t done = 0;
+        while (done < size) {
+            const uint64_t at = offset + done;
+            if (!load_block(at / kBlockSize)) return false;
+            const std::size_t inside = static_cast<std::size_t>(at % kBlockSize);
+            const std::size_t step = static_cast<std::size_t>(std::min<uint64_t>(size - done, kBlockSize - inside));
+            std::memcpy(out.data() + done, block_.data() + inside, step);
+            done += step;
+        }
+        return true;
+    }
+
+private:
+    static constexpr std::size_t kBlockSize = 64 * 1024;
+    static constexpr std::size_t kBlocksPerRecord = 16;
+
+    uint32_t field(uint32_t node, int index) const { return be32(tree_.data() + node * 16 + index * 4); }
+
+    bool load_block(uint64_t index) {
+        if (index == block_index_) return true;
+        const uint64_t record = index / kBlocksPerRecord;
+        if ((record + 1) * 40 > records_.size()) return false;
+        const uint8_t* entry = records_.data() + record * 40;
+        uint64_t offset = be64(entry);
+        const std::size_t within = static_cast<std::size_t>(index % kBlocksPerRecord);
+        for (std::size_t i = 0; i < within; ++i) {
+            offset += uint64_t(uint32_t(entry[8 + i * 2]) << 8 | entry[9 + i * 2]) + 1;
+        }
+        const std::size_t stored = (std::size_t(entry[8 + within * 2]) << 8 | entry[9 + within * 2]) + 1;
+        if (offset + stored > data_size_) return false;
+        block_.resize(kBlockSize);
+        block_index_ = UINT64_MAX;
+        if (stored == kBlockSize) {
+            if (!read_at(file_, data_offset_ + offset, block_.data(), kBlockSize)) return false;
+        } else {
+#ifdef DUALSCREEN_HAVE_ZSTD
+            std::vector<uint8_t> packed(stored);
+            if (!read_at(file_, data_offset_ + offset, packed.data(), stored)) return false;
+            if (ZSTD_decompress(block_.data(), kBlockSize, packed.data(), stored) != kBlockSize) return false;
+#else
+            // Built without zstd: only blocks kept as they are can be read.
+            return false;
+#endif
+        }
+        block_index_ = index;
+        return true;
+    }
+
+    std::FILE* file_ = nullptr;
+    uint64_t data_offset_ = 0;
+    uint64_t data_size_ = 0;
+    std::vector<uint8_t> records_;
+    std::vector<uint8_t> names_;
+    std::vector<uint8_t> tree_;
+    std::vector<uint8_t> block_;
+    uint64_t block_index_ = UINT64_MAX;
+};
+
+}  // namespace
+
 bool read_wii_u_meta(const std::string& meta_dir, ConsoleTitleInfo& out, std::string* error) {
     out = ConsoleTitleInfo();
     std::vector<uint8_t> bytes;
@@ -314,25 +523,81 @@ bool read_wii_u_meta(const std::string& meta_dir, ConsoleTitleInfo& out, std::st
         if (error != nullptr) *error = "no meta.xml in " + meta_dir;
         return false;
     }
-    const std::string xml(bytes.begin(), bytes.end());
-    const std::string id = xml_text(xml, "title_id");
-    if (id.size() != 16) {
-        if (error != nullptr) *error = "no title ID in " + meta_dir + "/meta.xml";
+    std::vector<uint8_t> tga;
+    if (!read_file(path_join(meta_dir, "iconTex.tga"), tga, nullptr)) tga.clear();
+    return parse_wii_u_meta(bytes, tga, meta_dir + "/meta.xml", out, error);
+}
+
+bool read_wii_u_archive_title_info(const std::string& wua_path, const std::string& sub_path, uint64_t title_id,
+                                   ConsoleTitleInfo& out, std::string* error) {
+    out = ConsoleTitleInfo();
+    WuaArchive archive;
+    if (!archive.open(wua_path, error)) return false;
+    // The title's own folder: the one Cemu named, else the first whose name
+    // starts with its title ID ("0005000010101c00_v0"), else the first with
+    // the same game's (an update's, "0005000e10101c00_v208", says the same).
+    uint32_t folder = 0;
+    bool found = !sub_path.empty() && archive.child(0, sub_path, folder);
+    char id[17];
+    std::snprintf(id, sizeof(id), "%016llx", static_cast<unsigned long long>(title_id));
+    for (int pass = 0; pass < 2 && !found && title_id != 0; ++pass) {
+        for (const uint32_t node : archive.children(0)) {
+            std::string name = archive.name(node);
+            for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (archive.is_file(node) || name.size() < 16) continue;
+            const bool same = pass == 0 ? name.compare(0, 16, id) == 0 : name.compare(8, 8, id + 8) == 0;
+            if (same) {
+                folder = node;
+                found = true;
+                break;
+            }
+        }
+    }
+    uint32_t meta = 0;
+    uint32_t xml = 0;
+    if (!found || !archive.child(folder, "meta", meta) || !archive.child(meta, "meta.xml", xml)) {
+        if (error != nullptr) *error = "no meta/meta.xml for " + std::string(id) + " in " + wua_path;
         return false;
     }
-    out.title_id = std::strtoull(id.c_str(), nullptr, 16);
-    out.title = xml_text(xml, "longname_en");
-    if (out.title.empty()) out.title = xml_text(xml, "shortname_en");
-    out.publisher = xml_text(xml, "publisher_en");
-    std::vector<uint8_t> tga;
-    int width = 0;
-    int height = 0;
-    std::vector<uint8_t> rgba;
-    if (read_file(path_join(meta_dir, "iconTex.tga"), tga, nullptr) && read_tga(tga, width, height, rgba)) {
-        shrink(width, height, rgba, 64);
-        out.icon = encode_rgba_icon(width, height, rgba);
+    std::vector<uint8_t> xml_bytes;
+    if (!archive.read(xml, xml_bytes, 1 << 20)) {
+        if (error != nullptr) *error = "cannot read meta.xml in " + wua_path;
+        return false;
     }
-    return out.title_id != 0;
+    std::vector<uint8_t> tga;
+    uint32_t icon = 0;
+    if (!archive.child(meta, "iconTex.tga", icon) || !archive.read(icon, tga, 4 << 20)) tga.clear();
+    return parse_wii_u_meta(xml_bytes, tga, wua_path, out, error);
+}
+
+std::vector<CemuTitleListEntry> read_cemu_title_list(const std::string& path) {
+    std::vector<CemuTitleListEntry> out;
+    std::vector<uint8_t> bytes;
+    if (!read_file(path, bytes, nullptr)) return out;
+    const std::string xml(bytes.begin(), bytes.end());
+    // <title_list><title titleId="0005000010101c00" ...><name>..</name>
+    // <format>1</format><path>..</path><sub_path>..</sub_path></title>...
+    for (std::size_t at = xml.find("<title"); at != std::string::npos; at = xml.find("<title", at + 1)) {
+        const char after = at + 6 < xml.size() ? xml[at + 6] : '\0';
+        if (after != ' ' && after != '>' && after != '\t' && after != '\n' && after != '\r') continue;
+        const std::size_t close = xml.find("</title>", at);
+        if (close == std::string::npos) break;
+        const std::string element = xml.substr(at, close + 8 - at);
+        const std::size_t id_at = element.find("titleId=\"");
+        const std::size_t tag_end = element.find('>');
+        if (id_at == std::string::npos || id_at > tag_end) continue;
+        const std::size_t id_end = element.find('"', id_at + 9);
+        if (id_end == std::string::npos || id_end - (id_at + 9) != 16) continue;
+        CemuTitleListEntry entry;
+        entry.title_id = std::strtoull(element.substr(id_at + 9, 16).c_str(), nullptr, 16);
+        if (entry.title_id == 0) continue;
+        entry.name = xml_text(element, "name");
+        entry.format = std::atoi(xml_text(element, "format").c_str());
+        entry.path = xml_text(element, "path");
+        entry.sub_path = xml_text(element, "sub_path");
+        out.push_back(entry);
+    }
+    return out;
 }
 
 bool read_wii_u_title_info(const std::string& rom_path, ConsoleTitleInfo& out, std::string* error) {

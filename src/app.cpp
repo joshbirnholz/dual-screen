@@ -2842,6 +2842,15 @@ void App::Impl::update_save_rom_dirs() {
         log_info(roots.wii_u_mlc.empty() ? std::string("Cemu's mlc01 folder was not found; no Wii U saves")
                                          : "Wii U saves are in " + roots.wii_u_mlc);
     }
+    // Cemu's game list, for the names and icons of games it plays from
+    // somewhere other than mlc01.
+    roots.wii_u_title_lists =
+        roots.wii_u_mlc.empty()
+            ? std::vector<std::string>()
+            : find_cemu_title_lists(settings.wii_u_program, home != nullptr ? home : "", roots.wii_u_mlc);
+    if (roots.wii_u_title_lists != save_store->folder_roots().wii_u_title_lists && !roots.wii_u_title_lists.empty()) {
+        log_info("Wii U games are named from Cemu's game list in " + roots.wii_u_title_lists.front());
+    }
     save_store->set_folder_roots(std::move(roots));
 }
 

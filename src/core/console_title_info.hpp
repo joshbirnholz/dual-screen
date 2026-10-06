@@ -30,6 +30,26 @@ bool read_wii_u_title_info(const std::string& rom_path, ConsoleTitleInfo& out, s
 // The same from a meta folder itself: a game folder's, or the one Cemu keeps
 // for an installed title in mlc01/usr/title/<high>/<low>/meta.
 bool read_wii_u_meta(const std::string& meta_dir, ConsoleTitleInfo& out, std::string* error);
+// The same from inside Cemu's single-file archive of a game (.wua): from its
+// folder `sub_path` ("0005000010101c00_v0"), or, when that is empty or not
+// there, the folder of `title_id` or of an update to the same game. Archives
+// are compressed with zstd: a build without it (DUALSCREEN_HAVE_ZSTD) reads
+// none.
+bool read_wii_u_archive_title_info(const std::string& wua_path, const std::string& sub_path, uint64_t title_id,
+                                   ConsoleTitleInfo& out, std::string* error);
+
+// A game in Cemu's game list, as it remembers it in title_list_cache.xml --
+// whatever form the game is kept in, installed or not.
+struct CemuTitleListEntry {
+    uint64_t title_id = 0;
+    std::string name;
+    int format = 0;        // 1 a folder (with code/, content/, meta/), 2 a disc image, 3 a .wua
+    std::string path;      // the folder or the file
+    std::string sub_path;  // for a .wua, the title's folder inside it
+};
+inline constexpr int kCemuTitleFolder = 1;
+inline constexpr int kCemuTitleArchive = 3;
+std::vector<CemuTitleListEntry> read_cemu_title_list(const std::string& path);
 
 // The game IDs Data Management knows these games by: the console's own code
 // for it and the title ID, "CTR-0004000000055D00", "WUP-0005000010101C00".

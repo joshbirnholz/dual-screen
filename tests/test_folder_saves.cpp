@@ -14,6 +14,10 @@
 #include <stdlib.h>
 #include <utime.h>
 
+#ifdef DUALSCREEN_HAVE_ZSTD
+#include <zstd.h>
+#endif
+
 #include "config/paths.hpp"
 #include "core/console_title_info.hpp"
 #include "core/save_folder.hpp"
@@ -326,6 +330,129 @@ void test_3ds_roms(const std::string& sandbox) {
 }
 
 constexpr uint64_t kMario3dWorld = 0x0005000010145D00ull;
+constexpr uint64_t kMarioKart8 = 0x0005000010101C00ull;
+constexpr uint64_t kZelda = 0x0005000010143500ull;
+constexpr uint64_t kPikmin = 0x000500001012BD00ull;
+
+void put_be16(std::vector<uint8_t>& bytes, std::size_t at, uint32_t value) {
+    bytes[at] = static_cast<uint8_t>(value >> 8);
+    bytes[at + 1] = static_cast<uint8_t>(value);
+}
+
+// A Cemu .wua -- a ZArchive -- of these files ("folder/meta/meta.xml"), laid
+// out as Exzap's writer does: the data in 64 KiB blocks, each compressed with
+// zstd when this build has it (and it shrinks) and kept as it is otherwise;
+// the block offsets, the names, the tree, the root first and every folder's
+// entries together; and the footer, big-endian throughout.
+std::vector<uint8_t> wua(const std::vector<std::pair<std::string, std::vector<uint8_t>>>& files) {
+    struct Node {
+        std::string name;
+        bool file = false;
+        std::vector<uint8_t> data;
+        std::vector<Node> children;
+    };
+    Node root;
+    for (const auto& [path, data] : files) {
+        Node* at = &root;
+        std::size_t start = 0;
+        while (true) {
+            const std::size_t slash = path.find('/', start);
+            const std::string part = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+            Node* next = nullptr;
+            for (Node& child : at->children) {
+                if (child.name == part) next = &child;
+            }
+            if (next == nullptr) {
+                at->children.push_back(Node{part, false, {}, {}});
+                next = &at->children.back();
+            }
+            at = next;
+            if (slash == std::string::npos) break;
+            start = slash + 1;
+        }
+        at->file = true;
+        at->data = data;
+    }
+    // Breadth first: each folder's entries are a run of the table.
+    std::vector<const Node*> order{&root};
+    std::vector<std::pair<uint32_t, uint32_t>> runs;  // per node: first child, count
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        runs.push_back({static_cast<uint32_t>(order.size()), static_cast<uint32_t>(order[i]->children.size())});
+        for (const Node& child : order[i]->children) order.push_back(&child);
+    }
+    std::vector<uint8_t> names;
+    std::vector<uint8_t> tree(order.size() * 16, 0);
+    std::vector<uint8_t> data;
+    for (std::size_t i = 0; i < order.size(); ++i) {
+        const Node& node = *order[i];
+        uint32_t name_at = 0x7FFFFFFF;
+        if (i != 0) {
+            name_at = static_cast<uint32_t>(names.size());
+            names.push_back(static_cast<uint8_t>(node.name.size()));
+            names.insert(names.end(), node.name.begin(), node.name.end());
+        }
+        put_be32(tree, i * 16, name_at | (node.file ? 0x80000000u : 0u));
+        if (node.file) {
+            put_be32(tree, i * 16 + 4, static_cast<uint32_t>(data.size()));
+            put_be32(tree, i * 16 + 8, static_cast<uint32_t>(node.data.size()));
+            data.insert(data.end(), node.data.begin(), node.data.end());
+        } else {
+            put_be32(tree, i * 16 + 4, node.children.empty() ? 0 : runs[i].first);
+            put_be32(tree, i * 16 + 8, runs[i].second);
+        }
+    }
+    constexpr std::size_t kBlock = 64 * 1024;
+    data.resize((data.size() + kBlock - 1) / kBlock * kBlock, 0);
+    std::vector<uint8_t> out;
+    const std::size_t blocks = data.size() / kBlock;
+    std::vector<uint8_t> records(((blocks + 15) / 16) * 40, 0);
+    for (std::size_t block = 0; block < blocks; ++block) {
+        const uint8_t* raw = data.data() + block * kBlock;
+        std::vector<uint8_t> stored(raw, raw + kBlock);
+#ifdef DUALSCREEN_HAVE_ZSTD
+        std::vector<uint8_t> packed(ZSTD_compressBound(kBlock));
+        const std::size_t size = ZSTD_compress(packed.data(), packed.size(), raw, kBlock, 3);
+        if (!ZSTD_isError(size) && size < kBlock) stored.assign(packed.begin(), packed.begin() + size);
+#endif
+        if (block % 16 == 0) put_be64(records, block / 16 * 40, out.size());
+        put_be16(records, block / 16 * 40 + 8 + (block % 16) * 2, static_cast<uint32_t>(stored.size() - 1));
+        out.insert(out.end(), stored.begin(), stored.end());
+    }
+    const uint64_t data_size = out.size();
+    const uint64_t records_at = out.size();
+    out.insert(out.end(), records.begin(), records.end());
+    const uint64_t names_at = out.size();
+    out.insert(out.end(), names.begin(), names.end());
+    const uint64_t tree_at = out.size();
+    out.insert(out.end(), tree.begin(), tree.end());
+    const uint64_t end = out.size();
+    std::vector<uint8_t> footer(16 * 6 + 32 + 8 + 4 + 4, 0);
+    const uint64_t sections[6][2] = {{0, data_size},          {records_at, records.size()},
+                                     {names_at, names.size()}, {tree_at, tree.size()},
+                                     {end, 0},                 {end, 0}};
+    for (int i = 0; i < 6; ++i) {
+        put_be64(footer, i * 16, sections[i][0]);
+        put_be64(footer, i * 16 + 8, sections[i][1]);
+    }
+    put_be64(footer, 16 * 6 + 32, end + footer.size());
+    put_be32(footer, 16 * 6 + 40, 0x61bf3a01u);
+    put_be32(footer, 16 * 6 + 44, 0x169f52d6u);
+    out.insert(out.end(), footer.begin(), footer.end());
+    return out;
+}
+
+std::vector<uint8_t> bytes_of(const std::string& text) { return std::vector<uint8_t>(text.begin(), text.end()); }
+
+std::string cemu_title(uint64_t title_id, const std::string& name, int format, const std::string& path,
+                       const std::string& sub_path = std::string()) {
+    char id[17];
+    std::snprintf(id, sizeof(id), "%016llx", static_cast<unsigned long long>(title_id));
+    return std::string("\t<title titleId=\"") + id +
+           "\" version=\"0\" sdk_version=\"0\" group_id=\"0\" app_type=\"80000000\">\n"
+           "\t\t<region>2</region>\n\t\t<name>" + name + "</name>\n\t\t<format>" + std::to_string(format) +
+           "</format>\n\t\t<path>" + path + "</path>\n" +
+           (sub_path.empty() ? std::string() : "\t\t<sub_path>" + sub_path + "</sub_path>\n") + "\t</title>\n";
+}
 
 void write_wii_u_game(const std::string& game) {
     CHECK(write_text(path_join(game, "code/RedPro.rpx"), "rpx"));
@@ -477,6 +604,142 @@ void test_wii_u_store(const std::string& sandbox) {
     CHECK(!error.empty());
 }
 
+// A Wii U game kept as Cemu's single-file archive says what it is too, from
+// the meta folder of its own title inside, or of its update's.
+void test_wii_u_archive(const std::string& sandbox) {
+    const uint8_t blue[4] = {0, 0, 255, 255};
+    // Big enough to run past the first 64 KiB block.
+    const std::vector<uint8_t> icon = tga(128, 128, blue);
+    const std::string path = path_join(sandbox, "wiiu/Mario Kart 8.wua");
+    CHECK(write_bytes(path, wua({{"0005000010101c00_v0/code/Turbo.rpx", bytes_of("rpx")},
+                                 {"0005000010101c00_v0/meta/meta.xml",
+                                  bytes_of(meta_xml("0005000010101C00", "Mario Kart 8", "Nintendo"))},
+                                 {"0005000010101c00_v0/meta/iconTex.tga", icon},
+                                 {"0005000e10101c00_v208/meta/meta.xml",
+                                  bytes_of(meta_xml("0005000E10101C00", "Mario Kart 8 (update)", "Nintendo"))}})));
+    ConsoleTitleInfo info;
+    std::string error;
+    CHECK_MSG(read_wii_u_archive_title_info(path, "0005000010101c00_v0", kMarioKart8, info, &error), error);
+    CHECK_STR_EQ(info.title, "Mario Kart 8");
+    CHECK_STR_EQ(info.publisher, "Nintendo");
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+    CHECK(decode_rgba_icon(info.icon, width, height, rgba));
+    CHECK_EQ(width, 64);
+    if (!rgba.empty()) CHECK_EQ(int(pixel(rgba, width, 32, 32)[2]), 255);
+    // Found by title ID without the folder's name; the update's for a title
+    // whose own folder is not there.
+    CHECK_MSG(read_wii_u_archive_title_info(path, "", kMarioKart8, info, &error), error);
+    CHECK_STR_EQ(info.title, "Mario Kart 8");
+    // An archive of only the update, for the game.
+    const std::string update = path_join(sandbox, "wiiu/Mario Kart 8 update.wua");
+    CHECK(write_bytes(update, wua({{"0005000e10101c00_v208/meta/meta.xml",
+                                   bytes_of(meta_xml("0005000E10101C00", "Mario Kart 8 (update)", "Nintendo"))}})));
+    CHECK_MSG(read_wii_u_archive_title_info(update, "missing_v0", kMarioKart8, info, &error), error);
+    CHECK_STR_EQ(info.title, "Mario Kart 8 (update)");
+    // Not a game in it, and not an archive.
+    CHECK(!read_wii_u_archive_title_info(path, "", kZelda, info, &error));
+    CHECK(!error.empty());
+    CHECK(write_text(path_join(sandbox, "wiiu/junk.wua"), std::string(300, 'x')));
+    CHECK(!read_wii_u_archive_title_info(path_join(sandbox, "wiiu/junk.wua"), "", kMarioKart8, info, nullptr));
+}
+
+// Wii U games played from somewhere other than Cemu's mlc01 -- a folder, a
+// .wua, a disc image -- named in Data Management from Cemu's own game list.
+void test_wii_u_names_from_cemu(const std::string& sandbox) {
+    const std::string mlc = path_join(sandbox, "cemu-mlc/mlc01");
+    for (const uint64_t id : {kMario3dWorld, kMarioKart8, kZelda, kPikmin}) {
+        char low[9];
+        std::snprintf(low, sizeof(low), "%08x", static_cast<unsigned>(id & 0xFFFFFFFFu));
+        CHECK(write_text(path_join(mlc, std::string("usr/save/00050000/") + low + "/user/80000001/save.dat"), "x"));
+    }
+    // Zelda: only its update installed in mlc01, which says the same.
+    CHECK(write_text(path_join(mlc, "usr/title/0005000e/10143500/meta/meta.xml"),
+                     meta_xml("0005000E10143500", "Breath of the Wild", "Nintendo")));
+    const std::string folder_game = path_join(sandbox, "cemu-games/Super Mario 3D World");
+    write_wii_u_game(folder_game);
+    const std::string archive = path_join(sandbox, "cemu-games/Mario Kart 8.wua");
+    const uint8_t green[4] = {0, 255, 0, 255};
+    CHECK(write_bytes(archive, wua({{"0005000010101c00_v0/meta/meta.xml",
+                                     bytes_of(meta_xml("0005000010101C00", "Mario Kart 8", "Nintendo"))},
+                                    {"0005000010101c00_v0/meta/iconTex.tga", tga(128, 128, green)}})));
+
+    // First without Cemu's game list: titles only.
+    const std::string saves = path_join(sandbox, "saves-cemu");
+    CHECK(ensure_directory(saves));
+    {
+        SaveStore store(saves, "Deck");
+        FolderSaveRoots roots = store.folder_roots();
+        roots.wii_u_mlc = mlc;
+        store.set_folder_roots(roots);
+        std::vector<SaveInfo> listed = store.list();
+        CHECK_EQ(listed.size(), static_cast<std::size_t>(4));
+        for (const SaveInfo& info : listed) {
+            if (info.game_id == wii_u_game_id(kZelda)) {
+                CHECK_STR_EQ(info.title, "Breath of the Wild");
+            } else {
+                CHECK_MSG(info.title.empty(), info.game_id + " " + info.title);
+            }
+        }
+    }
+
+    // Cemu has them in its game list: the next run names them -- from the
+    // folder's meta, from inside the archive, and for a disc image only the
+    // name the list kept.
+    const std::string list = path_join(sandbox, "cemu-mlc/title_list_cache.xml");
+    CHECK(write_text(list, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<title_list>\n" +
+                               cemu_title(kMario3dWorld, "Super Mario 3D World", kCemuTitleFolder, folder_game) +
+                               cemu_title(kMarioKart8, "Mario Kart 8", kCemuTitleArchive, archive,
+                                          "0005000010101c00_v0") +
+                               cemu_title(kPikmin, "Pikmin 3 &amp; More", 2, path_join(sandbox, "cemu-games/p.wud")) +
+                               "</title_list>\n"));
+    const std::vector<CemuTitleListEntry> entries = read_cemu_title_list(list);
+    CHECK_EQ(entries.size(), static_cast<std::size_t>(3));
+    if (entries.size() == 3) {
+        CHECK_EQ(entries[1].title_id, kMarioKart8);
+        CHECK_EQ(entries[1].format, kCemuTitleArchive);
+        CHECK_STR_EQ(entries[1].sub_path, "0005000010101c00_v0");
+        CHECK_STR_EQ(entries[2].name, "Pikmin 3 & More");
+    }
+    std::vector<std::string> lists = find_cemu_title_lists("", "", mlc);
+    CHECK_EQ(lists.size(), static_cast<std::size_t>(1));
+    {
+        SaveStore store(saves, "Deck");
+        FolderSaveRoots roots = store.folder_roots();
+        roots.wii_u_mlc = mlc;
+        roots.wii_u_title_lists = lists;
+        store.set_folder_roots(roots);
+        for (const SaveInfo& info : store.list()) {
+            if (info.game_id == wii_u_game_id(kMario3dWorld)) {
+                CHECK_STR_EQ(info.title, "Super Mario 3D World");
+                CHECK(!info.icon.empty());
+            } else if (info.game_id == wii_u_game_id(kMarioKart8)) {
+                CHECK_STR_EQ(info.title, "Mario Kart 8");
+                CHECK_STR_EQ(info.publisher, "Nintendo");
+#ifdef DUALSCREEN_HAVE_ZSTD
+                CHECK(!info.icon.empty());
+#endif
+            } else if (info.game_id == wii_u_game_id(kPikmin)) {
+                CHECK_STR_EQ(info.title, "Pikmin 3 & More");
+                CHECK(info.icon.empty());
+            }
+        }
+    }
+
+    // Where Cemu keeps the list: its user-data folder, the one its own
+    // mlc01 goes in, or beside a portable Cemu.
+    const std::string home = path_join(sandbox, "cemu-home");
+    CHECK(find_cemu_title_lists("", home, "").empty());
+    CHECK(write_text(path_join(home, ".local/share/Cemu/title_list_cache.xml"), "<title_list/>"));
+    lists = find_cemu_title_lists("cemu", home, mlc);
+    CHECK_EQ(lists.size(), static_cast<std::size_t>(2));
+    if (lists.size() == 2) {
+        CHECK_STR_EQ(lists[0], list);
+        CHECK_STR_EQ(lists[1], path_join(home, ".local/share/Cemu/title_list_cache.xml"));
+    }
+}
+
 void test_find_cemu_mlc(const std::string& sandbox) {
     const std::string home = path_join(sandbox, "home");
     CHECK_STR_EQ(find_cemu_mlc("/somewhere/mlc01", "", home), "/somewhere/mlc01");
@@ -513,5 +776,7 @@ int main() {
     test_3ds_store(sandbox);
     test_wii_u_store(sandbox);
     test_find_cemu_mlc(sandbox);
+    test_wii_u_archive(sandbox);
+    test_wii_u_names_from_cemu(sandbox);
     return test::finish("folder saves");
 }
