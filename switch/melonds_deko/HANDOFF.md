@@ -10,10 +10,52 @@ history of the graphics search, kept because they say what was ruled out.
 
 Branch: `claude/emulator-display-streaming-xnfjj0` (also pushed as
 `claude/affectionate-planck-3sv0qo`, the cloud session's branch; same
-commits). Newest commit before this note: `650f846`. Do not open a pull
+commits). Newest commit before this note: `63828f8`. Do not open a pull
 request unless the owner asks. No model names in commits, code or docs.
 
-## Latest: the local session (2026-10-03)
+## Latest: slowdown the longer a game runs (2026-10-06)
+
+The owner saw Bowser's Inside Story run in fits and starts after coming back
+from the HOME menu or sleep. Measured on the console, it was not the HOME
+menu: **deko3d leaks a kilobyte of command buffer memory every frame.**
+
+- `dkCmdBufClear` (deko3d 0.5.0 and upstream master) moves only the newest of
+  a command buffer's 1 KB control-memory chunks to the free list and drops its
+  link to the older ones. Compute binds and dispatches are control commands,
+  and RSDuck's 3D renderer issues enough of them each frame to need two
+  chunks, so one was lost per frame. The heap grew 608 KB per 10 s of play
+  (none while paused in the quick menu, none with `renderer=soft`) and
+  fragmented until everything slowed: drawing a frame 1.7 -> 4.4 ms in six
+  minutes, the main loop 4,570 -> 3,390 passes per 10 s, and with vsync locked
+  the game itself down to 55%.
+- Fixed by `__wrap_dkCmdBufClear` in `gfx.cpp` (`-Wl,--wrap=dkCmdBufClear` in
+  `switch/Makefile`, deko core only), which puts the older chunks on the free
+  list first. It relies on deko3d 0.5.0's internal `CmdBuf` layout (chunk
+  lists at bytes 32 and 40) and only acts on the core's own command buffers
+  whose chunks look right. **If devkitPro's deko3d is upgraded, re-check
+  `source/dk_cmdbuf.h`**; better still, the fix belongs upstream in deko3d.
+  Building deko3d from source instead needs `dekodef` from fincs' dekotools.
+- After the fix: heap flat at 758,136 KB for a whole session, drawing 1.8 ms
+  throughout, Bowser's Inside Story with vsync through ten HOME trips and
+  seven minutes at 600-601 frames per 602 refreshes, a Mario Kart race the
+  same.
+- Also (commit `63828f8`): with vsync on, if the display falls behind (a frame
+  waiting 0.1-1 s for a buffer, or three waits in a second) vsync is held off
+  for 10 s, doubling up to 2 min; the display's period is measured again
+  after every suspension; the `speed:` line gives drawing time; the clock
+  watcher (`companion/source/local_play.cpp`) logs GPU and memory clocks.
+- Not the cause, for the record: GPU clock (76 MHz in HOME, back to 307 on
+  return), the Mesa vertex buffer re-allocated every frame (tried three
+  buffers in turn; no difference; reverted), controllers (8 slots, constant).
+
+Console state now: the owner's home network, **Switch at 192.168.0.58**.
+Build `63828f8` on the card, `settings.json` has `"vsync": true`,
+`melonds.ini` empty. **System Settings > Sleep Mode > Auto-Sleep is set to
+Never** (it was 5 min) so a remote session cannot lose the console to sleep;
+the owner may want it back. Bowser's Inside Story now has Resume from Save
+State on, so it starts with the resume popup.
+
+## The local session before (2026-10-03)
 
 ### Commits, oldest first
 
