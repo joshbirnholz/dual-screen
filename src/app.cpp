@@ -3835,6 +3835,12 @@ void App::Impl::render() {
             menu_backdrop.capture(output_width, output_height, compositor.composition_key());
         }
         menu_backdrop.draw(quads, width, height);
+        // A page opened from the menu -- Settings, Data Management,
+        // Controllers -- sits a step further back from the game: the same
+        // picture, 60% darker again.
+        if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
+            quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+        }
     } else {
         menu_backdrop.forget();
     }
