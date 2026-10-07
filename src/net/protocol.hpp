@@ -417,7 +417,7 @@ enum class MenuSound : uint8_t {
     Cancel = 3,
     Error = 4,
     OpenQuickMenu = 5,
-    CloseQuickMenu = 6,
+    // 6 was the quick menu closing, which is Cancel now.
 };
 
 struct MenuSoundMessage {

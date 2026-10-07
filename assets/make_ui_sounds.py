@@ -36,7 +36,7 @@ import sys
 import wave
 
 RATE = 48000
-SOUNDS = ["move_cursor", "confirm", "cancel", "error", "open_quick_menu", "close_quick_menu"]
+SOUNDS = ["move_cursor", "confirm", "cancel", "error", "open_quick_menu"]
 THRESHOLD = 10 ** (-50 / 20)
 THRESHOLD_QUIET = 10 ** (-60 / 20)
 KEEP_AFTER = 0.030

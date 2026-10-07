@@ -20,8 +20,7 @@
 namespace ds {
 namespace {
 
-constexpr const char* kNames[kUiSoundCount] = {"move_cursor", "confirm",         "cancel",
-                                               "error",       "open_quick_menu", "close_quick_menu"};
+constexpr const char* kNames[kUiSoundCount] = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu"};
 
 uint32_t le32(const uint8_t* at) {
     return uint32_t(at[0]) | uint32_t(at[1]) << 8 | uint32_t(at[2]) << 16 | uint32_t(at[3]) << 24;
@@ -190,7 +189,9 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
     } else if (before.in_game && view.menu) {
         sound = UiSound::OpenQuickMenu;
     } else if (before.menu && view.in_game) {
-        sound = UiSound::CloseQuickMenu;
+        // Closing has no sound of its own: it is backing out, however it was
+        // done and whoever did it.
+        sound = UiSound::Cancel;
     } else if (pending_ != Pending::None) {
         const bool moved = view.focus != before.focus;
         const bool changed = view.screen != before.screen || view.rest != before.rest;

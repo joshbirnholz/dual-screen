@@ -14,11 +14,11 @@
 namespace ds {
 
 // The menus' own sounds: a cursor moving, something chosen, something backed
-// out of, something refused, and the quick menu opening and closing over a
-// game. The owner's own recordings, in assets/ui_sounds/, made ready by
+// out of, something refused, and the quick menu opening over a game -- its
+// closing is backing out, and sounds like it. The owner's own recordings, in assets/ui_sounds/, made ready by
 // assets/make_ui_sounds.py and carried inside the binary.
-enum class UiSound { MoveCursor, Confirm, Cancel, Error, OpenQuickMenu, CloseQuickMenu };
-inline constexpr int kUiSoundCount = 6;
+enum class UiSound { MoveCursor, Confirm, Cancel, Error, OpenQuickMenu };
+inline constexpr int kUiSoundCount = 5;
 const char* ui_sound_name(UiSound sound);
 // As net::MenuSound numbers them on the wire: one more than here.
 inline uint8_t ui_sound_to_wire(UiSound sound) { return static_cast<uint8_t>(static_cast<int>(sound) + 1); }

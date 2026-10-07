@@ -36,8 +36,7 @@ std::vector<uint8_t> make_pack(const std::vector<std::string>& names, uint32_t f
     return out;
 }
 
-const std::vector<std::string> kAll = {"move_cursor", "confirm",         "cancel",
-                                       "error",       "open_quick_menu", "close_quick_menu"};
+const std::vector<std::string> kAll = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu"};
 
 void test_the_carried_pack_has_every_sound_at_48k() {
     UiSoundPack pack;
@@ -66,10 +65,10 @@ void test_a_pack_cut_short_or_missing_a_sound_is_refused() {
     CHECK(!decode_ui_sound_pack(cut.data(), cut.size(), pack, &error));
     CHECK_MSG(error.find("cut short") != std::string::npos, error);
 
-    std::vector<std::string> five(kAll.begin(), kAll.end() - 1);
-    std::vector<uint8_t> missing = make_pack(five, 10, 100);
+    std::vector<std::string> all_but_one(kAll.begin(), kAll.end() - 1);
+    std::vector<uint8_t> missing = make_pack(all_but_one, 10, 100);
     CHECK(!decode_ui_sound_pack(missing.data(), missing.size(), pack, &error));
-    CHECK_MSG(error.find("close_quick_menu") != std::string::npos, error);
+    CHECK_MSG(error.find("open_quick_menu") != std::string::npos, error);
 
     std::vector<uint8_t> other = whole;
     other[4] = 2;
@@ -218,7 +217,16 @@ void test_the_quick_menu_and_errors_have_their_own_sounds() {
     CHECK(sound && *sound == UiSound::OpenQuickMenu);
     judge.note_input({UiAction::Cancel}, false, 0.3);
     sound = judge.observe(game, 0.3);
-    CHECK_MSG(sound && *sound == UiSound::CloseQuickMenu, "closing with Back is the menu closing, not Back");
+    CHECK_MSG(sound && *sound == UiSound::Cancel, "closing the menu is backing out");
+
+    // However it was closed: A on Continue, or the other device.
+    judge.observe(menu, 0.32);
+    judge.note_input({UiAction::Confirm}, false, 0.34);
+    sound = judge.observe(game, 0.34);
+    CHECK(sound && *sound == UiSound::Cancel);
+    judge.observe(menu, 0.36);
+    sound = judge.observe(game, 0.38);
+    CHECK(sound && *sound == UiSound::Cancel);
 
     UiSoundView failed = view_at(5, 0);
     failed.error = true;
@@ -256,13 +264,12 @@ void test_a_sound_crosses_the_wire_as_itself() {
         {UiSound::Cancel, net::MenuSound::Cancel},
         {UiSound::Error, net::MenuSound::Error},
         {UiSound::OpenQuickMenu, net::MenuSound::OpenQuickMenu},
-        {UiSound::CloseQuickMenu, net::MenuSound::CloseQuickMenu},
     };
     for (const auto& [sound, wire] : pairs) {
         CHECK(ui_sound_to_wire(sound) == static_cast<uint8_t>(wire));
         CHECK(ui_sound_from_wire(static_cast<uint8_t>(wire)) == sound);
     }
-    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(7));
+    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(6));
     const uint8_t unknown = 9;
     net::MenuSoundMessage back;
     CHECK(!net::decode_menu_sound(&unknown, 1, back));
