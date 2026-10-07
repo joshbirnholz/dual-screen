@@ -539,6 +539,22 @@ void test_input_round_trip() {
     CHECK_EQ(received.c_stick_y, 8000);
 }
 
+void test_menu_sound_round_trip() {
+    for (const MenuSound sound : {MenuSound::MoveCursor, MenuSound::OpenQuickMenu, MenuSound::CloseQuickMenu}) {
+        MenuSoundMessage sent;
+        sent.sound = sound;
+        std::vector<uint8_t> buffer;
+        encode_menu_sound(sent, buffer);
+        MessageType type = MessageType::Ping;
+        std::vector<uint8_t> payload;
+        CHECK(one_message(buffer, type, payload));
+        CHECK(type == MessageType::MenuSound);
+        MenuSoundMessage received;
+        CHECK(decode_menu_sound(payload.data(), payload.size(), received));
+        CHECK(received.sound == sound);
+    }
+}
+
 void test_rumble_round_trip() {
     for (const bool active : {true, false}) {
         RumbleMessage sent;
@@ -1642,6 +1658,7 @@ int main() {
     test_save_slots_round_trip();
     test_input_round_trip();
     test_rumble_round_trip();
+    test_menu_sound_round_trip();
     test_a_companions_pads_ride_the_input_as_a_tail();
     test_an_input_carries_its_number_and_the_host_echoes_it();
     test_rumble_can_name_one_pad();

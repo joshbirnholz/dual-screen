@@ -20,6 +20,12 @@ namespace ds {
 enum class UiSound { MoveCursor, Confirm, Cancel, Error, OpenQuickMenu, CloseQuickMenu };
 inline constexpr int kUiSoundCount = 6;
 const char* ui_sound_name(UiSound sound);
+// As net::MenuSound numbers them on the wire: one more than here.
+inline uint8_t ui_sound_to_wire(UiSound sound) { return static_cast<uint8_t>(static_cast<int>(sound) + 1); }
+inline std::optional<UiSound> ui_sound_from_wire(uint8_t value) {
+    if (value < 1 || value > kUiSoundCount) return std::nullopt;
+    return static_cast<UiSound>(value - 1);
+}
 
 // Every sound, 48 kHz int16 stereo, as assets/ui_sounds.bin carries them.
 struct UiSoundPack {
@@ -42,6 +48,8 @@ public:
     // Writes `frames` of int16 stereo to `out`: the voices summed, or silence.
     void mix(int16_t* out, std::size_t frames);
     std::size_t playing() const;
+    // A sum of voices, back into 16 bits without clipping hard.
+    static int16_t limit(int32_t sample);
 
 private:
     struct Voice {

@@ -15,6 +15,8 @@ struct UiSoundView {
     bool in_game = false;    // a game on screen, no menu over it
     bool menu = false;       // the quick menu, or a page opened from it, over a game
     bool error = false;      // an error being shown
+    bool on_cancel = false;  // the cursor on a popup's Cancel, which A backs
+                             // out with as B does -- and sounds like it
 };
 
 // Hashes a screen's state into a view's focus or rest.

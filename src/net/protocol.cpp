@@ -476,6 +476,12 @@ void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
     finish_message(out, start, MessageType::Rumble);
 }
 
+void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>(message.sound));
+    finish_message(out, start, MessageType::MenuSound);
+}
+
 // Each slot's picture goes deflated: a small one, but four of them, on the
 // same connection as every press.
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out) {
@@ -557,6 +563,18 @@ bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& 
     reader.u8(failed);
     out.status_failed = failed != 0;
     return reader.ok();
+}
+
+bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& out) {
+    Reader reader(data, size);
+    uint8_t sound = 0;
+    reader.u8(sound);
+    if (!reader.ok() || sound < static_cast<uint8_t>(MenuSound::MoveCursor) ||
+        sound > static_cast<uint8_t>(MenuSound::CloseQuickMenu)) {
+        return false;
+    }
+    out.sound = static_cast<MenuSound>(sound);
+    return true;
 }
 
 bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out) {

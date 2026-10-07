@@ -22,7 +22,7 @@ namespace ds::net {
 // readable reason rather than left to produce garbage. Bump it whenever the
 // meaning of an existing field changes.
 constexpr uint32_t kProtocolMagic = 0x48535344u;  // "DSSH" little-endian
-constexpr uint16_t kProtocolVersion = 26;
+constexpr uint16_t kProtocolVersion = 27;
 
 // Ports are fixed rather than negotiated: this is a LAN between two of the
 // player's own devices, and a fixed port is one less thing to configure.
@@ -87,6 +87,10 @@ enum class MessageType : uint16_t {
     // CompanionSession's input_to_picture figures. A companion from before
     // this ignores it.
     InputEcho = 17,
+    // A menu sound the host just played, for the companion to play too: the
+    // quick menu is mirrored there, so it sounds there as well. See
+    // MenuSoundMessage.
+    MenuSound = 18,
     // either way
     Ping = 20,
 };
@@ -405,6 +409,21 @@ struct SaveSlotsMessage {
     bool status_failed = false;
 };
 
+// Which of the menus' sounds -- see UiSound, whose order this is numbered apart
+// from, as MenuAction is from UiAction.
+enum class MenuSound : uint8_t {
+    MoveCursor = 1,
+    Confirm = 2,
+    Cancel = 3,
+    Error = 4,
+    OpenQuickMenu = 5,
+    CloseQuickMenu = 6,
+};
+
+struct MenuSoundMessage {
+    MenuSound sound = MenuSound::MoveCursor;
+};
+
 struct RumbleMessage {
     bool active = false;
     // Which of the companion's pads, by the id it reported (see ReportedPad),
@@ -528,6 +547,7 @@ void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
 // above is defined in terms of it.
 void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out);
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
+void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& out);
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
@@ -563,6 +583,8 @@ bool decode_frame(const uint8_t* data, std::size_t size, FrameMessage& out);
 bool decode_input(const uint8_t* data, std::size_t size, InputMessage& out);
 bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out);
 bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
+// False for a sound this end does not know.
+bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& out);
 bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one

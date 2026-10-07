@@ -242,6 +242,9 @@ public:
     // Cheap to call every time the state changes, like publish_audio -- only
     // sent when it actually changed.
     void publish_rumble(bool active);
+    // A menu sound this device just played, sent for the companion to play
+    // as well -- see MessageType::MenuSound. Nothing without one.
+    void publish_menu_sound(MenuSound sound);
 
     // Ends the session from this end. The companion is told, so it returns to
     // its launcher rather than waiting for a timeout.

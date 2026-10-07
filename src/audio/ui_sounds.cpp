@@ -1,6 +1,7 @@
 #include "audio/ui_sounds.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "render/embedded_assets.hpp"
@@ -12,7 +13,6 @@
 
 #include <atomic>
 #include <mutex>
-#include <thread>
 #else
 #include <SDL.h>
 #endif
@@ -78,6 +78,18 @@ bool decode_ui_sound_pack(const uint8_t* data, std::size_t size, UiSoundPack& ou
     return true;
 }
 
+int16_t UiSoundMixer::limit(int32_t sample) {
+    // Untouched up to three quarters of full scale; above that, bent smoothly
+    // towards it rather than cut off flat, which is what made two sounds at
+    // once crackle.
+    constexpr float knee = 24576.0f;
+    constexpr float room = 32767.0f - knee;
+    const float magnitude = std::fabs(static_cast<float>(sample));
+    if (magnitude <= knee) return static_cast<int16_t>(sample);
+    const float bent = knee + room * std::tanh((magnitude - knee) / room);
+    return static_cast<int16_t>(sample < 0 ? -bent : bent);
+}
+
 void UiSoundMixer::start(UiSound sound) {
     if (pack_ == nullptr) return;
     const int wanted = static_cast<int>(sound);
@@ -111,9 +123,7 @@ void UiSoundMixer::mix(int16_t* out, std::size_t frames) {
         voice.at += n;
         if (voice.at >= clip_frames) voice.sound = -1;
     }
-    for (std::size_t i = 0; i < frames * 2; ++i) {
-        out[i] = static_cast<int16_t>(std::clamp<int32_t>(sum[i], -32768, 32767));
-    }
+    for (std::size_t i = 0; i < frames * 2; ++i) out[i] = limit(sum[i]);
 }
 
 std::size_t UiSoundMixer::playing() const {
@@ -187,11 +197,14 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
         if (moved || changed) {
             switch (pending_) {
                 case Pending::Move: sound = UiSound::MoveCursor; break;
-                case Pending::Confirm: sound = UiSound::Confirm; break;
+                // A popup's Cancel, chosen with A, is backing out all the same.
+                case Pending::Confirm: sound = before.on_cancel ? UiSound::Cancel : UiSound::Confirm; break;
                 case Pending::Cancel: sound = UiSound::Cancel; break;
                 // A first tap on a row moves the cursor to it; a tap that does
                 // anything more is a choice.
-                case Pending::Tap: sound = changed ? UiSound::Confirm : UiSound::MoveCursor; break;
+                case Pending::Tap:
+                    sound = !changed ? UiSound::MoveCursor : before.on_cancel ? UiSound::Cancel : UiSound::Confirm;
+                    break;
                 case Pending::None: break;
             }
         }
@@ -206,16 +219,25 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
 // through: SDL's Switch audio drives the audio renderer, and there is only one
 // renderer to a program -- a second driver on it would trample the first's
 // voices on every update. This has a session of its own, which the system
-// mixes with the renderer's. Fed from a thread of its own, three buffers of
-// 256 frames kept queued: 5 ms each, so a sound starts within about 16.
+// mixes with the renderer's.
+//
+// Fed from a thread of its own, four buffers of 240 frames kept queued -- the
+// 5 ms the system mixes in at a time, so 20 ms in hand. The thread runs just
+// above the app's own threads, on the program's default core: run beside
+// them at the same priority, a frame that kept the main thread busy -- the
+// quick menu drawing every layout's preview -- left the queue to run dry, and
+// what came out was a sound with holes in it.
 struct UiSoundPlayer::Backend {
-    static constexpr std::size_t kFrames = 256;
+    static constexpr std::size_t kFrames = 240;
     static constexpr std::size_t kBufferBytes = 0x1000;  // what the service wants them aligned to
-    static constexpr int kBuffers = 3;
+    static constexpr int kBuffers = 4;
+    // Lower is sooner; the main thread and those it starts are 0x2C.
+    static constexpr int kFeederPriority = 0x2B;
     UiSoundMixer mixer;
     std::mutex mutex;
     std::atomic<bool> stopping{false};
-    std::thread feeder;
+    Thread feeder{};
+    bool feeding = false;
     bool service = false;
     bool started = false;
     std::array<AudioOutBuffer, kBuffers> buffers{};
@@ -250,9 +272,18 @@ struct UiSoundPlayer::Backend {
             rc = audoutAppendAudioOutBuffer(&buffer);
             if (R_FAILED(rc)) return fail("the console's audio output would not take a buffer", rc);
         }
-        feeder = std::thread([this] { feed(); });
+        rc = threadCreate(&feeder, &Backend::feed_entry, this, nullptr, 0x8000, kFeederPriority, -2);
+        if (R_FAILED(rc)) return fail("the menu sounds' thread would not start", rc);
+        rc = threadStart(&feeder);
+        if (R_FAILED(rc)) {
+            threadClose(&feeder);
+            return fail("the menu sounds' thread would not start", rc);
+        }
+        feeding = true;
         return true;
     }
+
+    static void feed_entry(void* self) { static_cast<Backend*>(self)->feed(); }
 
     void feed() {
         while (!stopping.load()) {
@@ -276,9 +307,11 @@ struct UiSoundPlayer::Backend {
     }
 
     void close() {
-        if (feeder.joinable()) {
+        if (feeding) {
             stopping.store(true);
-            feeder.join();
+            threadWaitForExit(&feeder);
+            threadClose(&feeder);
+            feeding = false;
         }
         if (started) {
             audoutStopAudioOut();

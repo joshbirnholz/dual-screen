@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "audio/ui_sounds.hpp"
+#include "net/protocol.hpp"
 #include "render/embedded_assets.hpp"
 #include "test_support.hpp"
 #include "ui/launcher_screen.hpp"
@@ -91,10 +92,25 @@ void test_the_mixer_sums_voices_and_clips() {
     CHECK(out[0] == 20000 && out[3] == 20000);
     mixer.start(UiSound::Cancel);
     mixer.mix(out, 4);
-    // Two frames left of the first, four of the second: summed, then clipped.
-    CHECK_MSG(out[0] == 32767, std::to_string(out[0]));
+    // Two frames left of the first, four of the second: summed, then bent
+    // under full scale rather than cut off flat at it.
+    CHECK_MSG(out[0] > 32000 && out[0] <= 32767, std::to_string(out[0]));
+    CHECK(out[1] == out[0] && out[2] == out[0]);
     CHECK(out[4] == 20000);
     CHECK(mixer.playing() == 0);
+}
+
+void test_the_limit_leaves_ordinary_levels_alone_and_bends_loud_ones() {
+    CHECK(UiSoundMixer::limit(10000) == 10000);
+    CHECK(UiSoundMixer::limit(-24000) == -24000);
+    CHECK(UiSoundMixer::limit(-50000) == -UiSoundMixer::limit(50000));
+    int16_t last = 0;
+    for (int32_t x = 0; x <= 100000; x += 500) {
+        const int16_t y = UiSoundMixer::limit(x);
+        CHECK_MSG(y >= last, "the limit never turns a louder sum into a quieter one");
+        last = y;
+    }
+    CHECK(UiSoundMixer::limit(1000000) <= 32767);
 }
 
 void test_a_held_cursor_restarts_its_sound_rather_than_stacking() {
@@ -169,6 +185,22 @@ void test_a_tap_is_a_move_or_a_choice_by_what_it_did() {
     CHECK(sound && *sound == UiSound::Confirm);
 }
 
+void test_a_popups_cancel_sounds_like_backing_out() {
+    UiSoundJudge judge;
+    UiSoundView asking = view_at(1, 1, 5);
+    asking.on_cancel = true;
+    judge.observe(asking, 0.0);
+    judge.note_input({UiAction::Confirm}, false, 0.1);
+    auto sound = judge.observe(view_at(1, 1, 6), 0.1);
+    CHECK_MSG(sound && *sound == UiSound::Cancel, "A on Cancel is B");
+
+    UiSoundView on_quit = view_at(1, 2, 5);
+    judge.observe(on_quit, 0.2);
+    judge.note_input({UiAction::Confirm}, false, 0.3);
+    sound = judge.observe(view_at(1, 2, 7), 0.3);
+    CHECK(sound && *sound == UiSound::Confirm);
+}
+
 void test_the_quick_menu_and_errors_have_their_own_sounds() {
     UiSoundJudge judge;
     UiSoundView game = view_at(0, 0);
@@ -217,17 +249,39 @@ void test_the_launcher_describes_its_cursor() {
     CHECK(a.focus == b.focus && a.rest == b.rest);
 }
 
+void test_a_sound_crosses_the_wire_as_itself() {
+    const std::pair<UiSound, net::MenuSound> pairs[] = {
+        {UiSound::MoveCursor, net::MenuSound::MoveCursor},
+        {UiSound::Confirm, net::MenuSound::Confirm},
+        {UiSound::Cancel, net::MenuSound::Cancel},
+        {UiSound::Error, net::MenuSound::Error},
+        {UiSound::OpenQuickMenu, net::MenuSound::OpenQuickMenu},
+        {UiSound::CloseQuickMenu, net::MenuSound::CloseQuickMenu},
+    };
+    for (const auto& [sound, wire] : pairs) {
+        CHECK(ui_sound_to_wire(sound) == static_cast<uint8_t>(wire));
+        CHECK(ui_sound_from_wire(static_cast<uint8_t>(wire)) == sound);
+    }
+    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(7));
+    const uint8_t unknown = 9;
+    net::MenuSoundMessage back;
+    CHECK(!net::decode_menu_sound(&unknown, 1, back));
+}
+
 }  // namespace
 
 int main() {
     test_the_carried_pack_has_every_sound_at_48k();
     test_a_pack_cut_short_or_missing_a_sound_is_refused();
     test_the_mixer_sums_voices_and_clips();
+    test_the_limit_leaves_ordinary_levels_alone_and_bends_loud_ones();
     test_a_held_cursor_restarts_its_sound_rather_than_stacking();
     test_a_press_sounds_only_when_it_changed_something();
     test_a_press_waits_for_the_other_device_but_not_for_ever();
     test_a_tap_is_a_move_or_a_choice_by_what_it_did();
     test_the_quick_menu_and_errors_have_their_own_sounds();
+    test_a_popups_cancel_sounds_like_backing_out();
     test_the_launcher_describes_its_cursor();
+    test_a_sound_crosses_the_wire_as_itself();
     return test::finish("ui_sounds");
 }

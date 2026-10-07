@@ -1331,6 +1331,12 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
         mix_sound_state(view.rest, static_cast<uint64_t>(slot.exists ? slot.saved_at : -1));
     }
     view.error = view.error || (!save_status_.empty() && save_status_failed_);
+    if (confirm_ != MenuConfirm::None) {
+        const std::vector<PopupButton> buttons = confirm_buttons();
+        const int at = confirm_cursor_.focus();
+        view.on_cancel = at >= 0 && at < static_cast<int>(buttons.size()) &&
+                         buttons[static_cast<std::size_t>(at)].label == "Cancel";
+    }
 }
 
 }  // namespace ds

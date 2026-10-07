@@ -143,6 +143,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     // whichever path the last session ended by, a fresh one starts with
     // nothing carried over from it, this included.
     menu_open_ = false;
+    menu_sounds_.clear();
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
@@ -301,6 +302,7 @@ void CompanionSession::disconnect() {
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
+    menu_sounds_.clear();
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
@@ -401,6 +403,7 @@ void CompanionSession::fail(const std::string& reason) {
     inbox_.clear();
     said_hello_ = false;
     menu_open_ = false;
+    menu_sounds_.clear();
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
@@ -573,6 +576,15 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             host_save_slots_ = std::move(slots);
             ++host_save_slots_revision_;
+            break;
+        }
+        case MessageType::MenuSound: {
+            MenuSoundMessage sound;
+            // Only the latest few: a backlog played all at once is noise.
+            if (decode_menu_sound(payload.data(), payload.size(), sound)) {
+                if (menu_sounds_.size() >= 4) menu_sounds_.pop_front();
+                menu_sounds_.push_back(sound.sound);
+            }
             break;
         }
         case MessageType::Rumble: {
@@ -3309,6 +3321,13 @@ SystemScreens CompanionSession::screens_geometry() const {
     // build, so the sizes are looked up rather than measured from whatever
     // frame happened to arrive first.
     return system_profile(system_).screens;
+}
+
+bool CompanionSession::take_menu_sound(MenuSound& out) {
+    if (menu_sounds_.empty()) return false;
+    out = menu_sounds_.front();
+    menu_sounds_.pop_front();
+    return true;
 }
 
 }  // namespace ds::net

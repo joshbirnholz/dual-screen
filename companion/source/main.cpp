@@ -1589,8 +1589,18 @@ void Client::run() {
         const double now_seconds = static_cast<double>(net::monotonic_millis() - started_ms) / 1000.0;
         ui_sound_judge_.note_input(actions, tapped, now_seconds);
         handle_actions(actions, pointers);
+        // In a session the host decides, for both devices: its menu is the
+        // one on screen here, and its sounds come over with it.
+        const bool host_decides = state_ == State::Playing;
         if (const std::optional<UiSound> sound = ui_sound_judge_.observe(sound_view(), now_seconds)) {
-            ui_sounds_.play(*sound);
+            // Nothing for a press that closes the app -- Quit, or Load a game,
+            // which starts it again: the sound would be cut off as it goes.
+            if (!host_decides && running_) ui_sounds_.play(*sound);
+        }
+        net::MenuSound from_host;
+        while (session_.take_menu_sound(from_host)) {
+            const std::optional<UiSound> sound = ui_sound_from_wire(static_cast<uint8_t>(from_host));
+            if (sound && host_decides) ui_sounds_.play(*sound);
         }
 
         if (state_ == State::Playing && !menu_open_ && !session_.host_settings_open() &&

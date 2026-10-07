@@ -968,6 +968,13 @@ struct App::Impl {
     UiSoundPlayer ui_sounds;
     UiSoundJudge ui_sound_judge;
     UiSoundView sound_view() const;
+    // What the judge decided, played -- and, with a companion mirroring the
+    // menu, sent for it to play too. A companion does the reverse: while it
+    // is in a session the host's sounds are the ones it plays.
+    void play_ui_sound(UiSound sound, const UiSoundView& view);
+    bool host_decides_sounds() const {
+        return is_companion() && (state == State::Companion || state == State::Menu);
+    }
     // How long the last frame took, so screens that need a clock have one.
     double last_delta_seconds = 0.0;
     CursorVisibility cursor;
@@ -3278,6 +3285,16 @@ UiSoundView App::Impl::sound_view() const {
     return view;
 }
 
+void App::Impl::play_ui_sound(UiSound sound, const UiSoundView& view) {
+    if (host_decides_sounds()) return;
+    ui_sounds.play(sound);
+    // Anything over the game is the session's, whichever device is showing
+    // it: the menu is drawn on both, and its sounds are heard on both.
+    if (host_session && host_session->has_companion() && (view.menu || view.in_game)) {
+        host_session->publish_menu_sound(static_cast<net::MenuSound>(ui_sound_to_wire(sound)));
+    }
+}
+
 void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers) {
     // Filtering is deliberately handled before anything else looks at the
@@ -4667,6 +4684,17 @@ int App::run(const AppOptions& options) {
             // them: two of them are two moves, not one.
             net::HostSession::MenuPress press;
             while (impl.host_session->take_menu_press(press)) {
+                // The companion's presses earn sounds as this device's own do,
+                // and those sounds go back to it: see play_ui_sound().
+                {
+                    const double now_seconds =
+                        static_cast<double>(SDL_GetPerformanceCounter() - started_counter) /
+                        static_cast<double>(counter_frequency);
+                    impl.ui_sound_judge.note_input(
+                        press.has_action ? std::vector<UiAction>{ui_action_for(press.action)}
+                                         : std::vector<UiAction>{},
+                        press.has_focus && !press.has_action, now_seconds);
+                }
                 // The resumed game's popup, shown on both devices: OK there
                 // is OK here.
                 if (impl.state == Impl::State::ResumeNotice) {
@@ -4899,8 +4927,19 @@ int App::run(const AppOptions& options) {
                                        static_cast<double>(counter_frequency);
             impl.ui_sound_judge.note_input(impl.input.ui_actions(), tapped, now_seconds);
             impl.handle_ui(impl.input.ui_actions(), pointers);
-            if (const std::optional<UiSound> sound = impl.ui_sound_judge.observe(impl.sound_view(), now_seconds)) {
-                impl.ui_sounds.play(*sound);
+            const UiSoundView view = impl.sound_view();
+            // Nothing for a press that closes the app: the sound would be cut
+            // off part way through as it goes.
+            if (const std::optional<UiSound> sound = impl.ui_sound_judge.observe(view, now_seconds);
+                sound && impl.running) {
+                impl.play_ui_sound(*sound, view);
+            }
+            if (impl.companion_session) {
+                net::MenuSound from_host;
+                while (impl.companion_session->take_menu_sound(from_host)) {
+                    const std::optional<UiSound> sound = ui_sound_from_wire(static_cast<uint8_t>(from_host));
+                    if (sound && impl.host_decides_sounds()) impl.ui_sounds.play(*sound);
+                }
             }
         }
 

@@ -89,7 +89,15 @@ Every menu in the app makes a sound when a press does something: the cursor
 moving, something chosen, backing out, an error appearing, and the quick menu
 opening and closing over a game, whichever device opened it. A press that
 changes nothing -- the cursor already at the end of a list -- makes none, and
-nor do a game's own buttons while it is playing. The sounds are the ones in
+nor do a game's own buttons while it is playing. A popup's Cancel sounds the
+same whether it is chosen with A or backed out of with B, and a press that
+closes the app -- Quit, or anything that leaves to start it again -- is
+silent rather than cut off part way through. With two devices, the quick menu
+is heard on both, as it is seen on both, whichever pad is working it: the
+device running the game decides each sound, the same way for a press from
+either pad, and sends it to the other to play as well -- and so do its
+Settings pages opened from the menu, which the other device's buttons work
+too. The sounds are the ones in
 `assets/ui_sounds/`; `python3 assets/make_ui_sounds.py` trims them to the
 sound, converts them to 48 kHz stereo and packs them into
 `assets/ui_sounds.bin`, which is built into the app.
@@ -97,7 +105,9 @@ sound, converts them to 48 kHz stereo and packs them into
 They play on an audio device of their own, opened at start-up, not with the
 game's sound, which is queued a tenth of a second deep and paused while a menu
 is up. On a Switch that is the console's plain audio output, beside the audio
-renderer SDL plays the game through. Where SDL can open only one device at a
+renderer SDL plays the game through, fed by a thread that runs just above
+the app's own so a busy frame cannot leave it with nothing to play; voices that
+overlap are summed and then eased under full scale rather than clipped. Where SDL can open only one device at a
 time -- Android, and a run with `SDL_AUDIODRIVER=dummy` -- there are no menu
 sounds, since the game's sound needs that device; the log says which at
 start-up (`menu sounds ready`, or `no menu sounds:` and why). **Sound effects**

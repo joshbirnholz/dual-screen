@@ -727,6 +727,9 @@ public:
     // RumbleMessage::ping_ms.
     using RumbleCallback = std::function<void(bool active, uint32_t pad, uint16_t ping_ms)>;
     void set_rumble_callback(RumbleCallback callback) { rumble_callback_ = std::move(callback); }
+    // The menu sounds the host has played since this was last asked, oldest
+    // first, for this device to play too. False when there are none left.
+    bool take_menu_sound(MenuSound& out);
 
     // How far the pacing clock may hold a frame back to even out the link --
     // see VideoHold. Safe to set at any time, including mid-session: it
@@ -1520,6 +1523,7 @@ private:
     AudioCallback audio_callback_;
     uint32_t audio_sample_rate_ = 0;
     RumbleCallback rumble_callback_;
+    std::deque<MenuSound> menu_sounds_;
     // Per AudioStreamId (3 entries -- Shared/TopDevice/BottomDevice), for
     // detecting a genuinely missing audio packet rather than the ordinary
     // jitter UDP never promised against -- see AudioMessage::sequence and

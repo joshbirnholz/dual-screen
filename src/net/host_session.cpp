@@ -1530,6 +1530,17 @@ void HostSession::publish_rumble(bool active) {
     have_sent_rumble_ = true;
 }
 
+void HostSession::publish_menu_sound(MenuSound sound) {
+    if (!has_companion() || !handshake_done_) {
+        return;
+    }
+    MenuSoundMessage message;
+    message.sound = sound;
+    std::vector<uint8_t> out;
+    encode_menu_sound(message, out);
+    companion_.send(out);
+}
+
 void HostSession::publish_pad_rumble(uint32_t pad, bool active) {
     if (!has_companion() || !companion_reports_pads_) {
         return;

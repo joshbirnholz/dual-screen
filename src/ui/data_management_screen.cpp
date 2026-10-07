@@ -1550,6 +1550,12 @@ void DataManagementScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, sync_mode_ ? 1u : 0u);
     mix_sound_state(view.rest, notice_);
     mix_sound_state(view.rest, busy_.empty() ? 0u : 1u);
+    if (overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm || overlay_ == Overlay::Choice) {
+        const std::vector<PopupButton> buttons = dialog_buttons();
+        const int at = popup_cursor_.focus();
+        view.on_cancel = at >= 0 && at < static_cast<int>(buttons.size()) &&
+                         buttons[static_cast<std::size_t>(at)].label == "Cancel";
+    }
 }
 
 }  // namespace ds
