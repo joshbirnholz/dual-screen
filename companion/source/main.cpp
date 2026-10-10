@@ -49,6 +49,7 @@
 
 #ifdef __ANDROID__
 #include <SDL_system.h>
+#include <jni.h>
 // FFmpeg's MediaCodec decoder reaches Android's own decoder through JNI, and
 // needs the JavaVM handed to it before anything asks it to open one -- see
 // where av_jni_set_java_vm() is called below. Guarded the same way every
@@ -56,7 +57,6 @@
 // defined (0 or 1) by whichever build is running, so a build with no video
 // codec compiled in never needs libavcodec's own headers to exist at all.
 #if DS_HAVE_VIDEO_CODEC
-#include <jni.h>
 extern "C" {
 #include <libavcodec/jni.h>
 }
@@ -133,6 +133,46 @@ extern "C" {
 
 namespace ds::sw {
 namespace {
+
+// Whether this program can play a game itself: a build with local play in it,
+// and a DS core actually there to play it with. A Switch's is linked in and
+// always is; an Android APK's rides beside this library and may have been
+// left out of the build, which leaves a companion and nothing else.
+bool can_play_here() {
+#if DS_LOCAL_PLAY
+    return builtin_core_system().has_value();
+#else
+    return false;
+#endif
+}
+
+#ifdef __ANDROID__
+// One of DualscreenActivity's own methods, taking nothing and returning a
+// boolean -- see that class for what each one does. False when there is no
+// activity to ask, which is not a case a running app meets.
+bool ask_activity(const char* method) {
+    auto* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (env == nullptr || activity == nullptr) return false;
+    bool answer = false;
+    jclass type = env->GetObjectClass(activity);
+    jmethodID id = env->GetMethodID(type, method, "()Z");
+    if (id != nullptr) {
+        answer = env->CallBooleanMethod(activity, id) == JNI_TRUE;
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        answer = false;
+    }
+    env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    return answer;
+}
+
+// Said over the opening screen when Load a game cannot go ahead yet.
+constexpr const char* kFileAccessNotice =
+    "Dualscreen needs access to your files to find games. Allow it, then come back.";
+#endif
 
 struct Options {
     // Which screen to be. Given on the command line, this device joins the
@@ -486,6 +526,12 @@ private:
     bool menu_open_ = false;
     bool running_ = true;
     bool wants_to_play_here_ = false;
+    // Said over the opening screen until it is answered -- why Load a game
+    // did not go ahead. Empty for nothing.
+    std::string launcher_notice_;
+    // Load a game was chosen on a device that has not yet let this app read
+    // its files; it goes ahead by itself once that is allowed.
+    bool awaiting_file_access_ = false;
     // Whether there is a surface to draw on. Only ever false on a device that
     // can take the app off screen without ending it.
     bool foreground_ = true;
@@ -718,7 +764,7 @@ void Client::open_launcher() {
 #endif
     // Unless this build carries its own emulator, in which case it can play a
     // game here too -- see local_play.hpp.
-    launcher_.set_offers_load_game(DS_LOCAL_PLAY != 0);
+    launcher_.set_offers_load_game(can_play_here());
     launcher_.open(/*runs_games=*/false);
 }
 
@@ -1086,6 +1132,14 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         return;
     }
 
+    if (state_ == State::Launcher && !launcher_notice_.empty()) {
+        if (notice_popup_answered(actions, pointers, static_cast<float>(output_width_),
+                                  static_cast<float>(output_height_), launcher_notice_)) {
+            launcher_notice_.clear();
+        }
+        return;
+    }
+
     if (state_ == State::Launcher) {
         const LauncherResult result =
             launcher_.update(actions, pointers, static_cast<float>(output_width_),
@@ -1107,6 +1161,21 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 running_ = false;
                 break;
             case LauncherChoice::LoadGame:
+#ifdef __ANDROID__
+                // Games live in shared storage, which an app may not read
+                // until the player has said so in the system's own settings
+                // -- "access to all files" from Android 11 on. Asked here, the
+                // first time it is needed, rather than at start-up, where a
+                // device only ever joining games would be asked for nothing.
+                if (!ask_activity("hasFileAccess")) {
+                    log_info("asking for access to the device's files before opening the game "
+                             "browser");
+                    ask_activity("requestFileAccess");
+                    awaiting_file_access_ = true;
+                    launcher_notice_ = kFileAccessNotice;
+                    break;
+                }
+#endif
                 log_info("leaving the menu to play a game on this device");
                 wants_to_play_here_ = true;
                 running_ = false;
@@ -1382,6 +1451,19 @@ void Client::run() {
                     log_error("cannot draw any more: " + reload_error);
                     running_ = false;
                 }
+#ifdef __ANDROID__
+                // Back from the system's settings, where Load a game sent the
+                // player to let this app read their files: on with it, if
+                // they did, as though it had just been chosen.
+                if (awaiting_file_access_ && state_ == State::Launcher &&
+                    ask_activity("hasFileAccess")) {
+                    log_info("file access allowed; opening the game browser");
+                    awaiting_file_access_ = false;
+                    launcher_notice_.clear();
+                    wants_to_play_here_ = true;
+                    running_ = false;
+                }
+#endif
             }
             // A real mouse brings the pointer back; a finger does not -- SDL
             // reports touches as mouse events from SDL_TOUCH_MOUSEID.
@@ -1713,6 +1795,9 @@ void Client::draw_scene() {
         // the same here as picking it there does.
         launcher_.render(quads_, text_, button_glyphs_, width, height,
                          static_cast<int>(session_.hosts().size()));
+        if (!launcher_notice_.empty()) {
+            render_notice_popup(quads_, text_, button_glyphs_, width, height, launcher_notice_);
+        }
         return;
     }
     if (state_ == State::Connecting) {
@@ -1869,6 +1954,14 @@ int main(int argc, char** argv) {
     // which is the equivalent of the Switch build's nxlink.
     if (const char* storage = SDL_AndroidGetExternalStoragePath()) {
         set_log_file(std::string(storage) + "/Dualscreen.log");
+        // And everything else this app keeps -- settings, per-game options,
+        // saves, save states, BIOS files -- under the same directory, in
+        // dualscreen/ there, where a file manager or a USB cable can reach
+        // it too. AppPaths reads where to put things the way a Linux desktop
+        // says, and nothing on Android says anything, so this is said here.
+        setenv("HOME", storage, 1);
+        setenv("XDG_CONFIG_HOME", storage, 1);
+        setenv("XDG_DATA_HOME", storage, 1);
     }
     log_info("Dualscreen starting");
 #if DS_HAVE_VIDEO_CODEC
@@ -1919,8 +2012,8 @@ int main(int argc, char** argv) {
     // Whether this build can play a game itself, said once up front: a build
     // made without the core in place looks exactly like one with it until
     // the menu is missing a row.
-    log_info(DS_LOCAL_PLAY ? "this build carries a DS core and can play DS games here"
-                           : "this build has no DS core; it joins games running elsewhere");
+    log_info(can_play_here() ? "this build carries a DS core and can play DS games here"
+                             : "this build has no DS core; it joins games running elsewhere");
 
     // This program's own path, for starting it again -- see local_play.hpp.
     [[maybe_unused]] const std::string self_path = argc > 0 && argv[0] != nullptr ? argv[0] : "";
@@ -1946,28 +2039,43 @@ int main(int argc, char** argv) {
         }
 #endif
     } else {
-        Client client(options);
-        if (client.start()) {
-            client.run();
-        } else {
-            status = 1;
+        // Round again only on a device that plays a game in this process
+        // and comes back to the menu after -- see below.
+        Options menu_options = options;
+        for (bool again = true; again;) {
+            again = false;
+            Client client(menu_options);
+            if (client.start()) {
+                client.run();
+            } else {
+                status = 1;
 #ifdef __SWITCH__
-            show_failure(client.start_error().empty() ? "no reason was recorded"
-                                                      : client.start_error());
+                show_failure(client.start_error().empty() ? "no reason was recorded"
+                                                          : client.start_error());
 #endif
-        }
-        client.stop();
+            }
+            client.stop();
 #if DS_LOCAL_PLAY
-        if (client.wants_to_play_here() && !relaunch(self_path, kBrowseArgument)) {
-            // Nothing to ask to start this again, so it plays here, now that
-            // the menu's window is gone -- and ends when the game does, since
-            // there is no way back to the menu either.
-            LocalPlayRequest browse = local_play_request(options);
-            browse.browse = true;
-            browse.self_path = self_path;
-            status = play_here(browse, &quit_chosen);
-        }
+            if (client.wants_to_play_here() && !relaunch(self_path, kBrowseArgument)) {
+                // Nothing to ask to start this again, so it plays here, now
+                // that the menu's window is gone.
+                LocalPlayRequest browse = local_play_request(options);
+                browse.browse = true;
+                browse.self_path = self_path;
+                status = play_here(browse, &quit_chosen);
+#ifdef __ANDROID__
+                // And back to the menu afterwards, the way a Switch comes
+                // back to it by being started again: an Android app is one
+                // process the system starts, and has nobody to ask for
+                // another. Quit closes the app instead, as it does there.
+                // The menu comes back as itself, not joining anything the
+                // command line asked for the first time round.
+                again = !quit_chosen;
+                menu_options.auto_connect = false;
 #endif
+            }
+#endif
+        }
     }
 
 #if DS_LOCAL_PLAY

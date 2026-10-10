@@ -83,12 +83,23 @@ void* find_core_symbol(void*, const char* name) {
 void close_core_library(void*) {}
 #else
 void* open_core_library(const std::string& core_path, std::string* error) {
+    // A core that ships inside this app (an Android APK's, beside this
+    // library) is "built in" to everything above, the same as a Switch's
+    // linked one, and found by the name it was packaged under: the system's
+    // loader looks for an app's own libraries where the APK keeps them,
+    // which is not a path this program could name anyway.
+    std::string path = core_path;
+#ifdef DS_BUNDLED_LIBRETRO_CORE
+    if (core_path == kBuiltInCorePath) {
+        path = DS_BUNDLED_LIBRETRO_CORE;
+    }
+#endif
     // RTLD_LOCAL keeps the core's symbols out of the global namespace; cores
     // routinely bundle their own copies of zlib and friends.
-    void* handle = dlopen(core_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (handle == nullptr && error != nullptr) {
         const char* reason = dlerror();
-        *error = "could not load core '" + core_path + "': " + (reason ? reason : "unknown error");
+        *error = "could not load core '" + path + "': " + (reason ? reason : "unknown error");
     }
     return handle;
 }
@@ -236,6 +247,25 @@ std::optional<SystemId> builtin_core_system() {
 #if DS_STATIC_LIBRETRO_CORE
     // One core per program, and on every device that needs this, a DS one.
     return SystemId::Ds;
+#elif defined(DS_BUNDLED_LIBRETRO_CORE)
+    // A DS core packaged with the app -- if it was. An APK built without one
+    // is still a whole companion, so whether it is there is asked of the
+    // loader once rather than assumed. The handle is kept: the library stays
+    // loaded for as long as the program runs, which is also what a game
+    // started from it would do.
+    static const bool bundled = [] {
+        void* handle = dlopen(DS_BUNDLED_LIBRETRO_CORE, RTLD_NOW | RTLD_LOCAL);
+        if (handle == nullptr) {
+            const char* reason = dlerror();
+            log_info(std::string("no DS core in this app (") + (reason ? reason : "not found") +
+                     "), so it joins games and plays none itself");
+            return false;
+        }
+        log_info(std::string("DS core: ") + DS_BUNDLED_LIBRETRO_CORE + ", packaged with the app");
+        return true;
+    }();
+    if (bundled) return SystemId::Ds;
+    return std::nullopt;
 #else
     return std::nullopt;
 #endif

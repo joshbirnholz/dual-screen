@@ -51,6 +51,8 @@ dualscreen_embed_asset(inter.ttf kUiFont BEZEL_SOURCES)
 dualscreen_embed_asset(stylus_hand.png kStylusHandPng BEZEL_SOURCES)
 dualscreen_embed_asset(button_icons.png kButtonIconsPng BEZEL_SOURCES)
 dualscreen_embed_asset(ui_sounds.bin kUiSounds BEZEL_SOURCES)
+# Data Management's icons, which only the app that plays games draws.
+dualscreen_embed_asset(ui_icons.png kUiIconsPng BEZEL_SOURCES)
 
 include(${DUALSCREEN_ROOT}/cmake/companion_sources.cmake)
 
@@ -59,7 +61,20 @@ include(${DUALSCREEN_ROOT}/cmake/companion_sources.cmake)
 add_library(main SHARED
     ${BEZEL_SOURCES}
     ${DUALSCREEN_COMPANION_SOURCES}
+    ${DUALSCREEN_LOCAL_PLAY_SOURCES}
 )
+
+# Playing DS games here, the way a Switch with a core linked in does: the
+# desktop app's own game browser, layouts, quick menu, save states and
+# hosting, compiled again. The emulator is not linked in -- Android loads code
+# at run time perfectly well -- but rides in the APK beside this library as
+# its own .so, put there by app/build.gradle (see android/README.md), and is
+# loaded by name when a game starts. An APK built without it still has all of
+# this compiled in and simply does not offer Load a game: whether the core is
+# there is asked at run time, not here.
+target_compile_definitions(main PRIVATE
+    DS_LOCAL_PLAY=1
+    DS_BUNDLED_LIBRETRO_CORE="libmelondsds_libretro_android.so")
 
 target_include_directories(main PRIVATE
     ${DUALSCREEN_ROOT}/src
@@ -67,18 +82,23 @@ target_include_directories(main PRIVATE
     ${DUALSCREEN_ROOT}/companion/source
 )
 
+# Which build this is, in the log -- the same stamp every other build writes.
+include(${DUALSCREEN_ROOT}/cmake/build_stamp.cmake)
+dualscreen_stamp_build("${DUALSCREEN_ROOT}/src/util/build_stamp.cpp")
+
 # No GL is named at link time: gl_loader.cpp reaches every entry point through
 # SDL_GL_GetProcAddress, exactly as the Switch build does. zlib is the frame
 # codec's, and the NDK ships it. `log` is what logcat output goes through.
-target_link_libraries(main PRIVATE SDL2 SDL2main z log android)
+# `mediandk` is MediaCodec, which decodes the H.264 a host sends -- see
+# src/video/mediacodec_decoder.hpp. It is part of every Android since 5.0, so
+# video needs nothing installed or built beyond this.
+target_link_libraries(main PRIVATE SDL2 SDL2main z log android mediandk)
 
-# Optional, the same way the desktop build and the Switch one both treat it:
-# the GamePad screen carries fine as changed tiles without it, just at
-# several times the bandwidth. There is no one official FFmpeg-for-Android
-# package the way switch-ffmpeg is for the Switch, so this expects a
-# self-built one -- see android/README.md for the configure line that gets
-# h264_mediacodec built in -- laid out as <dir>/<ANDROID_ABI>/{include,lib},
-# which is what FFmpeg's own android build instructions produce.
+# FFmpeg, which an Android build no longer needs: H.264 is decoded by
+# MediaCodec directly (mediandk above), the same hardware FFmpeg's
+# h264_mediacodec would reach the long way round. Still honoured if a
+# self-built one is pointed at, laid out as <dir>/<ANDROID_ABI>/{include,lib},
+# for anyone who wants FFmpeg's software decoder as a fallback behind it.
 # FFMPEG_ANDROID_DIR names it, the same way SDL2_ANDROID_SRC names the SDL2
 # source above; ANDROID_ABI is set for us by the NDK's own CMake toolchain
 # file, to whichever ABI this particular build is for.

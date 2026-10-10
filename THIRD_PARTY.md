@@ -33,9 +33,23 @@ A build and runtime dependency, not vendored. zlib licensed.
 libretro C ABI. melonDS DS is GPL-3.0; nothing from it is compiled into this
 project.
 
+## A DS core packaged in the Android build
+
+Still `dlopen`'d at run time and still not linked, but no longer only
+installed by the user: an Android build fetches melonDS DS (libretro's own
+buildbot build of it, GPL-3.0) when it is built and packages it in the APK
+beside the app's own library (see `android/README.md`). Nothing from it is
+compiled into this project, and it is not in this repository -- it is
+downloaded into `android/app/jni/melonds-ds/`, which git ignores.
+
+**An APK built that way carries a GPL-3.0 program inside it.** Passing one on
+is distributing melonDS DS, on the GPL's terms: with its source, or a written
+offer of it. An APK for your own device, not passed on, raises none of this;
+`-PnoDsCore` builds one with no core in it at all.
+
 ## A DS core linked into the Switch build
 
-The one exception to the above. A Switch cannot load code at run time, so a
+The one build that links a core rather than loading it. A Switch cannot load code at run time, so a
 Switch build that plays DS games itself has its core -- libretro's melonDS, or
 RSDuck's Switch port of melonDS, both GPL-3.0 -- linked into `Dualscreen.nro`
 (see `switch/README.md`). melonDS itself is not in this repository: it is built

@@ -88,7 +88,7 @@ CPPFILES    := main.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
                color_convert.cpp h264_bitstream.cpp videotoolbox_decoder.cpp \
-               video_decoder.cpp video_encoder.cpp \
+               mediacodec_decoder.cpp video_decoder.cpp video_encoder.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp frame_delay.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \

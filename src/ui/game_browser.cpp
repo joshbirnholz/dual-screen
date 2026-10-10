@@ -30,6 +30,23 @@ std::vector<std::string> default_browse_dirs() {
     }
     on_the_card.push_back("/");
     return on_the_card;
+#elif defined(__ANDROID__)
+    // Shared storage, where a file manager, a USB cable and RetroArch all put
+    // ROMs. Reading it at all takes "access to all files" from Android 11 on,
+    // which the app asks for before it gets here -- see
+    // DualscreenActivity.java.
+    const std::string storage = "/storage/emulated/0";
+    std::vector<std::string> candidates;
+    for (const char* candidate : {"roms/nds", "roms/NDS", "roms/ds", "ROMs/nds", "ROMs/NDS",
+                                  "RetroArch/roms/nds", "Emulation/roms/nds", "roms", "ROMs",
+                                  "Download"}) {
+        const std::string path = path_join(storage, candidate);
+        if (directory_exists(path)) {
+            candidates.push_back(path);
+        }
+    }
+    candidates.push_back(storage);
+    return candidates;
 #else
     const char* home_env = std::getenv("HOME");
     const std::string home = (home_env != nullptr && home_env[0] != '\0') ? home_env : "/home";

@@ -1,11 +1,13 @@
 # Dualscreen for Android
 
 An Android app that joins a game already running on another device and becomes
-one of its two screens.
+one of its two screens -- and, like the Switch build with a core in it, plays
+DS games itself as well.
 
-It runs no emulator and holds no ROM. There is no core to install, no BIOS to
-supply and nothing to dump: everything is being played on the other device, and
-this app draws the screen it was given and sends its buttons and touches back.
+Joining needs nothing: no core, no BIOS, no ROM. Everything is being played on
+the other device, and this app draws the screen it was given and sends its
+buttons and touches back. Playing here needs only the ROM; the DS core rides
+in the APK (see **Playing DS games here** below).
 
 It is the same program as the Switch companion — not a port of it, the same
 `companion/source/main.cpp` and the same shared sources under `src/`, compiled
@@ -24,6 +26,60 @@ See [`../switch/README.md`](../switch/README.md) for what the companion is and
 how it behaves: finding hosts, joining as the top or bottom screen, the quick
 menu, and the fact that everything the two devices have to agree on belongs to
 the host. All of it is the same here.
+
+## Playing DS games here
+
+The opening screen has **Load a game** and **Settings**, as a Switch's does
+when it is built with a core, and the app plays DS games with everything the
+desktop app has for them: the same file browser, layouts and quick menu,
+save states, Save Sync, **Resume from Save State**, Data Management, and a
+second device joining as the other screen. It is the desktop app's own code,
+compiled again -- not a port of it.
+
+The emulator is **melonDS DS**, the libretro core the desktop app plays DS
+games with. `app/build.gradle` fetches it from libretro's buildbot the first
+time the app is built, into `app/jni/melonds-ds/<abi>/` (ignored by git), and
+packages it beside the app's own library; the app loads it when a game starts.
+To use a build of your own instead, set `DS_CORE_ANDROID_DIR` to a folder laid
+out the same way (`<abi>/libmelondsds_libretro_android.so`). `-PnoDsCore`
+builds an APK without one: then the app is the companion alone and says so in
+its log, and Load a game is not offered.
+
+No BIOS or firmware is needed -- melonDS DS falls back to its own -- though
+`bios7.bin`, `bios9.bin` and `firmware.bin` are used if they are put in
+`dualscreen/system/` (below).
+
+**Load a game** first asks for access to the device's files: games live in
+shared storage, which from Android 11 an app can read only with **access to
+all files**, a switch in the system's own settings. The app opens that page
+the first time it is needed, never at start-up, and goes on to the file
+browser by itself once it is allowed. The browser opens on `roms/nds` (or
+`roms/NDS`, `roms/ds`, `ROMs/nds`, `RetroArch/roms/nds`, `roms`, `ROMs`,
+`Download`, whichever is there first) in shared storage, and after that
+wherever a game was last chosen from.
+
+**+** (Main Menu) in the browser goes back to the opening screen. Quitting a
+game from its quick menu closes the app, as it does on a Switch.
+
+The menu and the game take turns in one process: choosing Load a game closes
+the menu's window and the game opens its own, and leaving the game for the
+main menu does the reverse. (A Switch starts the program again between the
+two; an Android app has nobody to ask to do that.)
+
+### Where it keeps things
+
+Everything is in the app's own folder in shared storage, where a file manager
+or a USB cable can reach it, and which is removed with the app:
+
+```
+/sdcard/Android/data/com.dualscreen.companion/files/
+    Dualscreen.log
+    dualscreen/
+        settings.json      the app's settings
+        games/             per-game options and layouts
+        saves/             cartridge saves (.srm, as RetroArch's), save states
+        system/            BIOS and firmware, if you want melonDS DS to use them
+```
 
 ## Controls
 
@@ -117,51 +173,26 @@ same version, which is why a prebuilt `.aar` is not used.
 
 ### H.264 video
 
-Optional, the same way it is for the desktop build and the Switch one: the
-GamePad screen carries fine as changed tiles without it, just at several
-times the bandwidth. Unlike the Switch, there is no one official package for
-this — build FFmpeg yourself with the NDK, with MediaCodec (Android's own
-hardware decoder, reached through FFmpeg's JNI bridge) enabled:
+Nothing to install. H.264 -- what a host sends a Wii U GamePad's screen as,
+and any screen it judges too busy for tiles -- is decoded by Android's own
+MediaCodec, reached through the NDK (`libmediandk`, part of every Android
+since 5.0, this app's floor). That is the device's hardware decoder wherever
+it has one, which is every Android handheld; the app says which in its log:
 
-```sh
-git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg ffmpeg
-cd ffmpeg
-export ANDROID_NDK_HOME=/path/to/your/ndk   # the same one Gradle uses
-TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
-API=21   # matches minSdk in app/build.gradle
-# --cross-prefix has no API number -- it names ar/ranlib/strip, which the NDK
-# does not version -- but --cc/--cxx do, since the compiler is what minSdk
-# actually governs. A version on --cross-prefix too is the usual way this
-# silently falls back to a host gcc that happens to be on PATH instead.
-./configure --prefix=/path/to/ffmpeg-android/arm64-v8a \
-    --target-os=android --arch=aarch64 --cpu=armv8-a \
-    --sysroot=$TOOLCHAIN/sysroot \
-    --cross-prefix=$TOOLCHAIN/bin/llvm- \
-    --cc=$TOOLCHAIN/bin/aarch64-linux-android$API-clang \
-    --cxx=$TOOLCHAIN/bin/aarch64-linux-android$API-clang++ \
-    --enable-cross-compile --enable-pic --enable-jni --enable-mediacodec \
-    --enable-static --disable-shared --disable-programs --disable-doc \
-    --disable-avdevice --disable-avformat --disable-encoders --disable-muxers \
-    --enable-decoder=h264_mediacodec --enable-hwaccel=h264_mediacodec \
-    --enable-swscale
-make -j$(nproc) && make install
+```
+video decoder: MediaCodec c2.qti.avc.decoder, configured for 1280x720
+video decoder: pictures arrive 1280x720, stride 1280, 720 rows to a plane, colour format 0x7fa30c04 (NV12)
 ```
 
-Repeat for `armeabi-v7a` if that ABI matters to you —
-`build.gradle`'s `abiFilters` builds both by default — with `--arch=arm
---cpu=armv7-a` and the compiler names swapped for
-`armv7a-linux-androideabi$API-clang`/`clang++` (`arm`, not `aarch64`, is the
-only thing that changes in the triple). Then point the app's build at
-wherever `--prefix` for each ABI landed, one directory holding both:
+Frames come back as planes (NV12, or I420 from a software decoder) and are
+turned into colour while they are drawn, not on the CPU. See
+`src/video/mediacodec_decoder.hpp`.
 
-```sh
-export FFMPEG_ANDROID_DIR=/path/to/ffmpeg-android
-```
-
-Detected automatically from there: `cmake --log-level=STATUS` (or Android
-Studio's own build output) says whether it was found. Nothing else
-changes — a host that cannot encode video, or a companion the host is not
-sending it to, still gets the tile codec exactly as before.
+Before this, H.264 here meant cross-compiling FFmpeg with the NDK, which needs
+a Unix shell. FFmpeg is still honoured if a self-built one is pointed at with
+`FFMPEG_ANDROID_DIR` (laid out `<dir>/<abi>/{include,lib}`), but MediaCodec is
+tried first and FFmpeg's own `h264_mediacodec` would only reach the same
+hardware the long way round.
 
 ## Reading the log
 
@@ -241,10 +272,11 @@ threshold is `kSmallDisplayWidth`/`kSmallDisplayHeight` at the top of
 | --- | --- |
 | `app/CMakeLists.txt` | the native build — the shared sources plus SDL2 |
 | `app/build.gradle` | the Android build, and where SDL2 is expected |
-| `app/src/main/java/.../DualscreenActivity.java` | the Wi-Fi locks and keeping the screen on |
+| `app/src/main/java/.../DualscreenActivity.java` | the Wi-Fi locks, keeping the screen on, and asking for access to files |
 | `app/src/main/AndroidManifest.xml` | permissions, landscape, launcher entry |
 
 The list of sources the app is built from lives in
 [`../cmake/companion_sources.cmake`](../cmake/companion_sources.cmake), read by
 this build and by the desktop one, so a file added to the client cannot go
-missing from either.
+missing from either -- the companion's, and the desktop app's beyond it that
+playing DS games here needs.

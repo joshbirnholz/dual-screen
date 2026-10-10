@@ -114,6 +114,7 @@ add_library(dualscreen_core STATIC
     src/video/color_convert.cpp
     src/video/h264_bitstream.cpp
     src/video/videotoolbox_decoder.cpp
+    src/video/mediacodec_decoder.cpp
     src/video/video_encoder.cpp
     src/config/game_config.cpp
     src/config/paths.cpp

@@ -6,6 +6,28 @@ apply plugin: 'com.android.application'
 // android/README.md.
 def sdlDir = file(System.getenv('SDL2_ANDROID_SRC') ?: 'jni/SDL')
 
+// The ABIs built, here once so the native build and the DS core below agree.
+// The G Cloud is arm64; the 32-bit ABI is there because plenty of Android
+// handhelds are not. -Pabis=x86_64 (or any comma-separated list) builds for
+// something else instead -- an x86_64 emulator, say.
+def abis = (project.findProperty('abis') ?: 'arm64-v8a,armeabi-v7a').toString().split(',') as List
+
+// The DS emulator, which is what lets this app play DS games itself rather
+// than only join them: melonDS DS, the same libretro core the desktop app
+// plays DS games with, as libretro's own buildbot builds it for Android. Like
+// SDL2 it is not vendored -- it is GPL-3.0, several megabytes per ABI, and
+// not this project's code -- so it is fetched once into jni/melonds-ds/ and
+// packaged beside libmain.so, which loads it by name (see
+// DS_BUNDLED_LIBRETRO_CORE in CMakeLists.txt).
+//
+// Optional: an APK without it is the companion alone, exactly as before, and
+// says so in its log. DS_CORE_ANDROID_DIR points at a folder of your own
+// instead, laid out <abi>/libmelondsds_libretro_android.so; -PnoDsCore
+// leaves it out altogether.
+def dsCoreName = 'libmelondsds_libretro_android.so'
+def dsCoreDir = file(System.getenv('DS_CORE_ANDROID_DIR') ?: 'jni/melonds-ds')
+def wantDsCore = !project.hasProperty('noDsCore')
+
 android {
     namespace 'com.dualscreen.companion'
     // 33 is what the current SDL2 activity targets; the G Cloud runs 11 (30).
@@ -32,10 +54,9 @@ android {
                 arguments '-DANDROID_STL=c++_shared'
             }
         }
-        // The G Cloud is arm64. The 32-bit ABI is here because plenty of
-        // Android handhelds are not, and neither build is large.
+        // See `abis` at the top.
         ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            abiFilters(*abis)
         }
     }
 
@@ -51,6 +72,9 @@ android {
             // SDL2's own Java lives in its source tree and is compiled here,
             // because SDLActivity and libSDL2.so are two halves of one thing.
             java.srcDirs += "${sdlDir}/android-project/app/src/main/java"
+            if (wantDsCore) {
+                jniLibs.srcDirs += dsCoreDir
+            }
         }
     }
 
@@ -82,3 +106,36 @@ tasks.configureEach { task ->
         }
     }
 }
+
+tasks.register('fetchDsCore') {
+    description = 'Downloads the melonDS DS libretro core for each ABI, if it is not already here.'
+    onlyIf { wantDsCore && System.getenv('DS_CORE_ANDROID_DIR') == null }
+    doLast {
+        abis.each { abi ->
+            def target = new File(dsCoreDir, "${abi}/${dsCoreName}")
+            if (target.exists()) {
+                return
+            }
+            def url = "https://buildbot.libretro.com/nightly/android/latest/${abi}/" +
+                      "melondsds_libretro_android.so.zip"
+            def zip = new File(temporaryDir, "${abi}.zip")
+            try {
+                logger.lifecycle("Fetching the DS core for ${abi} from ${url}")
+                new URL(url).withInputStream { input ->
+                    zip.withOutputStream { output -> output << input }
+                }
+                copy {
+                    from zipTree(zip)
+                    include '*.so'
+                    into target.parentFile
+                    rename { dsCoreName }
+                }
+            } catch (Exception error) {
+                // Not fatal: the APK is still a whole companion without it.
+                logger.warn("Could not fetch the DS core for ${abi} (${error.message}); " +
+                            "this build will join games but not play them itself.")
+            }
+        }
+    }
+}
+preBuild.dependsOn 'fetchDsCore'

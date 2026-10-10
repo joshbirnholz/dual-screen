@@ -353,8 +353,9 @@ bool VideoDecoder::decode_ffmpeg(const uint8_t*, std::size_t, DecodedFrame& out,
 
 #endif
 
-// The public half, which is the same on every platform: try Apple's own
-// decoder first where there is one, and FFmpeg otherwise.
+// The public half, which is the same on every platform: try the platform's
+// own decoder first where there is one -- Apple's or Android's -- and FFmpeg
+// otherwise.
 //
 // Written once here rather than twice above because iOS and tvOS are built
 // with DS_HAVE_VIDEO_CODEC=0 -- there is no Homebrew for a phone -- and
@@ -369,12 +370,15 @@ bool can_encode() { return have_h264_encoder(); }
 // yes. This is what a companion tells a host when it says whether to bother
 // sending video -- answering it with have_ffmpeg() is answering a different
 // question, and the host believes the answer.
-bool can_decode() { return have_ffmpeg() || VideoToolboxDecoder::available(); }
+bool can_decode() {
+    return have_ffmpeg() || VideoToolboxDecoder::available() || MediaCodecDecoder::available();
+}
 
 VideoDecoder::~VideoDecoder() { close(); }
 
 bool VideoDecoder::is_open() const {
-    return context_ != nullptr || (apple_ != nullptr && apple_->is_open());
+    return context_ != nullptr || (apple_ != nullptr && apple_->is_open()) ||
+           (android_ != nullptr && android_->is_open());
 }
 
 bool VideoDecoder::open(const DecoderConfig& config, std::string* error) {
@@ -402,11 +406,35 @@ bool VideoDecoder::open(const DecoderConfig& config, std::string* error) {
         log_info("video decoder: VideoToolbox would not open (" + apple_error +
                  "), falling back");
     }
+    // Android's own decoder the same way, through the NDK. An Android build
+    // with FFmpeg in it would reach exactly this hardware through
+    // h264_mediacodec, by way of JNI and a copy more; asking for that name
+    // is asking for MediaCodec, and this is the shorter way there.
+    bool wants_mediacodec = false;
+    for (const std::string& name : config.backends) {
+        if (name.find("mediacodec") != std::string::npos) {
+            wants_mediacodec = true;
+            break;
+        }
+    }
+    if (wants_mediacodec && MediaCodecDecoder::available()) {
+        auto android = std::make_unique<MediaCodecDecoder>();
+        std::string android_error;
+        if (android->open(&android_error)) {
+            android_ = std::move(android);
+            backend_ = "mediacodec";
+            log_info("video decoder: MediaCodec, through the NDK");
+            return true;
+        }
+        log_info("video decoder: MediaCodec would not open (" + android_error +
+                 "), falling back");
+    }
     return open_ffmpeg(config, error);
 }
 
 void VideoDecoder::close() {
     apple_.reset();
+    android_.reset();
     close_ffmpeg();
 }
 
@@ -414,6 +442,9 @@ bool VideoDecoder::decode(const uint8_t* data, std::size_t size, DecodedFrame& o
                           std::string* error) {
     if (apple_ != nullptr) {
         return apple_->decode(data, size, out, error);
+    }
+    if (android_ != nullptr) {
+        return android_->decode(data, size, out, error);
     }
     return decode_ffmpeg(data, size, out, error);
 }

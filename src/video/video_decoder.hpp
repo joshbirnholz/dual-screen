@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+#include "video/mediacodec_decoder.hpp"
 #include "video/video_codec.hpp"
 #include "video/videotoolbox_decoder.hpp"
 
@@ -47,8 +48,9 @@ public:
 
 private:
     // The FFmpeg half. Private because open()/decode()/close() above choose
-    // between this and Apple's own decoder, which on iOS and tvOS is the only
-    // one there is -- those builds have no FFmpeg at all.
+    // between this and the platform's own decoder -- VideoToolbox, or
+    // Android's MediaCodec -- which on iOS, tvOS and Android is the only one
+    // there is: those builds have no FFmpeg at all unless someone added it.
     bool open_ffmpeg(const DecoderConfig& config, std::string* error);
     bool decode_ffmpeg(const uint8_t* data, std::size_t size, DecodedFrame& out,
                        std::string* error);
@@ -59,6 +61,8 @@ private:
 
     // Set only where VideoToolbox is both present and asked for.
     std::unique_ptr<VideoToolboxDecoder> apple_;
+    // And MediaCodec, through the NDK rather than through FFmpeg, likewise.
+    std::unique_ptr<MediaCodecDecoder> android_;
 
     AVCodecContext* context_ = nullptr;
     bool want_planar_ = false;

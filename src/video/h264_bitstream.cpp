@@ -139,6 +139,166 @@ std::size_t to_length_prefixed(const uint8_t* data, std::size_t size, std::vecto
     return written;
 }
 
+namespace {
+
+// Exp-Golomb, the variable-length code nearly every SPS field is written in,
+// over a NAL unit with its emulation prevention bytes already taken out.
+class BitReader {
+public:
+    explicit BitReader(const std::vector<uint8_t>& bytes) : bytes_(bytes) {}
+
+    bool failed() const { return failed_; }
+
+    uint32_t bit() {
+        if (position_ >= bytes_.size() * 8) {
+            failed_ = true;
+            return 0;
+        }
+        const uint32_t value = (bytes_[position_ / 8] >> (7 - position_ % 8)) & 1u;
+        ++position_;
+        return value;
+    }
+
+    uint32_t bits(int count) {
+        uint32_t value = 0;
+        for (int index = 0; index < count; ++index) value = (value << 1) | bit();
+        return value;
+    }
+
+    uint32_t unsigned_golomb() {
+        int zeroes = 0;
+        while (bit() == 0) {
+            // 32 leading zeroes is no number a real SPS holds, and is how a
+            // buffer of nothing but zero bytes would otherwise spin forever.
+            if (failed_ || ++zeroes > 31) {
+                failed_ = true;
+                return 0;
+            }
+        }
+        return ((1u << zeroes) - 1) + bits(zeroes);
+    }
+
+    int32_t signed_golomb() {
+        const uint32_t code = unsigned_golomb();
+        return (code & 1) ? static_cast<int32_t>((code + 1) / 2)
+                          : -static_cast<int32_t>(code / 2);
+    }
+
+private:
+    const std::vector<uint8_t>& bytes_;
+    std::size_t position_ = 0;
+    bool failed_ = false;
+};
+
+void skip_scaling_list(BitReader& reader, int entries) {
+    int32_t last = 8;
+    int32_t next = 8;
+    for (int index = 0; index < entries; ++index) {
+        if (next != 0) {
+            next = (last + reader.signed_golomb() + 256) % 256;
+        }
+        last = next == 0 ? last : next;
+    }
+}
+
+}  // namespace
+
+bool sps_picture_size(const uint8_t* sps, std::size_t size, int* width, int* height) {
+    if (sps == nullptr || size < 4 || (sps[0] & 0x1f) != 7) {
+        return false;
+    }
+    // The emulation prevention bytes come out first: 00 00 03 is 00 00 in
+    // the real field values, and reading through the 03 shifts every field
+    // after it.
+    std::vector<uint8_t> rbsp;
+    rbsp.reserve(size);
+    int zeroes = 0;
+    for (std::size_t index = 1; index < size; ++index) {
+        if (zeroes >= 2 && sps[index] == 3) {
+            zeroes = 0;
+            continue;
+        }
+        zeroes = sps[index] == 0 ? zeroes + 1 : 0;
+        rbsp.push_back(sps[index]);
+    }
+
+    BitReader reader(rbsp);
+    const uint32_t profile = reader.bits(8);
+    reader.bits(16);  // constraint flags, level
+    reader.unsigned_golomb();  // seq_parameter_set_id
+
+    uint32_t chroma_format = 1;
+    bool separate_planes = false;
+    switch (profile) {
+        case 100: case 110: case 122: case 244: case 44:
+        case 83: case 86: case 118: case 128: case 138: case 139: case 134: case 135:
+            chroma_format = reader.unsigned_golomb();
+            if (chroma_format == 3) separate_planes = reader.bit() != 0;
+            reader.unsigned_golomb();  // bit_depth_luma_minus8
+            reader.unsigned_golomb();  // bit_depth_chroma_minus8
+            reader.bit();              // qpprime_y_zero_transform_bypass_flag
+            if (reader.bit() != 0) {   // seq_scaling_matrix_present_flag
+                const int lists = chroma_format == 3 ? 12 : 8;
+                for (int list = 0; list < lists; ++list) {
+                    if (reader.bit() != 0) skip_scaling_list(reader, list < 6 ? 16 : 64);
+                }
+            }
+            break;
+        default:
+            break;
+    }
+
+    reader.unsigned_golomb();  // log2_max_frame_num_minus4
+    const uint32_t poc_type = reader.unsigned_golomb();
+    if (poc_type == 0) {
+        reader.unsigned_golomb();  // log2_max_pic_order_cnt_lsb_minus4
+    } else if (poc_type == 1) {
+        reader.bit();
+        reader.signed_golomb();
+        reader.signed_golomb();
+        const uint32_t cycle = reader.unsigned_golomb();
+        if (cycle > 255) return false;
+        for (uint32_t index = 0; index < cycle; ++index) reader.signed_golomb();
+    }
+    reader.unsigned_golomb();  // max_num_ref_frames
+    reader.bit();              // gaps_in_frame_num_value_allowed_flag
+    const uint32_t width_in_macroblocks = reader.unsigned_golomb() + 1;
+    const uint32_t height_in_map_units = reader.unsigned_golomb() + 1;
+    const uint32_t frames_only = reader.bit();
+    if (frames_only == 0) reader.bit();  // mb_adaptive_frame_field_flag
+    reader.bit();                         // direct_8x8_inference_flag
+
+    uint32_t crop_left = 0, crop_right = 0, crop_top = 0, crop_bottom = 0;
+    if (reader.bit() != 0) {
+        crop_left = reader.unsigned_golomb();
+        crop_right = reader.unsigned_golomb();
+        crop_top = reader.unsigned_golomb();
+        crop_bottom = reader.unsigned_golomb();
+    }
+    if (reader.failed()) {
+        return false;
+    }
+
+    // Cropping is counted in chroma samples, which are two luma pixels wide
+    // in 4:2:0 and 4:2:2 and two tall in 4:2:0 -- and twice that again
+    // vertically when the picture is coded as fields.
+    const uint32_t array_type = separate_planes ? 0 : chroma_format;
+    const uint32_t crop_unit_x = (array_type == 1 || array_type == 2) ? 2 : 1;
+    const uint32_t crop_unit_y =
+        ((array_type == 1) ? 2 : 1) * (frames_only != 0 ? 1 : 2);
+    const int64_t coded_width = static_cast<int64_t>(width_in_macroblocks) * 16;
+    const int64_t coded_height =
+        static_cast<int64_t>(height_in_map_units) * 16 * (frames_only != 0 ? 1 : 2);
+    const int64_t shown_width = coded_width - crop_unit_x * (int64_t{crop_left} + crop_right);
+    const int64_t shown_height = coded_height - crop_unit_y * (int64_t{crop_top} + crop_bottom);
+    if (shown_width <= 0 || shown_height <= 0 || shown_width > 16384 || shown_height > 16384) {
+        return false;
+    }
+    if (width != nullptr) *width = static_cast<int>(shown_width);
+    if (height != nullptr) *height = static_cast<int>(shown_height);
+    return true;
+}
+
 bool contains_keyframe(const uint8_t* data, std::size_t size) {
     std::vector<NalUnit>& units = scratch_units();
     find_nal_units(data, size, units);

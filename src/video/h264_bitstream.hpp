@@ -104,6 +104,19 @@ bool collect_parameter_sets(const uint8_t* data, std::size_t size, ParameterSets
 // for a buffer with no picture in it -- a caller should not submit that.
 std::size_t to_length_prefixed(const uint8_t* data, std::size_t size, std::vector<uint8_t>& out);
 
+// The size of the picture an SPS describes, after its cropping -- 1280x720
+// for a stream coded as 1280x736 with eight rows cropped off the bottom.
+//
+// What MediaCodec has to be told before it will take a single frame: a
+// decoder there is configured with a size up front, and only learns the real
+// one from the stream afterwards. Told the wrong one, some decoders allocate
+// for it and then reconfigure, and some simply refuse.
+//
+// `sps` is one SPS NAL unit as find_nal_units() returns it -- the header byte
+// included, start code not, emulation prevention bytes still in. False for
+// anything it cannot read, with the outputs untouched.
+bool sps_picture_size(const uint8_t* sps, std::size_t size, int* width, int* height);
+
 // Whether a buffer contains a keyframe, which is what tells a decoder it may
 // start. Cheaper than it looks: it stops at the first picture NAL.
 bool contains_keyframe(const uint8_t* data, std::size_t size);

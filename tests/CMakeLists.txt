@@ -174,7 +174,7 @@ add_test(NAME switch_makefile_sources
 add_test(NAME no_codec_typecheck
     COMMAND ${CMAKE_COMMAND}
         -DCOMPILER=${CMAKE_CXX_COMPILER}
-        "-DSOURCES=${CMAKE_SOURCE_DIR}/src/video/video_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/videotoolbox_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/h264_bitstream.cpp;${CMAKE_SOURCE_DIR}/src/net/companion_session.cpp;${CMAKE_SOURCE_DIR}/companion/source/main.cpp"
+        "-DSOURCES=${CMAKE_SOURCE_DIR}/src/video/video_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/videotoolbox_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/mediacodec_decoder.cpp;${CMAKE_SOURCE_DIR}/src/video/h264_bitstream.cpp;${CMAKE_SOURCE_DIR}/src/net/companion_session.cpp;${CMAKE_SOURCE_DIR}/companion/source/main.cpp"
         -DSRC_DIR=${CMAKE_SOURCE_DIR}/src
         "-DEXTRA_INCLUDES=${SDL2_INCLUDE_DIRS};${CMAKE_SOURCE_DIR}/third_party;${CMAKE_SOURCE_DIR}/companion/source;${NLOHMANN_JSON_INCLUDE_DIR};${nlohmann_json_SOURCE_DIR}/include"
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_no_codec_typecheck.cmake)

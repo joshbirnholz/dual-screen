@@ -19,6 +19,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/video/color_convert.cpp
     src/video/h264_bitstream.cpp
     src/video/videotoolbox_decoder.cpp
+    src/video/mediacodec_decoder.cpp
     src/video/video_decoder.cpp
     src/video/video_encoder.cpp
     src/core/save_points.cpp
@@ -60,3 +61,44 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/util/log.cpp
 )
 list(TRANSFORM DUALSCREEN_COMPANION_SOURCES PREPEND "${DUALSCREEN_ROOT}/")
+
+# And the desktop app's sources beyond the companion's, for a companion that
+# also plays DS games itself -- an Android build, where a DS core rides in
+# the APK. The same files switch/Makefile lists as LOCAL_PLAY_CPPFILES, less
+# the Switch's forwarder installer, which only a Switch can use.
+#
+# Sets DUALSCREEN_LOCAL_PLAY_SOURCES, relative to DUALSCREEN_ROOT.
+set(DUALSCREEN_LOCAL_PLAY_SOURCES
+    src/app.cpp
+    companion/source/local_play.cpp
+    src/config/game_config.cpp
+    src/config/settings.cpp
+    src/config/melonds_tuning.cpp
+    src/config/sha1.cpp
+    src/core/ds_rom_info.cpp
+    src/core/game_title.cpp
+    src/core/save_store.cpp
+    src/core/save_folder.cpp
+    src/core/console_title_info.cpp
+    src/core/gl_call_trace.cpp
+    src/core/hw_render_target.cpp
+    src/core/external_frame_link.cpp
+    src/core/external_screen_source.cpp
+    src/core/libretro_core.cpp
+    src/core/libretro_screen_source.cpp
+    src/core/core_input_sink.cpp
+    src/input/pad_routing.cpp
+    src/input/retro_keymap.cpp
+    src/net/host_session.cpp
+    src/net/save_exchange.cpp
+    src/ui/game_browser.cpp
+    src/ui/message_screen.cpp
+    src/ui/settings_screen.cpp
+    src/ui/controllers_screen.cpp
+    src/ui/data_management_screen.cpp
+    src/forwarder/forwarder_icon.cpp
+    src/forwarder/steamgriddb.cpp
+    src/ui/forwarder_screen.cpp
+    src/util/child_process.cpp
+)
+list(TRANSFORM DUALSCREEN_LOCAL_PLAY_SOURCES PREPEND "${DUALSCREEN_ROOT}/")

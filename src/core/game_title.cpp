@@ -231,8 +231,13 @@ std::string smdh_from_cia(const uint8_t* data, std::size_t size) {
     }
     if (meta_size == 0) return std::string();  // built without one; nothing to read
     constexpr std::size_t kAlign = 64;
-    const std::size_t content_size =
-        static_cast<std::size_t>(content_low) | (static_cast<std::size_t>(content_high) << 32);
+    // A 64-bit size, which on a 32-bit device (an armeabi-v7a Android one)
+    // is no size this buffer could be: the shift is done wide, and anything
+    // that does not fit is past the end of what was read anyway.
+    const uint64_t content_size64 =
+        static_cast<uint64_t>(content_low) | (static_cast<uint64_t>(content_high) << 32);
+    if (content_size64 >= size) return std::string();
+    const std::size_t content_size = static_cast<std::size_t>(content_size64);
     const std::size_t meta_at = align_up(header_size, kAlign) + align_up(cert_size, kAlign) +
                                 align_up(ticket_size, kAlign) + align_up(tmd_size, kAlign) +
                                 align_up(content_size, kAlign);

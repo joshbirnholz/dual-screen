@@ -13,6 +13,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#if defined(__ANDROID__)
+#include <sys/syscall.h>
+#endif
 
 namespace ds {
 namespace {
@@ -351,7 +354,12 @@ bool ExternalFrameLink::listen(const std::string& socket_path, std::string* erro
     close();
     socket_path_ = socket_path;
 
+#if defined(__ANDROID__) && __ANDROID_API__ < 30
+    // Bionic only wraps it from Android 11; the kernel has had it far longer.
+    memory_fd_ = static_cast<int>(::syscall(__NR_memfd_create, "dualscreen-frames", MFD_CLOEXEC));
+#else
     memory_fd_ = ::memfd_create("dualscreen-frames", MFD_CLOEXEC);
+#endif
     if (memory_fd_ < 0) {
         if (error != nullptr) *error = std::string("no shared memory: ") + std::strerror(errno);
         return false;

@@ -189,6 +189,45 @@ void test_rubbish_in_is_not_a_crash() {
     CHECK(!contains_keyframe(zeroes.data(), zeroes.size()));
 }
 
+// The size MediaCodec is configured with, read out of real SPSes from x264:
+// one cropped (854 is not a whole number of macroblocks, which is exactly
+// the GamePad's width), one High profile, whose SPS has the extra fields
+// Baseline's lacks, and one Main.
+void test_the_picture_size_is_read_from_an_sps() {
+    const std::vector<uint8_t> baseline_854x480 = bytes({
+        0x67, 0x42, 0xc0, 0x1f, 0xd9, 0x00, 0xd8, 0x3d, 0xe6, 0xf0, 0x11, 0x00, 0x00,
+        0x03, 0x00, 0x01, 0x00, 0x00, 0x03, 0x00, 0x3c, 0x0f, 0x18, 0x32, 0x48});
+    const std::vector<uint8_t> high_1280x720 = bytes({
+        0x67, 0x64, 0x00, 0x1f, 0xac, 0xd9, 0x40, 0x50, 0x05, 0xbb, 0x01, 0x10, 0x00,
+        0x00, 0x03, 0x00, 0x10, 0x00, 0x00, 0x03, 0x03, 0xc0, 0xf1, 0x83, 0x19, 0x60});
+    const std::vector<uint8_t> main_400x240 = bytes({
+        0x67, 0x4d, 0x40, 0x0d, 0xec, 0xa0, 0xc8, 0xfd, 0x80, 0x88, 0x00, 0x00,
+        0x03, 0x00, 0x08, 0x00, 0x00, 0x03, 0x01, 0xe0, 0x78, 0xa1, 0x4c, 0xb0});
+    int width = 0;
+    int height = 0;
+    CHECK(sps_picture_size(baseline_854x480.data(), baseline_854x480.size(), &width, &height));
+    CHECK_EQ(width, 854);
+    CHECK_EQ(height, 480);
+    CHECK(sps_picture_size(high_1280x720.data(), high_1280x720.size(), &width, &height));
+    CHECK_EQ(width, 1280);
+    CHECK_EQ(height, 720);
+    CHECK(sps_picture_size(main_400x240.data(), main_400x240.size(), &width, &height));
+    CHECK_EQ(width, 400);
+    CHECK_EQ(height, 240);
+
+    // Not an SPS, too short, or nothing but zeroes: refused, not misread.
+    width = height = -1;
+    const std::vector<uint8_t> pps = bytes({0x68, 0xce, 0x38, 0x80});
+    CHECK(!sps_picture_size(pps.data(), pps.size(), &width, &height));
+    const std::vector<uint8_t> zeroes(64, 0);
+    std::vector<uint8_t> empty_sps = zeroes;
+    empty_sps[0] = 0x67;
+    CHECK(!sps_picture_size(empty_sps.data(), empty_sps.size(), &width, &height));
+    CHECK(!sps_picture_size(high_1280x720.data(), 3, &width, &height));
+    CHECK_EQ(width, -1);
+    CHECK_EQ(height, -1);
+}
+
 // And the half that matters: the shape assumed above is the shape this app's
 // encoder actually emits. Everything before this is a test of a parser against
 // bytes chosen to suit it.
@@ -243,6 +282,12 @@ void test_real_encoder_output_parses_and_converts() {
             CHECK_MSG(sets.complete(),
                       "a keyframe carried no SPS/PPS, so a VideoToolbox session could not "
                       "be built from it");
+            int width = 0;
+            int height = 0;
+            CHECK_MSG(sps_picture_size(sets.sps.data(), sets.sps.size(), &width, &height),
+                      "the encoder's own SPS could not be read for its picture size");
+            CHECK_EQ(width, config.width);
+            CHECK_EQ(height, config.height);
         }
 
         // The conversion produces at least one picture NAL, and the lengths it
@@ -284,6 +329,7 @@ int main() {
     test_length_prefixing_drops_what_the_session_already_has();
     test_a_keyframe_is_told_from_an_ordinary_frame();
     test_rubbish_in_is_not_a_crash();
+    test_the_picture_size_is_read_from_an_sps();
     test_real_encoder_output_parses_and_converts();
     return test::finish("h264-bitstream");
 }

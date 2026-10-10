@@ -2833,7 +2833,7 @@ void App::Impl::note_external_game_closed() {
 
 std::vector<std::string> App::Impl::save_systems() const {
     std::vector<std::string> systems{kSaveSystemDs};
-#ifndef __SWITCH__
+#if !defined(__SWITCH__) && !defined(__ANDROID__)
     // A 3DS game's save goes in Azahar's folder under this app's saves, which
     // is always here to put it in; a Wii U game's in Cemu's, if there is one.
     systems.push_back(kSaveSystem3ds);

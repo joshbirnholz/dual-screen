@@ -1,5 +1,7 @@
 # The SDL2 source tree, fetched rather than vendored -- see README.md.
 app/jni/SDL/
+# The DS core, fetched by app/build.gradle -- see README.md.
+app/jni/melonds-ds/
 
 .gradle/
 build/

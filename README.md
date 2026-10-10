@@ -528,7 +528,8 @@ It is one program, in `companion/`, built for four kinds of device:
 
 - a **Nintendo Switch**, as homebrew — see [switch/README.md](switch/README.md)
 - an **Android** handheld, phone or tablet — see
-  [android/README.md](android/README.md); aimed at a Logitech G Cloud
+  [android/README.md](android/README.md); aimed at a Logitech G Cloud. Like a
+  Switch, it can also play DS games itself: its APK carries a DS core
 - a **Mac**, as an ordinary application — see
   [apple/README.md](apple/README.md), which is also honest about the fact that
   it has not been run on one yet
@@ -869,7 +870,7 @@ the table only joins a game running somewhere else.
 | macOS | the companion, as `Dualscreen Companion.app` | `cmake -S apple -B build-macos && cmake --build build-macos` | [below](#macos), [apple/README.md](apple/README.md) |
 | iPhone, iPad, Apple TV | the companion | `apple/build-all.sh` | [below](#iphone-ipad-and-apple-tv), [apple/README.md](apple/README.md) |
 | Nintendo Switch | the companion, as `Dualscreen.nro` | `cd switch && make` | [below](#nintendo-switch), [switch/README.md](switch/README.md) |
-| Android | the companion, as an APK | `cd android && ./gradlew assembleDebug` | [below](#android), [android/README.md](android/README.md) |
+| Android | the companion, and a DS player, as an APK | `cd android && ./gradlew assembleDebug` | [below](#android), [android/README.md](android/README.md) |
 | Cemu, for Wii U games | the fork this app hands screens over with | `cmake -S . -B build -G Ninja && cmake --build build` | [below](#cemu-for-wii-u-games) |
 
 After `git pull`, run the same commands again, both configure and build. The
@@ -1064,7 +1065,9 @@ gradle wrapper          # once, or open this directory in Android Studio
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-H.264 on Android needs FFmpeg built with the NDK; see
+The build also fetches the DS core (melonDS DS, from libretro's buildbot)
+into the APK, so it can play DS games as well as join them. H.264 needs
+nothing extra: it is decoded by Android's own MediaCodec. More in
 [android/README.md](android/README.md).
 
 ### Cemu, for Wii U games

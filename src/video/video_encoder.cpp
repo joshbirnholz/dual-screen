@@ -642,6 +642,11 @@ bool VideoEncoder::open_backend(const std::string&, const EncoderConfig&, std::s
     return false;
 }
 
+bool VideoEncoder::set_source_size(int, int, std::string* error) {
+    if (error != nullptr) *error = "this build has no video encoder";
+    return false;
+}
+
 bool VideoEncoder::encode(const uint32_t*, int, EncodedFrame& out, std::string* error) {
     out.bytes.clear();
     if (error != nullptr) *error = "this build has no video encoder";
