@@ -1605,6 +1605,19 @@ void CompanionSession::poll(uint64_t now_ms) {
     // the same clock. Beyond what this link's own jitter calls for, waiting is
     // a backlog rather than cover, and holding that would only show old
     // pictures late, so it is caught up on instead.
+    //
+    // First, the rest of a picture already on screen. Each screen of a frame
+    // travels on its own, and the second can land just after a pass has shown
+    // the first; queued, it read as a frame of its own and took the next
+    // frame's turn, leaving the two screens a period apart and the whole
+    // stream a period further behind. It is not a frame -- it is the other
+    // half of the one being shown, and goes up with it.
+    const uint64_t on_screen = std::max(top_.serial, bottom_.serial);
+    while (on_screen != 0 && !pending_frames_.empty() &&
+           pending_frames_.front().serial == on_screen) {
+        apply_frame(pending_frames_.front());
+        pending_frames_.pop_front();
+    }
     if (!pending_frames_.empty()) {
         const uint64_t period = frame_period();
         const std::size_t waiting = frames_waiting();
