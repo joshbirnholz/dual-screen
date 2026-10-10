@@ -238,6 +238,11 @@ Point by point against the list above:
   target (`wii_u_tv_audio_target` / `wii_u_gamepad_audio_target`), so a
   player can send the TV's sound to one device and the GamePad's to another
   independently.
+  Cemu's audio clock hurries while an output device is short of sound, so
+  only a device whose screen is actually played locally counts towards it
+  (`AXOut_update`): one left unfed -- a screen sent over the link, or not
+  shown at all -- used to keep it hurrying for good, and the screen that was
+  played drifted about a quarter of a second behind its picture.
 
 Verified end to end against a real session (Wind Waker HD, Steam Deck): video,
 pad, touch and audio all confirmed correct on real hardware, after two bugs the
