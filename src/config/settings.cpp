@@ -4,6 +4,11 @@
 
 #include <unistd.h>
 
+#if defined(__ANDROID__)
+#include <SDL_system.h>
+#include <jni.h>
+#endif
+
 #include "input/switch_console.hpp"
 
 #include <algorithm>
@@ -58,8 +63,40 @@ WiiUScreenAlone screen_alone_from_key(const std::string& key) {
     return WiiUScreenAlone::Auto;
 }
 
+#if defined(__ANDROID__)
+// What Android calls this device -- DualscreenActivity.deviceName(). Empty
+// when it cannot be asked.
+std::string android_device_name() {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (env == nullptr || activity == nullptr) return std::string();
+    std::string name;
+    jclass type = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(type, "deviceName", "()Ljava/lang/String;");
+    if (method != nullptr) {
+        auto text = static_cast<jstring>(env->CallObjectMethod(activity, method));
+        if (!env->ExceptionCheck() && text != nullptr) {
+            const char* chars = env->GetStringUTFChars(text, nullptr);
+            if (chars != nullptr) {
+                name = chars;
+                env->ReleaseStringUTFChars(text, chars);
+            }
+        }
+        if (text != nullptr) env->DeleteLocalRef(text);
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    return name;
+}
+#endif
+
 std::string default_device_name() {
-#if defined(__SWITCH__)
+#if defined(__ANDROID__)
+    // Not the host name: every Android device's is "localhost".
+    const std::string name = android_device_name();
+    return name.empty() ? std::string("Android") : name;
+#elif defined(__SWITCH__)
     // What the console is, the same name the companion gives itself -- a
     // Switch has no host name worth showing.
     return switch_console_name();
@@ -93,6 +130,13 @@ Settings Settings::load(const AppPaths& paths) {
     }
 
     settings.device_name = get_or<std::string>(document, "device_name", settings.device_name);
+#if defined(__ANDROID__)
+    // Written by a build that took the host name, which on Android is the
+    // same "localhost" everywhere: not a name anybody chose.
+    if (settings.device_name.empty() || settings.device_name == "localhost") {
+        settings.device_name = default_device_name();
+    }
+#endif
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
     settings.steamgriddb_api_key =
         get_or<std::string>(document, "steamgriddb_api_key", settings.steamgriddb_api_key);

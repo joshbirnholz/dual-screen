@@ -152,6 +152,29 @@ inline DsMotionState motion_turned_to_display(const DsMotionState& reading, Disp
     return out;
 }
 
+// Turns a handheld's own reading, already turned to its display, into the
+// frame a game controller reports in -- which is what every host reads motion
+// as, a Steam Deck's included.
+//
+// SDL defines the two differently. A phone or tablet is described held up in
+// front of you: z comes out of the screen, y runs up it. A controller is
+// described held in your hands, flat: y comes up out of its face and z points
+// at the player. A handheld held to play is held like the controller, so its
+// z is the controller's y, and its y -- up the screen, away from the player --
+// is the controller's z turned round.
+//
+// Measured, not reasoned: a G Cloud held against a Steam Deck and moved with
+// it (see MotionComparison) read the Deck's (x, y, z) as its own (x, z, -y),
+// acceleration and rotation alike, once its display turn was taken out.
+inline DsMotionState motion_held_like_a_controller(const DsMotionState& reading) {
+    DsMotionState out = reading;
+    out.accel_y = reading.accel_z;
+    out.accel_z = -reading.accel_y;
+    out.gyro_y = reading.gyro_z;
+    out.gyro_z = -reading.gyro_y;
+    return out;
+}
+
 // One frame's worth of DS input. Touch is always in DS screen space
 // (256x192), never in window or layout space — mapping happens before this
 // struct is filled in, which is what lets a future network-delivered companion

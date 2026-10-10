@@ -11,6 +11,11 @@ extern "C" int ds_ios_display_turn(void);
 #endif
 #endif
 
+#if defined(__ANDROID__)
+#include <SDL_system.h>
+#include <jni.h>
+#endif
+
 #include "input/switch_motion.hpp"
 
 #include <algorithm>
@@ -26,6 +31,52 @@ extern "C" int ds_ios_display_turn(void);
 
 namespace ds {
 namespace {
+
+#if defined(__ANDROID__)
+// Which way the picture is turned from the way this device is built, as a
+// DisplayTurn -- Android's half of ds_ios_display_turn(). Asked of the
+// activity (DualscreenActivity.displayRotation()), and only every quarter of
+// a second: it changes when the device is turned over, which is not a thing
+// that happens every frame, and a JNI call is not free.
+//
+// Android's ROTATION_90 is the turn this code calls TopToTheLeft. Reading it
+// the other way round -- as the device's top edge pointing right, which is
+// what Android's description of the number suggests -- was tried on a G
+// Cloud, and every tilt came out upside down.
+DisplayTurn android_display_turn() {
+    static DisplayTurn turn = DisplayTurn::None;
+    static uint32_t asked_ms = 0;
+    const uint32_t now_ms = SDL_GetTicks();
+    if (asked_ms != 0 && now_ms - asked_ms < 250) {
+        return turn;
+    }
+    asked_ms = now_ms == 0 ? 1 : now_ms;
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (env == nullptr || activity == nullptr) {
+        return turn;
+    }
+    jclass type = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(type, "displayRotation", "()I");
+    jint rotation = 0;
+    if (method != nullptr) {
+        rotation = env->CallIntMethod(activity, method);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        rotation = 0;
+    }
+    env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    switch (rotation) {
+        case 1: turn = DisplayTurn::TopToTheLeft; break;
+        case 2: turn = DisplayTurn::UpsideDown; break;
+        case 3: turn = DisplayTurn::TopToTheRight; break;
+        default: turn = DisplayTurn::None; break;
+    }
+    return turn;
+}
+#endif
 
 // SDL reports acceleration in metres per second squared and rotation in
 // radians per second, and DsMotionState carries exactly that onward -- so
@@ -297,7 +348,7 @@ bool MotionReader::read_device_sensors() {
     reading.accel_x = accel[0];
     reading.accel_y = accel[1];
     reading.accel_z = accel[2];
-#if defined(DS_APPLE_HANDHELD)
+#if defined(DS_APPLE_HANDHELD) || defined(__ANDROID__)
     // A phone's sensors report in the frame the phone was built in and never
     // move with the picture -- SDL says so outright: "the axis data is not
     // changed when the device is rotated". This app is locked to landscape,
@@ -310,8 +361,21 @@ bool MotionReader::read_device_sensors() {
     //
     // Asked every time rather than cached: it changes when the device is
     // turned over, and it is a property read, not a computation.
+#if defined(DS_APPLE_HANDHELD)
     const int turn = ds_ios_display_turn();
+#else
+    // The same on Android, where it matters even on a device built to be
+    // held sideways: a G Cloud's panel is portrait, turned to landscape by
+    // the system, so its sensors' x and y are its height and width.
+    const int turn = static_cast<int>(android_display_turn());
+#endif
     reading = motion_turned_to_display(reading, static_cast<DisplayTurn>(turn));
+#if defined(__ANDROID__)
+    // And from a tablet's frame into a controller's, which is what the host
+    // reads -- see motion_held_like_a_controller(). Measured on a G Cloud.
+    // An iPhone very likely needs the same and has not been measured.
+    reading = motion_held_like_a_controller(reading);
+#endif
     // Said when it changes, because a reading of this device's motion cannot
     // be interpreted without it. Holding this device against one that is
     // already right and moving the two as one measures the conversion that is

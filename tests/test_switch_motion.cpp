@@ -435,6 +435,41 @@ void test_the_gyroscope_turns_with_it() {
     CHECK(std::abs(shown.gyro_y) < 0.001f);
 }
 
+// A G Cloud and a Steam Deck held together and moved as one, as the Deck's
+// MotionComparison logged them: the Deck's reading, and the G Cloud's as it
+// arrived before this conversion. After it, the two agree.
+void test_a_handheld_reads_like_the_controller_it_is_held_as() {
+    struct Pair {
+        const char* what;
+        DsMotionState deck;
+        DsMotionState tablet;
+    };
+    const auto both = [](float ax, float ay, float az, float gx, float gy, float gz) {
+        DsMotionState reading = at_rest(ax, ay, az);
+        reading.gyro_x = gx;
+        reading.gyro_y = gy;
+        reading.gyro_z = gz;
+        return reading;
+    };
+    const Pair pairs[] = {
+        {"lying on its back", both(0.25f, 0.58f, -9.67f, 0, 0, 0),
+         both(0.25f, 10.14f, 0.17f, 0, 0, 0)},
+        {"standing up", both(0.09f, 9.86f, 0.38f, 0, 0, 0), both(0.06f, 0.79f, 10.08f, 0, 0, 0)},
+        {"tilted, turning", both(0.58f, 2.46f, -6.07f, 2.12f, 0.03f, 0.07f),
+         both(0.41f, 6.78f, 2.64f, 2.10f, -0.08f, 0.05f)},
+    };
+    for (const Pair& pair : pairs) {
+        const DsMotionState converted = motion_held_like_a_controller(pair.tablet);
+        // Two devices pressed together by hand: close, not equal.
+        CHECK_MSG(std::abs(converted.accel_x - pair.deck.accel_x) < 1.5f, pair.what);
+        CHECK_MSG(std::abs(converted.accel_y - pair.deck.accel_y) < 1.5f, pair.what);
+        CHECK_MSG(std::abs(converted.accel_z - pair.deck.accel_z) < 1.5f, pair.what);
+        CHECK_MSG(std::abs(converted.gyro_x - pair.deck.gyro_x) < 0.2f, pair.what);
+        CHECK_MSG(std::abs(converted.gyro_y - pair.deck.gyro_y) < 0.2f, pair.what);
+        CHECK_MSG(std::abs(converted.gyro_z - pair.deck.gyro_z) < 0.2f, pair.what);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -450,5 +485,6 @@ int main() {
     test_gravity_looks_the_same_whichever_way_up_it_is_held();
     test_a_turn_keeps_the_reading_it_was_given();
     test_the_gyroscope_turns_with_it();
+    test_a_handheld_reads_like_the_controller_it_is_held_as();
     return test::finish("motion-fit");
 }

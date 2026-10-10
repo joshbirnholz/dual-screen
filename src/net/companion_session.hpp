@@ -1463,6 +1463,9 @@ private:
         // Or, instead of `plane`, the decoder's own picture, left where it is
         // -- see DecodedFrame::native. What an iPhone or an Apple TV gets.
         std::shared_ptr<void> native;
+        // Or a picture already on the GPU, drawn into `texture` by the decoder
+        // itself -- see DecodedFrame::gpu. What an Android device gets.
+        std::shared_ptr<video::GpuPicture> gpu;
         // The frame as it travels and as tiles are patched onto it. Canonical:
         // a tiled payload is a difference from this, so it has to survive from
         // one frame to the next.
@@ -1486,6 +1489,7 @@ private:
         bool has_frame() const {
             if (!video) return !rgb565.empty();
             if (layout == video::DecodedLayout::Xrgb8888) return !pixels.empty();
+            if (layout == video::DecodedLayout::Gpu) return gpu != nullptr;
             return !plane[0].empty() || native != nullptr;
         }
     };

@@ -7,6 +7,14 @@
 cmake_minimum_required(VERSION 3.22)
 project(dualscreen_companion LANGUAGES C CXX)
 
+# Optimised in a debug build too, SDL included. The debug APK is the one that
+# gets installed while working on this -- it needs no signing -- and Gradle
+# builds its native code at -O0, which made streaming on a G Cloud several
+# times slower than the device is. Debug symbols stay; only stepping through
+# it in a debugger gets worse.
+string(APPEND CMAKE_C_FLAGS_DEBUG " -O2")
+string(APPEND CMAKE_CXX_FLAGS_DEBUG " -O2")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

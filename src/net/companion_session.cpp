@@ -2662,7 +2662,22 @@ const ScreenTextures& CompanionSession::screens() {
             // channel first would be a whole pass over the frame and twice the
             // bytes to the GPU, for a picture that is 5-6-5 either way; a video
             // frame is already eight, and going back would only lose.
-            if (buffer->video && buffer->layout == video::DecodedLayout::Nv12 &&
+            if (buffer->video && buffer->layout == video::DecodedLayout::Gpu &&
+                buffer->gpu != nullptr) {
+                // Already on the GPU: drawn by the decoder into this texture,
+                // nothing copied -- see DecodedFrame::gpu.
+                buffer->texture.allocate_rgba(buffer->width, buffer->height);
+                if (!buffer->gpu->draw_into(buffer->texture.id(), buffer->width,
+                                            buffer->height)) {
+                    if (++native_texture_failures_ == kNativeTextureFailuresToGiveUp) {
+                        video::set_native_frames_usable(false);
+                        log_warn("video: pictures could not be drawn from the decoder's Surface, "
+                                 "so from now on they are copied out of it instead");
+                    }
+                } else {
+                    native_texture_failures_ = 0;
+                }
+            } else if (buffer->video && buffer->layout == video::DecodedLayout::Nv12 &&
                 buffer->native != nullptr) {
                 // Drawn from the decoder's own memory, with nothing copied --
                 // see DecodedFrame::native.
@@ -3147,6 +3162,7 @@ void CompanionSession::apply_frame(const FrameMessage& frame) {
         target.video = false;
         // Nor keep hold of a decoder's picture this screen has stopped showing.
         target.native.reset();
+        target.gpu.reset();
         target.width = frame.width;
         target.height = frame.height;
     }
@@ -3236,6 +3252,7 @@ bool CompanionSession::apply_video_frame(const FrameMessage& frame, ScreenBuffer
         target.plane_stride[index] = decoded.stride[index];
     }
     target.native = std::move(decoded.native);
+    target.gpu = std::move(decoded.gpu);
     target.width = decoded.width;
     target.height = decoded.height;
     // Whatever the tile codec left here is not this picture, and keeping it

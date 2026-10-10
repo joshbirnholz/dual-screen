@@ -441,11 +441,21 @@ bool VideoToolboxDecoder::decode(const uint8_t* data, std::size_t size, DecodedF
 
 #else  // not Apple
 
+#include <atomic>
+
 namespace ds::video {
 
+#if defined(__ANDROID__)
+// Android's decoder can draw into a Surface (see MediaCodecDecoder), until
+// the renderer says those pictures cannot be drawn.
+static std::atomic<bool> g_android_native_frames_usable {true};
+bool native_frames_usable() { return g_android_native_frames_usable.load(); }
+void set_native_frames_usable(bool usable) { g_android_native_frames_usable.store(usable); }
+#else
 // No decoder here hands back anything but bytes.
 bool native_frames_usable() { return false; }
 void set_native_frames_usable(bool) {}
+#endif
 bool copy_native_planes(const std::shared_ptr<void>&, DecodedFrame&) { return false; }
 
 struct VideoToolboxDecoder::Impl {};

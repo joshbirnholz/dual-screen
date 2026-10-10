@@ -44,16 +44,18 @@ public:
     void close();
     bool is_open() const;
 
-    // The decoder's own name once one has been made -- "c2.qti.avc.decoder",
-    // say -- which says whether it is the hardware. Empty until then.
-    const std::string& codec_name() const;
-
     // Feeds one Annex B access unit, exactly as it comes off the wire.
+    //
+    // The decoding itself happens on a thread of its own (see the .cpp), so
+    // this only hands the frame over and takes the newest picture finished
+    // since the last call, waiting a moment for this frame's own while the
+    // decoder has shown that it is worth it.
     //
     // `out` is left invalid when there is nothing to show yet, which is not a
     // failure: everything before the first keyframe is dropped, and a decoder
     // still working on a frame hands it back on the next call instead. Returns
-    // false only for a real error.
+    // false only for a real error, which may be one the worker met on an
+    // earlier frame.
     bool decode(const uint8_t* data, std::size_t size, DecodedFrame& out, std::string* error);
 
 private:

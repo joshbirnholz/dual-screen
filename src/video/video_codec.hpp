@@ -76,6 +76,19 @@ struct EncodedFrame {
 // So a frame comes back in whichever of these its decoder produced, and the
 // conversion happens in the fragment shader instead -- see ChannelOrder in
 // render/texture.hpp, whose values these mirror.
+// A decoded picture that is already on the GPU, in a form only the decoder
+// knows how to draw: an Android decoder's output Surface, say, whose texture
+// is an external one no ordinary shader can sample. draw_into() draws it,
+// the right way up and in colour, into an ordinary RGBA texture of `width` x
+// `height` -- one draw, nothing copied through the CPU. Called with the
+// renderer's GL context current; false when it could not, and the caller has
+// nothing else to show for this picture.
+class GpuPicture {
+public:
+    virtual ~GpuPicture() = default;
+    virtual bool draw_into(unsigned texture, int width, int height) = 0;
+};
+
 enum class DecodedLayout {
     // Already converted. What a decoder whose output this app has no planar
     // path for falls back to, and what every caller understood before the
@@ -87,6 +100,9 @@ enum class DecodedLayout {
     // One full-size plane of luma and two half-size planes of chroma. What
     // FFmpeg's software H.264 decoder produces.
     Yuv420p,
+    // On the GPU already, drawn by DecodedFrame::gpu. What MediaCodec gives
+    // when it decodes straight into a Surface.
+    Gpu,
 };
 
 struct DecodedFrame {
@@ -134,9 +150,13 @@ struct DecodedFrame {
     // Anything that does want bytes gets them from copy_native_planes().
     std::shared_ptr<void> native;
 
+    // Set only for DecodedLayout::Gpu.
+    std::shared_ptr<GpuPicture> gpu;
+
     bool valid() const {
         if (width <= 0 || height <= 0) return false;
         if (layout == DecodedLayout::Xrgb8888) return !pixels.empty();
+        if (layout == DecodedLayout::Gpu) return gpu != nullptr;
         return !plane[0].empty() || native != nullptr;
     }
 };

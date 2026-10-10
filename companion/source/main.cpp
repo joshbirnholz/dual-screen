@@ -815,6 +815,9 @@ void Client::begin_search(ScreenId wanted) {
     std::string name = options_.device_name;
 #ifdef __SWITCH__
     if (name.empty()) name = switch_console_name();
+#elif defined(__ANDROID__)
+    // Which Android device, as Android names it -- see default_device_name().
+    if (name.empty()) name = Settings::load(AppPaths::resolve()).device_name;
 #endif
     std::string error;
     if (!session_.begin_search(name, wanted, &error)) {

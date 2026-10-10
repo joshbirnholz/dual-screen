@@ -84,6 +84,51 @@ public class DualscreenActivity extends SDLActivity {
      * own settings and nothing an app can grant itself. Before that, the
      * ordinary storage permission. Before Android 6, installing was enough.
      */
+    /**
+     * Which way the picture is turned from the way this device is built, as
+     * Surface.ROTATION_0 to ROTATION_270 (0 to 3). Read from native code
+     * (src/input/motion.cpp): a device's own motion sensors report in its
+     * built-in frame, and a device whose panel is built portrait -- a G
+     * Cloud's is -- shows this app turned a quarter of the way round from
+     * that.
+     */
+    public int displayRotation() {
+        try {
+            return getWindowManager().getDefaultDisplay().getRotation();
+        } catch (RuntimeException error) {
+            return 0;
+        }
+    }
+
+    /**
+     * What this device is called, for other devices to show: the name set
+     * under Settings > About (Android 7.1 and later), else its Bluetooth
+     * name, else its maker and model. Read from native code
+     * (src/config/settings.cpp) -- the host name an Android device reports
+     * is "localhost", whichever device it is.
+     */
+    public String deviceName() {
+        String name = null;
+        try {
+            if (Build.VERSION.SDK_INT >= 25) {
+                name = Settings.Global.getString(getContentResolver(),
+                        Settings.Global.DEVICE_NAME);
+            }
+            if (name == null || name.trim().isEmpty()) {
+                name = Settings.Secure.getString(getContentResolver(), "bluetooth_name");
+            }
+        } catch (RuntimeException error) {
+            name = null;
+        }
+        if (name == null || name.trim().isEmpty()) {
+            String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER;
+            String model = Build.MODEL == null ? "" : Build.MODEL;
+            name = model.toLowerCase().startsWith(maker.toLowerCase()) ? model
+                    : (maker + " " + model).trim();
+        }
+        return name.trim();
+    }
+
     public boolean hasFileAccess() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             return Environment.isExternalStorageManager();
