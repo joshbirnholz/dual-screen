@@ -8,6 +8,9 @@
          otherwise filters out before the app sees it. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Rumble: SDL cannot drive a controller's motor on Android, so the
+         activity does, through the vibrator: see rumble(). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Reading games from shared storage, to play them here. Asked for only
          when Load a game is chosen, never at start-up: see

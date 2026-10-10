@@ -565,6 +565,78 @@ bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& 
     return reader.ok();
 }
 
+void encode_controllers_view(const ControllersViewMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, message.open ? 1u : 0u);
+    put_u32(out, static_cast<uint32_t>(message.focus));
+    put_u8(out, message.holding ? 1u : 0u);
+    put_u8(out, message.gamepad_here ? 1u : 0u);
+    put_string(out, message.this_device);
+    put_string(out, message.other_device);
+    const std::size_t pads = std::min<std::size_t>(message.pads.size(), 255);
+    put_u8(out, static_cast<uint8_t>(pads));
+    for (std::size_t index = 0; index < pads; ++index) {
+        const ControllersViewPad& pad = message.pads[index];
+        put_u8(out, pad.on_this_device ? 1u : 0u);
+        put_u32(out, pad.id);
+        put_u32(out, static_cast<uint32_t>(pad.position));
+        put_string(out, pad.name);
+        put_u32(out, static_cast<uint32_t>(pad.slot));
+    }
+    put_u8(out, message.order_chosen ? 1u : 0u);
+    put_u8(out, message.order_gamepad_here ? 1u : 0u);
+    put_string(out, message.order_gamepad);
+    for (const std::vector<std::string>* list : {&message.order_players, &message.order_unused}) {
+        const std::size_t count = std::min<std::size_t>(list->size(), 255);
+        put_u8(out, static_cast<uint8_t>(count));
+        for (std::size_t index = 0; index < count; ++index) put_string(out, (*list)[index]);
+    }
+    finish_message(out, start, MessageType::ControllersView);
+}
+
+bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersViewMessage& out) {
+    Reader reader(data, size);
+    uint8_t open = 0, holding = 0, gamepad_here = 0, pads = 0;
+    uint32_t focus = 0;
+    reader.u8(open);
+    reader.u32(focus);
+    reader.u8(holding);
+    reader.u8(gamepad_here);
+    reader.string(out.this_device);
+    reader.string(out.other_device);
+    reader.u8(pads);
+    out.open = open != 0;
+    out.focus = static_cast<int32_t>(focus);
+    out.holding = holding != 0;
+    out.gamepad_here = gamepad_here != 0;
+    out.pads.assign(pads, ControllersViewPad{});
+    for (ControllersViewPad& pad : out.pads) {
+        uint8_t here = 0;
+        uint32_t position = 0, slot = 0;
+        reader.u8(here);
+        reader.u32(pad.id);
+        reader.u32(position);
+        reader.string(pad.name);
+        reader.u32(slot);
+        pad.on_this_device = here != 0;
+        pad.position = static_cast<int32_t>(position);
+        pad.slot = static_cast<int32_t>(slot);
+    }
+    uint8_t chosen = 0, order_here = 0;
+    reader.u8(chosen);
+    reader.u8(order_here);
+    reader.string(out.order_gamepad);
+    out.order_chosen = chosen != 0;
+    out.order_gamepad_here = order_here != 0;
+    for (std::vector<std::string>* list : {&out.order_players, &out.order_unused}) {
+        uint8_t count = 0;
+        reader.u8(count);
+        list->assign(count, std::string());
+        for (std::string& entry : *list) reader.string(entry);
+    }
+    return reader.ok();
+}
+
 bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& out) {
     Reader reader(data, size);
     uint8_t sound = 0;

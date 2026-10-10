@@ -704,7 +704,11 @@ void test_audio_reaches_the_companion() {
     }
     host.publish_audio(AudioStreamId::Shared, tone.data(), 512, 32823);
 
-    const bool heard = spin(host, companion, [&] { return frames_heard > 0; });
+    // All of it, not just the first packet: 512 frames go as more than one
+    // (kMaxAudioFramesPerPacket), and stopping at the first left the rest to
+    // land after the count below was cleared -- read as audio sent while off.
+    spin(host, companion, [&] { return frames_heard >= 512; });
+    const bool heard = frames_heard > 0;
     CHECK_MSG(heard, "no audio reached the companion");
     if (heard) {
         CHECK_EQ(frames_heard, static_cast<std::size_t>(512));

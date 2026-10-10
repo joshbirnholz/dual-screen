@@ -122,10 +122,20 @@ inline constexpr int kAudioTrimMarginMs = 15;
 inline constexpr int kAudioLowWaterWindowMs = 250;
 
 // Frames crossfaded across a splice, at the rate the device is running.
-// About three milliseconds at 48kHz: long enough that the join is a ramp
+// About five milliseconds at 48kHz: long enough that the join is a ramp
 // rather than a step, short enough to be over before it is heard as anything
-// of its own.
-inline constexpr std::size_t kAudioSpliceFrames = 128;
+// of its own -- once the two sides are in step, which is what
+// kAudioSpliceSearchFrames is for.
+inline constexpr std::size_t kAudioSpliceFrames = 256;
+
+// How far either side of the asked-for cut a splice looks for the place where
+// what comes after lines up best with what it is leaving -- the idea behind
+// WSOLA time-stretching. A crossfade between two places in a waveform that are
+// out of step is a crossfade between a sound and its own echo: on a Cemu's
+// 3 percent surplus, a dozen of those a second were heard as distortion. In
+// step, the join is the same wave carrying on. About five milliseconds, which
+// is longer than one cycle of anything but the lowest notes.
+inline constexpr std::size_t kAudioSpliceSearchFrames = 256;
 
 // Cover bought after the queue runs dry, on top of the target, in milliseconds
 // of audio -- the sound's counterpart of the picture's hold_extra_ms().
@@ -253,10 +263,13 @@ std::size_t audio_trim_frames(std::size_t sustained_frames, std::size_t target_f
 // running dry, and the sound that far behind the picture.
 std::size_t audio_target_frames(int device_rate, std::size_t device_buffer_frames);
 
-// Appends `frames` of stereo int16 to `out` with the first `skip` of them
-// dropped, crossfading from what was dropped into what follows so the join is
-// not a step. With `skip` of zero this is a plain copy.
-void audio_splice(const int16_t* interleaved_stereo, std::size_t frames, std::size_t skip,
+// Appends `frames` of stereo int16 to `out` with about the first `skip` of
+// them dropped, crossfading from what was dropped into what follows so the
+// join is not a step. The cut is moved by up to kAudioSpliceSearchFrames (and
+// never by more than half of `skip`) to wherever the waveform after it best
+// matches the one before. Returns how many frames were actually dropped. With
+// `skip` of zero this is a plain copy.
+std::size_t audio_splice(const int16_t* interleaved_stereo, std::size_t frames, std::size_t skip,
                   std::vector<int16_t>& out);
 
 // Playback rate to run at given how deep the queue currently is. Above the

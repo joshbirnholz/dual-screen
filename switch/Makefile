@@ -84,7 +84,7 @@ CPPFILES    := main.cpp \
                ui_sounds.cpp \
                paths.cpp \
                save_points.cpp system.cpp \
-               controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp switch_motion.cpp \
+               controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp pad_routing.cpp switch_motion.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
                color_convert.cpp h264_bitstream.cpp videotoolbox_decoder.cpp \
@@ -92,7 +92,7 @@ CPPFILES    := main.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp frame_delay.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \
-               connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
+               connecting_screen.cpp control_guide.cpp controllers_screen.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
                notice_popup.cpp \
                battery.cpp build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
@@ -137,9 +137,9 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                gl_call_trace.cpp hw_render_target.cpp \
                external_frame_link.cpp external_screen_source.cpp \
                libretro_core.cpp libretro_screen_source.cpp core_input_sink.cpp \
-               pad_routing.cpp retro_keymap.cpp \
+               retro_keymap.cpp \
                host_session.cpp save_exchange.cpp \
-               game_browser.cpp message_screen.cpp settings_screen.cpp controllers_screen.cpp \
+               game_browser.cpp message_screen.cpp settings_screen.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp

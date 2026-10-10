@@ -339,6 +339,77 @@ void ControllersScreen::render(QuadRenderer& quads,
     draw_page_guide(quads, text, glyphs, frame, guide);
 }
 
+void ControllersScreen::show_mirrored(int focus, bool holding, float output_width,
+                                      float output_height, const std::vector<KnownPad>& pads,
+                                      bool gamepad_here, const PadOrder& order) {
+    open_ = true;
+    holding_ = holding;
+    const std::vector<LineupRow> rows = lineup_rows(line_up_pads(pads, order, gamepad_here));
+    const int row_count = static_cast<int>(rows.size()) + kExtraRows;
+    focus_ = std::max(0, std::min(focus, row_count - 1));
+    scroll_focus_into_view(output_width, output_height, row_count, first_unused_row(rows));
+}
+
+net::ControllersViewMessage controllers_view_of(const ControllersScreen& screen,
+                                                const std::vector<KnownPad>& pads,
+                                                bool gamepad_here, const PadOrder& order,
+                                                const std::string& this_device,
+                                                const std::string& other_device) {
+    net::ControllersViewMessage view;
+    view.open = screen.is_open();
+    if (!view.open) return view;
+    view.focus = screen.focus();
+    view.holding = screen.holding();
+    view.gamepad_here = gamepad_here;
+    view.this_device = this_device;
+    view.other_device = other_device;
+    for (const KnownPad& pad : pads) {
+        view.pads.push_back(
+            net::ControllersViewPad{pad.on_this_device, pad.id, pad.position, pad.name, pad.slot});
+    }
+    view.order_chosen = order.chosen;
+    view.order_gamepad_here = order.gamepad_here;
+    view.order_gamepad = order.gamepad;
+    view.order_players = order.players;
+    view.order_unused = order.unused;
+    return view;
+}
+
+void unpack_controllers_view(const net::ControllersViewMessage& view,
+                             std::vector<KnownPad>& pads, PadOrder& order) {
+    pads.clear();
+    for (const net::ControllersViewPad& wire : view.pads) {
+        KnownPad pad;
+        pad.on_this_device = wire.on_this_device;
+        pad.id = wire.id;
+        pad.position = wire.position;
+        pad.name = wire.name;
+        pad.slot = wire.slot;
+        pads.push_back(pad);
+    }
+    order.chosen = view.order_chosen;
+    order.gamepad_here = view.order_gamepad_here;
+    order.gamepad = view.order_gamepad;
+    order.players = view.order_players;
+    order.unused = view.order_unused;
+}
+
+void render_mirrored_controllers(ControllersScreen& screen, QuadRenderer& quads,
+                                 TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                                 float output_width, float output_height,
+                                 const net::ControllersViewMessage& view) {
+    std::vector<KnownPad> pads;
+    PadOrder order;
+    unpack_controllers_view(view, pads, order);
+    quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
+    quads.clear(ui_theme().background);
+    screen.show_mirrored(view.focus, view.holding, output_width, output_height, pads,
+                         view.gamepad_here, order);
+    screen.set_over_game(false);
+    screen.render(quads, text, glyphs, output_width, output_height, pads, view.gamepad_here, order,
+                  view.this_device, view.other_device);
+}
+
 void ControllersScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.rest, open_ ? 1u : 0u);

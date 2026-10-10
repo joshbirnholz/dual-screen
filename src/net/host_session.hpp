@@ -211,6 +211,11 @@ public:
     // only when something has changed.
     void set_save_slots(const SaveSlotsMessage& slots);
 
+    // The Controller Order screen as it stands, for the companion to draw.
+    // Cheap to call every frame while it is up; nothing goes out unless it
+    // changed, and it goes again to a companion that joins.
+    void set_controllers_view(const ControllersViewMessage& view);
+
     // Sends one of the game's audio streams to the companion. DS and 3DS have
     // one soundtrack and always pass Shared; a Wii U's TV and GamePad are
     // independent and pass TopDevice/BottomDevice, each checked here against
@@ -643,6 +648,9 @@ private:
     SaveSlotsMessage save_slots_;
     bool save_slots_known_ = false;
     bool save_slots_dirty_ = false;
+    // Encoded, so a change is any change: compared byte for byte.
+    std::vector<uint8_t> controllers_view_;
+    bool controllers_view_dirty_ = false;
 
     DsInputState companion_input_;
     bool companion_input_fresh_ = false;

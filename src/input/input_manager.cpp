@@ -17,6 +17,11 @@
 #include "input/switch_console.hpp"
 #endif
 
+#if defined(__ANDROID__)
+#include <SDL_system.h>
+#include <jni.h>
+#endif
+
 namespace ds {
 namespace {
 
@@ -330,12 +335,39 @@ int InputManager::connected_controllers() const {
     return static_cast<int>(connected_pads().size());
 }
 
+#if defined(__ANDROID__)
+static void android_rumble(int ms) {
+    static bool said = false;
+    if (ms > 0 && !said) {
+        said = true;
+        log_info("rumble: through Android's vibrator");
+    }
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (env == nullptr || activity == nullptr) return;
+    jclass type = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(type, "rumble", "(I)V");
+    if (method != nullptr) env->CallVoidMethod(activity, method, static_cast<jint>(ms));
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+}
+#endif
+
 void InputManager::drive_motor(SDL_JoystickID id, SDL_GameController* controller, bool on,
                                uint32_t ms) {
 #ifdef __SWITCH__
     (void)controller;
     switch_vibrate(id, on);
     motor_until_[id] = on ? SDL_GetTicks() + ms : 0;
+#elif defined(__ANDROID__)
+    // SDL's Android port has no controller rumble -- SDL_GameControllerRumble
+    // answers "unsupported" for every pad -- so the activity runs the motors
+    // itself: see DualscreenActivity.rumble(). Every controller at once, since
+    // Android does not say which of its devices is which of SDL's.
+    (void)id;
+    (void)controller;
+    android_rumble(on ? static_cast<int>(ms) : 0);
 #else
     if (SDL_GameControllerRumble(controller, on ? 0xffffu : 0u, on ? 0xffffu : 0u,
                                  on ? ms : 0u) != 0 &&

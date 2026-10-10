@@ -117,37 +117,75 @@ std::size_t audio_dry_spell_frames(std::size_t since_last_push_frames,
                : 0;
 }
 
-void audio_splice(const int16_t* interleaved_stereo, std::size_t frames, std::size_t skip,
-                  std::vector<int16_t>& out) {
+std::size_t audio_splice(const int16_t* interleaved_stereo, std::size_t frames, std::size_t skip,
+                         std::vector<int16_t>& out) {
     if (interleaved_stereo == nullptr || frames == 0) {
-        return;
+        return 0;
     }
     if (skip >= frames) {
-        return;
+        return 0;
     }
-    const std::size_t kept = frames - skip;
+    if (skip == 0) {
+        out.insert(out.end(), interleaved_stereo, interleaved_stereo + frames * 2);
+        return 0;
+    }
+    const auto mono = [interleaved_stereo](std::size_t frame) {
+        return static_cast<double>(interleaved_stereo[frame * 2]) +
+               static_cast<double>(interleaved_stereo[frame * 2 + 1]);
+    };
+
+    // Where to cut: near `skip`, wherever the stretch after the cut looks most
+    // like the stretch it takes over from -- see kAudioSpliceSearchFrames.
+    const std::size_t window = std::min(kAudioSpliceFrames, frames - skip);
+    const std::size_t reach = std::min(kAudioSpliceSearchFrames, skip / 2);
+    const std::size_t lowest = std::max<std::size_t>(1, skip - reach);
+    const std::size_t highest = std::min(skip + reach, frames - window);
+    std::size_t cut = skip;
+    if (window >= 16 && highest >= lowest) {
+        double best = -2.0;
+        for (std::size_t candidate = lowest; candidate <= highest; ++candidate) {
+            double together = 0.0;
+            double energy = 0.0;
+            double reference = 0.0;
+            for (std::size_t i = 0; i < window; ++i) {
+                const double a = mono(i);
+                const double b = mono(candidate + i);
+                together += a * b;
+                energy += b * b;
+                reference += a * a;
+            }
+            // Normalised, so a loud stretch is not preferred for being loud;
+            // silence on either side matches anything equally well.
+            const double score =
+                energy > 0.0 && reference > 0.0 ? together / std::sqrt(energy * reference) : 0.0;
+            if (score > best) {
+                best = score;
+                cut = candidate;
+            }
+        }
+    }
+
+    const std::size_t kept = frames - cut;
     const std::size_t base = out.size();
     out.resize(base + kept * 2);
     int16_t* dest = out.data() + base;
-    std::copy_n(interleaved_stereo + skip * 2, kept * 2, dest);
-    if (skip == 0) {
-        return;
-    }
+    std::copy_n(interleaved_stereo + cut * 2, kept * 2, dest);
     // Ramp from what is being dropped into what replaces it. Both sides are
-    // the same signal a few milliseconds apart, so this is a short crossfade
-    // rather than a fade to nothing -- the level holds, and what changes is
-    // only the phase, over long enough not to be heard as an edge.
-    const std::size_t blend = std::min({kAudioSpliceFrames, skip, kept});
+    // the same signal a few milliseconds apart and now in step, so this is a
+    // short crossfade rather than a fade to nothing -- the level holds, and
+    // nothing changes that can be heard as an edge.
+    const std::size_t blend = std::min({kAudioSpliceFrames, cut, kept});
     for (std::size_t i = 0; i < blend; ++i) {
         const double t = static_cast<double>(i + 1) / static_cast<double>(blend + 1);
         for (int channel = 0; channel < 2; ++channel) {
             const double from = interleaved_stereo[i * 2 + channel];
-            const double to = interleaved_stereo[(skip + i) * 2 + channel];
+            const double to = interleaved_stereo[(cut + i) * 2 + channel];
             dest[i * 2 + channel] =
                 static_cast<int16_t>(std::lround(std::clamp(from + (to - from) * t,
                                                             -32768.0, 32767.0)));
         }
     }
+    return cut;
 }
 
 void AudioResampler::reset() {
@@ -502,12 +540,8 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     // added, so the next push sees the smaller queue), which is what keeps the
     // same surplus from being paid for twice.
     const std::size_t sustained = low_water_.note(queued, frames);
-    const std::size_t skipped =
+    const std::size_t skip =
         audio_trim_frames(sustained, aimed_frames(), trim_margin_frames_, frames);
-    if (skipped > 0) {
-        ++stats_trims_;
-        stats_trimmed_frames_ += skipped;
-    }
 
     // What the queue is actually doing, once a second. Sound going wrong is
     // otherwise the one thing in this app with no numbers at all behind it --
@@ -526,7 +560,11 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     }
 
     spliced_.clear();
-    audio_splice(interleaved_stereo, frames, skipped, spliced_);
+    const std::size_t skipped = audio_splice(interleaved_stereo, frames, skip, spliced_);
+    if (skipped > 0) {
+        ++stats_trims_;
+        stats_trimmed_frames_ += skipped;
+    }
     if (spliced_.empty()) {
         return;
     }

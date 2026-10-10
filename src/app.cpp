@@ -402,6 +402,9 @@ struct App::Impl {
     std::string game_notice = kResumedNotice;
     // Opened from Settings, and drawn over it -- see ControllersScreen.
     ControllersScreen controllers_screen;
+    // The host's, drawn here while this device is its companion -- see
+    // render_mirrored_controllers().
+    ControllersScreen mirrored_controllers;
     // The game running here, which its save points are named after.
     std::string game_path;
     std::unique_ptr<GameBrowser> browser;
@@ -3729,9 +3732,16 @@ void App::Impl::render() {
     // here, and a frozen game would look like a session that had stopped.
     if (state == State::Companion && companion_session &&
         companion_session->host_settings_open()) {
-        // Settings or Controllers: both are the host's own screens, and a
-        // name for either here could be the wrong one.
-        render_centred_message(quads, text, width, height, "Look at the other screen.");
+        // Its Controller Order screen is drawn here too, the way the quick
+        // menu is; anything else of the host's own -- Settings, Data
+        // Management -- is about that machine, and is looked at there.
+        const net::ControllersViewMessage& view = companion_session->host_controllers_view();
+        if (view.open) {
+            render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs, width,
+                                        height, view);
+        } else {
+            render_centred_message(quads, text, width, height, "Look at the other screen.");
+        }
         swap();
         ++frames_rendered;
         companion_session->note_frame_drawn();
@@ -4527,6 +4537,17 @@ int App::run(const AppOptions& options) {
             shared.resume_from_save_state = impl.resume_in_effect();
             shared.resume_notice = impl.state == Impl::State::ResumeNotice;
             impl.host_session->set_session_state(shared);
+            // And the Controller Order screen, for the other device to show
+            // the same -- see ControllersViewMessage. Closed is a message too:
+            // it is how the other device learns to put it away.
+            if (impl.state == Impl::State::Controllers) {
+                impl.host_session->set_controllers_view(controllers_view_of(
+                    impl.controllers_screen, impl.gather_pads(impl.companion_joined()),
+                    impl.holds_gamepad(), impl.pad_order, impl.settings.device_name,
+                    impl.host_session->companion_name()));
+            } else {
+                impl.host_session->set_controllers_view(net::ControllersViewMessage());
+            }
             const uint64_t poll_began_us = steady_micros();
             impl.host_session->poll(network_now);
             impl.pass_times.network_us += steady_micros() - poll_began_us;

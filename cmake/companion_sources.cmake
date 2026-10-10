@@ -32,6 +32,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/input/motion.cpp
     src/input/switch_motion.cpp
     src/input/motion_compare.cpp
+    src/input/pad_routing.cpp
     src/layout/layout.cpp
     src/layout/layout_registry.cpp
     src/net/companion_session.cpp
@@ -53,6 +54,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/render/texture.cpp
     src/ui/connecting_screen.cpp
     src/ui/control_guide.cpp
+    src/ui/controllers_screen.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
     src/ui/menu_state.cpp
@@ -88,14 +90,12 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/core/libretro_core.cpp
     src/core/libretro_screen_source.cpp
     src/core/core_input_sink.cpp
-    src/input/pad_routing.cpp
     src/input/retro_keymap.cpp
     src/net/host_session.cpp
     src/net/save_exchange.cpp
     src/ui/game_browser.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
-    src/ui/controllers_screen.cpp
     src/ui/data_management_screen.cpp
     src/forwarder/forwarder_icon.cpp
     src/forwarder/steamgriddb.cpp

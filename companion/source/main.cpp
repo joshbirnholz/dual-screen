@@ -102,6 +102,7 @@ extern "C" {
 #include "ui/connecting_screen.hpp"
 #include "ui/launcher_screen.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/controllers_screen.hpp"
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
 #include "ui/notice_popup.hpp"
@@ -501,6 +502,8 @@ private:
     CompanionOutputRouter router_{session_, video_layers_};
     BezelArt bezel_art_;
     LayoutPicker picker_{registry_};
+    // The host's Controller Order screen, drawn here while it is up.
+    ControllersScreen mirrored_controllers_;
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
     uint32_t save_slots_shown_ = 0;
@@ -1822,9 +1825,17 @@ void Client::draw_scene() {
     }
 
     if (session_.host_settings_open()) {
-        // Settings and Controllers are the host's own screens; see
-        // handle_actions() for why the buttons here still work them.
-        render_centred_message(quads_, text_, width, height, "Look at the other screen.");
+        // The host's own screens, whose presses still go to it -- see
+        // handle_actions(). Its Controller Order screen is drawn here as well,
+        // as the quick menu is; Settings and Data Management are about that
+        // machine, and are looked at there.
+        const net::ControllersViewMessage& view = session_.host_controllers_view();
+        if (view.open) {
+            render_mirrored_controllers(mirrored_controllers_, quads_, text_, button_glyphs_,
+                                        width, height, view);
+        } else {
+            render_centred_message(quads_, text_, width, height, "Look at the other screen.");
+        }
         return;
     }
 

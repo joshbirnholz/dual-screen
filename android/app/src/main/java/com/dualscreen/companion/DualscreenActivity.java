@@ -9,8 +9,11 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.InputDevice;
 import android.view.WindowManager;
 
 import org.libsdl.app.SDLActivity;
@@ -127,6 +130,48 @@ public class DualscreenActivity extends SDLActivity {
                     : (maker + " " + model).trim();
         }
         return name.trim();
+    }
+
+    /**
+     * Runs every game controller's motor for {@code ms} milliseconds, or stops
+     * them at 0. Called from native code (src/input/input_manager.cpp): SDL's
+     * Android port has no controller rumble at all. A controller with no motor
+     * of its own -- a handheld's built-in controls, a G Cloud's among them --
+     * buzzes the device itself, which is where those controls are.
+     */
+    public void rumble(int ms) {
+        try {
+            boolean any = false;
+            for (int id : InputDevice.getDeviceIds()) {
+                InputDevice device = InputDevice.getDevice(id);
+                if (device == null || device.isVirtual()) continue;
+                int sources = device.getSources();
+                boolean pad = (sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+                        || (sources & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK;
+                if (!pad) continue;
+                Vibrator motor = device.getVibrator();
+                if (motor != null && motor.hasVibrator()) {
+                    buzz(motor, ms);
+                    any = true;
+                }
+            }
+            if (!any) {
+                Vibrator motor = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (motor != null && motor.hasVibrator()) buzz(motor, ms);
+            }
+        } catch (RuntimeException error) {
+            Log.w(TAG, "could not rumble", error);
+        }
+    }
+
+    private static void buzz(Vibrator motor, int ms) {
+        if (ms <= 0) {
+            motor.cancel();
+        } else if (Build.VERSION.SDK_INT >= 26) {
+            motor.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+        } else {
+            motor.vibrate(ms);
+        }
     }
 
     public boolean hasFileAccess() {

@@ -5,6 +5,7 @@
 
 #include "input/input_manager.hpp"
 #include "input/pad_routing.hpp"
+#include "net/protocol.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
@@ -74,6 +75,13 @@ public:
     int focus() const { return focus_; }
     bool holding() const { return holding_; }
 
+    // The other device's screen, drawn from what it said -- see
+    // ControllersViewMessage: the cursor where it has it, scrolled to show it
+    // here, and nothing run here. Opens the screen if it is not.
+    void show_mirrored(int focus, bool holding, float output_width, float output_height,
+                       const std::vector<KnownPad>& pads, bool gamepad_here,
+                       const PadOrder& order);
+
 private:
     struct Geometry {
         std::vector<PixelRect> rows;
@@ -101,5 +109,22 @@ private:
     float scroll_ = 0.0f;
     ListDrag drag_;
 };
+
+// The Controller Order screen as a message for the other device, and back.
+net::ControllersViewMessage controllers_view_of(const ControllersScreen& screen,
+                                                const std::vector<KnownPad>& pads,
+                                                bool gamepad_here, const PadOrder& order,
+                                                const std::string& this_device,
+                                                const std::string& other_device);
+void unpack_controllers_view(const net::ControllersViewMessage& view,
+                             std::vector<KnownPad>& pads, PadOrder& order);
+
+// A whole frame of the other device's Controller Order screen, on this
+// device's own background -- what a companion shows while the host has it
+// up. `screen` is a ControllersScreen kept for this alone.
+void render_mirrored_controllers(ControllersScreen& screen, QuadRenderer& quads,
+                                 TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                                 float output_width, float output_height,
+                                 const net::ControllersViewMessage& view);
 
 }  // namespace ds

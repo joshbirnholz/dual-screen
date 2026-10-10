@@ -15,6 +15,15 @@ constexpr Uint32 kReadEveryMs = 5000;
 
 BatteryReading read_now() {
     BatteryReading reading;
+    // DUALSCREEN_FAKE_BATTERY=73, or 73c for charging: a reading for a
+    // machine with no battery, so the indicator can be looked at -- and
+    // screenshotted by a test -- anywhere.
+    if (const char* fake = SDL_getenv("DUALSCREEN_FAKE_BATTERY")) {
+        reading.present = true;
+        reading.percent = std::clamp(SDL_atoi(fake), 0, 100);
+        reading.charging = SDL_strchr(fake, 'c') != nullptr;
+        return reading;
+    }
 #ifdef __SWITCH__
     // SDL has no power reading for a Switch; the system's psm service has.
     static bool started = R_SUCCEEDED(psmInitialize());

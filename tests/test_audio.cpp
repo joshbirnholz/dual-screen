@@ -203,8 +203,10 @@ void test_a_splice_joins_two_places_in_a_tone_without_a_step() {
     };
 
     std::vector<int16_t> spliced;
-    audio_splice(input.data(), 512, skip, spliced);
-    CHECK(spliced.size() == (512 - skip) * 2);
+    const std::size_t used = audio_splice(input.data(), 512, skip, spliced);
+    // Moved to where the wave lines up, but never by more than half of it.
+    CHECK(used >= skip / 2 && used <= skip + skip / 2);
+    CHECK(spliced.size() == (512 - used) * 2);
 
     // A hard cut at the same place, for the comparison that makes the number
     // above mean something.
@@ -217,6 +219,29 @@ void test_a_splice_joins_two_places_in_a_tone_without_a_step() {
     std::vector<int16_t> whole;
     audio_splice(input.data(), 512, 0, whole);
     CHECK(whole == input);
+}
+
+// A cut lands where the wave after it is in step with the wave before it: a
+// whole number of cycles on, so the crossfade is between two copies of the same
+// stretch of tone rather than between a tone and its echo -- which cancel each
+// other part way through, and are heard as distortion when it happens a dozen
+// times a second.
+void test_a_splice_cuts_a_whole_number_of_cycles() {
+    const std::vector<int16_t> input = make_tone(2048);
+    const double period = 2.0 * 3.14159265358979 / 0.05;  // make_tone's
+    constexpr std::size_t skip = 300;  // two and a half cycles, nearly
+
+    std::vector<int16_t> spliced;
+    const std::size_t used = audio_splice(input.data(), 2048, skip, spliced);
+    const double cycles = static_cast<double>(used) / period;
+    CHECK(std::abs(cycles - std::round(cycles)) * period <= 2.0);
+
+    // And so the crossfade holds the level: in step, nothing cancels.
+    int loudest = 0;
+    for (std::size_t i = 0; i < 128 * 2; ++i) {
+        loudest = std::max(loudest, std::abs(static_cast<int>(spliced[i])));
+    }
+    CHECK(loudest >= 9000);
 }
 
 // The whole of what the trim exists for, run as the loop it actually sits in:
@@ -521,6 +546,7 @@ int main() {
     test_the_correction_moves_gradually_rather_than_stepping();
     test_a_queue_near_its_target_is_left_alone_and_a_deep_one_is_trimmed();
     test_a_splice_joins_two_places_in_a_tone_without_a_step();
+    test_a_splice_cuts_a_whole_number_of_cycles();
     test_a_sending_source_is_paid_off_in_splices_rather_than_at_the_panic();
     test_audio_arriving_in_lumps_is_not_a_surplus();
     test_a_real_surplus_is_still_found_through_the_low_water_mark();

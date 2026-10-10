@@ -586,6 +586,9 @@ public:
     // What the host last said is in each save point slot, and a number that
     // moves each time it says so, for the menu to notice.
     const SaveSlotsMessage& host_save_slots() const { return host_save_slots_; }
+    // The host's Controller Order screen, as it last said -- `open` false
+    // until a host that sends it has it up. See ControllersViewMessage.
+    const ControllersViewMessage& host_controllers_view() const { return host_controllers_view_; }
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
     // Sends this device's input to the host. Only what changed goes out.
@@ -1101,6 +1104,7 @@ private:
     bool host_resume_from_save_state_ = false;
     bool host_resume_notice_ = false;
     SaveSlotsMessage host_save_slots_;
+    ControllersViewMessage host_controllers_view_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;
@@ -1534,6 +1538,11 @@ private:
     // handle_media_datagram()'s Audio case.
     bool audio_sequence_known_[3] = {false, false, false};
     uint32_t audio_next_sequence_[3] = {0, 0, 0};
+    // Frames arrived on each stream since audio_counted_at_ms_, said every
+    // five seconds: a Wii U sends a companion one stream, and two arriving
+    // at once would be played as one, interleaved.
+    uint64_t audio_frames_by_stream_[3] = {0, 0, 0};
+    uint64_t audio_counted_at_ms_ = 0;
 };
 
 const char* to_string(CompanionSession::Status status);

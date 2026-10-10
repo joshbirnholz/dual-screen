@@ -91,6 +91,10 @@ enum class MessageType : uint16_t {
     // quick menu is mirrored there, so it sounds there as well. See
     // MenuSoundMessage.
     MenuSound = 18,
+    // The host's Controller Order screen, as it stands, for a companion to
+    // draw while it is up -- see ControllersViewMessage. Sent when it changes.
+    // A companion from before this ignores it and says where to look instead.
+    ControllersView = 19,
     // either way
     Ping = 20,
 };
@@ -409,6 +413,39 @@ struct SaveSlotsMessage {
     bool status_failed = false;
 };
 
+// The host's Controller Order screen, mirrored on the companion the way the
+// quick menu is: everything its rows are drawn from, as the host has it, so
+// the two screens show the same line with the same row picked out. Presses
+// on the companion already reach the host's screen (see settings_open); this
+// is only what it looks like.
+//
+// The pads as the host knows them, `on_this_device` meaning the host -- and
+// the two names their rows say they are plugged into, worked out there, so
+// the companion draws the host's words rather than guessing at them.
+struct ControllersViewPad {
+    bool on_this_device = true;
+    uint32_t id = 0;
+    int32_t position = 0;
+    std::string name;
+    int32_t slot = -1;
+};
+
+struct ControllersViewMessage {
+    bool open = false;
+    int32_t focus = 0;
+    bool holding = false;
+    bool gamepad_here = true;
+    std::string this_device;
+    std::string other_device;
+    std::vector<ControllersViewPad> pads;
+    // PadOrder, field for field.
+    bool order_chosen = false;
+    bool order_gamepad_here = true;
+    std::string order_gamepad;
+    std::vector<std::string> order_players;
+    std::vector<std::string> order_unused;
+};
+
 // Which of the menus' sounds -- see UiSound, whose order this is numbered apart
 // from, as MenuAction is from UiAction.
 enum class MenuSound : uint8_t {
@@ -549,6 +586,7 @@ void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
 void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& out);
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
+void encode_controllers_view(const ControllersViewMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
 // companion closes its own app rather than going back to its main menu. One
@@ -586,6 +624,7 @@ bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
 // False for a sound this end does not know.
 bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& out);
 bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& out);
+bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersViewMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one
 // device; a bound so a malformed message cannot ask for a million.

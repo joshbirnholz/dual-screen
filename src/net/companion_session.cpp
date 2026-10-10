@@ -147,6 +147,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
+    host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -306,6 +307,7 @@ void CompanionSession::disconnect() {
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
+    host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -407,6 +409,7 @@ void CompanionSession::fail(const std::string& reason) {
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
+    host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -578,6 +581,15 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             ++host_save_slots_revision_;
             break;
         }
+        case MessageType::ControllersView: {
+            ControllersViewMessage view;
+            // A view that does not decode is only a screen that says where to
+            // look instead.
+            if (decode_controllers_view(payload.data(), payload.size(), view)) {
+                host_controllers_view_ = std::move(view);
+            }
+            break;
+        }
         case MessageType::MenuSound: {
             MenuSoundMessage sound;
             // Only the latest few: a backlog played all at once is noise.
@@ -648,6 +660,23 @@ void CompanionSession::handle_media_datagram(MessageType type, const uint8_t* pa
             bool gap = false;
             uint32_t missing = 0;
             if (index < 3) {
+                audio_frames_by_stream_[index] += audio.samples.size() / 2;
+                const uint64_t now_ms = monotonic_millis();
+                if (audio_counted_at_ms_ == 0) audio_counted_at_ms_ = now_ms;
+                if (now_ms - audio_counted_at_ms_ >= 5000) {
+                    const double seconds = (now_ms - audio_counted_at_ms_) / 1000.0;
+                    char text[200];
+                    std::snprintf(text, sizeof(text),
+                                  "audio: arriving per second -- shared %.0f, top %.0f, bottom "
+                                  "%.0f frames, at %u Hz",
+                                  audio_frames_by_stream_[0] / seconds,
+                                  audio_frames_by_stream_[1] / seconds,
+                                  audio_frames_by_stream_[2] / seconds, audio.sample_rate);
+                    log_debug(text);
+                    audio_frames_by_stream_[0] = audio_frames_by_stream_[1] =
+                        audio_frames_by_stream_[2] = 0;
+                    audio_counted_at_ms_ = now_ms;
+                }
                 if (audio_sequence_known_[index] && audio.sequence != audio_next_sequence_[index]) {
                     gap = true;
                     missing = audio.sequence > audio_next_sequence_[index]

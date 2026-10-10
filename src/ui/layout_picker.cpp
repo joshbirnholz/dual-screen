@@ -1233,34 +1233,43 @@ namespace {
 float battery_width(const BatteryReading& battery, float scale) {
     const float line = TextRenderer::line_height(scale);
     return TextRenderer::measure_width(std::to_string(battery.percent) + "%", scale) +
-           line * 0.4f + line * 1.45f;
+           line * 0.35f + line * 1.7f;
 }
 
 // The percentage, then the battery with as much of it filled as is left, as a
 // Switch's HOME menu has them in its top corner: green while charging, red
 // once it is low. `right` is where it ends; it is centred on `centre_y`.
+//
+// Rounded all over and drawn as fills, not lines: the body a faint white, the
+// charge a solid one inside it. An outline would need its middle cut out of
+// whatever is behind the menu, which here is the blurred game.
 void draw_battery(QuadRenderer& quads, TextRenderer& text, const BatteryReading& battery,
                   float right, float centre_y, float scale) {
     const UiTheme& theme = ui_theme();
     const float line = TextRenderer::line_height(scale);
-    const float body_w = std::round(line * 1.3f);
-    const float body_h = std::round(line * 0.66f);
-    const float nub_w = std::max(2.0f, std::round(line * 0.12f));
-    const float border = std::max(1.0f, std::round(scale * 1.5f));
-    const PixelRect body{std::round(right - nub_w - body_w), std::round(centre_y - body_h * 0.5f),
-                         body_w, body_h};
-    quads.draw_outline(body, theme.text, border);
-    quads.draw_solid(PixelRect{body.x + body.w, std::round(centre_y - body_h * 0.22f), nub_w,
-                               std::round(body_h * 0.44f)},
-                     theme.text);
-    const float inset = border * 2.0f;
+    const float body_w = std::round(line * 1.5f);
+    const float body_h = std::round(line * 0.74f);
+    const float nub_w = std::max(2.0f, std::round(line * 0.1f));
+    const float nub_gap = std::max(1.0f, std::round(line * 0.04f));
+    const PixelRect body{std::round(right - nub_w - nub_gap - body_w),
+                         std::round(centre_y - body_h * 0.5f), body_w, body_h};
+    Color shell = theme.text;
+    shell.a = 0.35f;
+    quads.draw_rounded_rect(body, body_h * 0.3f, shell);
+    const float nub_h = std::round(body_h * 0.4f);
+    quads.draw_rounded_rect(PixelRect{body.x + body.w + nub_gap, std::round(centre_y - nub_h * 0.5f),
+                                      nub_w, nub_h},
+                            nub_w * 0.5f, shell);
+    const float inset = std::max(1.5f, std::round(body_h * 0.14f));
     const float room = body.w - inset * 2.0f;
-    const float filled = std::max(1.0f, std::round(room * battery.percent / 100.0f));
+    const float filled = std::max(body_h * 0.2f, room * battery.percent / 100.0f);
     const Color& fill = battery.charging          ? theme.success
                         : battery.percent <= 15   ? theme.danger
                                                   : theme.text;
-    quads.draw_solid(PixelRect{body.x + inset, body.y + inset, filled, body.h - inset * 2.0f}, fill);
-    text.draw(quads, std::to_string(battery.percent) + "%", body.x - line * 0.4f,
+    const float fill_h = body.h - inset * 2.0f;
+    quads.draw_rounded_rect(PixelRect{body.x + inset, body.y + inset, std::round(filled), fill_h},
+                            fill_h * 0.3f, fill);
+    text.draw(quads, std::to_string(battery.percent) + "%", body.x - line * 0.35f,
               std::round(centre_y - line * 0.5f), scale, theme.text, TextAlign::Right);
 }
 

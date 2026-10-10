@@ -1648,6 +1648,56 @@ void test_a_gap_in_sent_frames_is_loss() {
     CHECK_EQ(frames_missing_between(0, 65535), 0u);
 }
 
+// The host's Controller Order screen, for a companion to draw: every field
+// it is drawn from comes back as it went, and a cut-short one is refused.
+void test_controllers_view_round_trip() {
+    ControllersViewMessage sent;
+    sent.open = true;
+    sent.focus = 3;
+    sent.holding = true;
+    sent.gamepad_here = false;
+    sent.this_device = "SteamOS";
+    sent.other_device = "G Cloud";
+    sent.pads.push_back(ControllersViewPad{true, 12, 0, "Steam Deck", 1});
+    sent.pads.push_back(ControllersViewPad{false, 3, 1, "", -1});
+    sent.order_chosen = true;
+    sent.order_gamepad_here = false;
+    sent.order_gamepad = "companion#3";
+    sent.order_players = {"this#12"};
+    sent.order_unused = {};
+
+    std::vector<uint8_t> buffer;
+    encode_controllers_view(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::ControllersView);
+
+    ControllersViewMessage received;
+    CHECK(decode_controllers_view(payload.data(), payload.size(), received));
+    CHECK(received.open);
+    CHECK_EQ(received.focus, 3);
+    CHECK(received.holding);
+    CHECK(!received.gamepad_here);
+    CHECK_STR_EQ(received.this_device, "SteamOS");
+    CHECK_STR_EQ(received.other_device, "G Cloud");
+    CHECK_EQ(received.pads.size(), static_cast<std::size_t>(2));
+    CHECK(received.pads[0].on_this_device);
+    CHECK_EQ(received.pads[0].id, 12u);
+    CHECK_STR_EQ(received.pads[0].name, "Steam Deck");
+    CHECK_EQ(received.pads[0].slot, 1);
+    CHECK(!received.pads[1].on_this_device);
+    CHECK_EQ(received.pads[1].position, 1);
+    CHECK_EQ(received.pads[1].slot, -1);
+    CHECK(received.order_chosen);
+    CHECK(!received.order_gamepad_here);
+    CHECK_STR_EQ(received.order_gamepad, "companion#3");
+    CHECK(received.order_players == sent.order_players);
+    CHECK(received.order_unused.empty());
+
+    CHECK(!decode_controllers_view(payload.data(), payload.size() / 2, received));
+}
+
 int main() {
     test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
@@ -1682,5 +1732,6 @@ int main() {
     test_frame_ack_carries_how_late_the_frame_arrived();
     test_a_gap_in_sent_frames_is_loss();
     test_a_fragment_can_be_restamped_as_it_leaves();
+    test_controllers_view_round_trip();
     return test::finish("protocol");
 }
