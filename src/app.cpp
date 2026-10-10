@@ -773,7 +773,9 @@ struct App::Impl {
     // from the main menu and, now, from a game's own menu -- and on a host,
     // possibly because the other device asked.
     void open_settings();
-    void open_data_management();
+    // `whole_list`: every game's saves, even during one -- what Settings
+    // opens. Otherwise, during a game, its own page alone.
+    void open_data_management(bool whole_list = false);
     void apply_data_management_result(const DataManagementResult& result);
     // What to do about whatever that screen just decided -- called for a press
     // made here and for one the companion sent, the same way the menu is.
@@ -2523,7 +2525,7 @@ void App::Impl::open_settings() {
     log_info("the settings screen is up");
 }
 
-void App::Impl::open_data_management() {
+void App::Impl::open_data_management(bool whole_list) {
     if (!save_store) return;
     if (!data_screen) {
         data_screen.reset(new DataManagementScreen(
@@ -2534,13 +2536,14 @@ void App::Impl::open_data_management() {
             data_screen->set_change_source([service] { return service->saves_received(); });
         }
     }
-    // During a DS or 3DS game, its own page and nothing else.
+    // During a DS or 3DS game, its own page and nothing else -- unless asked
+    // for the whole list, which still knows which game is being played.
     std::string game_id;
     SaveInfo info;
     if (save_sync_available() && save_store->find_for_rom(game_path, info)) {
         game_id = info.game_id;
     }
-    data_screen->open(game_id);
+    data_screen->open(game_id, whole_list);
     data_from_settings = false;
     state = State::DataManagement;
     input.set_game_input_enabled(false);
@@ -2588,7 +2591,8 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     if (result.open_data_management) {
-        open_data_management();
+        // Every game's saves, from Settings, whether or not one is playing.
+        open_data_management(true);
         data_from_settings = state == State::DataManagement;
         return;
     }
@@ -3727,9 +3731,7 @@ void App::Impl::render() {
         companion_session->host_settings_open()) {
         // Settings or Controllers: both are the host's own screens, and a
         // name for either here could be the wrong one.
-        render_waiting_screen(quads, text, button_glyphs, width, height, "On the other screen",
-                              {"A menu is open there.", "This device's buttons still work it."},
-                              {});
+        render_centred_message(quads, text, width, height, "Look at the other screen.");
         swap();
         ++frames_rendered;
         companion_session->note_frame_drawn();
@@ -3792,6 +3794,7 @@ void App::Impl::render() {
             quads.begin_frame(output_width, output_height);
             quads.clear(ui_theme().background);
             picker->set_preview_screen(own_separate_screen());
+            picker->set_show_battery(settings.show_battery);
             picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
         } else {
             const SystemProfile& profile = system_profile(system);
@@ -3848,6 +3851,7 @@ void App::Impl::render() {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
         picker->set_preview_screen(own_separate_screen());
+        picker->set_show_battery(settings.show_battery);
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(show_menu_backdrop);

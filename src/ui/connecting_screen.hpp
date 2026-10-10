@@ -11,6 +11,14 @@
 
 namespace ds {
 
+// One line, in the middle of an otherwise empty screen: what a device shows
+// while the thing to look at is on the other one.
+void render_centred_message(QuadRenderer& quads,
+                            TextRenderer& text,
+                            float output_width,
+                            float output_height,
+                            const std::string& message);
+
 // A device with nothing to draw yet, because what it is waiting for has not
 // arrived. A heading, some lines under it, and whatever way out there is.
 //

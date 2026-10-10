@@ -94,7 +94,7 @@ CPPFILES    := main.cpp \
                text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
                notice_popup.cpp \
-               build_stamp.cpp log.cpp \
+               battery.cpp build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
 
 # Playing DS games on the Switch itself, which it can do (a 3DS or a Wii U it

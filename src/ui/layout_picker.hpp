@@ -307,6 +307,9 @@ public:
     void set_filtering(bool bilinear) { state_.bilinear_filtering = bilinear; }
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
+    // This device's battery in the heading's corner -- Settings' "Battery in
+    // the quick menu". Shown only where there is a battery to show.
+    void set_show_battery(bool show) { show_battery_ = show; }
     void set_left_handed_layouts(std::vector<std::string> layouts) {
         state_.left_handed_layouts = std::move(layouts);
     }
@@ -507,6 +510,7 @@ private:
     // both. See layout_fits_system().
     std::vector<std::size_t> tiles_;
     bool open_ = false;
+    bool show_battery_ = true;
     // The Wii U list's row.
     int focus_ = 0;
     // The DS and 3DS menu's cursor: which section, and whether it is over on

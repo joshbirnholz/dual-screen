@@ -3,6 +3,7 @@
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/page_frame.hpp"
+#include "util/battery.hpp"
 
 #include <algorithm>
 #include <string>
@@ -1033,7 +1034,10 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
         if (focused) {
             quads.draw_solid(row, theme.text);
         } else if (current) {
-            quads.draw_solid(row, theme.panel_focused);
+            // The same faint white as the layout in use: marked, not chosen.
+            Color faint = theme.text;
+            faint.a = kSelectedTileOpacity;
+            quads.draw_solid(row, faint);
         }
         const Color& ink = focused ? theme.background : theme.text;
         text.draw(quads, section_label(section), row.x + row.w - line * 0.8f,
@@ -1223,6 +1227,45 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     }
 }
 
+namespace {
+
+// How wide draw_battery() is at `scale`, so the heading can leave it room.
+float battery_width(const BatteryReading& battery, float scale) {
+    const float line = TextRenderer::line_height(scale);
+    return TextRenderer::measure_width(std::to_string(battery.percent) + "%", scale) +
+           line * 0.4f + line * 1.45f;
+}
+
+// The percentage, then the battery with as much of it filled as is left, as a
+// Switch's HOME menu has them in its top corner: green while charging, red
+// once it is low. `right` is where it ends; it is centred on `centre_y`.
+void draw_battery(QuadRenderer& quads, TextRenderer& text, const BatteryReading& battery,
+                  float right, float centre_y, float scale) {
+    const UiTheme& theme = ui_theme();
+    const float line = TextRenderer::line_height(scale);
+    const float body_w = std::round(line * 1.3f);
+    const float body_h = std::round(line * 0.66f);
+    const float nub_w = std::max(2.0f, std::round(line * 0.12f));
+    const float border = std::max(1.0f, std::round(scale * 1.5f));
+    const PixelRect body{std::round(right - nub_w - body_w), std::round(centre_y - body_h * 0.5f),
+                         body_w, body_h};
+    quads.draw_outline(body, theme.text, border);
+    quads.draw_solid(PixelRect{body.x + body.w, std::round(centre_y - body_h * 0.22f), nub_w,
+                               std::round(body_h * 0.44f)},
+                     theme.text);
+    const float inset = border * 2.0f;
+    const float room = body.w - inset * 2.0f;
+    const float filled = std::max(1.0f, std::round(room * battery.percent / 100.0f));
+    const Color& fill = battery.charging          ? theme.success
+                        : battery.percent <= 15   ? theme.danger
+                                                  : theme.text;
+    quads.draw_solid(PixelRect{body.x + inset, body.y + inset, filled, body.h - inset * 2.0f}, fill);
+    text.draw(quads, std::to_string(battery.percent) + "%", body.x - line * 0.4f,
+              std::round(centre_y - line * 0.5f), scale, theme.text, TextAlign::Right);
+}
+
+}  // namespace
+
 void LayoutPicker::render(QuadRenderer& quads,
                           TextRenderer& text,
                           const ButtonGlyphSheet& glyphs,
@@ -1241,7 +1284,14 @@ void LayoutPicker::render(QuadRenderer& quads,
     // The game the menu was opened over, where the heading used to say what
     // the screen already looks like -- in the heading every page has.
     const PageFrame frame = page_frame(output_width, output_height);
-    draw_page_header(quads, text, frame, game_title, state_.subtitle);
+    const BatteryReading battery = show_battery_ ? read_battery() : BatteryReading();
+    const float battery_room =
+        battery.present ? battery_width(battery, scale) + frame.line * 1.2f : 0.0f;
+    draw_page_header(quads, text, frame, game_title, state_.subtitle, 0.0f, false, battery_room);
+    if (battery.present) {
+        draw_battery(quads, text, battery, frame.panel.x + frame.panel.w,
+                     std::round((frame.panel.y + frame.header_bottom) * 0.5f), scale);
+    }
 
     std::vector<GuidePrompt> guide;
     if (wii_u) {

@@ -264,7 +264,7 @@ Three things are different about a Wii U session:
 - **One device shows one screen.** The television is the game and the GamePad is
   a second view of it, so squeezing both into one window is not the arrangement
   the console has. With a second device connected, each holds one. Alone, the
-  device is whichever screen **This device alone is a Wii U's** on the Settings
+  device is whichever screen **Default Wii U screen** on the Settings
   screen says — and Cemu is told, so its own window shows that screen rather
   than whatever it was last left on. **F3** swaps it for the rest of a session
   without writing anything down.
@@ -274,7 +274,7 @@ Three things are different about a Wii U session:
   Deck in the hand is the GamePad and the same Deck on a dock is the
   television. It is decided when the game starts. A Deck's display does not
   change size under a running app, so docking takes effect the next time
-  Dualscreen is started. **Television** and **GamePad** pin
+  Dualscreen is started. **TV** and **GamePad** pin
   it to one. The log says which it picked and why:
 
   ```

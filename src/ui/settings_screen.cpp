@@ -12,11 +12,9 @@
 namespace ds {
 namespace {
 
-// Said under the BIOS files, at the end of the page, where it scrolls with
-// them rather than taking room from every page's content.
-constexpr const char* kFootnote =
-    "None of these ship with this app - they have to be your own dumps. DS games still boot "
-    "without them, using the core's built-in BIOS replacement.";
+// Said under Vsync, which a device that only shows another device's game
+// never uses: the picture it shows is paced by the stream, not by this.
+constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
 
 }  // namespace
 
@@ -57,7 +55,6 @@ void SettingsScreen::open(const Settings& settings, const std::vector<CoreStatus
     cores_ = cores;
     scroll_ = 0.0f;
     page_ = Page::Main;
-    refresh_bios();
 }
 
 void SettingsScreen::set_melonds_page(bool deko, std::string path) {
@@ -122,7 +119,7 @@ void SettingsScreen::return_from_data_management() {
 }
 
 std::string SettingsScreen::footnote() const {
-    if (page_ != Page::MelonDs) return kFootnote;
+    if (page_ != Page::MelonDs) return std::string();
     std::string note = "These take effect the next time a game starts. They are kept in " + melonds_path_ +
                        ", which can be edited by hand as well.";
     if (melonds_deko_) {
@@ -132,7 +129,17 @@ std::string SettingsScreen::footnote() const {
     return note;
 }
 
-void SettingsScreen::refresh_bios() { bios_ = check_bios_files(settings_.system_dir); }
+const char* SettingsScreen::row_description(int index) const {
+    if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::Vsync)) {
+        return kVsyncDescription;
+    }
+    return nullptr;
+}
+
+float SettingsScreen::description_height(float scale) const {
+    // Its own line, and room under it so it reads as the row above's.
+    return TextRenderer::line_height(scale * 0.8f) + TextRenderer::line_height(scale) * 0.7f;
+}
 
 SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
                                                           float output_height) const {
@@ -155,16 +162,15 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     // the rows rather than over them.
     const float row_width = geometry.panel.w - scroll_bar_width(geometry.scale) - line * 0.6f;
     const int rows = row_count();
+    float row_y = rows_top;
     for (int index = 0; index < rows; ++index) {
-        geometry.rows.push_back(PixelRect{
-            geometry.panel.x,
-            rows_top + index * (row_height + gap),
-            row_width,
-            row_height,
-        });
+        geometry.rows.push_back(PixelRect{geometry.panel.x, row_y, row_width, row_height});
+        row_y += row_height + gap;
+        // A line of explanation under the row, in the gap before the next.
+        if (row_description(index) != nullptr) row_y += description_height(geometry.scale);
     }
     geometry.view_height = geometry.panel.y + geometry.panel.h - content_top;
-    const float rows_bottom = rows_top + rows * (row_height + gap);
+    const float rows_bottom = row_y;
     const float footnote_scale = geometry.scale * 0.85f;
     const std::string note = footnote();
     const float footnote_height =
@@ -186,16 +192,12 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     const float core_height = line * (1.6f + 1.1f * static_cast<float>(cores_.size()));
     geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
 
-    const float bios_top = core_top + core_height + line * 0.6f;
-    // Exactly what is drawn there -- a heading and one line per file -- so
-    // the page ends where its last line does and the scroll bar with it.
-    const float bios_height = line * (1.6f + 1.1f * static_cast<float>(bios_.size()));
-    geometry.bios_panel = PixelRect{geometry.panel.x, bios_top, geometry.panel.w, bios_height};
-    geometry.footnote_top = bios_top + bios_height + line * 0.4f;
-    // Measured from the top of the content rather than from the panel, so it
-    // is the height of the thing being scrolled and not of the window onto it.
-    geometry.content_height =
-        geometry.footnote_top + footnote_height + line * 0.4f - (content_top - scroll_);
+    // The page ends where the last emulator's line does, and the scroll bar
+    // with it. Measured from the top of the content rather than from the
+    // panel, so it is the height of the thing being scrolled and not of the
+    // window onto it.
+    (void)footnote_height;
+    geometry.content_height = core_top + core_height + line * 0.4f - (content_top - scroll_);
     return geometry;
 }
 
@@ -255,6 +257,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             break;
         case Row::UiSounds:
             settings_.ui_sounds = !settings_.ui_sounds;
+            result.settings_changed = true;
+            break;
+        case Row::ShowBattery:
+            settings_.show_battery = !settings_.show_battery;
             result.settings_changed = true;
             break;
         case Row::Count:
@@ -419,9 +425,9 @@ void SettingsScreen::render(QuadRenderer& quads,
              : std::to_string(settings_.run_ahead_ds) +
                    (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
         {"Vsync", settings_.vsync ? "On" : "Off"},
-        {"This device alone is a Wii U's",
-         to_string(settings_.wii_u_screen_alone)},
+        {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
         {"Sound effects", settings_.ui_sounds ? "On" : "Off"},
+        {"Battery in the quick menu", settings_.show_battery ? "On" : "Off"},
     };
     if (page_ == Page::Main) {
         if (offers_data_management_) rows.push_back({"Data Management", ""});
@@ -440,6 +446,10 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float pad = menu_row_pad(line);
         const float baseline = page_row_text_y(row, scale);
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
+        if (const char* description = row_description(index)) {
+            text.draw(quads, description, row.x + pad, row.y + row.h + menu_row_gap(line) * 0.3f,
+                      scale * 0.8f, theme.text_dim);
+        }
 #ifndef __SWITCH__
         if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::ConfirmButtonRow)) {
             // The yes button, then the no one, as the prompts everywhere else
@@ -512,23 +522,6 @@ void SettingsScreen::render(QuadRenderer& quads,
         core_pen_y += line * 1.1f;
     }
 
-    // BIOS file inventory.
-    float pen_y = geometry.bios_panel.y;
-    text.draw(quads, "DS BIOS and firmware files", geometry.bios_panel.x, pen_y,
-              scale, theme.text);
-    pen_y += line * 1.6f;
-
-    for (const BiosFileStatus& status : bios_) {
-        const float x = geometry.bios_panel.x;
-        const std::string mark = status.present ? "[found]   " : "[missing] ";
-        const Color color = status.present ? theme.success
-                                           : (status.required ? theme.danger : theme.text_dim);
-        text.draw(quads, mark + status.filename, x, pen_y, scale * 0.9f, color);
-        pen_y += line * 1.1f;
-    }
-
-    text.draw_wrapped(quads, kFootnote, geometry.panel.x, geometry.footnote_top, geometry.panel.w,
-                      scale * 0.85f, theme.text_dim);
     }
 
     // Everything above scrolled and was clipped to the panel. The prompts
@@ -560,6 +553,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, settings_.vsync ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_screen_alone));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
+    mix_sound_state(view.rest, settings_.show_battery ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
 }

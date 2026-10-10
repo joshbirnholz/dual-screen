@@ -117,11 +117,12 @@ if ! grep -q "the settings screen is up" "$WORK_DIR/host.log" 2>/dev/null; then
     FAILED=1
 fi
 
-# The companion said where to look rather than showing a frozen game.
+# The companion said where to look rather than showing a frozen game: one line,
+# in the middle of the screen.
 if [ ! -f "$COMPANION_SHOT" ]; then
     echo "no screenshot from the companion" >&2
     FAILED=1
-elif ! "$CHECKER" "$COMPANION_SHOT" "text=0.06,0.05,0.9,0.30"; then
+elif ! "$CHECKER" "$COMPANION_SHOT" "text=0.25,0.44,0.75,0.56"; then
     echo "the companion did not say where to look while the host's settings were up" >&2
     FAILED=1
 fi

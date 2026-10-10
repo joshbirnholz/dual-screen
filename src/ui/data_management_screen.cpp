@@ -102,9 +102,10 @@ std::string DataManagementScreen::describe_count(std::size_t count) {
     return std::to_string(count) + (count == 1 ? " save" : " saves");
 }
 
-void DataManagementScreen::open(const std::string& game_in_play) {
+void DataManagementScreen::open(const std::string& game_in_play, bool whole_list) {
     open_ = true;
     game_in_play_ = game_in_play;
+    whole_list_ = whole_list;
     own_name_ = store_.device_name();
     own_kind_ = net::this_device_kind();
     overlay_ = Overlay::None;
@@ -117,11 +118,12 @@ void DataManagementScreen::open(const std::string& game_in_play) {
     reload_saves();
     // A game's page looks for devices as it opens; the list waits to be
     // asked, by Sync All.
-    if (in_game()) {
+    if (in_game() && !whole_list_) {
         open_game(game_in_play_);
     }
-    log_info(in_game() ? "Data Management is up, on the page for the game being played"
-                       : "Data Management is up");
+    log_info(in_game() && !whole_list_
+                 ? "Data Management is up, on the page for the game being played"
+                 : "Data Management is up");
 }
 
 void DataManagementScreen::close() { open_ = false; }
@@ -876,6 +878,14 @@ void DataManagementScreen::start_sync_all() {
 void DataManagementScreen::advance_sync_all() {
     while (sync_all_ && sync_index_ < sync_items_.size()) {
         const SyncItem& item = sync_items_[sync_index_];
+        // The game being played has its save open. Its own page can change
+        // it, restarting the game to do so; a sweep over every game does not
+        // stop to.
+        if (in_game() && item.game_id == game_in_play_) {
+            ++sync_skipped_;
+            ++sync_index_;
+            continue;
+        }
         SaveInfo here;
         const SaveVersionState versions = store_.find(item.game_id, here) ? version_state(here)
                                                                           : SaveVersionState();
@@ -1174,7 +1184,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
                                                                : (device_index_ + 1) % devices;
                 }
                 if (action == UiAction::Cancel) {
-                    if (in_game()) {
+                    if (in_game() && !whole_list_) {
                         result.close_requested = true;
                     } else {
                         reload_saves();

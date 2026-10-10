@@ -7,6 +7,21 @@
 
 namespace ds {
 
+void render_centred_message(QuadRenderer& quads,
+                            TextRenderer& text,
+                            float output_width,
+                            float output_height,
+                            const std::string& message) {
+    const UiTheme& theme = ui_theme();
+    const PageFrame frame = page_frame(output_width, output_height);
+    const float scale = frame.scale * 1.1f;
+    quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
+    quads.clear(theme.background);
+    text.draw(quads, message, std::round(output_width * 0.5f),
+              std::round((output_height - TextRenderer::line_height(scale)) * 0.5f), scale,
+              theme.text, TextAlign::Center);
+}
+
 void render_waiting_screen(QuadRenderer& quads,
                            TextRenderer& text,
                            const ButtonGlyphSheet& glyphs,

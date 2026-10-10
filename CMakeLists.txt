@@ -180,6 +180,7 @@ add_library(dualscreen_core STATIC
     src/ui/controllers_screen.cpp
     src/ui/data_management_screen.cpp
     src/ui/forwarder_screen.cpp
+    src/util/battery.cpp
     src/util/build_stamp.cpp
     src/util/child_process.cpp
     src/util/log.cpp

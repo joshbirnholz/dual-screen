@@ -929,6 +929,10 @@ void Client::open_menu() {
     // to prevent.
     picker_.set_screens(session_.screens_geometry(), session_.system());
     picker_.set_bezel_art(bezel_art_.texture(session_.system()));
+#if DS_LOCAL_PLAY
+    // A companion with no Settings of its own (no local play) always shows it.
+    picker_.set_show_battery(Settings::load(AppPaths::resolve()).show_battery);
+#endif
     picker_.open(menu_state_from_host());
     save_slots_shown_ = session_.host_save_slots_revision() - 1;
     show_host_save_slots();
@@ -1820,9 +1824,7 @@ void Client::draw_scene() {
     if (session_.host_settings_open()) {
         // Settings and Controllers are the host's own screens; see
         // handle_actions() for why the buttons here still work them.
-        render_waiting_screen(quads_, text_, button_glyphs_, width, height, "On the other screen",
-                              {"A menu is open there.", "This device's buttons still work it."},
-                              {});
+        render_centred_message(quads_, text_, width, height, "Look at the other screen.");
         return;
     }
 

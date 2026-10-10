@@ -110,6 +110,7 @@ private:
         Vsync,
         WiiUScreenAlone,
         UiSounds,
+        ShowBattery,
         Count
     };
     static constexpr int kRowCount = static_cast<int>(Row::Count);
@@ -118,7 +119,6 @@ private:
         std::vector<PixelRect> rows;
         PixelRect panel;
         PixelRect core_panel;
-        PixelRect bios_panel;
         float scale = 1.0f;
         // Everything the panel holds, laid out end to end, against the room
         // there is to show it in. The difference is how far this can scroll.
@@ -137,7 +137,9 @@ private:
     // cannot see is the same as no cursor.
     void scroll_focus_into_view(const Geometry& geometry);
     void adjust(int direction, SettingsScreenResult& result);
-    void refresh_bios();
+    // A line said under a row, or null. Only Vsync has one.
+    const char* row_description(int index) const;
+    float description_height(float scale) const;
 
     // The melonDS page's rows, in order.
     enum class MelonRow {
@@ -161,7 +163,6 @@ private:
     AppPaths paths_;
     Settings settings_;
     std::vector<CoreStatus> cores_;
-    std::vector<BiosFileStatus> bios_;
     int focus_ = 0;
     bool open_ = false;
     bool over_game_ = false;

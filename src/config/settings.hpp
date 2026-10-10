@@ -36,7 +36,7 @@ inline WiiUScreenAlone next_wii_u_screen_alone(WiiUScreenAlone screen) {
 inline const char* to_string(WiiUScreenAlone screen) {
     switch (screen) {
         case WiiUScreenAlone::Auto: return "Auto";
-        case WiiUScreenAlone::Television: return "Television";
+        case WiiUScreenAlone::Television: return "TV";
         case WiiUScreenAlone::GamePad: return "GamePad";
     }
     return "Auto";
@@ -254,6 +254,10 @@ struct Settings {
     // The menus' own sounds -- a cursor moving, something chosen, the quick
     // menu opening -- on this device. See UiSoundPlayer.
     bool ui_sounds = true;
+
+    // This device's battery, in the quick menu's corner, as a Switch's HOME
+    // menu shows it. Nothing is shown where there is no battery.
+    bool show_battery = true;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

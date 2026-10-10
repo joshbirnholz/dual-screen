@@ -52,8 +52,12 @@ public:
     DataManagementScreen(const DataManagementScreen&) = delete;
     DataManagementScreen& operator=(const DataManagementScreen&) = delete;
 
-    // With a game's ID, that game is being played and its page is all there is.
-    void open(const std::string& game_in_play = std::string());
+    // With a game's ID, that game is being played and its page is all there
+    // is -- unless `whole_list`, when it opens on the list of every game as
+    // it would with none playing, and only that game's own page knows it is
+    // being played (changing its save restarts it; Sync All leaves it be).
+    // What Settings opens; the quick menu's own Data Management is the page.
+    void open(const std::string& game_in_play = std::string(), bool whole_list = false);
     void close();
     bool is_open() const { return open_; }
     // Over a paused game, which shows through dimmed; otherwise on the app's
@@ -206,6 +210,8 @@ private:
     bool open_ = false;
     bool over_game_ = false;
     std::string game_in_play_;
+    // Opened on the list though a game is being played -- see open().
+    bool whole_list_ = false;
     Page page_ = Page::List;
     Overlay overlay_ = Overlay::None;
     int list_focus_ = 0;
