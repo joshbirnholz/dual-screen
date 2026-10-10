@@ -127,6 +127,67 @@ inline constexpr int kAudioLowWaterWindowMs = 250;
 // of its own.
 inline constexpr std::size_t kAudioSpliceFrames = 128;
 
+// Cover bought after the queue runs dry, on top of the target, in milliseconds
+// of audio -- the sound's counterpart of the picture's hold_extra_ms().
+//
+// Over wifi a link does not only jitter, it now and then holds everything back
+// for a tenth of a second and hands it over at once. Measured, Steam Deck as
+// the GamePad for a PC playing Wind Waker HD: the queue sat at its 60ms target
+// with nothing wrong for seconds at a time, then ran dry one to three times a
+// second for a spell, each time followed by a lump of audio arriving together
+// ("-900 parts per ten thousand" one second, "+900" the next). A G Cloud on
+// the same host did the same.
+//
+// What made that sound broken rather than merely gappy was what came after.
+// A dry spell plays silence in place of audio, so once the held-back audio
+// lands the queue is deeper by exactly the length of the spell -- which is the
+// cover the next spell needed. The trim read that as surplus and cut it back
+// out in a dozen or more splices a second while the rate correction pinned
+// itself at the limit chasing the old target: crackle and warble, every time,
+// and nothing left to absorb the next one.
+//
+// So a dry spell is now kept. The queue running empty raises the target by
+// how long it ran empty, which is what the lump about to arrive brings the
+// queue to anyway, so nothing is trimmed and nothing is resampled; the next
+// spell that size finds audio waiting. A calm spell gives it back slowly
+// enough for the rate correction to absorb, well inside its limit, with no
+// splices at all.
+//
+// The ceiling is the most delay sound is allowed to trail the picture by for
+// the sake of never stopping: gaps longer than this are still heard as gaps.
+inline constexpr int kAudioCoverCeilingMs = 120;
+// The least one dry spell buys, for one too short to measure well.
+inline constexpr int kAudioCoverStepMs = 10;
+// How long without running dry before any cover is given back, and how much a
+// second after that. Two milliseconds a second is a fifth of what
+// kAudioMaxRateAdjust lets the correction take off, so giving back never
+// saturates it -- and 120ms of cover still takes only a minute to return.
+// Asymmetric on purpose, for the same reason as the picture's: buying costs
+// delay once, giving back too eagerly costs a gap every time the link twitches.
+inline constexpr int kAudioCalmMsBeforeGivingBack = 3000;
+inline constexpr int kAudioCoverGivenBackPerSecondMs = 2;
+// A wait between pushes this long is the stream stopping -- a menu up on the
+// host, the game paused -- not the link holding it back, and buys no cover:
+// a stall this long is past anything the ceiling could cover anyway.
+inline constexpr int kAudioStreamStoppedMs = 500;
+// Frames faded in when sound resumes after the queue ran dry. The device has
+// been playing silence, so the first sample back is otherwise a step from
+// nothing to wherever the waveform happens to be -- a click on top of the gap.
+inline constexpr std::size_t kAudioResumeFadeFrames = 64;
+
+// The cover to hold after a dry spell of `dry_frames`, from `current_frames`
+// already held: the spell's own length on top, at least `step_frames`, and
+// never past `ceiling_frames`.
+std::size_t audio_cover_after_running_dry(std::size_t current_frames, std::size_t dry_frames,
+                                          std::size_t step_frames, std::size_t ceiling_frames);
+
+// How long the device went without anything to play, in frames, given that
+// `since_last_push_frames` worth of time has passed since the last push and
+// that push left `queued_after_last_push_frames` waiting. Zero when the queue
+// should still have had something in it, which is a spell too short to see.
+std::size_t audio_dry_spell_frames(std::size_t since_last_push_frames,
+                                   std::size_t queued_after_last_push_frames);
+
 // The lowest the queue has been lately, which is the difference between a
 // queue that is genuinely too deep and one that is merely spiky.
 //
@@ -282,13 +343,30 @@ private:
     // correction is aiming to hold, rather than from empty -- which would
     // otherwise underrun immediately and have to climb out of it.
     void prime();
+    // Buys cover for a dry spell found at this push, or gives some back after
+    // a calm one. See kAudioCoverCeilingMs.
+    void update_cover(uint64_t now_ms, std::size_t queued, std::size_t frames);
+    std::size_t aimed_frames() const { return target_frames_ + cover_frames_; }
 
     SDL_AudioDeviceID device_ = 0;
     SDL_AudioSpec spec_ {};
     SDL_AudioStream* stream_ = nullptr;  // only when the device refused our rate
     double sample_rate_ = 0.0;
     std::size_t target_frames_ = 0;
+    // Cover bought after running dry, on top of target_frames_; see
+    // kAudioCoverCeilingMs. What the queue is aimed at is the sum of the two.
+    std::size_t cover_frames_ = 0;
+    std::size_t cover_ceiling_frames_ = 0;
+    std::size_t cover_step_frames_ = 0;
+    // When the last push happened and how much it left queued, which is what
+    // says how long a dry spell lasted; when the queue last ran dry, and when
+    // cover was last given back. Milliseconds on a steady clock; 0 is never.
+    uint64_t last_push_ms_ = 0;
+    std::size_t queued_after_last_push_ = 0;
+    uint64_t last_dry_ms_ = 0;
+    uint64_t last_given_back_ms_ = 0;
     std::size_t panic_frames_ = 0;
+    std::size_t panic_margin_frames_ = 0;
     std::size_t trim_margin_frames_ = 0;
     // What the trim is actually read against -- see AudioLowWater.
     AudioLowWater low_water_;

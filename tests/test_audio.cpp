@@ -484,7 +484,34 @@ void test_the_queue_target_follows_the_device_buffer() {
     CHECK(target < 4096 * 2);
 }
 
+// A dry spell is kept as cover rather than trimmed back out: what the queue
+// gains when the held-back audio lands is exactly what the next spell needs.
+void test_running_dry_buys_cover_the_length_of_the_spell() {
+    constexpr std::size_t step = 480;       // 10ms at 48kHz
+    constexpr std::size_t ceiling = 5760;   // 120ms at 48kHz
+
+    // A 90ms spell -- the size measured over wifi -- buys 90ms.
+    CHECK_EQ(audio_cover_after_running_dry(0, 4320, step, ceiling), static_cast<std::size_t>(4320));
+    // A spell too short to measure still buys the step.
+    CHECK_EQ(audio_cover_after_running_dry(0, 0, step, ceiling), step);
+    // Running dry again with cover held means the cover was short by the
+    // spell, so it adds on top...
+    CHECK_EQ(audio_cover_after_running_dry(1440, 960, step, ceiling), static_cast<std::size_t>(2400));
+    // ...but never past the ceiling.
+    CHECK_EQ(audio_cover_after_running_dry(4320, 4320, step, ceiling), ceiling);
+}
+
+void test_a_dry_spell_is_the_time_past_what_was_queued() {
+    // 100ms since the last push, which left 60ms queued: 40ms dry.
+    CHECK_EQ(audio_dry_spell_frames(4800, 2880), static_cast<std::size_t>(1920));
+    // Pushes coming as fast as they are played never read as dry.
+    CHECK_EQ(audio_dry_spell_frames(480, 2880), static_cast<std::size_t>(0));
+    CHECK_EQ(audio_dry_spell_frames(2880, 2880), static_cast<std::size_t>(0));
+}
+
 int main() {
+    test_running_dry_buys_cover_the_length_of_the_spell();
+    test_a_dry_spell_is_the_time_past_what_was_queued();
     test_the_queue_target_follows_the_device_buffer();
     test_the_correction_stays_inaudible_however_far_off_the_queue_is();
     test_a_ratio_of_one_passes_samples_through_unchanged();

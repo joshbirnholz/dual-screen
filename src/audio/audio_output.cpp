@@ -1,6 +1,7 @@
 #include "audio/audio_output.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <vector>
 
@@ -22,6 +23,12 @@ constexpr double kRatioSmoothing = 0.05;
 // already runs at the full correction, so real drift is worked off as fast as
 // it can be while the rate still stays inaudible.
 constexpr double kRateGain = 0.04;
+
+uint64_t steady_ms() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count());
+}
 
 int16_t lerp_sample(int16_t a, int16_t b, double t) {
     const double value = static_cast<double>(a) + (static_cast<double>(b) - a) * t;
@@ -96,6 +103,18 @@ std::size_t audio_trim_frames(std::size_t sustained_frames, std::size_t target_f
     // badly; the next one is read against a queue that has not moved, so
     // nothing is lost by waiting for it.
     return std::min(surplus, block_frames / 2);
+}
+
+std::size_t audio_cover_after_running_dry(std::size_t current_frames, std::size_t dry_frames,
+                                          std::size_t step_frames, std::size_t ceiling_frames) {
+    return std::min(current_frames + std::max(dry_frames, step_frames), ceiling_frames);
+}
+
+std::size_t audio_dry_spell_frames(std::size_t since_last_push_frames,
+                                   std::size_t queued_after_last_push_frames) {
+    return since_last_push_frames > queued_after_last_push_frames
+               ? since_last_push_frames - queued_after_last_push_frames
+               : 0;
 }
 
 void audio_splice(const int16_t* interleaved_stereo, std::size_t frames, std::size_t skip,
@@ -258,6 +277,16 @@ bool AudioOutput::open(double sample_rate, std::string* error) {
     const std::size_t margin_frames =
         static_cast<std::size_t>(spec_.freq) * kPanicMarginMs / 1000;
     panic_frames_ = std::max(panic_frames_, target_frames_ + margin_frames);
+    // Kept for push(), which holds the panic clear of the target plus whatever
+    // cover has been bought on top of it.
+    panic_margin_frames_ = margin_frames;
+    cover_frames_ = 0;
+    cover_ceiling_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioCoverCeilingMs / 1000;
+    cover_step_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioCoverStepMs / 1000;
+    last_push_ms_ = 0;
+    queued_after_last_push_ = 0;
+    last_dry_ms_ = 0;
+    last_given_back_ms_ = 0;
     trim_margin_frames_ = static_cast<std::size_t>(spec_.freq) * kAudioTrimMarginMs / 1000;
     // Kept as a floor, though the low-water mark is what actually sees past
     // the sawtooth of the device draining in whole buffers now. This costs
@@ -307,6 +336,9 @@ void AudioOutput::flush() {
     rate_ratio_ = 1.0;
     resampler_.reset();
     primed_ = false;
+    // A suspend is not a dry spell, and the time it took must not be read as
+    // one by the first push after it.
+    last_push_ms_ = 0;
 }
 
 std::size_t AudioOutput::queued_frames() const {
@@ -338,8 +370,12 @@ void AudioOutput::report(uint64_t now_ms) {
                                        ? 0
                                        : stats_queue_lowest_)) +
               "ms at its lowest, against a " +
-              std::to_string(to_ms(target_frames_)) + "ms target it is trimmed towards once it "
-              "sits above " + std::to_string(to_ms(target_frames_ + trim_margin_frames_)) +
+              std::to_string(to_ms(aimed_frames())) + "ms target" +
+              (cover_frames_ > 0 ? " (" + std::to_string(to_ms(cover_frames_)) +
+                                       "ms of it bought after running dry)"
+                                 : std::string()) +
+              " it is trimmed towards once it sits above " +
+              std::to_string(to_ms(aimed_frames() + trim_margin_frames_)) +
               "ms, " + std::to_string(stats_empty_) +
               " empty, " + std::to_string(stats_panics_) + " cut short, playing at " +
               std::to_string(static_cast<int>((rate_ratio_ - 1.0) * 10000.0)) + " parts per "
@@ -382,8 +418,8 @@ void AudioOutput::report(uint64_t now_ms) {
 
 void AudioOutput::prime() {
     primed_ = true;
-    if (target_frames_ != 0) {
-        const std::vector<int16_t> silence(target_frames_ * 2, 0);
+    if (aimed_frames() != 0) {
+        const std::vector<int16_t> silence(aimed_frames() * 2, 0);
         SDL_QueueAudio(device_, silence.data(),
                        static_cast<Uint32>(silence.size() * sizeof(int16_t)));
     }
@@ -391,6 +427,33 @@ void AudioOutput::prime() {
     // every path through here -- there is no case where a stream begins and
     // the mark should still be carrying a reading from an older one.
     low_water_.reset(low_water_window_frames_, queued_frames());
+}
+
+void AudioOutput::update_cover(uint64_t now_ms, std::size_t queued, std::size_t frames) {
+    const double rate = spec_.freq > 0 ? static_cast<double>(spec_.freq) : 48000.0;
+    if (queued == 0 && last_push_ms_ != 0 &&
+        now_ms - last_push_ms_ < static_cast<uint64_t>(kAudioStreamStoppedMs)) {
+        // How long it ran empty is how much deeper the queue is about to be
+        // once whatever was held back lands -- keep that rather than trim it.
+        const auto since = static_cast<std::size_t>(
+            static_cast<double>(now_ms - last_push_ms_) * rate / 1000.0);
+        const std::size_t dry = audio_dry_spell_frames(since, queued_after_last_push_);
+        cover_frames_ = audio_cover_after_running_dry(cover_frames_, dry, cover_step_frames_,
+                                                      cover_ceiling_frames_);
+        last_dry_ms_ = now_ms;
+        last_given_back_ms_ = now_ms;
+    } else if (cover_frames_ > 0 && last_dry_ms_ != 0 &&
+               now_ms - last_dry_ms_ >= static_cast<uint64_t>(kAudioCalmMsBeforeGivingBack) &&
+               now_ms - last_given_back_ms_ >= 1000) {
+        const auto step = static_cast<std::size_t>(rate * kAudioCoverGivenBackPerSecondMs / 1000.0);
+        cover_frames_ -= std::min(cover_frames_, step);
+        last_given_back_ms_ = now_ms;
+    }
+    last_push_ms_ = now_ms;
+    // What this push leaves waiting, near enough: a trim or the rate takes a
+    // few frames off it, which only makes the next dry spell read a little
+    // long -- the safe direction for cover to be wrong in.
+    queued_after_last_push_ = queued + frames;
 }
 
 void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
@@ -402,7 +465,7 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
         prime();
     }
 
-    if (queued_frames() > panic_frames_) {
+    if (queued_frames() > std::max(panic_frames_, aimed_frames() + panic_margin_frames_)) {
         ++stats_panics_;
         // Not drift -- see kAudioPanicQueueMs. Everything queued is already
         // far enough behind to be worthless, so it goes, and playback picks up
@@ -417,7 +480,14 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     }
 
     const std::size_t queued = queued_frames();
-    rate_ratio_ = audio_drift_ratio(queued, target_frames_, rate_ratio_);
+    const uint64_t now_ms = steady_ms();
+    // Read before update_cover() moves last_push_ms_ on: a queue found empty
+    // after an earlier push is one the device ran out of, and what follows it
+    // is fading back in from silence. The very first push finds it empty too,
+    // and that is a start rather than a stop.
+    const bool resuming_from_dry = queued == 0 && last_push_ms_ != 0;
+    update_cover(now_ms, queued, frames);
+    rate_ratio_ = audio_drift_ratio(queued, aimed_frames(), rate_ratio_);
 
     // Surplus, not drift -- see kAudioTrimMarginMs. Taken off the block on the
     // way in rather than off the queue behind it, which comes to the same
@@ -433,7 +503,7 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     // same surplus from being paid for twice.
     const std::size_t sustained = low_water_.note(queued, frames);
     const std::size_t skipped =
-        audio_trim_frames(sustained, target_frames_, trim_margin_frames_, frames);
+        audio_trim_frames(sustained, aimed_frames(), trim_margin_frames_, frames);
     if (skipped > 0) {
         ++stats_trims_;
         stats_trimmed_frames_ += skipped;
@@ -459,6 +529,16 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     audio_splice(interleaved_stereo, frames, skipped, spliced_);
     if (spliced_.empty()) {
         return;
+    }
+    if (resuming_from_dry) {
+        const std::size_t fade = std::min(kAudioResumeFadeFrames, spliced_.size() / 2);
+        for (std::size_t frame = 0; frame < fade; ++frame) {
+            const double gain = static_cast<double>(frame + 1) / static_cast<double>(fade + 1);
+            for (int channel = 0; channel < 2; ++channel) {
+                int16_t& sample = spliced_[frame * 2 + channel];
+                sample = static_cast<int16_t>(std::lround(sample * gain));
+            }
+        }
     }
 
     scratch_.clear();
