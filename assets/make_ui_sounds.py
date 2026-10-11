@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Regenerates assets/ui_sounds.bin: the shell's own sounds, in one blob.
 
-The sources are assets/ui_sounds/*.wav, as the owner gave them: a mix of 44.1
+The sources are assets/ui_sounds/<style>/*.wav, one folder for each style
+Settings offers: the ones assets/synth_ui_sounds.py makes, and "original",
+the owner's own recordings as they gave them: a mix of 44.1
 and 48 kHz, mono and stereo, most of them a second long with the sound itself
 in the first few hundredths and silence after. Played as they are, that
 silence is a voice held for nothing, and a rate the device is not running at
@@ -19,12 +21,14 @@ here:
 
 The blob, little-endian throughout -- see decode_ui_sound_pack():
 
-    "DSUS", version (u32, 1), rate (u32), count (u32)
+    "DSUS", version (u32, 2), rate (u32), count (u32)
     count times: name length (u8), name (ASCII), frames (u32)
     the frames, int16 stereo interleaved, one sound after another
 
-The names are the files' stems; the player looks them up by name, so the
-order here is not something it relies on.
+The names are "<style>/<sound>"; the player looks them up by name, so the
+order of the sounds is not something it relies on -- but the styles' order is
+Settings' order, and the first is the one played when another is asked for
+that the pack does not have.
 
 Run from the repository root:  python3 assets/make_ui_sounds.py
 """
@@ -37,6 +41,8 @@ import wave
 
 RATE = 48000
 SOUNDS = ["move_cursor", "confirm", "cancel", "error", "open_quick_menu"]
+# The same order as kUiSoundStyles in src/audio/ui_sounds.hpp.
+STYLES = ["click", "bubble", "chime", "original"]
 THRESHOLD = 10 ** (-50 / 20)
 THRESHOLD_QUIET = 10 ** (-60 / 20)
 KEEP_AFTER = 0.030
@@ -126,10 +132,11 @@ def trim(channels):
 def main():
     root = os.path.dirname(os.path.abspath(__file__))
     header = bytearray(b"DSUS")
-    header += struct.pack("<III", 1, RATE, len(SOUNDS))
+    header += struct.pack("<III", 2, RATE, len(SOUNDS) * len(STYLES))
     body = bytearray()
-    for name in SOUNDS:
-        rate, channels = read_wav(os.path.join(root, "ui_sounds", name + ".wav"))
+    for style, sound in [(style, sound) for style in STYLES for sound in SOUNDS]:
+        name = style + "/" + sound
+        rate, channels = read_wav(os.path.join(root, "ui_sounds", style, sound + ".wav"))
         channels = [resample(c, rate, RATE) for c in channels]
         channels = trim(channels)
         frames = len(channels[0])

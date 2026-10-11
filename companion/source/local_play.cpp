@@ -247,6 +247,15 @@ private:
             hook == AppletHookType_OnFocusState || hook == AppletHookType_OnResume) {
             auto* boost = static_cast<CpuBoost*>(self);
             boost->apply(boost->target_hz_);
+            if (hook == AppletHookType_OnResume) {
+                // Woken from sleep: what the system left the clocks at, for
+                // a game that comes back slower than it went.
+                const u32 cpu = boost->current();
+                log_info("woke from sleep: the CPU is at " + std::to_string(cpu / 1000000) + " MHz");
+                boost->said_gpu_hz_ = 0;
+                boost->said_memory_hz_ = 0;
+                boost->note_gpu_clocks();
+            }
         }
     }
 
@@ -283,8 +292,17 @@ private:
     }
 
     void apply(u32 hz) {
-        const Result result =
+        Result result =
             use_pcv_ ? pcvSetClockRate(PcvModule_CpuBus, hz) : clkrstSetClockRate(&session_, hz);
+        if (R_FAILED(result) && !use_pcv_) {
+            // A session the system closed under it, as it may across sleep:
+            // opened again, and asked again.
+            clkrstCloseSession(&session_);
+            if (R_SUCCEEDED(clkrstOpenSession(&session_, PcvModuleId_CpuBus, 3))) {
+                result = clkrstSetClockRate(&session_, hz);
+                if (R_SUCCEEDED(result)) log_info("the CPU clock's session was opened again");
+            }
+        }
         if (R_FAILED(result)) {
             log_warn("the CPU clock would not change to " + std::to_string(hz / 1000000) +
                      " MHz (error " + std::to_string(result) + ")");

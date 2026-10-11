@@ -1,6 +1,7 @@
 #include "audio/ui_sounds.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 
@@ -33,31 +34,61 @@ constexpr double kPressCountsFor = 0.5;
 
 const char* ui_sound_name(UiSound sound) { return kNames[static_cast<int>(sound)]; }
 
-bool decode_ui_sound_pack(const uint8_t* data, std::size_t size, UiSoundPack& out, std::string* error) {
+std::string ui_sound_style_label(const std::string& style) {
+    if (style.empty()) return style;
+    std::string label = style;
+    label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
+    return label;
+}
+
+bool decode_ui_sound_pack(const uint8_t* data, std::size_t size, UiSoundPack& out, std::string* error,
+                          const std::string& style) {
     out = UiSoundPack();
     const auto fail = [&](const std::string& why) {
         if (error != nullptr) *error = why;
         return false;
     };
     if (data == nullptr || size < 16 || std::memcmp(data, "DSUS", 4) != 0) return fail("not a sound pack");
-    if (le32(data + 4) != 1) return fail("a sound pack of another version");
+    const uint32_t version = le32(data + 4);
+    if (version != 1 && version != 2) return fail("a sound pack of another version");
     out.rate = static_cast<int>(le32(data + 8));
     const uint32_t count = le32(data + 12);
     std::size_t at = 16;
-    std::vector<std::pair<int, uint32_t>> order;  // sound, frames
+    // Every entry's style, sound and length, before choosing which style.
+    struct Entry {
+        std::string style;
+        int sound = -1;
+        uint32_t frames = 0;
+    };
+    std::vector<Entry> entries;
+    std::vector<std::string> styles;
     for (uint32_t i = 0; i < count; ++i) {
         if (at >= size) return fail("the sound pack is cut short");
         const std::size_t length = data[at++];
         if (at + length + 4 > size) return fail("the sound pack is cut short");
-        const std::string name(reinterpret_cast<const char*>(data + at), length);
+        std::string name(reinterpret_cast<const char*>(data + at), length);
         at += length;
-        const uint32_t frames = le32(data + at);
+        Entry entry;
+        entry.frames = le32(data + at);
         at += 4;
-        int sound = -1;
-        for (int s = 0; s < kUiSoundCount; ++s) {
-            if (name == kNames[s]) sound = s;
+        const std::size_t slash = name.find('/');
+        if (slash != std::string::npos) {
+            entry.style = name.substr(0, slash);
+            name = name.substr(slash + 1);
         }
-        order.push_back({sound, frames});
+        for (int s = 0; s < kUiSoundCount; ++s) {
+            if (name == kNames[s]) entry.sound = s;
+        }
+        if (std::find(styles.begin(), styles.end(), entry.style) == styles.end()) styles.push_back(entry.style);
+        entries.push_back(entry);
+    }
+    const std::string chosen =
+        std::find(styles.begin(), styles.end(), style) != styles.end() ? style
+        : styles.empty()                                               ? std::string()
+                                                                       : styles.front();
+    std::vector<std::pair<int, uint32_t>> order;  // sound, frames
+    for (const Entry& entry : entries) {
+        order.push_back({entry.style == chosen ? entry.sound : -1, entry.frames});
     }
     for (const auto& [sound, frames] : order) {
         const std::size_t bytes = std::size_t(frames) * 4;
@@ -417,7 +448,7 @@ UiSoundPlayer::~UiSoundPlayer() { close(); }
 
 bool UiSoundPlayer::open(std::string* error) {
     close();
-    if (!decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, pack_, error)) return false;
+    if (!decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, pack_, error, style_)) return false;
     auto backend = std::make_unique<Backend>();
     if (!backend->open(pack_, error)) return false;
     backend_ = std::move(backend);
@@ -432,6 +463,14 @@ void UiSoundPlayer::close() {
 }
 
 bool UiSoundPlayer::is_open() const { return backend_ != nullptr; }
+
+void UiSoundPlayer::set_style(const std::string& style) {
+    if (style == style_) return;
+    style_ = style;
+    if (!backend_) return;
+    std::string error;
+    if (!open(&error)) log_warn("the menus' sounds would not open again in the " + style + " style: " + error);
+}
 
 void UiSoundPlayer::play(UiSound sound) {
     if (!enabled_) return;

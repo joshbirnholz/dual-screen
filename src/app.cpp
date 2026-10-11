@@ -693,6 +693,9 @@ struct App::Impl {
     uint64_t vsync_held_off_until_us = 0;
     uint64_t vsync_hold_off_us = 10'000'000;
     uint64_t locked_since_us = 0;
+    // Until when, after waking from sleep, a display that keeps frames
+    // waiting is the display coming back rather than falling behind.
+    uint64_t resume_settle_until_us = 0;
     uint64_t locked_waits_window_us = 0;
     int locked_waits_in_window = 0;
     // Vsync as it is right now: the setting, unless held off.
@@ -2746,6 +2749,7 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     }
     if (result.settings_changed) {
         settings = settings_screen->settings();
+        ui_sounds.set_style(settings.ui_sound_style);
         ui_sounds.set_enabled(settings.ui_sounds);
         if (!settings.save(paths)) {
             log_warn("could not save settings.json");
@@ -4397,6 +4401,7 @@ int App::run(const AppOptions& options) {
 
     {
         std::string sound_error;
+        impl.ui_sounds.set_style(impl.settings.ui_sound_style);
         if (impl.ui_sounds.open(&sound_error)) {
             log_info(std::string("menu sounds ready") + (impl.settings.ui_sounds ? "" : ", but turned off in Settings"));
         } else {
@@ -4490,6 +4495,14 @@ int App::run(const AppOptions& options) {
             impl.locked_period_us = 0;
             impl.locked_learn_count = 0;
             impl.locked_queue_full = false;
+            // And whatever it did meanwhile is not the display falling
+            // behind: the first frames after a Switch wakes wait while its
+            // display comes back, and taken for falling behind they held
+            // vsync off -- for longer each time -- and the game ran unpaced.
+            impl.vsync_held_off = false;
+            impl.vsync_hold_off_us = 10'000'000;
+            impl.locked_waits_in_window = 0;
+            impl.resume_settle_until_us = steady_micros() + 3'000'000;
             impl.audio.flush();
             impl.refresh_output_size();
             impl.flush_saves();
@@ -5562,8 +5575,9 @@ int App::run(const AppOptions& options) {
                     ++impl.locked_waits_in_window;
                 }
                 const bool falling_behind =
-                    (waited_us > 100'000 && waited_us < 1'000'000) ||
-                    (impl.locked_period_us != 0 && impl.locked_waits_in_window >= 3);
+                    presented_us > impl.resume_settle_until_us &&
+                    ((waited_us > 100'000 && waited_us < 1'000'000) ||
+                     (impl.locked_period_us != 0 && impl.locked_waits_in_window >= 3));
                 if (falling_behind) {
                     impl.vsync_held_off = true;
                     impl.vsync_held_off_until_us = presented_us + impl.vsync_hold_off_us;

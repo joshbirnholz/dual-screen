@@ -208,6 +208,7 @@ Settings Settings::load(const AppPaths& paths) {
     settings.trigger_deadzone = get_or<float>(document, "trigger_deadzone", settings.trigger_deadzone);
     settings.vsync = get_or<bool>(document, "vsync", settings.vsync);
     settings.ui_sounds = get_or<bool>(document, "ui_sounds", settings.ui_sounds);
+    settings.ui_sound_style = get_or<std::string>(document, "ui_sound_style", settings.ui_sound_style);
     settings.show_battery = get_or<bool>(document, "show_battery", settings.show_battery);
 
     if (settings.system_dir.empty()) {
@@ -248,6 +249,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["trigger_deadzone"] = trigger_deadzone;
     document["vsync"] = vsync;
     document["ui_sounds"] = ui_sounds;
+    document["ui_sound_style"] = ui_sound_style;
     document["show_battery"] = show_battery;
 
     const std::string temporary = paths.settings_file + ".tmp";
