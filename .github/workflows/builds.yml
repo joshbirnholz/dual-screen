@@ -137,8 +137,14 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null || true
           "$SDKMANAGER" --install "platforms;android-33" "cmake;3.22.1" "ndk;25.1.8937393"
+      # Outside the checkout, and found through SDL2_ANDROID_SRC: setup-gradle
+      # checks every Gradle wrapper it finds under the checkout against the
+      # ones Gradle published, and SDL's own sample project carries one it
+      # does not know.
       - name: SDL2's source
-        run: git clone --depth 1 --branch release-2.30.9 https://github.com/libsdl-org/SDL android/app/jni/SDL
+        run: |
+          git clone --depth 1 --branch release-2.30.9 https://github.com/libsdl-org/SDL "$RUNNER_TEMP/SDL"
+          echo "SDL2_ANDROID_SRC=$RUNNER_TEMP/SDL" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
