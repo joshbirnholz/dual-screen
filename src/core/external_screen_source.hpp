@@ -89,6 +89,7 @@ public:
     }
     void hide_overlay() { link_.hide_overlay(); }
     bool take_menu_key() { return link_.take_menu_key(); }
+    void set_pointer_shown(bool shown) { link_.set_pointer_shown(shown); }
 
     // Tells the far end which single screen, if any, this app actually wants
     // captured and sent right now, the largest it is any use at, and which

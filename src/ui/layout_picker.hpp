@@ -398,6 +398,9 @@ private:
     // cycling -- see rebuild_footer()'s Wii U branch and render()'s.
     enum class Footer {
         OpenControllers,
+        // The Pointer setting, as the DS menu's Options has it: a value
+        // flipped in place rather than a page opened.
+        Pointer,
         OpenSettings,
         Disconnect,
         Quit,

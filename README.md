@@ -321,10 +321,24 @@ Three things are different about a Wii U session:
 
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
-  "Playing on Cemu" notice: **Controller Order**, **Settings**, **Disconnect** and
-  **Quit**. It answers only while its window has the focus, so a press meant
-  for the game never picks Quit. There is no Resume: the game never paused,
-  and going back to it is switching back to Cemu's window.
+  "Playing on Cemu" notice: **Controller Order**, **Pointer**, **Settings**,
+  **Disconnect** and **Quit**. It answers only while its window has the focus,
+  so a press meant for the game never picks Quit. There is no Resume: the game
+  never paused, and going back to it is switching back to Cemu's window.
+
+- **The quick menu also opens over the game, in Cemu's window.** With this
+  project's Cemu build, **F1** in Cemu's window, or the menu button on a pad,
+  puts the quick menu up over the game without switching windows. The game is
+  darkened behind it but keeps running, and pads work the menu while it is up.
+  It is the same menu on both devices: opened from a companion, it shows in
+  Cemu's window too. **F1** or **B** on the list puts it away. Not **Tab**,
+  which Cemu keeps for itself: held, it shows the GamePad's screen.
+
+- **Pointer** shows or hides the mouse pointer over Cemu's window, as it does
+  over a DS game. Shown, it appears when a mouse or trackpad moves it -- even
+  with Cemu filling the screen, as in Game Mode -- and hides again when it is
+  still, and a click with it on the GamePad's screen is a touch there. Hidden,
+  it never shows. Touches on the screen itself work either way.
 
 - **None of the controller shortcuts exist.** A Wii U game reads every control
   the console has, including both stick presses, so nothing is taken from the
@@ -1255,7 +1269,7 @@ Full options:
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Turn the pointer off entirely | **Pointer**, under **Options** in the quick menu |
+| Turn the pointer off entirely | **Pointer**, under **Options** in the quick menu — on a Wii U, in its list, for Cemu's window |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |

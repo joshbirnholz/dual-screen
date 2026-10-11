@@ -855,6 +855,16 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
               "the menu closing never reached the producer");
     CHECK(!producer.take_overlay(got, width, height));
 
+    // The Pointer setting: shown until said otherwise, and only a change
+    // crosses.
+    CHECK(producer.pointer_shown());
+    link.set_pointer_shown(false);
+    CHECK_MSG(wait_for([&]() { return !producer.pointer_shown(); }),
+              "the pointer being hidden never reached the producer");
+    link.set_pointer_shown(true);
+    CHECK_MSG(wait_for([&]() { return producer.pointer_shown(); }),
+              "the pointer being shown again never reached the producer");
+
     // Tab in the game's window, which only it can hear.
     CHECK(!link.take_menu_key());
     producer.send_menu_key();

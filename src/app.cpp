@@ -4909,6 +4909,12 @@ int App::run(const AppOptions& options) {
                                        " screen; asking Cemu to show it and to send nothing");
                 }
                 impl.external_link_was_running = external_now_running;
+                // The Pointer setting, for Cemu's window too: whether the
+                // mouse pointer shows there. Only a change goes over.
+                if (external_now_running) {
+                    impl.external_source->set_pointer_shown(impl.settings.cursor_mode ==
+                                                            CursorMode::Shown);
+                }
                 // Told to the companion as SharedState.layout_id below, so it
                 // knows which single screen the video it is about to receive
                 // actually is -- this end never draws it itself (see above),

@@ -126,6 +126,9 @@ void LayoutPicker::rebuild_footer() {
         // and where it is shown in place of it -- see LayoutPickerState::
         // embedded -- the game was never paused and is one window away.
         footer_.push_back(Footer::OpenControllers);
+        // Cemu's own pointer, over the GamePad screen in its window: shown,
+        // it comes and goes with the mouse, which taps the screen with it.
+        if (state_.cursor_choosable) footer_.push_back(Footer::Pointer);
         footer_.push_back(Footer::OpenSettings);
         if (state_.session_active) {
             footer_.push_back(Footer::Disconnect);
@@ -242,6 +245,7 @@ bool LayoutPicker::swap_button_usable() const {
 std::string LayoutPicker::footer_label(Footer kind) const {
     switch (kind) {
         case Footer::OpenControllers: return "Controller Order";
+        case Footer::Pointer: return "Pointer";
         case Footer::OpenSettings: return "Settings";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: return "Quit";
@@ -603,6 +607,9 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         case Footer::OpenControllers:
             result.controllers_requested = true;
             return true;
+        case Footer::Pointer:
+            result.cursor_mode_changed = true;
+            return true;
         case Footer::OpenSettings:
             result.settings_requested = true;
             return true;
@@ -891,6 +898,15 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 case UiAction::Up: move_focus(-1); break;
                 case UiAction::Down: move_focus(1); break;
                 case UiAction::Confirm: activate_focus(result); break;
+                // Left and Right flip a value where the row holds one, as
+                // they do in the DS menu's Options.
+                case UiAction::Left:
+                case UiAction::Right:
+                    if (focus_ >= 0 && focus_ < footer_count() &&
+                        footer_[static_cast<std::size_t>(focus_)] == Footer::Pointer) {
+                        result.cursor_mode_changed = true;
+                    }
+                    break;
                 // Nothing to close where the menu is the screen itself.
                 case UiAction::Cancel:
                 case UiAction::ToggleMenu:
@@ -1327,6 +1343,11 @@ void LayoutPicker::render(QuadRenderer& quads,
             const float pad = line * 0.7f;
             text.draw(quads, footer_label(footer_[index]), row.x + pad,
                       page_row_text_y(row, scale * 1.1f), scale * 1.1f, menu_row_text(focused));
+            if (footer_[index] == Footer::Pointer) {
+                text.draw(quads, to_string(state_.cursor_mode), row.x + row.w - pad,
+                          page_row_text_y(row, scale * 1.1f), scale * 1.1f,
+                          focused ? ui_theme().background : ui_theme().text_dim, TextAlign::Right);
+            }
         }
         // Everything this menu can do lives in the list above, reached by A.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});

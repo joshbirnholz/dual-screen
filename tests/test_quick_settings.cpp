@@ -953,6 +953,9 @@ void test_wii_u_menu_is_a_plain_list() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
+    // A device with no pointer: the one row that holds a value is checked on
+    // its own, below.
+    state.cursor_choosable = false;
 
     for (const bool session_active : {false, true}) {
         state.session_active = session_active;
@@ -1559,6 +1562,32 @@ void test_the_resume_popup_is_put_away_with_ok() {
     CHECK(!notice_popup_answered({}, {slide_onto(10.0f, 10.0f, ok_x, ok_y)}, kWidth, kHeight, said));
 }
 
+// Where there is a mouse to point with, a Wii U's list has a Pointer row too,
+// under Controller Order: the DS menu's Options entry, for Cemu's window. A
+// flips it in place, as do Left and Right; nothing else on the list does.
+void test_wii_u_menu_offers_the_pointer_where_there_is_one() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.cursor_choosable = true;
+    state.cursor_mode = CursorMode::Shown;
+
+    LayoutPicker picker(registry);
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    picker.open(state);
+    CHECK(!picker.update({UiAction::Left}, {}, kWidth, kHeight).cursor_mode_changed);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    const LayoutPickerResult flipped = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(flipped.cursor_mode_changed);
+    CHECK(!flipped.settings_requested && !flipped.controllers_requested);
+    CHECK(picker.is_open());
+    CHECK(picker.update({UiAction::Right}, {}, kWidth, kHeight).cursor_mode_changed);
+    CHECK(picker.update({UiAction::Left}, {}, kWidth, kHeight).cursor_mode_changed);
+    // Settings is still a row further down.
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).settings_requested);
+}
+
 int main() {
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_on_the_section_it_was_closed_on();
@@ -1584,6 +1613,7 @@ int main() {
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
     test_wii_u_menu_is_a_plain_list();
+    test_wii_u_menu_offers_the_pointer_where_there_is_one();
     test_wii_u_menu_guide_is_just_ok_and_resume();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();
