@@ -191,6 +191,12 @@ public:
     // Which face button means yes. See ConfirmButton; changing it swaps the
     // pair, never leaves both meaning the same thing.
     void set_confirm_button(ConfirmButton choice) { confirm_button_ = choice; }
+    // Whether a pad is read by the letters Steam Input gives its buttons
+    // rather than by where they are -- every pad Steam presents as one of its
+    // virtual gamepads. See reads_by_letter() in input_manager.cpp.
+    static bool reads_by_letter(SDL_GameController* controller);
+    // Whether the pad pressed last is one of those: the prompts follow it.
+    bool last_pad_reads_by_letter() const;
     ConfirmButton confirm_button() const { return confirm_button_; }
 
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }

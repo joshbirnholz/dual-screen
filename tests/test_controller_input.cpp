@@ -124,6 +124,104 @@ void test_each_pad_is_read_on_its_own_in_order() {
     first.detach();
 }
 
+// Steam Input's virtual gamepad, as SDL sees one: Valve's vendor and the
+// virtual gamepad's product. SDL hides these unless asked not to, which Steam
+// does for every game it starts.
+struct SteamPad : VirtualPad {
+    bool attach_as_steam() {
+        SDL_SetHint("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1");
+        SDL_VirtualJoystickDesc desc;
+        SDL_zero(desc);
+        desc.version = SDL_VIRTUAL_JOYSTICK_DESC_VERSION;
+        desc.type = SDL_JOYSTICK_TYPE_GAMECONTROLLER;
+        desc.naxes = 6;
+        desc.nbuttons = SDL_CONTROLLER_BUTTON_MAX;
+        desc.vendor_id = 0x28de;
+        desc.product_id = 0x11ff;
+        desc.name = "Steam Virtual Gamepad";
+        device_index = SDL_JoystickAttachVirtualEx(&desc);
+        if (device_index < 0) return false;
+        SDL_GameControllerUpdate();
+        joystick = SDL_JoystickOpen(device_index);
+        return joystick != nullptr;
+    }
+};
+
+// What a press on a Steam Input pad comes out as, in the game and in a menu.
+struct SteamPress {
+    DsInputState held;
+    std::vector<UiAction> actions;
+    bool by_letter = false;
+    bool attached = false;
+};
+
+SteamPress press_on_steam_pad(SDL_GameControllerButton button, ConfirmButton confirm) {
+    SteamPress out;
+    SteamPad pad;
+    if (!pad.attach_as_steam()) {
+        pad.detach();
+        return out;
+    }
+    out.attached = true;
+    InputManager input;
+    input.initialize(Settings());
+    input.set_confirm_button(confirm);
+    pad.press(button, true);
+    input.begin_frame();
+    SDL_Event event;
+    while (SDL_PollEvent(&event) != 0) input.handle_event(event);
+    input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f, system_profile(SystemId::Ds).screens);
+    out.held = input.ds_state();
+    out.actions = input.ui_actions();
+    out.by_letter = input.last_pad_reads_by_letter();
+    input.shutdown();
+    pad.detach();
+    return out;
+}
+
+bool has_action(const std::vector<UiAction>& actions, UiAction wanted) {
+    for (const UiAction action : actions) {
+        if (action == wanted) return true;
+    }
+    return false;
+}
+
+// A Steam Input pad is read by the letters Steam gives its buttons: its A is
+// the game's A, wherever Steam put it, so a Switch Pro controller set up in
+// Steam with Nintendo's layout and a Steam Controller beside it agree. And A
+// says yes in a menu, whichever place Confirm/Cancel names.
+void test_steam_input_pads_are_read_by_letter() {
+    const struct {
+        SDL_GameControllerButton pressed;
+        DsButton gives;
+    } kLetters[] = {
+        {SDL_CONTROLLER_BUTTON_A, DsButton::A},
+        {SDL_CONTROLLER_BUTTON_B, DsButton::B},
+        {SDL_CONTROLLER_BUTTON_X, DsButton::X},
+        {SDL_CONTROLLER_BUTTON_Y, DsButton::Y},
+    };
+    for (const auto& letter : kLetters) {
+        const SteamPress press = press_on_steam_pad(letter.pressed, ConfirmButton::East);
+        if (!press.attached) {
+            test::skip("this SDL cannot make a virtual pad that looks like Steam's");
+            return;
+        }
+        CHECK_MSG(press.held.pressed(letter.gives),
+                  std::string("Steam's ") + SDL_GameControllerGetStringForButton(letter.pressed) +
+                      " did not reach the game as the same letter");
+        CHECK(press.by_letter);
+    }
+    for (const ConfirmButton confirm : {ConfirmButton::East, ConfirmButton::South}) {
+        CHECK_MSG(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, confirm).actions, UiAction::Confirm),
+                  "Steam's A did not say yes");
+        CHECK_MSG(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, confirm).actions, UiAction::Cancel),
+                  "Steam's B did not say no");
+    }
+    // A pad SDL reads itself is still read by place.
+    const DsInputState placed = press_and_read(SDL_CONTROLLER_BUTTON_A);
+    CHECK_MSG(placed.pressed(DsButton::B), "a pad read by place lost its places");
+}
+
 // Nintendo positional, end to end: south is DS B, east is DS A.
 void test_face_buttons_follow_ds_positions() {
     DsInputState state = press_and_read(SDL_CONTROLLER_BUTTON_A);
@@ -1104,6 +1202,7 @@ int main() {
 
     test_each_pad_is_read_on_its_own_in_order();
     test_holding_a_direction_keeps_moving();
+    test_steam_input_pads_are_read_by_letter();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();

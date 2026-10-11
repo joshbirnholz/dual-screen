@@ -1260,7 +1260,7 @@ Full options:
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |
 | Change how button prompts are drawn | **Controller icons** in Settings: Nintendo letters, PlayStation symbols, Xbox letters, or **Positional** -- four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
-| Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
+| Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. A pad read through Steam Input always confirms with Steam's A -- see Face buttons. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
 
 ### If it quits immediately in Game Mode
 
@@ -1493,26 +1493,35 @@ starts from the beginning and the log says why.
 
 ### Face buttons
 
-Everything — menus and game alike — uses **Nintendo positional** controls:
+**Through Steam Input, a pad is read by the letters Steam gives its buttons.**
+Steam's A is the game's A, B is B, X is X and Y is Y, wherever Steam has put
+them -- and A says yes in every menu, B no. Steam has already decided which of
+a controller's buttons is which (with **Use Nintendo Button Layout**, a Switch
+Pro controller's printed A is A), and that one decision covers every pad at
+once: a Pro controller, a Steam Controller and the Deck's own buttons can be
+mixed in one game -- Nintendo Land with whatever is to hand -- and every one of
+them does what Steam says. The Deck's and a Steam Controller's A is the bottom
+button, so that is the one that says yes; remap it in Steam if you want the
+right-hand one instead. The prompts draw that letter in whichever symbols are
+chosen.
+
+**A pad SDL reads itself** -- not through Steam, or on a desktop without it --
+uses **Nintendo positional** controls:
 
 ```
         north = X
-   west = Y      east = A     confirms menus, and is DS A
+   west = Y      east = A     confirms menus (or south: see Confirm/Cancel), and is DS A
         south = B             cancels menus, and is DS B
 ```
 
-So on an Xbox-layout pad, which is what Steam Input's virtual controller is,
-the button marked **B** confirms and is DS A, and the button marked **A**
-cancels and is DS B. One rule in both places: the button that means "yes" in a
-menu is the button that means A in a game.
+So on an Xbox-layout pad read this way, the button marked **B** is DS A and
+the button marked **A** is DS B: the places a DS has them. SDL is asked to
+report such pads' face buttons by *position* rather than by printed label, and
+**Confirm/Cancel** in Settings chooses which of the two lower ones says yes.
 
-To make that hold without guessing at each pad, SDL is asked to report face
-buttons by *position* rather than by printed label. On-screen prompts still
-name the letters your pad actually prints, so a Switch Pro pad reads "A: Select"
-and an Xbox pad reads "B: Select" — the same physical button either way.
-
-None of it is configurable. Remap the pad in Steam Input if you want something
-else; that is a better place for it than a second set of bindings here. A pad
+Beyond that none of it is configurable. Remap the pad in Steam Input if you
+want something else; that is a better place for it than a second set of
+bindings here. A pad
 SDL has no entry for, or a wrong one, can be corrected without a rebuild by
 dropping a `gamecontrollerdb.txt` next to `settings.json`.
 

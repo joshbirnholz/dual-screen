@@ -235,6 +235,17 @@ void ButtonGlyphSheet::draw(QuadRenderer& quads,
     if (!texture_.valid() || glyph == ButtonGlyph::Count) {
         return;
     }
+    if (by_letter_ && (style_ == PadGlyphStyle::Xbox || style_ == PadGlyphStyle::PlayStation)) {
+        // The place a DS's A is in holds Steam's A on such a pad: drawn as
+        // Xbox's A or PlayStation's cross, which sit south on their own pads.
+        switch (glyph) {
+            case ButtonGlyph::A: glyph = ButtonGlyph::B; break;
+            case ButtonGlyph::B: glyph = ButtonGlyph::A; break;
+            case ButtonGlyph::X: glyph = ButtonGlyph::Y; break;
+            case ButtonGlyph::Y: glyph = ButtonGlyph::X; break;
+            default: break;
+        }
+    }
     const int cell = static_cast<int>(glyph_cell(style_, glyph));
     const float cells = static_cast<float>(static_cast<int>(GlyphCell::Count));
     const float u0 = static_cast<float>(cell) / cells;

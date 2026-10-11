@@ -275,6 +275,45 @@ bool is_steam_virtual_pad(SDL_GameController* controller) {
 }  // namespace
 #endif
 
+namespace {
+
+// A, B, X and Y as their letters rather than their places: the face buttons
+// of a pad read by letter, turned into the places this app reads -- A east,
+// B south, X north, Y west, a DS's own -- so that everything after reading
+// works the one way for every pad.
+SDL_GameControllerButton letter_to_place(SDL_GameControllerButton button) {
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A: return SDL_CONTROLLER_BUTTON_B;
+        case SDL_CONTROLLER_BUTTON_B: return SDL_CONTROLLER_BUTTON_A;
+        case SDL_CONTROLLER_BUTTON_X: return SDL_CONTROLLER_BUTTON_Y;
+        case SDL_CONTROLLER_BUTTON_Y: return SDL_CONTROLLER_BUTTON_X;
+        default: return button;
+    }
+}
+
+}  // namespace
+
+// Steam Input's pads are read by letter. Steam has already decided which of
+// a controller's buttons is A -- for a Switch Pro controller, with "Use
+// Nintendo Button Layout", the one printed A, wherever it sits -- and the
+// player set that up in Steam for every controller at once. Read by place
+// instead, a Pro controller beside a Steam Controller came out with A and B
+// the wrong way round on one of them, whichever way Steam was set. A pad
+// SDL reads itself, without Steam, is still read by place.
+bool InputManager::reads_by_letter(SDL_GameController* controller) {
+#ifdef __SWITCH__
+    (void)controller;
+    return false;
+#else
+    return controller != nullptr && is_steam_virtual_pad(controller);
+#endif
+}
+
+bool InputManager::last_pad_reads_by_letter() const {
+    const auto it = controllers_.find(last_pad_pressed_);
+    return it != controllers_.end() && reads_by_letter(it->second);
+}
+
 bool InputManager::pad_connected(SDL_JoystickID id) const {
 #ifdef __SWITCH__
     // An empty slot has no style at all.
@@ -758,9 +797,15 @@ void InputManager::handle_event(const SDL_Event& event) {
             break;
 
         case SDL_CONTROLLERBUTTONDOWN: {
-            const SDL_GameControllerButton button =
-                static_cast<SDL_GameControllerButton>(event.cbutton.button);
+            SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(event.cbutton.button);
             last_pad_pressed_ = event.cbutton.which;
+            // A Steam Input pad's A is A, wherever Steam put it -- and A says
+            // yes, whichever place Confirm/Cancel names, since on such a pad
+            // the place is Steam's to choose.
+            const auto pressed_on = controllers_.find(event.cbutton.which);
+            const bool by_letter = pressed_on != controllers_.end() && reads_by_letter(pressed_on->second);
+            if (by_letter) button = letter_to_place(button);
+            const ConfirmButton confirm_choice = by_letter ? ConfirmButton::East : confirm_button_;
 
             // Every press is logged under --verbose with the name SDL gives it,
             // so a pad whose buttons arrive as the wrong thing can be
@@ -775,10 +820,10 @@ void InputManager::handle_event(const SDL_Event& event) {
             // PlayStation. The other one of the pair is always the other
             // answer, so the two can never both mean the same thing.
             const char* meaning = "nothing in a menu";
-            if (button == confirm_button_for(confirm_button_)) {
+            if (button == confirm_button_for(confirm_choice)) {
                 push_action(UiAction::Confirm);
                 meaning = "yes";
-            } else if (button == cancel_button_for(confirm_button_)) {
+            } else if (button == cancel_button_for(confirm_choice)) {
                 push_action(UiAction::Cancel);
                 meaning = "no / back";
             } else if (button == kMenuQuitButton) {
@@ -1164,6 +1209,11 @@ RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
     }
     for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
         raw.axes[index] = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(index));
+    }
+    if (reads_by_letter(controller)) {
+        // Into places: Steam's A goes where a DS's A is. See reads_by_letter().
+        std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_A], raw.buttons[SDL_CONTROLLER_BUTTON_B]);
+        std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_X], raw.buttons[SDL_CONTROLLER_BUTTON_Y]);
     }
     return raw;
 }
