@@ -931,7 +931,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 const bool highlighted = on_content_ && item_ == static_cast<int>(index);
                 on_content_ = true;
                 item_ = static_cast<int>(index);
-                if (highlighted) activate_item(result);
+                // A layout, and the swap or stylus button beside them, are
+                // chosen by the first tap: each is undone by tapping the one
+                // before, and seeing it is the point of trying one.
+                if (highlighted || section_ == MenuSection::Layout) activate_item(result);
                 hit = true;
             }
         }

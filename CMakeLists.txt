@@ -185,6 +185,7 @@ add_library(dualscreen_core STATIC
     src/util/child_process.cpp
     src/update/updater.cpp
     src/update/desktop_updater.cpp
+    src/update/zip_extract.cpp
     src/ui/update_prompt.cpp
     src/util/log.cpp
 )

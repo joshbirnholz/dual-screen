@@ -3,6 +3,7 @@
 #include <atomic>
 
 #include "config/paths.hpp"
+#include "update/zip_extract.hpp"
 #include "util/log.hpp"
 
 #if defined(__linux__) && defined(__x86_64__) && !defined(__ANDROID__)
@@ -175,7 +176,8 @@ bool put_in_place(const std::string& from, const std::string& to, std::string& e
 
 class DesktopBackend : public Backend {
 public:
-    explicit DesktopBackend(std::string data_dir) : data_dir_(std::move(data_dir)) {}
+    DesktopBackend(std::string data_dir, std::string cores_dir)
+        : data_dir_(std::move(data_dir)), cores_dir_(std::move(cores_dir)) {}
 
     bool fetch(const std::string& url, std::string& body, const std::atomic<bool>& cancel,
                std::string& error) override {
@@ -217,8 +219,9 @@ public:
 
     bool install(const ComponentSpec& component, const ReleaseInfo& release, const std::string& file,
                  std::string& error) override {
-        const bool done = component.id == Component::Cemu ? install_cemu(release, file, error)
-                                                           : install_dualscreen(file, error);
+        const bool done = component.id == Component::Cemu         ? install_cemu(release, file, error)
+                          : component.source == Source::Buildbot ? install_core(release, file, error)
+                                                                 : install_dualscreen(file, error);
         std::remove(file.c_str());
         return done;
     }
@@ -273,6 +276,25 @@ private:
         return true;
     }
 
+    // A core: the library out of its zip, beside the others in the cores
+    // folder, and which build it is beside that.
+    bool install_core(const ReleaseInfo& release, const std::string& file, std::string& error) {
+        const std::string library = core_library_name(release.asset);
+        if (!ensure_directory(cores_dir_)) {
+            error = "could not make " + cores_dir_;
+            return false;
+        }
+        const std::string unpacked = path_join(staging_dir(), library);
+        if (!extract_zip_entry(file, library, unpacked, &error)) return false;
+        const bool placed = put_in_place(unpacked, path_join(cores_dir_, library), error);
+        std::remove(unpacked.c_str());
+        if (!placed) return false;
+        std::string ignored;
+        write_file_atomically(core_version_file(cores_dir_, library), release.version.data(), release.version.size(),
+                              &ignored);
+        return true;
+    }
+
     bool install_cemu(const ReleaseInfo& release, const std::string& file, std::string& error) {
         const std::string target = managed_cemu_path(data_dir_);
         if (!ensure_directory(path_dirname(target))) {
@@ -288,14 +310,15 @@ private:
     }
 
     std::string data_dir_;
+    std::string cores_dir_;
 };
 
 }  // namespace
 
 bool desktop_updates_supported() { return true; }
 
-std::unique_ptr<Backend> make_desktop_backend(const std::string& data_dir) {
-    return std::make_unique<DesktopBackend>(data_dir);
+std::unique_ptr<Backend> make_desktop_backend(const std::string& data_dir, const std::string& cores_dir) {
+    return std::make_unique<DesktopBackend>(data_dir, cores_dir);
 }
 
 std::string install_dir() {
@@ -330,7 +353,7 @@ void restart_if_requested(char** argv) {
 #else
 
 bool desktop_updates_supported() { return false; }
-std::unique_ptr<Backend> make_desktop_backend(const std::string&) { return nullptr; }
+std::unique_ptr<Backend> make_desktop_backend(const std::string&, const std::string&) { return nullptr; }
 std::string install_dir() { return std::string(); }
 void restart_if_requested(char**) {}
 

@@ -117,9 +117,9 @@ void test_page(const std::string& sandbox) {
     CHECK(melonds_row > 0);
     // Back does nothing on a way in; forwards opens it.
     press(screen, UiAction::Left);
-    CHECK(!screen.on_melonds_page());
+    CHECK(!screen.on_emulators_page());
     press(screen, UiAction::Confirm);
-    CHECK(screen.on_melonds_page());
+    CHECK(screen.on_emulators_page());
     CHECK_EQ(screen.focus(), 0);
 
     // The clock, one step slower; then each frame shown as soon as drawn.
@@ -138,7 +138,7 @@ void test_page(const std::string& sandbox) {
     // Back leaves the page, not Settings, onto the row it was opened from.
     SettingsScreenResult result = press(screen, UiAction::Cancel);
     CHECK(!result.close_requested);
-    CHECK(!screen.on_melonds_page());
+    CHECK(!screen.on_emulators_page());
     CHECK(screen.is_open());
     CHECK_EQ(screen.focus(), melonds_row);
     result = press(screen, UiAction::Cancel);
@@ -158,7 +158,7 @@ void test_page(const std::string& sandbox) {
     plain.open(Settings(), {});
     press(plain, UiAction::Down, 20);
     press(plain, UiAction::Confirm);
-    CHECK(plain.on_melonds_page());
+    CHECK(plain.on_emulators_page());
     press(plain, UiAction::Down, 20);
     CHECK_EQ(plain.focus(), 0);
 
@@ -175,7 +175,7 @@ void test_page(const std::string& sandbox) {
     press(with_saves, UiAction::Down, 20);
     CHECK_EQ(with_saves.focus(), melonds_row + 1);
     press(with_saves, UiAction::Confirm);
-    CHECK(with_saves.on_melonds_page());
+    CHECK(with_saves.on_emulators_page());
     press(with_saves, UiAction::Cancel);
     with_saves.return_from_data_management();
     CHECK_EQ(with_saves.focus(), 0);
@@ -186,7 +186,7 @@ void test_page(const std::string& sandbox) {
     press(none, UiAction::Down, 20);
     CHECK_EQ(none.focus(), melonds_row - 1);
     press(none, UiAction::Confirm);
-    CHECK(!none.on_melonds_page());
+    CHECK(!none.on_emulators_page());
 }
 
 }  // namespace

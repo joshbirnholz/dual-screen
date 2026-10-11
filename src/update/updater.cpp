@@ -37,19 +37,126 @@ std::string release_url(const std::string& repository, const std::string& file) 
     return "https://github.com/" + repository + "/releases/download/nightly/" + file;
 }
 
+std::string buildbot_index_url(const std::string& folder) { return folder + ".index-extended"; }
+
+bool parse_buildbot_index(const std::string& text, const std::vector<std::string>& candidates,
+                          ReleaseInfo& out) {
+    // Each line "<date> <hash> <file>"; the candidates in order of preference.
+    for (const std::string& wanted : candidates) {
+        std::size_t at = 0;
+        while (at < text.size()) {
+            std::size_t end = text.find('\n', at);
+            if (end == std::string::npos) end = text.size();
+            std::string line = text.substr(at, end - at);
+            at = end + 1;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            const std::size_t first = line.find(' ');
+            const std::size_t second = first == std::string::npos ? first : line.find(' ', first + 1);
+            if (second == std::string::npos || line.substr(second + 1) != wanted) continue;
+            ReleaseInfo info;
+            info.built = line.substr(0, first);
+            info.version = line.substr(0, second);
+            info.asset = wanted;
+            out = info;
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string download_url(const ComponentSpec& component, const ReleaseInfo& release) {
+    if (component.source == Source::Buildbot) return component.repository + release.asset;
+    return release_url(component.repository, component.asset);
+}
+
+std::string describe_release(const ComponentSpec& component, const ReleaseInfo& release) {
+    if (component.source == Source::Buildbot) {
+        return release.built.empty() ? std::string("a new build") : "built " + release.built;
+    }
+    return release.build > 0 ? "build " + std::to_string(release.build) : std::string("a local build");
+}
+
+std::string core_library_name(const std::string& asset) {
+    const std::string zip = ".zip";
+    if (asset.size() > zip.size() && asset.compare(asset.size() - zip.size(), zip.size(), zip) == 0) {
+        return asset.substr(0, asset.size() - zip.size());
+    }
+    return asset;
+}
+
+std::string core_version_file(const std::string& cores_dir, const std::string& library) {
+    return path_join(cores_dir, library + ".version");
+}
+
+ComponentSpec core_component(Component id, const std::string& cores_dir, bool in_use) {
+    ComponentSpec core;
+    core.id = id;
+    core.source = Source::Buildbot;
+    core.repository = kBuildbotLinux;
+    core.automatic = in_use;
+    if (id == Component::ThreeDsCore) {
+        core.name = "Azahar";
+        // Azahar's own first, as core_search_paths() prefers it: the one with
+        // motion. Citra where the buildbot has no Azahar.
+        core.candidates = {"azahar_libretro.so.zip", "citra_libretro.so.zip"};
+    } else {
+        core.name = "melonDS DS";
+        core.candidates = {"melondsds_libretro.so.zip"};
+    }
+    core.asset = core.candidates.front();
+    core.installed = kNotInstalled;
+    for (const std::string& candidate : core.candidates) {
+        const std::string library = core_library_name(candidate);
+        if (!file_exists(path_join(cores_dir, library))) continue;
+        core.asset = candidate;
+        std::vector<uint8_t> bytes;
+        core.installed_version = read_file(core_version_file(cores_dir, library), bytes, nullptr)
+                                     ? std::string(bytes.begin(), bytes.end())
+                                     : std::string("unknown");
+        while (!core.installed_version.empty() &&
+               (core.installed_version.back() == '\n' || core.installed_version.back() == '\r')) {
+            core.installed_version.pop_back();
+        }
+        core.installed = kLocalBuild;
+        if (candidate.rfind("citra", 0) == 0) core.name = "Citra";
+        break;
+    }
+    return core;
+}
+
 bool worth_offering(const ComponentSpec& component, const ReleaseInfo& release, bool asked) {
+    if (!component.automatic && !asked) return false;
+    if (component.source == Source::Buildbot) {
+        // Told apart by date and hash: any other build than the one here is
+        // the newer, the buildbot keeping only its latest.
+        if (release.version.empty()) return false;
+        if (component.installed_version.empty()) return asked;
+        return release.version != component.installed_version;
+    }
     if (release.build <= 0) return false;
     if (component.installed > 0) return release.build > component.installed;
     return asked;
 }
 
 std::vector<ComponentSpec> components_for(const std::string& platform_asset, int dualscreen_build,
-                                          bool keeps_cemu, int cemu_installed) {
+                                          bool keeps_cemu, int cemu_installed, bool cemu_in_use) {
     std::vector<ComponentSpec> components;
-    components.push_back(
-        ComponentSpec{Component::Dualscreen, "Dualscreen", kDualscreenRepository, platform_asset, dualscreen_build});
+    ComponentSpec dualscreen;
+    dualscreen.id = Component::Dualscreen;
+    dualscreen.name = "Dualscreen";
+    dualscreen.repository = kDualscreenRepository;
+    dualscreen.asset = platform_asset;
+    dualscreen.installed = dualscreen_build;
+    components.push_back(dualscreen);
     if (keeps_cemu) {
-        components.push_back(ComponentSpec{Component::Cemu, "Cemu", kCemuRepository, kCemuAsset, cemu_installed});
+        ComponentSpec cemu;
+        cemu.id = Component::Cemu;
+        cemu.name = "Cemu";
+        cemu.repository = kCemuRepository;
+        cemu.asset = kCemuAsset;
+        cemu.installed = cemu_installed;
+        cemu.automatic = cemu_in_use;
+        components.push_back(cemu);
     }
     return components;
 }
@@ -125,7 +232,14 @@ void Updater::start(std::function<void()> work) {
     });
 }
 
-void Updater::check(bool asked) {
+void Updater::set_automatic(Component id, bool automatic) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (ComponentSpec& component : components_) {
+        if (component.id == id) component.automatic = automatic;
+    }
+}
+
+void Updater::check(bool asked, std::optional<Component> only) {
     if (busy() || !backend_) return;
     set([&](Status& status) {
         status.phase = Phase::Checking;
@@ -133,22 +247,50 @@ void Updater::check(bool asked) {
         status.error.clear();
         ++status.round;
     });
-    start([this, asked] { run_check(asked); });
+    start([this, asked, only] { run_check(asked, only); });
 }
 
-void Updater::run_check(bool asked) {
+void Updater::run_check(bool asked, std::optional<Component> only) {
     std::vector<Offer> offers;
     int newest = 0;
-    for (const ComponentSpec& component : components()) {
+    // The buildbot's index, fetched once for every core that wants it.
+    std::string index;
+    bool index_fetched = false;
+    std::string index_error;
+    for (ComponentSpec component : components()) {
+        if (only && component.id != *only) continue;
+        if (!only && !component.automatic) continue;
         std::string body;
         std::string error;
         ReleaseInfo release;
-        const std::string url = release_url(component.repository, "version.json");
-        if (!backend_->fetch(url, body, cancel_, error) || !parse_release_info(body, release, &error)) {
+        bool seen = false;
+        if (component.source == Source::Buildbot) {
+            if (!index_fetched) {
+                index_fetched = true;
+                if (!backend_->fetch(buildbot_index_url(component.repository), index, cancel_, index_error)) {
+                    index.clear();
+                }
+            }
+            error = index_error;
+            if (!index.empty()) {
+                seen = parse_buildbot_index(index, component.candidates, release);
+                if (!seen) error = "the buildbot has no " + component.name + " for this device";
+            }
+            if (seen) {
+                // Whichever of its files the buildbot has is the one it is.
+                component.asset = release.asset;
+                if (release.asset.rfind("citra", 0) == 0) component.name = "Citra";
+            }
+        } else {
+            seen = backend_->fetch(release_url(component.repository, "version.json"), body, cancel_, error) &&
+                   parse_release_info(body, release, &error);
+        }
+        if (!seen) {
             log_info("updates: could not see " + component.name + "'s newest build: " + error);
-            // Dualscreen's own is the one that matters; a Cemu that cannot be
-            // checked is only not offered.
-            if (component.id == Component::Dualscreen) {
+            // Dualscreen's own is the one that matters -- or the one asked
+            // about by name; a Cemu that cannot be checked beside Dualscreen
+            // is only not offered.
+            if (component.id == Component::Dualscreen || only) {
                 set([&](Status& status) {
                     status.phase = Phase::Failed;
                     status.error = error;
@@ -160,10 +302,17 @@ void Updater::run_check(bool asked) {
         }
         if (component.id == Component::Dualscreen) newest = release.build;
         const bool offered = worth_offering(component, release, asked);
-        log_info("updates: " + component.name + "'s newest is build " + std::to_string(release.build) +
-                 (component.installed > 0 ? ", this is build " + std::to_string(component.installed)
-                  : component.installed == kNotInstalled ? ", none here" : ", this is a local build") +
-                 (offered ? "; offering it" : ""));
+        if (component.source == Source::Buildbot) {
+            log_info("updates: the buildbot's " + component.name + " is " + release.version +
+                     (component.installed_version.empty() ? ", none here"
+                                                          : ", the one here " + component.installed_version) +
+                     (offered ? "; offering it" : ""));
+        } else {
+            log_info("updates: " + component.name + "'s newest is build " + std::to_string(release.build) +
+                     (component.installed > 0 ? ", this is build " + std::to_string(component.installed)
+                      : component.installed == kNotInstalled ? ", none here" : ", this is a local build") +
+                     (offered ? "; offering it" : ""));
+        }
         if (offered) offers.push_back(Offer{component, release});
     }
     set([&](Status& status) {
@@ -211,9 +360,9 @@ void Updater::run_install(std::vector<Offer> offers) {
         const std::string file = path_join(staging, offer.component.asset);
         std::remove(file.c_str());
         std::string error;
-        const std::string url = release_url(offer.component.repository, offer.component.asset);
-        log_info("updates: downloading " + offer.component.name + " build " + std::to_string(offer.release.build) +
-                 " from " + url);
+        const std::string url = download_url(offer.component, offer.release);
+        log_info("updates: downloading " + offer.component.name + " " +
+                 describe_release(offer.component, offer.release) + " from " + url);
         const bool downloaded = backend_->download(
             url, file, cancel_, [this](int64_t done, int64_t total) {
                 set([&](Status& status) {
@@ -259,7 +408,7 @@ void Updater::run_install(std::vector<Offer> offers) {
             });
             return;
         }
-        log_info("updates: " + offer.component.name + " build " + std::to_string(offer.release.build) +
+        log_info("updates: " + offer.component.name + " " + describe_release(offer.component, offer.release) +
                  " is installed");
         if (offer.component.id == Component::Dualscreen) {
             if (backend_->restarts_after_install()) {
@@ -271,7 +420,11 @@ void Updater::run_install(std::vector<Offer> offers) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (ComponentSpec& component : components_) {
-                if (component.id == offer.component.id) component.installed = offer.release.build;
+                if (component.id != offer.component.id) continue;
+                component.installed = offer.component.source == Source::Buildbot ? kLocalBuild : offer.release.build;
+                component.installed_version = offer.release.version;
+                component.asset = offer.component.asset;
+                component.name = offer.component.name;
             }
         }
     }

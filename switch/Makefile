@@ -143,7 +143,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
-               child_process.cpp updater.cpp desktop_updater.cpp update_prompt.cpp
+               child_process.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp
 
 # Making forwarders -- X on a ROM in the file picker: the Switch's half, which
 # the desktop app has no use for. forwarder/ is Sphaira's forwarder code,

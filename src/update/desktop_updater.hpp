@@ -26,8 +26,9 @@ bool desktop_updates_supported();
 inline constexpr const char* kSteamOsAsset = "dualscreen-steamos.tar.gz";
 
 // `data_dir` is AppPaths::data_dir: downloads are staged under it, and Cemu
-// kept in it. Null where desktop_updates_supported() is false.
-std::unique_ptr<Backend> make_desktop_backend(const std::string& data_dir);
+// kept in it. `cores_dir` is where the DS and 3DS cores go -- see
+// core_component(). Null where desktop_updates_supported() is false.
+std::unique_ptr<Backend> make_desktop_backend(const std::string& data_dir, const std::string& cores_dir);
 
 // The folder this program runs from, which an update replaces.
 std::string install_dir();

@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -31,8 +32,13 @@ namespace ds::update {
 struct ReleaseInfo {
     int build = 0;
     std::string commit;
-    // When it was built, as CI wrote it: an ISO 8601 time in UTC.
+    // When it was built, as CI wrote it: an ISO 8601 time in UTC. For a
+    // libretro core, the buildbot's date.
     std::string built;
+    // A libretro core's: which build it is, as the buildbot's index says --
+    // its date and hash -- and which of the component's files it is.
+    std::string version;
+    std::string asset;
 };
 
 // Reads version.json. False, with why, for anything that is not one -- a
@@ -42,7 +48,22 @@ bool parse_release_info(const std::string& text, ReleaseInfo& out, std::string* 
 // Where a file of a repository's nightly release is downloaded from.
 std::string release_url(const std::string& repository, const std::string& file);
 
-enum class Component { Dualscreen, Cemu };
+enum class Component { Dualscreen, Cemu, DsCore, ThreeDsCore };
+
+// Where a component's builds come from: a GitHub repository's rolling
+// "nightly" release, numbered by CI, or libretro's buildbot -- the same place
+// RetroArch's own core downloader looks -- whose builds are told apart by
+// their date and hash.
+enum class Source { GitHubNightly, Buildbot };
+
+// The buildbot's folder of x86-64 Linux cores, and its index of them: a line
+// per core, "<date> <hash> <file>".
+inline constexpr const char* kBuildbotLinux = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/";
+std::string buildbot_index_url(const std::string& folder);
+// Reads that index: for the first of `candidates` it lists, its file, and its
+// date and hash as the version. False when it lists none of them.
+bool parse_buildbot_index(const std::string& text, const std::vector<std::string>& candidates,
+                          ReleaseInfo& out);
 
 // The installed builds of a component, as far as this device knows them.
 inline constexpr int kNotInstalled = -1;
@@ -51,21 +72,39 @@ inline constexpr int kLocalBuild = 0;
 
 struct ComponentSpec {
     Component id = Component::Dualscreen;
-    // What the player is told it is: "Dualscreen", "Cemu".
+    // What the player is told it is: "Dualscreen", "Cemu", "melonDS DS".
     std::string name;
-    // Whose nightly release it comes from: "owner/repository".
+    // Whose nightly release it comes from: "owner/repository". For a core,
+    // the buildbot's folder.
     std::string repository;
     // Its file in that release.
     std::string asset;
     // The build here: a CI run's number, kLocalBuild or kNotInstalled.
     int installed = kLocalBuild;
+    // Whether a check made at start-up, or Settings' Updates row, looks at it
+    // at all. Cemu and the cores only while they are the ones games are
+    // played with; otherwise only when the Emulators page asks by name.
+    bool automatic = true;
+    Source source = Source::GitHubNightly;
+    // A core's: the files it may be on the buildbot, the one wanted first
+    // first -- Azahar, then Citra -- and the version installed, empty when
+    // none is (installed is then kNotInstalled).
+    std::vector<std::string> candidates;
+    std::string installed_version;
 };
+
+// Where a component's release file is downloaded from.
+std::string download_url(const ComponentSpec& component, const ReleaseInfo& release);
+// What a release is called to the player: "build 15", or a core's date.
+std::string describe_release(const ComponentSpec& component, const ReleaseInfo& release);
 
 // Whether `release` is worth offering in place of what `component` has. A
 // build from CI is offered anything newer. A local build, or nothing at all,
 // is offered the nightly only when the player asked -- a build made by hand
 // is somebody working on this, and an app they did not ask for is not one to
 // put on their screen at every start.
+// `asked` is whether the player asked about this component: Settings'
+// Updates row, for one that is automatic, or the Emulators page, for Cemu.
 bool worth_offering(const ComponentSpec& component, const ReleaseInfo& release, bool asked);
 
 // Where the work of fetching and installing is done, which is all a platform's
@@ -154,8 +193,12 @@ public:
     Updater(const Updater&) = delete;
     Updater& operator=(const Updater&) = delete;
 
-    // Looks for newer builds. Nothing, while a check or an install is going.
-    void check(bool asked);
+    // Looks for newer builds -- of `only`, when given, and of everything
+    // automatic otherwise. Nothing, while a check or an install is going.
+    void check(bool asked, std::optional<Component> only = std::nullopt);
+    // Whether `id` is looked at without being asked for by name -- see
+    // ComponentSpec::automatic. Cemu becomes so once it is the Wii U program.
+    void set_automatic(Component id, bool automatic);
     // Downloads and installs what the last check offered.
     void install();
     // Stops a download as soon as it can.
@@ -172,7 +215,7 @@ public:
     void wait();
 
 private:
-    void run_check(bool asked);
+    void run_check(bool asked, std::optional<Component> only);
     void run_install(std::vector<Offer> offers);
     void start(std::function<void()> work);
     void set(const std::function<void(Status&)>& change);
@@ -193,7 +236,7 @@ private:
 // Deck whose Wii U program is the one Dualscreen keeps (see
 // managed_cemu_path()).
 std::vector<ComponentSpec> components_for(const std::string& platform_asset, int dualscreen_build,
-                                          bool keeps_cemu, int cemu_installed);
+                                          bool keeps_cemu, int cemu_installed, bool cemu_in_use = true);
 
 // Where the repositories are.
 inline constexpr const char* kDualscreenRepository = "joshbirnholz/dual-screen";
@@ -207,5 +250,15 @@ std::string managed_cemu_path(const std::string& data_dir);
 std::string managed_cemu_build_file(const std::string& data_dir);
 // The build of the Cemu there, or kNotInstalled.
 int managed_cemu_build(const std::string& data_dir);
+
+// The DS and 3DS cores, from the buildbot, kept in `cores_dir` -- this app's
+// own cores folder, the first place core_search_paths() looks -- beside a
+// "<core>.version" file saying which build each is. `in_use` is whether the
+// one there is the one games are played with, which makes it automatic.
+ComponentSpec core_component(Component id, const std::string& cores_dir, bool in_use);
+// The file a core's zip holds: "melondsds_libretro.so.zip" holds
+// "melondsds_libretro.so".
+std::string core_library_name(const std::string& asset);
+std::string core_version_file(const std::string& cores_dir, const std::string& library);
 
 }  // namespace ds::update

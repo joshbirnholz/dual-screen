@@ -13,6 +13,9 @@
 #include "config/paths.hpp"
 #include "ui/update_prompt.hpp"
 #include "update/updater.hpp"
+#include "update/zip_extract.hpp"
+
+#include <zlib.h>
 
 namespace {
 
@@ -78,6 +81,23 @@ struct FakeBackend : Backend {
     bool restarts_after_install() const override { return restarts; }
 };
 
+ComponentSpec spec(Component id, const std::string& name, const std::string& repository,
+                   const std::string& asset, int installed) {
+    ComponentSpec component;
+    component.id = id;
+    component.name = name;
+    component.repository = repository;
+    component.asset = asset;
+    component.installed = installed;
+    return component;
+}
+
+ReleaseInfo release_numbered(int build) {
+    ReleaseInfo release;
+    release.build = build;
+    return release;
+}
+
 const std::string kDualscreenVersion = release_url(kDualscreenRepository, "version.json");
 const std::string kCemuVersion = release_url(kCemuRepository, "version.json");
 
@@ -107,8 +127,8 @@ void test_release_urls_are_the_rolling_nightly() {
 // A build from CI is offered anything newer, and nothing else. A local build,
 // or a component not installed, only when the player asked.
 void test_what_is_worth_offering() {
-    const ReleaseInfo newest{15, "", ""};
-    ComponentSpec from_ci{Component::Dualscreen, "Dualscreen", kDualscreenRepository, "x", 12};
+    const ReleaseInfo newest = release_numbered(15);
+    ComponentSpec from_ci = spec(Component::Dualscreen, "Dualscreen", kDualscreenRepository, "x", 12);
     CHECK(worth_offering(from_ci, newest, false));
     from_ci.installed = 15;
     CHECK(!worth_offering(from_ci, newest, false));
@@ -116,11 +136,11 @@ void test_what_is_worth_offering() {
     from_ci.installed = 16;
     CHECK(!worth_offering(from_ci, newest, true));
 
-    ComponentSpec local{Component::Dualscreen, "Dualscreen", kDualscreenRepository, "x", kLocalBuild};
+    ComponentSpec local = spec(Component::Dualscreen, "Dualscreen", kDualscreenRepository, "x", kLocalBuild);
     CHECK(!worth_offering(local, newest, false));
     CHECK(worth_offering(local, newest, true));
 
-    ComponentSpec missing{Component::Cemu, "Cemu", kCemuRepository, kCemuAsset, kNotInstalled};
+    ComponentSpec missing = spec(Component::Cemu, "Cemu", kCemuRepository, kCemuAsset, kNotInstalled);
     CHECK(!worth_offering(missing, newest, false));
     CHECK(worth_offering(missing, newest, true));
 }
@@ -361,6 +381,192 @@ void test_up_to_date_is_said_when_asked() {
     CHECK(!prompt.open());
 }
 
+// The buildbot's index: the first of a core's files it lists, by its date
+// and hash.
+void test_reads_the_buildbot_index() {
+    const std::string index =
+        "2026-10-09 1a2b3c4d citra_libretro.so.zip\r\n"
+        "2026-10-10 5e6f7a8b melondsds_libretro.so.zip\n"
+        "2026-10-08 99999999 melonds_libretro.so.zip\n";
+    ReleaseInfo release;
+    CHECK(parse_buildbot_index(index, {"melondsds_libretro.so.zip"}, release));
+    CHECK_STR_EQ(release.version, std::string("2026-10-10 5e6f7a8b"));
+    CHECK_STR_EQ(release.built, std::string("2026-10-10"));
+    CHECK_STR_EQ(release.asset, std::string("melondsds_libretro.so.zip"));
+    // Azahar wanted, Citra there: Citra.
+    CHECK(parse_buildbot_index(index, {"azahar_libretro.so.zip", "citra_libretro.so.zip"}, release));
+    CHECK_STR_EQ(release.asset, std::string("citra_libretro.so.zip"));
+    CHECK_STR_EQ(release.version, std::string("2026-10-09 1a2b3c4d"));
+    // A name that only ends the same is not the core.
+    CHECK(!parse_buildbot_index("2026-10-10 5e6f7a8b xmelondsds_libretro.so.zip\n", {"melondsds_libretro.so.zip"},
+                                release));
+    CHECK_STR_EQ(download_url(core_component(Component::DsCore, "/nowhere", false), release),
+                 std::string(kBuildbotLinux) + "citra_libretro.so.zip");
+}
+
+// A core is offered when it is a different build from the one here, and --
+// not installed, or not the one in use -- only when asked for by name.
+void test_cores_are_offered_by_version() {
+    ReleaseInfo release;
+    release.version = "2026-10-10 5e6f7a8b";
+    ComponentSpec core = core_component(Component::DsCore, "/nowhere", true);
+    CHECK_EQ(core.installed, kNotInstalled);
+    CHECK(!worth_offering(core, release, false));
+    CHECK(worth_offering(core, release, true));
+    core.installed = kLocalBuild;
+    core.installed_version = "2026-10-01 00000000";
+    CHECK(worth_offering(core, release, false));
+    core.installed_version = release.version;
+    CHECK(!worth_offering(core, release, true));
+    core.installed_version = "2026-10-01 00000000";
+    core.automatic = false;
+    CHECK(!worth_offering(core, release, false));
+    CHECK(worth_offering(core, release, true));
+}
+
+// Asked for by name on the Emulators page: downloaded from the buildbot,
+// Citra standing in where it has no Azahar, and nothing else looked at.
+void test_a_core_is_downloaded_when_asked() {
+    auto backend = std::make_unique<FakeBackend>();
+    FakeBackend* fake = backend.get();
+    fake->staging = make_temp_dir();
+    fake->pages[buildbot_index_url(kBuildbotLinux)] = "2026-10-09 1a2b3c4d citra_libretro.so.zip\n";
+    std::vector<ComponentSpec> components = components_for("dualscreen-steamos.tar.gz", 12, true, kNotInstalled, false);
+    components.push_back(core_component(Component::ThreeDsCore, make_temp_dir(), false));
+    Updater updater(std::move(backend), components);
+    // Not automatic: Settings' Updates row does not look at it.
+    updater.check(true);
+    updater.wait();
+    CHECK(updater.status().phase == Phase::Failed);  // no Dualscreen page in the fake
+    updater.check(true, Component::ThreeDsCore);
+    updater.wait();
+    Status status = updater.status();
+    CHECK(status.phase == Phase::Checked);
+    CHECK_EQ(static_cast<int>(status.offers.size()), 1);
+    if (status.offers.size() == 1) {
+        CHECK_STR_EQ(status.offers.front().component.name, std::string("Citra"));
+        CHECK_STR_EQ(describe_release(status.offers.front().component, status.offers.front().release),
+                     std::string("built 2026-10-09"));
+    }
+    updater.install();
+    updater.wait();
+    status = updater.status();
+    CHECK(status.phase == Phase::Installed);
+    CHECK(!status.restart);
+    CHECK_STR_EQ(fake->downloaded.front(), std::string(kBuildbotLinux) + "citra_libretro.so.zip");
+    for (const ComponentSpec& component : updater.components()) {
+        if (component.id != Component::ThreeDsCore) continue;
+        CHECK_STR_EQ(component.installed_version, std::string("2026-10-09 1a2b3c4d"));
+        CHECK_STR_EQ(component.asset, std::string("citra_libretro.so.zip"));
+    }
+}
+
+// What core_component() finds in the cores folder.
+void test_finds_the_cores_here() {
+    const std::string cores = make_temp_dir();
+    auto touch = [](const std::string& path, const std::string& text) {
+        FILE* file = std::fopen(path.c_str(), "wb");
+        if (file == nullptr) return;
+        std::fputs(text.c_str(), file);
+        std::fclose(file);
+    };
+    touch(ds::path_join(cores, "citra_libretro.so"), "x");
+    ComponentSpec three = core_component(Component::ThreeDsCore, cores, true);
+    CHECK_EQ(three.installed, kLocalBuild);
+    CHECK_STR_EQ(three.name, std::string("Citra"));
+    CHECK_STR_EQ(three.installed_version, std::string("unknown"));
+    touch(core_version_file(cores, "citra_libretro.so"), "2026-10-09 1a2b3c4d\n");
+    three = core_component(Component::ThreeDsCore, cores, true);
+    CHECK_STR_EQ(three.installed_version, std::string("2026-10-09 1a2b3c4d"));
+    // Azahar, once it is there, ahead of Citra.
+    touch(ds::path_join(cores, "azahar_libretro.so"), "x");
+    CHECK_STR_EQ(core_component(Component::ThreeDsCore, cores, true).name, std::string("Azahar"));
+    CHECK_STR_EQ(core_library_name("melondsds_libretro.so.zip"), std::string("melondsds_libretro.so"));
+}
+
+// A zip of two files, one stored and one deflated, the way a zip tool writes
+// them.
+std::vector<uint8_t> make_zip(const std::vector<std::pair<std::string, std::string>>& files) {
+    std::vector<uint8_t> out;
+    std::vector<uint8_t> directory;
+    auto put16 = [](std::vector<uint8_t>& to, uint32_t v) {
+        to.push_back(v & 0xFF);
+        to.push_back((v >> 8) & 0xFF);
+    };
+    auto put32 = [&](std::vector<uint8_t>& to, uint32_t v) {
+        put16(to, v & 0xFFFF);
+        put16(to, v >> 16);
+    };
+    for (std::size_t index = 0; index < files.size(); ++index) {
+        const std::string& name = files[index].first;
+        const std::string& body = files[index].second;
+        const bool deflated = index % 2 == 1;
+        std::vector<uint8_t> packed(body.begin(), body.end());
+        if (deflated) {
+            packed.assign(body.size() + 64, 0);
+            z_stream stream{};
+            deflateInit2(&stream, 9, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+            stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(body.data()));
+            stream.avail_in = static_cast<uInt>(body.size());
+            stream.next_out = packed.data();
+            stream.avail_out = static_cast<uInt>(packed.size());
+            deflate(&stream, Z_FINISH);
+            packed.resize(stream.total_out);
+            deflateEnd(&stream);
+        }
+        const uint32_t crc = static_cast<uint32_t>(
+            crc32(crc32(0L, Z_NULL, 0), reinterpret_cast<const Bytef*>(body.data()), static_cast<uInt>(body.size())));
+        const uint32_t offset = static_cast<uint32_t>(out.size());
+        put32(out, 0x04034b50); put16(out, 20); put16(out, 0); put16(out, deflated ? 8 : 0);
+        put16(out, 0); put16(out, 0); put32(out, crc);
+        put32(out, static_cast<uint32_t>(packed.size())); put32(out, static_cast<uint32_t>(body.size()));
+        put16(out, static_cast<uint32_t>(name.size())); put16(out, 0);
+        out.insert(out.end(), name.begin(), name.end());
+        out.insert(out.end(), packed.begin(), packed.end());
+        put32(directory, 0x02014b50); put16(directory, 20); put16(directory, 20); put16(directory, 0);
+        put16(directory, deflated ? 8 : 0); put16(directory, 0); put16(directory, 0); put32(directory, crc);
+        put32(directory, static_cast<uint32_t>(packed.size())); put32(directory, static_cast<uint32_t>(body.size()));
+        put16(directory, static_cast<uint32_t>(name.size())); put16(directory, 0); put16(directory, 0);
+        put16(directory, 0); put16(directory, 0); put32(directory, 0); put32(directory, offset);
+        directory.insert(directory.end(), name.begin(), name.end());
+    }
+    const uint32_t directory_offset = static_cast<uint32_t>(out.size());
+    out.insert(out.end(), directory.begin(), directory.end());
+    put32(out, 0x06054b50); put16(out, 0); put16(out, 0);
+    put16(out, static_cast<uint32_t>(files.size())); put16(out, static_cast<uint32_t>(files.size()));
+    put32(out, static_cast<uint32_t>(directory.size())); put32(out, directory_offset); put16(out, 0);
+    return out;
+}
+
+void test_reads_a_core_out_of_its_zip() {
+    const std::string folder = make_temp_dir();
+    const std::string zip = ds::path_join(folder, "core.zip");
+    std::string big(100000, 'a');
+    for (std::size_t i = 0; i < big.size(); i += 7) big[i] = static_cast<char>('a' + i % 26);
+    const std::vector<uint8_t> bytes = make_zip({{"readme.txt", "hello"}, {"melondsds_libretro.so", big}});
+    CHECK(ds::write_file_atomically(zip, bytes.data(), bytes.size(), nullptr));
+    std::vector<std::string> names;
+    CHECK(list_zip(zip, names, nullptr));
+    CHECK_EQ(static_cast<int>(names.size()), 2);
+    std::string error;
+    const std::string out = ds::path_join(folder, "melondsds_libretro.so");
+    CHECK(extract_zip_entry(zip, "melondsds_libretro.so", out, &error));
+    std::vector<uint8_t> got;
+    CHECK(ds::read_file(out, got, nullptr));
+    CHECK(std::string(got.begin(), got.end()) == big);
+    CHECK(extract_zip_entry(zip, "readme.txt", ds::path_join(folder, "readme.txt"), &error));
+    CHECK(!extract_zip_entry(zip, "missing.so", ds::path_join(folder, "missing.so"), &error));
+    CHECK(!error.empty());
+    // Damaged: a byte of the deflated data changed fails its CRC or inflate.
+    std::vector<uint8_t> broken = bytes;
+    broken[200] ^= 0xFF;  // inside the deflated entry, which starts at 96
+    CHECK(ds::write_file_atomically(zip, broken.data(), broken.size(), nullptr));
+    CHECK(!extract_zip_entry(zip, "melondsds_libretro.so", out + ".2", &error));
+    // Not a zip at all.
+    CHECK(ds::write_file_atomically(zip, "<html>", 6, nullptr));
+    CHECK(!list_zip(zip, names, &error));
+}
+
 }  // namespace
 
 int main() {
@@ -377,5 +583,10 @@ int main() {
     test_the_prompt_offers_and_installs();
     test_not_now_is_remembered();
     test_up_to_date_is_said_when_asked();
+    test_reads_the_buildbot_index();
+    test_cores_are_offered_by_version();
+    test_a_core_is_downloaded_when_asked();
+    test_finds_the_cores_here();
+    test_reads_a_core_out_of_its_zip();
     return test::finish("updater");
 }

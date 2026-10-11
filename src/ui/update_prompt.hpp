@@ -20,6 +20,9 @@ struct UpdatePromptResult {
     // Cemu was installed where Dualscreen keeps it -- the shell makes it the
     // Wii U program if none was set.
     bool cemu_installed = false;
+    // Every component installed: Cemu, or a core, which the shell makes the
+    // one its console is played with.
+    std::vector<update::Component> installed;
 };
 
 // The popups that go with the updater (update/updater.hpp): a newer build
@@ -43,8 +46,12 @@ public:
     // the shell is somewhere it can be -- see poll().
     void check_at_start();
     // Settings' Updates row was chosen: checks again, and says what it
-    // finds -- or, while one is already found, offers it.
-    void choose();
+    // finds -- or, while one is already found, offers it. With `only`, the
+    // Emulators page's row for that one component instead -- Cemu's.
+    void choose(std::optional<update::Component> only = std::nullopt);
+    // What a component's row says: its build, "Not installed", or what the
+    // updater is doing with it.
+    std::string component_value(update::Component id) const;
 
     // Every frame. `may_offer` is whether the shell is somewhere a newer
     // build found at start-up can be offered -- its main menu -- rather than
@@ -84,6 +91,7 @@ private:
     // something, or one asked for, which is answered either way.
     int waiting_round_ = 0;
     bool waiting_asked_ = false;
+    std::optional<update::Component> waiting_only_;
     bool offered_at_start_ = false;
     // Whether the offer up is the start-up one, and what it offered.
     bool offer_from_start_ = false;
@@ -92,7 +100,7 @@ private:
     // The round of the install the progress popup is showing, whether Cemu
     // is part of it, and whether the restart it ended in has been passed on.
     int install_round_ = 0;
-    bool installing_cemu_ = false;
+    std::vector<update::Offer> installing_;
     bool restart_reported_ = false;
     // The status as of the last poll, for drawing.
     update::Status status_;

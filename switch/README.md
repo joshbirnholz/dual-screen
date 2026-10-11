@@ -328,7 +328,7 @@ Two things it needs that libretro's melonDS does not:
   too little for that; start Dualscreen through a game (hold R while starting
   one) instead. If there is not enough, the game says so rather than starting.
 
-Two things about how it runs are in **Settings > melonDS**, and take effect the
+Two things about how it runs are in **Settings > Emulators**, under Nintendo DS,, and take effect the
 next time a game starts:
 
 - **CPU clock while playing**: 1785 MHz unless set lower, for a cooler

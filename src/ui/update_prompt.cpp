@@ -39,9 +39,10 @@ void UpdatePrompt::check_at_start() {
     updater_->check(false);
     waiting_round_ = updater_->status().round;
     waiting_asked_ = false;
+    waiting_only_.reset();
 }
 
-void UpdatePrompt::choose() {
+void UpdatePrompt::choose(std::optional<update::Component> only) {
     if (updater_ == nullptr) return;
     const update::Status status = updater_->status();
     if (updater_->busy()) {
@@ -57,23 +58,75 @@ void UpdatePrompt::choose() {
         }
         return;
     }
-    updater_->check(true);
+    updater_->check(true, only);
     waiting_round_ = updater_->status().round;
     waiting_asked_ = true;
+    waiting_only_ = only;
+}
+
+std::string UpdatePrompt::component_value(update::Component id) const {
+    if (updater_ == nullptr) return std::string();
+    std::string name;
+    int installed = update::kNotInstalled;
+    bool core = false;
+    std::string built;
+    for (const update::ComponentSpec& component : updater_->components()) {
+        if (component.id == id) {
+            name = component.name;
+            installed = component.installed;
+            core = component.source == update::Source::Buildbot;
+            // "<date> <hash>": the date, which is what tells builds apart to
+            // a person.
+            built = component.installed_version.substr(0, component.installed_version.find(' '));
+        }
+    }
+    const bool this_one = status_.current == name;
+    switch (status_.phase) {
+        case Phase::Checking:
+            if (waiting_only_ == id) return "Checking...";
+            break;
+        case Phase::Downloading:
+            if (this_one) {
+                return status_.progress >= 0.0f ? "Downloading " + percent(status_.progress) : "Downloading...";
+            }
+            break;
+        case Phase::Installing:
+            if (this_one) return "Installing...";
+            break;
+        case Phase::Checked:
+            for (const update::Offer& offer : status_.offers) {
+                if (offer.component.id == id && installed != update::kNotInstalled) {
+                    return core ? std::string("Update available")
+                                : "Build " + std::to_string(offer.release.build) + " available";
+                }
+            }
+            break;
+        default: break;
+    }
+    if (installed == update::kNotInstalled) return "Not installed";
+    if (core) return built.size() == 10 ? "Built " + built : std::string("Installed");
+    return installed > 0 ? "Build " + std::to_string(installed) : std::string("Installed");
 }
 
 void UpdatePrompt::show_offer(const update::Status& status) {
     const bool one = status.offers.size() == 1;
-    message_ = one ? status.offers.front().component.name + " " + describe_build(status.offers.front().release.build) +
+    message_ = one ? status.offers.front().component.name + " " +
+                         update::describe_release(status.offers.front().component, status.offers.front().release) +
                          " is available."
                    : std::string("Updates are available.");
     lines_.clear();
     bool replaces_dualscreen = false;
     for (const update::Offer& offer : status.offers) {
-        const std::string newest = offer.component.name + " " + describe_build(offer.release.build);
+        const std::string newest =
+            offer.component.name + " " + update::describe_release(offer.component, offer.release);
+        const char* plays = offer.component.id == Component::Cemu          ? " to play Wii U games."
+                            : offer.component.id == Component::DsCore      ? " to play DS games."
+                            : offer.component.id == Component::ThreeDsCore ? " to play 3DS games."
+                                                                          : ".";
         if (offer.component.installed == update::kNotInstalled) {
-            lines_.push_back(newest + " will be downloaded" +
-                             (offer.component.id == Component::Cemu ? " to play Wii U games." : "."));
+            lines_.push_back(newest + " will be downloaded" + plays);
+        } else if (offer.component.source == update::Source::Buildbot) {
+            lines_.push_back(newest + " will replace the one here.");
         } else {
             lines_.push_back(newest + " will replace " +
                              (offer.component.installed > 0 ? describe_build(offer.component.installed)
@@ -111,15 +164,26 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
         if (waiting_asked_) {
             waiting_round_ = 0;
             if (status_.phase == Phase::Failed) {
-                show_notice("Dualscreen could not check for updates.", {status_.error});
+                show_notice(waiting_only_ ? "Dualscreen could not reach Cemu's builds."
+                                          : "Dualscreen could not check for updates.",
+                            {status_.error});
             } else if (!status_.offers.empty()) {
                 show_offer(status_);
             } else {
+                const Component asked_about = waiting_only_.value_or(Component::Dualscreen);
                 int installed = update::kLocalBuild;
+                std::string name = "Dualscreen";
+                bool core = false;
                 for (const update::ComponentSpec& component : updater_->components()) {
-                    if (component.id == Component::Dualscreen) installed = component.installed;
+                    if (component.id == asked_about) {
+                        installed = component.installed;
+                        name = component.name;
+                        core = component.source == update::Source::Buildbot;
+                    }
                 }
-                show_notice("Dualscreen is up to date.", {"This is " + describe_build(installed) + "."});
+                show_notice(name + " is up to date.",
+                            {core ? std::string("It is the buildbot's latest.")
+                                  : "This is " + describe_build(installed) + "."});
             }
         } else if (may_offer && popup_ == Popup::None) {
             // At start-up: said only when there is something to say, and
@@ -157,18 +221,33 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
             } else if (status_.handed_to_system) {
                 popup_ = Popup::None;
             } else {
-                show_notice(installing_cemu_ ? "Cemu is installed." : "The update is installed.",
-                            {installing_cemu_ ? "Wii U games will be played with it from now on." : ""});
-                if (lines_.front().empty()) lines_.clear();
+                // An emulator, new to this device or updated: said by name,
+                // and what it plays.
+                const bool one = installing_.size() == 1;
+                const bool fresh = one && installing_.front().component.installed == update::kNotInstalled;
+                const std::string name = one ? installing_.front().component.name : std::string();
+                show_notice(one ? name + (fresh ? " is installed." : " is up to date now.")
+                                : std::string("The updates are installed."),
+                            {});
+                if (one && fresh) {
+                    const Component id = installing_.front().component.id;
+                    lines_ = {std::string(id == Component::Cemu     ? "Wii U"
+                                          : id == Component::DsCore ? "DS"
+                                                                    : "3DS") +
+                              " games will be played with it from now on."};
+                }
             }
-            if (installing_cemu_) result.cemu_installed = true;
-            installing_cemu_ = false;
+            for (const update::Offer& offer : installing_) {
+                result.installed.push_back(offer.component.id);
+                if (offer.component.id == Component::Cemu) result.cemu_installed = true;
+            }
+            installing_.clear();
         } else if (status_.phase == Phase::Failed) {
-            installing_cemu_ = false;
+            installing_.clear();
             show_notice("The update was not installed.", {status_.error});
         } else if (status_.phase == Phase::Checked) {
             // Cancelled.
-            installing_cemu_ = false;
+            installing_.clear();
             popup_ = Popup::None;
         }
     }
@@ -177,7 +256,14 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
 
 std::vector<PopupButton> UpdatePrompt::buttons() const {
     switch (popup_) {
-        case Popup::Offer: return {{"Update", ""}, {"Not Now", ""}};
+        case Popup::Offer: {
+            // Download, when nothing it offers is here yet.
+            bool all_new = !status_.offers.empty();
+            for (const update::Offer& offer : status_.offers) {
+                if (offer.component.installed != update::kNotInstalled) all_new = false;
+            }
+            return {{all_new ? "Download" : "Update", ""}, {"Not Now", ""}};
+        }
         case Popup::Progress:
             if (status_.phase == Phase::Downloading) return {{"Cancel", ""}};
             return {};
@@ -227,10 +313,7 @@ UpdatePromptResult UpdatePrompt::update(const std::vector<UiAction>& actions,
     switch (popup_) {
         case Popup::Offer:
             if (pressed == 0) {
-                installing_cemu_ = false;
-                for (const update::Offer& offer : updater_->status().offers) {
-                    if (offer.component.id == Component::Cemu) installing_cemu_ = true;
-                }
+                installing_ = updater_->status().offers;
                 updater_->install();
                 status_ = updater_->status();
                 install_round_ = status_.round;

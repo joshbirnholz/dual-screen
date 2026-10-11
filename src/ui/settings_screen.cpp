@@ -64,8 +64,60 @@ void SettingsScreen::set_melonds_page(bool deko, std::string path) {
 }
 
 int SettingsScreen::row_count() const {
-    if (page_ == Page::MelonDs) return static_cast<int>(melon_rows().size());
-    return first_setting_row() + kRowCount + (melonds_available_ ? 1 : 0) + (updates_row() >= 0 ? 1 : 0);
+    if (page_ == Page::Emulators) {
+        int count = 0;
+        for (const Entry& entry : entries_) count += entry.focusable() ? 1 : 0;
+        return count;
+    }
+    return first_setting_row() + kRowCount + (has_emulators_page() ? 1 : 0) + (updates_row() >= 0 ? 1 : 0);
+}
+
+std::vector<SettingsScreen::Entry> SettingsScreen::emulator_entries() const {
+    std::vector<Entry> entries;
+    const auto add_melon_rows = [&] {
+        for (const MelonRow row : melon_rows()) {
+            Entry entry;
+            entry.kind = Entry::Kind::Melon;
+            entry.text = melon_label(row);
+            entry.value = melon_value(row);
+            entry.melon = row;
+            entries.push_back(entry);
+        }
+    };
+    const bool ds_listed = std::any_of(cores_.begin(), cores_.end(),
+                                       [](const CoreStatus& core) { return core.system == SystemId::Ds; });
+    if (melonds_available_ && !ds_listed) {
+        entries.push_back(Entry{Entry::Kind::Heading, "Nintendo DS", "melonDS"});
+        add_melon_rows();
+    }
+    for (const CoreStatus& core : cores_) {
+        entries.push_back(Entry{Entry::Kind::Heading, core.system_name, core.emulator});
+        const bool built_in = core.resolved_path == kBuiltInCorePath;
+        const bool found = built_in || (!core.resolved_path.empty() && file_exists(core.resolved_path));
+        Entry where{Entry::Kind::Location, "", "", found};
+        where.text = built_in               ? std::string("Built into Dualscreen")
+                     : found                ? core.resolved_path
+                     : core.resolved_path.empty() ? std::string("Not found")
+                                            : "Not found at " + core.resolved_path;
+        entries.push_back(where);
+        if (core.system == SystemId::Ds && melonds_available_) add_melon_rows();
+        const auto download = download_rows_.find(core.system);
+        if (download != download_rows_.end()) {
+            Entry row{Entry::Kind::Download, download->second[0], download->second[1], true};
+            row.system = core.system;
+            entries.push_back(row);
+        }
+    }
+    return entries;
+}
+
+const SettingsScreen::Entry* SettingsScreen::focused_entry() const {
+    int index = 0;
+    for (const Entry& entry : entries_) {
+        if (!entry.focusable()) continue;
+        if (index++ == focus_) return &entry;
+    }
+    return nullptr;
 }
 
 std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
@@ -74,11 +126,12 @@ std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
     return {MelonRow::CpuClock, MelonRow::Pipeline};
 }
 
-void SettingsScreen::open_melonds_page() {
+void SettingsScreen::open_emulators_page() {
     // Read afresh each time, so a file edited by hand since is what shows.
-    tuning_ = read_melonds_tuning(melonds_path_);
+    if (melonds_available_) tuning_ = read_melonds_tuning(melonds_path_);
     melonds_error_.clear();
-    page_ = Page::MelonDs;
+    page_ = Page::Emulators;
+    refresh_entries();
     focus_ = 0;
     scroll_ = 0.0f;
 }
@@ -119,9 +172,9 @@ void SettingsScreen::return_from_data_management() {
 }
 
 std::string SettingsScreen::footnote() const {
-    if (page_ != Page::MelonDs) return std::string();
-    std::string note = "These take effect the next time a game starts. They are kept in " + melonds_path_ +
-                       ", which can be edited by hand as well.";
+    if (page_ != Page::Emulators || !melonds_available_) return std::string();
+    std::string note = "melonDS's settings take effect the next time a game starts. They are kept in " +
+                       melonds_path_ + ", which can be edited by hand as well.";
     if (melonds_deko_) {
         note += " Each frame shown a frame later lets the emulator run on while the GPU draws, which keeps "
                 "busy 3D games at full speed; as soon as drawn shows each picture a frame sooner.";
@@ -155,63 +208,78 @@ SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
     // The heading stays put; everything under it moves with the scroll.
     const float content_top = frame.content_top;
     geometry.view_top = content_top;
-    const float rows_top = content_top - scroll_;
+    geometry.view_height = geometry.panel.y + geometry.panel.h - content_top;
+    const float top = content_top - scroll_;
     const float row_height = menu_row_height(line);
     const float gap = menu_row_gap(line);
     // Short of the panel's right edge by the scroll bar, which runs beside
     // the rows rather than over them.
     const float row_width = geometry.panel.w - scroll_bar_width(geometry.scale) - line * 0.6f;
+
+    if (page_ == Page::Emulators) {
+        // Each console's heading, where its emulator is, then its rows.
+        float y = top + line * 0.5f;
+        for (std::size_t index = 0; index < entries_.size(); ++index) {
+            switch (entries_[index].kind) {
+                case Entry::Kind::Heading:
+                    if (index > 0) y += line * 0.9f;
+                    geometry.texts.push_back(Geometry::Text{index, y});
+                    y += line * 1.45f;
+                    break;
+                case Entry::Kind::Location:
+                    geometry.texts.push_back(Geometry::Text{index, y});
+                    y += line * 1.35f;
+                    break;
+                case Entry::Kind::Melon:
+                case Entry::Kind::Download:
+                    geometry.rows.push_back(PixelRect{geometry.panel.x, y, row_width, row_height});
+                    y += row_height + gap;
+                    break;
+            }
+        }
+        const float footnote_scale = geometry.scale * 0.85f;
+        const std::string note = footnote();
+        const float footnote_height =
+            note.empty() ? 0.0f
+                         : TextRenderer::wrapped_line_step(footnote_scale) *
+                               static_cast<float>(TextRenderer::wrap(note, geometry.panel.w, footnote_scale).size());
+        geometry.footnote_top = y + line * 0.4f;
+        const float error_height = melonds_error_.empty() ? 0.0f : line * 1.4f;
+        geometry.content_height = geometry.footnote_top + footnote_height + error_height + line * 0.4f - top;
+        return geometry;
+    }
+
+    float row_y = top;
     const int rows = row_count();
-    float row_y = rows_top;
     for (int index = 0; index < rows; ++index) {
         geometry.rows.push_back(PixelRect{geometry.panel.x, row_y, row_width, row_height});
         row_y += row_height + gap;
         // A line of explanation under the row, in the gap before the next.
         if (row_description(index) != nullptr) row_y += description_height(geometry.scale);
     }
-    geometry.view_height = geometry.panel.y + geometry.panel.h - content_top;
-    const float rows_bottom = row_y;
-    const float footnote_scale = geometry.scale * 0.85f;
-    const std::string note = footnote();
-    const float footnote_height =
-        TextRenderer::wrapped_line_step(footnote_scale) *
-        static_cast<float>(TextRenderer::wrap(note, geometry.panel.w, footnote_scale).size());
-
-    if (page_ == Page::MelonDs) {
-        // Its rows and what they are, and nothing else.
-        geometry.footnote_top = rows_bottom + line * 0.4f;
-        const float error_height = melonds_error_.empty() ? 0.0f : line * 1.4f;
-        geometry.content_height =
-            geometry.footnote_top + footnote_height + error_height + line * 0.4f - (content_top - scroll_);
-        return geometry;
-    }
-
-    // The cores get their own block: a heading plus one line per console, so
-    // the space it takes follows the list rather than a remembered count.
-    const float core_top = rows_bottom + line;
-    const float core_height = line * (1.6f + 1.1f * static_cast<float>(cores_.size()));
-    geometry.core_panel = PixelRect{geometry.panel.x, core_top, geometry.panel.w, core_height};
-
-    // The page ends where the last emulator's line does, and the scroll bar
-    // with it. Measured from the top of the content rather than from the
-    // panel, so it is the height of the thing being scrolled and not of the
-    // window onto it.
-    (void)footnote_height;
-    geometry.content_height = core_top + core_height + line * 0.4f - (content_top - scroll_);
+    // The page ends where the last row does, and the scroll bar with it.
+    // Measured from the top of the content rather than from the panel, so it
+    // is the height of the thing being scrolled and not of the window onto it.
+    geometry.content_height = row_y + line * 0.4f - top;
     return geometry;
 }
 
 void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
-    if (page_ == Page::MelonDs) {
-        const std::vector<MelonRow> rows = melon_rows();
-        if (focus_ >= 0 && focus_ < static_cast<int>(rows.size())) {
-            adjust_melonds(rows[static_cast<std::size_t>(focus_)], direction);
+    if (page_ == Page::Emulators) {
+        const Entry* entry = focused_entry();
+        if (entry == nullptr) return;
+        if (entry->kind == Entry::Kind::Melon) {
+            adjust_melonds(entry->melon, direction);
+            refresh_entries();
+        } else if (entry->kind == Entry::Kind::Download && direction > 0) {
+            // Downloading or updating is the app's -- and asked first.
+            result.open_download = entry->system;
         }
         return;
     }
-    if (melonds_available_ && focus_ == melonds_row()) {
+    if (focus_ == emulators_row()) {
         // A way in, not a value: forwards opens it, back does nothing.
-        if (direction > 0) open_melonds_page();
+        if (direction > 0) open_emulators_page();
         return;
     }
     if (focus_ == data_management_row()) {
@@ -255,10 +323,12 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
             break;
+#if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone:
             settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
             result.settings_changed = true;
             break;
+#endif
         case Row::UiSounds:
             settings_.ui_sounds = !settings_.ui_sounds;
             result.settings_changed = true;
@@ -308,6 +378,9 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
     if (!open_) {
         return result;
     }
+    // What the Emulators page shows can change under it -- a download's
+    // progress, say -- so it is read again each time.
+    if (page_ == Page::Emulators) refresh_entries();
     // A tap on Back at the foot of the page is Back pressed.
     std::vector<UiAction> actions = pressed;
     std::vector<PointerEvent> pointers = touched;
@@ -326,10 +399,11 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
                 break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu:
-                if (page_ == Page::MelonDs) {
+                if (page_ == Page::Emulators) {
                     // Back to Settings, on the row it was opened from.
                     page_ = Page::Main;
-                    focus_ = melonds_row();
+                    focus_ = emulators_row();
+                    scroll_ = 0.0f;
                 } else {
                     result.close_requested = true;
                 }
@@ -407,7 +481,8 @@ void SettingsScreen::render(QuadRenderer& quads,
     // Over the paused game, dimmed, when opened from its menu; on the app's
     // own background otherwise, since there is nothing behind it to dim.
     draw_page_background(quads, output_width, output_height, over_game_);
-    draw_page_header(quads, text, frame, page_ == Page::MelonDs ? "Settings \xC2\xB7 melonDS" : "Settings");
+    if (page_ == Page::Emulators) refresh_entries();
+    draw_page_header(quads, text, frame, page_ == Page::Emulators ? "Settings \xC2\xB7 Emulators" : "Settings");
 
     // Everything below the heading scrolls, so everything below the heading is
     // clipped to the room there is for it. Without this a row pushed past the
@@ -417,8 +492,10 @@ void SettingsScreen::render(QuadRenderer& quads,
                              geometry.panel.y + geometry.panel.h - view_top});
 
     std::vector<std::array<std::string, 2>> rows;
-    if (page_ == Page::MelonDs) {
-        for (const MelonRow row : melon_rows()) rows.push_back({melon_label(row), melon_value(row)});
+    if (page_ == Page::Emulators) {
+        for (const Entry& entry : entries_) {
+            if (entry.focusable()) rows.push_back({entry.text, entry.value});
+        }
     }
     const std::string main_rows[kRowCount][2] = {
 #ifndef __SWITCH__
@@ -433,14 +510,16 @@ void SettingsScreen::render(QuadRenderer& quads,
              : std::to_string(settings_.run_ahead_ds) +
                    (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
         {"Vsync", settings_.vsync ? "On" : "Off"},
+#if DS_PLAYS_WII_U
         {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
+#endif
         {"Sound effects", settings_.ui_sounds ? "On" : "Off"},
         {"Battery in the quick menu", settings_.show_battery ? "On" : "Off"},
     };
     if (page_ == Page::Main) {
         if (offers_data_management_) rows.push_back({"Data Management", ""});
         for (const auto& row : main_rows) rows.push_back({row[0], row[1]});
-        if (melonds_available_) rows.push_back({"melonDS", ""});
+        if (has_emulators_page()) rows.push_back({"Emulators", ""});
         if (updates_row() >= 0) rows.push_back({"Updates", updates_value_});
     }
 
@@ -496,41 +575,37 @@ void SettingsScreen::render(QuadRenderer& quads,
         }
     }
 
-    if (page_ == Page::MelonDs) {
-        text.draw_wrapped(quads, footnote(), geometry.panel.x, geometry.footnote_top, geometry.panel.w,
-                          scale * 0.85f, theme.text_dim);
+    if (page_ == Page::Emulators) {
+        // Each console's heading -- its name, then its emulator's, dimmer --
+        // and on the line under it where that emulator was found.
+        for (const Geometry::Text& placed : geometry.texts) {
+            const Entry& entry = entries_[placed.entry];
+            if (entry.kind == Entry::Kind::Heading) {
+                text.draw(quads, entry.text, geometry.panel.x, placed.y, scale, theme.text);
+                if (!entry.value.empty()) {
+                    const float name_width = TextRenderer::measure_width(entry.text + "  ", scale);
+                    text.draw(quads, entry.value, geometry.panel.x + name_width, placed.y, scale,
+                              theme.text_dim);
+                }
+            } else {
+                text.draw(quads, TextRenderer::elide_left(entry.text, geometry.panel.w, scale * 0.85f),
+                          geometry.panel.x, placed.y, scale * 0.85f, theme.text_dim);
+            }
+        }
+        const std::string note = footnote();
+        if (!note.empty()) {
+            text.draw_wrapped(quads, note, geometry.panel.x, geometry.footnote_top, geometry.panel.w,
+                              scale * 0.85f, theme.text_dim);
+        }
         if (!melonds_error_.empty()) {
             const float note_height =
-                TextRenderer::wrapped_line_step(scale * 0.85f) *
-                static_cast<float>(TextRenderer::wrap(footnote(), geometry.panel.w, scale * 0.85f).size());
+                note.empty() ? 0.0f
+                             : TextRenderer::wrapped_line_step(scale * 0.85f) *
+                                   static_cast<float>(TextRenderer::wrap(note, geometry.panel.w, scale * 0.85f).size());
             text.draw(quads, TextRenderer::elide_right(melonds_error_, geometry.panel.w, scale * 0.85f),
                       geometry.panel.x, geometry.footnote_top + note_height + line * 0.4f, scale * 0.85f,
                       theme.danger);
         }
-    }
-
-    if (page_ == Page::Main) {
-    // One line per console, saying where its emulator was found -- which for
-    // most of them is a core this app loads and for a Wii U is a program it
-    // starts. A machine set up for one and not another says so before a game is
-    // picked rather than after.
-    float core_pen_y = geometry.core_panel.y;
-    text.draw(quads, "Emulators", geometry.core_panel.x, core_pen_y, scale, theme.text);
-    core_pen_y += line * 1.6f;
-    for (const CoreStatus& core : cores_) {
-        const bool found = core.resolved_path == kBuiltInCorePath ||
-                           (!core.resolved_path.empty() && file_exists(core.resolved_path));
-        const std::string label = core.system_name + "  ";
-        text.draw(quads, label, geometry.core_panel.x, core_pen_y, scale * 0.9f, theme.text_dim);
-        const float label_width = TextRenderer::measure_width(label, scale * 0.9f);
-        const float available = geometry.core_panel.w - label_width;
-        const std::string value = TextRenderer::elide_left(
-            found ? core.resolved_path : std::string("not found"), available, scale * 0.9f);
-        text.draw(quads, value, geometry.core_panel.x + label_width, core_pen_y, scale * 0.9f,
-                  found ? theme.success : theme.danger);
-        core_pen_y += line * 1.1f;
-    }
-
     }
 
     // Everything above scrolled and was clipped to the panel. The prompts

@@ -898,11 +898,28 @@ chosen, including on a build made by hand, which never looks on its own.
   all -- and then replaces it. It only installs over a build signed with the
   same key, so a locally built debug APK has to be uninstalled once first.
 
-On a PC or a Steam Deck it keeps **Cemu** too, from the fork's own nightly
-(`joshbirnholz/cemu-dualscreen`): when `wii_u_program` is not set, choosing
-Settings > Updates offers to download it, into `~/.local/share/dualscreen/cemu/`,
-and it is used for Wii U games and updated with Dualscreen from then on. A
-`wii_u_program` of your own is left alone.
+### Emulators
+
+**Settings > Emulators** has a section for each console the device plays:
+which emulator plays it, where it was found, and that emulator's own settings
+(melonDS's CPU clock and frame pipeline, on a Switch).
+
+On a PC or a Steam Deck each section also has a row for Dualscreen's own copy
+of the emulator, which it downloads when chosen and keeps up to date from then
+on -- checked at start-up with Dualscreen itself, and offered the same way:
+
+| Console | Emulator | From | Kept in |
+| --- | --- | --- | --- |
+| DS | melonDS DS | libretro's buildbot, as RetroArch downloads it | `~/.config/dualscreen/cores/` |
+| 3DS | Azahar (Citra where the buildbot has no Azahar) | libretro's buildbot | `~/.config/dualscreen/cores/` |
+| Wii U | Cemu, this project's fork | the fork's nightly (`joshbirnholz/cemu-dualscreen`) | `~/.local/share/dualscreen/cemu/` |
+
+A downloaded emulator becomes the one its console is played with (the core
+path, or `wii_u_program`, in settings.json); one of your own is used until then,
+and its row says "Use Dualscreen's own". A buildbot core is told apart by the
+date and hash in the buildbot's index, which is kept beside it as
+`<core>.version`. A Switch's DS emulator is built into Dualscreen, and an
+Android device's comes in its APK, so both are updated with Dualscreen itself.
 
 | Platform | What you get | Command | Details |
 | --- | --- | --- | --- |

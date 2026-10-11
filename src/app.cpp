@@ -183,12 +183,16 @@ std::vector<SettingsScreen::CoreStatus> resolve_core_statuses(const AppOptions& 
         // Where this console is played from, whichever kind of thing that is.
         // What the player needs to know is the same either way: is it there.
         switch (profile.frame_origin) {
-            case FrameOrigin::LibretroCore:
-                statuses.push_back(
-                    {profile.name, resolve_core_path(options, settings, profile.id)});
+            case FrameOrigin::LibretroCore: {
+                const std::string path = resolve_core_path(options, settings, profile.id);
+                // A core linked in is the Switch's own melonDS, whichever.
+                statuses.push_back({profile.name, path, profile.id,
+                                    path == kBuiltInCorePath ? std::string("melonDS") : profile.core_description});
                 break;
+            }
             case FrameOrigin::External:
-                statuses.push_back({profile.name, settings.external_program_for(profile.id)});
+                statuses.push_back(
+                    {profile.name, settings.external_program_for(profile.id), profile.id, profile.core_description});
                 break;
         }
     }
@@ -406,6 +410,8 @@ struct App::Impl {
     UpdatePrompt update_prompt;
     void start_updater(const AppOptions& options);
     void poll_updates();
+    // Where the core Dualscreen keeps for `system` is, or would be.
+    std::string managed_core_path(SystemId system) const;
     std::unique_ptr<DataManagementScreen> data_screen;
     // What the popup over a paused game says: that it was resumed, or that
     // Data Management restarted it on another save.
@@ -2602,33 +2608,116 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
     }
 }
 
+namespace {
+
+// Where the cores Dualscreen downloads go: its own cores folder, the first
+// place core_search_paths() looks.
+std::string managed_cores_dir(const AppPaths& paths) { return path_join(paths.config_dir, "cores"); }
+
+update::Component core_component_for(SystemId system) {
+    return system == SystemId::ThreeDs ? update::Component::ThreeDsCore : update::Component::DsCore;
+}
+
+}  // namespace
+
+std::string App::Impl::managed_core_path(SystemId system) const {
+    if (!updater) return std::string();
+    for (const update::ComponentSpec& component : updater->components()) {
+        if (component.id == core_component_for(system)) {
+            return path_join(managed_cores_dir(paths), update::core_library_name(component.asset));
+        }
+    }
+    return std::string();
+}
+
 void App::Impl::start_updater(const AppOptions& options) {
     if (!update::desktop_updates_supported() || options.leave_instead_of_launcher) return;
-    // Cemu, when Dualscreen is the one keeping it: when no other Wii U
-    // program is named, the one it downloaded is the one used.
+    // Cemu, which Dualscreen downloads when asked on the Emulators page and
+    // keeps up to date while it is the one Wii U games are played with: when
+    // no other Wii U program is named, one it downloaded is the one used.
     const std::string cemu = update::managed_cemu_path(paths.data_dir);
-    const bool keeps_cemu = settings.wii_u_program.empty() || settings.wii_u_program == cemu;
     if (settings.wii_u_program.empty() && file_exists(cemu)) settings.wii_u_program = cemu;
-    updater = std::make_unique<update::Updater>(
-        update::make_desktop_backend(paths.data_dir),
-        update::components_for(update::kSteamOsAsset, build_number(), keeps_cemu,
-                               keeps_cemu ? update::managed_cemu_build(paths.data_dir) : update::kNotInstalled));
+    const bool cemu_in_use = settings.wii_u_program == cemu;
+    std::vector<update::ComponentSpec> components =
+        update::components_for(update::kSteamOsAsset, build_number(), true,
+                               update::managed_cemu_build(paths.data_dir), cemu_in_use);
+    // The DS and 3DS cores, from libretro's buildbot as RetroArch gets them:
+    // kept up to date while the one in Dualscreen's cores folder is the one
+    // played with.
+    const std::string cores = managed_cores_dir(paths);
+    bool core_kept = false;
+    for (const SystemId system : {SystemId::Ds, SystemId::ThreeDs}) {
+        update::ComponentSpec core = update::core_component(core_component_for(system), cores, false);
+        core.automatic = core.installed != update::kNotInstalled &&
+                         resolve_core_path(options, settings, system) ==
+                             path_join(cores, update::core_library_name(core.asset));
+        core_kept = core_kept || core.automatic;
+        components.push_back(core);
+    }
+    updater = std::make_unique<update::Updater>(update::make_desktop_backend(paths.data_dir, cores),
+                                                std::move(components));
     update_prompt.set_updater(updater.get());
     update_prompt.set_declined_file(path_join(path_join(paths.data_dir, "update"), "declined"));
     settings_screen->set_offers_updates(true);
     // At start-up, quietly, and only on a build from CI: a build made by hand
     // is not offered one unless it asks, so there is nothing to look for --
-    // and nothing for a test run to go out to the network for.
+    // and nothing for a test run to go out to the network for. A build made
+    // by hand still keeps its emulators up to date, when it keeps any.
     const bool test_run = options.exit_after_frames > 0 || options.exit_after_seconds > 0.0;
-    if (build_number() > 0 && !test_run) update_prompt.check_at_start();
+    const bool cemu_kept = cemu_in_use && update::managed_cemu_build(paths.data_dir) > 0;
+    if ((build_number() > 0 || cemu_kept || core_kept) && !test_run) update_prompt.check_at_start();
 }
 
 void App::Impl::poll_updates() {
     if (!updater) return;
     const UpdatePromptResult result = update_prompt.poll(state == State::Launcher);
-    if (result.cemu_installed && settings.wii_u_program.empty()) {
-        settings.wii_u_program = update::managed_cemu_path(paths.data_dir);
-        if (!settings.save(paths)) log_warn("could not save settings.json");
+    const std::string cemu = update::managed_cemu_path(paths.data_dir);
+    bool changed = false;
+    for (const update::Component installed : result.installed) {
+        // Asked for on the Emulators page, or updated because it was already
+        // the one in use: either way it is the one its console is played
+        // with now, and kept up to date from here on.
+        if (installed == update::Component::Cemu) {
+            if (settings.wii_u_program != cemu) {
+                log_info("Wii U games will be played with the Cemu at " + cemu);
+                settings.wii_u_program = cemu;
+                changed = true;
+            }
+        } else if (installed != update::Component::Dualscreen) {
+            const SystemId system =
+                installed == update::Component::ThreeDsCore ? SystemId::ThreeDs : SystemId::Ds;
+            const std::string core = managed_core_path(system);
+            if (resolve_core_path(options, settings, system) != core) {
+                log_info(system_profile(system).name + " games will be played with the core at " + core);
+                (system == SystemId::ThreeDs ? settings.core_path_3ds : settings.core_path) = core;
+                changed = true;
+            }
+        } else {
+            continue;
+        }
+        updater->set_automatic(installed, true);
+    }
+    if (changed && !settings.save(paths)) log_warn("could not save settings.json");
+    if (!result.installed.empty()) {
+        settings_screen->refresh_settings(settings);
+        settings_screen->set_cores(resolve_core_statuses(options, settings));
+    }
+    // The Emulators page's rows: Dualscreen's own copy of each emulator,
+    // named as what it would take over from when another is in use.
+    settings_screen->set_download_row(
+        SystemId::WiiU,
+        settings.wii_u_program.empty() || settings.wii_u_program == cemu ? "Dualscreen's Cemu"
+                                                                         : "Use Dualscreen's own Cemu",
+        update_prompt.component_value(update::Component::Cemu));
+    for (const update::ComponentSpec& component : updater->components()) {
+        if (component.source != update::Source::Buildbot) continue;
+        const SystemId system =
+            component.id == update::Component::ThreeDsCore ? SystemId::ThreeDs : SystemId::Ds;
+        const bool ours = resolve_core_path(options, settings, system) == managed_core_path(system);
+        settings_screen->set_download_row(
+            system, (ours || component.installed == update::kNotInstalled ? "Dualscreen's " : "Use Dualscreen's own ") +
+                        component.name,
+            update_prompt.component_value(component.id));
     }
     if (result.restart) {
         log_info("leaving to start the new build");
@@ -2641,6 +2730,12 @@ void App::Impl::poll_updates() {
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     if (result.open_updates) {
         update_prompt.choose();
+        return;
+    }
+    if (result.open_download) {
+        update_prompt.choose(*result.open_download == SystemId::WiiU      ? update::Component::Cemu
+                             : *result.open_download == SystemId::ThreeDs ? update::Component::ThreeDsCore
+                                                                         : update::Component::DsCore);
         return;
     }
     if (result.open_data_management) {
@@ -4284,6 +4379,10 @@ int App::run(const AppOptions& options) {
         impl.open_browser();
     } else if (options.start_screen == "settings") {
         impl.open_settings();
+    } else if (options.start_screen == "emulators") {
+        impl.open_settings();
+        impl.poll_updates();
+        impl.settings_screen->open_emulators_page();
     } else if (options.start_screen == "updates") {
         // Settings, with its Updates row chosen: a real check, for seeing
         // what the popups that follow look like.
@@ -5487,19 +5586,40 @@ int App::run(const AppOptions& options) {
                     } else if (impl.locked_learn_count++ == 0) {
                         impl.locked_learn_start_us = presented_us;
                     } else if (impl.locked_learn_count > kLearnRefreshes) {
-                        impl.locked_period_us =
+                        const uint64_t measured =
                             (presented_us - impl.locked_learn_start_us) / kLearnRefreshes;
-                        impl.locked_since_us = presented_us;
-                        // Every frame waited while measuring; none of that is
-                        // the display falling behind.
-                        impl.locked_waits_in_window = 0;
-                        impl.locked_waits_window_us = presented_us;
-                        char text[128];
-                        std::snprintf(text, sizeof(text),
-                                      "the display refreshes every %.3f ms; a frame goes up "
-                                      "each refresh, with no more than one waiting",
-                                      impl.locked_period_us / 1000.0);
-                        log_info(text);
+                        // Only a measurement within a couple of percent of what
+                        // the display says it does is its refresh. Frames that
+                        // waited on drawing rather than on the display -- a
+                        // busy 3D scene, the frames after a reset -- come
+                        // further apart than that, and a run of them taken for
+                        // the period paced every frame after it: the game ran
+                        // slow for as long as it was played.
+                        const double nominal_us =
+                            impl.display_refresh_hz > 0.0 ? 1'000'000.0 / impl.display_refresh_hz : 0.0;
+                        if (nominal_us > 0.0 &&
+                            std::abs(static_cast<double>(measured) / nominal_us - 1.0) > 0.02) {
+                            char text[160];
+                            std::snprintf(text, sizeof(text),
+                                          "frames came %.3f ms apart, not the display's %.3f ms; "
+                                          "measuring its refresh again",
+                                          measured / 1000.0, nominal_us / 1000.0);
+                            log_info(text);
+                            impl.locked_learn_count = 0;
+                        } else {
+                            impl.locked_period_us = measured;
+                            impl.locked_since_us = presented_us;
+                            // Every frame waited while measuring; none of that is
+                            // the display falling behind.
+                            impl.locked_waits_in_window = 0;
+                            impl.locked_waits_window_us = presented_us;
+                            char text[128];
+                            std::snprintf(text, sizeof(text),
+                                          "the display refreshes every %.3f ms; a frame goes up "
+                                          "each refresh, with no more than one waiting",
+                                          impl.locked_period_us / 1000.0);
+                            log_info(text);
+                        }
                     }
                 } else if (waited) {
                     impl.locked_queue_full = true;

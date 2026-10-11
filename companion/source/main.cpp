@@ -849,7 +849,7 @@ void Client::open_settings() {
 #endif
     }
     // The one emulator this build has, linked in.
-    settings_screen_->open(settings_, {{"Nintendo DS", kBuiltInCorePath}});
+    settings_screen_->open(settings_, {{"Nintendo DS", kBuiltInCorePath, SystemId::Ds, "melonDS"}});
     state_ = State::Settings;
     log_info("the settings screen is up");
 }
