@@ -45,6 +45,7 @@
 #include "render/compositor.hpp"
 #include "render/frame_delay.hpp"
 #include "render/menu_backdrop.hpp"
+#include "render/menu_overlay.hpp"
 #include "ui/menu_actions.hpp"
 #include "render/gl_loader.hpp"
 #include "render/gl_window.hpp"
@@ -359,6 +360,11 @@ struct App::Impl {
     TextRenderer text;
     Compositor compositor;
     MenuBackdrop menu_backdrop;
+    // The quick menu as Cemu draws it over a Wii U game -- see
+    // wants_menu_overlay() -- and whether Cemu is showing one now.
+    MenuOverlay menu_overlay;
+    bool menu_overlay_shown = false;
+    bool menu_overlay_logged = false;
     // A companion's pass started as late before the display's refresh as it
     // can be -- see FrameDelay. Never the host's: the host's pass runs the
     // game, whose timing is the game's.
@@ -862,6 +868,17 @@ struct App::Impl {
     // Whether the Wii U list is shown in place of "Playing on Cemu" -- see
     // LayoutPickerState::embedded.
     bool shows_embedded_menu() const;
+    // Whether this app's menu, or a page opened from it, is up over a Wii U
+    // game whose program can draw it in its own window -- the window the
+    // player is looking at, where this one is behind it. From either device:
+    // a companion opening the menu opens it here too.
+    bool wants_menu_overlay() const;
+    // Draws that, on its own, and hands it over when it has changed; or takes
+    // it down once it is not wanted.
+    void render_menu_overlay();
+    // The menu and the pages opened from it, over whatever has been drawn
+    // already -- shared by the window and the overlay.
+    void render_pages(float width, float height, bool over_game, const ScreenTextures* frames);
     // Assigns the pads, hands each player's to the game, and returns the
     // GamePad's -- with the touch screen and the motion of whichever device is
     // showing the GamePad's screen.
@@ -1763,6 +1780,62 @@ void App::Impl::tick_identify() {
 bool App::Impl::shows_embedded_menu() const {
     return state == State::Playing && system == SystemId::WiiU && !is_companion() &&
            external_source && external_source->running() && picker;
+}
+
+bool App::Impl::wants_menu_overlay() const {
+    const bool page_up = state == State::Menu || state == State::Message ||
+                         ((state == State::Settings || state == State::DataManagement) &&
+                          settings_came_from == State::Menu) ||
+                         (state == State::Controllers && controllers_came_from == State::Menu);
+    return page_up && system == SystemId::WiiU && !is_companion() && external_source &&
+           external_source->running() && external_source->overlay_supported() &&
+           MenuOverlay::supported();
+}
+
+void App::Impl::render_menu_overlay() {
+    if (!wants_menu_overlay()) {
+        if (menu_overlay_shown) {
+            if (external_source) external_source->hide_overlay();
+            menu_overlay_shown = false;
+            menu_overlay.forget();
+            log_info("the menu over the game is down");
+        }
+        return;
+    }
+    int width = 0;
+    int height = 0;
+    MenuOverlay::fit(output_width, output_height, ExternalOverlayArea::kMaxWidth,
+                     ExternalOverlayArea::kMaxHeight, width, height);
+    if (!menu_overlay.begin(width, height)) {
+        if (!menu_overlay_logged) {
+            log_warn("could not draw the menu for Cemu's window; it is only in this one");
+            menu_overlay_logged = true;
+        }
+        return;
+    }
+    quads.begin_frame(width, height);
+    quads.clear(Color{0.0f, 0.0f, 0.0f, 0.0f});
+    // Alpha accumulates as coverage rather than being blended like a colour,
+    // so what is left is how much of the game each pixel hides.
+    gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    const float w = static_cast<float>(width);
+    const float h = static_cast<float>(height);
+    // The game is not paused and blurred here as it is in this window -- it is
+    // Cemu's to draw -- so it is only darkened, by about as much.
+    quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.55f});
+    if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
+        quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+    }
+    render_pages(w, h, /*over_game=*/true, nullptr);
+    const bool changed = menu_overlay.finish();
+    gl::reset_render_state();
+    if (changed || !menu_overlay_shown) {
+        if (external_source->publish_overlay(menu_overlay.pixels().data(), menu_overlay.width(),
+                                             menu_overlay.height())) {
+            if (!menu_overlay_shown) log_info("the menu is up over the game in Cemu's window");
+            menu_overlay_shown = true;
+        }
+    }
 }
 
 bool App::Impl::paired() const {
@@ -3770,6 +3843,18 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 if (!picker->embedded()) {
                     open_picker(/*embedded=*/true);
                 }
+                // Where Cemu can draw the menu over the game, the menu keys
+                // open it there, wherever the focus is -- a pad's menu button,
+                // or Tab or F1 in Cemu's window, which arrive as the same
+                // press. See wants_menu_overlay().
+                if (external_source->overlay_supported() && MenuOverlay::supported() &&
+                    std::any_of(actions.begin(), actions.end(), [](UiAction action) {
+                        return action == UiAction::ToggleMenu || action == UiAction::OpenMenu;
+                    })) {
+                    picker->close();
+                    set_menu_open(true);
+                    break;
+                }
                 const bool focused =
                     window != nullptr &&
                     (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0;
@@ -3832,6 +3917,34 @@ void App::Impl::swap() {
     frame_delay.presented(done, done - began);
 }
 
+void App::Impl::render_pages(float width, float height, bool over_game,
+                             const ScreenTextures* frames) {
+    if (state == State::Menu) {
+        // The previews are drawn from the frame the game is paused on, so each
+        // tile shows what picking it will actually look like.
+        picker->set_preview_screen(own_separate_screen());
+        picker->set_show_battery(settings.show_battery);
+        picker->render(quads, text, button_glyphs, width, height, game_title, frames);
+    } else if (state == State::Controllers) {
+        controllers_screen.set_over_game(over_game);
+        controllers_screen.render(quads, text, button_glyphs, width, height,
+                                  gather_pads(companion_joined()), holds_gamepad(), pad_order,
+                                  settings.device_name,
+                                  companion_joined() ? host_session->companion_name()
+                                                     : std::string("other device"));
+    } else if (state == State::Settings) {
+        settings_screen->set_over_game(over_game);
+        settings_screen->render(quads, text, button_glyphs, width, height);
+        update_prompt.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::DataManagement) {
+        data_screen->set_over_game(over_game);
+        data_screen->render(quads, text, button_glyphs, width, height);
+    } else if (state == State::Message) {
+        message.set_over_game(over_game);
+        message.render(quads, text, button_glyphs, width, height);
+    }
+}
+
 void App::Impl::render() {
     const float width = static_cast<float>(output_width);
     const float height = static_cast<float>(output_height);
@@ -3839,6 +3952,9 @@ void App::Impl::render() {
     // and nothing says why. Reported once, since a failing draw fails every
     // frame and one line is the useful amount.
     gl::log_error_once("something in the last frame was rejected by OpenGL");
+    // First, so this window's own pass is the last to lay out the pages: what
+    // a tap here lands on is where they are drawn here.
+    render_menu_overlay();
     gl::bind_window_framebuffer();
 
     if (state == State::Forwarder) {
@@ -4023,30 +4139,8 @@ void App::Impl::render() {
     } else {
         menu_backdrop.forget();
     }
-    if (state == State::Menu) {
-        // The previews are drawn from the frame the game is paused on, so each
-        // tile shows what picking it will actually look like.
-        picker->set_preview_screen(own_separate_screen());
-        picker->set_show_battery(settings.show_battery);
-        picker->render(quads, text, button_glyphs, width, height, game_title, frames);
-    } else if (state == State::Controllers) {
-        controllers_screen.set_over_game(show_menu_backdrop);
-        controllers_screen.render(quads, text, button_glyphs, width, height,
-                                  gather_pads(companion_joined()), holds_gamepad(), pad_order,
-                                  settings.device_name,
-                                  companion_joined() ? host_session->companion_name()
-                                                     : std::string("other device"));
-    } else if (state == State::Settings) {
-        settings_screen->set_over_game(show_menu_backdrop);
-        settings_screen->render(quads, text, button_glyphs, width, height);
-        update_prompt.render(quads, text, button_glyphs, width, height);
-    } else if (state == State::DataManagement) {
-        data_screen->set_over_game(show_menu_backdrop);
-        data_screen->render(quads, text, button_glyphs, width, height);
-    } else if (state == State::Message) {
-        message.set_over_game(show_menu_backdrop);
-        message.render(quads, text, button_glyphs, width, height);
-    } else if (state == State::ResumeNotice ||
+    render_pages(width, height, show_menu_backdrop, frames);
+    if (state == State::ResumeNotice ||
                (state == State::Companion && companion_session &&
                 companion_session->host_resume_notice())) {
         render_notice_popup(quads, text, button_glyphs, width, height,
@@ -5145,8 +5239,15 @@ int App::run(const AppOptions& options) {
                                             [](const PointerEvent& pointer) { return pointer.released; });
             const double now_seconds = static_cast<double>(SDL_GetPerformanceCounter() - started_counter) /
                                        static_cast<double>(counter_frequency);
-            impl.ui_sound_judge.note_input(impl.input.ui_actions(), tapped, now_seconds);
-            impl.handle_ui(impl.input.ui_actions(), pointers);
+            // Tab or F1 pressed in Cemu's window, which has the keyboard
+            // while a Wii U game plays in it: the same as pressing it here.
+            std::vector<UiAction> ui_actions = impl.input.ui_actions();
+            if (impl.external_source && impl.external_source->take_menu_key()) {
+                log_info("the menu key was pressed in Cemu's window");
+                ui_actions.push_back(UiAction::ToggleMenu);
+            }
+            impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
+            impl.handle_ui(ui_actions, pointers);
             const UiSoundView view = impl.sound_view();
             // Nothing for a press that closes the app: the sound would be cut
             // off part way through as it goes.

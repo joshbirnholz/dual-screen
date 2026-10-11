@@ -92,6 +92,7 @@ PFN_GetIntegerv GetIntegerv = nullptr;
 PFN_DepthMask DepthMask = nullptr;
 PFN_ColorMask ColorMask = nullptr;
 PFN_BlendEquation BlendEquation = nullptr;
+PFN_BlendFuncSeparate BlendFuncSeparate = nullptr;
 PFN_DepthFunc DepthFunc = nullptr;
 PFN_CullFace CullFace = nullptr;
 PFN_FrontFace FrontFace = nullptr;
@@ -272,7 +273,7 @@ void unload() {
     BufferData = nullptr; BufferSubData = nullptr; VertexAttribPointer = nullptr;
     EnableVertexAttribArray = nullptr; DisableVertexAttribArray = nullptr;
     DrawArrays = nullptr; GetIntegerv = nullptr; DepthMask = nullptr; ColorMask = nullptr;
-    BlendEquation = nullptr; DepthFunc = nullptr; CullFace = nullptr; FrontFace = nullptr;
+    BlendEquation = nullptr; BlendFuncSeparate = nullptr; DepthFunc = nullptr; CullFace = nullptr; FrontFace = nullptr;
     StencilMask = nullptr; IsEnabled = nullptr; BindSampler = nullptr; GenFramebuffers = nullptr;
     DeleteFramebuffers = nullptr; BindFramebuffer = nullptr; FramebufferTexture2D = nullptr;
     CheckFramebufferStatus = nullptr; GenRenderbuffers = nullptr;
@@ -365,6 +366,7 @@ bool load(bool gles_context, std::string* error) {
     resolve(GenVertexArrays, "glGenVertexArrays");
     resolve(DeleteVertexArrays, "glDeleteVertexArrays");
     resolve(BindVertexArray, "glBindVertexArray");
+    resolve(BlendFuncSeparate, "glBlendFuncSeparate");
 
     if (!missing.empty()) {
         std::string names;

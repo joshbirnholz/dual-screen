@@ -785,6 +785,84 @@ void test_how_the_pad_is_being_held_crosses_too() {
               "the game was never told the device had stopped reporting how it is held");
 }
 
+// This app's quick menu drawn over a Wii U game in Cemu's window: a producer
+// that says it can draw one is handed the pixels, told when they are taken
+// down, and its menu key comes back the other way. One that does not say so is
+// never offered any.
+void test_the_menu_crosses_to_be_drawn_over_the_game() {
+    {
+        ExternalFrameLink link;
+        ExternalFrameProducer producer;
+        if (!bring_up(link, producer)) return;
+        CHECK_MSG(!link.overlay_supported(),
+                  "a producer that never said it can draw an overlay was taken to");
+        const std::vector<uint8_t> pixel = {1, 2, 3, 4};
+        CHECK(!link.publish_overlay(pixel.data(), 1, 1));
+    }
+
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay;
+    if (!bring_up(link, producer, info)) return;
+    CHECK(producer.overlay_available());
+    CHECK_MSG(link.overlay_supported(), "the producer's offer of an overlay was not heard");
+
+    constexpr int kWidth = 320;
+    constexpr int kHeight = 180;
+    std::vector<uint8_t> menu(static_cast<std::size_t>(kWidth) * kHeight * 4);
+    for (std::size_t i = 0; i < menu.size(); ++i) menu[i] = static_cast<uint8_t>(i % 253);
+    CHECK(link.publish_overlay(menu.data(), kWidth, kHeight));
+    // Nothing bigger than the area can hold.
+    CHECK(!link.publish_overlay(menu.data(), ExternalOverlayArea::kMaxWidth + 1, 1));
+
+    // Waits for the producer to have something, the way a fork's render loop
+    // polls once a frame.
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    std::vector<uint8_t> got;
+    int width = 0;
+    int height = 0;
+    CHECK_MSG(wait_for([&]() { return producer.take_overlay(got, width, height); }),
+              "the menu never reached the producer");
+    CHECK(producer.overlay_visible());
+    CHECK_EQ(width, kWidth);
+    CHECK_EQ(height, kHeight);
+    CHECK_MSG(got == menu, "the menu arrived different from how it was sent");
+    // Taken once: the same picture is not handed over again every frame.
+    CHECK(!producer.take_overlay(got, width, height));
+
+    // The cursor moves: the next picture goes into the other slot.
+    menu[0] = 99;
+    CHECK(link.publish_overlay(menu.data(), kWidth, kHeight));
+    CHECK(wait_for([&]() { return producer.take_overlay(got, width, height); }));
+    CHECK_EQ(static_cast<int>(got[0]), 99);
+
+    link.hide_overlay();
+    CHECK_MSG(wait_for([&]() { return !producer.overlay_visible(); }),
+              "the menu closing never reached the producer");
+    CHECK(!producer.take_overlay(got, width, height));
+
+    // Tab in the game's window, which only it can hear.
+    CHECK(!link.take_menu_key());
+    producer.send_menu_key();
+    CHECK_MSG(wait_for([&]() { return link.take_menu_key(); }),
+              "the menu key never came back");
+    CHECK(!link.take_menu_key());
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -801,5 +879,6 @@ int main() {
     test_a_game_is_told_which_screen_to_show_even_when_asked_for_none();
     test_asking_for_the_same_screen_twice_says_nothing_the_second_time();
     test_how_the_pad_is_being_held_crosses_too();
+    test_the_menu_crosses_to_be_drawn_over_the_game();
     return test::finish("external-link");
 }

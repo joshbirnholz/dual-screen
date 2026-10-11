@@ -81,6 +81,15 @@ public:
     // Only the program playing the game knows what restarting one means.
     void reset() { link_.request_reset(); }
 
+    // This app's menu drawn over the game's own window, and the key that asks
+    // for it there -- see ExternalFrameLink::publish_overlay().
+    bool overlay_supported() const { return link_.overlay_supported(); }
+    bool publish_overlay(const uint8_t* rgba, int width, int height) {
+        return link_.publish_overlay(rgba, width, height);
+    }
+    void hide_overlay() { link_.hide_overlay(); }
+    bool take_menu_key() { return link_.take_menu_key(); }
+
     // Tells the far end which single screen, if any, this app actually wants
     // captured and sent right now, the largest it is any use at, and which
     // screen the far end should show in its own window -- see

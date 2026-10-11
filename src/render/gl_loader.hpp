@@ -83,6 +83,7 @@ using PFN_GetIntegerv = void (*)(GLenum, GLint*);
 using PFN_DepthMask = void (*)(GLboolean);
 using PFN_ColorMask = void (*)(GLboolean, GLboolean, GLboolean, GLboolean);
 using PFN_BlendEquation = void (*)(GLenum);
+using PFN_BlendFuncSeparate = void (*)(GLenum, GLenum, GLenum, GLenum);
 using PFN_DepthFunc = void (*)(GLenum);
 using PFN_CullFace = void (*)(GLenum);
 using PFN_FrontFace = void (*)(GLenum);
@@ -164,6 +165,8 @@ extern PFN_GetIntegerv GetIntegerv;
 extern PFN_DepthMask DepthMask;
 extern PFN_ColorMask ColorMask;
 extern PFN_BlendEquation BlendEquation;
+// Optional: only drawing something with alpha of its own to hand on needs it.
+extern PFN_BlendFuncSeparate BlendFuncSeparate;
 extern PFN_DepthFunc DepthFunc;
 extern PFN_CullFace CullFace;
 extern PFN_FrontFace FrontFace;
