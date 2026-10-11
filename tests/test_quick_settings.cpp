@@ -525,8 +525,12 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(picked.selection_changed);
     CHECK(picker.is_open());
 
-    // B closes the menu from inside a section too, not just from the list.
+    // B from inside a section goes back to the list on the left, as a
+    // Switch's menus do; from the list it closes the menu.
     CHECK(picker.on_content());
+    CHECK(!picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
+    CHECK(!picker.on_content());
+    CHECK(picker.is_open());
     CHECK(picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
 
     // Options: A on a row cycles it and stays there.
@@ -1453,13 +1457,19 @@ void test_the_menu_reopens_on_the_section_it_was_closed_on() {
     picker.open(state);
     CHECK(picker.section() == MenuSection::Continue);
 
-    // Down to Options, across into it, and closed with B from in there.
+    // Down to Options, across into it, back out to the list with B, and
+    // closed with the menu button from in there -- that one closes it
+    // wherever the cursor is.
     while (picker.section() != MenuSection::Options) {
         picker.update({UiAction::Down}, {}, kWidth, kHeight);
     }
     picker.update({UiAction::Right}, {}, kWidth, kHeight);
     CHECK(picker.on_content());
-    CHECK(picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
+    CHECK(!picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
+    CHECK(picker.section() == MenuSection::Options);
+    picker.update({UiAction::Right}, {}, kWidth, kHeight);
+    CHECK(picker.on_content());
+    CHECK(picker.update({UiAction::ToggleMenu}, {}, kWidth, kHeight).close_requested);
     picker.close();
 
     picker.open(state);

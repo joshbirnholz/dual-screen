@@ -774,12 +774,19 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
                 activate_section(result);
             }
             break;
-        // Straight out of the menu, from the list or from inside a section:
-        // B is how a player gets back to the game, and having to press it
-        // twice from the right-hand side was a step nobody wanted. Left is
-        // still the way back to the list. The section is remembered, so the
-        // menu opens on it again -- see open().
+        // B backs out a step at a time, the way a Switch's own menus do:
+        // from inside a section to the list on the left, and from the list
+        // out of the menu. The section is remembered, so the menu opens on it
+        // again -- see open().
         case UiAction::Cancel:
+            if (on_content_) {
+                on_content_ = false;
+            } else if (!state_.embedded) {
+                result.close_requested = true;
+            }
+            break;
+        // The menu's own button closes it from wherever the cursor is: it is
+        // the button that opened it.
         case UiAction::ToggleMenu:
             if (!state_.embedded) {
                 result.close_requested = true;
