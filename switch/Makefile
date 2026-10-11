@@ -91,7 +91,7 @@ CPPFILES    := main.cpp \
                color_convert.cpp h264_bitstream.cpp videotoolbox_decoder.cpp \
                mediacodec_decoder.cpp video_decoder.cpp video_encoder.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp frame_delay.cpp gl_loader.cpp gl_window.cpp \
-               menu_backdrop.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
+               menu_backdrop.cpp menu_overlay.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \
                connecting_screen.cpp control_guide.cpp controllers_screen.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
                notice_popup.cpp \
