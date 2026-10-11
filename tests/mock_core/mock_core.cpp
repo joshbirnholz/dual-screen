@@ -677,6 +677,30 @@ void draw_button_indicators() {
         fill_rect(static_cast<int>(kTopX) + indicator.x, static_cast<int>(kTopHeight) - 24, 14, 14,
                   down ? pack(255, 255, 120) : pack(50, 50, 60));
     }
+    // A row above for the second shoulders and the stick presses, which a DS
+    // core gives jobs of its own -- see MOCK_CORE_MIC_ON_L2.
+    const struct {
+        unsigned id;
+        int x;
+    } kExtraIndicators[] = {
+        {RETRO_DEVICE_ID_JOYPAD_L2, 8},
+        {RETRO_DEVICE_ID_JOYPAD_R2, 28},
+        {RETRO_DEVICE_ID_JOYPAD_L3, 48},
+        {RETRO_DEVICE_ID_JOYPAD_R3, 68},
+    };
+    for (const auto& indicator : kExtraIndicators) {
+        const bool down = g_input_state(0, RETRO_DEVICE_JOYPAD, 0, indicator.id) != 0;
+        fill_rect(static_cast<int>(kTopX) + indicator.x, static_cast<int>(kTopHeight) - 44, 14, 14,
+                  down ? pack(255, 255, 120) : pack(50, 50, 60));
+    }
+}
+
+// melonDS DS up to 1.2 put the microphone on L2 and the DS's lid on L3, and
+// said so in its input descriptors; from 1.3 the microphone is L3. Set, the
+// mock speaks the older one.
+bool mic_on_l2() {
+    const char* set = std::getenv("MOCK_CORE_MIC_ON_L2");
+    return !kIsThreeDs && set != nullptr && set[0] != '\0' && set[0] != '0';
 }
 
 }  // namespace
@@ -701,6 +725,17 @@ RETRO_API void retro_set_environment(retro_environment_t callback) {
             : speaks_legacy_melonds() ? kLegacyMelonDsOptions
                                       : kOptions);
         callback(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, &options);
+    }
+
+    if (mic_on_l2()) {
+        static const retro_input_descriptor kDescriptors[] = {
+            {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "A"},
+            {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Microphone"},
+            {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Next Screen Layout"},
+            {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "Close Lid"},
+            {0, 0, 0, 0, nullptr},
+        };
+        callback(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, const_cast<retro_input_descriptor*>(kDescriptors));
     }
 
     // Stands in for a 3DS's swkbd asking to actually receive what is typed,

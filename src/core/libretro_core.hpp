@@ -27,6 +27,7 @@ inline constexpr const char* kBuiltInCorePath = "built in";
 std::optional<SystemId> builtin_core_system();
 
 struct DsInputState;
+enum class DsButton;
 
 struct CoreAvInfo {
     unsigned base_width = 0;
@@ -232,6 +233,10 @@ public:
     const std::vector<std::string>& option_warnings() const { return option_warnings_; }
     const std::map<std::string, CoreOptionInfo>& declared_options() const { return declared_options_; }
     std::string option_value(const std::string& key) const;
+    // The pad button this core blows into the microphone with, by libretro id:
+    // whichever one its input descriptors call "Microphone", or L3 when it
+    // names none. See mic_button_id_.
+    unsigned microphone_button() const { return mic_button_id_; }
 
 private:
     // libretro frontend callbacks (static thunks -> active instance)
@@ -245,6 +250,8 @@ private:
     bool on_environment(unsigned command, void* data);
     void on_video_refresh(const void* data, unsigned width, unsigned height, std::size_t pitch);
     int16_t on_input_state(unsigned port, unsigned device, unsigned index, unsigned id) const;
+    // retro_id_for(), except for the microphone -- see mic_button_id_.
+    unsigned id_for(DsButton button) const;
     int16_t pointer_axis(bool horizontal) const;
 
     // One retro_run, with this frontend's GL handover around it. run_frame()
@@ -292,6 +299,14 @@ private:
 
     std::map<std::string, CoreOptionInfo> declared_options_;
     std::map<std::string, std::string> option_values_;
+    // Where this app's microphone button (DsButton::LeftStick, on a console
+    // with one) reaches the core. melonDS DS moved it: up to 1.2 the
+    // microphone is L2 and L3 closes the DS's lid -- a press that blanked
+    // both screens and paused the game until it was pressed again -- and
+    // from 1.3 the microphone is L3. Both say which in their input
+    // descriptors, so the core's own word is taken over any version number.
+    unsigned mic_button_id_ = kJoypadL3;
+    static constexpr unsigned kJoypadL3 = 14;  // RETRO_DEVICE_ID_JOYPAD_L3
     // A setting we insist on, and the spellings it may go by.
     struct ForcedOption {
         std::vector<std::string> values;  // in order of preference

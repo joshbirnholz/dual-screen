@@ -1257,7 +1257,16 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
                         std::tolower(static_cast<unsigned char>(character))));
                 }
                 const bool interesting = lowered.find("mic") != std::string::npos ||
-                                         lowered.find("blow") != std::string::npos;
+                                         lowered.find("blow") != std::string::npos ||
+                                         lowered.find("lid") != std::string::npos;
+                if (descriptor->port == 0 && descriptor->device == RETRO_DEVICE_JOYPAD &&
+                    lowered.find("microphone") != std::string::npos &&
+                    descriptor->id != mic_button_id_) {
+                    mic_button_id_ = descriptor->id;
+                    log_info("the microphone goes to the core as its button " +
+                             std::to_string(descriptor->id) + ", which it calls \"" + description +
+                             "\"");
+                }
                 const std::string line =
                     "core input: port " + std::to_string(descriptor->port) + " id " +
                     std::to_string(descriptor->id) + " is \"" + description + "\"";
@@ -1371,6 +1380,11 @@ void LibretroCore::on_video_refresh(const void* data, unsigned width, unsigned h
     video_frame_.serial = ++video_serial_;
 }
 
+unsigned LibretroCore::id_for(DsButton button) const {
+    static_assert(kJoypadL3 == RETRO_DEVICE_ID_JOYPAD_L3);
+    return button == DsButton::LeftStick ? mic_button_id_ : retro_id_for(button);
+}
+
 int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned index, unsigned id) const {
     if (port != 0 || input_state_ == nullptr) {
         return 0;
@@ -1381,15 +1395,15 @@ int16_t LibretroCore::on_input_state(unsigned port, unsigned device, unsigned in
             int16_t mask = 0;
             for (unsigned button = 0; button < static_cast<unsigned>(DsButton::Count); ++button) {
                 if (input_state_->pressed(static_cast<DsButton>(button))) {
-                    mask |= static_cast<int16_t>(1 << retro_id_for(static_cast<DsButton>(button)));
+                    mask |= static_cast<int16_t>(1 << id_for(static_cast<DsButton>(button)));
                 }
             }
             return mask;
         }
         for (unsigned button = 0; button < static_cast<unsigned>(DsButton::Count); ++button) {
             const DsButton ds_button = static_cast<DsButton>(button);
-            if (retro_id_for(ds_button) == id) {
-                return input_state_->pressed(ds_button) ? 1 : 0;
+            if (id_for(ds_button) == id && input_state_->pressed(ds_button)) {
+                return 1;
             }
         }
         return 0;

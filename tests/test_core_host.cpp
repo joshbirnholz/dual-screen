@@ -762,6 +762,63 @@ void test_the_older_melonds_takes_its_own_option_names() {
     source.close();
 }
 
+// The microphone button goes wherever the core says its microphone is. melonDS
+// DS up to 1.2 has it on L2 and closes the DS's lid on L3 -- sent as L3, the
+// press meant to blow into the microphone blanked both screens and paused the
+// game until it was pressed again. Whichever button a core calls "Microphone"
+// is the one, and L3 is left alone; a core that names none keeps L3.
+std::string extra_buttons_lit(const CoreVideoFrame& frame) {
+    // mock_core.cpp's second indicator row: L2, R2, L3, R3.
+    const struct {
+        const char* name;
+        int x;
+    } kExtra[] = {{"L2", 8}, {"R2", 28}, {"L3", 48}, {"R3", 68}};
+    const int row = 192 - 44 + 6;
+    std::string lit;
+    for (const auto& indicator : kExtra) {
+        const uint32_t pixel = frame.pixels[static_cast<std::size_t>(row) * frame.stride_pixels +
+                                            static_cast<std::size_t>(indicator.x) + 6] &
+                               0x00ffffffu;
+        if (pixel == 0x00ffff78u) {  // pack(255, 255, 120)
+            if (!lit.empty()) lit += ",";
+            lit += indicator.name;
+        }
+    }
+    return lit;
+}
+
+std::string buttons_the_microphone_presses(bool mic_on_l2) {
+    const std::string core_path = mock_core_path();
+    if (core_path.empty()) return "skipped";
+    if (mic_on_l2) ::setenv("MOCK_CORE_MIC_ON_L2", "1", 1);
+    struct Restore {
+        ~Restore() { ::unsetenv("MOCK_CORE_MIC_ON_L2"); }
+    } restore;
+
+    LibretroCoreScreenSource source;
+    LibretroSourceConfig config;
+    config.core_path = core_path;
+    config.rom_path = make_fake_rom();
+    config.system_directory = "/tmp";
+    config.save_directory = "/tmp";
+    std::string error;
+    if (!source.open(config, &error)) return "open failed: " + error;
+    DsInputState blowing;
+    blowing.set(DsButton::LeftStick, true);
+    source.input_sink().submit(blowing);
+    if (!source.advance_frame(&error)) return "frame failed: " + error;
+    const std::string lit = extra_buttons_lit(source.core_frame_for_test());
+    source.close();
+    return lit;
+}
+
+void test_the_microphone_is_whichever_button_the_core_says() {
+    const std::string older = buttons_the_microphone_presses(true);
+    if (older == "skipped") return;
+    CHECK_STR_EQ(older, "L2");
+    CHECK_STR_EQ(buttons_the_microphone_presses(false), "L3");
+}
+
 // Rendering at 2x changes how much the core draws and nothing else. The two
 // screens have to come out of the larger buffer whole, in the same places, and
 // the geometry the layouts are built from has to stay the console's own -- a
@@ -1087,6 +1144,7 @@ int main() {
     test_screen_source_handles_a_3ds_core();
     test_a_3ds_core_that_spells_its_options_differently();
     test_the_older_melonds_takes_its_own_option_names();
+    test_the_microphone_is_whichever_button_the_core_says();
     test_render_scale_only_changes_the_resolution();
     test_read_screen_bounds_the_target_size();
     test_render_scale_is_ignored_where_there_is_none();

@@ -160,7 +160,10 @@ stylus is set for: a left-handed focus layout swaps to the other one
 left-handed too. On a DS that is one of two
 things L3 can be: **Left Stick Click** under Options in the quick menu chooses
 between that and holding the DS's microphone, for games that ask to be blown
-into. Like everything else on that menu it is the host's, and both devices'
+into. Held, it reaches melonDS DS as whichever button the core itself calls
+its microphone: L3 from version 1.3, and L2 before that, when L3 closed the
+DS's lid -- which, pressed by mistake, blanks both screens and pauses the game
+until it is pressed again. Like everything else on that menu it is the host's, and both devices'
 L3 follow it while they are connected. L3 does nothing under any other
 layout but Separate Screens, and like everything else on that menu it is one choice for both devices:
 pressing it on the companion asks the host, the same as picking the layout from
