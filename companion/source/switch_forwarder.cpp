@@ -209,6 +209,22 @@ std::unique_ptr<ForwarderPlatform> make_switch_forwarder_platform(const std::str
     return std::make_unique<SwitchForwarderPlatform>(nro_path);
 }
 
+bool curl_needs_ca_file() {
+#if DS_HAVE_CURL
+    return needs_ca_file();
+#else
+    return false;
+#endif
+}
+
+std::string console_ca_file() {
+#if DS_HAVE_CURL
+    return system_ca_file();
+#else
+    return std::string();
+#endif
+}
+
 }  // namespace ds::sw
 
 #endif

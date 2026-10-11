@@ -45,7 +45,25 @@ string(TIMESTAMP DUALSCREEN_CONFIGURED_AT "%Y-%m-%d %H:%M" UTC)
 set(DUALSCREEN_BUILD_STAMP "${DUALSCREEN_GIT_HASH}, configured ${DUALSCREEN_CONFIGURED_AT}")
 message(STATUS "build stamp: ${DUALSCREEN_BUILD_STAMP}")
 
+# Which nightly this is, for the updater to compare with the newest one -- see
+# src/update/. Set by CI (.github/workflows/builds.yml), through the
+# environment or -DDUALSCREEN_BUILD_NUMBER; 0, a build made anywhere else,
+# is one the updater leaves alone unless asked.
+if(NOT DEFINED DUALSCREEN_BUILD_NUMBER)
+    if(DEFINED ENV{DUALSCREEN_BUILD_NUMBER} AND NOT "$ENV{DUALSCREEN_BUILD_NUMBER}" STREQUAL "")
+        set(DUALSCREEN_BUILD_NUMBER "$ENV{DUALSCREEN_BUILD_NUMBER}")
+    else()
+        set(DUALSCREEN_BUILD_NUMBER 0)
+    endif()
+endif()
+if(NOT DUALSCREEN_BUILD_NUMBER MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "DUALSCREEN_BUILD_NUMBER is \"${DUALSCREEN_BUILD_NUMBER}\", not a number")
+endif()
+if(NOT DUALSCREEN_BUILD_NUMBER EQUAL 0)
+    message(STATUS "nightly build ${DUALSCREEN_BUILD_NUMBER}")
+endif()
+
 function(dualscreen_stamp_build source)
     set_source_files_properties("${source}" PROPERTIES
-        COMPILE_DEFINITIONS "DS_BUILD_STAMP=\"${DUALSCREEN_BUILD_STAMP}\"")
+        COMPILE_DEFINITIONS "DS_BUILD_STAMP=\"${DUALSCREEN_BUILD_STAMP}\";DS_BUILD_NUMBER=${DUALSCREEN_BUILD_NUMBER}")
 endfunction()

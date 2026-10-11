@@ -32,6 +32,12 @@ concurrency:
 permissions:
   contents: write
 
+# Which build each is, compiled into it, for the updater to compare with the
+# newest one -- see src/update/updater.hpp. CMake and switch/Makefile both
+# read it from here.
+env:
+  DUALSCREEN_BUILD_NUMBER: ${{ github.run_number }}
+
 jobs:
   steamos:
     name: SteamOS

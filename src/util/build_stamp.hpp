@@ -18,6 +18,11 @@ namespace ds {
 // which is the device furthest from whoever is reading the log.
 std::string build_stamp();
 
+// Which nightly this is -- the number of the CI run that built it, which is
+// what the updater compares with the newest one (see src/update/). 0 for a
+// build made anywhere else.
+int build_number();
+
 // Logs it as an info line, or says outright that this build does not carry one
 // -- which is itself the answer to the same question, since a binary old
 // enough to predate this cannot say anything at all.

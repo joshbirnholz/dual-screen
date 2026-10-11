@@ -1,8 +1,10 @@
 package com.dualscreen.companion;
 
 import android.Manifest;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
@@ -15,6 +17,17 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.WindowManager;
+import android.widget.Toast;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 import org.libsdl.app.SDLActivity;
 
@@ -221,6 +234,166 @@ public class DualscreenActivity extends SDLActivity {
             }
         });
         return true;
+    }
+
+    // ---- Updates -------------------------------------------------------
+    //
+    // Called from native code on the updater's own thread (see
+    // companion/source/android_updater.cpp): fetching what the newest build
+    // is, downloading it, and handing it to Android's package installer.
+    // Each of them blocks, and each says what went wrong through
+    // updateError() rather than an exception crossing into native code.
+
+    /** Where the package installer's answer comes back to, as a new intent. */
+    private static final String ACTION_INSTALLED = "com.dualscreen.companion.UPDATE_INSTALLED";
+
+    private volatile String updateError = "";
+
+    /** Why the last of the methods below failed. */
+    public String updateError() {
+        return updateError;
+    }
+
+    /** How far a download has got; false to stop it. */
+    private static native boolean updateProgress(long done, long total);
+
+    private static HttpURLConnection open(String address) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(address).openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("User-Agent", "Dualscreen");
+        int status = connection.getResponseCode();
+        if (status != HttpURLConnection.HTTP_OK) {
+            connection.disconnect();
+            throw new IOException(status == HttpURLConnection.HTTP_NOT_FOUND
+                    ? "the release is not there" : "GitHub answered " + status);
+        }
+        return connection;
+    }
+
+    private static String describe(Exception error) {
+        if (error instanceof java.net.UnknownHostException
+                || error instanceof java.net.ConnectException
+                || error instanceof java.net.SocketTimeoutException) {
+            return "GitHub could not be reached";
+        }
+        String message = error.getMessage();
+        return message == null || message.isEmpty() ? error.getClass().getSimpleName() : message;
+    }
+
+    /** A small file, whole -- the release's version.json -- or null. */
+    public String httpGet(String address) {
+        HttpURLConnection connection = null;
+        try {
+            connection = open(address);
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            try (InputStream in = connection.getInputStream()) {
+                for (int read; (read = in.read(buffer)) > 0; ) {
+                    body.write(buffer, 0, read);
+                    if (body.size() > 65536) throw new IOException("the answer is too long");
+                }
+            }
+            return body.toString("UTF-8");
+        } catch (Exception error) {
+            updateError = describe(error);
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    /** A release's file, into {@code path}. */
+    public boolean downloadFile(String address, String path) {
+        HttpURLConnection connection = null;
+        File file = new File(path);
+        try {
+            connection = open(address);
+            long total = connection.getContentLength();
+            long done = 0;
+            byte[] buffer = new byte[65536];
+            try (InputStream in = connection.getInputStream();
+                 OutputStream out = new FileOutputStream(file)) {
+                for (int read; (read = in.read(buffer)) > 0; ) {
+                    out.write(buffer, 0, read);
+                    done += read;
+                    if (!updateProgress(done, Math.max(0, total))) {
+                        throw new IOException("cancelled");
+                    }
+                }
+            }
+            return true;
+        } catch (Exception error) {
+            updateError = describe(error);
+            file.delete();
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    /**
+     * Hands the APK at {@code path} to the package installer. It asks the
+     * player -- and, the first time, for this app to be allowed to install
+     * apps at all -- then replaces this one; its answer comes back through
+     * onNewIntent(). True once it has been handed over.
+     */
+    public boolean installPackage(String path) {
+        File file = new File(path);
+        PackageInstaller.Session session = null;
+        try {
+            PackageInstaller installer = getPackageManager().getPackageInstaller();
+            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
+                    PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setAppPackageName(getPackageName());
+            int id = installer.createSession(params);
+            session = installer.openSession(id);
+            try (InputStream in = new FileInputStream(file);
+                 OutputStream out = session.openWrite("dualscreen.apk", 0, file.length())) {
+                byte[] buffer = new byte[65536];
+                for (int read; (read = in.read(buffer)) > 0; ) {
+                    out.write(buffer, 0, read);
+                }
+                session.fsync(out);
+            }
+            Intent answer = new Intent(this, DualscreenActivity.class).setAction(ACTION_INSTALLED);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            // The installer adds its answer to the intent, which Android 12
+            // and later allow only into one marked mutable.
+            if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+            PendingIntent pending = PendingIntent.getActivity(this, id, answer, flags);
+            session.commit(pending.getIntentSender());
+            Log.i(TAG, "handed the update to the package installer");
+            return true;
+        } catch (Exception error) {
+            updateError = describe(error);
+            if (session != null) session.abandon();
+            return false;
+        } finally {
+            if (session != null) session.close();
+            file.delete();
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        if (intent != null && ACTION_INSTALLED.equals(intent.getAction())) {
+            int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS,
+                    PackageInstaller.STATUS_FAILURE);
+            if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                // The installer's own screen, asking the player.
+                Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
+                if (confirm != null) startActivity(confirm);
+            } else if (status != PackageInstaller.STATUS_SUCCESS) {
+                String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+                Log.w(TAG, "the update was not installed: " + message);
+                Toast.makeText(this, "The update was not installed"
+                        + (message == null ? "." : ": " + message), Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+        super.onNewIntent(intent);
     }
 
     @Override

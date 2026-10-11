@@ -118,6 +118,10 @@ extern "C" {
 #include "core/libretro_core.hpp"
 #include "ui/data_management_screen.hpp"
 #include "ui/settings_screen.hpp"
+#include "ui/update_prompt.hpp"
+#include "update/updater.hpp"
+#include "android_updater.hpp"
+#include "switch_updater.hpp"
 #endif
 
 #if defined(__APPLE__)
@@ -176,6 +180,9 @@ constexpr const char* kFileAccessNotice =
 #endif
 
 struct Options {
+    // This program's own path, argv[0]: what an update replaces, and starts
+    // again -- see switch_updater.hpp.
+    std::string self_path;
     // Which screen to be. Given on the command line, this device joins the
     // first host offering it without anybody choosing -- the same as the
     // desktop app's --connect, and what a launcher shortcut wants.
@@ -399,6 +406,8 @@ private:
 
     void open_launcher();
 #if DS_LOCAL_PLAY
+    void start_updater(const AppPaths& paths);
+    void poll_updates();
     void open_settings();
     void open_data_management();
 #endif
@@ -551,6 +560,11 @@ private:
     // same settings.json; Data Management is its first row.
     std::unique_ptr<SettingsScreen> settings_screen_;
     Settings settings_;
+    // Updating this app from the nightly builds, on a Switch or an Android
+    // device built by CI: offered on the opening screen when a check at
+    // start finds one, and from Settings. See update/updater.hpp.
+    std::unique_ptr<update::Updater> updater_;
+    UpdatePrompt update_prompt_;
 #endif
 };
 
@@ -708,6 +722,7 @@ bool Client::start() {
             log_warn("not answering other devices about saves: " + error);
             save_service_.reset();
         }
+        start_updater(paths);
     }
 #endif
 
@@ -723,6 +738,9 @@ bool Client::start() {
 
 void Client::stop() {
 #if DS_LOCAL_PLAY
+    // Stops a check or a download under way, and waits for it.
+    update_prompt_.set_updater(nullptr);
+    updater_.reset();
     // Before a game here starts answering in its place. The screen first: it
     // may be waiting on a search, and holds textures the context below owns.
     data_screen_.reset();
@@ -777,12 +795,51 @@ void Client::open_launcher() {
 }
 
 #if DS_LOCAL_PLAY
+void Client::start_updater(const AppPaths& paths) {
+    std::unique_ptr<update::Backend> backend;
+    const char* asset = "";
+#if defined(__SWITCH__)
+    backend = sw::make_switch_update_backend(options_.self_path, path_join(paths.data_dir, "update"));
+    asset = sw::kSwitchAsset;
+#elif defined(__ANDROID__)
+    backend = android::make_android_update_backend();
+    asset = android::kAndroidAsset;
+#endif
+    if (!backend) return;
+    updater_ = std::make_unique<update::Updater>(
+        std::move(backend), update::components_for(asset, build_number(), false, update::kNotInstalled));
+    update_prompt_.set_updater(updater_.get());
+    update_prompt_.set_declined_file(path_join(path_join(paths.data_dir, "update"), "declined"));
+    // Only a build from CI looks at start-up -- one built by hand is offered
+    // the nightly only when it asks -- and never one joining a game straight
+    // from its command line, or run by a test.
+    if (build_number() > 0 && !options_.auto_connect && options_.exit_after_seconds <= 0.0) {
+        update_prompt_.check_at_start();
+    }
+}
+
+void Client::poll_updates() {
+    if (!updater_) return;
+    const UpdatePromptResult result = update_prompt_.poll(state_ == State::Launcher);
+    if (result.restart) {
+#if defined(__SWITCH__)
+        // The homebrew loader starts the new one once this has exited.
+        relaunch(options_.self_path, "");
+#endif
+        log_info("leaving to start the new build");
+        running_ = false;
+    }
+    if (settings_screen_) settings_screen_->set_updates_value(update_prompt_.row_value());
+}
+
 void Client::open_settings() {
     const AppPaths paths = AppPaths::resolve();
     settings_ = Settings::load(paths);
     if (!settings_screen_) {
         settings_screen_.reset(new SettingsScreen(paths));
         settings_screen_->set_offers_data_management(save_store_ != nullptr);
+        settings_screen_->set_offers_updates(updater_ != nullptr);
+        settings_screen_->set_updates_value(update_prompt_.row_value());
 #ifdef __SWITCH__
 #ifdef DS_DEKO_CORE
         settings_screen_->set_melonds_page(true, kMelonDsTuningPath);
@@ -1058,6 +1115,15 @@ void Client::route_guide_taps(std::vector<UiAction>& actions,
 
 void Client::handle_actions(const std::vector<UiAction>& actions,
                             const std::vector<PointerEvent>& pointers) {
+#if DS_LOCAL_PLAY
+    poll_updates();
+    // An update being offered, downloaded or reported takes every press.
+    if (update_prompt_.open()) {
+        update_prompt_.update(actions, pointers, static_cast<float>(output_width_),
+                              static_cast<float>(output_height_));
+        return;
+    }
+#endif
     if (state_ == State::Playing && menu_open_) {
         handle_menu(actions, pointers);
         return;
@@ -1117,7 +1183,9 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             ui_sounds_.set_enabled(settings_.ui_sounds);
             if (!settings_.save(AppPaths::resolve())) log_warn("could not save settings.json");
         }
-        if (result.open_data_management) {
+        if (result.open_updates) {
+            update_prompt_.choose();
+        } else if (result.open_data_management) {
             open_data_management();
         } else if (result.close_requested) {
             open_launcher();
@@ -1369,6 +1437,9 @@ UiSoundView Client::sound_view() const {
 #endif
         default: break;
     }
+#if DS_LOCAL_PLAY
+    update_prompt_.describe_for_sound(view);
+#endif
     return view;
 }
 
@@ -1789,6 +1860,7 @@ void Client::draw_scene() {
     if (state_ == State::Settings) {
 #if DS_LOCAL_PLAY
         if (settings_screen_) settings_screen_->render(quads_, text_, button_glyphs_, width, height);
+        update_prompt_.render(quads_, text_, button_glyphs_, width, height);
 #endif
         return;
     }
@@ -1800,6 +1872,9 @@ void Client::draw_scene() {
         if (!launcher_notice_.empty()) {
             render_notice_popup(quads_, text_, button_glyphs_, width, height, launcher_notice_);
         }
+#if DS_LOCAL_PLAY
+        update_prompt_.render(quads_, text_, button_glyphs_, width, height);
+#endif
         return;
     }
     if (state_ == State::Connecting) {
@@ -2050,6 +2125,7 @@ int main(int argc, char** argv) {
         // Round again only on a device that plays a game in this process
         // and comes back to the menu after -- see below.
         Options menu_options = options;
+        menu_options.self_path = self_path;
         for (bool again = true; again;) {
             again = false;
             Client client(menu_options);

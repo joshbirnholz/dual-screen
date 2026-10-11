@@ -179,6 +179,8 @@ there is a release build, numbered by the run (`versionCode` is the build
 number), and signed with one key kept in the repository's secrets -- so each
 build installs over the one before it. An APK signed with a different key will
 not: going from a locally built debug APK to these needs one uninstall first.
+Once one is installed, Dualscreen updates itself from the next -- see Updates
+in the main README.
 
 The four secrets, under the repository's **Settings > Secrets and variables >
 Actions**:

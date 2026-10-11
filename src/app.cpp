@@ -65,6 +65,9 @@
 #include "ui/list_touch.hpp"
 #include "ui/message_screen.hpp"
 #include "ui/settings_screen.hpp"
+#include "ui/update_prompt.hpp"
+#include "update/desktop_updater.hpp"
+#include "update/updater.hpp"
 #include "util/child_process.hpp"
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
@@ -396,6 +399,13 @@ struct App::Impl {
     ChildProcess external_program;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
+    // Updating Dualscreen, and the Cemu it keeps, from the nightly builds --
+    // on a PC or a Steam Deck. Null everywhere else: a Switch's and an
+    // Android device's are their companion menu's. See update/updater.hpp.
+    std::unique_ptr<update::Updater> updater;
+    UpdatePrompt update_prompt;
+    void start_updater(const AppOptions& options);
+    void poll_updates();
     std::unique_ptr<DataManagementScreen> data_screen;
     // What the popup over a paused game says: that it was resumed, or that
     // Data Management restarted it on another save.
@@ -2592,7 +2602,47 @@ void App::Impl::apply_data_management_result(const DataManagementResult& result)
     }
 }
 
+void App::Impl::start_updater(const AppOptions& options) {
+    if (!update::desktop_updates_supported() || options.leave_instead_of_launcher) return;
+    // Cemu, when Dualscreen is the one keeping it: when no other Wii U
+    // program is named, the one it downloaded is the one used.
+    const std::string cemu = update::managed_cemu_path(paths.data_dir);
+    const bool keeps_cemu = settings.wii_u_program.empty() || settings.wii_u_program == cemu;
+    if (settings.wii_u_program.empty() && file_exists(cemu)) settings.wii_u_program = cemu;
+    updater = std::make_unique<update::Updater>(
+        update::make_desktop_backend(paths.data_dir),
+        update::components_for(update::kSteamOsAsset, build_number(), keeps_cemu,
+                               keeps_cemu ? update::managed_cemu_build(paths.data_dir) : update::kNotInstalled));
+    update_prompt.set_updater(updater.get());
+    update_prompt.set_declined_file(path_join(path_join(paths.data_dir, "update"), "declined"));
+    settings_screen->set_offers_updates(true);
+    // At start-up, quietly, and only on a build from CI: a build made by hand
+    // is not offered one unless it asks, so there is nothing to look for --
+    // and nothing for a test run to go out to the network for.
+    const bool test_run = options.exit_after_frames > 0 || options.exit_after_seconds > 0.0;
+    if (build_number() > 0 && !test_run) update_prompt.check_at_start();
+}
+
+void App::Impl::poll_updates() {
+    if (!updater) return;
+    const UpdatePromptResult result = update_prompt.poll(state == State::Launcher);
+    if (result.cemu_installed && settings.wii_u_program.empty()) {
+        settings.wii_u_program = update::managed_cemu_path(paths.data_dir);
+        if (!settings.save(paths)) log_warn("could not save settings.json");
+    }
+    if (result.restart) {
+        log_info("leaving to start the new build");
+        update::request_restart();
+        running = false;
+    }
+    settings_screen->set_updates_value(update_prompt.row_value());
+}
+
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
+    if (result.open_updates) {
+        update_prompt.choose();
+        return;
+    }
     if (result.open_data_management) {
         // Every game's saves, from Settings, whether or not one is playing.
         open_data_management(true);
@@ -3289,6 +3339,7 @@ UiSoundView App::Impl::sound_view() const {
         case State::Companion:
         case State::ResumeNotice: break;
     }
+    update_prompt.describe_for_sound(view);
     return view;
 }
 
@@ -3304,6 +3355,14 @@ void App::Impl::play_ui_sound(UiSound sound, const UiSoundView& view) {
 
 void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                           const std::vector<PointerEvent>& pointers) {
+    poll_updates();
+    // An update being offered, downloaded or reported is answered before
+    // anything under it sees a press.
+    if (update_prompt.open()) {
+        update_prompt.update(actions, pointers, static_cast<float>(output_width),
+                             static_cast<float>(output_height));
+        return;
+    }
     // Filtering is deliberately handled before anything else looks at the
     // actions: R3 means the same thing in a game and in every menu, so it does
     // not belong to any one screen.
@@ -3700,6 +3759,7 @@ void App::Impl::render() {
         launcher->render(quads, text, button_glyphs, width, height,
                          companion_session ? static_cast<int>(companion_session->hosts().size())
                                            : 0);
+        update_prompt.render(quads, text, button_glyphs, width, height);
         swap();
         ++frames_rendered;
         return;
@@ -3880,6 +3940,7 @@ void App::Impl::render() {
     } else if (state == State::Settings) {
         settings_screen->set_over_game(show_menu_backdrop);
         settings_screen->render(quads, text, button_glyphs, width, height);
+        update_prompt.render(quads, text, button_glyphs, width, height);
     } else if (state == State::DataManagement) {
         data_screen->set_over_game(show_menu_backdrop);
         data_screen->render(quads, text, button_glyphs, width, height);
@@ -4142,6 +4203,7 @@ int App::run(const AppOptions& options) {
         impl.settings_screen->set_melonds_page(true, ini);
     }
 #endif
+    impl.start_updater(options);
     impl.active_layout_id = kNewGameLayoutId;
     // A starting guess for the settings screen. Loading a game replaces it with
     // the core for whichever console that game is for.
@@ -4222,6 +4284,11 @@ int App::run(const AppOptions& options) {
         impl.open_browser();
     } else if (options.start_screen == "settings") {
         impl.open_settings();
+    } else if (options.start_screen == "updates") {
+        // Settings, with its Updates row chosen: a real check, for seeing
+        // what the popups that follow look like.
+        impl.open_settings();
+        impl.update_prompt.choose();
     } else if (options.start_screen == "controllers") {
         impl.open_controllers();
     } else if (options.start_screen == "data") {

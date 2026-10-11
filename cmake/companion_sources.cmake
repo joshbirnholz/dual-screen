@@ -101,5 +101,9 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/forwarder/steamgriddb.cpp
     src/ui/forwarder_screen.cpp
     src/util/child_process.cpp
+    src/update/updater.cpp
+    src/update/desktop_updater.cpp
+    src/ui/update_prompt.cpp
+    companion/source/android_updater.cpp
 )
 list(TRANSFORM DUALSCREEN_LOCAL_PLAY_SOURCES PREPEND "${DUALSCREEN_ROOT}/")

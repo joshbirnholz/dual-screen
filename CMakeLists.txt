@@ -183,6 +183,9 @@ add_library(dualscreen_core STATIC
     src/util/battery.cpp
     src/util/build_stamp.cpp
     src/util/child_process.cpp
+    src/update/updater.cpp
+    src/update/desktop_updater.cpp
+    src/ui/update_prompt.cpp
     src/util/log.cpp
 )
 

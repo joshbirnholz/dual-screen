@@ -53,7 +53,10 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments '-DANDROID_STL=c++_shared'
+                // The build number again, for the native updater (see
+                // src/update/updater.hpp): 0 for a local build.
+                arguments '-DANDROID_STL=c++_shared',
+                          "-DDUALSCREEN_BUILD_NUMBER=${project.findProperty('versionCode') ?: 0}"
             }
         }
         // See `abis` at the top.

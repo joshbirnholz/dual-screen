@@ -15,13 +15,23 @@ std::string build_stamp() {
 #endif
 }
 
+int build_number() {
+#ifdef DS_BUILD_NUMBER
+    return DS_BUILD_NUMBER;
+#else
+    return 0;
+#endif
+}
+
 void log_build_stamp() {
     const std::string stamp = build_stamp();
     if (stamp.empty()) {
         log_info("this build does not say which build it is");
         return;
     }
-    log_info("this build is " + stamp);
+    const int number = build_number();
+    log_info("this build is " + stamp +
+             (number > 0 ? ", nightly build " + std::to_string(number) : std::string()));
 }
 
 }  // namespace ds

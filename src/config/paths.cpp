@@ -414,6 +414,7 @@ AppPaths AppPaths::under(const PathConvention& convention) {
     paths.games_dir = path_join(paths.config_dir, "games");
     paths.settings_file = path_join(paths.config_dir, "settings.json");
     const std::string data = path_join(convention.data_root, "dualscreen");
+    paths.data_dir = data;
     paths.saves_dir = path_join(data, "saves");
     paths.default_system_dir = path_join(data, "system");
     paths.log_file = path_join(path_join(convention.log_root, "dualscreen"), "dualscreen.log");

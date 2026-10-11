@@ -65,7 +65,7 @@ void SettingsScreen::set_melonds_page(bool deko, std::string path) {
 
 int SettingsScreen::row_count() const {
     if (page_ == Page::MelonDs) return static_cast<int>(melon_rows().size());
-    return first_setting_row() + kRowCount + (melonds_available_ ? 1 : 0);
+    return first_setting_row() + kRowCount + (melonds_available_ ? 1 : 0) + (updates_row() >= 0 ? 1 : 0);
 }
 
 std::vector<SettingsScreen::MelonRow> SettingsScreen::melon_rows() const {
@@ -216,6 +216,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
     }
     if (focus_ == data_management_row()) {
         if (direction > 0) result.open_data_management = true;
+        return;
+    }
+    if (focus_ == updates_row()) {
+        if (direction > 0) result.open_updates = true;
         return;
     }
     switch (static_cast<Row>(focus_ - first_setting_row())) {
@@ -437,6 +441,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         if (offers_data_management_) rows.push_back({"Data Management", ""});
         for (const auto& row : main_rows) rows.push_back({row[0], row[1]});
         if (melonds_available_) rows.push_back({"melonDS", ""});
+        if (updates_row() >= 0) rows.push_back({"Updates", updates_value_});
     }
 
     for (int index = 0; index < static_cast<int>(rows.size()); ++index) {

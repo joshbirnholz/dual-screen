@@ -37,6 +37,9 @@ struct SettingsScreenResult {
     // Its Data Management row was chosen: the app opens it, and comes back
     // here when it is left.
     bool open_data_management = false;
+    // Its Updates row was chosen: the app checks for a newer build -- see
+    // UpdatePrompt.
+    bool open_updates = false;
 };
 
 // Shows where the app is looking for the core and the BIOS files, and lets the
@@ -66,6 +69,11 @@ public:
     void set_melonds_page(bool deko, std::string path);
     // A Data Management row, first, on a device that keeps saves of its own.
     void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
+    // An Updates row, last, on a device that can update itself, saying what
+    // `value` does -- which build this is, or what the updater is doing. Not
+    // over a game: an update ends with the app starting again.
+    void set_offers_updates(bool offers) { offers_updates_ = offers; }
+    void set_updates_value(std::string value) { updates_value_ = std::move(value); }
     // Back from Data Management: the cursor where it was, on its row.
     void return_from_data_management();
     bool on_melonds_page() const { return page_ == Page::MelonDs; }
@@ -155,6 +163,9 @@ private:
     // Where the rows of Row start: after Data Management's.
     int first_setting_row() const { return offers_data_management_ ? 1 : 0; }
     int melonds_row() const { return first_setting_row() + kRowCount; }
+    int updates_row() const {
+        return offers_updates_ && !over_game_ ? melonds_row() + (melonds_available_ ? 1 : 0) : -1;
+    }
     void open_melonds_page();
     void adjust_melonds(MelonRow row, int direction);
     static std::string melon_label(MelonRow row);
@@ -169,6 +180,8 @@ private:
     bool over_game_ = false;
 
     bool offers_data_management_ = false;
+    bool offers_updates_ = false;
+    std::string updates_value_;
     bool melonds_available_ = false;
     bool melonds_deko_ = false;
     std::string melonds_path_;

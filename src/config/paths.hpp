@@ -87,6 +87,7 @@ struct AppPaths {
     std::string config_dir;    // ~/.config/dualscreen, or ~/Library/Application Support
     std::string games_dir;     // .../games
     std::string settings_file; // .../settings.json
+    std::string data_dir;      // ~/.local/share/dualscreen: what the app owns
     std::string saves_dir;     // .../saves
     std::string default_system_dir;  // .../system
     std::string log_file;            // .../dualscreen.log

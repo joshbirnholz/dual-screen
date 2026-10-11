@@ -11,6 +11,10 @@
     <!-- Rumble: SDL cannot drive a controller's motor on Android, so the
          activity does, through the vibrator: see rumble(). -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Updating itself from the nightly builds: the APK is handed to the
+         system's package installer, which asks the player each time. See
+         DualscreenActivity.installPackage(). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Reading games from shared storage, to play them here. Asked for only
          when Load a game is chosen, never at start-up: see

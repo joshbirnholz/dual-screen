@@ -76,6 +76,7 @@ SOURCE_DIRS := $(CLIENT) \
                $(SHARED)/net \
                $(SHARED)/render \
                $(SHARED)/ui \
+               $(SHARED)/update \
                $(SHARED)/util \
                $(SHARED)/video
 
@@ -142,13 +143,13 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
-               child_process.cpp
+               child_process.cpp updater.cpp desktop_updater.cpp update_prompt.cpp
 
 # Making forwarders -- X on a ROM in the file picker: the Switch's half, which
 # the desktop app has no use for. forwarder/ is Sphaira's forwarder code,
 # adapted, and GPL-3.0-or-later like melonds_deko/ (see THIRD_PARTY.md); it
 # puts hbloader, built from forwarder/hbl and embedded here, in each one.
-FORWARDER_CPPFILES := forwarder_nca.cpp forwarder_install.cpp switch_forwarder.cpp \
+FORWARDER_CPPFILES := forwarder_nca.cpp forwarder_install.cpp switch_forwarder.cpp switch_updater.cpp \
                kForwarderHblMain.cpp kForwarderHblNpdm.cpp
 HBL_DIR := forwarder/hbl
 
@@ -415,6 +416,9 @@ else ifneq ($(strip $(shell git -C $(CURDIR)/.. status --porcelain --untracked-f
 DS_GIT_HASH := $(DS_GIT_HASH) with local changes
 endif
 DS_BUILD_STAMP := $(DS_GIT_HASH), built $(shell date -u '+%Y-%m-%d %H:%M') UTC
+# Which nightly this is, for the updater -- see cmake/build_stamp.cmake. CI sets
+# DUALSCREEN_BUILD_NUMBER; anywhere else it is 0.
+DS_BUILD_NUMBER := $(or $(strip $(DUALSCREEN_BUILD_NUMBER)),0)
 
 .PHONY: all clean
 
@@ -455,12 +459,12 @@ endif
 # that changed nothing does not relink for the sake of the stamp.
 .PHONY: stamp
 stamp: | $(BUILD)
-	@printf '#define DS_BUILD_STAMP "%s"\n' '$(DS_BUILD_STAMP)' > $(BUILD)/ds_build_stamp.h.new
+	@printf '#define DS_BUILD_STAMP "%s"\n#define DS_BUILD_NUMBER %s\n' '$(DS_BUILD_STAMP)' '$(DS_BUILD_NUMBER)' > $(BUILD)/ds_build_stamp.h.new
 	@if cmp -s $(BUILD)/ds_build_stamp.h.new $(BUILD)/ds_build_stamp.h; then \
 	    rm -f $(BUILD)/ds_build_stamp.h.new; \
 	else \
 	    mv $(BUILD)/ds_build_stamp.h.new $(BUILD)/ds_build_stamp.h; \
-	    echo 'build stamp: $(DS_BUILD_STAMP)'; \
+	    echo 'build stamp: $(DS_BUILD_STAMP), nightly build $(DS_BUILD_NUMBER)'; \
 	fi
 
 # Which configuration the objects in $(BUILD) were compiled for: with a DS core

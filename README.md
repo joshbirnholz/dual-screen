@@ -877,6 +877,33 @@ Every push to this branch is also built for SteamOS, the Switch and Android by
 with a `version.json` saying which build and commit it is. Android's signing
 key comes from the repository's secrets; see android/README.md.
 
+### Updates
+
+A build from there knows its own number, and updates itself from the next ones
+(`src/update/`). At start it looks at the nightly's `version.json`; when there
+is a newer build, the main menu offers it -- **Update** downloads and installs
+it, **Not Now** leaves it, and that build is not offered at start again.
+**Settings > Updates** says which build this is and checks again whenever it is
+chosen, including on a build made by hand, which never looks on its own.
+
+- **SteamOS**: the tarball is downloaded with the system's `curl`, unpacked
+  with `tar`, and its files are put in place of the ones in the folder
+  Dualscreen is running from; then Dualscreen starts again. That folder has to
+  be one it can write to.
+- **Switch**: the `.nro` is downloaded and written over the one Dualscreen was
+  started from, and the homebrew loader starts it again. Forwarders name that
+  path, so they start the new build too.
+- **Android**: the APK is handed to Android's package installer, which asks
+  first -- the first time, for Dualscreen to be allowed to install apps at
+  all -- and then replaces it. It only installs over a build signed with the
+  same key, so a locally built debug APK has to be uninstalled once first.
+
+On a PC or a Steam Deck it keeps **Cemu** too, from the fork's own nightly
+(`joshbirnholz/cemu-dualscreen`): when `wii_u_program` is not set, choosing
+Settings > Updates offers to download it, into `~/.local/share/dualscreen/cemu/`,
+and it is used for Wii U games and updated with Dualscreen from then on. A
+`wii_u_program` of your own is left alone.
+
 | Platform | What you get | Command | Details |
 | --- | --- | --- | --- |
 | Steam Deck / SteamOS | the desktop app | `./tools/build-steamos.sh` | [below](#steam-deck--steamos) |
