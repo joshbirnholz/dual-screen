@@ -680,6 +680,7 @@ bool menu_action_from_wire(uint8_t value, MenuAction& out) {
         case 8: out = MenuAction::Reset; return true;
         case 9: out = MenuAction::Disconnect; return true;
         case 10: out = MenuAction::Settings; return true;
+        case 11: out = MenuAction::Close; return true;
         default: break;
     }
     return false;

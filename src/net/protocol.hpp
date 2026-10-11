@@ -116,6 +116,10 @@ enum class MenuAction : uint8_t {
     // shared one -- see SessionStateMessage::settings_open -- but either pad
     // can ask for it and either pad can work it once it is up.
     Settings = 10,
+    // The menu's own button: closes the menu from wherever its cursor is,
+    // where Cancel steps back out of a section first. A host that predates it
+    // drops it, as it drops any value it does not know.
+    Close = 11,
 };
 
 // How a screen's pixels are encoded in a Frame message.

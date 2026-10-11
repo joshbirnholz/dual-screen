@@ -9,6 +9,7 @@
 #include "layout/layout_registry.hpp"
 #include "render/button_glyphs.hpp"
 #include "ui/layout_picker.hpp"
+#include "ui/menu_actions.hpp"
 #include "ui/notice_popup.hpp"
 
 using namespace ds;
@@ -532,6 +533,27 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(!picker.on_content());
     CHECK(picker.is_open());
     CHECK(picker.update({UiAction::Cancel}, {}, kWidth, kHeight).close_requested);
+
+    // The menu's own button closes it from inside a section in one press --
+    // and so does the same button pressed on the other device, which reaches
+    // this one over the wire as Close rather than as B.
+    open_on(picker, state, MenuSection::Layout);
+    picker.update({UiAction::Right}, {}, kWidth, kHeight);
+    CHECK(picker.on_content());
+    CHECK(picker.update({UiAction::ToggleMenu}, {}, kWidth, kHeight).close_requested);
+    net::MenuAction wire = net::MenuAction::Confirm;
+    CHECK(menu_action_for(UiAction::ToggleMenu, wire));
+    CHECK(wire == net::MenuAction::Close);
+    open_on(picker, state, MenuSection::Layout);
+    picker.update({UiAction::Right}, {}, kWidth, kHeight);
+    CHECK(picker.on_content());
+    net::MenuAction back = net::MenuAction::Confirm;
+    CHECK(menu_action_for(UiAction::Cancel, back));
+    CHECK(!picker.update({ui_action_for(back)}, {}, kWidth, kHeight).close_requested);
+    CHECK(!picker.on_content());
+    picker.update({UiAction::Right}, {}, kWidth, kHeight);
+    CHECK(picker.on_content());
+    CHECK(picker.update({ui_action_for(wire)}, {}, kWidth, kHeight).close_requested);
 
     // Options: A on a row cycles it and stays there.
     LayoutPicker options(registry);

@@ -19,8 +19,8 @@ inline bool menu_action_for(UiAction action, net::MenuAction& out) {
         case UiAction::Left: out = net::MenuAction::Left; return true;
         case UiAction::Right: out = net::MenuAction::Right; return true;
         case UiAction::Confirm: out = net::MenuAction::Confirm; return true;
-        case UiAction::Cancel:
-        case UiAction::ToggleMenu: out = net::MenuAction::Cancel; return true;
+        case UiAction::Cancel: out = net::MenuAction::Cancel; return true;
+        case UiAction::ToggleMenu: out = net::MenuAction::Close; return true;
         case UiAction::MenuQuit: out = net::MenuAction::Quit; return true;
         case UiAction::MenuReset: out = net::MenuAction::Reset; return true;
         case UiAction::MenuDisconnect: out = net::MenuAction::Disconnect; return true;
@@ -37,6 +37,7 @@ inline UiAction ui_action_for(net::MenuAction action) {
         case net::MenuAction::Left: return UiAction::Left;
         case net::MenuAction::Right: return UiAction::Right;
         case net::MenuAction::Cancel: return UiAction::Cancel;
+        case net::MenuAction::Close: return UiAction::ToggleMenu;
         case net::MenuAction::Quit: return UiAction::MenuQuit;
         case net::MenuAction::Reset: return UiAction::MenuReset;
         case net::MenuAction::Disconnect: return UiAction::MenuDisconnect;

@@ -469,6 +469,15 @@ void test_request_round_trip() {
     CHECK_EQ(received_press.wants_menu_focus, true);
     CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
 
+    // The menu button's own action, which closes rather than steps back.
+    pressed.menu_action = MenuAction::Close;
+    buffer.clear();
+    encode_request(pressed, buffer);
+    CHECK(one_message(buffer, type, payload));
+    RequestMessage received_close;
+    CHECK(decode_request(payload.data(), payload.size(), received_close));
+    CHECK(received_close.menu_action == MenuAction::Close);
+
     std::vector<uint8_t> impossible(payload);
     impossible[impossible.size() - 7] = 200;
     RequestMessage refused;
