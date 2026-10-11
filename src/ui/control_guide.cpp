@@ -200,6 +200,23 @@ float draw_control_guide(QuadRenderer& quads,
                 out_hits->push_back(GuideHit{prompts[index].glyph, box});
             }
         } else {
+            // Held down on, by a finger or the mouse, and still there: the
+            // prompt lights up behind itself, the way a Switch's own footer
+            // does, for exactly as long as letting go would press it. Only a
+            // press that began on it counts -- see tapped(). Only where the
+            // row can be pressed at all, which is where its hits are kept.
+            const PixelRect hit{pen_x, y, width, height};
+            const LivePointer& pointer = live_pointer();
+            if (out_hits != nullptr && pointer.down && hit.contains(pointer.press_x, pointer.press_y) &&
+                hit.contains(pointer.x, pointer.y)) {
+                const float pad_x = std::round(TextRenderer::line_height(scale) * 0.45f);
+                const float pad_y = std::round(height * 0.12f);
+                Color glow = ui_theme().accent;
+                glow.a = 0.22f;
+                quads.draw_rounded_rect(PixelRect{hit.x - pad_x, hit.y - pad_y, hit.w + pad_x * 2.0f,
+                                                  hit.h + pad_y * 2.0f},
+                                        std::round(scale * 3.0f), glow);
+            }
             glyphs.draw(quads, glyph_as_drawn(prompts[index].glyph), pen_x, y, height, color);
             if (prompts[index].pair != ButtonGlyph::Count) {
                 const float slash_x = pen_x + glyph_width + pair_gap;
@@ -233,6 +250,10 @@ LivePointer g_live_pointer;
 }  // namespace
 
 void set_live_pointer(bool down, float x, float y) {
+    if (down && !g_live_pointer.down) {
+        g_live_pointer.press_x = x;
+        g_live_pointer.press_y = y;
+    }
     g_live_pointer.down = down;
     g_live_pointer.x = x;
     g_live_pointer.y = y;

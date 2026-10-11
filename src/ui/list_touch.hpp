@@ -18,6 +18,10 @@ struct LivePointer {
     bool down = false;
     float x = 0.0f;
     float y = 0.0f;
+    // Where it went down, while it is down: a press only counts for what it
+    // both started and ends on.
+    float press_x = 0.0f;
+    float press_y = 0.0f;
 };
 void set_live_pointer(bool down, float x, float y);
 const LivePointer& live_pointer();
