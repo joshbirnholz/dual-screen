@@ -11,17 +11,16 @@
 #include "render/png_image.hpp"
 #include "ui/notice_popup.hpp"
 #include "ui/page_frame.hpp"
+#include "ui/ui_icons.hpp"
 #include "ui/ui_theme.hpp"
 #include "util/log.hpp"
 
 namespace ds {
 namespace {
 
-// The cells of assets/ui_icons.png, in order.
-enum class UiIcon { Get, Send, History, Delete, SteamDeck, Switch, Pc, Sync, Count };
-
 UiIcon device_icon(const std::string& kind) {
     if (kind == net::kDeviceKindSteamDeck) return UiIcon::SteamDeck;
+    if (kind == net::kDeviceKindAndroid) return UiIcon::Android;
     // No open icon of a Switch Lite exists, so a Lite is drawn as a Switch.
     if (kind == net::kDeviceKindSwitch || kind == net::kDeviceKindSwitchLite) return UiIcon::Switch;
     return UiIcon::Pc;
@@ -1246,24 +1245,7 @@ void DataManagementScreen::follow_focus(float output_width, float output_height)
     scroll = std::clamp(scroll, 0.0f, std::max(0.0f, static_cast<float>(count) * row_h - view));
 }
 
-bool DataManagementScreen::ensure_icons() {
-    if (ui_icons_.valid()) return true;
-    if (ui_icons_tried_) return false;
-    ui_icons_tried_ = true;
-    DecodedImage image;
-    std::string error;
-    if (!decode_png(assets::kUiIconsPng, assets::kUiIconsPng_size, image, &error)) {
-        log_warn("Data Management's icons would not load: " + error);
-        return false;
-    }
-    std::vector<uint8_t> coverage(image.pixels.size());
-    for (std::size_t index = 0; index < image.pixels.size(); ++index) {
-        coverage[index] = static_cast<uint8_t>(image.pixels[index] >> 24);
-    }
-    ui_icons_.upload_alpha8(coverage.data(), image.width, image.height);
-    ui_icons_.set_linear_filtering(true);
-    return ui_icons_.valid();
-}
+bool DataManagementScreen::ensure_icons() { return load_ui_icons(ui_icons_, ui_icons_tried_); }
 
 std::string DataManagementScreen::subtitle(const SaveInfo& info) const {
     // Which console it is, once there is more than one it could be.
@@ -1297,9 +1279,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
     const bool icons = ensure_icons();
     const auto draw_icon = [&](UiIcon icon, const PixelRect& rect, const Color& color) {
         if (!icons) return;
-        const float cells = static_cast<float>(static_cast<int>(UiIcon::Count));
-        const float cell = static_cast<float>(static_cast<int>(icon));
-        quads.draw_alpha_mask(rect, ui_icons_, color, cell / cells, 0.0f, (cell + 1.0f) / cells, 1.0f);
+        draw_ui_icon(quads, ui_icons_, icon, rect, color);
     };
     const auto draw_game_icon = [&](const SaveInfo& info, const PixelRect& rect) {
         if (const Texture* icon = game_icon(info)) {

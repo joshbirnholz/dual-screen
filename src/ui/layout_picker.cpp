@@ -1039,7 +1039,8 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
             faint.a = kSelectedTileOpacity;
             quads.draw_solid(row, faint);
         }
-        const Color& ink = focused ? theme.background : theme.text;
+        // Dark on either fill, the faint one included.
+        const Color& ink = current ? theme.background : theme.text;
         text.draw(quads, section_label(section), row.x + row.w - line * 0.8f,
                   row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f, row_scale, ink,
                   TextAlign::Right);

@@ -36,6 +36,9 @@ inline constexpr const char* kDeviceKindSteamDeck = "steam-deck";
 inline constexpr const char* kDeviceKindSwitch = "switch";
 inline constexpr const char* kDeviceKindSwitchLite = "switch-lite";
 inline constexpr const char* kDeviceKindPc = "pc";
+// A phone, a handheld or a TV box running Android. A device from before this
+// kind existed draws one as a PC.
+inline constexpr const char* kDeviceKindAndroid = "android";
 
 // This one's.
 std::string this_device_kind();

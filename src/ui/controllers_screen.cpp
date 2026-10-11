@@ -6,6 +6,7 @@
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/page_frame.hpp"
+#include "ui/ui_icons.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -265,9 +266,45 @@ void ControllersScreen::render(QuadRenderer& quads,
     quads.set_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
                              geometry.view_bottom - geometry.view_top});
     const float pad = menu_row_pad(line);
-    const float slot_column = std::max(TextRenderer::measure_width("Player 8", scale),
-                                       TextRenderer::measure_width("Not used", scale)) +
-                              pad * 3.0f;
+    const bool icons = load_ui_icons(icons_, icons_tried_);
+    // Which player a controller is, the way a Wii Remote's own lights say it:
+    // four squares in a row, the one for its number filled -- only that one,
+    // a Wii U's way, where a Switch fills every square up to it. A Wii U
+    // stops at four; past that, a Switch's patterns for five to eight.
+    const float light = std::round(line * 0.62f);
+    const float light_gap = std::round(light * 0.42f);
+    const float lights_width = light * 4.0f + light_gap * 3.0f;
+    // The GamePad is drawn as one. Its icon sits in a band half as tall as
+    // the square it is drawn in -- see ui/ui_icons.hpp.
+    const float gamepad_size = std::round(line * 2.3f);
+    const float slot_column = std::max(lights_width, gamepad_size) + pad * 3.0f;
+    const auto draw_slot = [&](const PadSlot& slot, const PixelRect& row, const Color& color) {
+        const float cy = row.y + row.h * 0.5f;
+        if (slot.kind == PadSlot::Kind::GamePad) {
+            if (icons) {
+                draw_ui_icon(quads, icons_, UiIcon::WiiUGamePad,
+                             PixelRect{row.x + pad, cy - gamepad_size * 0.5f, gamepad_size, gamepad_size},
+                             color);
+            } else {
+                text.draw(quads, "GamePad", row.x + pad, page_row_text_y(row, scale), scale, color);
+            }
+            return;
+        }
+        if (slot.kind != PadSlot::Kind::Player) return;  // not used: nothing there
+        static constexpr unsigned kLit[8] = {0b0001, 0b0010, 0b0100, 0b1000,
+                                             0b1001, 0b0101, 0b1101, 0b0110};
+        const unsigned lit = kLit[std::clamp(slot.player, 0, 7)];
+        const float thickness = std::max(1.0f, std::round(light * 0.16f));
+        for (int index = 0; index < 4; ++index) {
+            const PixelRect square{row.x + pad + static_cast<float>(index) * (light + light_gap),
+                                   std::round(cy - light * 0.5f), light, light};
+            if (lit & (1u << index)) {
+                quads.draw_solid(square, color);
+            } else {
+                quads.draw_outline(square, color, thickness);
+            }
+        }
+    };
     for (int index = 0; index < row_count; ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = index == focus_;
@@ -284,7 +321,8 @@ void ControllersScreen::render(QuadRenderer& quads,
         // moving the cursor.
         const bool lifted = focused && holding_;
         if (lifted) {
-            quads.draw_solid(row, theme.accent);
+            // The same rounded shape as the cursor's, only filled.
+            quads.draw_rounded_rect(row, std::round(std::min(row.h * 0.18f, scale * 5.0f)), theme.accent);
         } else {
             draw_menu_row(quads, row, focused, scale);
         }
@@ -292,8 +330,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         const Color dim = (focused || lifted) ? theme.panel : theme.text_dim;
 
         const LineupRow& entry = rows[static_cast<std::size_t>(index)];
-        text.draw(quads, pad_slot_name(entry.slot), row.x + pad, baseline, scale,
-                  entry.slot.kind == PadSlot::Kind::NotUsed ? dim : ink);
+        draw_slot(entry.slot, row, ink);
         const float name_x = row.x + slot_column;
         if (entry.pad < 0) {
             text.draw(quads, "No controller - its screen's touch and motion only", name_x,

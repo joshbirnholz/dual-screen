@@ -697,7 +697,10 @@ bool Client::start() {
     {
         const AppPaths paths = AppPaths::resolve();
         ensure_directory(paths.saves_dir);
-        save_store_.reset(new SaveStore(paths.saves_dir, Settings::load(paths).device_name));
+        // Read now rather than when Settings is first opened: its button
+        // prompts and Confirm/Cancel apply to these menus from the start.
+        settings_ = Settings::load(paths);
+        save_store_.reset(new SaveStore(paths.saves_dir, settings_.device_name));
         save_service_.reset(
             new net::SaveExchangeService(*save_store_, net::SaveExchangeService::Config{}));
         std::string error;
@@ -1673,6 +1676,14 @@ void Client::run() {
         // apply_button_style().
         button_glyphs_.set_style(input_.single_joycon_in_use() ? PadGlyphStyle::Positional
                                                                : PadGlyphStyle::Nintendo);
+#elif DS_LOCAL_PLAY && !defined(DS_APPLE_TELEVISION)
+        // Everywhere else that has Settings -- an Android device, a desktop --
+        // the player's own choice of prompts and of which button says yes,
+        // the same two the desktop app follows. Only Settings offered them:
+        // these menus always drew a Switch's letters, whatever was chosen.
+        button_glyphs_.set_style(settings_.pad_glyphs);
+        input_.set_confirm_button(settings_.confirm_button);
+        set_confirm_button(settings_.confirm_button);
 #endif
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();

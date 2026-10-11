@@ -9,6 +9,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
+#include "render/texture.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/sound_view.hpp"
 
@@ -104,6 +105,9 @@ private:
     bool over_game_ = false;
     // Whether a controller is picked up, and which: by identity, so it stays
     // in hand while the rows move around it.
+    // The GamePad's icon, from the menus' icon strip -- see ui/ui_icons.hpp.
+    Texture icons_;
+    bool icons_tried_ = false;
     bool holding_ = false;
     std::string held_;
     float scroll_ = 0.0f;

@@ -206,6 +206,8 @@ bool exchange(const SaveDevice& device, const json& request, const std::vector<u
 std::string this_device_kind() {
 #ifdef __SWITCH__
     return switch_is_lite() ? kDeviceKindSwitchLite : kDeviceKindSwitch;
+#elif defined(__ANDROID__)
+    return kDeviceKindAndroid;
 #else
     // Valve's own boards: Jupiter and Galileo, the LCD and OLED Decks.
     std::ifstream vendor("/sys/devices/virtual/dmi/id/board_vendor");

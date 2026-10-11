@@ -390,7 +390,12 @@ when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
 **Controller Order**, in the quick menu, rearranges the line the way SteamOS's own
-Controller Order screen does. Press confirm to pick a controller up, move it
+Controller Order screen does. Each row starts with what that controller is:
+the GamePad, drawn as one, or a player, drawn as four small squares the way a
+Wii Remote's lights show it -- the second square alone filled for Player 2,
+as a Wii U lights them, rather than the first two a Switch would. A Wii U
+stops at four; Players 5 to 8 take a Switch's patterns. A controller in
+neither has nothing there. Press confirm to pick a controller up, move it
 up or down, and press confirm again to put it down. Moving one up from Player 1
 makes it the GamePad; moving one down past the last player puts it in **Not
 used**. Press **X** or **Y** (Identify) to give the highlighted controller

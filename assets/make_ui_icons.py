@@ -16,9 +16,16 @@ The cells, in UiIcon order (see src/ui/data_management_screen.cpp):
                                    console's outline as the user gave it; pc.png is
                                    Phosphor's desktop-tower-fill (MIT), drawn
                                    from pc.svg beside it
-    sync                           last: two arrows round a circle
+    sync                           two arrows round a circle
+    android                        an Android device: the robot's head, drawn
+                                   here -- a half disc, two antennae, and two
+                                   eyes cut out of it
+    wiiu-gamepad                   a Wii U GamePad, for Controller Order:
+                                   Kenney's solid one (CC0),
+                                   assets/ui_icons/wiiu_gamepad.png
 
-A Switch and a Switch Lite are drawn alike.
+A Switch and a Switch Lite are drawn alike. New cells go on the end, so the
+ones before them keep their places.
 
 Run from the repository root:  python3 assets/make_ui_icons.py
 """
@@ -107,7 +114,33 @@ def render_action(name):
     return cell
 
 
+def android_alpha():
+    """The robot's head on a 256-unit square, as coverage: a half disc with
+    two antennae, the eyes cut out."""
+    size, ss = 256, 3
+    out = []
+    for y in range(size):
+        row = []
+        for x in range(size):
+            hits = 0
+            for sy in range(ss):
+                for sx in range(ss):
+                    px, py = x + (sx + 0.5) / ss, y + (sy + 0.5) / ss
+                    head = py <= 172 and math.hypot(px - 128, py - 172) <= 108
+                    antenna = (near_segment(px, py, 84, 92, 60, 52) <= 7 or
+                               near_segment(px, py, 172, 92, 196, 52) <= 7)
+                    eye = (math.hypot(px - 90, py - 128) <= 12 or
+                           math.hypot(px - 166, py - 128) <= 12)
+                    if (head or antenna) and not eye:
+                        hits += 1
+            row.append(round(255 * hits / (ss * ss)))
+        out.append(row)
+    return size, size, out
+
+
 def device_alpha(name):
+    if name == "android":
+        return android_alpha()
     path = f"assets/ui_icons/{name}.png"
     data = open(path, "rb").read()
     colour = data[25]
@@ -162,6 +195,7 @@ def main():
     cells = [render_action(name) for name in ["get", "send", "history", "delete"]]
     cells += [render_device(name) for name in DEVICES]
     cells += [render_action("sync")]
+    cells += [render_device("android"), render_device("wiiu_gamepad")]
     width = CELL * len(cells)
     out = bytearray(width * CELL * 4)
     for index, cell in enumerate(cells):
