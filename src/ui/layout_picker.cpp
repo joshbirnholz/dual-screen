@@ -1297,7 +1297,8 @@ void LayoutPicker::render(QuadRenderer& quads,
     const BatteryReading battery = show_battery_ ? read_battery() : BatteryReading();
     const float battery_room =
         battery.present ? battery_width(battery, scale) + frame.line * 1.2f : 0.0f;
-    draw_page_header(quads, text, frame, game_title, state_.subtitle, 0.0f, false, battery_room);
+    draw_page_header(quads, text, frame, game_title, state_.subtitle, 0.0f, false, battery_room,
+                     /*rules=*/false);
     if (battery.present) {
         draw_battery(quads, text, battery, frame.panel.x + frame.panel.w,
                      std::round((frame.panel.y + frame.header_bottom) * 0.5f), scale);

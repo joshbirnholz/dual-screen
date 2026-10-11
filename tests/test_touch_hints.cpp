@@ -63,13 +63,15 @@ void test_every_prompt_outside_a_menu_does_something() {
     CHECK(ui_action_for_glyph(ButtonGlyph::Minus, action) && action == UiAction::ToggleMenu);
 }
 
-// The quick menu's own prompts are deliberately not here: a press on one of
-// those is forwarded to the host rather than acted on locally, so a mapping
-// for them in this direction would be a second opinion about what they mean.
+// X and Y are what a menu's upper face buttons raise -- Controller Order's
+// Identify is X. The stick clicks only ever appear in the quick menu, whose
+// prompts route their own taps: a press there is forwarded to the host rather
+// than acted on locally, so a mapping for them here would be a second opinion
+// about what they mean.
 void test_the_menus_own_prompts_are_left_to_the_menu() {
     UiAction action = UiAction::Confirm;
-    CHECK(!ui_action_for_glyph(ButtonGlyph::X, action));
-    CHECK(!ui_action_for_glyph(ButtonGlyph::Y, action));
+    CHECK(ui_action_for_glyph(ButtonGlyph::X, action) && action == UiAction::MenuQuit);
+    CHECK(ui_action_for_glyph(ButtonGlyph::Y, action) && action == UiAction::MenuReset);
     CHECK(!ui_action_for_glyph(ButtonGlyph::RightStick, action));
 }
 

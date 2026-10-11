@@ -10,6 +10,7 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "render/texture.hpp"
+#include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/sound_view.hpp"
 
@@ -42,6 +43,9 @@ public:
         open_ = false;
         holding_ = false;
     }
+    // Where its prompts were last drawn -- see take_guide_taps(). For a
+    // device showing another's Controller Order, whose taps go over there.
+    const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
     bool is_open() const { return open_; }
     // Over a paused game, which shows through dimmed; otherwise on the app's
     // own background. See draw_page_background().
@@ -112,6 +116,8 @@ private:
     std::string held_;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    // Where the prompts at the foot of the page were drawn -- see take_guide_taps().
+    std::vector<GuideHit> guide_hits_;
 };
 
 // The Controller Order screen as a message for the other device, and back.

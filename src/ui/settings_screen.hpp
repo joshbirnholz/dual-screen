@@ -11,6 +11,7 @@
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
@@ -182,6 +183,9 @@ private:
     ListDrag drag_;
     // Dragged by a finger on a device with a touch screen -- a Deck, a Switch
     // -- the same as every list.
+
+    // Where the prompts at the foot of the page were drawn -- see take_guide_taps().
+    std::vector<GuideHit> guide_hits_;
 };
 
 }  // namespace ds

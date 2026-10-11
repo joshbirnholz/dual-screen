@@ -119,11 +119,34 @@ bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out) {
         case ButtonGlyph::Minus: out = UiAction::ToggleMenu; return true;
         case ButtonGlyph::L: out = UiAction::PageUp; return true;
         case ButtonGlyph::R: out = UiAction::PageDown; return true;
-        // X, Y and the stick clicks only ever appear in the quick menu, where
-        // a press is forwarded to the host rather than acted on here. See
+        // What the upper face buttons raise in a menu -- Controller Order's
+        // Identify, for one.
+        case ButtonGlyph::X: out = UiAction::MenuQuit; return true;
+        case ButtonGlyph::Y: out = UiAction::MenuReset; return true;
+        // The stick clicks only ever appear in the quick menu, where a press
+        // is forwarded to the host rather than acted on here. See
         // Client::handle_menu().
         default: return false;
     }
+}
+
+void take_guide_taps(const std::vector<GuideHit>& hits, std::vector<UiAction>& actions,
+                     std::vector<PointerEvent>& pointers) {
+    if (hits.empty()) return;
+    std::vector<PointerEvent> survivors;
+    survivors.reserve(pointers.size());
+    for (const PointerEvent& pointer : pointers) {
+        const ButtonGlyph on_guide =
+            pointer.released ? guide_button_at(hits, pointer.x, pointer.y) : ButtonGlyph::Count;
+        if (on_guide == ButtonGlyph::Count ||
+            on_guide != guide_button_at(hits, pointer.press_x, pointer.press_y)) {
+            survivors.push_back(pointer);
+            continue;
+        }
+        UiAction action = UiAction::Confirm;
+        if (ui_action_for_glyph(on_guide, action)) actions.push_back(action);
+    }
+    pointers.swap(survivors);
 }
 
 float control_guide_height(float scale) { return glyph_height(scale); }

@@ -77,8 +77,8 @@ void ControllersScreen::scroll_focus_into_view(float output_width, float output_
     scroll_ = std::max(0.0f, std::min(scroll_, max_scroll));
 }
 
-ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& actions,
-                                                  const std::vector<PointerEvent>& pointers,
+ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& pressed,
+                                                  const std::vector<PointerEvent>& touched,
                                                   float output_width,
                                                   float output_height,
                                                   const std::vector<KnownPad>& pads,
@@ -88,6 +88,10 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& a
     if (!open_) {
         return result;
     }
+    // A tap on a prompt at the foot of the page is that button pressed.
+    std::vector<UiAction> actions = pressed;
+    std::vector<PointerEvent> pointers = touched;
+    take_guide_taps(guide_hits_, actions, pointers);
 
     PadLineup lineup = line_up_pads(pads, order, gamepad_here);
     std::vector<LineupRow> rows = lineup_rows(lineup);
@@ -379,7 +383,8 @@ void ControllersScreen::render(QuadRenderer& quads,
         guide.push_back({ButtonGlyph::A, "Reorder", PromptRole::ActsOnSelection});
         guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     }
-    draw_page_guide(quads, text, glyphs, frame, guide);
+    guide_hits_.clear();
+    draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 }
 
 void ControllersScreen::show_mirrored(int focus, bool holding, float output_width,

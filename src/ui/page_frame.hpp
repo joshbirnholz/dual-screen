@@ -77,11 +77,12 @@ inline void draw_page_background(QuadRenderer& quads, float output_width, float 
 // puts a picture of its own in front of it -- and, when there is one, a line
 // of detail at the right in the dimmer colour, shortened to fit: a path keeps
 // its end, anything else its start. Then the rules under the heading and over
-// the prompts.
+// the prompts, unless `rules` is false -- the quick menu, which stands over
+// the game rather than being a page of its own, goes without.
 inline void draw_page_header(QuadRenderer& quads, TextRenderer& text, const PageFrame& frame,
                              const std::string& title, const std::string& detail = std::string(),
                              float title_indent = 0.0f, bool detail_is_path = false,
-                             float right_reserved = 0.0f) {
+                             float right_reserved = 0.0f, bool rules = true) {
     const UiTheme& theme = ui_theme();
     const float title_scale = frame.title_scale();
     const float header_h = frame.header_bottom - frame.panel.y;
@@ -107,6 +108,7 @@ inline void draw_page_header(QuadRenderer& quads, TextRenderer& text, const Page
     }
     text.draw(quads, TextRenderer::elide_right(title, title_room, title_scale), title_x, title_y,
               title_scale, theme.text);
+    if (!rules) return;
     const Color rule = page_rule_color();
     quads.draw_solid(PixelRect{frame.panel.x, frame.header_bottom, frame.panel.w, 1.0f}, rule);
     quads.draw_solid(PixelRect{frame.panel.x, frame.footer_rule_y, frame.panel.w, 1.0f}, rule);

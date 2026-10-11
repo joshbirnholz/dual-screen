@@ -3436,7 +3436,14 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             // and it is still their session, so the presses go over.
             if (companion_session->host_settings_open()) {
                 input.set_game_input_enabled(false);
-                for (const UiAction action : actions) {
+                // Taps on the prompts of a Controller Order drawn here too,
+                // which press what they name, over there.
+                std::vector<UiAction> forwarded = actions;
+                if (companion_session->host_controllers_view().open) {
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(mirrored_controllers.guide_hits(), forwarded, rest);
+                }
+                for (const UiAction action : forwarded) {
                     net::MenuAction wire = net::MenuAction::Confirm;
                     if (menu_action_for(action, wire)) {
                         companion_session->request_menu_action(wire);

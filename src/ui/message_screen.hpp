@@ -6,6 +6,7 @@
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/control_guide.hpp"
 #include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -58,6 +59,7 @@ private:
     std::string body_;
     std::vector<std::string> details_;
     double seconds_visible_ = 0.0;
+    std::vector<GuideHit> guide_hits_;
 };
 
 // How long a message stays un-dismissable after appearing.

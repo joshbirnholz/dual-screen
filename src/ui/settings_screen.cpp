@@ -296,14 +296,18 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
     scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
 }
 
-SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& actions,
-                                            const std::vector<PointerEvent>& pointers,
+SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed,
+                                            const std::vector<PointerEvent>& touched,
                                             float output_width,
                                             float output_height) {
     SettingsScreenResult result;
     if (!open_) {
         return result;
     }
+    // A tap on Back at the foot of the page is Back pressed.
+    std::vector<UiAction> actions = pressed;
+    std::vector<PointerEvent> pointers = touched;
+    take_guide_taps(guide_hits_, actions, pointers);
 
     const Geometry geometry = compute_geometry(output_width, output_height);
 
@@ -528,7 +532,9 @@ void SettingsScreen::render(QuadRenderer& quads,
     // below it are fixed to the window, so the clip comes off here.
     quads.clear_clip();
 
-    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}});
+    guide_hits_.clear();
+    draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
+                    &guide_hits_);
 
     // Something has to say there is more, or a list that stops at the bottom
     // edge looks like a list that ends there.

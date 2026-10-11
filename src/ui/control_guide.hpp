@@ -123,6 +123,14 @@ ButtonGlyph guide_button_at(const std::vector<GuideHit>& hits, float x, float y)
 // between an app you can leave and one you cannot.
 bool ui_action_for_glyph(ButtonGlyph glyph, UiAction& out);
 
+// A screen's taps on its own prompts, as the presses they stand for: each
+// one's action added to `actions`, and the tap taken out of `pointers` so
+// nothing behind the prompt also takes it. Only a tap that went down and came
+// up on the same prompt -- see tapped(). Every row of prompts at the foot of a
+// page can be pressed this way; one that cannot is one a phone cannot leave.
+void take_guide_taps(const std::vector<GuideHit>& hits, std::vector<UiAction>& actions,
+                     std::vector<PointerEvent>& pointers);
+
 // Which prompt to draw for yes and for no, given which button was chosen to
 // mean yes. Here rather than beside the buttons themselves: what a button
 // does is input's business, what is drawn for it is this layer's.

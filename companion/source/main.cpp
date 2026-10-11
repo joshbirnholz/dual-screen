@@ -1036,8 +1036,14 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
         // fingers at once -- see InputManager -- rather than a button sitting
         // on top of the picture the whole session. The quick menu itself
         // draws prompts but routes them itself, since a press there is
-        // forwarded to the host rather than acted on here.
-        case State::Playing: return none;
+        // forwarded to the host rather than acted on here. The host's
+        // Controller Order, drawn here, is routed here: the presses its
+        // prompts stand for go over with the rest -- see handle_actions().
+        case State::Playing:
+            if (!menu_open_ && session_.host_settings_open() && session_.host_controllers_view().open) {
+                return mirrored_controllers_.guide_hits();
+            }
+            return none;
         // Its prompts are its own, and so are taps on them.
         case State::DataManagement:
         case State::Settings: return none;
@@ -1047,34 +1053,7 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
 
 void Client::route_guide_taps(std::vector<UiAction>& actions,
                               std::vector<PointerEvent>& pointers) {
-    const std::vector<GuideHit>& hits = guide_hits_on_screen();
-    if (hits.empty()) {
-        return;
-    }
-    std::vector<PointerEvent> survivors;
-    survivors.reserve(pointers.size());
-    for (const PointerEvent& pointer : pointers) {
-        // Only where the finger came down and left on the same prompt, the
-        // same rule the menu's own prompts use -- a press that slid across
-        // one on its way somewhere else is not a press on it.
-        const ButtonGlyph on_guide =
-            pointer.released ? guide_button_at(hits, pointer.x, pointer.y) : ButtonGlyph::Count;
-        if (on_guide == ButtonGlyph::Count ||
-            on_guide != guide_button_at(hits, pointer.press_x, pointer.press_y)) {
-            survivors.push_back(pointer);
-            continue;
-        }
-        // The prompt says what it does; this is that. A prompt drawn for a
-        // finger has no button behind it, so the action is raised here rather
-        // than arriving from a pad.
-        UiAction action = UiAction::Confirm;
-        if (ui_action_for_glyph(on_guide, action)) {
-            actions.push_back(action);
-        }
-        // Swallowed either way: a tap that was aimed at a prompt is not also
-        // a tap on whatever is behind it.
-    }
-    pointers.swap(survivors);
+    take_guide_taps(guide_hits_on_screen(), actions, pointers);
 }
 
 void Client::handle_actions(const std::vector<UiAction>& actions,
