@@ -532,9 +532,11 @@ private:
     // Said over the opening screen until it is answered -- why Load a game
     // did not go ahead. Empty for nothing.
     std::string launcher_notice_;
+#ifdef __ANDROID__
     // Load a game was chosen on a device that has not yet let this app read
     // its files; it goes ahead by itself once that is allowed.
     bool awaiting_file_access_ = false;
+#endif
     // Whether there is a surface to draw on. Only ever false on a device that
     // can take the app off screen without ending it.
     bool foreground_ = true;
