@@ -21,11 +21,13 @@ on:
       - 'docs/**'
   workflow_dispatch:
 
-# A push while a build is still going makes that build pointless: it is
-# cancelled, and only the newest is finished and published.
+# One build at a time. A push while one is going waits for it to finish
+# rather than cancelling it -- so what it built, and the caches it saves, are
+# not thrown away -- and only the newest waiting push is kept: older ones are
+# dropped, since the newest has their changes too.
 concurrency:
   group: builds-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -75,12 +77,31 @@ jobs:
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
     steps:
+      # devkitPro's package server turns CI away (403): its images are meant
+      # to be used as they come, with every Switch library already in them.
+      # So nothing is installed from there -- only checked for, so a missing
+      # one is named here rather than as a link error later.
       - name: Tools
         run: |
           apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake git
-          dkp-pacman -Sy --noconfirm --needed \
-            switch-sdl2 switch-zlib switch-ffmpeg switch-curl deko3d uam
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake git meson ninja-build
+          # deko3d and its shader compiler, from source if the image lacks them.
+          if [ ! -e "$DEVKITPRO/libnx/include/deko3d.hpp" ]; then
+            git clone --depth 1 https://github.com/devkitPro/deko3d /tmp/deko3d
+            make -C /tmp/deko3d -j"$(nproc)" install
+          fi
+          if [ ! -e "$DEVKITPRO/tools/bin/uam" ]; then
+            git clone --depth 1 https://github.com/devkitPro/uam /tmp/uam
+            meson setup /tmp/uam/build /tmp/uam --prefix="$DEVKITPRO/tools"
+            ninja -C /tmp/uam/build install
+          fi
+          for file in portlibs/switch/lib/libSDL2.a portlibs/switch/lib/libz.a \
+                      libnx/include/deko3d.hpp tools/bin/uam; do
+            [ -e "$DEVKITPRO/$file" ] || { echo "::error::$DEVKITPRO/$file is not in the image"; exit 1; }
+          done
+          for optional in portlibs/switch/lib/libavcodec.a portlibs/switch/lib/libcurl.a; do
+            [ -e "$DEVKITPRO/$optional" ] || echo "::warning::$DEVKITPRO/$optional is not in the image; built without it"
+          done
       - uses: actions/checkout@v4
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -109,9 +130,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # The runner has the SDK already; only the parts this build pins are
+      # added to it.
       - name: SDK parts
-        run: sdkmanager --install "platforms;android-33" "cmake;3.22.1" "ndk;25.1.8937393"
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-33" "cmake;3.22.1" "ndk;25.1.8937393"
       - name: SDL2's source
         run: git clone --depth 1 --branch release-2.30.9 https://github.com/libsdl-org/SDL android/app/jni/SDL
       - uses: gradle/actions/setup-gradle@v4
