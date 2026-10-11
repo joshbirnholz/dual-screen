@@ -871,6 +871,12 @@ Every platform builds from this one repository. The desktop app is the full
 thing: it runs games and can also join one as a companion. Everything else in
 the table only joins a game running somewhere else.
 
+Every push to this branch is also built for SteamOS, the Switch and Android by
+`.github/workflows/builds.yml`, and the three are published together as the
+**nightly** pre-release on the repository's Releases page -- replaced each time,
+with a `version.json` saying which build and commit it is. Android's signing
+key comes from the repository's secrets; see android/README.md.
+
 | Platform | What you get | Command | Details |
 | --- | --- | --- | --- |
 | Steam Deck / SteamOS | the desktop app | `./tools/build-steamos.sh` | [below](#steam-deck--steamos) |

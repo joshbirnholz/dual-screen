@@ -171,6 +171,31 @@ Both halves of SDL2 are built from that source tree: the native library, and
 the `SDLActivity` Java class this app's activity extends. They have to be the
 same version, which is why a prebuilt `.aar` is not used.
 
+### Builds from GitHub, and the signing key
+
+Every push is built by `.github/workflows/builds.yml` and published with the
+SteamOS and Switch builds as the repository's **nightly** pre-release. The APK
+there is a release build, numbered by the run (`versionCode` is the build
+number), and signed with one key kept in the repository's secrets -- so each
+build installs over the one before it. An APK signed with a different key will
+not: going from a locally built debug APK to these needs one uninstall first.
+
+The four secrets, under the repository's **Settings > Secrets and variables >
+Actions**:
+
+| Secret | What it is |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | the PKCS#12 keystore, base64 on one line |
+| `ANDROID_KEYSTORE_PASSWORD` | its password |
+| `ANDROID_KEY_ALIAS` | the key's alias in it |
+| `ANDROID_KEY_PASSWORD` | the key's password (the same as the store's, for PKCS#12) |
+
+Without them the workflow still builds, but signs with a key made for that run
+alone, and says so in the release notes. The same key signs a release build
+locally: set `ANDROID_KEYSTORE_FILE` to the keystore's path and the other three
+as environment variables, then `./gradlew assembleRelease`. Keep a copy of the
+keystore somewhere safe -- losing it means every device uninstalling once.
+
 ### H.264 video
 
 Nothing to install. H.264 -- what a host sends a Wii U GamePad's screen as,

@@ -46,8 +46,10 @@ android {
         // the difference -- but raising this floor does change that code.
         minSdk 21
         targetSdk 33
-        versionCode 1
-        versionName '0.1.0'
+        // A build from CI says which it is -- see .github/workflows/builds.yml --
+        // so a newer one installs over an older one; a local build is 1.
+        versionCode((project.findProperty('versionCode') ?: '1').toString().toInteger())
+        versionName((project.findProperty('versionName') ?: '0.1.0').toString())
 
         externalNativeBuild {
             cmake {
@@ -78,8 +80,26 @@ android {
         }
     }
 
+    // The key a release is signed with, when one is given: CI's, from the
+    // repository's secrets. Every build after the first has to be signed with
+    // the same key to install over the one before it, so it is one key, kept,
+    // rather than one made per build. Without it a release is left unsigned.
+    signingConfigs {
+        release {
+            def keystore = System.getenv('ANDROID_KEYSTORE_FILE')
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (System.getenv('ANDROID_KEYSTORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
         }
     }
