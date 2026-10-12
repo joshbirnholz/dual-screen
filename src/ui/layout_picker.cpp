@@ -1374,7 +1374,7 @@ void LayoutPicker::render(QuadRenderer& quads,
             const float pad = line * 0.7f;
             text.draw(quads, footer_label(footer_[index]), row.x + pad,
                       page_row_text_y(row, scale * 1.1f), scale * 1.1f, menu_row_text(focused));
-            if (footer_[index] == Footer::SwapScreens) {
+            if (footer_[index] == Footer::SwapScreens && state_.screens_swap_value_shown) {
                 text.draw(quads, state_.screens_swapped ? "On" : "Off", row.x + row.w - pad,
                           page_row_text_y(row, scale * 1.1f), scale * 1.1f,
                           focused ? ui_theme().background : ui_theme().text_dim, TextAlign::Right);

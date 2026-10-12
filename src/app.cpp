@@ -1956,8 +1956,14 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.resume_toggled) {
                 request_resume(!resume_in_effect());
             }
-            if (result.screens_swap_toggled && !paired()) {
-                toggle_solo_screen_swap();
+            if (result.screens_swap_toggled) {
+                // Alone, this game's screen; with a second device, the two
+                // trading theirs -- as Separate Screens does on a DS.
+                if (paired()) {
+                    swap_separate_screens();
+                } else {
+                    toggle_solo_screen_swap();
+                }
             }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
@@ -2036,9 +2042,9 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
-    picker_state.screens_swappable =
-        system_profile(system).solo_screens == SoloScreens::One && !paired() && !is_companion();
+    picker_state.screens_swappable = system_profile(system).solo_screens == SoloScreens::One;
     picker_state.screens_swapped = solo_screen_swapped;
+    picker_state.screens_swap_value_shown = !paired();
     picker_state.left_handed_layouts = left_handed_layouts;
     picker_state.render_scale = render_scale;
     // From the console being played, on both devices: a companion is shown the

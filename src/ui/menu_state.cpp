@@ -30,6 +30,7 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     // carries `system()`, so these need nothing from the host beyond that.
     state.reset_available = system_profile(session.system()).offers_reset;
     state.smoothing_available = system_profile(session.system()).offers_smoothing;
+    state.screens_swappable = system_profile(session.system()).solo_screens == SoloScreens::One;
     return state;
 }
 

@@ -107,10 +107,13 @@ struct LayoutPickerState {
     // cannot do anything is worse than an absent one. Same rule as the render
     // scale and the right stick: offered where there is something to choose.
     bool cursor_choosable = true;
-    // A Wii U's Swap Screens, offered only to a device playing alone: with a
-    // second device each already shows one screen.
+    // A Wii U's Swap Screens: alone, the other screen from the setting's for
+    // this game (screens_swapped says whether it is, shown beside it); with a
+    // second device, the two trading screens. Offered on both devices alike,
+    // so that their lists line up row for row.
     bool screens_swappable = false;
     bool screens_swapped = false;
+    bool screens_swap_value_shown = false;
     // Which layouts are flipped for a left hand, by id: each is chosen on its
     // own, with the stylus button under the layouts, and each preview is
     // drawn the way round its own layout is.
