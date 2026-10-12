@@ -31,7 +31,12 @@ public:
     bool ready() const { return program_ != 0; }
 
     // Sets the pixel-space viewport all subsequent draws map into.
-    void begin_frame(int output_width, int output_height);
+    // `target_scale` draws the same picture smaller: everything is still laid
+    // out in output_width x output_height, and lands in a target that much
+    // smaller -- the quick menu drawn for Cemu's window, which the link caps
+    // in size, laid out as this window's own copy is so that both scroll and
+    // place alike.
+    void begin_frame(int output_width, int output_height, float target_scale = 1.0f);
     void clear(const Color& color);
 
     // Confines everything drawn until clear_clip() to `rect`. A layout can now
@@ -138,6 +143,7 @@ private:
     bool build_disc();
 
     int output_width_ = 0;
+    float target_scale_ = 1.0f;
     int output_height_ = 0;
 };
 

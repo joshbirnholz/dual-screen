@@ -1857,13 +1857,18 @@ void App::Impl::render_menu_overlay() {
         }
         return;
     }
-    quads.begin_frame(width, height);
+    // Laid out at this window's own size and drawn into the smaller target:
+    // pages keep their scroll in this window's pixels, and a copy laid out
+    // at another size scrolled too far for it -- the cursor off its list, and
+    // empty space under Settings.
+    quads.begin_frame(output_width, output_height,
+                      static_cast<float>(width) / static_cast<float>(std::max(1, output_width)));
     quads.clear(Color{0.0f, 0.0f, 0.0f, 0.0f});
     // Alpha accumulates as coverage rather than being blended like a colour,
     // so what is left is how much of the game each pixel hides.
     gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    const float w = static_cast<float>(width);
-    const float h = static_cast<float>(height);
+    const float w = static_cast<float>(output_width);
+    const float h = static_cast<float>(output_height);
     // The game goes on underneath, Cemu's to draw: darkened, as it is on
     // every page in this window -- see kLiveGameDim.
     quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});

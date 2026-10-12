@@ -19,6 +19,8 @@
 #include "core/save_store.hpp"
 #include "net/save_exchange.hpp"
 #include "ui/data_management_screen.hpp"
+#include "ui/page_frame.hpp"
+#include "ui/ui_theme.hpp"
 
 using namespace ds;
 
@@ -112,9 +114,48 @@ bool has_line(const std::vector<std::string>& lines, const std::string& wanted) 
 
 }  // namespace
 
+// A list longer than the screen keeps the row under the cursor on screen as
+// the d-pad walks it, all the way down and back.
+void test_the_list_follows_the_cursor(const std::string& sandbox) {
+    const std::string saves = path_join(sandbox, "many-saves");
+    ensure_directory(saves);
+    SaveStore store(saves, "many");
+    for (int game = 0; game < 25; ++game) {
+        std::vector<uint8_t> rom = ds_rom();
+        const std::string code = std::string("A") + static_cast<char>('A' + game) + "CE";
+        std::memcpy(rom.data() + 0x00C, code.data(), 4);
+        const std::string path = path_join(sandbox, "game" + std::to_string(game) + ".nds");
+        write_bytes(path, rom);
+        store.note_game_started(path);
+        write_bytes(path_join(saves, path_stem(path) + ".srm"), std::vector<uint8_t>(64, 1));
+        store.note_game_stopped(path);
+    }
+    DataManagementScreen screen(store, "many-instance");
+    screen.open();
+    CHECK(screen.saves().size() >= 20u);
+    const PageFrame frame = page_frame(1280.0f, 800.0f);
+    const float row_h = menu_two_line_row_height(frame.line);
+    const float view = frame.content_bottom - frame.content_top;
+    auto visible = [&]() {
+        const float top = static_cast<float>(screen.list_focus()) * row_h - screen.list_scroll();
+        return top >= -0.5f && top + row_h <= view + 0.5f;
+    };
+    for (std::size_t step = 0; step + 1 < screen.saves().size(); ++step) {
+        press(screen, UiAction::Down);
+        CHECK_MSG(visible(), "the row under the cursor went off screen at row " +
+                                 std::to_string(screen.list_focus()));
+    }
+    for (std::size_t step = 0; step + 1 < screen.saves().size(); ++step) {
+        press(screen, UiAction::Up);
+        CHECK_MSG(visible(), "the row under the cursor went off screen going up, at row " +
+                                 std::to_string(screen.list_focus()));
+    }
+}
+
 int main() {
     const std::string sandbox = make_sandbox();
     CHECK(!sandbox.empty());
+    test_the_list_follows_the_cursor(sandbox);
     Device here(sandbox, "Switch Lite");
     Device deck(sandbox, "steamdeck");
 

@@ -258,13 +258,15 @@ void QuadRenderer::shutdown() {
     }
 }
 
-void QuadRenderer::begin_frame(int output_width, int output_height) {
+void QuadRenderer::begin_frame(int output_width, int output_height, float target_scale) {
     output_width_ = output_width;
     output_height_ = output_height;
+    target_scale_ = target_scale > 0.0f ? target_scale : 1.0f;
     if (gl::Viewport == nullptr) {
         return;
     }
-    gl::Viewport(0, 0, output_width, output_height);
+    gl::Viewport(0, 0, static_cast<int>(std::lround(output_width * target_scale_)),
+                 static_cast<int>(std::lround(output_height * target_scale_)));
     orphan_vertex_buffer();
 
     // Every frame, not once at startup: a GPU-rendering core shares this
@@ -284,12 +286,16 @@ void QuadRenderer::set_clip(const PixelRect& rect) {
     }
     // GL measures from the bottom-left; everything above measures from the
     // top-left, so the box is flipped on its way down.
-    const int x = static_cast<int>(std::floor(rect.x));
-    const int width = static_cast<int>(std::ceil(rect.x + rect.w)) - x;
-    const int top = static_cast<int>(std::floor(rect.y));
-    const int height = static_cast<int>(std::ceil(rect.y + rect.h)) - top;
+    // In the target's own pixels, which are fewer than the layout's when it
+    // is drawn smaller -- see begin_frame().
+    const float s = target_scale_;
+    const int target_height = static_cast<int>(std::lround(output_height_ * s));
+    const int x = static_cast<int>(std::floor(rect.x * s));
+    const int width = static_cast<int>(std::ceil((rect.x + rect.w) * s)) - x;
+    const int top = static_cast<int>(std::floor(rect.y * s));
+    const int height = static_cast<int>(std::ceil((rect.y + rect.h) * s)) - top;
     gl::Enable(GL_SCISSOR_TEST);
-    gl::Scissor(x, output_height_ - top - height, std::max(0, width), std::max(0, height));
+    gl::Scissor(x, target_height - top - height, std::max(0, width), std::max(0, height));
 }
 
 void QuadRenderer::clear_clip() {

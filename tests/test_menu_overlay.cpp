@@ -129,6 +129,21 @@ void test_the_menu_hides_the_game_only_where_it_is_drawn() {
     CHECK_MSG(!draw(), "the same menu drawn again was reported as a change");
     overlay.forget();
     CHECK(draw());
+
+    // Laid out at twice the target's size and drawn into it: the window's
+    // own layout, scaled -- clips included -- rather than laid out afresh.
+    CHECK(overlay.begin(kWidth, kHeight));
+    quads.begin_frame(kWidth * 2, kHeight * 2, 0.5f);
+    quads.clear(Color{0.0f, 0.0f, 0.0f, 0.0f});
+    gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    quads.set_clip(PixelRect{0.0f, 0.0f, kWidth, kHeight});
+    quads.draw_solid(PixelRect{0.0f, 0.0f, kWidth * 2.0f, kHeight * 2.0f}, Color{1.0f, 1.0f, 1.0f, 1.0f});
+    quads.clear_clip();
+    overlay.finish();
+    CHECK_EQ(at(0, 0, 3), 255);
+    CHECK_EQ(at(kWidth / 2 - 1, kHeight / 2 - 1, 3), 255);
+    CHECK_MSG(at(kWidth / 2, kHeight / 2, 3) == 0, "the clip was not scaled with the picture");
+    CHECK_EQ(at(kWidth - 1, kHeight - 1, 3), 0);
 }
 
 }  // namespace

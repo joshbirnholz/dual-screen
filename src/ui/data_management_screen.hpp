@@ -87,6 +87,8 @@ public:
     enum class Page { List, Game, Earlier };
     enum class Overlay { None, Confirm, ResumeConfirm, Busy, Notice, Choice };
     Page page() const { return page_; }
+    int list_focus() const { return list_focus_; }
+    float list_scroll() const { return list_scroll_; }
     Overlay overlay() const { return overlay_; }
     const std::vector<SaveInfo>& saves() const { return saves_; }
     const std::vector<net::SaveDevice>& devices() const { return devices_; }
