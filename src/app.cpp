@@ -3856,6 +3856,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                             case ButtonGlyph::X: wire = net::MenuAction::Quit; break;
                             case ButtonGlyph::Y: wire = net::MenuAction::Reset; break;
                             case ButtonGlyph::Plus: wire = net::MenuAction::Disconnect; break;
+                            case ButtonGlyph::Minus: wire = net::MenuAction::Settings; break;
                             // Smoothing is a shared setting rather than a menu
                             // press, asked for the way its button asks for it.
                             case ButtonGlyph::RightStick:
