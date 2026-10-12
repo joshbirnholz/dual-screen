@@ -1782,6 +1782,11 @@ bool App::Impl::shows_embedded_menu() const {
            external_source && external_source->running() && picker;
 }
 
+// How dark a game that goes on running is under a menu: as dark as a paused
+// one is under a page opened from the menu, its blurred picture with 60% more
+// black over it.
+constexpr float kLiveGameDim = 0.8f;
+
 bool App::Impl::wants_menu_overlay() const {
     const bool page_up = state == State::Menu || state == State::Message ||
                          ((state == State::Settings || state == State::DataManagement) &&
@@ -1820,12 +1825,9 @@ void App::Impl::render_menu_overlay() {
     gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     const float w = static_cast<float>(width);
     const float h = static_cast<float>(height);
-    // The game is not paused and blurred here as it is in this window -- it is
-    // Cemu's to draw -- so it is only darkened, by about as much.
-    quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.55f});
-    if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
-        quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
-    }
+    // The game goes on underneath, Cemu's to draw: darkened, as it is on
+    // every page in this window -- see kLiveGameDim.
+    quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
     render_pages(w, h, /*over_game=*/true, nullptr);
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
@@ -4121,7 +4123,14 @@ void App::Impl::render() {
          ((state == State::Settings || state == State::DataManagement) &&
           settings_came_from == State::Menu) ||
          (state == State::Controllers && controllers_came_from == State::Menu));
-    if (show_menu_backdrop) {
+    if (show_menu_backdrop && system == SystemId::WiiU) {
+        // A Wii U game cannot be paused -- Cemu goes on running it -- so it is
+        // not shown as a paused picture, blurred, but live, under the same
+        // darkness on every page: the menu's first page as much as the ones
+        // opened from it.
+        menu_backdrop.forget();
+        quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+    } else if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is
         // exactly the frame underneath it -- and taken again when that frame
         // stops being the one that was copied, which is what picking a layout
@@ -5303,7 +5312,19 @@ int App::run(const AppOptions& options) {
         // reads a menu while the game carries on without them.
         // Opening the menu pauses the game, wherever it was opened from: the
         // host holds the one menu, so its own state already says so.
-        const bool game_running = impl.state == Impl::State::Playing;
+        //
+        // Except a game played by another program, which cannot be paused:
+        // Cemu goes on running under a menu, so its frames and sound go on
+        // being taken and passed on -- to a companion, which would otherwise
+        // freeze -- and its link read, which carries the menu's own taps and
+        // key. Only the pads are held back from it; see pads_to_game.
+        const bool page_over_game =
+            impl.state == Impl::State::Menu || impl.state == Impl::State::Settings ||
+            impl.state == Impl::State::Controllers || impl.state == Impl::State::DataManagement ||
+            impl.state == Impl::State::Message;
+        const bool game_running = impl.state == Impl::State::Playing ||
+                                  (impl.external_source && page_over_game);
+        const bool pads_to_game = impl.state == Impl::State::Playing;
         // Whichever kind of game this device is playing, if it is playing one.
         // Everything below that only needs a frame out of it asks through here;
         // what is still spelled `impl.source` is genuinely a core's own -- save
@@ -5342,66 +5363,77 @@ int App::run(const AppOptions& options) {
             // merging every pad into the GamePad made every player press the
             // GamePad's buttons too. See pad_belongs_to_its_screen and
             // pad_routing.hpp.
-            const bool companion_here =
-                impl.host_session && impl.host_session->has_companion();
-            const DsInputState remote =
-                companion_here ? impl.host_session->companion_input() : DsInputState();
-            DsInputState combined;
-            if (system_profile(impl.system).pad_belongs_to_its_screen && impl.external_source) {
-                combined = impl.route_wii_u_pads(impl.input.ds_state(), remote, companion_here);
-            } else {
-                const PadOwner owner = console_pad_owner(
-                    system_profile(impl.system).pad_belongs_to_its_screen, companion_here,
-                    companion_here && impl.host_session->companion_screen() == ScreenId::Bottom);
-                if (!impl.said_pad_owner || owner != impl.last_pad_owner) {
-                    impl.said_pad_owner = true;
-                    impl.last_pad_owner = owner;
-                    log_info(std::string("the console's pad takes its controls from ") +
-                             pad_owner_name(owner) +
-                             (owner == PadOwner::Companion
-                                  ? ", which is showing its screen; this device's controllers "
-                                    "are left to the game's other players"
-                                  : ""));
+            if (pads_to_game) {
+                const bool companion_here =
+                    impl.host_session && impl.host_session->has_companion();
+                const DsInputState remote =
+                    companion_here ? impl.host_session->companion_input() : DsInputState();
+                DsInputState combined;
+                if (system_profile(impl.system).pad_belongs_to_its_screen && impl.external_source) {
+                    combined = impl.route_wii_u_pads(impl.input.ds_state(), remote, companion_here);
+                } else {
+                    const PadOwner owner = console_pad_owner(
+                        system_profile(impl.system).pad_belongs_to_its_screen, companion_here,
+                        companion_here && impl.host_session->companion_screen() == ScreenId::Bottom);
+                    if (!impl.said_pad_owner || owner != impl.last_pad_owner) {
+                        impl.said_pad_owner = true;
+                        impl.last_pad_owner = owner;
+                        log_info(std::string("the console's pad takes its controls from ") +
+                                 pad_owner_name(owner) +
+                                 (owner == PadOwner::Companion
+                                      ? ", which is showing its screen; this device's controllers "
+                                        "are left to the game's other players"
+                                      : ""));
+                    }
+                    combined = input_for_the_console_pad(impl.input.ds_state(), remote, owner);
                 }
-                combined = input_for_the_console_pad(impl.input.ds_state(), remote, owner);
-            }
-            // While both devices report motion, hold the two up against each
-            // other. This is the host, so both readings are in hand at the
-            // same instant with nothing to line up afterwards -- which is what
-            // makes a device that is already right usable as an instrument for
-            // one that is not. See MotionComparison.
-            if (companion_here && impl.input.motion().present && remote.motion.present) {
-                impl.motion_comparison.add(impl.input.motion(), remote.motion);
-                impl.motion_comparison.report(SDL_GetTicks());
-            }
-            if (impl.source) {
-                impl.source->input_sink().submit(combined);
+                // While both devices report motion, hold the two up against each
+                // other. This is the host, so both readings are in hand at the
+                // same instant with nothing to line up afterwards -- which is what
+                // makes a device that is already right usable as an instrument for
+                // one that is not. See MotionComparison.
+                if (companion_here && impl.input.motion().present && remote.motion.present) {
+                    impl.motion_comparison.add(impl.input.motion(), remote.motion);
+                    impl.motion_comparison.report(SDL_GetTicks());
+                }
+                if (impl.source) {
+                    impl.source->input_sink().submit(combined);
+                } else if (impl.external_source) {
+                    // Said once, the first time anything is actually pressed.
+                    //
+                    // "The controls do not work" has two halves and they are not
+                    // distinguishable from the outside: either nothing reaches
+                    // this app, or it reaches this app and stops somewhere in
+                    // Cemu. This line separates them. Its absence, with a game
+                    // running and buttons being pressed, means this app is
+                    // reading a pad that never moves -- which is what SDL hands
+                    // back while another program's window is in front, and why
+                    // apply_controller_hints() exists.
+                    if (!impl.said_first_pad && (combined.buttons != 0 || combined.touching)) {
+                        impl.said_first_pad = true;
+                        log_info("the first pad press reached the game beside this app; controls are "
+                                 "getting through");
+                    }
+                    // And the same for motion, separately, because the two travel
+                    // together and fail apart: buttons working while aiming does
+                    // not is exactly the case this distinguishes. If this line is
+                    // in the log, how the device is being held crossed the link
+                    // and anything still wrong is on the far side of it.
+                    if (!impl.said_first_motion && combined.motion.present) {
+                        impl.said_first_motion = true;
+                        log_info("how this device is being held is reaching the game beside it too");
+                    }
+                    impl.external_source->submit_input(combined);
+                }
             } else if (impl.external_source) {
-                // Said once, the first time anything is actually pressed.
-                //
-                // "The controls do not work" has two halves and they are not
-                // distinguishable from the outside: either nothing reaches
-                // this app, or it reaches this app and stops somewhere in
-                // Cemu. This line separates them. Its absence, with a game
-                // running and buttons being pressed, means this app is
-                // reading a pad that never moves -- which is what SDL hands
-                // back while another program's window is in front, and why
-                // apply_controller_hints() exists.
-                if (!impl.said_first_pad && (combined.buttons != 0 || combined.touching)) {
-                    impl.said_first_pad = true;
-                    log_info("the first pad press reached the game beside this app; controls are "
-                             "getting through");
+                // A menu is up over a game that goes on running: nothing
+                // pressed reaches it, the same as the paused case below.
+                impl.external_source->submit_input(DsInputState());
+                const RoutedPads routed = route_pads(impl.known_pads, impl.pad_slots);
+                for (int player = 0; player < kPadPlayers; ++player) {
+                    impl.external_source->submit_player_input(player, routed.player_fed[player],
+                                                              DsInputState());
                 }
-                // And the same for motion, separately, because the two travel
-                // together and fail apart: buttons working while aiming does
-                // not is exactly the case this distinguishes. If this line is
-                // in the log, how the device is being held crossed the link
-                // and anything still wrong is on the far side of it.
-                if (!impl.said_first_motion && combined.motion.present) {
-                    impl.said_first_motion = true;
-                    log_info("how this device is being held is reaching the game beside it too");
-                }
-                impl.external_source->submit_input(combined);
             }
 
             impl.frame_accumulator += elapsed;
