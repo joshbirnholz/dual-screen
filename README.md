@@ -323,7 +323,8 @@ Three things are different about a Wii U session:
   the game, this app's own window shows the Wii U menu in place of a
   "Playing on Cemu" notice: **Controller Order**, **Swap Screens** (played
   alone: the other screen from **Default Wii U screen**, remembered for that
-  game until swapped back -- **F3** does the same), **Pointer**, **Reset**,
+  game until swapped back -- **F3** does the same; with a second device
+  connected, the two trade screens), **Pointer**, **Reset**,
   **Disconnect** and **Quit**, with **Settings** on minus as on every
   console's menu. Cemu cannot restart a game itself, so **Reset** closes the
   Cemu this app started and starts it again on the same game. It
