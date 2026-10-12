@@ -445,15 +445,17 @@ void unpack_controllers_view(const net::ControllersViewMessage& view,
 void render_mirrored_controllers(ControllersScreen& screen, QuadRenderer& quads,
                                  TextRenderer& text, const ButtonGlyphSheet& glyphs,
                                  float output_width, float output_height,
-                                 const net::ControllersViewMessage& view) {
+                                 const net::ControllersViewMessage& view, bool over_game) {
     std::vector<KnownPad> pads;
     PadOrder order;
     unpack_controllers_view(view, pads, order);
-    quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
-    quads.clear(ui_theme().background);
+    if (!over_game) {
+        quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
+        quads.clear(ui_theme().background);
+    }
     screen.show_mirrored(view.focus, view.holding, output_width, output_height, pads,
                          view.gamepad_here, order);
-    screen.set_over_game(false);
+    screen.set_over_game(over_game);
     screen.render(quads, text, glyphs, output_width, output_height, pads, view.gamepad_here, order,
                   view.this_device, view.other_device);
 }

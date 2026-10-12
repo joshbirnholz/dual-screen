@@ -1905,8 +1905,27 @@ void Client::draw_scene() {
         // machine, and are looked at there.
         const net::ControllersViewMessage& view = session_.host_controllers_view();
         if (view.open) {
+            // Over the game, darkened as the host's own page is: live for a
+            // Wii U game, which goes on, and the blurred still otherwise.
+            router_.decide(false);
+            const ScreenTextures& textures = session_.screens();
+            compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(),
+                               width, height, router_);
+            if (session_.system() == SystemId::WiiU) {
+                menu_backdrop_.forget();
+                quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
+                                  Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+            } else {
+                if (!menu_backdrop_.matches(compositor_.composition_key())) {
+                    menu_backdrop_.capture(static_cast<int>(width), static_cast<int>(height),
+                                           compositor_.composition_key());
+                }
+                menu_backdrop_.draw(quads_, width, height);
+                quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
+                                  Color{0.0f, 0.0f, 0.0f, 0.6f});
+            }
             render_mirrored_controllers(mirrored_controllers_, quads_, text_, button_glyphs_,
-                                        width, height, view);
+                                        width, height, view, /*over_game=*/true);
         } else {
             render_centred_message(quads_, text_, width, height, "Look at the other screen.");
         }

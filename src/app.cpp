@@ -4122,8 +4122,34 @@ void App::Impl::render() {
         // Management -- is about that machine, and is looked at there.
         const net::ControllersViewMessage& view = companion_session->host_controllers_view();
         if (view.open) {
-            render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs, width,
-                                        height, view);
+            // Over the game, darkened as the host's own page is: live for a
+            // Wii U game, which goes on, and the blurred still otherwise.
+            if (ScreenSource* drawing = active_source()) {
+                float panel_width = 0.0f;
+                float panel_height = 0.0f;
+                panel_size(panel_width, panel_height);
+                compositor.set_display_size(panel_width, panel_height);
+                compositor.render(quads, device_layout(), drawing->screens(), screens_geometry(),
+                                  width, height, router);
+                if (system == SystemId::WiiU) {
+                    menu_backdrop.forget();
+                    quads.draw_solid(PixelRect{0.0f, 0.0f, width, height},
+                                     Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+                } else {
+                    if (!menu_backdrop.matches(compositor.composition_key())) {
+                        menu_backdrop.capture(output_width, output_height,
+                                              compositor.composition_key());
+                    }
+                    menu_backdrop.draw(quads, width, height);
+                    quads.draw_solid(PixelRect{0.0f, 0.0f, width, height},
+                                     Color{0.0f, 0.0f, 0.0f, 0.6f});
+                }
+                render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs,
+                                            width, height, view, /*over_game=*/true);
+            } else {
+                render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs,
+                                            width, height, view);
+            }
         } else {
             render_centred_message(quads, text, width, height, "Look at the other screen.");
         }

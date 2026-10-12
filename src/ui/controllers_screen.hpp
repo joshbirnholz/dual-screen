@@ -132,9 +132,11 @@ void unpack_controllers_view(const net::ControllersViewMessage& view,
 // A whole frame of the other device's Controller Order screen, on this
 // device's own background -- what a companion shows while the host has it
 // up. `screen` is a ControllersScreen kept for this alone.
+// `over_game`: drawn over a game the caller has already put on screen,
+// darkened, the way the host draws it -- rather than on the app's background.
 void render_mirrored_controllers(ControllersScreen& screen, QuadRenderer& quads,
                                  TextRenderer& text, const ButtonGlyphSheet& glyphs,
                                  float output_width, float output_height,
-                                 const net::ControllersViewMessage& view);
+                                 const net::ControllersViewMessage& view, bool over_game = false);
 
 }  // namespace ds
