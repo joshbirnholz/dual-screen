@@ -95,9 +95,9 @@ struct SystemProfile {
     // this are played between two desktops -- and it is the thing to solve
     // before one of them is a handheld.
     bool game_uses_every_control = false;
-    // Whether the quick menu offers Reset. False for a Wii U: Cemu owns
-    // restarting the game, and there is nothing here that can do it in its
-    // place.
+    // Whether the quick menu offers Reset. A Wii U's included: Cemu cannot
+    // restart a game in place, so Reset closes the Cemu this app started and
+    // starts it again on the same game -- see App's restart_external_game().
     bool offers_reset = true;
     // Whether the quick menu offers Screen Smoothing. False for a Wii U:
     // game_uses_every_control already keeps RightStick from ever becoming the

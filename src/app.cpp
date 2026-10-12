@@ -407,6 +407,10 @@ struct App::Impl {
     // it. Stopping it is as much the point as starting it: in Game Mode there
     // is nothing left to close a window the shell walked away from.
     ChildProcess external_program;
+    // What it was started with, so Reset can start it again: see
+    // restart_external_game().
+    std::string external_program_path;
+    std::vector<std::string> external_program_arguments;
     std::unique_ptr<LayoutPicker> picker;
     std::unique_ptr<SettingsScreen> settings_screen;
     // Updating Dualscreen, and the Cemu it keeps, from the nightly builds --
@@ -928,6 +932,8 @@ struct App::Impl {
     // the host runs a core to restart; there is nothing to adopt back, since
     // there is no value beyond the moment it happens.
     void request_reset();
+    // Reset for a game played by another program: see the definition.
+    bool restart_external_game();
     // Applies and persists a host-side change to any of them.
     void adopt_filtering(bool bilinear);
     void adopt_render_scale(int scale);
@@ -2462,8 +2468,42 @@ void App::Impl::request_reset() {
     if (source) {
         source->reset();
     } else if (external_source) {
-        external_source->reset();
+        if (!restart_external_game()) external_source->reset();
     }
+}
+
+bool App::Impl::restart_external_game() {
+    // Cemu cannot restart a game in place -- its own way of stopping one is
+    // unfinished, and crashes after a few uses -- so the reset is the whole
+    // program: closed, and started again on the same game, the way a player
+    // would do it by hand. Only one this app started: one started by hand is
+    // not this app's to close.
+    if (!external_source || external_program_path.empty()) {
+        log_warn("Reset: " + system_profile(system).core_description +
+                 " was not started by this app, so it is not this app's to restart");
+        return false;
+    }
+    log_info("Reset: closing " + system_profile(system).core_description +
+             " and starting it again on the same game");
+    // The link first, so its going is not taken for the game ending.
+    external_source->close();
+    external_program.stop();
+    std::string error;
+    if (!external_source->open(external_socket_path, &error)) {
+        log_warn("Reset: could not open the way back in: " + error);
+        return false;
+    }
+    external_game_arrived = false;
+    external_link_was_running = false;
+    menu_overlay_shown = false;
+    menu_overlay.forget();
+    std::string start_error;
+    if (external_program.start(external_program_path, external_program_arguments, &start_error)) {
+        external_program_wanted = true;
+    } else {
+        log_warn("Reset: could not start " + external_program_path + " again: " + start_error);
+    }
+    return true;
 }
 
 void App::Impl::request_filtering(bool bilinear) {
@@ -3361,6 +3401,8 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                     arguments.push_back(fill_placeholders(argument, socket_path, rom_path));
                 }
                 std::string start_error;
+                external_program_path = program;
+                external_program_arguments = arguments;
                 if (external_program.start(program, arguments, &start_error)) {
                     external_program_wanted = true;
                 } else {

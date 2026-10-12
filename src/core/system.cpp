@@ -171,9 +171,7 @@ SystemProfile make_wii_u() {
     // Cemu has its own resolution settings and they are not this app's to
     // second-guess, so there is nothing here to cycle through.
     profile.max_render_scale = 1;
-    // Neither of these is this shell's to offer for a Wii U -- see the fields'
-    // own comments.
-    profile.offers_reset = false;
+    // Not this shell's to offer for a Wii U -- see the field's own comment.
     profile.offers_smoothing = false;
     return profile;
 }

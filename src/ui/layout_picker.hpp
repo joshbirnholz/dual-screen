@@ -403,6 +403,8 @@ private:
         // The Pointer setting, as the DS menu's Options has it: a value
         // flipped in place rather than a page opened.
         Pointer,
+        // Asked about first, as on the DS menu.
+        Reset,
         Disconnect,
         Quit,
     };

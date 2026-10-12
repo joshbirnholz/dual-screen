@@ -144,6 +144,7 @@ void LayoutPicker::rebuild_footer() {
         // Cemu's own pointer, over the GamePad screen in its window: shown,
         // it comes and goes with the mouse, which taps the screen with it.
         if (state_.cursor_choosable) footer_.push_back(Footer::Pointer);
+        if (state_.reset_available) footer_.push_back(Footer::Reset);
         if (state_.session_active) {
             footer_.push_back(Footer::Disconnect);
         }
@@ -261,6 +262,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::Continue: return "Continue";
         case Footer::OpenControllers: return "Controller Order";
         case Footer::Pointer: return "Pointer";
+        case Footer::Reset: return "Reset";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: return "Quit";
     }
@@ -626,6 +628,9 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::Pointer:
             result.cursor_mode_changed = true;
+            return true;
+        case Footer::Reset:
+            if (state_.reset_available) ask(MenuConfirm::Reset);
             return true;
         case Footer::Disconnect:
             if (state_.session_active) result.disconnect_requested = true;

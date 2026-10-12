@@ -219,28 +219,30 @@ int taps_that_toggle_smoothing(const LayoutRegistry& registry, const LayoutPicke
     return hits;
 }
 
-// Reset and Screen Smoothing are Cemu's to own for a Wii U -- see
-// SystemProfile::offers_reset and offers_smoothing -- so neither is offered
-// there, on a tap or on the button itself. Every other console keeps both,
-// unaffected.
-void test_reset_and_smoothing_are_hidden_where_the_console_owns_them() {
+// Screen Smoothing is Cemu's to own for a Wii U -- see
+// SystemProfile::offers_smoothing -- so it is not offered there. Reset is,
+// as a row of the Wii U's list, asked about first: it restarts Cemu. Every
+// other console keeps both, unaffected.
+void test_smoothing_is_hidden_where_the_console_owns_it() {
     LayoutRegistry registry;
 
     LayoutPickerState wii_u;
     wii_u.layout_id = registry.at(0).id;
     wii_u.reset_available = system_profile(SystemId::WiiU).offers_reset;
     wii_u.smoothing_available = system_profile(SystemId::WiiU).offers_smoothing;
-    CHECK(!wii_u.reset_available);
+    CHECK(wii_u.reset_available);
     CHECK(!wii_u.smoothing_available);
-    CHECK_EQ(taps_that_open_reset(registry, wii_u), 0);
     CHECK_EQ(taps_that_toggle_smoothing(registry, wii_u), 0);
 
-    LayoutPicker pressing_y(registry);
-    pressing_y.open(wii_u);
-    const LayoutPickerResult pressed =
-        pressing_y.update({UiAction::MenuReset}, {}, kWidth, kHeight);
-    CHECK_MSG(!pressed.reset_requested && !pressing_y.awaiting_confirmation(),
-              "Y still opened the reset confirmation on a console that owns reset itself");
+    // Reset on a Wii U's list: Continue, Controller Order, Pointer, Reset.
+    LayoutPicker list(registry);
+    list.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    list.open(wii_u);
+    for (int step = 0; step < 3; ++step) list.update({UiAction::Down}, {}, kWidth, kHeight);
+    const LayoutPickerResult asked = list.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_MSG(!asked.reset_requested && list.awaiting_confirmation(),
+              "Reset on a Wii U's list was not asked about first");
+    CHECK(list.confirmation() == MenuConfirm::Reset);
 
     LayoutPickerState ds;
     ds.layout_id = registry.at(0).id;
@@ -1616,7 +1618,7 @@ int main() {
     test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
-    test_reset_and_smoothing_are_hidden_where_the_console_owns_them();
+    test_smoothing_is_hidden_where_the_console_owns_it();
     test_the_pointer_button_appears_only_where_there_is_a_pointer();
     test_the_gap_option_is_always_offered();
     test_toggling_the_gap_updates_what_the_previews_would_draw();
