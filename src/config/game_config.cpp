@@ -101,6 +101,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
     config.resume_from_save_state =
         get_bool(document, "resume_from_save_state", config.resume_from_save_state);
+    config.screens_swapped = get_bool(document, "screens_swapped", config.screens_swapped);
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -145,6 +146,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["right_stick_mode"] = right_stick_mode_key(right_stick_mode);
     document["rumble_pak"] = rumble_pak;
     document["resume_from_save_state"] = resume_from_save_state;
+    document["screens_swapped"] = screens_swapped;
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

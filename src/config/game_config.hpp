@@ -43,6 +43,11 @@ struct GameConfig {
     // from its title screen -- see App::Impl::write_resume_point(). Off unless
     // asked for, and only offered where save states are.
     bool resume_from_save_state = false;
+    // A Wii U game played alone shows the other screen from the one
+    // Settings::wii_u_screen_alone says -- Swap Screens in the quick menu, or
+    // F3 -- until swapped back. Per game, since which screen a game is best
+    // played on is a fact about that game.
+    bool screens_swapped = false;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1

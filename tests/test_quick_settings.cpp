@@ -1599,6 +1599,35 @@ void test_wii_u_menu_offers_the_pointer_where_there_is_one() {
     CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).close_requested);
 }
 
+// A Wii U played alone has Swap Screens under Controller Order: the other
+// screen from the setting's, for this game. A or Left/Right flips it; with a
+// second device, each already shows one, and it is not offered.
+void test_wii_u_menu_swaps_screens_when_alone() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.screens_swappable = true;
+
+    LayoutPicker picker(registry);
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    picker.open(state);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).screens_swap_toggled);
+    CHECK(picker.update({UiAction::Right}, {}, kWidth, kHeight).screens_swap_toggled);
+
+    state.screens_swappable = false;
+    LayoutPicker paired(registry);
+    paired.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    paired.open(state);
+    for (int row = 0; row < 8; ++row) {
+        CHECK(!paired.update({UiAction::Confirm}, {}, kWidth, kHeight).screens_swap_toggled);
+        paired.close();
+        paired.open(state);
+        paired.update({UiAction::Down}, {}, kWidth, kHeight);
+    }
+}
+
 int main() {
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_where_it_was_closed();
@@ -1625,6 +1654,7 @@ int main() {
     test_the_other_buttons_still_work();
     test_wii_u_menu_is_a_plain_list();
     test_wii_u_menu_offers_the_pointer_where_there_is_one();
+    test_wii_u_menu_swaps_screens_when_alone();
     test_wii_u_menu_guide_is_ok_back_and_settings();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();

@@ -475,6 +475,9 @@ struct App::Impl {
     // running app, docked or not, until the app is started again, so the
     // answer at the start of a game is the answer for the whole of it.
     void update_solo_screen();
+    // Swap Screens, from the menu or F3: the other screen from the setting's,
+    // for this game, until swapped back -- see GameConfig::screens_swapped.
+    void toggle_solo_screen_swap();
     // Set when a game starts; the loop does the check and clears it, which it
     // can only do once there is a window to ask about -- a game started from
     // the command line starts before there is one.
@@ -1474,7 +1477,7 @@ void App::Impl::update_solo_screen() {
     solo_screen = screen;
     std::string why;
     if (solo_screen_swapped) {
-        why = "flipped for this session";
+        why = "swapped for this game";
     } else if (settings.wii_u_screen_alone == WiiUScreenAlone::Auto) {
         why = "Auto, on a " + std::to_string(display_width) + "x" +
               std::to_string(display_height) + " display, which " +
@@ -1486,6 +1489,16 @@ void App::Impl::update_solo_screen() {
     }
     log_info(std::string("alone, this device is a Wii U's ") +
              (screen == ScreenId::Bottom ? "GamePad" : "television") + " (" + why + ")");
+}
+
+void App::Impl::toggle_solo_screen_swap() {
+    solo_screen_swapped = !solo_screen_swapped;
+    if (have_game_config) {
+        game_config.screens_swapped = solo_screen_swapped;
+        persist_game_config();
+    }
+    if (picker) picker->set_screens_swapped(solo_screen_swapped);
+    update_solo_screen();
 }
 
 bool App::Impl::is_companion() const {
@@ -1948,6 +1961,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.resume_toggled) {
                 request_resume(!resume_in_effect());
             }
+            if (result.screens_swap_toggled && !paired()) {
+                toggle_solo_screen_swap();
+            }
             if (result.cursor_mode_changed) {
                 // This device's own pointer, so it is decided here and not
                 // asked of the host -- the other device has its own.
@@ -2025,6 +2041,9 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.bilinear_filtering = bilinear_filtering;
     picker_state.audio_target = audio_target;
     picker_state.cursor_mode = settings.cursor_mode;
+    picker_state.screens_swappable =
+        system_profile(system).solo_screens == SoloScreens::One && !paired() && !is_companion();
+    picker_state.screens_swapped = solo_screen_swapped;
     picker_state.left_handed_layouts = left_handed_layouts;
     picker_state.render_scale = render_scale;
     // From the console being played, on both devices: a companion is shown the
@@ -2906,7 +2925,9 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         // Takes effect at once rather than at the next launch: this is the
         // kind of thing somebody changes to see what it does, and the poll
         // loop below picks the new value up on its next pass.
-        solo_screen_swapped = false;
+        // A game's own swap stays: it is the other screen from whatever this
+        // now says.
+        solo_screen_swapped = have_game_config && game_config.screens_swapped;
         update_solo_screen();
         // Likewise immediate, and the one setting somebody is most likely to
         // change while watching the thing it changes.
@@ -3217,7 +3238,14 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     screen_gap = settings.default_screen_gap;
     right_stick_mode = settings.default_right_stick_mode;
 
-    const std::string rom_sha1 = Sha1::hash_file(rom_path);
+    // A Wii U game is a folder, or one file of gigabytes: kept by where it is
+    // rather than by reading it all. Everything else, by what it is.
+    const std::string path_key = "path:" + rom_path;
+    SystemId rom_system = SystemId::Ds;
+    const bool wii_u_game = system_for_rom(rom_path, rom_system) && rom_system == SystemId::WiiU;
+    const std::string rom_sha1 = wii_u_game
+                                     ? Sha1::hash_bytes(path_key.data(), path_key.size())
+                                     : Sha1::hash_file(rom_path);
     render_scale = settings.default_render_scale;
     if (rom_sha1.empty()) {
         log_warn("could not hash the ROM; this session's layout will not be remembered");
@@ -3234,6 +3262,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         screen_gap = game_config.screen_gap;
         right_stick_mode = game_config.right_stick_mode;
     }
+    solo_screen_swapped = have_game_config && game_config.screens_swapped;
     input.set_right_stick_mode(right_stick_mode);
     if (!options.layout_id.empty()) {
         active_layout_id = options.layout_id;
@@ -3628,10 +3657,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 // connected it means nothing at all: both screens are already
                 // being shown, one on each device.
                 if (system_profile(system).solo_screens == SoloScreens::One) {
-                    if (!paired()) {
-                        solo_screen_swapped = !solo_screen_swapped;
-                        update_solo_screen();
-                    }
+                    if (!paired()) toggle_solo_screen_swap();
                 } else if (active_layout().swaps_screens) {
                     // Separate Screens: the other screen, rather than another
                     // layout.

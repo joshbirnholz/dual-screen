@@ -143,6 +143,7 @@ void LayoutPicker::rebuild_footer() {
         footer_.push_back(Footer::OpenControllers);
         // Cemu's own pointer, over the GamePad screen in its window: shown,
         // it comes and goes with the mouse, which taps the screen with it.
+        if (state_.screens_swappable) footer_.push_back(Footer::SwapScreens);
         if (state_.cursor_choosable) footer_.push_back(Footer::Pointer);
         if (state_.reset_available) footer_.push_back(Footer::Reset);
         if (state_.session_active) {
@@ -262,6 +263,7 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::Continue: return "Continue";
         case Footer::OpenControllers: return "Controller Order";
         case Footer::Pointer: return "Pointer";
+        case Footer::SwapScreens: return "Swap Screens";
         case Footer::Reset: return "Reset";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: return "Quit";
@@ -458,6 +460,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
     const bool entries_changed = state.layout_id != selected_layout_id_ ||
                                  state.session_active != state_.session_active ||
                                  state.max_render_scale != state_.max_render_scale ||
+                                 state.screens_swappable != state_.screens_swappable ||
                                  state.cursor_choosable != state_.cursor_choosable ||
                                  state.right_stick_choosable != state_.right_stick_choosable ||
                                  state.left_stick_choosable != state_.left_stick_choosable ||
@@ -628,6 +631,9 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::Pointer:
             result.cursor_mode_changed = true;
+            return true;
+        case Footer::SwapScreens:
+            result.screens_swap_toggled = true;
             return true;
         case Footer::Reset:
             if (state_.reset_available) ask(MenuConfirm::Reset);
@@ -924,6 +930,10 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                     if (focus_ >= 0 && focus_ < footer_count() &&
                         footer_[static_cast<std::size_t>(focus_)] == Footer::Pointer) {
                         result.cursor_mode_changed = true;
+                    }
+                    if (focus_ >= 0 && focus_ < footer_count() &&
+                        footer_[static_cast<std::size_t>(focus_)] == Footer::SwapScreens) {
+                        result.screens_swap_toggled = true;
                     }
                     break;
                 // Nothing to close where the menu is the screen itself.
@@ -1364,6 +1374,11 @@ void LayoutPicker::render(QuadRenderer& quads,
             const float pad = line * 0.7f;
             text.draw(quads, footer_label(footer_[index]), row.x + pad,
                       page_row_text_y(row, scale * 1.1f), scale * 1.1f, menu_row_text(focused));
+            if (footer_[index] == Footer::SwapScreens) {
+                text.draw(quads, state_.screens_swapped ? "On" : "Off", row.x + row.w - pad,
+                          page_row_text_y(row, scale * 1.1f), scale * 1.1f,
+                          focused ? ui_theme().background : ui_theme().text_dim, TextAlign::Right);
+            }
             if (footer_[index] == Footer::Pointer) {
                 text.draw(quads, to_string(state_.cursor_mode), row.x + row.w - pad,
                           page_row_text_y(row, scale * 1.1f), scale * 1.1f,

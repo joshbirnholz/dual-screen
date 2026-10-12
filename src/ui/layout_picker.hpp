@@ -24,6 +24,8 @@ namespace ds {
 struct LayoutPickerResult {
     bool close_requested = false;
     bool selection_changed = false;  // the layout changed; worth persisting
+    // Swap Screens on a Wii U's list: the other screen, for this game.
+    bool screens_swap_toggled = false;
 
     bool quit_requested = false;
     // Ends the two-device session. Offered on both devices, since either end
@@ -105,6 +107,10 @@ struct LayoutPickerState {
     // cannot do anything is worse than an absent one. Same rule as the render
     // scale and the right stick: offered where there is something to choose.
     bool cursor_choosable = true;
+    // A Wii U's Swap Screens, offered only to a device playing alone: with a
+    // second device each already shows one screen.
+    bool screens_swappable = false;
+    bool screens_swapped = false;
     // Which layouts are flipped for a left hand, by id: each is chosen on its
     // own, with the stylus button under the layouts, and each preview is
     // drawn the way round its own layout is.
@@ -307,6 +313,7 @@ public:
     void set_filtering(bool bilinear) { state_.bilinear_filtering = bilinear; }
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
+    void set_screens_swapped(bool swapped) { state_.screens_swapped = swapped; }
     // This device's battery in the heading's corner -- Settings' "Battery in
     // the quick menu". Shown only where there is a battery to show.
     void set_show_battery(bool show) { show_battery_ = show; }
@@ -403,6 +410,7 @@ private:
         // The Pointer setting, as the DS menu's Options has it: a value
         // flipped in place rather than a page opened.
         Pointer,
+        SwapScreens,
         // Asked about first, as on the DS menu.
         Reset,
         Disconnect,
