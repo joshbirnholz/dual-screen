@@ -14,7 +14,7 @@ namespace ds {
 
 // The cells of assets/ui_icons.png, in order -- see assets/make_ui_icons.py.
 // Each is coverage only, tinted for whatever it is drawn on.
-enum class UiIcon { Get, Send, History, Delete, SteamDeck, Switch, Pc, Sync, Android, WiiUGamePad, Count };
+enum class UiIcon { Get, Send, History, Delete, SteamDeck, Switch, Pc, Sync, Android, WiiUGamePad, Tv, Count };
 
 // The strip, loaded into `texture` the first time it is wanted. False, once
 // and with a line in the log, when it will not load.

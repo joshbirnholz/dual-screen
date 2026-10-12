@@ -23,6 +23,9 @@ The cells, in UiIcon order (see src/ui/data_management_screen.cpp):
     wiiu-gamepad                   a Wii U GamePad, for Controller Order:
                                    Kenney's solid one (CC0),
                                    assets/ui_icons/wiiu_gamepad.png
+    tv                             a television, drawn here: a screen's
+                                   heavy rounded outline on a stem and base,
+                                   for the Wii U menu's which-screen icon
 
 A Switch and a Switch Lite are drawn alike. New cells go on the end, so the
 ones before them keep their places.
@@ -90,6 +93,11 @@ def in_action(name, x, y):
                 if near_segment(x, y, px, py, bx, by) <= half:
                     heads = True
         return on_arc or heads
+    if name == "tv":
+        frame = -2.8 <= rounded_box_distance(x, y, 4, 7, 28, 19, 3.5) <= 0
+        stem = 16.6 <= x <= 19.4 and 25.5 <= y <= 29
+        base = rounded_box_distance(x, y, 11, 28.5, 14, 5, 2.2) <= 0 and y <= 31
+        return frame or stem or base
     if name == "delete":
         return (near_segment(x, y, 8, 10, 28, 10) <= half or
                 near_segment(x, y, 14, 10, 14, 6) <= half or
@@ -196,6 +204,7 @@ def main():
     cells += [render_device(name) for name in DEVICES]
     cells += [render_action("sync")]
     cells += [render_device("android"), render_device("wiiu_gamepad")]
+    cells += [render_action("tv")]
     width = CELL * len(cells)
     out = bytearray(width * CELL * 4)
     for index, cell in enumerate(cells):

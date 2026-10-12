@@ -1948,6 +1948,9 @@ void Client::draw_scene() {
         quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                           Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
         picker_.set_preview_screen(session_.granted_screen());
+        picker_.set_device_screen(session_.system() == SystemId::WiiU
+                                      ? std::optional<ScreenId>(session_.granted_screen())
+                                      : std::nullopt);
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
     } else if (menu_open_) {
@@ -1963,6 +1966,9 @@ void Client::draw_scene() {
         // tile shows what picking it will actually look like -- the same as on
         // the other device, because it is the same picker.
         picker_.set_preview_screen(session_.granted_screen());
+        picker_.set_device_screen(session_.system() == SystemId::WiiU
+                                      ? std::optional<ScreenId>(session_.granted_screen())
+                                      : std::nullopt);
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
     } else {

@@ -891,6 +891,9 @@ struct App::Impl {
     // The menu and the pages opened from it, over whatever has been drawn
     // already -- shared by the window and the overlay.
     void render_pages(float width, float height, bool over_game, const ScreenTextures* frames);
+    // Which of a Wii U's screens this device is showing, for its menu's
+    // icon; none for any other console.
+    std::optional<ScreenId> wii_u_screen_here() const;
     // Assigns the pads, hands each player's to the game, and returns the
     // GamePad's -- with the touch screen and the motion of whichever device is
     // showing the GamePad's screen.
@@ -1499,6 +1502,13 @@ void App::Impl::toggle_solo_screen_swap() {
     }
     if (picker) picker->set_screens_swapped(solo_screen_swapped);
     update_solo_screen();
+}
+
+std::optional<ScreenId> App::Impl::wii_u_screen_here() const {
+    if (system != SystemId::WiiU) return std::nullopt;
+    if (is_companion()) return companion_session->granted_screen();
+    if (host_session && host_session->has_companion()) return host_session->host_screen();
+    return solo_screen;
 }
 
 bool App::Impl::is_companion() const {
@@ -4027,6 +4037,7 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         // tile shows what picking it will actually look like.
         picker->set_preview_screen(own_separate_screen());
         picker->set_show_battery(settings.show_battery);
+        picker->set_device_screen(wii_u_screen_here());
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
@@ -4216,6 +4227,7 @@ void App::Impl::render() {
             quads.clear(ui_theme().background);
             picker->set_preview_screen(own_separate_screen());
             picker->set_show_battery(settings.show_battery);
+            picker->set_device_screen(wii_u_screen_here());
             picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
         } else {
             const SystemProfile& profile = system_profile(system);

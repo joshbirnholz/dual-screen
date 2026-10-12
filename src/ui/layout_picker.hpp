@@ -2,6 +2,7 @@
 
 #include <array>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "layout/layout_registry.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/compositor.hpp"
+#include "render/texture.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/popup.hpp"
@@ -320,6 +322,10 @@ public:
     // This device's battery in the heading's corner -- Settings' "Battery in
     // the quick menu". Shown only where there is a battery to show.
     void set_show_battery(bool show) { show_battery_ = show; }
+    // Which of a Wii U's screens the device this menu is drawn on is showing,
+    // drawn at the bottom left of its list -- a GamePad or a television.
+    // Each device's own, so set by each, every frame, rather than shared.
+    void set_device_screen(std::optional<ScreenId> screen) { device_screen_ = screen; }
     void set_left_handed_layouts(std::vector<std::string> layouts) {
         state_.left_handed_layouts = std::move(layouts);
     }
@@ -528,6 +534,9 @@ private:
     std::vector<std::size_t> tiles_;
     bool open_ = false;
     bool show_battery_ = true;
+    std::optional<ScreenId> device_screen_;
+    Texture ui_icons_;
+    bool ui_icons_tried_ = false;
     // The Wii U list's row.
     int focus_ = 0;
     // The DS and 3DS menu's cursor: which section, and whether it is over on

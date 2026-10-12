@@ -3,6 +3,7 @@
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/page_frame.hpp"
+#include "ui/ui_icons.hpp"
 #include "util/battery.hpp"
 
 #include <algorithm>
@@ -1423,6 +1424,16 @@ void LayoutPicker::render(QuadRenderer& quads,
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     }
     draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
+    // A Wii U's: which screen this device is, at the left of the prompts.
+    if (wii_u && device_screen_ && load_ui_icons(ui_icons_, ui_icons_tried_)) {
+        const float guide_height = control_guide_height(frame.guide_scale());
+        const float size = std::round(guide_height * 1.5f);
+        const PixelRect cell{frame.panel.x, std::round(frame.guide_y + (guide_height - size) * 0.5f),
+                             size, size};
+        draw_ui_icon(quads, ui_icons_,
+                     *device_screen_ == ScreenId::Bottom ? UiIcon::WiiUGamePad : UiIcon::Tv, cell,
+                     ui_theme().text);
+    }
 
     if (confirming()) {
         // The popup every question in the app is asked in: see ui/popup.hpp.
