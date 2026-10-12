@@ -876,6 +876,11 @@ struct App::Impl {
     // Draws that, on its own, and hands it over when it has changed; or takes
     // it down once it is not wanted.
     void render_menu_overlay();
+    // The menu's own button, pressed on a page opened from the menu during a
+    // game: straight back to the game, every page and the menu put away at
+    // once, the way it closes the menu itself. False when that is not where
+    // it is pressed, for the page to answer as usual.
+    bool menu_key_back_to_game(const std::vector<UiAction>& actions);
     // The menu and the pages opened from it, over whatever has been drawn
     // already -- shared by the window and the overlay.
     void render_pages(float width, float height, bool over_game, const ScreenTextures* frames);
@@ -1786,6 +1791,26 @@ bool App::Impl::shows_embedded_menu() const {
 // one is under a page opened from the menu, its blurred picture with 60% more
 // black over it.
 constexpr float kLiveGameDim = 0.8f;
+
+bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
+    if (!local_game() || is_companion()) return false;
+    if (state != State::Settings && state != State::Controllers && state != State::DataManagement) {
+        return false;
+    }
+    if (std::find(actions.begin(), actions.end(), UiAction::ToggleMenu) == actions.end()) {
+        return false;
+    }
+    if (state == State::Settings) settings_screen->close();
+    if (state == State::Controllers) controllers_screen.close();
+    if (state == State::DataManagement && data_screen) data_screen->close();
+    data_from_settings = false;
+    log_info("the menu button: every page put away, back to the game");
+    // Closed the way the menu itself is, so that everything closing it does
+    // -- the game running again, the other device told -- happens here too.
+    state = State::Menu;
+    set_menu_open(false);
+    return true;
+}
 
 bool App::Impl::wants_menu_overlay() const {
     const bool page_up = state == State::Menu || state == State::Message ||
@@ -3537,6 +3562,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                              static_cast<float>(output_height));
         return;
     }
+    if (menu_key_back_to_game(actions)) return;
     // Filtering is deliberately handled before anything else looks at the
     // actions: R3 means the same thing in a game and in every menu, so it does
     // not belong to any one screen.
@@ -5057,6 +5083,7 @@ int App::run(const AppOptions& options) {
                                               static_cast<float>(impl.output_height));
                     continue;
                 }
+                if (for_settings && impl.menu_key_back_to_game({action})) continue;
                 if (impl.state == Impl::State::Controllers) {
                     impl.update_controllers_screen({action}, {});
                     continue;
