@@ -245,6 +245,13 @@ void encode_welcome(const WelcomeMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, system_to_wire(message.system));
     put_u32(out, message.audio_sample_rate);
     put_u64(out, message.session_token);
+    const std::size_t icon_bytes =
+        static_cast<std::size_t>(message.icon_width) * message.icon_height * 4u;
+    if (icon_bytes > 0 && message.icon_rgba.size() == icon_bytes) {
+        put_u16(out, message.icon_width);
+        put_u16(out, message.icon_height);
+        out.insert(out.end(), message.icon_rgba.begin(), message.icon_rgba.end());
+    }
     finish_message(out, start, MessageType::Welcome);
 }
 
@@ -908,6 +915,18 @@ bool decode_welcome(const uint8_t* data, std::size_t size, WelcomeMessage& out) 
     reader.u32(out.audio_sample_rate);
     reader.u64(out.session_token);
     if (!reader.ok() || !system_from_wire(system, out.system)) return false;
+    if (reader.remaining() > 0) {
+        // Bounded: an icon is a few hundred pixels across at most.
+        if (reader.u16(out.icon_width) && reader.u16(out.icon_height) && out.icon_width <= 512 &&
+            out.icon_height <= 512) {
+            reader.bytes(out.icon_rgba, static_cast<std::size_t>(out.icon_width) * out.icon_height * 4u);
+        }
+        if (!reader.ok() || out.icon_width > 512 || out.icon_height > 512) {
+            out.icon_width = 0;
+            out.icon_height = 0;
+            out.icon_rgba.clear();
+        }
+    }
     return screen_from_wire(screen, out.granted_screen);
 }
 

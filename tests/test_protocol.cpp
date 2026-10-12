@@ -84,6 +84,27 @@ void test_welcome_and_session_round_trip() {
     CHECK(received.granted_screen == ScreenId::Top);
     CHECK(received.system == SystemId::ThreeDs);
     CHECK(received.session_token == welcome.session_token);
+    CHECK(received.icon_rgba.empty());
+
+    // With the game's icon on the end, decoded already.
+    welcome.icon_width = 2;
+    welcome.icon_height = 3;
+    welcome.icon_rgba.assign(2 * 3 * 4, 0);
+    for (std::size_t i = 0; i < welcome.icon_rgba.size(); ++i) {
+        welcome.icon_rgba[i] = static_cast<uint8_t>(i * 7);
+    }
+    buffer.clear();
+    encode_welcome(welcome, buffer);
+    CHECK(one_message(buffer, type, payload));
+    WelcomeMessage with_icon;
+    CHECK(decode_welcome(payload.data(), payload.size(), with_icon));
+    CHECK_EQ(static_cast<int>(with_icon.icon_width), 2);
+    CHECK_EQ(static_cast<int>(with_icon.icon_height), 3);
+    CHECK(with_icon.icon_rgba == welcome.icon_rgba);
+    CHECK_STR_EQ(with_icon.game_title, welcome.game_title);
+    welcome.icon_width = 0;
+    welcome.icon_height = 0;
+    welcome.icon_rgba.clear();
 
     SessionStateMessage state;
     state.layout_id = "upper_on_tv";

@@ -501,6 +501,11 @@ private:
     TextRenderer text_;
     ButtonGlyphSheet button_glyphs_;
     MenuBackdrop menu_backdrop_;
+    // The game's icon the host sent, for the quick menu's header: decoded
+    // once for each game, keyed by its title and the icon's size.
+    Texture game_icon_;
+    std::string game_icon_for_;
+    const Texture* host_game_icon();
     // Each pass started as late before the display's refresh as it can be --
     // see FrameDelay -- and whether that is currently on, so the log says
     // when it changes.
@@ -1843,6 +1848,25 @@ void Client::report_slow_pass(const PassTimes& pass) {
     slow_passes_unsaid_ = 0;
 }
 
+const Texture* Client::host_game_icon() {
+    const std::string key =
+        session_.game_title() + ":" + std::to_string(session_.game_icon_rgba().size());
+    if (key != game_icon_for_) {
+        game_icon_for_ = key;
+        game_icon_ = Texture();
+        const int width = session_.game_icon_width();
+        const int height = session_.game_icon_height();
+        const std::vector<uint8_t>& rgba = session_.game_icon_rgba();
+        if (width > 0 && height > 0 &&
+            rgba.size() == static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u) {
+            game_icon_.upload_rgba8888(reinterpret_cast<const uint32_t*>(rgba.data()), width,
+                                       height, width);
+            game_icon_.set_linear_filtering(true);
+        }
+    }
+    return game_icon_.valid() ? &game_icon_ : nullptr;
+}
+
 void Client::draw() {
     // Whatever a layer is not given this frame, it stops showing -- see
     // SystemVideoLayers::end_frame().
@@ -1951,6 +1975,7 @@ void Client::draw_scene() {
         picker_.set_device_screen(session_.system() == SystemId::WiiU
                                       ? std::optional<ScreenId>(session_.granted_screen())
                                       : std::nullopt);
+        picker_.set_game_icon(host_game_icon());
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
     } else if (menu_open_) {
@@ -1969,6 +1994,7 @@ void Client::draw_scene() {
         picker_.set_device_screen(session_.system() == SystemId::WiiU
                                       ? std::optional<ScreenId>(session_.granted_screen())
                                       : std::nullopt);
+        picker_.set_game_icon(host_game_icon());
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
     } else {

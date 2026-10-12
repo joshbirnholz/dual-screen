@@ -492,6 +492,9 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                 return;
             }
             game_title_ = welcome.game_title;
+            game_icon_width_ = welcome.icon_width;
+            game_icon_height_ = welcome.icon_height;
+            game_icon_rgba_ = welcome.icon_rgba;
             system_ = welcome.system;
             granted_screen_ = welcome.granted_screen;
             audio_sample_rate_ = welcome.audio_sample_rate;

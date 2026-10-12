@@ -183,6 +183,13 @@ struct WelcomeMessage {
     // that happens to land on this port -- so every one carries this and is
     // ignored if it does not match.
     uint64_t session_token = 0;
+    // The game's icon for the quick menu's header, decoded already: RGBA8,
+    // icon_width x icon_height, so the other device needs nothing of any
+    // console's own format to show it. Trailing and optional: empty from an
+    // older host, and an older companion stops reading before it.
+    uint16_t icon_width = 0;
+    uint16_t icon_height = 0;
+    std::vector<uint8_t> icon_rgba;
 };
 
 // Which device an audio stream belongs to.

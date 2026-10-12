@@ -326,6 +326,9 @@ public:
     // drawn at the bottom left of its list -- a GamePad or a television.
     // Each device's own, so set by each, every frame, rather than shared.
     void set_device_screen(std::optional<ScreenId> screen) { device_screen_ = screen; }
+    // The game's icon, drawn left of its title in the header; null for none.
+    // The caller's, and kept alive by it while the menu is drawn.
+    void set_game_icon(const Texture* icon) { game_icon_ = icon; }
     void set_left_handed_layouts(std::vector<std::string> layouts) {
         state_.left_handed_layouts = std::move(layouts);
     }
@@ -535,6 +538,7 @@ private:
     bool open_ = false;
     bool show_battery_ = true;
     std::optional<ScreenId> device_screen_;
+    const Texture* game_icon_ = nullptr;
     Texture ui_icons_;
     bool ui_icons_tried_ = false;
     // The Wii U list's row.

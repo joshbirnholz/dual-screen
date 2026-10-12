@@ -98,6 +98,10 @@ public:
     struct Config {
         std::string device_name;
         std::string game_title;
+        // Its icon, for the other device's menu: see WelcomeMessage::icon_rgba.
+        int game_icon_width = 0;
+        int game_icon_height = 0;
+        std::vector<uint8_t> game_icon_rgba;
         std::string rom_sha1;
         // Which console is running, so the companion lays its screens out the
         // same way and clamps touches to the same coordinate space.

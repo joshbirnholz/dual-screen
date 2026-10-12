@@ -31,6 +31,7 @@
 #include "core/gl_call_trace.hpp"
 #include "core/libretro_core.hpp"
 #include "core/libretro_screen_source.hpp"
+#include "core/console_title_info.hpp"
 #include "core/game_title.hpp"
 #include "core/save_store.hpp"
 #include "core/system.hpp"
@@ -363,6 +364,17 @@ struct App::Impl {
     // The quick menu as Cemu draws it over a Wii U game -- see
     // wants_menu_overlay() -- and whether Cemu is showing one now.
     MenuOverlay menu_overlay;
+    // The game's icon for the quick menu's header: this device's game's, read
+    // from its save store as Data Management shows it, or on a companion the
+    // one the host sent. `game_icon_for` says whose it is.
+    Texture game_icon;
+    std::string game_icon_for;
+    int game_icon_width = 0;
+    int game_icon_height = 0;
+    std::vector<uint8_t> game_icon_rgba;
+    uint64_t game_icon_tried_us = 0;
+    // Loads it when it is not loaded yet for what is being played.
+    void refresh_game_icon();
     bool menu_overlay_shown = false;
     bool menu_overlay_logged = false;
     // A companion's pass started as late before the display's refresh as it
@@ -1502,6 +1514,50 @@ void App::Impl::toggle_solo_screen_swap() {
     }
     if (picker) picker->set_screens_swapped(solo_screen_swapped);
     update_solo_screen();
+}
+
+void App::Impl::refresh_game_icon() {
+    std::string key;
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> rgba;
+    if (is_companion()) {
+        key = "host:" + companion_session->game_title() + ":" +
+              std::to_string(companion_session->game_icon_rgba().size());
+        if (key == game_icon_for) return;
+        width = companion_session->game_icon_width();
+        height = companion_session->game_icon_height();
+        rgba = companion_session->game_icon_rgba();
+    } else {
+        key = "here:" + game_path;
+        if (key == game_icon_for || game_path.empty() || !save_store) return;
+        // At most every two seconds while it is not found.
+        const uint64_t now_us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        if (game_icon_tried_us != 0 && now_us - game_icon_tried_us < 2000000) return;
+        game_icon_tried_us = now_us;
+        SaveInfo info;
+        // Not kept as tried when not found: the store may only learn the game
+        // once it has been played a moment, and the next menu asks again.
+        if (!save_store->find_for_rom(game_path, info) || info.icon.empty() ||
+            !save_icon_rgba(info.system, info.icon, width, height, rgba)) {
+            game_icon = Texture();
+            return;
+        }
+    }
+    game_icon_for = key;
+    game_icon = Texture();
+    game_icon_width = width;
+    game_icon_height = height;
+    game_icon_rgba = rgba;
+    if (width > 0 && height > 0 &&
+        rgba.size() == static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u) {
+        game_icon.upload_rgba8888(reinterpret_cast<const uint32_t*>(rgba.data()), width, height,
+                                  width);
+        game_icon.set_linear_filtering(true);
+    }
 }
 
 std::optional<ScreenId> App::Impl::wii_u_screen_here() const {
@@ -3491,6 +3547,12 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     net::HostSession::Config host_config;
     host_config.device_name = settings.device_name;
     host_config.game_title = game_title;
+    refresh_game_icon();
+    if (game_icon_for == "here:" + game_path) {
+        host_config.game_icon_width = game_icon_width;
+        host_config.game_icon_height = game_icon_height;
+        host_config.game_icon_rgba = game_icon_rgba;
+    }
     host_config.rom_sha1 = game_config.rom_sha1;
     host_config.host_screen = local_screen;
     host_config.system = system;
@@ -4038,6 +4100,8 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         picker->set_preview_screen(own_separate_screen());
         picker->set_show_battery(settings.show_battery);
         picker->set_device_screen(wii_u_screen_here());
+        refresh_game_icon();
+        picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
@@ -4228,6 +4292,8 @@ void App::Impl::render() {
             picker->set_preview_screen(own_separate_screen());
             picker->set_show_battery(settings.show_battery);
             picker->set_device_screen(wii_u_screen_here());
+            refresh_game_icon();
+            picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
             picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
         } else {
             const SystemProfile& profile = system_profile(system);

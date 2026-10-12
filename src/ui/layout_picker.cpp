@@ -1355,8 +1355,19 @@ void LayoutPicker::render(QuadRenderer& quads,
     const BatteryReading battery = show_battery_ ? read_battery() : BatteryReading();
     const float battery_room =
         battery.present ? battery_width(battery, scale) + frame.line * 1.2f : 0.0f;
-    draw_page_header(quads, text, frame, game_title, state_.subtitle, 0.0f, false, battery_room,
-                     /*rules=*/false);
+    // The game's icon left of its title, as on its Data Management page.
+    float title_indent = 0.0f;
+    if (game_icon_ != nullptr && game_icon_->valid()) {
+        const float icon_size = std::round(frame.line * 1.7f);
+        quads.draw_image(PixelRect{frame.panel.x,
+                                   std::round(frame.panel.y +
+                                              (frame.header_bottom - frame.panel.y - icon_size) * 0.5f),
+                                   icon_size, icon_size},
+                         *game_icon_);
+        title_indent = icon_size + std::round(frame.line * 0.6f);
+    }
+    draw_page_header(quads, text, frame, game_title, state_.subtitle, title_indent, false,
+                     battery_room, /*rules=*/false);
     if (battery.present) {
         draw_battery(quads, text, battery, frame.panel.x + frame.panel.w,
                      std::round((frame.panel.y + frame.header_bottom) * 0.5f), scale);
