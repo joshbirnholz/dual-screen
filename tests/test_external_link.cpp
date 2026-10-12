@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <string>
 #include <thread>
 #include <vector>
@@ -864,6 +865,16 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
     link.set_pointer_shown(true);
     CHECK_MSG(wait_for([&]() { return producer.pointer_shown(); }),
               "the pointer being shown again never reached the producer");
+
+    // A click on the menu in the game's window, handed back as fractions of
+    // the menu's size.
+    float press_x = 0.0f, press_y = 0.0f, tap_x = 0.0f, tap_y = 0.0f;
+    CHECK(!link.take_overlay_tap(press_x, press_y, tap_x, tap_y));
+    producer.send_overlay_tap(0.25f, 0.5f, 0.75f, 1.0f);
+    CHECK_MSG(wait_for([&]() { return link.take_overlay_tap(press_x, press_y, tap_x, tap_y); }),
+              "a tap on the menu never came back");
+    CHECK(std::abs(press_x - 0.25f) < 0.001f && std::abs(press_y - 0.5f) < 0.001f);
+    CHECK(std::abs(tap_x - 0.75f) < 0.001f && std::abs(tap_y - 1.0f) < 0.001f);
 
     // Tab in the game's window, which only it can hear.
     CHECK(!link.take_menu_key());

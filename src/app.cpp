@@ -5240,7 +5240,24 @@ int App::run(const AppOptions& options) {
         set_live_pointer(impl.input.pointer_active(), impl.input.pointer_x(),
                          impl.input.pointer_y());
         {
-            const std::vector<PointerEvent>& pointers = impl.input.pointer_events();
+            std::vector<PointerEvent> pointers = impl.input.pointer_events();
+            // Taps on the menu as Cemu draws it over the game, which land
+            // where they would on this window's copy of it: the two are
+            // drawn at the same shape. See wants_menu_overlay().
+            if (impl.external_source) {
+                float press_x = 0.0f, press_y = 0.0f, x = 0.0f, y = 0.0f;
+                while (impl.external_source->take_overlay_tap(press_x, press_y, x, y)) {
+                    if (!impl.wants_menu_overlay()) continue;
+                    PointerEvent tap;
+                    tap.normalized = false;
+                    tap.released = true;
+                    tap.press_x = press_x * static_cast<float>(impl.output_width);
+                    tap.press_y = press_y * static_cast<float>(impl.output_height);
+                    tap.x = x * static_cast<float>(impl.output_width);
+                    tap.y = y * static_cast<float>(impl.output_height);
+                    pointers.push_back(tap);
+                }
+            }
             const bool tapped = std::any_of(pointers.begin(), pointers.end(),
                                             [](const PointerEvent& pointer) { return pointer.released; });
             const double now_seconds = static_cast<double>(SDL_GetPerformanceCounter() - started_counter) /
