@@ -5038,6 +5038,16 @@ int App::run(const AppOptions& options) {
                 }
                 if (!press.has_action) continue;
                 const UiAction action = ui_action_for(press.action);
+                // A popup over Settings -- an update's offer, or its answer --
+                // takes the press first, as it does a press made here. Sent
+                // straight to the page under it, the popup could never be
+                // put away from the other device, and its A and B worked the
+                // page instead.
+                if (for_settings && impl.update_prompt.open()) {
+                    impl.update_prompt.update({action}, {}, static_cast<float>(impl.output_width),
+                                              static_cast<float>(impl.output_height));
+                    continue;
+                }
                 if (impl.state == Impl::State::Controllers) {
                     impl.update_controllers_screen({action}, {});
                     continue;
