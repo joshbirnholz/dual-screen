@@ -1468,11 +1468,12 @@ void test_the_settings_prompt_is_there_and_is_leftmost() {
 
 }  // namespace
 
-// The menu opens where it was put away: the same section, in the list. The
+// The menu opens where it was put away: the same section, and inside it when
+// the cursor was in there. The
 // first time in a run it opens at the top, the way NSO's does, and a section
 // the menu no longer has -- save states on a game without them -- starts
 // from the top again.
-void test_the_menu_reopens_on_the_section_it_was_closed_on() {
+void test_the_menu_reopens_where_it_was_closed() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
@@ -1500,7 +1501,9 @@ void test_the_menu_reopens_on_the_section_it_was_closed_on() {
     picker.open(state);
     CHECK_MSG(picker.section() == MenuSection::Options,
               "the menu did not open on the section it was closed on");
-    CHECK_MSG(!picker.on_content(), "the menu opened inside the section rather than on it");
+    CHECK_MSG(picker.on_content(), "the menu did not open where in the section it was closed");
+    picker.update({UiAction::Cancel}, {}, kWidth, kHeight);
+    CHECK(!picker.on_content());
 
     // Closed on Load Save State, then opened for a game that has none.
     while (picker.section() != MenuSection::LoadSavePoint) {
@@ -1590,7 +1593,7 @@ void test_wii_u_menu_offers_the_pointer_where_there_is_one() {
 
 int main() {
     test_the_resume_popup_is_put_away_with_ok();
-    test_the_menu_reopens_on_the_section_it_was_closed_on();
+    test_the_menu_reopens_where_it_was_closed();
     test_the_layout_swap_keeps_the_stylus_hand();
     test_the_sections_come_in_order();
     test_save_sync_asks_for_the_game_page();

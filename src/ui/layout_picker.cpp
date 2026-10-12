@@ -64,6 +64,9 @@ int LayoutPicker::tile_index_of(const std::string& layout_id) const {
 void LayoutPicker::open(const LayoutPickerState& state) {
     // Where it was closed, held before anything below can move it.
     const MenuSection closed_on = section_;
+    const bool closed_inside = on_content_;
+    const int closed_item = item_;
+    const int closed_focus = focus_;
     const bool reopening = opened_before_;
     opened_before_ = true;
     open_ = true;
@@ -76,19 +79,28 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     rebuild_footer();
     focus_ = 0;
     // The first time, the list at its top -- the way NSO's menu opens -- with
-    // the layouts already showing beside it. After that, back on the section
-    // it was closed on, in the list rather than inside it: whoever comes back
-    // to the menu mostly comes back for the same thing. A section this game
-    // or this session does not have starts from the top instead.
+    // the layouts already showing beside it. After that, exactly where it was
+    // closed: the section, and the entry inside it when the cursor was in
+    // there. Whoever comes back to the menu mostly comes back for the same
+    // thing. A section this game or this session does not have starts from
+    // the top instead.
+    on_content_ = false;
+    item_ = 0;
     if (sections_.empty()) {
         section_ = MenuSection::Layout;
     } else if (reopening && has_section(closed_on)) {
         section_ = closed_on;
+        if (closed_inside && closed_item < content_count(section_)) {
+            on_content_ = true;
+            item_ = std::max(0, closed_item);
+        }
     } else {
         section_ = sections_.front();
     }
-    on_content_ = false;
-    item_ = 0;
+    // A Wii U's plain list, the same way: back on the row it was closed on.
+    if (reopening && closed_focus > 0 && closed_focus < footer_count()) {
+        focus_ = closed_focus;
+    }
 }
 
 void LayoutPicker::set_save_slots(std::vector<SavePointInfo> slots) {
