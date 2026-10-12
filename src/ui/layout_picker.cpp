@@ -134,14 +134,16 @@ void LayoutPicker::rebuild_footer() {
         // as face-button shortcuts either, so neither does this one. See
         // update()'s Wii U branch for the controls this deliberately ignores.
         //
-        // No Resume: Back does that where the menu is opened over the game,
-        // and where it is shown in place of it -- see LayoutPickerState::
-        // embedded -- the game was never paused and is one window away.
+        // Continue at the top, as the DS menu has it -- except where the list
+        // is shown in place of the game (see LayoutPickerState::embedded):
+        // there is no menu to leave there, the game being one window away.
+        // Settings is the minus button, as it is on every other console's
+        // menu, rather than a row.
+        if (!state_.embedded) footer_.push_back(Footer::Continue);
         footer_.push_back(Footer::OpenControllers);
         // Cemu's own pointer, over the GamePad screen in its window: shown,
         // it comes and goes with the mouse, which taps the screen with it.
         if (state_.cursor_choosable) footer_.push_back(Footer::Pointer);
-        footer_.push_back(Footer::OpenSettings);
         if (state_.session_active) {
             footer_.push_back(Footer::Disconnect);
         }
@@ -256,9 +258,9 @@ bool LayoutPicker::swap_button_usable() const {
 
 std::string LayoutPicker::footer_label(Footer kind) const {
     switch (kind) {
+        case Footer::Continue: return "Continue";
         case Footer::OpenControllers: return "Controller Order";
         case Footer::Pointer: return "Pointer";
-        case Footer::OpenSettings: return "Settings";
         case Footer::Disconnect: return "Disconnect";
         case Footer::Quit: return "Quit";
     }
@@ -616,14 +618,14 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
         return false;
     }
     switch (footer_[static_cast<std::size_t>(focus_)]) {
+        case Footer::Continue:
+            if (!state_.embedded) result.close_requested = true;
+            return true;
         case Footer::OpenControllers:
             result.controllers_requested = true;
             return true;
         case Footer::Pointer:
             result.cursor_mode_changed = true;
-            return true;
-        case Footer::OpenSettings:
-            result.settings_requested = true;
             return true;
         case Footer::Disconnect:
             if (state_.session_active) result.disconnect_requested = true;
@@ -925,6 +927,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                     if (!state_.embedded) result.close_requested = true;
                     break;
                 case UiAction::Quit: result.quit_requested = true; break;
+                // Minus, as on every console's menu.
+                case UiAction::MenuSettings: result.settings_requested = true; break;
                 // Everything else is in the list, reached by A; a controller
                 // that sends one of the DS menu's shortcuts anyway (a shared
                 // keybinding, a macro) should not reach past it.
@@ -1361,11 +1365,13 @@ void LayoutPicker::render(QuadRenderer& quads,
                           focused ? ui_theme().background : ui_theme().text_dim, TextAlign::Right);
             }
         }
-        // Everything this menu can do lives in the list above, reached by A.
-        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+        // Everything else this menu can do lives in the list above, reached
+        // by A; Settings is minus, leftmost, as on the DS menu.
+        guide.push_back({ButtonGlyph::Minus, "Settings"});
         if (!state_.embedded) {
             guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
         }
+        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     } else {
         const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
         render_sections(quads, text, geometry);

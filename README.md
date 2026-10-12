@@ -321,10 +321,11 @@ Three things are different about a Wii U session:
 
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
-  "Playing on Cemu" notice: **Controller Order**, **Pointer**, **Settings**,
-  **Disconnect** and **Quit**. It answers only while its window has the focus,
-  so a press meant for the game never picks Quit. There is no Resume: the game
-  never paused, and going back to it is switching back to Cemu's window.
+  "Playing on Cemu" notice: **Controller Order**, **Pointer**, **Disconnect**
+  and **Quit**, with **Settings** on minus as on every console's menu. It
+  answers only while its window has the focus, so a press meant for the game
+  never picks Quit. Opened over the game, the menu also starts with
+  **Continue**, which goes back to it.
 
 - **The quick menu also opens over the game, in Cemu's window.** With this
   project's Cemu build, **F1** in Cemu's window, or the menu button on a pad,

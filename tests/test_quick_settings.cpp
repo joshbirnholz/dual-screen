@@ -942,9 +942,9 @@ void test_the_sections_that_end_something() {
     CHECK(!across.on_content());
 }
 
-// A Wii U's quick menu is a plain list -- Controllers, Settings, Disconnect
-// (only with a companion attached), Quit -- and nothing else, not even Resume,
-// which Back already is: no layout tiles (see
+// A Wii U's quick menu is a plain list -- Continue, Controllers, Disconnect
+// (only with a companion attached), Quit -- with Settings on minus as on every
+// console's menu, and nothing else: no layout tiles (see
 // test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape), no
 // audio, hands, pointer, right-stick or render-scale buttons, and no
 // face-button shortcuts standing in for any of them. Which screen is shown
@@ -983,8 +983,8 @@ void test_wii_u_menu_is_a_plain_list() {
             }
         }
         CHECK_MSG(controllers > 0, "no tap reached Controllers on a Wii U's menu");
-        CHECK_MSG(closed == 0, "a Wii U's menu still has a row that only closes it");
-        CHECK_MSG(settings > 0, "no tap reached Settings on a Wii U's menu");
+        CHECK_MSG(closed > 0, "no tap reached Continue on a Wii U's menu");
+        CHECK_MSG(settings == 0, "a row of a Wii U's menu still opens Settings; minus does");
         CHECK_MSG(quit > 0, "no tap reached Quit on a Wii U's menu");
         CHECK_MSG(session_active == (disconnect > 0),
                   "Disconnect did not follow whether a companion is attached");
@@ -1000,13 +1000,14 @@ void test_wii_u_menu_is_a_plain_list() {
     LayoutPicker shortcuts(registry);
     shortcuts.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
     shortcuts.open(state);
-    for (const UiAction action :
-         {UiAction::MenuQuit, UiAction::MenuDisconnect, UiAction::MenuSettings}) {
+    for (const UiAction action : {UiAction::MenuQuit, UiAction::MenuDisconnect}) {
         const LayoutPickerResult result = shortcuts.update({action}, {}, kWidth, kHeight);
         CHECK_MSG(!result.settings_requested && !result.disconnect_requested &&
                       !shortcuts.awaiting_confirmation(),
                   "a face-button shortcut still worked on a Wii U's plain-list menu");
     }
+    // Except minus, which is Settings on every console's menu.
+    CHECK(shortcuts.update({UiAction::MenuSettings}, {}, kWidth, kHeight).settings_requested);
 
     // And the reverse: a DS keeps every one of its own buttons and never
     // shrinks to the Wii U's plain list.
@@ -1036,9 +1037,9 @@ void test_wii_u_menu_is_a_plain_list() {
 }
 
 // The control guide is what actually tells a player what a press does, so the
-// list has to shrink there too: A and B only, nothing named for a control
-// that no longer does anything on this menu.
-void test_wii_u_menu_guide_is_just_ok_and_resume() {
+// list has to shrink there too: A, B and minus for Settings, nothing named for
+// a control that no longer does anything on this menu.
+void test_wii_u_menu_guide_is_ok_back_and_settings() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
@@ -1055,12 +1056,14 @@ void test_wii_u_menu_guide_is_just_ok_and_resume() {
 
     bool found_a = false;
     bool found_b = false;
+    bool found_minus = false;
     bool found_other = false;
     for (float y = 2.0f; y < kHeight; y += 4.0f) {
         for (float x = 2.0f; x < kWidth; x += 4.0f) {
             switch (picker.guide_button_at(x, y)) {
                 case ButtonGlyph::A: found_a = true; break;
                 case ButtonGlyph::B: found_b = true; break;
+                case ButtonGlyph::Minus: found_minus = true; break;
                 case ButtonGlyph::Count: break;
                 default: found_other = true; break;
             }
@@ -1068,7 +1071,8 @@ void test_wii_u_menu_guide_is_just_ok_and_resume() {
     }
     CHECK_MSG(found_a, "a Wii U's menu guide is missing A");
     CHECK_MSG(found_b, "a Wii U's menu guide is missing B");
-    CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A and B");
+    CHECK_MSG(found_minus, "a Wii U's menu guide is missing Settings on minus");
+    CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and minus");
 }
 
 // Reset and Quit throw away something the player cannot get back, so neither
@@ -1566,7 +1570,7 @@ void test_the_resume_popup_is_put_away_with_ok() {
 }
 
 // Where there is a mouse to point with, a Wii U's list has a Pointer row too,
-// under Controller Order: the DS menu's Options entry, for Cemu's window. A
+// under Continue and Controller Order: the DS menu's Options entry, for Cemu's window. A
 // flips it in place, as do Left and Right; nothing else on the list does.
 void test_wii_u_menu_offers_the_pointer_where_there_is_one() {
     LayoutRegistry registry;
@@ -1580,15 +1584,17 @@ void test_wii_u_menu_offers_the_pointer_where_there_is_one() {
     picker.open(state);
     CHECK(!picker.update({UiAction::Left}, {}, kWidth, kHeight).cursor_mode_changed);
     picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
     const LayoutPickerResult flipped = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK(flipped.cursor_mode_changed);
     CHECK(!flipped.settings_requested && !flipped.controllers_requested);
     CHECK(picker.is_open());
     CHECK(picker.update({UiAction::Right}, {}, kWidth, kHeight).cursor_mode_changed);
     CHECK(picker.update({UiAction::Left}, {}, kWidth, kHeight).cursor_mode_changed);
-    // Settings is still a row further down.
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).settings_requested);
+    // Continue is at the top, and closes the menu.
+    picker.update({UiAction::Up}, {}, kWidth, kHeight);
+    picker.update({UiAction::Up}, {}, kWidth, kHeight);
+    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).close_requested);
 }
 
 int main() {
@@ -1617,7 +1623,7 @@ int main() {
     test_the_other_buttons_still_work();
     test_wii_u_menu_is_a_plain_list();
     test_wii_u_menu_offers_the_pointer_where_there_is_one();
-    test_wii_u_menu_guide_is_just_ok_and_resume();
+    test_wii_u_menu_guide_is_ok_back_and_settings();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();
     test_nothing_else_answers_while_a_confirmation_is_up();
