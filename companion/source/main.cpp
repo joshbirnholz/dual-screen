@@ -1921,7 +1921,16 @@ void Client::draw_scene() {
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
 
-    if (menu_open_) {
+    if (menu_open_ && session_.system() == SystemId::WiiU) {
+        // A Wii U game goes on running under the menu -- Cemu cannot pause
+        // it -- so it is shown live, darkened, the same as on the other device.
+        menu_backdrop_.forget();
+        quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
+                          Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+        picker_.set_preview_screen(session_.granted_screen());
+        picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
+                       &textures);
+    } else if (menu_open_) {
         // Taken between the game and the menu, the same as on the other device:
         // one menu, drawn over the same blurred frame wherever it is opened,
         // and taken again when the host moves the screens underneath it.

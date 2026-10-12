@@ -17,6 +17,12 @@ namespace ds {
 // enough to read as one is not worth paying for sixty times a second. What does
 // change while the menu is up is the arrangement of the screens, since picking a
 // layout applies it underneath -- so the copy is keyed to what was drawn.
+// How dark a game that goes on running is under a menu -- a Wii U game, which
+// Cemu cannot pause -- drawn live rather than blurred: as dark as a paused one
+// is under a page opened from the menu, its blurred picture with 60% more
+// black over it.
+inline constexpr float kLiveGameDim = 0.8f;
+
 class MenuBackdrop {
 public:
     // Reads whatever is in the framebuffer right now. Call after the game has

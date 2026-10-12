@@ -1806,11 +1806,6 @@ bool App::Impl::shows_embedded_menu() const {
            external_source && external_source->running() && picker;
 }
 
-// How dark a game that goes on running is under a menu: as dark as a paused
-// one is under a page opened from the menu, its blurred picture with 60% more
-// black over it.
-constexpr float kLiveGameDim = 0.8f;
-
 bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (!local_game() || is_companion()) return false;
     if (state != State::Settings && state != State::Controllers && state != State::DataManagement) {
