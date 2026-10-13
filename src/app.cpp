@@ -411,6 +411,9 @@ struct App::Impl {
     // Loads it when it is not loaded yet for what is being played.
     void refresh_game_icon();
     bool menu_overlay_shown = false;
+    // Whether what is up in Cemu's window is the menu, which takes its input,
+    // or only a notice, which leaves it to the game.
+    bool menu_overlay_takes_input = true;
     bool menu_overlay_logged = false;
     // A companion's pass started as late before the display's refresh as it
     // can be -- see FrameDelay. Never the host's: the host's pass runs the
@@ -2165,11 +2168,18 @@ void App::Impl::render_menu_overlay() {
     if (corner_notice_up()) render_corner_notice(quads, text, w, h, corner_notice);
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
-    if (changed || !menu_overlay_shown) {
+    // A notice alone, the game running under it and refused the pause, keeps
+    // the pads and keys going to the game, as the Switch's own does.
+    const bool takes_input = menu_over_wii_u_game();
+    if (changed || !menu_overlay_shown || takes_input != menu_overlay_takes_input) {
         if (external_source->publish_overlay(menu_overlay.pixels().data(), menu_overlay.width(),
-                                             menu_overlay.height())) {
-            if (!menu_overlay_shown) log_info("the menu is up over the game in Cemu's window");
+                                             menu_overlay.height(), takes_input)) {
+            if (!menu_overlay_shown) {
+                log_info(takes_input ? "the menu is up over the game in Cemu's window"
+                                     : "a notice is up over the game in Cemu's window");
+            }
             menu_overlay_shown = true;
+            menu_overlay_takes_input = takes_input;
         }
     }
 }

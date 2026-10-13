@@ -88,8 +88,8 @@ public:
     // This app's menu drawn over the game's own window, and the key that asks
     // for it there -- see ExternalFrameLink::publish_overlay().
     bool overlay_supported() const { return link_.overlay_supported(); }
-    bool publish_overlay(const uint8_t* rgba, int width, int height) {
-        return link_.publish_overlay(rgba, width, height);
+    bool publish_overlay(const uint8_t* rgba, int width, int height, bool takes_input = true) {
+        return link_.publish_overlay(rgba, width, height, takes_input);
     }
     void hide_overlay() { link_.hide_overlay(); }
     bool take_menu_key() { return link_.take_menu_key(); }

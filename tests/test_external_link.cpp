@@ -850,6 +850,15 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
     CHECK(link.publish_overlay(menu.data(), kWidth, kHeight));
     CHECK(wait_for([&]() { return producer.take_overlay(got, width, height); }));
     CHECK_EQ(static_cast<int>(got[0]), 99);
+    CHECK(producer.overlay_takes_input());
+
+    // A notice instead: drawn the same way, but the game keeps its input.
+    menu[0] = 7;
+    CHECK(link.publish_overlay(menu.data(), kWidth, kHeight, /*takes_input=*/false));
+    CHECK(wait_for([&]() { return producer.take_overlay(got, width, height); }));
+    CHECK_EQ(static_cast<int>(got[0]), 7);
+    CHECK(producer.overlay_visible());
+    CHECK_MSG(!producer.overlay_takes_input(), "a notice took the game's input");
 
     link.hide_overlay();
     CHECK_MSG(wait_for([&]() { return !producer.overlay_visible(); }),
