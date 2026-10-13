@@ -384,11 +384,13 @@ struct App::Impl {
     // stopped, so the menu waits for that before it opens.
     bool wii_u_paused = false;
     bool menu_waiting_for_pause = false;
-    // The television as it was when the game paused, which Cemu sends then:
-    // the paused game behind the menu, blurred, as a DS or 3DS game is. Ready
-    // once a picture newer than `wii_u_still_after` has arrived.
-    uint64_t wii_u_still_after = 0;
-    bool wii_u_still_ready = false;
+    // Both screens as they were when the game paused, which Cemu sends then:
+    // the paused game behind the menu, blurred, as a DS or 3DS game is --
+    // whichever of the two Cemu's window is showing, so Swap Screens swaps
+    // the picture too. Indexed Top 0, Bottom 1; each ready once a picture
+    // newer than its `wii_u_still_after` has arrived.
+    uint64_t wii_u_still_after[2] = {0, 0};
+    bool wii_u_still_ready[2] = {false, false};
     std::chrono::steady_clock::time_point wii_u_paused_at;
     std::chrono::steady_clock::time_point menu_pause_asked_at;
     // A few words in the top right corner, until `corner_notice_until`.
@@ -939,6 +941,8 @@ struct App::Impl {
     // first wanted. False while the game is not paused, or its picture has
     // not arrived, when the game is shown live and darkened instead.
     bool wii_u_backdrop_ready();
+    // The screen Cemu's window is showing, whose picture that is.
+    ScreenId wii_u_screen_shown() const { return external_shown_screen.value_or(ScreenId::Top); }
     // Draws that, on its own, and hands it over when it has changed; or takes
     // it down once it is not wanted.
     void render_menu_overlay();
@@ -2008,8 +2012,11 @@ void App::Impl::update_wii_u_pause() {
         switch (said) {
             case ExternalPauseState::Paused:
                 wii_u_paused = true;
-                wii_u_still_after = external_source->screen_serial(ScreenId::Top);
-                wii_u_still_ready = false;
+                for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+                    const int index = screen == ScreenId::Top ? 0 : 1;
+                    wii_u_still_after[index] = external_source->screen_serial(screen);
+                    wii_u_still_ready[index] = false;
+                }
                 wii_u_paused_at = std::chrono::steady_clock::now();
                 menu_backdrop.forget();
                 log_info("the game paused");
@@ -2017,7 +2024,7 @@ void App::Impl::update_wii_u_pause() {
             case ExternalPauseState::Running:
                 if (wii_u_paused) log_info("the game is going again");
                 wii_u_paused = false;
-                wii_u_still_ready = false;
+                wii_u_still_ready[0] = wii_u_still_ready[1] = false;
                 menu_backdrop.forget();
                 break;
             case ExternalPauseState::Refused:
@@ -2030,12 +2037,17 @@ void App::Impl::update_wii_u_pause() {
                 break;
         }
     }
-    // A television already being sent here is already the paused picture.
-    if (wii_u_paused && !wii_u_still_ready &&
-        (external_source->screen_serial(ScreenId::Top) != wii_u_still_after ||
-         external_requested_screen == ScreenId::Top)) {
-        wii_u_still_ready = true;
-        log_info("the paused game's picture arrived, to blur behind the menu");
+    // A screen already being sent here is already its paused picture.
+    for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+        const int index = screen == ScreenId::Top ? 0 : 1;
+        if (wii_u_paused && !wii_u_still_ready[index] &&
+            (external_source->screen_serial(screen) != wii_u_still_after[index] ||
+             external_requested_screen == screen)) {
+            wii_u_still_ready[index] = true;
+            log_info(std::string("the paused game's ") +
+                     (screen == ScreenId::Top ? "television" : "GamePad") +
+                     " picture arrived, to blur behind the menu");
+        }
     }
     if (menu_waiting_for_pause) {
         if (wii_u_paused) {
@@ -2044,7 +2056,7 @@ void App::Impl::update_wii_u_pause() {
             // then the blur -- a flash, every time the picture was late.
             // Never for long, though: a picture that does not come leaves
             // the darkening, as before.
-            if (wii_u_still_ready ||
+            if (wii_u_still_ready[wii_u_screen_shown() == ScreenId::Top ? 0 : 1] ||
                 std::chrono::steady_clock::now() - wii_u_paused_at >
                     std::chrono::milliseconds(500)) {
                 menu_waiting_for_pause = false;
@@ -2083,11 +2095,16 @@ void App::Impl::update_wii_u_pause() {
 }
 
 bool App::Impl::wii_u_backdrop_ready() {
-    if (!wii_u_paused || !wii_u_still_ready || !external_source) return false;
-    const std::size_t key = static_cast<std::size_t>(external_source->screen_serial(ScreenId::Top)) + 1u;
+    const ScreenId shown = wii_u_screen_shown();
+    const int index = shown == ScreenId::Top ? 0 : 1;
+    if (!wii_u_paused || !wii_u_still_ready[index] || !external_source) return false;
+    // Keyed to the screen as well as its picture, so swapping the screens
+    // makes it again from the other one.
+    const std::size_t key =
+        static_cast<std::size_t>(external_source->screen_serial(shown)) * 2u + index + 1u;
     if (!menu_backdrop.matches(key)) {
         ScreenReadback still;
-        if (!external_source->read_screen(ScreenId::Top, still)) return false;
+        if (!external_source->read_screen(shown, still)) return false;
         menu_backdrop.capture_image(still.pixels, still.width, still.height, still.stride_pixels,
                                     still.channel_order == ChannelOrder::Rgba, output_width,
                                     output_height, key);
