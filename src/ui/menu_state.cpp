@@ -32,6 +32,8 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.smoothing_available = system_profile(session.system()).offers_smoothing;
     state.screens_swappable = system_profile(session.system()).solo_screens == SoloScreens::One;
     state.graphic_packs_available = session.host_graphic_packs_available();
+    state.options_available = session.host_options_available();
+    state.amiibo_available = session.host_amiibo_available();
     return state;
 }
 

@@ -48,6 +48,13 @@ void test_rom_extensions() {
     CHECK(!is_supported_rom("nds"));
     CHECK(!is_supported_rom(""));
     CHECK(!is_supported_rom(".nds"));  // a dotfile with no name
+
+    // An amiibo's dump, in each form Cemu reads, for the Wii U menu's browser.
+    CHECK(is_amiibo_file("Link (SSB).bin"));
+    CHECK(is_amiibo_file("MARIO.NFC"));
+    CHECK(is_amiibo_file("tag.dat"));
+    CHECK(!is_amiibo_file("game.nds"));
+    CHECK(!is_amiibo_file("bin"));
 }
 
 void test_listing_sorts_and_filters() {

@@ -17,6 +17,8 @@ namespace ds {
 
 // True if this filename looks like something the DS core can load.
 bool is_supported_rom(const std::string& filename);
+// True if it looks like an amiibo's dump, in any of the forms Cemu reads.
+bool is_amiibo_file(const std::string& filename);
 
 // Directories worth opening in when there is no remembered one: the usual
 // EmuDeck/RetroDECK ROM folders, then removable media, then home. Only
@@ -51,6 +53,12 @@ public:
     // Whether X makes a forwarder for the ROM under the cursor: only where
     // one can be installed -- a Switch.
     void set_offers_forwarders(bool offers) { offers_forwarders_ = offers; }
+    // Browsing for an amiibo to scan rather than a game to play: its files,
+    // and drawn as a page of the quick menu over a game -- the caller has
+    // already started the frame, and the game is behind it when `over_game`.
+    // Set before open().
+    void set_amiibo(bool amiibo) { amiibo_ = amiibo; }
+    void set_over_game(bool over_game) { over_game_ = over_game; }
 
     GameBrowserResult update(const InputManager& input,
                              const std::vector<UiAction>& actions,
@@ -103,6 +111,8 @@ private:
     float scroll_ = 0.0f;
     bool open_ = false;
     bool offers_forwarders_ = false;
+    bool amiibo_ = false;
+    bool over_game_ = false;
 
     // A finger dragging the list, and the glide after it lets go.
     ListDrag drag_;

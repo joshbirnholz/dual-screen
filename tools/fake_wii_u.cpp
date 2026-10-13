@@ -234,8 +234,15 @@ int main(int argc, char** argv) {
     // there is no window here to draw them in. And a few graphics packs, kept
     // only in memory, for the quick menu's Graphics Packs page to change.
     info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause |
-                    ds::kExternalFeatureGraphicPacks;
+                    ds::kExternalFeatureGraphicPacks | ds::kExternalFeatureOptions |
+                    ds::kExternalFeatureAmiibo;
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
+    // Cemu's options, as its fork offers them, kept only in memory.
+    std::vector<ds::ExternalOption> options(3);
+    options[0] = {"upscale_filter", "Upscaling", {"Bilinear", "Bicubic", "Hermite", "Nearest neighbor"}, 1, false};
+    options[1] = {"fullscreen_scaling", "Aspect ratio", {"Original", "Stretched"}, 0, false};
+    options[2] = {"performance_overlay", "Performance overlay",
+                  {"Off", "Frame rate", "Frame rate and CPU", "Everything"}, 0, false};
 
     ds::ExternalFrameProducer producer;
     std::string error;
@@ -299,6 +306,34 @@ int main(int argc, char** argv) {
             packs_wanted = true;
         }
         if (packs_wanted) producer.send_graphic_packs(packs);
+        bool options_wanted = producer.take_options_wanted();
+        std::string option_id;
+        for (int choice = 0; producer.take_option_change(option_id, choice);) {
+            for (ds::ExternalOption& option : options) {
+                if (option.id == option_id && choice < static_cast<int>(option.choices.size())) {
+                    option.active = choice;
+                    ds::log_info(option.label + ": " + option.choices[static_cast<std::size_t>(choice)]);
+                }
+            }
+            options_wanted = true;
+        }
+        if (options_wanted) producer.send_options(options);
+        // An amiibo is only measured, not read: a file the size of an
+        // amiibo's dump is one, as far as this stand-in goes.
+        for (std::string amiibo; producer.take_amiibo_scan(amiibo);) {
+            std::FILE* file = std::fopen(amiibo.c_str(), "rb");
+            ds::ExternalAmiiboResult result = ds::ExternalAmiiboResult::CannotOpen;
+            if (file != nullptr) {
+                std::fseek(file, 0, SEEK_END);
+                const long size = std::ftell(file);
+                std::fclose(file);
+                result = size == 540 || size == 572 ? ds::ExternalAmiiboResult::Scanned
+                                                    : ds::ExternalAmiiboResult::NotAnAmiibo;
+            }
+            ds::log_info("amiibo " + amiibo +
+                         (result == ds::ExternalAmiiboResult::Scanned ? ": scanned" : ": not scanned"));
+            producer.send_amiibo_result(result);
+        }
         if (producer.have_input() && producer.input() != last_input) {
             last_input = producer.input();
             ds::log_info("pad: " + describe(last_input));

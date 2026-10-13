@@ -576,6 +576,8 @@ public:
     bool host_menu_unavailable_notice() const { return host_menu_unavailable_notice_; }
     // SessionStateMessage::graphic_packs_available.
     bool host_graphic_packs_available() const { return host_graphic_packs_available_; }
+    bool host_options_available() const { return host_options_available_; }
+    bool host_amiibo_available() const { return host_amiibo_available_; }
     int host_max_render_scale() const { return host_max_render_scale_; }
     bool host_cursor_choosable() const { return host_cursor_choosable_; }
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
@@ -1104,6 +1106,8 @@ private:
     uint8_t host_menu_confirm_focus_ = 0;
     bool host_menu_unavailable_notice_ = false;
     bool host_graphic_packs_available_ = false;
+    bool host_options_available_ = false;
+    bool host_amiibo_available_ = false;
     int host_max_render_scale_ = 1;
     bool host_cursor_choosable_ = false;
     bool host_right_stick_choosable_ = false;

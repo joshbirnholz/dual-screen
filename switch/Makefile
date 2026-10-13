@@ -141,7 +141,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                retro_keymap.cpp \
                host_session.cpp save_exchange.cpp \
                game_browser.cpp message_screen.cpp settings_screen.cpp \
-               data_management_screen.cpp graphic_packs_screen.cpp \
+               data_management_screen.cpp graphic_packs_screen.cpp wii_u_options_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp
 

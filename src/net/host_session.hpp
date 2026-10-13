@@ -184,6 +184,8 @@ public:
         bool menu_unavailable_notice = false;
         // See SessionStateMessage::graphic_packs_available.
         bool graphic_packs_available = false;
+        bool options_available = false;
+        bool amiibo_available = false;
         // The settings screen, which is this device's own rather than shared:
         // the companion is told only that it is up. See
         // SessionStateMessage::settings_open.

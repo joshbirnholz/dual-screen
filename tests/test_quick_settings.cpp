@@ -1658,8 +1658,30 @@ void test_wii_u_menu_offers_graphics_packs_where_cemu_does() {
     }
 }
 
+// Options and Scan amiibo follow Graphics Packs, where Cemu offers them, each
+// asking for its own page.
+void test_wii_u_menu_offers_options_and_amiibo_where_cemu_does() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.graphic_packs_available = true;
+    state.options_available = true;
+    state.amiibo_available = true;
+
+    LayoutPicker picker(registry);
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    picker.open(state);
+    for (int row = 0; row < 3; ++row) picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    const LayoutPickerResult options = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(options.options_requested && !options.graphic_packs_requested && !options.amiibo_requested);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    const LayoutPickerResult amiibo = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(amiibo.amiibo_requested && !amiibo.options_requested);
+}
+
 int main() {
     test_wii_u_menu_offers_graphics_packs_where_cemu_does();
+    test_wii_u_menu_offers_options_and_amiibo_where_cemu_does();
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_where_it_was_closed();
     test_the_layout_swap_keeps_the_stylus_hand();

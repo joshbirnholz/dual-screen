@@ -283,6 +283,17 @@ void test_welcome_and_session_round_trip() {
     CHECK_EQ(received_state.graphic_packs_available, true);
     CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
     CHECK_EQ(received_state.graphic_packs_available, false);
+
+    // Options and Scan amiibo share its byte, a bit each.
+    state.graphic_packs_available = false;
+    state.options_available = true;
+    state.amiibo_available = true;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(!received_state.graphic_packs_available && received_state.options_available &&
+          received_state.amiibo_available);
 }
 
 // Everything a companion can ask the host for travels in one message, each

@@ -62,6 +62,7 @@
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
 #include "ui/graphic_packs_screen.hpp"
+#include "ui/wii_u_options_screen.hpp"
 #include "ui/data_management_screen.hpp"
 #include "ui/forwarder_screen.hpp"
 #include "ui/game_browser.hpp"
@@ -360,7 +361,11 @@ struct App::Impl {
         // A ROM's forwarder, from the file picker.
         Forwarder,
         // A Wii U game's graphics packs, from its quick menu.
-        GraphicPacks
+        GraphicPacks,
+        // Cemu's own options, from the same menu.
+        WiiUOptions,
+        // An amiibo to scan, from the same menu.
+        Amiibo
     };
 
     AppOptions options;
@@ -482,6 +487,15 @@ struct App::Impl {
     // Opened from Settings, and drawn over it -- see ControllersScreen.
     ControllersScreen controllers_screen;
     GraphicPacksScreen graphic_packs_screen;
+    WiiUOptionsScreen wii_u_options_screen;
+    GameBrowser amiibo_browser;
+    // An amiibo chosen in the menu, held to the GamePad once the game is
+    // going again: a Wii U game only sees a figure for the moment it is
+    // there, which a paused one would miss.
+    std::string pending_amiibo;
+    // Its name, for the notice that says how the scan went.
+    std::string pending_amiibo_name;
+    std::chrono::steady_clock::time_point pending_amiibo_at;
     // The host's, drawn here while this device is its companion -- see
     // render_mirrored_controllers().
     ControllersScreen mirrored_controllers;
@@ -615,9 +629,10 @@ struct App::Impl {
     // Where the Controllers screen was opened from, which is where closing it
     // goes back to.
     State controllers_came_from = State::Playing;
-    // The same for Graphics Packs: the quick menu over the game, or the list
-    // in this window while the game plays in Cemu's.
-    State graphic_packs_came_from = State::Playing;
+    // The same for the pages that are Cemu's -- Graphics Packs, Options, an
+    // amiibo: the quick menu over the game, or the list in this window while
+    // the game plays in Cemu's.
+    State cemu_page_came_from = State::Playing;
     // Whether the Wii U list shown in place of "Playing on Cemu" has had the
     // window's focus, as last logged -- see LayoutPickerState::embedded.
     bool embedded_menu_focused = false;
@@ -911,9 +926,26 @@ struct App::Impl {
     // the game runs -- see GraphicPacksScreen.
     bool graphic_packs_available() const;
     void open_graphic_packs();
-    void close_graphic_packs();
     void update_graphic_packs_screen(const std::vector<UiAction>& actions,
                                      const std::vector<PointerEvent>& pointers);
+    // Cemu's own options, and an amiibo scanned -- see WiiUOptionsScreen and
+    // pending_amiibo.
+    bool wii_u_options_available() const;
+    void open_wii_u_options();
+    void update_wii_u_options_screen(const std::vector<UiAction>& actions,
+                                     const std::vector<PointerEvent>& pointers);
+    bool amiibo_available() const;
+    void open_amiibo_browser();
+    void update_amiibo_browser(const std::vector<UiAction>& actions,
+                               const std::vector<PointerEvent>& pointers);
+    void send_pending_amiibo();
+    // Any of those three pages, which open over the game from its menu and
+    // go back to where they came from.
+    bool on_cemu_page() const {
+        return state == State::GraphicPacks || state == State::WiiUOptions || state == State::Amiibo;
+    }
+    void enter_cemu_page(State page);
+    void close_cemu_page();
     void update_controllers_screen(const std::vector<UiAction>& actions,
                                    const std::vector<PointerEvent>& pointers);
     // Save points, made and loaded from the quick menu. The slots are read
@@ -1834,21 +1866,147 @@ bool App::Impl::graphic_packs_available() const {
            external_source->running() && external_source->graphic_packs_supported();
 }
 
-void App::Impl::open_graphic_packs() {
-    graphic_packs_came_from = state;
+void App::Impl::enter_cemu_page(State page) {
+    cemu_page_came_from = state;
     // One menu on screen at a time, as for Controllers.
     if (picker) picker->close();
+    state = page;
+    input.set_game_input_enabled(false);
+}
+
+void App::Impl::open_graphic_packs() {
+    enter_cemu_page(State::GraphicPacks);
     graphic_packs_screen.open();
     external_source->request_graphic_packs();
-    state = State::GraphicPacks;
-    input.set_game_input_enabled(false);
     log_info("the graphics packs page is up");
 }
 
-void App::Impl::close_graphic_packs() {
-    graphic_packs_screen.close();
-    log_info("the graphics packs page is down");
-    if (graphic_packs_came_from == State::Menu && local_game()) {
+bool App::Impl::wii_u_options_available() const {
+    return system == SystemId::WiiU && !is_companion() && external_source &&
+           external_source->running() && external_source->options_supported();
+}
+
+void App::Impl::open_wii_u_options() {
+    enter_cemu_page(State::WiiUOptions);
+    wii_u_options_screen.open();
+    external_source->request_options();
+    log_info("the Wii U options page is up");
+}
+
+void App::Impl::update_wii_u_options_screen(const std::vector<UiAction>& actions,
+                                            const std::vector<PointerEvent>& pointers) {
+    if (!wii_u_options_available()) {
+        close_cemu_page();
+        return;
+    }
+    std::vector<ExternalOption> options;
+    if (external_source->take_options(options)) wii_u_options_screen.set_options(std::move(options));
+    const WiiUOptionsScreenResult result = wii_u_options_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    if (result.change) {
+        external_source->change_option(result.change->first, result.change->second);
+        for (const ExternalOption& option : wii_u_options_screen.options()) {
+            if (option.id != result.change->first) continue;
+            const int at = result.change->second;
+            if (at >= 0 && at < static_cast<int>(option.choices.size())) {
+                log_info("Wii U options: " + option.label + ", " +
+                         option.choices[static_cast<std::size_t>(at)]);
+            }
+        }
+    }
+    if (result.close_requested) close_cemu_page();
+}
+
+bool App::Impl::amiibo_available() const {
+    return system == SystemId::WiiU && !is_companion() && external_source &&
+           external_source->running() && external_source->amiibo_supported();
+}
+
+void App::Impl::open_amiibo_browser() {
+    enter_cemu_page(State::Amiibo);
+    amiibo_browser.set_amiibo(true);
+    const char* home = std::getenv("HOME");
+    amiibo_browser.open(!settings.amiibo_dir.empty() ? settings.amiibo_dir
+                                                     : std::string(home != nullptr ? home : "/"));
+    log_info("the amiibo browser is up, in " + amiibo_browser.current_directory());
+}
+
+void App::Impl::update_amiibo_browser(const std::vector<UiAction>& actions,
+                                      const std::vector<PointerEvent>& pointers) {
+    if (!amiibo_available()) {
+        close_cemu_page();
+        return;
+    }
+    const GameBrowserResult result = amiibo_browser.update(
+        input, actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    if (result.directory_changed) {
+        settings.amiibo_dir = amiibo_browser.current_directory();
+        if (!settings.save(paths)) log_warn("could not keep the amiibo folder");
+    }
+    if (result.game_chosen) {
+        // Held to the GamePad once the game is going again, so the menu goes
+        // first -- all of it, as choosing a save point to load does.
+        pending_amiibo = result.chosen_path;
+        pending_amiibo_at = std::chrono::steady_clock::now();
+        log_info("amiibo chosen: " + path_basename(result.chosen_path) +
+                 ", to scan once the game is going again");
+        amiibo_browser.close();
+        state = State::Menu;
+        set_menu_open(false);
+        return;
+    }
+    if (result.back_requested) close_cemu_page();
+}
+
+void App::Impl::send_pending_amiibo() {
+    if (!external_source || !external_source->running()) {
+        pending_amiibo.clear();
+        return;
+    }
+    // Once the menu is down and the game going -- or after a few seconds
+    // regardless, rather than never, should the game not say it is.
+    const bool going = state == State::Playing && !wii_u_paused && !menu_waiting_for_pause;
+    if (!pending_amiibo.empty() &&
+        (going || std::chrono::steady_clock::now() - pending_amiibo_at > std::chrono::seconds(3))) {
+        external_source->scan_amiibo(pending_amiibo);
+        log_info("amiibo: holding " + path_basename(pending_amiibo) + " to the GamePad");
+        pending_amiibo_name = path_stem(pending_amiibo);
+        pending_amiibo.clear();
+    }
+    ExternalAmiiboResult result = ExternalAmiiboResult::Scanned;
+    while (external_source->take_amiibo_result(result)) {
+        switch (result) {
+            case ExternalAmiiboResult::Scanned:
+                log_info("amiibo: scanned");
+                show_corner_notice(pending_amiibo_name + " was scanned.");
+                break;
+            case ExternalAmiiboResult::CannotOpen:
+                log_warn("amiibo: Cemu could not open the file");
+                show_corner_notice("That amiibo's file couldn't be opened.");
+                break;
+            case ExternalAmiiboResult::NotAnAmiibo:
+                log_warn("amiibo: Cemu says the file is not an amiibo");
+                show_corner_notice("That file isn't an amiibo.");
+                break;
+            case ExternalAmiiboResult::NoGame:
+                log_warn("amiibo: no game was running to scan it in");
+                break;
+        }
+    }
+}
+
+void App::Impl::close_cemu_page() {
+    if (state == State::GraphicPacks) {
+        graphic_packs_screen.close();
+        log_info("the graphics packs page is down");
+    } else if (state == State::WiiUOptions) {
+        wii_u_options_screen.close();
+        log_info("the Wii U options page is down");
+    } else if (state == State::Amiibo) {
+        amiibo_browser.close();
+        log_info("the amiibo browser is down");
+    }
+    if (cemu_page_came_from == State::Menu && local_game()) {
         set_menu_open(true);
     } else if (local_game()) {
         state = State::Playing;
@@ -1862,7 +2020,7 @@ void App::Impl::update_graphic_packs_screen(const std::vector<UiAction>& actions
                                             const std::vector<PointerEvent>& pointers) {
     // The game went while the page was up: nothing left to change.
     if (!graphic_packs_available()) {
-        close_graphic_packs();
+        close_cemu_page();
         return;
     }
     std::vector<ExternalGraphicPack> packs;
@@ -1885,7 +2043,7 @@ void App::Impl::update_graphic_packs_screen(const std::vector<UiAction>& actions
                      (change.category.empty() ? std::string() : change.category + " ") + change.preset);
         }
     }
-    if (result.close_requested) close_graphic_packs();
+    if (result.close_requested) close_cemu_page();
 }
 
 void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
@@ -2027,7 +2185,7 @@ bool App::Impl::shows_embedded_menu() const {
 bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (!local_game() || is_companion()) return false;
     if (state != State::Settings && state != State::Controllers && state != State::DataManagement &&
-        state != State::GraphicPacks) {
+        !on_cemu_page()) {
         return false;
     }
     if (std::find(actions.begin(), actions.end(), UiAction::ToggleMenu) == actions.end()) {
@@ -2036,6 +2194,8 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (state == State::Settings) settings_screen->close();
     if (state == State::Controllers) controllers_screen.close();
     if (state == State::GraphicPacks) graphic_packs_screen.close();
+    if (state == State::WiiUOptions) wii_u_options_screen.close();
+    if (state == State::Amiibo) amiibo_browser.close();
     if (state == State::DataManagement && data_screen) data_screen->close();
     data_from_settings = false;
     log_info("the menu button: every page put away, back to the game");
@@ -2051,7 +2211,7 @@ bool App::Impl::menu_over_wii_u_game() const {
                          ((state == State::Settings || state == State::DataManagement) &&
                           settings_came_from == State::Menu) ||
                          (state == State::Controllers && controllers_came_from == State::Menu) ||
-                         (state == State::GraphicPacks && graphic_packs_came_from == State::Menu);
+                         (on_cemu_page() && cemu_page_came_from == State::Menu);
     return page_up && system == SystemId::WiiU && !is_companion() && external_source &&
            external_source->running() && external_source->overlay_supported() &&
            MenuOverlay::supported();
@@ -2168,9 +2328,10 @@ void App::Impl::update_wii_u_pause() {
     }
     const bool page_over_game =
         state == State::Menu || state == State::Settings || state == State::Controllers ||
-        state == State::DataManagement || state == State::Message || state == State::GraphicPacks;
+        state == State::DataManagement || state == State::Message || on_cemu_page();
     external_source->request_pause(pauses_wii_u_for_menu() &&
                                    (menu_waiting_for_pause || page_over_game));
+    send_pending_amiibo();
 }
 
 bool App::Impl::wii_u_backdrop_ready() {
@@ -2231,7 +2392,7 @@ void App::Impl::render_menu_overlay() {
             // darker again.
             menu_backdrop.draw(quads, w, h);
             if (state == State::Settings || state == State::DataManagement ||
-                state == State::Controllers || state == State::GraphicPacks) {
+                state == State::Controllers || on_cemu_page()) {
                 quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
             }
         } else {
@@ -2416,6 +2577,10 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 // Cemu's, on this machine, like Settings: the other device is
                 // told to look over here.
                 if (graphic_packs_available()) open_graphic_packs();
+            } else if (result.options_requested) {
+                if (wii_u_options_available()) open_wii_u_options();
+            } else if (result.amiibo_requested) {
+                if (amiibo_available()) open_amiibo_browser();
             } else if (result.save_sync_requested) {
                 // The game's own page, on the device whose save it is --
                 // like Settings, whichever pad asked.
@@ -2451,6 +2616,10 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.graphic_packs_available = is_companion()
                                                ? companion_session->host_graphic_packs_available()
                                                : graphic_packs_available();
+    picker_state.options_available = is_companion() ? companion_session->host_options_available()
+                                                    : wii_u_options_available();
+    picker_state.amiibo_available =
+        is_companion() ? companion_session->host_amiibo_available() : amiibo_available();
     picker_state.left_handed_layouts = left_handed_layouts;
     picker_state.render_scale = render_scale;
     // From the console being played, on both devices: a companion is shown the
@@ -4003,7 +4172,7 @@ UiSoundView App::Impl::sound_view() const {
     view.in_game = state == State::Playing || (state == State::Companion && is_companion());
     view.menu = game_here && (state == State::Menu || state == State::Settings ||
                               state == State::Controllers || state == State::DataManagement ||
-                              state == State::GraphicPacks);
+                              on_cemu_page());
     switch (state) {
         case State::Menu:
             if (picker) picker->describe_for_sound(view);
@@ -4013,6 +4182,8 @@ UiSoundView App::Impl::sound_view() const {
             break;
         case State::Controllers: controllers_screen.describe_for_sound(view); break;
         case State::GraphicPacks: graphic_packs_screen.describe_for_sound(view); break;
+        case State::WiiUOptions: wii_u_options_screen.describe_for_sound(view); break;
+        case State::Amiibo: amiibo_browser.describe_for_sound(view); break;
         case State::Message: message.describe_for_sound(view); break;
         case State::Browser:
             if (browser) browser->describe_for_sound(view);
@@ -4321,6 +4492,16 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
+        case State::WiiUOptions: {
+            update_wii_u_options_screen(actions, pointers);
+            break;
+        }
+
+        case State::Amiibo: {
+            update_amiibo_browser(actions, pointers);
+            break;
+        }
+
         case State::ResumeNotice: {
             if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
                                       static_cast<float>(output_height), game_notice)) {
@@ -4457,6 +4638,12 @@ void App::Impl::render_pages(float width, float height, bool over_game,
     } else if (state == State::GraphicPacks) {
         graphic_packs_screen.set_over_game(over_game);
         graphic_packs_screen.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::WiiUOptions) {
+        wii_u_options_screen.set_over_game(over_game);
+        wii_u_options_screen.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::Amiibo) {
+        amiibo_browser.set_over_game(over_game);
+        amiibo_browser.render(quads, text, button_glyphs, width, height);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
         controllers_screen.render(quads, text, button_glyphs, width, height,
@@ -4682,12 +4869,12 @@ void App::Impl::render() {
          ((state == State::Settings || state == State::DataManagement) &&
           settings_came_from == State::Menu) ||
          (state == State::Controllers && controllers_came_from == State::Menu) ||
-         (state == State::GraphicPacks && graphic_packs_came_from == State::Menu));
+         (on_cemu_page() && cemu_page_came_from == State::Menu));
     if (show_menu_backdrop && system == SystemId::WiiU && wii_u_backdrop_ready()) {
         // Paused, and its picture here: as a DS or 3DS game is.
         menu_backdrop.draw(quads, width, height);
         if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
-            state == State::GraphicPacks) {
+            on_cemu_page()) {
             quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
         }
     } else if (show_menu_backdrop && system == SystemId::WiiU &&
@@ -4713,7 +4900,7 @@ void App::Impl::render() {
         // Controllers -- sits a step further back from the game: the same
         // picture, 60% darker again.
         if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
-            state == State::GraphicPacks) {
+            on_cemu_page()) {
             quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
         }
     } else {
@@ -5386,14 +5573,19 @@ int App::run(const AppOptions& options) {
             shared.settings_open = impl.state == Impl::State::Settings ||
                                    impl.state == Impl::State::Controllers ||
                                    impl.state == Impl::State::DataManagement ||
-                                   impl.state == Impl::State::GraphicPacks;
+                                   impl.on_cemu_page();
             shared.graphic_packs_available = impl.graphic_packs_available();
+            shared.options_available = impl.wii_u_options_available();
+            shared.amiibo_available = impl.amiibo_available();
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
             shared.menu_confirm_focus =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirm_focus_wire()) : 0;
-            shared.menu_unavailable_notice = impl.corner_notice_up();
+            // Only that notice: the other device has its own words for it,
+            // and none for an amiibo's.
+            shared.menu_unavailable_notice =
+                impl.corner_notice_up() && impl.corner_notice == kMenuUnavailableNotice;
             shared.max_render_scale =
                 impl.local_game() ? system_profile(impl.system).max_render_scale : 1;
             shared.cursor_choosable = impl.pointer_choosable();
@@ -5625,7 +5817,7 @@ int App::run(const AppOptions& options) {
                 const bool for_settings = impl.state == Impl::State::Settings ||
                                           impl.state == Impl::State::Controllers ||
                                           impl.state == Impl::State::DataManagement ||
-                                          impl.state == Impl::State::GraphicPacks;
+                                          impl.on_cemu_page();
                 if (!for_menu && !for_settings) continue;
                 if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
@@ -5649,6 +5841,14 @@ int App::run(const AppOptions& options) {
                 }
                 if (impl.state == Impl::State::GraphicPacks) {
                     impl.update_graphic_packs_screen({action}, {});
+                    continue;
+                }
+                if (impl.state == Impl::State::WiiUOptions) {
+                    impl.update_wii_u_options_screen({action}, {});
+                    continue;
+                }
+                if (impl.state == Impl::State::Amiibo) {
+                    impl.update_amiibo_browser({action}, {});
                     continue;
                 }
                 if (impl.state == Impl::State::DataManagement) {
@@ -5958,7 +6158,7 @@ int App::run(const AppOptions& options) {
         const bool page_over_game =
             impl.state == Impl::State::Menu || impl.state == Impl::State::Settings ||
             impl.state == Impl::State::Controllers || impl.state == Impl::State::DataManagement ||
-            impl.state == Impl::State::Message || impl.state == Impl::State::GraphicPacks;
+            impl.state == Impl::State::Message || impl.on_cemu_page();
         const bool game_running = impl.state == Impl::State::Playing ||
                                   (impl.external_source && page_over_game);
         const bool pads_to_game = impl.state == Impl::State::Playing;

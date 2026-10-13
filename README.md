@@ -321,8 +321,8 @@ Three things are different about a Wii U session:
 
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
-  "Playing on Cemu" notice: **Controller Order**, **Graphics Packs** (see
-  below), **Swap Screens** (played
+  "Playing on Cemu" notice: **Controller Order**, **Graphics Packs**,
+  **Options** and **Scan amiibo** (see below), **Swap Screens** (played
   alone: the other screen from **Default Wii U screen**, remembered for that
   game until swapped back -- **F3** does the same; with a second device
   connected, the two trade screens), **Pointer**, **Reset**,
@@ -354,6 +354,21 @@ Three things are different about a Wii U session:
   will take effect once the game is reset -- which **Reset**, a step back,
   does. It needs this project's Cemu build, and is offered only on the
   device running Cemu; a second device is told to look at that one.
+
+- **Options**, in the quick menu, has the Cemu settings worth changing while
+  playing, each taking effect at once and kept in Cemu's own settings:
+  **Upscaling** (how Cemu enlarges a picture smaller than its window:
+  bilinear, bicubic, Hermite or nearest neighbor), **Aspect ratio** (the
+  game's own, or stretched to the screen) and **Performance overlay** (off,
+  frame rate, frame rate and CPU, or everything Cemu can show). **Left** and
+  **Right** step a value either way, and **A** steps it on.
+
+- **Scan amiibo**, in the quick menu, picks an amiibo's dump (`.bin`, `.nfc`
+  or `.dat`) from a folder, which is remembered for next time. Choosing one
+  closes the menu, and once the game is going again it is held to the
+  GamePad, as Cemu's own "Scan NFC tag/amiibo from file" does -- a game only
+  sees a figure for the couple of seconds it is there, which a paused one
+  would miss. A notice at the top right says it was scanned, or why not.
 
 - **Pointer** shows or hides the mouse pointer over Cemu's window, as it does
   over a DS game. Shown, it appears when a mouse or trackpad moves it -- even

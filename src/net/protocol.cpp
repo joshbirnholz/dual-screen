@@ -299,7 +299,9 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.save_sync_available ? 1u : 0u);
     put_u8(out, message.menu_confirm_focus);
     put_u8(out, message.menu_unavailable_notice ? 1u : 0u);
-    put_u8(out, message.graphic_packs_available ? 1u : 0u);
+    put_u8(out, static_cast<uint8_t>((message.graphic_packs_available ? 1u : 0u) |
+                                     (message.options_available ? 2u : 0u) |
+                                     (message.amiibo_available ? 4u : 0u)));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -1039,10 +1041,14 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         out.menu_unavailable_notice = notice != 0;
     }
     out.graphic_packs_available = false;
+    out.options_available = false;
+    out.amiibo_available = false;
     if (reader.remaining() > 0) {
-        uint8_t packs = 0;
-        reader.u8(packs);
-        out.graphic_packs_available = packs != 0;
+        uint8_t cemu_pages = 0;
+        reader.u8(cemu_pages);
+        out.graphic_packs_available = (cemu_pages & 1u) != 0;
+        out.options_available = (cemu_pages & 2u) != 0;
+        out.amiibo_available = (cemu_pages & 4u) != 0;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

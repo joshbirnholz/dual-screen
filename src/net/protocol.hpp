@@ -387,9 +387,12 @@ struct SessionStateMessage {
     // host, and the companion shows them too, for as long. Last, and
     // optional.
     bool menu_unavailable_notice = false;
-    // The host's Wii U menu has Graphics Packs -- Cemu offered them -- so the
-    // companion's has the row too, and the two line up. Last, and optional.
+    // The host's Wii U menu has Graphics Packs, Options and Scan amiibo --
+    // whichever Cemu offered -- so the companion's has the rows too, and the
+    // two line up. One byte, a bit each; last, and optional.
     bool graphic_packs_available = false;
+    bool options_available = false;
+    bool amiibo_available = false;
 };
 
 struct FrameMessage {

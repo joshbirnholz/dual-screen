@@ -143,6 +143,16 @@ Management have no layout problems at 4K.
   FPS++ preset changes while paused (patches reload under a paused game),
   turning a resolution pack on (should say it waits for Reset), and the
   list for a game with no packs installed.
+- **Options and Scan amiibo (new, untested on the PC):** two more quick-menu
+  rows. Options is generic on the link (`OptionsWanted`/`Options`/
+  `OptionChange`): the fork describes each option itself in
+  `DualscreenRequests.cpp` (Upscaling, Aspect ratio, Performance overlay so
+  far), so adding one there needs no Dualscreen change. Scan amiibo sends
+  `ScanAmiibo` with a file path once the menu is closed and the game reports
+  Running (Cemu forgets a tag 2 s after it is touched), and Cemu answers
+  `AmiiboScanned`, shown as a corner notice. Worth trying: the overlay and
+  upscaling changing live, and an amiibo in a game that asks for one (Mario
+  Kart 8, Smash, Captain Toad).
 - **The Switch's slowdown after sleep:** attributed to discovery beacons
   blocking while Wi-Fi reconnects, moved to a thread. Confirm with the user's
   next Switch log ("slow pass ... network" lines).

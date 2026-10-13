@@ -75,6 +75,9 @@ struct LayoutPickerResult {
     // And for the Wii U game's graphics packs, which are Cemu's, on the
     // machine running it.
     bool graphic_packs_requested = false;
+    // And for Cemu's own options, and for an amiibo to scan.
+    bool options_requested = false;
+    bool amiibo_requested = false;
     // And for this game's page in Data Management.
     bool save_sync_requested = false;
     // A save point slot to save into or to load, already confirmed where
@@ -123,6 +126,9 @@ struct LayoutPickerState {
     // GraphicPacksScreen. The host's to say, and told to the other device,
     // so that their lists line up row for row.
     bool graphic_packs_available = false;
+    // The same for Cemu's own options, and for scanning an amiibo.
+    bool options_available = false;
+    bool amiibo_available = false;
     // Which layouts are flipped for a left hand, by id: each is chosen on its
     // own, with the stylus button under the layouts, and each preview is
     // drawn the way round its own layout is.
@@ -427,6 +433,8 @@ private:
         Continue,
         OpenControllers,
         GraphicPacks,
+        Options,
+        ScanAmiibo,
         // The Pointer setting, as the DS menu's Options has it: a value
         // flipped in place rather than a page opened.
         Pointer,

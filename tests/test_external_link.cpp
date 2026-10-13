@@ -1084,6 +1084,79 @@ void test_graphics_packs_are_listed_and_changed() {
     CHECK(got.empty());
 }
 
+void test_options_and_amiibo_cross() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay;
+    {
+        ExternalFrameLink older;
+        ExternalFrameProducer quiet;
+        if (!bring_up(older, quiet, info)) return;
+        CHECK(!older.options_supported() && !older.amiibo_supported());
+    }
+    info.features = kExternalFeatureOverlay | kExternalFeatureOptions | kExternalFeatureAmiibo;
+    if (!bring_up(link, producer, info)) return;
+    CHECK(link.options_supported() && link.amiibo_supported());
+
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    link.request_options();
+    CHECK_MSG(wait_for([&]() { return producer.take_options_wanted(); }),
+              "the request for options never reached the producer");
+    std::vector<ExternalOption> sent(2);
+    sent[0].id = "upscale";
+    sent[0].label = "Upscaling";
+    sent[0].choices = {"Bilinear", "Bicubic", "Nearest neighbor"};
+    sent[0].active = 1;
+    sent[1].id = "language";
+    sent[1].label = "Console language";
+    sent[1].choices = {"English", "Japanese"};
+    sent[1].restart_needed = true;
+    producer.send_options(sent);
+    std::vector<ExternalOption> got;
+    CHECK_MSG(wait_for([&]() { return link.take_options(got); }), "the options never arrived");
+    CHECK_EQ(got.size(), std::size_t{2});
+    if (got.size() == 2) {
+        CHECK(got[0].id == "upscale" && got[0].label == "Upscaling" && got[0].choices == sent[0].choices);
+        CHECK_EQ(got[0].active, 1);
+        CHECK(!got[0].restart_needed && got[1].restart_needed);
+        CHECK_EQ(got[1].active, -1);
+    }
+    CHECK(!link.take_options(got));
+
+    link.change_option("upscale", 2);
+    std::string id;
+    int choice = -1;
+    CHECK_MSG(wait_for([&]() { return producer.take_option_change(id, choice); }),
+              "the change of option never reached the producer");
+    CHECK(id == "upscale");
+    CHECK_EQ(choice, 2);
+
+    link.scan_amiibo("/home/deck/amiibo/Link.bin");
+    std::string path;
+    CHECK_MSG(wait_for([&]() { return producer.take_amiibo_scan(path); }),
+              "the amiibo never reached the producer");
+    CHECK(path == "/home/deck/amiibo/Link.bin");
+    producer.send_amiibo_result(ExternalAmiiboResult::NotAnAmiibo);
+    ExternalAmiiboResult result = ExternalAmiiboResult::Scanned;
+    CHECK_MSG(wait_for([&]() { return link.take_amiibo_result(result); }),
+              "how the scan went never came back");
+    CHECK(result == ExternalAmiiboResult::NotAnAmiibo);
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -1103,5 +1176,6 @@ int main() {
     test_the_menu_crosses_to_be_drawn_over_the_game();
     test_the_game_pauses_only_when_it_says_so();
     test_graphics_packs_are_listed_and_changed();
+    test_options_and_amiibo_cross();
     return test::finish("external-link");
 }

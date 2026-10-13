@@ -143,6 +143,8 @@ void LayoutPicker::rebuild_footer() {
         if (!state_.embedded) footer_.push_back(Footer::Continue);
         footer_.push_back(Footer::OpenControllers);
         if (state_.graphic_packs_available) footer_.push_back(Footer::GraphicPacks);
+        if (state_.options_available) footer_.push_back(Footer::Options);
+        if (state_.amiibo_available) footer_.push_back(Footer::ScanAmiibo);
         // Cemu's own pointer, over the GamePad screen in its window: shown,
         // it comes and goes with the mouse, which taps the screen with it.
         if (state_.screens_swappable) footer_.push_back(Footer::SwapScreens);
@@ -265,6 +267,8 @@ std::string LayoutPicker::footer_label(Footer kind) const {
         case Footer::Continue: return "Continue";
         case Footer::OpenControllers: return "Controller Order";
         case Footer::GraphicPacks: return "Graphics Packs";
+        case Footer::Options: return "Options";
+        case Footer::ScanAmiibo: return "Scan amiibo";
         case Footer::Pointer: return "Pointer";
         case Footer::SwapScreens: return "Swap Screens";
         case Footer::Reset: return "Reset";
@@ -634,6 +638,12 @@ bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
             return true;
         case Footer::GraphicPacks:
             result.graphic_packs_requested = true;
+            return true;
+        case Footer::Options:
+            result.options_requested = true;
+            return true;
+        case Footer::ScanAmiibo:
+            result.amiibo_requested = true;
             return true;
         case Footer::Pointer:
             result.cursor_mode_changed = true;

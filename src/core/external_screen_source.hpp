@@ -103,6 +103,15 @@ public:
     void change_graphic_pack(const ExternalGraphicPackChange& change) {
         link_.change_graphic_pack(change);
     }
+    // Cemu's own options, and an amiibo scanned -- see
+    // ExternalFrameLink::options_supported() and amiibo_supported().
+    bool options_supported() const { return link_.options_supported(); }
+    void request_options() { link_.request_options(); }
+    bool take_options(std::vector<ExternalOption>& out) { return link_.take_options(out); }
+    void change_option(const std::string& id, int choice) { link_.change_option(id, choice); }
+    bool amiibo_supported() const { return link_.amiibo_supported(); }
+    void scan_amiibo(const std::string& path) { link_.scan_amiibo(path); }
+    bool take_amiibo_result(ExternalAmiiboResult& out) { return link_.take_amiibo_result(out); }
     bool pause_supported() const { return link_.pause_supported(); }
     void request_pause(bool pause) { link_.request_pause(pause); }
     bool take_pause_state(ExternalPauseState& out) { return link_.take_pause_state(out); }

@@ -595,6 +595,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.menu_confirm_focus != shared_.menu_confirm_focus ||
         state.menu_unavailable_notice != shared_.menu_unavailable_notice ||
         state.graphic_packs_available != shared_.graphic_packs_available ||
+        state.options_available != shared_.options_available ||
+        state.amiibo_available != shared_.amiibo_available ||
         state.max_render_scale != shared_.max_render_scale ||
         state.cursor_choosable != shared_.cursor_choosable ||
         state.right_stick_choosable != shared_.right_stick_choosable ||
@@ -1224,6 +1226,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.menu_confirm_focus = shared_.menu_confirm_focus;
         state.menu_unavailable_notice = shared_.menu_unavailable_notice;
         state.graphic_packs_available = shared_.graphic_packs_available;
+        state.options_available = shared_.options_available;
+        state.amiibo_available = shared_.amiibo_available;
         state.max_render_scale = static_cast<uint8_t>(std::max(1, shared_.max_render_scale));
         state.cursor_choosable = shared_.cursor_choosable;
         state.right_stick_choosable = shared_.right_stick_choosable;

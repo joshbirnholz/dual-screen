@@ -138,6 +138,7 @@ Settings Settings::load(const AppPaths& paths) {
     }
 #endif
     settings.last_browse_dir = expand_user_path(get_or<std::string>(document, "last_browse_dir", settings.last_browse_dir));
+    settings.amiibo_dir = expand_user_path(get_or<std::string>(document, "amiibo_dir", settings.amiibo_dir));
     settings.steamgriddb_api_key =
         get_or<std::string>(document, "steamgriddb_api_key", settings.steamgriddb_api_key);
     settings.system_dir = expand_user_path(get_or<std::string>(document, "system_dir", settings.system_dir));
@@ -227,6 +228,7 @@ bool Settings::save(const AppPaths& paths) const {
     json document;
     document["device_name"] = device_name;
     document["last_browse_dir"] = last_browse_dir;
+    document["amiibo_dir"] = amiibo_dir;
     if (!steamgriddb_api_key.empty()) document["steamgriddb_api_key"] = steamgriddb_api_key;
     document["system_dir"] = system_dir;
     document["core_path"] = core_path;

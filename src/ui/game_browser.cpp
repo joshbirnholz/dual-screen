@@ -18,6 +18,11 @@ bool is_supported_rom(const std::string& filename) {
     return is_supported_rom_for_any_system(filename);
 }
 
+bool is_amiibo_file(const std::string& filename) {
+    const std::string extension = path_extension_lower(filename);
+    return extension == "bin" || extension == "nfc" || extension == "dat";
+}
+
 std::vector<std::string> default_browse_dirs() {
 #if defined(__SWITCH__)
     // The SD card, and where Switch homebrew conventionally keeps ROMs --
@@ -140,7 +145,8 @@ bool GameBrowser::navigate_to(std::string directory) {
     }
 
     for (const DirectoryEntry& entry : entries) {
-        if (!entry.is_directory && !is_supported_rom(entry.name)) {
+        if (!entry.is_directory &&
+            !(amiibo_ ? is_amiibo_file(entry.name) : is_supported_rom(entry.name))) {
             continue;
         }
         Row row;
@@ -275,7 +281,9 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             // Plus: straight out to the main menu, from however deep in the
             // folders this is -- where B only goes up one.
             case UiAction::MenuDisconnect:
-                if (!navigated) {
+                // An amiibo's browser is a page of the quick menu, which B
+                // leaves; there is no main menu behind it.
+                if (!navigated && !amiibo_) {
                     result.back_requested = true;
                     navigated = true;
                 }
@@ -306,7 +314,7 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
         if (!navigated && under != ButtonGlyph::Count &&
             under == guide_button_at(guide_hits_, pointer.press_x, pointer.press_y)) {
             std::string path;
-            if (under == ButtonGlyph::Plus) {
+            if (under == ButtonGlyph::Plus && !amiibo_) {
                 result.back_requested = true;
             } else if (under == ButtonGlyph::X && forwarder_target(path)) {
                 result.forwarder_requested = true;
@@ -359,11 +367,16 @@ void GameBrowser::render(QuadRenderer& quads,
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
 
-    quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
-    quads.clear(theme.background);
+    if (amiibo_) {
+        draw_page_background(quads, output_width, output_height, over_game_);
+    } else {
+        quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
+        quads.clear(theme.background);
+    }
 
     // The folder, at the right of the heading, keeping its end.
-    draw_page_header(quads, text, frame, "Choose a game", directory_, 0.0f, true);
+    draw_page_header(quads, text, frame, amiibo_ ? "Choose an amiibo" : "Choose a game", directory_,
+                     0.0f, true);
 
     if (!error_.empty()) {
         text.draw_wrapped(quads, error_, geometry.list.x + line * 0.5f,
@@ -418,10 +431,15 @@ void GameBrowser::render(QuadRenderer& quads,
     // to and out of the browser once there is not, which "Back" covers
     // either way.
     guide_hits_.clear();
-    std::vector<GuidePrompt> prompts{{ButtonGlyph::Plus, "Main Menu"}};
+    std::vector<GuidePrompt> prompts;
+    if (!amiibo_) prompts.push_back({ButtonGlyph::Plus, "Main Menu"});
     std::string target;
     if (forwarder_target(target)) prompts.push_back({ButtonGlyph::X, "Create Forwarder"});
-    prompts.push_back({ButtonGlyph::A, "Open", PromptRole::ActsOnSelection});
+    // An amiibo is scanned rather than opened; a folder is still opened.
+    const bool on_file = focus_ >= 0 && focus_ < static_cast<int>(rows_.size()) &&
+                         !rows_[static_cast<std::size_t>(focus_)].is_directory;
+    prompts.push_back({ButtonGlyph::A, amiibo_ && on_file ? "Scan" : "Open",
+                       PromptRole::ActsOnSelection});
     prompts.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     draw_page_guide(quads, text, glyphs, frame, prompts, &guide_hits_);
 }
