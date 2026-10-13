@@ -176,12 +176,26 @@ std::string resolve_core_path(const AppOptions& options,
     return std::string();
 }
 
-// One entry per console for the Settings screen, so a machine set up for one
-// and not another says so before a game is picked rather than after.
+// Whether this device can play a console's games itself. A Switch and an
+// Android device play DS games only -- melonDS is built in, or in the APK --
+// so nothing about another console's emulator is offered there.
+bool device_plays(SystemId system) {
+#if defined(__SWITCH__) || defined(__ANDROID__)
+    return system == SystemId::Ds;
+#else
+    (void)system;
+    return true;
+#endif
+}
+
+// One entry per console this device plays, for the Settings screen, so a
+// machine set up for one and not another says so before a game is picked
+// rather than after.
 std::vector<SettingsScreen::CoreStatus> resolve_core_statuses(const AppOptions& options,
                                                               const Settings& settings) {
     std::vector<SettingsScreen::CoreStatus> statuses;
     for (const SystemProfile& profile : system_profiles()) {
+        if (!device_plays(profile.id)) continue;
         // Where this console is played from, whichever kind of thing that is.
         // What the player needs to know is the same either way: is it there.
         switch (profile.frame_origin) {
@@ -2938,15 +2952,19 @@ void App::Impl::poll_updates() {
     }
     // The Emulators page's rows: Dualscreen's own copy of each emulator,
     // named as what it would take over from when another is in use.
-    settings_screen->set_download_row(
-        SystemId::WiiU,
-        settings.wii_u_program.empty() || settings.wii_u_program == cemu ? "Dualscreen's Cemu"
-                                                                         : "Use Dualscreen's own Cemu",
-        update_prompt.component_value(update::Component::Cemu));
+    if (device_plays(SystemId::WiiU)) {
+        settings_screen->set_download_row(
+            SystemId::WiiU,
+            settings.wii_u_program.empty() || settings.wii_u_program == cemu
+                ? "Dualscreen's Cemu"
+                : "Use Dualscreen's own Cemu",
+            update_prompt.component_value(update::Component::Cemu));
+    }
     for (const update::ComponentSpec& component : updater->components()) {
         if (component.source != update::Source::Buildbot) continue;
         const SystemId system =
             component.id == update::Component::ThreeDsCore ? SystemId::ThreeDs : SystemId::Ds;
+        if (!device_plays(system)) continue;
         const bool ours = resolve_core_path(options, settings, system) == managed_core_path(system);
         settings_screen->set_download_row(
             system, (ours || component.installed == update::kNotInstalled ? "Dualscreen's " : "Use Dualscreen's own ") +
