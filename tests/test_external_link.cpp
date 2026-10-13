@@ -882,6 +882,22 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
     CHECK_MSG(wait_for([&]() { return link.take_menu_key(); }),
               "the menu key never came back");
     CHECK(!link.take_menu_key());
+
+    // The keys that move through the menu, down and up, in order.
+    ExternalMenuKey key = ExternalMenuKey::Up;
+    bool down = false;
+    CHECK(!link.take_menu_keyboard(key, down));
+    producer.send_menu_keyboard(ExternalMenuKey::Down, true);
+    producer.send_menu_keyboard(ExternalMenuKey::Down, false);
+    producer.send_menu_keyboard(ExternalMenuKey::Back, true);
+    CHECK_MSG(wait_for([&]() { return link.take_menu_keyboard(key, down); }),
+              "a menu key pressed in the game's window never came back");
+    CHECK(key == ExternalMenuKey::Down && down);
+    CHECK(wait_for([&]() { return link.take_menu_keyboard(key, down); }));
+    CHECK(key == ExternalMenuKey::Down && !down);
+    CHECK(wait_for([&]() { return link.take_menu_keyboard(key, down); }));
+    CHECK(key == ExternalMenuKey::Back && down);
+    CHECK(!link.take_menu_keyboard(key, down));
 }
 
 void test_the_game_pauses_only_when_it_says_so() {
