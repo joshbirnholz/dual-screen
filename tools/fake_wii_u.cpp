@@ -13,7 +13,7 @@
 // It uses ExternalFrameProducer rather than a copy of the protocol, so what is
 // exercised here is the code a fork of Cemu would link, not a description of it.
 //
-//   fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only]
+//   fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] [--refuse-pause]
 
 #include <chrono>
 #include <cmath>
@@ -131,7 +131,8 @@ std::string describe(const ds::ExternalInput& input) {
 
 void usage() {
     std::fprintf(stderr,
-                 "fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only]\n");
+                 "fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] "
+                 "[--refuse-pause]\n");
 }
 
 }  // namespace
@@ -143,6 +144,9 @@ int main(int argc, char** argv) {
     // Publishes only the GamePad screen, to prove a consumer copes with one
     // screen arriving and the other never doing so.
     bool pad_only = false;
+    // Answers a pause the way a game with its HOME Menu turned off does, to
+    // show what the quick menu does then.
+    bool refuse_pause = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -157,6 +161,7 @@ int main(int argc, char** argv) {
         else if (arg == "--seconds") seconds = std::atof(value().c_str());
         else if (arg == "--fps") fps = std::atof(value().c_str());
         else if (arg == "--pad-only") pad_only = true;
+        else if (arg == "--refuse-pause") refuse_pause = true;
         else {
             usage();
             return 2;
@@ -174,6 +179,10 @@ int main(int argc, char** argv) {
     info.bottom_height = kPadHeight;
     info.audio_sample_rate = 48000;
     info.frames_per_second = fps;
+    // The overlay too, as Cemu offers it, so the menu keys go the way they do
+    // with Cemu -- through a pause. Its pictures are taken and drawn nowhere:
+    // there is no window here to draw them in.
+    info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause;
 
     ds::ExternalFrameProducer producer;
     std::string error;
@@ -196,6 +205,7 @@ int main(int argc, char** argv) {
     // Only reported when it changes: a pad is sent every frame it differs and
     // a line a frame would be a log rather than a record.
     ds::ExternalInput last_input;
+    bool paused = false;
     while (true) {
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration<double>(now - started).count() >= seconds) {
@@ -211,11 +221,28 @@ int main(int argc, char** argv) {
             ds::log_info("restarting, because the player asked");
             scene_origin = frame;
         }
+        // Pausing here is only saying so: the scene stands still meanwhile.
+        bool pause = false;
+        while (producer.take_pause_request(pause)) {
+            if (pause && refuse_pause) {
+                ds::log_info("refusing to pause, as a game saving would");
+                producer.send_pause_state(ds::ExternalPauseState::Refused);
+            } else if (pause) {
+                ds::log_info("paused");
+                paused = true;
+                producer.send_pause_state(ds::ExternalPauseState::Paused);
+            } else if (paused) {
+                ds::log_info("going on");
+                paused = false;
+                producer.send_pause_state(ds::ExternalPauseState::Running);
+            }
+        }
         if (producer.have_input() && producer.input() != last_input) {
             last_input = producer.input();
             ds::log_info("pad: " + describe(last_input));
         }
 
+        if (paused) scene_origin += 1;
         const int scene_frame = frame - scene_origin;
         // Only whichever screen the shell has actually asked for -- see
         // ExternalControl::RequestScreen. Mirrors the gate a real fork of
