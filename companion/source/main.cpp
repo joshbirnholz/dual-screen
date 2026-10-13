@@ -106,6 +106,7 @@ extern "C" {
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
 #include "ui/notice_popup.hpp"
+#include "ui/corner_notice.hpp"
 #include "util/build_stamp.hpp"
 #include "util/log.hpp"
 
@@ -1957,10 +1958,11 @@ void Client::draw_scene() {
     }
 
     compositor_.set_smoothing(session_.host_filtering());
-    // Both are drawn over the game with GL, so the game has to be drawn that
-    // way too while either is up.
+    // All three are drawn over the game with GL, so the game has to be drawn
+    // that way too while any is up.
     const bool resume_notice = session_.host_resume_notice();
-    router_.decide(!menu_open_ && !resume_notice);
+    const bool unavailable_notice = session_.host_menu_unavailable_notice();
+    router_.decide(!menu_open_ && !resume_notice && !unavailable_notice);
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -2002,6 +2004,10 @@ void Client::draw_scene() {
         if (resume_notice) {
             render_notice_popup(quads_, text_, button_glyphs_, width, height, kResumedNotice);
         }
+    }
+    // The menu the host could not open, for as long as the host shows it.
+    if (unavailable_notice) {
+        render_corner_notice(quads_, text_, width, height, kMenuUnavailableNotice);
     }
 }
 

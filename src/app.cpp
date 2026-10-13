@@ -2172,6 +2172,8 @@ void App::Impl::set_menu_open(bool open) {
 
 void App::Impl::open_quick_menu() {
     if (state == State::Menu || state == State::ResumeNotice) return;
+    // A notice that the menu could not open is over once it has.
+    corner_notice.clear();
     open_picker();
     state = State::Menu;
     log_info("the quick menu is up");
@@ -4566,7 +4568,12 @@ void App::Impl::render() {
         menu_backdrop.forget();
     }
     render_pages(width, height, show_menu_backdrop, frames);
-    if (corner_notice_up()) render_corner_notice(quads, text, width, height, corner_notice);
+    if (corner_notice_up()) {
+        render_corner_notice(quads, text, width, height, corner_notice);
+    } else if (state == State::Companion && companion_session &&
+               companion_session->host_menu_unavailable_notice()) {
+        render_corner_notice(quads, text, width, height, kMenuUnavailableNotice);
+    }
     if (state == State::ResumeNotice ||
                (state == State::Companion && companion_session &&
                 companion_session->host_resume_notice())) {
@@ -5228,6 +5235,7 @@ int App::run(const AppOptions& options) {
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
             shared.menu_confirm_focus =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirm_focus_wire()) : 0;
+            shared.menu_unavailable_notice = impl.corner_notice_up();
             shared.max_render_scale =
                 impl.local_game() ? system_profile(impl.system).max_render_scale : 1;
             shared.cursor_choosable = impl.pointer_choosable();

@@ -147,6 +147,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
+    host_menu_unavailable_notice_ = false;
     host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
@@ -307,6 +308,7 @@ void CompanionSession::disconnect() {
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
+    host_menu_unavailable_notice_ = false;
     host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
@@ -409,6 +411,7 @@ void CompanionSession::fail(const std::string& reason) {
     session_token_ = 0;
     // A popup the last host had up is not one this device is still under.
     host_resume_notice_ = false;
+    host_menu_unavailable_notice_ = false;
     host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
@@ -559,6 +562,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_menu_focus_ = state.menu_focus;
             host_menu_confirm_ = state.menu_confirm;
             host_menu_confirm_focus_ = state.menu_confirm_focus;
+            host_menu_unavailable_notice_ = state.menu_unavailable_notice;
             host_max_render_scale_ = state.max_render_scale;
             host_cursor_choosable_ = state.cursor_choosable;
             host_right_stick_choosable_ = state.right_stick_choosable;

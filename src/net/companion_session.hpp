@@ -572,6 +572,8 @@ public:
     int host_menu_focus() const { return host_menu_focus_; }
     uint8_t host_menu_confirm() const { return host_menu_confirm_; }
     uint8_t host_menu_confirm_focus() const { return host_menu_confirm_focus_; }
+    // SessionStateMessage::menu_unavailable_notice.
+    bool host_menu_unavailable_notice() const { return host_menu_unavailable_notice_; }
     int host_max_render_scale() const { return host_max_render_scale_; }
     bool host_cursor_choosable() const { return host_cursor_choosable_; }
     bool host_right_stick_choosable() const { return host_right_stick_choosable_; }
@@ -1098,6 +1100,7 @@ private:
     int host_menu_focus_ = 0;
     uint8_t host_menu_confirm_ = 0;
     uint8_t host_menu_confirm_focus_ = 0;
+    bool host_menu_unavailable_notice_ = false;
     int host_max_render_scale_ = 1;
     bool host_cursor_choosable_ = false;
     bool host_right_stick_choosable_ = false;

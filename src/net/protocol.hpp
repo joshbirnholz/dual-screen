@@ -382,6 +382,11 @@ struct SessionStateMessage {
     // Which button of the menu's popup the cursor is on, plus one; 0 when
     // the cursor is not showing, or there is no popup. Last, and optional.
     uint8_t menu_confirm_focus = 0;
+    // The few words in the top right corner that say the menu can't be opened
+    // right now -- a Wii U game that would not pause for it -- are up on the
+    // host, and the companion shows them too, for as long. Last, and
+    // optional.
+    bool menu_unavailable_notice = false;
 };
 
 struct FrameMessage {

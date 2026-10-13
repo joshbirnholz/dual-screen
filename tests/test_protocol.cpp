@@ -163,10 +163,10 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.left_handed_layouts ==
           std::vector<std::string>({"upper_focus", "side_by_side"}));
-    // (The left stick's, the Rumble Pak's, resuming's two, Save Sync's and
-    // the popup cursor's bytes go after the list, so a host from before the
-    // list stops six bytes earlier still.)
-    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 6;
+    // (The left stick's, the Rumble Pak's, resuming's two, Save Sync's, the
+    // popup cursor's and the menu-unavailable notice's bytes go after the
+    // list, so a host from before the list stops seven bytes earlier still.)
+    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 7;
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes, received_state));
     CHECK(received_state.left_handed_layouts == std::vector<std::string>({"upper_on_tv"}));
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes - 1, received_state));
@@ -186,7 +186,7 @@ void test_welcome_and_session_round_trip() {
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK_EQ(received_state.left_stick_choosable, true);
         CHECK(received_state.left_stick_press == press);
-        CHECK(decode_session_state(payload.data(), payload.size() - 6, received_state));
+        CHECK(decode_session_state(payload.data(), payload.size() - 7, received_state));
         CHECK_EQ(received_state.left_stick_choosable, false);
         CHECK(received_state.left_handed_layouts ==
               std::vector<std::string>({"upper_focus", "side_by_side"}));
@@ -205,8 +205,8 @@ void test_welcome_and_session_round_trip() {
         CHECK_EQ(received_state.rumble_choosable, true);
         CHECK_EQ(received_state.rumble_pak, in);
         // Without the bytes after it: the resume option, its popup, Save
-        // Sync and the popup cursor.
-        CHECK(decode_session_state(payload.data(), payload.size() - 5, received_state));
+        // Sync, the popup cursor and the menu-unavailable notice.
+        CHECK(decode_session_state(payload.data(), payload.size() - 6, received_state));
         CHECK_EQ(received_state.rumble_choosable, false);
         CHECK_EQ(received_state.left_stick_choosable, true);
     }
@@ -246,7 +246,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.save_sync_available, true);
-    CHECK(decode_session_state(payload.data(), payload.size() - 2, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 3, received_state));
     CHECK_EQ(received_state.save_sync_available, false);
 
     // Where the cursor is on the menu's popup, last of all: none from a host
@@ -257,8 +257,19 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.menu_confirm_focus, static_cast<uint8_t>(2));
-    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 2, received_state));
     CHECK_EQ(received_state.menu_confirm_focus, static_cast<uint8_t>(0));
+
+    // The menu can't be opened right now, after that: not up, from a host
+    // from before it.
+    state.menu_unavailable_notice = true;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK_EQ(received_state.menu_unavailable_notice, true);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK_EQ(received_state.menu_unavailable_notice, false);
 }
 
 // Everything a companion can ask the host for travels in one message, each
