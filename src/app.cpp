@@ -55,6 +55,7 @@
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
 #include "ui/notice_popup.hpp"
+#include "ui/corner_notice.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "net/save_exchange.hpp"
@@ -378,6 +379,15 @@ struct App::Impl {
     // The quick menu as Cemu draws it over a Wii U game -- see
     // wants_menu_overlay() -- and whether Cemu is showing one now.
     MenuOverlay menu_overlay;
+    // A Wii U game paused for the quick menu, as the console pauses for its
+    // HOME Menu -- see set_menu_open(). Cemu answers when the game has
+    // stopped, so the menu waits for that before it opens.
+    bool wii_u_paused = false;
+    bool menu_waiting_for_pause = false;
+    std::chrono::steady_clock::time_point menu_pause_asked_at;
+    // A few words in the top right corner, until `corner_notice_until`.
+    std::string corner_notice;
+    std::chrono::steady_clock::time_point corner_notice_until;
     // The game's icon for the quick menu's header: this device's game's, read
     // from its save store as Data Management shows it, or on a companion the
     // one the host sent. `game_icon_for` says whose it is.
@@ -908,7 +918,17 @@ struct App::Impl {
     // game whose program can draw it in its own window -- the window the
     // player is looking at, where this one is behind it. From either device:
     // a companion opening the menu opens it here too.
+    bool menu_over_wii_u_game() const;
+    // That, or a corner notice over a Wii U game: anything Cemu's window has
+    // to draw for this app.
     bool wants_menu_overlay() const;
+    bool corner_notice_up() const;
+    void show_corner_notice(const std::string& message);
+    // Whether opening the menu pauses the game first -- see set_menu_open().
+    bool pauses_wii_u_for_menu() const;
+    // Hears Cemu out on the pause, opens a menu that was waiting for it, and
+    // asks for the game to be paused or to go on as the pages over it say.
+    void update_wii_u_pause();
     // Draws that, on its own, and hands it over when it has changed; or takes
     // it down once it is not wanted.
     void render_menu_overlay();
@@ -948,6 +968,8 @@ struct App::Impl {
     // Opens or closes the one menu on this device, which for a host is also
     // what the companion is told to draw.
     void set_menu_open(bool open);
+    // Opens it, with no waiting.
+    void open_quick_menu();
     // The menu as the host has it, for a device that is only showing it.
     LayoutPickerState menu_state_from_host() const;
     // The two settings both devices share. On a companion these ask the host
@@ -1932,7 +1954,7 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     return true;
 }
 
-bool App::Impl::wants_menu_overlay() const {
+bool App::Impl::menu_over_wii_u_game() const {
     const bool page_up = state == State::Menu || state == State::Message ||
                          ((state == State::Settings || state == State::DataManagement) &&
                           settings_came_from == State::Menu) ||
@@ -1942,13 +1964,84 @@ bool App::Impl::wants_menu_overlay() const {
            MenuOverlay::supported();
 }
 
+bool App::Impl::wants_menu_overlay() const {
+    if (menu_over_wii_u_game()) return true;
+    return corner_notice_up() && system == SystemId::WiiU && !is_companion() && external_source &&
+           external_source->running() && external_source->overlay_supported() &&
+           MenuOverlay::supported();
+}
+
+bool App::Impl::corner_notice_up() const {
+    return !corner_notice.empty() && std::chrono::steady_clock::now() < corner_notice_until;
+}
+
+void App::Impl::show_corner_notice(const std::string& message) {
+    corner_notice = message;
+    corner_notice_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+}
+
+bool App::Impl::pauses_wii_u_for_menu() const {
+    return settings.pause_wii_u_in_menu && system == SystemId::WiiU && !is_companion() &&
+           external_source && external_source->running() && external_source->pause_supported();
+}
+
+void App::Impl::update_wii_u_pause() {
+    if (!external_source || !external_source->running()) {
+        wii_u_paused = false;
+        menu_waiting_for_pause = false;
+        return;
+    }
+    bool refused = false;
+    ExternalPauseState said = ExternalPauseState::Running;
+    while (external_source->take_pause_state(said)) {
+        switch (said) {
+            case ExternalPauseState::Paused:
+                wii_u_paused = true;
+                log_info("the game paused");
+                break;
+            case ExternalPauseState::Running:
+                if (wii_u_paused) log_info("the game is going again");
+                wii_u_paused = false;
+                break;
+            case ExternalPauseState::Refused:
+                wii_u_paused = false;
+                refused = true;
+                break;
+        }
+    }
+    if (menu_waiting_for_pause) {
+        if (wii_u_paused) {
+            menu_waiting_for_pause = false;
+            open_quick_menu();
+        } else if (refused) {
+            // As the console does while a game has its HOME Menu turned off,
+            // which games do while saving: no menu, and a word to say so.
+            menu_waiting_for_pause = false;
+            log_info("the game can't be paused right now, so the quick menu stays closed");
+            show_corner_notice(kMenuUnavailableNotice);
+        } else if (std::chrono::steady_clock::now() - menu_pause_asked_at >
+                   std::chrono::seconds(1)) {
+            // A game that never answers -- one that does not listen for the
+            // HOME Menu at all -- still gets a menu, over it as it plays.
+            menu_waiting_for_pause = false;
+            log_info("the game didn't pause; the quick menu opens over it as it plays");
+            open_quick_menu();
+        }
+    }
+    const bool page_over_game =
+        state == State::Menu || state == State::Settings || state == State::Controllers ||
+        state == State::DataManagement || state == State::Message;
+    external_source->request_pause(pauses_wii_u_for_menu() &&
+                                   (menu_waiting_for_pause || page_over_game));
+}
+
 void App::Impl::render_menu_overlay() {
     if (!wants_menu_overlay()) {
         if (menu_overlay_shown) {
             if (external_source) external_source->hide_overlay();
             menu_overlay_shown = false;
             menu_overlay.forget();
-            log_info("the menu over the game is down");
+            log_info("nothing of this app's is over the game any more");
         }
         return;
     }
@@ -1975,10 +2068,13 @@ void App::Impl::render_menu_overlay() {
     gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     const float w = static_cast<float>(output_width);
     const float h = static_cast<float>(output_height);
-    // The game goes on underneath, Cemu's to draw: darkened, as it is on
-    // every page in this window -- see kLiveGameDim.
-    quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
-    render_pages(w, h, /*over_game=*/true, nullptr);
+    if (menu_over_wii_u_game()) {
+        // The game goes on underneath, Cemu's to draw: darkened, as it is on
+        // every page in this window -- see kLiveGameDim.
+        quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+        render_pages(w, h, /*over_game=*/true, nullptr);
+    }
+    if (corner_notice_up()) render_corner_notice(quads, text, w, h, corner_notice);
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
     if (changed || !menu_overlay_shown) {
@@ -2003,14 +2099,18 @@ void App::Impl::set_menu_open(bool open) {
         if (state == State::Menu) return;
         // The popup is answered first: it is what the game is waiting on.
         if (state == State::ResumeNotice) return;
-        open_picker();
-        state = State::Menu;
-        log_info("the quick menu is up");
-        // A menu is often the last thing opened before a game is put down,
-        // whichever device opened it.
-        if (!is_companion()) flush_saves("the quick menu opened");
-        input.set_game_input_enabled(false);
-        if (is_companion()) companion_session->set_menu_open(true);
+        // A Wii U game is asked to pause first, as for the console's HOME
+        // Menu, and the menu opens once it has -- see update_wii_u_pause().
+        if (pauses_wii_u_for_menu() && !wii_u_paused) {
+            if (!menu_waiting_for_pause) {
+                menu_waiting_for_pause = true;
+                menu_pause_asked_at = std::chrono::steady_clock::now();
+                log_info("asking the game to pause for the quick menu");
+                update_wii_u_pause();
+            }
+            return;
+        }
+        open_quick_menu();
         return;
     }
     if (state != State::Menu) return;
@@ -2023,6 +2123,18 @@ void App::Impl::set_menu_open(bool open) {
         state = State::Playing;
     }
     input.set_game_input_enabled(true);
+}
+
+void App::Impl::open_quick_menu() {
+    if (state == State::Menu || state == State::ResumeNotice) return;
+    open_picker();
+    state = State::Menu;
+    log_info("the quick menu is up");
+    // A menu is often the last thing opened before a game is put down,
+    // whichever device opened it.
+    if (!is_companion()) flush_saves("the quick menu opened");
+    input.set_game_input_enabled(false);
+    if (is_companion()) companion_session->set_menu_open(true);
 }
 
 void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed_here) {
@@ -4403,6 +4515,7 @@ void App::Impl::render() {
         menu_backdrop.forget();
     }
     render_pages(width, height, show_menu_backdrop, frames);
+    if (corner_notice_up()) render_corner_notice(quads, text, width, height, corner_notice);
     if (state == State::ResumeNotice ||
                (state == State::Companion && companion_session &&
                 companion_session->host_resume_notice())) {
@@ -5517,11 +5630,12 @@ int App::run(const AppOptions& options) {
             std::vector<PointerEvent> pointers = impl.input.pointer_events();
             // Taps on the menu as Cemu draws it over the game, which land
             // where they would on this window's copy of it: the two are
-            // drawn at the same shape. See wants_menu_overlay().
+            // drawn at the same shape. See wants_menu_overlay(). Only the
+            // menu's: a corner notice has nothing to tap.
             if (impl.external_source) {
                 float press_x = 0.0f, press_y = 0.0f, x = 0.0f, y = 0.0f;
                 while (impl.external_source->take_overlay_tap(press_x, press_y, x, y)) {
-                    if (!impl.wants_menu_overlay()) continue;
+                    if (!impl.menu_over_wii_u_game()) continue;
                     PointerEvent tap;
                     tap.normalized = false;
                     tap.released = true;
@@ -5545,6 +5659,7 @@ int App::run(const AppOptions& options) {
             }
             impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
             impl.handle_ui(ui_actions, pointers);
+            impl.update_wii_u_pause();
             const UiSoundView view = impl.sound_view();
             // Nothing for a press that closes the app: the sound would be cut
             // off part way through as it goes.

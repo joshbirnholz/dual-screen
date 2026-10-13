@@ -89,6 +89,9 @@ public:
     }
     void hide_overlay() { link_.hide_overlay(); }
     bool take_menu_key() { return link_.take_menu_key(); }
+    bool pause_supported() const { return link_.pause_supported(); }
+    void request_pause(bool pause) { link_.request_pause(pause); }
+    bool take_pause_state(ExternalPauseState& out) { return link_.take_pause_state(out); }
     void set_pointer_shown(bool shown) { link_.set_pointer_shown(shown); }
     bool take_overlay_tap(float& press_x, float& press_y, float& x, float& y) {
         return link_.take_overlay_tap(press_x, press_y, x, y);

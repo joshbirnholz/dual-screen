@@ -124,6 +124,9 @@ struct Settings {
     // Cemu's mlc01 folder, where it keeps Wii U saves, for Data Management.
     // Empty means wherever Cemu says it is -- see find_cemu_mlc().
     std::string wii_u_mlc_path;
+    // Whether a Wii U game pauses while the quick menu is up, as it does for
+    // the console's HOME Menu. Off, it plays on underneath, darkened.
+    bool pause_wii_u_in_menu = true;
 
     const std::string& external_program_for(SystemId system) const {
         switch (system) {

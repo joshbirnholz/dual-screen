@@ -148,6 +148,8 @@ Settings Settings::load(const AppPaths& paths) {
         expand_user_path(get_or<std::string>(document, "wii_u_program", settings.wii_u_program));
     settings.wii_u_mlc_path =
         expand_user_path(get_or<std::string>(document, "wii_u_mlc_path", settings.wii_u_mlc_path));
+    settings.pause_wii_u_in_menu =
+        get_or<bool>(document, "pause_wii_u_in_menu", settings.pause_wii_u_in_menu);
     if (document.contains("wii_u_arguments") && document["wii_u_arguments"].is_array()) {
         settings.wii_u_arguments.clear();
         for (const auto& argument : document["wii_u_arguments"]) {
@@ -232,6 +234,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["wii_u_program"] = wii_u_program;
     document["wii_u_arguments"] = wii_u_arguments;
     if (!wii_u_mlc_path.empty()) document["wii_u_mlc_path"] = wii_u_mlc_path;
+    document["pause_wii_u_in_menu"] = pause_wii_u_in_menu;
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;
