@@ -2052,12 +2052,14 @@ void App::Impl::update_wii_u_pause() {
             log_info("the game can't be paused right now, so the quick menu stays closed");
             show_corner_notice(kMenuUnavailableNotice);
         } else if (std::chrono::steady_clock::now() - menu_pause_asked_at >
-                   std::chrono::seconds(1)) {
-            // A game that never answers -- one that does not listen for the
-            // HOME Menu at all -- still gets a menu, over it as it plays.
+                   std::chrono::seconds(2)) {
+            // A game that never answers -- one stuck loading, or that does
+            // not listen for the HOME Menu at all -- is treated as refusing:
+            // the menu never opens over a game that is still going. The
+            // request is withdrawn below, as no longer wanted.
             menu_waiting_for_pause = false;
-            log_info("the game didn't pause; the quick menu opens over it as it plays");
-            open_quick_menu();
+            log_info("the game didn't pause in time, so the quick menu stays closed");
+            show_corner_notice(kMenuUnavailableNotice);
         }
     }
     const bool page_over_game =
