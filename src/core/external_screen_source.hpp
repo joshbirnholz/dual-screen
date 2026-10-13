@@ -58,6 +58,10 @@ public:
     // The two screens arrive under one serial each frame but are published
     // separately, so either may be the one that has just landed.
     uint64_t frame_serial() const override { return std::max(top_.serial, bottom_.serial); }
+    // One screen's own, for telling whether a new picture of it has arrived.
+    uint64_t screen_serial(ScreenId screen) const {
+        return screen == ScreenId::Top ? top_.serial : bottom_.serial;
+    }
     bool wants_shutdown() const override { return ended_; }
 
     void set_audio_callback(AudioCallback callback) { audio_callback_ = std::move(callback); }

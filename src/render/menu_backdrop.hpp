@@ -29,6 +29,13 @@ public:
     // been composited and before the menu is drawn over it. `key` says what was
     // composited -- see Compositor::composition_key().
     void capture(int output_width, int output_height, std::size_t key);
+    // The same from a picture rather than the framebuffer: a game drawn by
+    // another program, whose frame this app has as pixels and never drew --
+    // a Wii U's television, as Cemu sent it when the game paused. `rgba` says
+    // the bytes are a GPU's R, G, B, A rather than XRGB8888. Stretched to
+    // `output_width` x `output_height`, the window it goes behind.
+    void capture_image(const uint32_t* pixels, int width, int height, int stride_pixels, bool rgba,
+                       int output_width, int output_height, std::size_t key);
     // Dropped when the menu closes, so the next one opens onto the frame it
     // actually opened over.
     void forget();

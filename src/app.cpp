@@ -384,6 +384,11 @@ struct App::Impl {
     // stopped, so the menu waits for that before it opens.
     bool wii_u_paused = false;
     bool menu_waiting_for_pause = false;
+    // The television as it was when the game paused, which Cemu sends then:
+    // the paused game behind the menu, blurred, as a DS or 3DS game is. Ready
+    // once a picture newer than `wii_u_still_after` has arrived.
+    uint64_t wii_u_still_after = 0;
+    bool wii_u_still_ready = false;
     std::chrono::steady_clock::time_point menu_pause_asked_at;
     // A few words in the top right corner, until `corner_notice_until`.
     std::string corner_notice;
@@ -929,6 +934,10 @@ struct App::Impl {
     // Hears Cemu out on the pause, opens a menu that was waiting for it, and
     // asks for the game to be paused or to go on as the pages over it say.
     void update_wii_u_pause();
+    // The paused game's blurred picture in menu_backdrop, made when it is
+    // first wanted. False while the game is not paused, or its picture has
+    // not arrived, when the game is shown live and darkened instead.
+    bool wii_u_backdrop_ready();
     // Draws that, on its own, and hands it over when it has changed; or takes
     // it down once it is not wanted.
     void render_menu_overlay();
@@ -1997,17 +2006,29 @@ void App::Impl::update_wii_u_pause() {
         switch (said) {
             case ExternalPauseState::Paused:
                 wii_u_paused = true;
+                wii_u_still_after = external_source->screen_serial(ScreenId::Top);
+                wii_u_still_ready = false;
+                menu_backdrop.forget();
                 log_info("the game paused");
                 break;
             case ExternalPauseState::Running:
                 if (wii_u_paused) log_info("the game is going again");
                 wii_u_paused = false;
+                wii_u_still_ready = false;
+                menu_backdrop.forget();
                 break;
             case ExternalPauseState::Refused:
                 wii_u_paused = false;
                 refused = true;
                 break;
         }
+    }
+    // A television already being sent here is already the paused picture.
+    if (wii_u_paused && !wii_u_still_ready &&
+        (external_source->screen_serial(ScreenId::Top) != wii_u_still_after ||
+         external_requested_screen == ScreenId::Top)) {
+        wii_u_still_ready = true;
+        log_info("the paused game's picture arrived, to blur behind the menu");
     }
     if (menu_waiting_for_pause) {
         if (wii_u_paused) {
@@ -2033,6 +2054,19 @@ void App::Impl::update_wii_u_pause() {
         state == State::DataManagement || state == State::Message;
     external_source->request_pause(pauses_wii_u_for_menu() &&
                                    (menu_waiting_for_pause || page_over_game));
+}
+
+bool App::Impl::wii_u_backdrop_ready() {
+    if (!wii_u_paused || !wii_u_still_ready || !external_source) return false;
+    const std::size_t key = static_cast<std::size_t>(external_source->screen_serial(ScreenId::Top)) + 1u;
+    if (!menu_backdrop.matches(key)) {
+        ScreenReadback still;
+        if (!external_source->read_screen(ScreenId::Top, still)) return false;
+        menu_backdrop.capture_image(still.pixels, still.width, still.height, still.stride_pixels,
+                                    still.channel_order == ChannelOrder::Rgba, output_width,
+                                    output_height, key);
+    }
+    return menu_backdrop.matches(key);
 }
 
 void App::Impl::render_menu_overlay() {
@@ -2069,9 +2103,20 @@ void App::Impl::render_menu_overlay() {
     const float w = static_cast<float>(output_width);
     const float h = static_cast<float>(output_height);
     if (menu_over_wii_u_game()) {
-        // The game goes on underneath, Cemu's to draw: darkened, as it is on
-        // every page in this window -- see kLiveGameDim.
-        quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+        if (wii_u_backdrop_ready()) {
+            // Paused: the game's picture blurred, as a DS or 3DS game's is,
+            // over all of Cemu's window, and a page opened from the menu 60%
+            // darker again.
+            menu_backdrop.draw(quads, w, h);
+            if (state == State::Settings || state == State::DataManagement ||
+                state == State::Controllers) {
+                quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+            }
+        } else {
+            // The game goes on underneath, Cemu's to draw: darkened, as it is
+            // on every page in this window -- see kLiveGameDim.
+            quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+        }
         render_pages(w, h, /*over_game=*/true, nullptr);
     }
     if (corner_notice_up()) render_corner_notice(quads, text, w, h, corner_notice);
@@ -4489,12 +4534,18 @@ void App::Impl::render() {
          ((state == State::Settings || state == State::DataManagement) &&
           settings_came_from == State::Menu) ||
          (state == State::Controllers && controllers_came_from == State::Menu));
-    if (show_menu_backdrop && system == SystemId::WiiU) {
-        // A Wii U game cannot be paused -- Cemu goes on running it -- so it is
-        // not shown as a paused picture, blurred, but live, under the same
-        // darkness on every page: the menu's first page as much as the ones
-        // opened from it.
-        menu_backdrop.forget();
+    if (show_menu_backdrop && system == SystemId::WiiU && wii_u_backdrop_ready()) {
+        // Paused, and its picture here: as a DS or 3DS game is.
+        menu_backdrop.draw(quads, width, height);
+        if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
+            quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+        }
+    } else if (show_menu_backdrop && system == SystemId::WiiU) {
+        // A Wii U game going on under the menu -- one that did not pause, or
+        // whose picture has yet to arrive -- is shown live rather than
+        // blurred, under the same darkness on every page: the menu's first
+        // page as much as the ones opened from it.
+        if (!wii_u_paused) menu_backdrop.forget();
         quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
     } else if (show_menu_backdrop) {
         // Taken here, between the game and the menu, so what gets blurred is

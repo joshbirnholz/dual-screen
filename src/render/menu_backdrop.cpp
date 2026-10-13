@@ -239,6 +239,58 @@ void MenuBackdrop::capture(int output_width, int output_height, std::size_t key)
     texture_.set_linear_filtering(true);
 }
 
+void MenuBackdrop::capture_image(const uint32_t* pixels, int width, int height,
+                                 int stride_pixels, bool rgba, int output_width,
+                                 int output_height, std::size_t key) {
+    forget();
+    key_ = key;
+    if (pixels == nullptr || width <= 0 || height <= 0 || output_width <= 0 ||
+        output_height <= 0) {
+        return;
+    }
+    // The size capture() would shrink the window to, so the same blur reads
+    // the same whatever size the picture came at.
+    width_ = std::max(1, output_width / kShrink);
+    height_ = std::max(1, output_height / kShrink);
+    pixels_.assign(static_cast<std::size_t>(width_) * height_, 0);
+    // Averaged over the block of the picture each small pixel stands for, as
+    // capture() does, for the same reason.
+    for (int y = 0; y < height_; ++y) {
+        const int from_y = y * height / height_;
+        const int to_y = std::max(from_y + 1, (y + 1) * height / height_);
+        for (int x = 0; x < width_; ++x) {
+            const int from_x = x * width / width_;
+            const int to_x = std::max(from_x + 1, (x + 1) * width / width_);
+            uint32_t red = 0;
+            uint32_t green = 0;
+            uint32_t blue = 0;
+            uint32_t taken = 0;
+            for (int source_y = from_y; source_y < to_y && source_y < height; ++source_y) {
+                const uint32_t* row = pixels + static_cast<std::size_t>(source_y) * stride_pixels;
+                for (int source_x = from_x; source_x < to_x && source_x < width; ++source_x) {
+                    const uint32_t value = row[source_x];
+                    if (rgba) {
+                        red += value & 0xFFu;
+                        blue += (value >> 16) & 0xFFu;
+                    } else {
+                        red += (value >> 16) & 0xFFu;
+                        blue += value & 0xFFu;
+                    }
+                    green += (value >> 8) & 0xFFu;
+                    ++taken;
+                }
+            }
+            if (taken == 0) taken = 1;
+            pixels_[static_cast<std::size_t>(y) * width_ + x] =
+                pack(static_cast<float>(red / taken), static_cast<float>(green / taken),
+                     static_cast<float>(blue / taken));
+        }
+    }
+    blur_and_darken(pixels_, scratch_, width_, height_, kBlurRadius / kShrink);
+    texture_.upload_xrgb8888(pixels_.data(), width_, height_, width_);
+    texture_.set_linear_filtering(true);
+}
+
 void MenuBackdrop::forget() {
     texture_.destroy();
     key_ = 0;
