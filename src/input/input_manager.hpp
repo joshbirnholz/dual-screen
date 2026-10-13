@@ -273,6 +273,13 @@ public:
     // Whether `direction` (Up, Down, Left or Right) is being held long
     // enough to repeat: the press itself is false, the steps after it true.
     bool direction_repeating(UiAction direction) const;
+    // An arrow held in another program's window -- Cemu's, with this app's
+    // menu drawn over it -- for the repeat, as if held here. Up, down, left,
+    // right. The step for the press itself is the caller's, as it is for
+    // every other way of pressing one. See ExternalControl::MenuKeyboard.
+    void set_forwarded_direction_held(int direction, bool held) {
+        if (direction >= 0 && direction < 4) forwarded_held_[direction] = held;
+    }
 
     MenuButtonLabels menu_labels() const;
 
@@ -419,6 +426,7 @@ private:
     // first, which a list that goes round stops at its end rather than
     // going round on -- see direction_repeating().
     bool direction_repeated_[4] = {};
+    bool forwarded_held_[4] = {};
     void repeat_held_directions(const bool held[4]);
 };
 

@@ -5766,6 +5766,49 @@ int App::run(const AppOptions& options) {
                 log_info("the menu key was pressed in Cemu's window");
                 ui_actions.push_back(UiAction::ToggleMenu);
             }
+            // And the keys that move through the menu, which Cemu's window
+            // hears while the menu is drawn over it: whatever they would do
+            // in this one, a held arrow repeating as one held here does.
+            // Escape is Back in the menu, as here, but never opens it from
+            // Cemu's window -- F1 does that.
+            if (impl.external_source) {
+                const bool menu_there = impl.menu_over_wii_u_game();
+                ExternalMenuKey key = ExternalMenuKey::Up;
+                bool down = false;
+                while (impl.external_source->take_menu_keyboard(key, down)) {
+                    if (!menu_there) continue;
+                    static const UiAction kDirections[4] = {UiAction::Up, UiAction::Down,
+                                                            UiAction::Left, UiAction::Right};
+                    const int direction = static_cast<int>(key);
+                    if (direction < 4) {
+                        impl.input.set_forwarded_direction_held(direction, down);
+                        if (down) ui_actions.push_back(kDirections[direction]);
+                        continue;
+                    }
+                    if (!down) continue;
+                    switch (key) {
+                        case ExternalMenuKey::PageUp: ui_actions.push_back(UiAction::PageUp); break;
+                        case ExternalMenuKey::PageDown: ui_actions.push_back(UiAction::PageDown); break;
+                        case ExternalMenuKey::Confirm: ui_actions.push_back(UiAction::Confirm); break;
+                        case ExternalMenuKey::Back: ui_actions.push_back(UiAction::Cancel); break;
+                        case ExternalMenuKey::Filter: ui_actions.push_back(UiAction::ToggleFilter); break;
+                        case ExternalMenuKey::SwapLayout: ui_actions.push_back(UiAction::SwapLayout); break;
+                        case ExternalMenuKey::Settings: ui_actions.push_back(UiAction::MenuSettings); break;
+                        case ExternalMenuKey::Reset: ui_actions.push_back(UiAction::MenuReset); break;
+                        case ExternalMenuKey::Quit: ui_actions.push_back(UiAction::MenuQuit); break;
+                        case ExternalMenuKey::Disconnect:
+                            ui_actions.push_back(UiAction::MenuDisconnect);
+                            break;
+                        default: break;
+                    }
+                }
+                // A key let go after the menu closed never says so here.
+                if (!menu_there) {
+                    for (int direction = 0; direction < 4; ++direction) {
+                        impl.input.set_forwarded_direction_held(direction, false);
+                    }
+                }
+            }
             impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
             impl.handle_ui(ui_actions, pointers);
             impl.update_wii_u_pause();

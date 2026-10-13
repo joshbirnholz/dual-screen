@@ -1141,6 +1141,7 @@ void InputManager::emit_navigation_from_axes() {
         if (keys != nullptr && arrows[direction] < key_count && keys[arrows[direction]] != 0) {
             held[direction] = true;
         }
+        if (forwarded_held_[direction]) held[direction] = true;
     }
     repeat_held_directions(held);
 }
