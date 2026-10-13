@@ -389,6 +389,7 @@ struct App::Impl {
     // once a picture newer than `wii_u_still_after` has arrived.
     uint64_t wii_u_still_after = 0;
     bool wii_u_still_ready = false;
+    std::chrono::steady_clock::time_point wii_u_paused_at;
     std::chrono::steady_clock::time_point menu_pause_asked_at;
     // A few words in the top right corner, until `corner_notice_until`.
     std::string corner_notice;
@@ -2008,6 +2009,7 @@ void App::Impl::update_wii_u_pause() {
                 wii_u_paused = true;
                 wii_u_still_after = external_source->screen_serial(ScreenId::Top);
                 wii_u_still_ready = false;
+                wii_u_paused_at = std::chrono::steady_clock::now();
                 menu_backdrop.forget();
                 log_info("the game paused");
                 break;
@@ -2032,8 +2034,17 @@ void App::Impl::update_wii_u_pause() {
     }
     if (menu_waiting_for_pause) {
         if (wii_u_paused) {
-            menu_waiting_for_pause = false;
-            open_quick_menu();
+            // And for its picture, a moment behind: a menu opened before it
+            // had only the darkening a game going on gets, nearly black, and
+            // then the blur -- a flash, every time the picture was late.
+            // Never for long, though: a picture that does not come leaves
+            // the darkening, as before.
+            if (wii_u_still_ready ||
+                std::chrono::steady_clock::now() - wii_u_paused_at >
+                    std::chrono::milliseconds(500)) {
+                menu_waiting_for_pause = false;
+                open_quick_menu();
+            }
         } else if (refused) {
             // As the console does while a game has its HOME Menu turned off,
             // which games do while saving: no menu, and a word to say so.
