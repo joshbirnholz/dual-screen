@@ -19,11 +19,8 @@ SteamOS, Switch and Android for Dualscreen, and a Linux AppImage for the fork.
 Dualscreen's updater installs those builds.
 
 Commit messages: a short subject, then a body explaining why. End every commit
-message with:
-
-```
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-```
+message with the Co-Authored-By attribution line your Claude Code session
+provides.
 
 Never put a model name or identifier anywhere in the code, comments or
 documentation.
