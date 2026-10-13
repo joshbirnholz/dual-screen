@@ -2002,6 +2002,7 @@ void App::Impl::update_wii_u_pause() {
         return;
     }
     bool refused = false;
+    bool not_listening = false;
     ExternalPauseState said = ExternalPauseState::Running;
     while (external_source->take_pause_state(said)) {
         switch (said) {
@@ -2022,6 +2023,10 @@ void App::Impl::update_wii_u_pause() {
             case ExternalPauseState::Refused:
                 wii_u_paused = false;
                 refused = true;
+                break;
+            case ExternalPauseState::NotListening:
+                wii_u_paused = false;
+                not_listening = true;
                 break;
         }
     }
@@ -2051,15 +2056,23 @@ void App::Impl::update_wii_u_pause() {
             menu_waiting_for_pause = false;
             log_info("the game can't be paused right now, so the quick menu stays closed");
             show_corner_notice(kMenuUnavailableNotice);
+        } else if (not_listening) {
+            // A game that never listens for the HOME Menu cannot be asked,
+            // and would otherwise never have a menu at all -- no Quit, no
+            // Settings -- so it gets one over it as it plays, at once.
+            menu_waiting_for_pause = false;
+            log_info("the game doesn't listen for the HOME Menu, so the quick menu opens over it "
+                     "as it plays");
+            open_quick_menu();
         } else if (std::chrono::steady_clock::now() - menu_pause_asked_at >
                    std::chrono::seconds(2)) {
-            // A game that never answers -- one stuck loading, or that does
-            // not listen for the HOME Menu at all -- is treated as refusing:
-            // the menu never opens over a game that is still going. The
-            // request is withdrawn below, as no longer wanted.
+            // One that listens but does not answer -- stuck loading, say --
+            // the same, once it has had its chance. The request stands while
+            // the menu is up, so a game that answers late still pauses under
+            // it.
             menu_waiting_for_pause = false;
-            log_info("the game didn't pause in time, so the quick menu stays closed");
-            show_corner_notice(kMenuUnavailableNotice);
+            log_info("the game didn't pause in time, so the quick menu opens over it as it plays");
+            open_quick_menu();
         }
     }
     const bool page_over_game =
