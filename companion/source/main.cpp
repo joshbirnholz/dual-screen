@@ -1931,12 +1931,12 @@ void Client::draw_scene() {
         const net::ControllersViewMessage& view = session_.host_controllers_view();
         if (view.open) {
             // Over the game, darkened as the host's own page is: live for a
-            // Wii U game, which goes on, and the blurred still otherwise.
+            // Wii U game that goes on, and the blurred still otherwise.
             router_.decide(false);
             const ScreenTextures& textures = session_.screens();
             compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(),
                                width, height, router_);
-            if (session_.system() == SystemId::WiiU) {
+            if (session_.system() == SystemId::WiiU && !session_.host_paused()) {
                 menu_backdrop_.forget();
                 quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                                   Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
@@ -1967,9 +1967,11 @@ void Client::draw_scene() {
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
 
-    if (menu_open_ && session_.system() == SystemId::WiiU) {
-        // A Wii U game goes on running under the menu -- Cemu cannot pause
-        // it -- so it is shown live, darkened, the same as on the other device.
+    if (menu_open_ && session_.system() == SystemId::WiiU && !session_.host_paused()) {
+        // A Wii U game that goes on under the menu -- one that did not pause --
+        // is shown live, darkened, the same as on the other device. One that
+        // paused stopped sending pictures, so the last is its paused one, and
+        // is blurred below like any other console's.
         menu_backdrop_.forget();
         quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                           Color{0.0f, 0.0f, 0.0f, kLiveGameDim});

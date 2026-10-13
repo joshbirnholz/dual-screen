@@ -4425,7 +4425,7 @@ void App::Impl::render() {
                 compositor.set_display_size(panel_width, panel_height);
                 compositor.render(quads, device_layout(), drawing->screens(), screens_geometry(),
                                   width, height, router);
-                if (system == SystemId::WiiU) {
+                if (system == SystemId::WiiU && !companion_session->host_paused()) {
                     menu_backdrop.forget();
                     quads.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                                      Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
@@ -4553,11 +4553,14 @@ void App::Impl::render() {
         if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
             quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
         }
-    } else if (show_menu_backdrop && system == SystemId::WiiU) {
+    } else if (show_menu_backdrop && system == SystemId::WiiU &&
+               !(is_companion() && companion_session && companion_session->host_paused())) {
         // A Wii U game going on under the menu -- one that did not pause, or
         // whose picture has yet to arrive -- is shown live rather than
         // blurred, under the same darkness on every page: the menu's first
-        // page as much as the ones opened from it.
+        // page as much as the ones opened from it. On the other device, a
+        // paused one has stopped sending pictures, and is blurred below like
+        // any other console's.
         if (!wii_u_paused) menu_backdrop.forget();
         quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
     } else if (show_menu_backdrop) {
@@ -5212,8 +5215,12 @@ int App::run(const AppOptions& options) {
             impl.host_session->set_audio_enabled(
                 audio_reaches(impl.audio_target, impl.host_session->companion_screen()));
             // A menu on either device pauses the game, so the two are always
-            // looking at the same frame.
-            const bool paused_here = impl.state != Impl::State::Playing;
+            // looking at the same frame -- except a Wii U game, which is only
+            // paused once it says it has, and goes on under the menu when it
+            // does not. The other device blurs the picture only then.
+            const bool paused_here =
+                impl.state != Impl::State::Playing &&
+                (impl.system != SystemId::WiiU || impl.wii_u_paused);
             net::HostSession::SharedState shared;
             shared.layout_id = impl.active_layout_id;
             shared.per_device_layout = impl.active_layout().per_device;
