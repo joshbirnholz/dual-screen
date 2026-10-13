@@ -154,6 +154,7 @@ private:
         Vsync,
 #if DS_PLAYS_WII_U
         WiiUScreenAlone,
+        PauseWiiUInMenu,
 #endif
         UiSounds,
         ShowBattery,

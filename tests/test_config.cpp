@@ -405,6 +405,9 @@ void test_settings_round_trip() {
     // Away from Auto, the default, so the round trip is checking storage.
     defaults.wii_u_screen_alone = WiiUScreenAlone::GamePad;
     const WiiUScreenAlone chosen_alone = defaults.wii_u_screen_alone;
+    // On by default, so off is the one worth writing down.
+    CHECK(defaults.pause_wii_u_in_menu);
+    defaults.pause_wii_u_in_menu = false;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -427,6 +430,8 @@ void test_settings_round_trip() {
     CHECK(reloaded.cursor_mode == CursorMode::Hidden);
     CHECK_MSG(reloaded.wii_u_screen_alone == chosen_alone,
               "which screen this device is on its own did not survive being written down");
+    CHECK_MSG(!reloaded.pause_wii_u_in_menu,
+              "Wii U games being left running in the quick menu did not survive being written down");
 
     // A config file that names arguments replaces them rather than adding to
     // them: a fork with different flags must not inherit these.

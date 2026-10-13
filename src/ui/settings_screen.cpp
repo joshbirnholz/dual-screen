@@ -329,6 +329,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.wii_u_screen_alone = next_wii_u_screen_alone(settings_.wii_u_screen_alone);
             result.settings_changed = true;
             break;
+        case Row::PauseWiiUInMenu:
+            settings_.pause_wii_u_in_menu = !settings_.pause_wii_u_in_menu;
+            result.settings_changed = true;
+            break;
 #endif
         case Row::UiSounds: {
             // Off, then each style in turn: one row for whether and which,
@@ -527,6 +531,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Vsync", settings_.vsync ? "On" : "Off"},
 #if DS_PLAYS_WII_U
         {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
+        {"Pause Wii U games in the quick menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
 #endif
         {"Sound effects", settings_.ui_sounds ? ui_sound_style_label(settings_.ui_sound_style) : "Off"},
         {"Battery in the quick menu", settings_.show_battery ? "On" : "Off"},
@@ -653,6 +658,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.run_ahead_ds));
     mix_sound_state(view.rest, settings_.vsync ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_screen_alone));
+    mix_sound_state(view.rest, settings_.pause_wii_u_in_menu ? 1u : 0u);
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, settings_.ui_sound_style);
     mix_sound_state(view.rest, settings_.show_battery ? 1u : 0u);
