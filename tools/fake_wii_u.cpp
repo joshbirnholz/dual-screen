@@ -14,6 +14,7 @@
 // exercised here is the code a fork of Cemu would link, not a description of it.
 //
 //   fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] [--refuse-pause]
+//              [--ignore-pause]
 
 #include <chrono>
 #include <cmath>
@@ -132,7 +133,7 @@ std::string describe(const ds::ExternalInput& input) {
 void usage() {
     std::fprintf(stderr,
                  "fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] "
-                 "[--refuse-pause]\n");
+                 "[--refuse-pause] [--ignore-pause]\n");
 }
 
 }  // namespace
@@ -147,6 +148,9 @@ int main(int argc, char** argv) {
     // Answers a pause the way a game with its HOME Menu turned off does, to
     // show what the quick menu does then.
     bool refuse_pause = false;
+    // Never answers one, as a game that does not listen for the HOME Menu
+    // never does.
+    bool ignore_pause = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -162,6 +166,7 @@ int main(int argc, char** argv) {
         else if (arg == "--fps") fps = std::atof(value().c_str());
         else if (arg == "--pad-only") pad_only = true;
         else if (arg == "--refuse-pause") refuse_pause = true;
+        else if (arg == "--ignore-pause") ignore_pause = true;
         else {
             usage();
             return 2;
@@ -224,7 +229,10 @@ int main(int argc, char** argv) {
         // Pausing here is only saying so: the scene stands still meanwhile.
         bool pause = false;
         while (producer.take_pause_request(pause)) {
-            if (pause && refuse_pause) {
+            if (ignore_pause) {
+                ds::log_info(pause ? "not answering a request to pause"
+                                   : "not answering a request to go on");
+            } else if (pause && refuse_pause) {
                 ds::log_info("refusing to pause, as a game saving would");
                 producer.send_pause_state(ds::ExternalPauseState::Refused);
             } else if (pause) {
