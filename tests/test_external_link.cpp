@@ -884,6 +884,73 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
     CHECK(!link.take_menu_key());
 }
 
+void test_the_game_pauses_only_when_it_says_so() {
+    {
+        ExternalFrameLink link;
+        ExternalFrameProducer producer;
+        if (!bring_up(link, producer)) return;
+        CHECK_MSG(!link.pause_supported(),
+                  "a producer that never said it can pause was taken to");
+    }
+
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay | kExternalFeaturePause;
+    if (!bring_up(link, producer, info)) return;
+    CHECK_MSG(link.pause_supported(), "the producer's offer to pause was not heard");
+
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    bool pause = false;
+    CHECK(!producer.take_pause_request(pause));
+    link.request_pause(true);
+    // Asking again before anything changed says nothing more.
+    link.request_pause(true);
+    CHECK_MSG(wait_for([&]() { return producer.take_pause_request(pause); }),
+              "the request to pause never reached the producer");
+    CHECK(pause);
+    CHECK_MSG(!wait_for([&]() { return producer.take_pause_request(pause); }),
+              "the same request crossed twice");
+
+    // Nothing is paused until the producer says so.
+    ExternalPauseState state = ExternalPauseState::Running;
+    CHECK(!link.take_pause_state(state));
+    producer.send_pause_state(ExternalPauseState::Paused);
+    CHECK_MSG(wait_for([&]() { return link.take_pause_state(state); }),
+              "the game pausing was never heard");
+    CHECK(state == ExternalPauseState::Paused);
+
+    link.request_pause(false);
+    CHECK(wait_for([&]() { return producer.take_pause_request(pause); }));
+    CHECK(!pause);
+    producer.send_pause_state(ExternalPauseState::Running);
+    CHECK(wait_for([&]() { return link.take_pause_state(state); }));
+    CHECK(state == ExternalPauseState::Running);
+
+    // A game that cannot stop says so, and in order with what came before.
+    link.request_pause(true);
+    CHECK(wait_for([&]() { return producer.take_pause_request(pause); }));
+    producer.send_pause_state(ExternalPauseState::Refused);
+    producer.send_pause_state(ExternalPauseState::Running);
+    CHECK(wait_for([&]() { return link.take_pause_state(state); }));
+    CHECK(state == ExternalPauseState::Refused);
+    CHECK(wait_for([&]() { return link.take_pause_state(state); }));
+    CHECK(state == ExternalPauseState::Running);
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -901,5 +968,6 @@ int main() {
     test_asking_for_the_same_screen_twice_says_nothing_the_second_time();
     test_how_the_pad_is_being_held_crosses_too();
     test_the_menu_crosses_to_be_drawn_over_the_game();
+    test_the_game_pauses_only_when_it_says_so();
     return test::finish("external-link");
 }
