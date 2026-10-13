@@ -72,6 +72,9 @@ struct LayoutPickerResult {
     // The same for the Controllers screen -- a Wii U's, which is the one
     // console whose controllers are each somebody's.
     bool controllers_requested = false;
+    // And for the Wii U game's graphics packs, which are Cemu's, on the
+    // machine running it.
+    bool graphic_packs_requested = false;
     // And for this game's page in Data Management.
     bool save_sync_requested = false;
     // A save point slot to save into or to load, already confirmed where
@@ -116,6 +119,10 @@ struct LayoutPickerState {
     bool screens_swappable = false;
     bool screens_swapped = false;
     bool screens_swap_value_shown = false;
+    // Cemu can have the game's graphics packs changed from here -- see
+    // GraphicPacksScreen. The host's to say, and told to the other device,
+    // so that their lists line up row for row.
+    bool graphic_packs_available = false;
     // Which layouts are flipped for a left hand, by id: each is chosen on its
     // own, with the stylus button under the layouts, and each preview is
     // drawn the way round its own layout is.
@@ -419,6 +426,7 @@ private:
         // Back to the game, as the DS menu's Continue is.
         Continue,
         OpenControllers,
+        GraphicPacks,
         // The Pointer setting, as the DS menu's Options has it: a value
         // flipped in place rather than a page opened.
         Pointer,

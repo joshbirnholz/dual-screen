@@ -138,6 +138,51 @@ void usage() {
 
 }  // namespace
 
+namespace {
+
+// What Cemu would list for a game with the community's packs installed: one
+// that needs the game started again, one with two choices, one with none.
+std::vector<ds::ExternalGraphicPack> fake_graphic_packs() {
+    std::vector<ds::ExternalGraphicPack> packs(3);
+    packs[0].id = "graphicPacks/Fake_Resolution/rules.txt";
+    packs[0].path = "Fake Game/Graphics";
+    packs[0].name = "Graphics";
+    packs[0].enabled = true;
+    packs[0].restart_needed = true;
+    packs[0].choices.push_back({"TV Resolution", {"1280x720", "1920x1080", "2560x1440", "3840x2160"}, 1});
+    packs[0].choices.push_back({"Shadows", {"Low", "Medium", "High"}, 1});
+    packs[1].id = "graphicPacks/Fake_FPS/rules.txt";
+    packs[1].path = "Fake Game/Mods/FPS++";
+    packs[1].name = "FPS++";
+    packs[1].choices.push_back({"", {"30FPS", "60FPS"}, 0});
+    packs[2].id = "graphicPacks/Fake_Bloom/rules.txt";
+    packs[2].path = "Fake Game/Enhancements/No Bloom";
+    packs[2].name = "No Bloom";
+    return packs;
+}
+
+void change_graphic_pack(std::vector<ds::ExternalGraphicPack>& packs,
+                         const ds::ExternalGraphicPackChange& change) {
+    for (ds::ExternalGraphicPack& pack : packs) {
+        if (pack.id != change.id) continue;
+        if (change.kind == ds::ExternalGraphicPackChange::Kind::Enabled) {
+            pack.enabled = change.enabled;
+            ds::log_info("graphics pack " + pack.name + (change.enabled ? " turned on" : " turned off"));
+            return;
+        }
+        for (ds::ExternalGraphicPack::Choice& choice : pack.choices) {
+            if (choice.category != change.category) continue;
+            for (std::size_t at = 0; at < choice.presets.size(); ++at) {
+                if (choice.presets[at] == change.preset) choice.active = static_cast<int>(at);
+            }
+        }
+        ds::log_info("graphics pack " + pack.name + ": " + change.preset);
+        return;
+    }
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     std::string socket_path = ds::ExternalFrameLink::default_socket_path();
     double seconds = 10.0;
@@ -186,8 +231,11 @@ int main(int argc, char** argv) {
     info.frames_per_second = fps;
     // The overlay too, as Cemu offers it, so the menu keys go the way they do
     // with Cemu -- through a pause. Its pictures are taken and drawn nowhere:
-    // there is no window here to draw them in.
-    info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause;
+    // there is no window here to draw them in. And a few graphics packs, kept
+    // only in memory, for the quick menu's Graphics Packs page to change.
+    info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause |
+                    ds::kExternalFeatureGraphicPacks;
+    std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
 
     ds::ExternalFrameProducer producer;
     std::string error;
@@ -245,6 +293,12 @@ int main(int argc, char** argv) {
                 producer.send_pause_state(ds::ExternalPauseState::Running);
             }
         }
+        bool packs_wanted = producer.take_graphic_packs_wanted();
+        for (ds::ExternalGraphicPackChange change; producer.take_graphic_pack_change(change);) {
+            change_graphic_pack(packs, change);
+            packs_wanted = true;
+        }
+        if (packs_wanted) producer.send_graphic_packs(packs);
         if (producer.have_input() && producer.input() != last_input) {
             last_input = producer.input();
             ds::log_info("pad: " + describe(last_input));

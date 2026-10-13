@@ -1628,7 +1628,38 @@ void test_wii_u_menu_swaps_screens_when_alone() {
     }
 }
 
+// Graphics Packs, under Controller Order, where Cemu offers them: A asks for
+// the page, and nothing else on the row does anything.
+void test_wii_u_menu_offers_graphics_packs_where_cemu_does() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.graphic_packs_available = true;
+
+    LayoutPicker picker(registry);
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    picker.open(state);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    CHECK(!picker.update({UiAction::Right}, {}, kWidth, kHeight).graphic_packs_requested);
+    const LayoutPickerResult chosen = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(chosen.graphic_packs_requested);
+    CHECK(!chosen.controllers_requested && !chosen.close_requested);
+
+    state.graphic_packs_available = false;
+    LayoutPicker without(registry);
+    without.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    without.open(state);
+    for (int row = 0; row < 8; ++row) {
+        CHECK(!without.update({UiAction::Confirm}, {}, kWidth, kHeight).graphic_packs_requested);
+        without.close();
+        without.open(state);
+        without.update({UiAction::Down}, {}, kWidth, kHeight);
+    }
+}
+
 int main() {
+    test_wii_u_menu_offers_graphics_packs_where_cemu_does();
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_where_it_was_closed();
     test_the_layout_swap_keeps_the_stylus_hand();

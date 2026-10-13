@@ -985,6 +985,105 @@ void test_the_game_pauses_only_when_it_says_so() {
     CHECK(state == ExternalPauseState::NotListening);
 }
 
+void test_graphics_packs_are_listed_and_changed() {
+    {
+        ExternalFrameLink link;
+        ExternalFrameProducer producer;
+        if (!bring_up(link, producer)) return;
+        CHECK_MSG(!link.graphic_packs_supported(),
+                  "a producer that never offered graphics packs was taken to");
+    }
+
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay | kExternalFeatureGraphicPacks;
+    if (!bring_up(link, producer, info)) return;
+    CHECK_MSG(link.graphic_packs_supported(), "the producer's graphics packs were not heard of");
+
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    CHECK(!producer.take_graphic_packs_wanted());
+    link.request_graphic_packs();
+    CHECK_MSG(wait_for([&]() { return producer.take_graphic_packs_wanted(); }),
+              "the request for graphics packs never reached the producer");
+
+    std::vector<ExternalGraphicPack> sent(2);
+    sent[0].id = "graphicPacks/Game_Resolution/rules.txt";
+    sent[0].path = "Some Game/Graphics";
+    sent[0].name = "Graphics";
+    sent[0].description = "Changes the resolution.";
+    sent[0].enabled = true;
+    sent[0].restart_needed = true;
+    sent[0].choices.push_back({"TV Resolution", {"1280x720", "1920x1080", "2560x1440"}, 1});
+    sent[0].choices.push_back({"", {"Low", "High"}, -1});
+    sent[1].id = "graphicPacks/Game_FPS/rules.txt";
+    sent[1].path = "Some Game/Mods/FPS++";
+    sent[1].name = "FPS++";
+    producer.send_graphic_packs(sent);
+
+    std::vector<ExternalGraphicPack> got;
+    CHECK_MSG(wait_for([&]() { return link.take_graphic_packs(got); }),
+              "the graphics packs never arrived");
+    CHECK_EQ(got.size(), std::size_t{2});
+    if (got.size() == 2) {
+        CHECK(got[0].id == sent[0].id);
+        CHECK(got[0].path == sent[0].path);
+        CHECK(got[0].name == "Graphics");
+        CHECK(got[0].description == sent[0].description);
+        CHECK(got[0].enabled && got[0].restart_needed);
+        CHECK_EQ(got[0].choices.size(), std::size_t{2});
+        if (got[0].choices.size() == 2) {
+            CHECK(got[0].choices[0].category == "TV Resolution");
+            CHECK(got[0].choices[0].presets == sent[0].choices[0].presets);
+            CHECK_EQ(got[0].choices[0].active, 1);
+            CHECK(got[0].choices[1].category.empty());
+            CHECK_EQ(got[0].choices[1].active, -1);
+        }
+        CHECK(!got[1].enabled && !got[1].restart_needed && got[1].choices.empty());
+    }
+    // Handed over once.
+    CHECK(!link.take_graphic_packs(got));
+
+    ExternalGraphicPackChange change;
+    CHECK(!producer.take_graphic_pack_change(change));
+    ExternalGraphicPackChange turn_on;
+    turn_on.id = sent[1].id;
+    turn_on.enabled = true;
+    link.change_graphic_pack(turn_on);
+    ExternalGraphicPackChange choose;
+    choose.id = sent[0].id;
+    choose.kind = ExternalGraphicPackChange::Kind::Preset;
+    choose.category = "TV Resolution";
+    choose.preset = "2560x1440";
+    link.change_graphic_pack(choose);
+    CHECK_MSG(wait_for([&]() { return producer.take_graphic_pack_change(change); }),
+              "the change never reached the producer");
+    CHECK(change.id == sent[1].id && change.kind == ExternalGraphicPackChange::Kind::Enabled &&
+          change.enabled);
+    CHECK(wait_for([&]() { return producer.take_graphic_pack_change(change); }));
+    CHECK(change.id == sent[0].id && change.kind == ExternalGraphicPackChange::Kind::Preset &&
+          change.category == "TV Resolution" && change.preset == "2560x1440");
+
+    // A game with none at all says so too.
+    producer.send_graphic_packs({});
+    got.assign(1, ExternalGraphicPack());
+    CHECK(wait_for([&]() { return link.take_graphic_packs(got); }));
+    CHECK(got.empty());
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -1003,5 +1102,6 @@ int main() {
     test_how_the_pad_is_being_held_crosses_too();
     test_the_menu_crosses_to_be_drawn_over_the_game();
     test_the_game_pauses_only_when_it_says_so();
+    test_graphics_packs_are_listed_and_changed();
     return test::finish("external-link");
 }

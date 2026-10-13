@@ -321,7 +321,8 @@ Three things are different about a Wii U session:
 
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
-  "Playing on Cemu" notice: **Controller Order**, **Swap Screens** (played
+  "Playing on Cemu" notice: **Controller Order**, **Graphics Packs** (see
+  below), **Swap Screens** (played
   alone: the other screen from **Default Wii U screen**, remembered for that
   game until swapped back -- **F3** does the same; with a second device
   connected, the two trade screens), **Pointer**, **Reset**,
@@ -339,6 +340,18 @@ Three things are different about a Wii U session:
   It is the same menu on both devices: opened from a companion, it shows in
   Cemu's window too. **F1** or **B** on the list puts it away. Not **Tab**,
   which Cemu keeps for itself: held, it shows the GamePad's screen.
+
+- **Graphics Packs**, in the quick menu, lists the game's graphics packs as
+  Cemu's own Graphic Packs window does -- grouped as Mods, Enhancements and so
+  on -- so they can be changed with a controller in Game Mode, where that
+  window is out of reach. **A**, or **Left**/**Right**, turns a pack on or off;
+  a pack that is on shows its presets under it, and the same buttons step
+  through each. Cemu makes each change as it is chosen and keeps it, exactly
+  as its own window would. A pack that replaces textures (most resolution
+  packs) is only read as the game starts, and the page then says its change
+  will take effect once the game is reset -- which **Reset**, a step back,
+  does. It needs this project's Cemu build, and is offered only on the
+  device running Cemu; a second device is told to look at that one.
 
 - **Pointer** shows or hides the mouse pointer over Cemu's window, as it does
   over a DS game. Shown, it appears when a mouse or trackpad moves it -- even

@@ -93,6 +93,16 @@ public:
     }
     void hide_overlay() { link_.hide_overlay(); }
     bool take_menu_key() { return link_.take_menu_key(); }
+    // The game's graphics packs, which Cemu keeps -- see
+    // ExternalFrameLink::graphic_packs_supported().
+    bool graphic_packs_supported() const { return link_.graphic_packs_supported(); }
+    void request_graphic_packs() { link_.request_graphic_packs(); }
+    bool take_graphic_packs(std::vector<ExternalGraphicPack>& out) {
+        return link_.take_graphic_packs(out);
+    }
+    void change_graphic_pack(const ExternalGraphicPackChange& change) {
+        link_.change_graphic_pack(change);
+    }
     bool pause_supported() const { return link_.pause_supported(); }
     void request_pause(bool pause) { link_.request_pause(pause); }
     bool take_pause_state(ExternalPauseState& out) { return link_.take_pause_state(out); }

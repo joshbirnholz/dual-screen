@@ -127,8 +127,22 @@ Management have no layout problems at 4K.
   on title screens. That session may have been an older build; unconfirmed.
 - **Bayonetta 2: F1 reached neither window for a while after the game
   started.** Not investigated; looks like keyboard focus after boot.
-- **Keys during the notice:** while the 2.5 s "can't be opened" notice is up,
-  the overlay is up, so Cemu holds the menu keys back from the game too.
+- **Keys during the notice:** fixed, untested on the PC. The overlay message's
+  first byte is now 2 for a notice, and Cemu holds pads, keys and clicks back
+  only for a menu (1), so a game that refused to pause keeps its controls
+  under the 2.5 s notice.
+- **Graphics Packs (new, untested on the PC):** a quick-menu row under
+  Controller Order, offered when Cemu's Hello has `kExternalFeatureGraphicPacks`.
+  The page (`src/ui/graphic_packs_screen.*`) asks with `GraphicPacksWanted`,
+  Cemu answers with `GraphicPacks`, and each press sends a
+  `GraphicPackChange` that Cemu applies on its UI thread exactly as its own
+  Graphic Packs window does (`src/gui/wxgui/DualscreenGraphicPacks.cpp`, which
+  reuses that window's now-static `ReloadPack`, `SaveStateToConfig` and
+  `DeleteShadersFromRuntimeCache`), saves to `settings.xml`, and answers with
+  the whole list again. `fake_wii_u` offers three fake packs. Worth trying:
+  FPS++ preset changes while paused (patches reload under a paused game),
+  turning a resolution pack on (should say it waits for Reset), and the
+  list for a game with no packs installed.
 - **The Switch's slowdown after sleep:** attributed to discovery beacons
   blocking while Wi-Fi reconnects, moved to a thread. Confirm with the user's
   next Switch log ("slow pass ... network" lines).

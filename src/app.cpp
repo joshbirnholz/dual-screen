@@ -61,6 +61,7 @@
 #include "net/save_exchange.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
+#include "ui/graphic_packs_screen.hpp"
 #include "ui/data_management_screen.hpp"
 #include "ui/forwarder_screen.hpp"
 #include "ui/game_browser.hpp"
@@ -357,7 +358,9 @@ struct App::Impl {
         // Settings > Data Management.
         DataManagement,
         // A ROM's forwarder, from the file picker.
-        Forwarder
+        Forwarder,
+        // A Wii U game's graphics packs, from its quick menu.
+        GraphicPacks
     };
 
     AppOptions options;
@@ -478,6 +481,7 @@ struct App::Impl {
     std::string game_notice = kResumedNotice;
     // Opened from Settings, and drawn over it -- see ControllersScreen.
     ControllersScreen controllers_screen;
+    GraphicPacksScreen graphic_packs_screen;
     // The host's, drawn here while this device is its companion -- see
     // render_mirrored_controllers().
     ControllersScreen mirrored_controllers;
@@ -611,6 +615,9 @@ struct App::Impl {
     // Where the Controllers screen was opened from, which is where closing it
     // goes back to.
     State controllers_came_from = State::Playing;
+    // The same for Graphics Packs: the quick menu over the game, or the list
+    // in this window while the game plays in Cemu's.
+    State graphic_packs_came_from = State::Playing;
     // Whether the Wii U list shown in place of "Playing on Cemu" has had the
     // window's focus, as last logged -- see LayoutPickerState::embedded.
     bool embedded_menu_focused = false;
@@ -900,6 +907,13 @@ struct App::Impl {
     // handed presses, and put away again back to where it was opened from.
     void open_controllers();
     void close_controllers();
+    // The Wii U game's graphics packs, which Cemu keeps and can change while
+    // the game runs -- see GraphicPacksScreen.
+    bool graphic_packs_available() const;
+    void open_graphic_packs();
+    void close_graphic_packs();
+    void update_graphic_packs_screen(const std::vector<UiAction>& actions,
+                                     const std::vector<PointerEvent>& pointers);
     void update_controllers_screen(const std::vector<UiAction>& actions,
                                    const std::vector<PointerEvent>& pointers);
     // Save points, made and loaded from the quick menu. The slots are read
@@ -1815,6 +1829,65 @@ void App::Impl::close_controllers() {
     }
 }
 
+bool App::Impl::graphic_packs_available() const {
+    return system == SystemId::WiiU && !is_companion() && external_source &&
+           external_source->running() && external_source->graphic_packs_supported();
+}
+
+void App::Impl::open_graphic_packs() {
+    graphic_packs_came_from = state;
+    // One menu on screen at a time, as for Controllers.
+    if (picker) picker->close();
+    graphic_packs_screen.open();
+    external_source->request_graphic_packs();
+    state = State::GraphicPacks;
+    input.set_game_input_enabled(false);
+    log_info("the graphics packs page is up");
+}
+
+void App::Impl::close_graphic_packs() {
+    graphic_packs_screen.close();
+    log_info("the graphics packs page is down");
+    if (graphic_packs_came_from == State::Menu && local_game()) {
+        set_menu_open(true);
+    } else if (local_game()) {
+        state = State::Playing;
+        input.set_game_input_enabled(true);
+    } else {
+        open_launcher();
+    }
+}
+
+void App::Impl::update_graphic_packs_screen(const std::vector<UiAction>& actions,
+                                            const std::vector<PointerEvent>& pointers) {
+    // The game went while the page was up: nothing left to change.
+    if (!graphic_packs_available()) {
+        close_graphic_packs();
+        return;
+    }
+    std::vector<ExternalGraphicPack> packs;
+    if (external_source->take_graphic_packs(packs)) {
+        graphic_packs_screen.set_packs(std::move(packs));
+    }
+    const GraphicPacksScreenResult result = graphic_packs_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    if (result.change) {
+        const ExternalGraphicPackChange& change = *result.change;
+        external_source->change_graphic_pack(change);
+        std::string name = change.id;
+        for (const ExternalGraphicPack& pack : graphic_packs_screen.packs()) {
+            if (pack.id == change.id) name = pack.name;
+        }
+        if (change.kind == ExternalGraphicPackChange::Kind::Enabled) {
+            log_info("graphics packs: " + name + (change.enabled ? " turned on" : " turned off"));
+        } else {
+            log_info("graphics packs: " + name + ", " +
+                     (change.category.empty() ? std::string() : change.category + " ") + change.preset);
+        }
+    }
+    if (result.close_requested) close_graphic_packs();
+}
+
 void App::Impl::update_controllers_screen(const std::vector<UiAction>& actions,
                                           const std::vector<PointerEvent>& pointers) {
     const std::vector<KnownPad> pads = gather_pads(companion_joined());
@@ -1953,7 +2026,8 @@ bool App::Impl::shows_embedded_menu() const {
 
 bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (!local_game() || is_companion()) return false;
-    if (state != State::Settings && state != State::Controllers && state != State::DataManagement) {
+    if (state != State::Settings && state != State::Controllers && state != State::DataManagement &&
+        state != State::GraphicPacks) {
         return false;
     }
     if (std::find(actions.begin(), actions.end(), UiAction::ToggleMenu) == actions.end()) {
@@ -1961,6 +2035,7 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     }
     if (state == State::Settings) settings_screen->close();
     if (state == State::Controllers) controllers_screen.close();
+    if (state == State::GraphicPacks) graphic_packs_screen.close();
     if (state == State::DataManagement && data_screen) data_screen->close();
     data_from_settings = false;
     log_info("the menu button: every page put away, back to the game");
@@ -1975,7 +2050,8 @@ bool App::Impl::menu_over_wii_u_game() const {
     const bool page_up = state == State::Menu || state == State::Message ||
                          ((state == State::Settings || state == State::DataManagement) &&
                           settings_came_from == State::Menu) ||
-                         (state == State::Controllers && controllers_came_from == State::Menu);
+                         (state == State::Controllers && controllers_came_from == State::Menu) ||
+                         (state == State::GraphicPacks && graphic_packs_came_from == State::Menu);
     return page_up && system == SystemId::WiiU && !is_companion() && external_source &&
            external_source->running() && external_source->overlay_supported() &&
            MenuOverlay::supported();
@@ -2092,7 +2168,7 @@ void App::Impl::update_wii_u_pause() {
     }
     const bool page_over_game =
         state == State::Menu || state == State::Settings || state == State::Controllers ||
-        state == State::DataManagement || state == State::Message;
+        state == State::DataManagement || state == State::Message || state == State::GraphicPacks;
     external_source->request_pause(pauses_wii_u_for_menu() &&
                                    (menu_waiting_for_pause || page_over_game));
 }
@@ -2155,7 +2231,7 @@ void App::Impl::render_menu_overlay() {
             // darker again.
             menu_backdrop.draw(quads, w, h);
             if (state == State::Settings || state == State::DataManagement ||
-                state == State::Controllers) {
+                state == State::Controllers || state == State::GraphicPacks) {
                 quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
             }
         } else {
@@ -2336,6 +2412,10 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 // The host's own screen, the same as Settings below: only it
                 // can see every controller on both devices.
                 open_controllers();
+            } else if (result.graphic_packs_requested) {
+                // Cemu's, on this machine, like Settings: the other device is
+                // told to look over here.
+                if (graphic_packs_available()) open_graphic_packs();
             } else if (result.save_sync_requested) {
                 // The game's own page, on the device whose save it is --
                 // like Settings, whichever pad asked.
@@ -2368,6 +2448,9 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.screens_swappable = system_profile(system).solo_screens == SoloScreens::One;
     picker_state.screens_swapped = solo_screen_swapped;
     picker_state.screens_swap_value_shown = !paired();
+    picker_state.graphic_packs_available = is_companion()
+                                               ? companion_session->host_graphic_packs_available()
+                                               : graphic_packs_available();
     picker_state.left_handed_layouts = left_handed_layouts;
     picker_state.render_scale = render_scale;
     // From the console being played, on both devices: a companion is shown the
@@ -3919,7 +4002,8 @@ UiSoundView App::Impl::sound_view() const {
     const bool game_here = local_game() != nullptr || is_companion();
     view.in_game = state == State::Playing || (state == State::Companion && is_companion());
     view.menu = game_here && (state == State::Menu || state == State::Settings ||
-                              state == State::Controllers || state == State::DataManagement);
+                              state == State::Controllers || state == State::DataManagement ||
+                              state == State::GraphicPacks);
     switch (state) {
         case State::Menu:
             if (picker) picker->describe_for_sound(view);
@@ -3928,6 +4012,7 @@ UiSoundView App::Impl::sound_view() const {
             if (settings_screen) settings_screen->describe_for_sound(view);
             break;
         case State::Controllers: controllers_screen.describe_for_sound(view); break;
+        case State::GraphicPacks: graphic_packs_screen.describe_for_sound(view); break;
         case State::Message: message.describe_for_sound(view); break;
         case State::Browser:
             if (browser) browser->describe_for_sound(view);
@@ -4231,6 +4316,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
+        case State::GraphicPacks: {
+            update_graphic_packs_screen(actions, pointers);
+            break;
+        }
+
         case State::ResumeNotice: {
             if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
                                       static_cast<float>(output_height), game_notice)) {
@@ -4364,6 +4454,9 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         refresh_game_icon();
         picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
         picker->render(quads, text, button_glyphs, width, height, game_title, frames);
+    } else if (state == State::GraphicPacks) {
+        graphic_packs_screen.set_over_game(over_game);
+        graphic_packs_screen.render(quads, text, button_glyphs, width, height);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
         controllers_screen.render(quads, text, button_glyphs, width, height,
@@ -4588,11 +4681,13 @@ void App::Impl::render() {
         (state == State::Menu || state == State::Message ||
          ((state == State::Settings || state == State::DataManagement) &&
           settings_came_from == State::Menu) ||
-         (state == State::Controllers && controllers_came_from == State::Menu));
+         (state == State::Controllers && controllers_came_from == State::Menu) ||
+         (state == State::GraphicPacks && graphic_packs_came_from == State::Menu));
     if (show_menu_backdrop && system == SystemId::WiiU && wii_u_backdrop_ready()) {
         // Paused, and its picture here: as a DS or 3DS game is.
         menu_backdrop.draw(quads, width, height);
-        if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
+        if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
+            state == State::GraphicPacks) {
             quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
         }
     } else if (show_menu_backdrop && system == SystemId::WiiU &&
@@ -4617,7 +4712,8 @@ void App::Impl::render() {
         // A page opened from the menu -- Settings, Data Management,
         // Controllers -- sits a step further back from the game: the same
         // picture, 60% darker again.
-        if (state == State::Settings || state == State::DataManagement || state == State::Controllers) {
+        if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
+            state == State::GraphicPacks) {
             quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
         }
     } else {
@@ -5289,7 +5385,9 @@ int App::run(const AppOptions& options) {
             // device is told to look over here for it the same way.
             shared.settings_open = impl.state == Impl::State::Settings ||
                                    impl.state == Impl::State::Controllers ||
-                                   impl.state == Impl::State::DataManagement;
+                                   impl.state == Impl::State::DataManagement ||
+                                   impl.state == Impl::State::GraphicPacks;
+            shared.graphic_packs_available = impl.graphic_packs_available();
             shared.menu_focus = impl.picker ? impl.picker->focus() : 0;
             shared.menu_confirm =
                 impl.picker ? static_cast<uint8_t>(impl.picker->confirmation()) : 0;
@@ -5526,7 +5624,8 @@ int App::run(const AppOptions& options) {
                 const bool for_menu = impl.state == Impl::State::Menu && impl.picker;
                 const bool for_settings = impl.state == Impl::State::Settings ||
                                           impl.state == Impl::State::Controllers ||
-                                          impl.state == Impl::State::DataManagement;
+                                          impl.state == Impl::State::DataManagement ||
+                                          impl.state == Impl::State::GraphicPacks;
                 if (!for_menu && !for_settings) continue;
                 if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
@@ -5546,6 +5645,10 @@ int App::run(const AppOptions& options) {
                 if (for_settings && impl.menu_key_back_to_game({action})) continue;
                 if (impl.state == Impl::State::Controllers) {
                     impl.update_controllers_screen({action}, {});
+                    continue;
+                }
+                if (impl.state == Impl::State::GraphicPacks) {
+                    impl.update_graphic_packs_screen({action}, {});
                     continue;
                 }
                 if (impl.state == Impl::State::DataManagement) {
@@ -5855,7 +5958,7 @@ int App::run(const AppOptions& options) {
         const bool page_over_game =
             impl.state == Impl::State::Menu || impl.state == Impl::State::Settings ||
             impl.state == Impl::State::Controllers || impl.state == Impl::State::DataManagement ||
-            impl.state == Impl::State::Message;
+            impl.state == Impl::State::Message || impl.state == Impl::State::GraphicPacks;
         const bool game_running = impl.state == Impl::State::Playing ||
                                   (impl.external_source && page_over_game);
         const bool pads_to_game = impl.state == Impl::State::Playing;
