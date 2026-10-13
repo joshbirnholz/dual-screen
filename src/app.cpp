@@ -5762,11 +5762,13 @@ int App::run(const AppOptions& options) {
         // Opening the menu pauses the game, wherever it was opened from: the
         // host holds the one menu, so its own state already says so.
         //
-        // Except a game played by another program, which cannot be paused:
-        // Cemu goes on running under a menu, so its frames and sound go on
-        // being taken and passed on -- to a companion, which would otherwise
-        // freeze -- and its link read, which carries the menu's own taps and
-        // key. Only the pads are held back from it; see pads_to_game.
+        // Except a game played by another program, which this app cannot stop:
+        // a Wii U game pauses itself when asked (see update_wii_u_pause()),
+        // and with the setting off goes on running under a menu. Either way
+        // its link goes on being read -- it carries the menu's own taps and
+        // key, and the game's answer about pausing -- and whatever it sends
+        // passed on, to a companion that would otherwise freeze. Only the pads
+        // are held back from it; see pads_to_game.
         const bool page_over_game =
             impl.state == Impl::State::Menu || impl.state == Impl::State::Settings ||
             impl.state == Impl::State::Controllers || impl.state == Impl::State::DataManagement ||
@@ -5875,8 +5877,9 @@ int App::run(const AppOptions& options) {
                     impl.external_source->submit_input(combined);
                 }
             } else if (impl.external_source) {
-                // A menu is up over a game that goes on running: nothing
-                // pressed reaches it, the same as the paused case below.
+                // A menu is up over a game played by another program, paused
+                // or not: nothing pressed reaches it, the same as the paused
+                // case below.
                 impl.external_source->submit_input(DsInputState());
                 const RoutedPads routed = route_pads(impl.known_pads, impl.pad_slots);
                 for (int player = 0; player < kPadPlayers; ++player) {
