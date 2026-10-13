@@ -23,32 +23,33 @@ struct GraphicPacksScreenResult {
     std::optional<ExternalGraphicPackChange> change;
 };
 
-// What the page lists, top to bottom: a heading for each group of packs (the
-// folders Cemu's own Graphic Packs window shows them in, less the game's
-// name), each pack under it, and under a pack that is on, its presets. Only
-// the packs and presets take the cursor.
+// The left-hand list, top to bottom: a heading for each group of packs (the
+// folders Cemu's own Graphic Packs window files them in, less the game's
+// name), and each pack under it. Only the packs take the cursor.
 struct GraphicPackLine {
-    enum class Kind { Heading, Pack, Choice } kind = Kind::Heading;
+    enum class Kind { Heading, Pack } kind = Kind::Heading;
     std::string text;
     std::size_t pack = 0;
-    std::size_t choice = 0;
-    bool focusable() const { return kind != Kind::Heading; }
+    bool focusable() const { return kind == Kind::Pack; }
 };
 std::vector<GraphicPackLine> graphic_pack_lines(const std::vector<ExternalGraphicPack>& packs);
 
-// The running Wii U game's graphics packs, from the quick menu: each turned on
-// and off, and its presets chosen, with a controller -- what Cemu's Graphic
-// Packs window does, which in Game Mode is out of reach. The packs are Cemu's;
-// this only shows what Cemu last said and asks it for changes, showing each
-// as made rather than waiting to hear it back.
+// The running Wii U game's graphics packs, from the quick menu, laid out as
+// both that menu and Cemu's own Graphic Packs window are: the packs listed on
+// the left, and on the right the one highlighted there -- on or off, its
+// presets, what it says about itself. Moving between the two goes as it does
+// in the quick menu: Right or A into the pack, Left or B back to the list.
+//
+// The packs are Cemu's; this only shows what Cemu last said and asks it for
+// changes, showing each as made rather than waiting to hear it back.
 class GraphicPacksScreen {
 public:
     // Up, and waiting for Cemu's list.
     void open();
     void close() { open_ = false; }
     bool is_open() const { return open_; }
-    // Cemu's list, as it is now: the cursor stays on the pack or preset it
-    // was on.
+    // Cemu's list, as it is now: the cursor stays on the pack, and the row in
+    // it, that it was on.
     void set_packs(std::vector<ExternalGraphicPack> packs);
     // Whether a paused game is behind it, to be dimmed rather than covered.
     void set_over_game(bool over_game) { over_game_ = over_game; }
@@ -60,7 +61,12 @@ public:
                 float output_width, float output_height);
     void describe_for_sound(UiSoundView& view) const;
 
+    // Which pack is highlighted in the list, counting packs only.
     int focus() const { return focus_; }
+    // Whether the cursor is over on the right, in that pack, and on which of
+    // its rows: 0 turns it on and off, and each preset choice follows.
+    bool in_pack() const { return in_pack_; }
+    int item() const { return item_; }
     const std::vector<ExternalGraphicPack>& packs() const { return packs_; }
     // Whether a change was made to a pack that only takes effect once the
     // game starts again -- which the page then says.
@@ -70,25 +76,37 @@ private:
     struct Geometry {
         PixelRect panel;
         float scale = 1.0f;
+        float line = 0.0f;
         float view_top = 0.0f;
         float view_height = 0.0f;
-        float content_height = 0.0f;
-        // One per line, headings included.
+        float divider_x = 0.0f;
+        // The left-hand list: one rect per line, headings included, and how
+        // tall it all is against the room it has.
+        PixelRect list;
         std::vector<PixelRect> lines;
+        float content_height = 0.0f;
+        // The right-hand side: the pack's name, its rows, and under them
+        // what it says about itself.
+        PixelRect detail;
+        float title_y = 0.0f;
+        std::vector<PixelRect> items;
+        float description_y = 0.0f;
         float max_scroll() const { return std::max(0.0f, content_height - view_height); }
     };
     Geometry compute_geometry(float output_width, float output_height) const;
-    void rebuild_lines();
-    // The line the cursor is on, or null.
-    const GraphicPackLine* focused_line() const;
-    int focusable_count() const;
-    // The index in lines_ of the focusable line `focus`.
+    void rebuild_lines() { lines_ = graphic_pack_lines(packs_); }
+    int pack_count() const;
+    // The index in lines_ of the `focus`th pack, and the pack it is.
     int line_of_focus(int focus) const;
+    ExternalGraphicPack* focused_pack();
+    const ExternalGraphicPack* focused_pack() const;
+    // Rows on the right for the focused pack: on/off, then one per choice.
+    int item_count() const;
     void scroll_focus_into_view(const Geometry& geometry);
-    // Turns the focused pack on or off, or steps its focused preset
-    // `direction` places.
-    void adjust(int direction, GraphicPacksScreenResult& result);
-    std::string line_value(const GraphicPackLine& line) const;
+    // Turns the focused pack on or off, or steps its focused preset on.
+    void adjust(GraphicPacksScreenResult& result);
+    std::string item_label(int item) const;
+    std::string item_value(int item) const;
 
     bool open_ = false;
     bool waiting_ = true;
@@ -101,6 +119,8 @@ private:
     std::vector<ExternalGraphicPack> packs_;
     std::vector<GraphicPackLine> lines_;
     int focus_ = 0;
+    bool in_pack_ = false;
+    int item_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;
     std::vector<GuideHit> guide_hits_;

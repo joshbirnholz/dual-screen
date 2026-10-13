@@ -341,13 +341,15 @@ Three things are different about a Wii U session:
   Cemu's window too. **F1** or **B** on the list puts it away. Not **Tab**,
   which Cemu keeps for itself: held, it shows the GamePad's screen.
 
-- **Graphics Packs**, in the quick menu, lists the game's graphics packs as
-  Cemu's own Graphic Packs window does -- grouped as Mods, Enhancements and so
-  on -- so they can be changed with a controller in Game Mode, where that
-  window is out of reach. **A**, or **Left**/**Right**, turns a pack on or off;
-  a pack that is on shows its presets under it, and the same buttons step
-  through each. Cemu makes each change as it is chosen and keeps it, exactly
-  as its own window would. A pack that replaces textures (most resolution
+- **Graphics Packs**, in the quick menu, is Cemu's own Graphic Packs window
+  laid out as the quick menu is, so the packs can be changed with a controller
+  in Game Mode, where that window is out of reach: the game's packs down the
+  left, grouped as Mods, Enhancements and so on, and on the right the one
+  highlighted -- on or off, each of its presets, and what it says about
+  itself. **Right** or **A** goes into a pack, **Left** or **B** back to the
+  list; inside it, **A** or **Right** turns it on or off or steps a preset on.
+  Cemu makes each change as it is chosen and keeps it, exactly as its own
+  window would. A pack that replaces textures (most resolution
   packs) is only read as the game starts, and the page then says its change
   will take effect once the game is reset -- which **Reset**, a step back,
   does. It needs this project's Cemu build, and is offered only on the
