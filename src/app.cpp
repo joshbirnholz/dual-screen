@@ -383,6 +383,9 @@ struct App::Impl {
     // one the host sent. `game_icon_for` says whose it is.
     Texture game_icon;
     std::string game_icon_for;
+    // The file the game being played was started from -- a DS or 3DS ROM, or
+    // a Wii U game's -- which the icon is read out of.
+    std::string game_icon_rom;
     int game_icon_width = 0;
     int game_icon_height = 0;
     std::vector<uint8_t> game_icon_rgba;
@@ -1543,20 +1546,43 @@ void App::Impl::refresh_game_icon() {
         height = companion_session->game_icon_height();
         rgba = companion_session->game_icon_rgba();
     } else {
-        key = "here:" + game_path;
-        if (key == game_icon_for || game_path.empty() || !save_store) return;
-        // At most every two seconds while it is not found.
-        const uint64_t now_us = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now().time_since_epoch())
-                .count());
-        if (game_icon_tried_us != 0 && now_us - game_icon_tried_us < 2000000) return;
-        game_icon_tried_us = now_us;
-        SaveInfo info;
-        // Not kept as tried when not found: the store may only learn the game
-        // once it has been played a moment, and the next menu asks again.
-        if (!save_store->find_for_rom(game_path, info) || info.icon.empty() ||
-            !save_icon_rgba(info.system, info.icon, width, height, rgba)) {
+        key = "here:" + game_icon_rom;
+        if (key == game_icon_for || game_icon_rom.empty()) return;
+        // Read out of the game itself, so a game that has never been saved
+        // has its icon too -- and from the save store when the file says
+        // nothing it can read (a Wii U disc image, say).
+        bool found = false;
+        SystemId rom_system = SystemId::Ds;
+        if (system_for_rom(game_icon_rom, rom_system)) {
+            if (rom_system == SystemId::Ds) {
+                DsRomInfo info;
+                found = read_ds_rom_info(game_icon_rom, info, nullptr) && !info.icon.empty() &&
+                        save_icon_rgba(kSaveSystemDs, info.icon, width, height, rgba);
+            } else {
+                ConsoleTitleInfo info;
+                const bool read =
+                    rom_system == SystemId::ThreeDs
+                        ? read_3ds_title_info(game_icon_rom, info, nullptr)
+                    : path_extension_lower(game_icon_rom) == "wua"
+                        ? read_wii_u_archive_title_info(game_icon_rom, "", 0, info, nullptr)
+                        : read_wii_u_title_info(game_icon_rom, info, nullptr);
+                found = read && !info.icon.empty() && decode_rgba_icon(info.icon, width, height, rgba);
+            }
+        }
+        if (!found && save_store) {
+            // At most every two seconds while it is not found: the store may
+            // only learn the game once it has been played a moment.
+            const uint64_t now_us = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
+            if (game_icon_tried_us != 0 && now_us - game_icon_tried_us < 2000000) return;
+            game_icon_tried_us = now_us;
+            SaveInfo info;
+            found = save_store->find_for_rom(game_icon_rom, info) && !info.icon.empty() &&
+                    save_icon_rgba(info.system, info.icon, width, height, rgba);
+        }
+        if (!found) {
             game_icon = Texture();
             return;
         }
@@ -3366,6 +3392,11 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     if (!system_for_rom(rom_path, system)) {
         system = SystemId::Ds;
     }
+    // The game's icon, read now -- out of the file itself -- so the menu has
+    // it from the first time it opens, saved or not.
+    game_icon_rom = rom_path;
+    game_icon_tried_us = 0;
+    refresh_game_icon();
     const SystemProfile& profile = system_profile(system);
     resolved_core_path = resolve_core_path(options, settings, system);
     apply_system();
@@ -3566,7 +3597,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     host_config.device_name = settings.device_name;
     host_config.game_title = game_title;
     refresh_game_icon();
-    if (game_icon_for == "here:" + game_path) {
+    if (game_icon_for == "here:" + game_icon_rom) {
         host_config.game_icon_width = game_icon_width;
         host_config.game_icon_height = game_icon_height;
         host_config.game_icon_rgba = game_icon_rgba;
