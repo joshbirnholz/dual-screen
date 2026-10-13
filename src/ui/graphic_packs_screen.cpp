@@ -448,7 +448,8 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                   TextAlign::Center);
     } else {
         // The list. The pack whose things are showing stays marked, faintly,
-        // while the cursor is over among them -- as a quick menu section is.
+        // while the cursor is over among them -- as a quick menu section is
+        // -- and both are rounded, as every page's rows are.
         quads.set_clip(geometry.list);
         const int focused_line = line_of_focus(focus_);
         for (std::size_t index = 0; index < lines_.size() && index < geometry.lines.size(); ++index) {
@@ -462,11 +463,12 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
             const bool current = static_cast<int>(index) == focused_line;
             const bool focused = current && !in_pack_;
             if (focused) {
-                quads.draw_solid(row, theme.text);
+                draw_menu_row(quads, row, true, scale);
             } else if (current) {
                 Color faint = theme.text;
                 faint.a = kSelectedTileOpacity;
-                quads.draw_solid(row, faint);
+                quads.draw_rounded_rect(row, std::round(std::min(row.h * 0.18f, scale * 5.0f)),
+                                        faint);
             }
             // Dark on either fill, the faint one included.
             const Color& ink = current ? theme.background : theme.text;
@@ -509,7 +511,7 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
             for (int item = 0; item < static_cast<int>(geometry.items.size()); ++item) {
                 const PixelRect& row = geometry.items[static_cast<std::size_t>(item)];
                 const bool focused = in_pack_ && item == item_;
-                draw_quick_menu_row(quads, row, focused, scale);
+                draw_menu_row(quads, row, focused, scale);
                 const float pad = line * 0.8f;
                 const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
                 const std::string value = item_value(item);
