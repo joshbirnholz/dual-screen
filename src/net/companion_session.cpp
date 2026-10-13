@@ -149,8 +149,10 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_resume_notice_ = false;
     host_menu_unavailable_notice_ = false;
     host_graphic_packs_available_ = false;
-    host_options_available_ = false;
     host_amiibo_available_ = false;
+    host_producer_options_.clear();
+    host_amiibo_.clear();
+    host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
@@ -313,8 +315,10 @@ void CompanionSession::disconnect() {
     host_resume_notice_ = false;
     host_menu_unavailable_notice_ = false;
     host_graphic_packs_available_ = false;
-    host_options_available_ = false;
     host_amiibo_available_ = false;
+    host_producer_options_.clear();
+    host_amiibo_.clear();
+    host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
@@ -419,8 +423,10 @@ void CompanionSession::fail(const std::string& reason) {
     host_resume_notice_ = false;
     host_menu_unavailable_notice_ = false;
     host_graphic_packs_available_ = false;
-    host_options_available_ = false;
     host_amiibo_available_ = false;
+    host_producer_options_.clear();
+    host_amiibo_.clear();
+    host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
@@ -573,8 +579,10 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_menu_confirm_focus_ = state.menu_confirm_focus;
             host_menu_unavailable_notice_ = state.menu_unavailable_notice;
             host_graphic_packs_available_ = state.graphic_packs_available;
-            host_options_available_ = state.options_available;
             host_amiibo_available_ = state.amiibo_available;
+            host_producer_options_ = state.producer_options;
+            host_amiibo_ = state.amiibo;
+            host_amiibo_folder_ = state.amiibo_folder;
             host_max_render_scale_ = state.max_render_scale;
             host_cursor_choosable_ = state.cursor_choosable;
             host_right_stick_choosable_ = state.right_stick_choosable;
@@ -2223,7 +2231,7 @@ void CompanionSession::request_menu_focus(int focus) {
     }
     RequestMessage request;
     request.wants_menu_focus = true;
-    request.menu_focus = static_cast<uint8_t>(focus);
+    request.menu_focus = static_cast<uint16_t>(std::clamp(focus, 0, 65535));
     send_request(request);
 }
 
@@ -2234,7 +2242,7 @@ void CompanionSession::request_menu_press(int focus, MenuAction action) {
     }
     RequestMessage request;
     request.wants_menu_focus = true;
-    request.menu_focus = static_cast<uint8_t>(focus);
+    request.menu_focus = static_cast<uint16_t>(std::clamp(focus, 0, 65535));
     request.wants_menu_action = true;
     request.menu_action = action;
     send_request(request);

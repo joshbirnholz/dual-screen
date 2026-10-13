@@ -67,7 +67,6 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     const MenuSection closed_on = section_;
     const bool closed_inside = on_content_;
     const int closed_item = item_;
-    const int closed_focus = focus_;
     const bool reopening = opened_before_;
     opened_before_ = true;
     open_ = true;
@@ -78,7 +77,7 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     save_status_failed_ = false;
 
     rebuild_footer();
-    focus_ = 0;
+    content_first_ = 0;
     // The first time, the list at its top -- the way NSO's menu opens -- with
     // the layouts already showing beside it. After that, exactly where it was
     // closed: the section, and the entry inside it when the cursor was in
@@ -97,10 +96,6 @@ void LayoutPicker::open(const LayoutPickerState& state) {
         }
     } else {
         section_ = sections_.front();
-    }
-    // A Wii U's plain list, the same way: back on the row it was closed on.
-    if (reopening && closed_focus > 0 && closed_focus < footer_count()) {
-        focus_ = closed_focus;
     }
 }
 
@@ -125,40 +120,35 @@ void LayoutPicker::set_selected_layout(const std::string& layout_id) {
 }
 
 void LayoutPicker::rebuild_footer() {
-    footer_.clear();
     sections_.clear();
     options_.clear();
     if (system_ == SystemId::WiiU) {
-        // A plain list, the same shape as the main menu -- see LauncherScreen
-        // and render()'s Wii U branch. Nothing here is a value to cycle from a
-        // control, unlike everything below: a real GamePad has none of these
-        // as face-button shortcuts either, so neither does this one. See
-        // update()'s Wii U branch for the controls this deliberately ignores.
+        // The same two columns as a DS or 3DS game's, with a Wii U's own
+        // things in them: there is no layout to pick (see rebuild_tiles()),
+        // and no save states -- Cemu has none -- but there are its pages,
+        // and amiibo.
         //
-        // Continue at the top, as the DS menu has it -- except where the list
-        // is shown in place of the game (see LayoutPickerState::embedded):
-        // there is no menu to leave there, the game being one window away.
-        // Settings is the minus button, as it is on every other console's
-        // menu, rather than a row.
-        if (!state_.embedded) footer_.push_back(Footer::Continue);
-        footer_.push_back(Footer::OpenControllers);
-        if (state_.graphic_packs_available) footer_.push_back(Footer::GraphicPacks);
-        if (state_.options_available) footer_.push_back(Footer::Options);
-        if (state_.amiibo_available) footer_.push_back(Footer::ScanAmiibo);
-        // Cemu's own pointer, over the GamePad screen in its window: shown,
-        // it comes and goes with the mouse, which taps the screen with it.
-        if (state_.screens_swappable) footer_.push_back(Footer::SwapScreens);
-        if (state_.cursor_choosable) footer_.push_back(Footer::Pointer);
-        if (state_.reset_available) footer_.push_back(Footer::Reset);
-        if (state_.session_active) {
-            footer_.push_back(Footer::Disconnect);
+        // Continue at the top, except where the menu is shown in place of
+        // the game (see LayoutPickerState::embedded): there is no menu to
+        // leave there, the game being one window away. Settings is the minus
+        // button, as on every other console's menu, rather than a section.
+        if (!state_.embedded) sections_.push_back(MenuSection::Continue);
+        sections_.push_back(MenuSection::Options);
+        if (state_.amiibo_available) sections_.push_back(MenuSection::Amiibo);
+        if (state_.graphic_packs_available) sections_.push_back(MenuSection::GraphicPacks);
+        sections_.push_back(MenuSection::ControllerOrder);
+        if (state_.session_active) sections_.push_back(MenuSection::Disconnect);
+        if (state_.reset_available) sections_.push_back(MenuSection::Reset);
+        sections_.push_back(MenuSection::Quit);
+
+        // This game's Options: its screen, kept for it, the pointer, which
+        // is this device's own as on a DS menu, and then whatever Cemu offers.
+        if (state_.screens_swappable) options_.push_back(OptionRow{Option::SwapScreens});
+        if (state_.cursor_choosable) options_.push_back(OptionRow{Option::Cursor});
+        for (std::size_t index = 0; index < state_.producer_options.size(); ++index) {
+            options_.push_back(OptionRow{Option::Producer, static_cast<int>(index)});
         }
-        footer_.push_back(Footer::Quit);
-        if (focus_ >= footer_count()) {
-            focus_ = std::max(0, footer_count() - 1);
-        }
-        return;
-    }
+    } else {
 
     // The sections, in the order the player asked for them: back to the game,
     // what the game looks like, then saving and loading, then everything
@@ -179,32 +169,35 @@ void LayoutPicker::rebuild_footer() {
     // at one fixed resolution, or no game at all. A companion gets it like
     // every other entry here -- one menu, reachable from either device -- and
     // asks the host to make the change.
-    if (state_.max_render_scale > 1) options_.push_back(Option::RenderScale);
+    if (state_.max_render_scale > 1) options_.push_back(OptionRow{Option::RenderScale});
     // Which device makes the sound is only a question when there are two of
     // them, so the entry appears with the session and not before.
-    if (state_.session_active) options_.push_back(Option::Sound);
+    if (state_.session_active) options_.push_back(OptionRow{Option::Sound});
     // The pointer is this device's own, and it is the one thing worth reaching
     // quickly while playing: a trackpad you cannot see is a trackpad you cannot
     // aim.
-    if (state_.cursor_choosable) options_.push_back(Option::Cursor);
+    if (state_.cursor_choosable) options_.push_back(OptionRow{Option::Cursor});
     // What the right stick does, where the console has one of its own to have
     // an opinion about -- a 3DS.
-    if (state_.right_stick_choosable) options_.push_back(Option::RightStick);
+    if (state_.right_stick_choosable) options_.push_back(OptionRow{Option::RightStick});
     // What L3 does, where the console has a microphone for it to be.
-    if (state_.left_stick_choosable) options_.push_back(Option::LeftStick);
+    if (state_.left_stick_choosable) options_.push_back(OptionRow{Option::LeftStick});
     // A DS's Rumble Pak, where the core can give it one.
-    if (state_.rumble_choosable) options_.push_back(Option::Rumble);
+    if (state_.rumble_choosable) options_.push_back(OptionRow{Option::Rumble});
     // The gap is one choice for every layout that has one -- Vertical Screens
     // and the two focus layouts; see LayoutComposition::gap_toggleable -- so
     // it is offered whichever layout is in use, and waits for those.
-    options_.push_back(Option::ScreenGap);
+    options_.push_back(OptionRow{Option::ScreenGap});
     // R3 still does this without opening anything; this is where it is seen.
-    if (state_.smoothing_available) options_.push_back(Option::Smoothing);
+    if (state_.smoothing_available) options_.push_back(OptionRow{Option::Smoothing});
     // Where the game starts next time, which is about the game rather than
     // about how it looks -- so last. Only where save states are.
-    if (state_.resume_choosable) options_.push_back(Option::Resume);
+    if (state_.resume_choosable) options_.push_back(OptionRow{Option::Resume});
+
+    }
 
     // The cursor can be sitting on something that just went away.
+    if (sections_.empty()) return;
     if (!has_section(section_)) {
         section_ = sections_.front();
         on_content_ = false;
@@ -225,8 +218,12 @@ int LayoutPicker::content_count(MenuSection section) const {
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint: return kSavePointSlots;
         case MenuSection::Options: return static_cast<int>(options_.size());
+        // Each amiibo, then a row to look in another folder.
+        case MenuSection::Amiibo: return static_cast<int>(state_.amiibo.size()) + 1;
         case MenuSection::Continue:
         case MenuSection::SaveSync:
+        case MenuSection::ControllerOrder:
+        case MenuSection::GraphicPacks:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: break;
@@ -262,24 +259,8 @@ bool LayoutPicker::swap_button_usable() const {
     return tile_count() > 0 && registry_->resolve(selected_layout_id_).swaps_screens;
 }
 
-std::string LayoutPicker::footer_label(Footer kind) const {
-    switch (kind) {
-        case Footer::Continue: return "Continue";
-        case Footer::OpenControllers: return "Controller Order";
-        case Footer::GraphicPacks: return "Graphics Packs";
-        case Footer::Options: return "Options";
-        case Footer::ScanAmiibo: return "Scan amiibo";
-        case Footer::Pointer: return "Pointer";
-        case Footer::SwapScreens: return "Swap Screens";
-        case Footer::Reset: return "Reset";
-        case Footer::Disconnect: return "Disconnect";
-        case Footer::Quit: return "Quit";
-    }
-    return std::string();
-}
-
-std::string LayoutPicker::option_name(Option option) const {
-    switch (option) {
+std::string LayoutPicker::option_name(const OptionRow& row) const {
+    switch (row.option) {
         case Option::RenderScale: return "Render Scale";
         case Option::Sound: return "Sound";
         case Option::Cursor: return "Pointer";
@@ -289,12 +270,18 @@ std::string LayoutPicker::option_name(Option option) const {
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
         case Option::Resume: return "Resume from Save State";
+        case Option::SwapScreens: return "Swap Screens";
+        case Option::Producer:
+            if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
+                return state_.producer_options[static_cast<std::size_t>(row.index)].first;
+            }
+            return std::string();
     }
     return std::string();
 }
 
-std::string LayoutPicker::option_value(Option option) const {
-    switch (option) {
+std::string LayoutPicker::option_value(const OptionRow& row) const {
+    switch (row.option) {
         case Option::RenderScale: return std::to_string(state_.render_scale) + "x";
         case Option::Sound:
             switch (state_.audio_target) {
@@ -311,33 +298,17 @@ std::string LayoutPicker::option_value(Option option) const {
         case Option::ScreenGap: return state_.screen_gap ? "On" : "Off";
         case Option::Smoothing: return state_.bilinear_filtering ? "On" : "Off";
         case Option::Resume: return state_.resume_from_save_state ? "On" : "Off";
+        // Alone, whether this game shows the other screen from the setting's;
+        // with a second device, nothing to say -- it swaps them, there and then.
+        case Option::SwapScreens:
+            return state_.screens_swap_value_shown ? (state_.screens_swapped ? "On" : "Off") : "";
+        case Option::Producer:
+            if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
+                return state_.producer_options[static_cast<std::size_t>(row.index)].second;
+            }
+            return std::string();
     }
     return std::string();
-}
-
-LayoutPicker::Geometry LayoutPicker::compute_geometry(float output_width, float output_height) const {
-    // A plain vertical list, laid out the same way LauncherScreen lays out the
-    // main menu's rows -- see render()'s Wii U branch, which draws these with
-    // draw_menu_row().
-    // On the same frame as every other page (see ui/page_frame.hpp), with
-    // rows the size of a DS game's menu's.
-    Geometry geometry;
-    const PageFrame frame = page_frame(output_width, output_height);
-    geometry.scale = frame.scale;
-    geometry.panel = frame.panel;
-    const float line = frame.line;
-    const float row_height = line * 2.2f;
-    const float row_gap = line * 0.25f;
-    const float top = frame.content_top;
-    for (std::size_t index = 0; index < footer_.size(); ++index) {
-        geometry.footer.push_back(PixelRect{
-            geometry.panel.x,
-            top + static_cast<float>(index) * (row_height + row_gap),
-            geometry.panel.w,
-            row_height,
-        });
-    }
-    return geometry;
 }
 
 namespace {
@@ -353,6 +324,9 @@ const char* section_label(MenuSection section) {
         case MenuSection::Disconnect: return "Disconnect";
         case MenuSection::Reset: return "Reset Game";
         case MenuSection::Quit: return "Quit";
+        case MenuSection::ControllerOrder: return "Controller Order";
+        case MenuSection::GraphicPacks: return "Graphics Packs";
+        case MenuSection::Amiibo: return "Scan amiibo";
     }
     return "";
 }
@@ -441,16 +415,26 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             }
             break;
         }
-        case MenuSection::Options: {
+        case MenuSection::Options:
+        case MenuSection::Amiibo: {
+            // A list, as tall as the sections' rows. Scan amiibo's can run
+            // past the bottom, so it starts from the first of it in view.
             const float option_height = line * 2.2f;
+            const bool amiibo = section_ == MenuSection::Amiibo;
+            const int first = amiibo ? content_first_ : 0;
+            // Short of the right-hand edge by a scroll bar, where there can be one.
+            const float width = amiibo ? area.w - scroll_bar_width(scale) - line * 0.5f : area.w;
             for (int index = 0; index < count; ++index) {
-                geometry.items.push_back(PixelRect{area.x, area.y + index * (option_height + line * 0.25f),
-                                                   area.w, option_height});
+                geometry.items.push_back(
+                    PixelRect{area.x, area.y + (index - first) * (option_height + line * 0.25f), width,
+                              option_height});
             }
             break;
         }
         case MenuSection::Continue:
         case MenuSection::SaveSync:
+        case MenuSection::ControllerOrder:
+        case MenuSection::GraphicPacks:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: break;
@@ -508,9 +492,26 @@ void LayoutPicker::set_session_active(bool active) {
     rebuild_footer();
 }
 
-int LayoutPicker::focus() const {
-    if (system_ == SystemId::WiiU) return focus_;
-    return focus_of(section_, on_content_ ? item_ : -1);
+int LayoutPicker::focus() const { return focus_of(section_, on_content_ ? item_ : -1); }
+
+int LayoutPicker::content_rows_fitting(const MenuGeometry& geometry) const {
+    const float line = TextRenderer::line_height(geometry.scale);
+    const float step = line * 2.2f + line * 0.25f;
+    return std::max(1, static_cast<int>((geometry.content.h + line * 0.25f) / step));
+}
+
+void LayoutPicker::keep_item_in_view(float output_width, float output_height) {
+    if (section_ != MenuSection::Amiibo) {
+        content_first_ = 0;
+        return;
+    }
+    const int rows = content_rows_fitting(compute_menu_geometry(output_width, output_height));
+    const int count = content_count(section_);
+    if (on_content_) {
+        if (item_ < content_first_) content_first_ = item_;
+        if (item_ >= content_first_ + rows) content_first_ = item_ - rows + 1;
+    }
+    content_first_ = std::clamp(content_first_, 0, std::max(0, count - rows));
 }
 
 void LayoutPicker::set_focus(int focus) {
@@ -520,16 +521,19 @@ void LayoutPicker::set_focus(int focus) {
         confirm_cursor_.set_focus(focus - kPopupFocusBase);
         return;
     }
-    if (system_ == SystemId::WiiU) {
-        if (focus >= 0 && focus < footer_count()) {
-            focus_ = focus;
-        }
-        return;
-    }
     if (focus < 0) return;
-    const auto section =
-        focus == kSaveSyncFocus ? MenuSection::SaveSync : static_cast<MenuSection>(focus / kSectionStride);
-    const int item = focus == kSaveSyncFocus ? -1 : focus % kSectionStride - 1;
+    MenuSection section = MenuSection::Continue;
+    int item = -1;
+    if (focus >= kWideFocusBase) {
+        section = static_cast<MenuSection>(static_cast<int>(MenuSection::ControllerOrder) +
+                                           (focus - kWideFocusBase) / kWideStride);
+        item = (focus - kWideFocusBase) % kWideStride - 1;
+    } else if (focus == kSaveSyncFocus) {
+        section = MenuSection::SaveSync;
+    } else {
+        section = static_cast<MenuSection>(focus / kSectionStride);
+        item = focus % kSectionStride - 1;
+    }
     if (!has_section(section) || item >= content_count(section)) return;
     section_ = section;
     on_content_ = item >= 0;
@@ -550,19 +554,13 @@ int LayoutPicker::entry_at(float x, float y, float output_width, float output_he
         const int button = popup_button_at(confirm_popup(output_width, output_height), x, y);
         return button >= 0 ? kPopupFocusBase + button : -1;
     }
-    if (system_ == SystemId::WiiU) {
-        const Geometry geometry = compute_geometry(output_width, output_height);
-        for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
-            if (geometry.footer[index].contains(x, y)) return static_cast<int>(index);
-        }
-        return -1;
-    }
     const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
     for (std::size_t index = 0; index < geometry.sections.size(); ++index) {
         if (geometry.sections[index].contains(x, y)) return focus_of(sections_[index]);
     }
     for (std::size_t index = 0; index < geometry.items.size(); ++index) {
-        if (geometry.items[index].contains(x, y)) {
+        // A long list's rows past the area are not on screen to be tapped.
+        if (geometry.items[index].contains(x, y) && geometry.content.contains(x, y)) {
             return focus_of(section_, static_cast<int>(index));
         }
     }
@@ -618,62 +616,22 @@ PopupGeometry LayoutPicker::confirm_popup(float output_width, float output_heigh
                           confirm_buttons());
 }
 
-void LayoutPicker::move_focus(int delta_y) {
-    const int next = focus_ + delta_y;
-    if (next >= 0 && next < footer_count()) {
-        focus_ = next;
-    }
-}
-
-bool LayoutPicker::activate_focus(LayoutPickerResult& result) {
-    if (focus_ < 0 || focus_ >= footer_count()) {
-        return false;
-    }
-    switch (footer_[static_cast<std::size_t>(focus_)]) {
-        case Footer::Continue:
-            if (!state_.embedded) result.close_requested = true;
-            return true;
-        case Footer::OpenControllers:
-            result.controllers_requested = true;
-            return true;
-        case Footer::GraphicPacks:
-            result.graphic_packs_requested = true;
-            return true;
-        case Footer::Options:
-            result.options_requested = true;
-            return true;
-        case Footer::ScanAmiibo:
-            result.amiibo_requested = true;
-            return true;
-        case Footer::Pointer:
-            result.cursor_mode_changed = true;
-            return true;
-        case Footer::SwapScreens:
-            result.screens_swap_toggled = true;
-            return true;
-        case Footer::Reset:
-            if (state_.reset_available) ask(MenuConfirm::Reset);
-            return true;
-        case Footer::Disconnect:
-            if (state_.session_active) result.disconnect_requested = true;
-            return true;
-        case Footer::Quit:
-            ask(MenuConfirm::Quit);
-            return true;
-    }
-    return false;
-}
-
 void LayoutPicker::activate_section(LayoutPickerResult& result) {
     switch (section_) {
         case MenuSection::Layout:
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint:
         case MenuSection::Options:
+        case MenuSection::Amiibo:
             if (content_count(section_) > 0) {
                 on_content_ = true;
                 item_ = 0;
             }
+            break;
+        // Pages of the device running Cemu, which the caller puts up.
+        case MenuSection::ControllerOrder: result.controllers_requested = true; break;
+        case MenuSection::GraphicPacks:
+            if (state_.graphic_packs_available) result.graphic_packs_requested = true;
             break;
         // Back to the game, the same as B on the list.
         case MenuSection::Continue:
@@ -734,7 +692,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             // Each is cycled by the caller, which tells the menu what it
             // landed on -- so the menu never shows a value that was not
             // actually applied, and on a companion the host decides.
-            switch (options_[static_cast<std::size_t>(item_)]) {
+            switch (options_[static_cast<std::size_t>(item_)].option) {
                 case Option::RenderScale: result.render_scale_changed = true; break;
                 case Option::Sound: result.audio_target_changed = true; break;
                 case Option::Cursor: result.cursor_mode_changed = true; break;
@@ -744,10 +702,23 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::ScreenGap: result.screen_gap_toggled = true; break;
                 case Option::Smoothing: result.filtering_toggled = true; break;
                 case Option::Resume: result.resume_toggled = true; break;
+                case Option::SwapScreens: result.screens_swap_toggled = true; break;
+                case Option::Producer:
+                    result.producer_option = options_[static_cast<std::size_t>(item_)].index;
+                    break;
+            }
+            return;
+        case MenuSection::Amiibo:
+            if (item_ < static_cast<int>(state_.amiibo.size())) {
+                result.amiibo_chosen = item_;
+            } else {
+                result.amiibo_folder_requested = true;
             }
             return;
         case MenuSection::Continue:
         case MenuSection::SaveSync:
+        case MenuSection::ControllerOrder:
+        case MenuSection::GraphicPacks:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
         case MenuSection::Quit: return;
@@ -848,12 +819,16 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         case UiAction::Quit: result.quit_requested = true; break;
         // The face buttons that used to be these entries still are them,
         // for hands that remember where they were.
-        case UiAction::MenuQuit: ask(MenuConfirm::Quit); break;
+        // Not on a Wii U's: a real GamePad has none of these as face-button
+        // shortcuts either, and the game behind it reads every button.
+        case UiAction::MenuQuit:
+            if (system_ != SystemId::WiiU) ask(MenuConfirm::Quit);
+            break;
         case UiAction::MenuReset:
-            if (state_.reset_available) ask(MenuConfirm::Reset);
+            if (state_.reset_available && system_ != SystemId::WiiU) ask(MenuConfirm::Reset);
             break;
         case UiAction::MenuDisconnect:
-            if (state_.session_active) result.disconnect_requested = true;
+            if (state_.session_active && system_ != SystemId::WiiU) result.disconnect_requested = true;
             break;
         // Not a value this menu holds: the caller puts the screen up and this
         // one gets out of the way.
@@ -932,51 +907,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         }
     }
 
-    if (system_ == SystemId::WiiU) {
-        const Geometry geometry = compute_geometry(output_width, output_height);
-        for (const UiAction action : pressed) {
-            switch (action) {
-                case UiAction::Up: move_focus(-1); break;
-                case UiAction::Down: move_focus(1); break;
-                case UiAction::Confirm: activate_focus(result); break;
-                // Left and Right flip a value where the row holds one, as
-                // they do in the DS menu's Options.
-                case UiAction::Left:
-                case UiAction::Right:
-                    if (focus_ >= 0 && focus_ < footer_count() &&
-                        footer_[static_cast<std::size_t>(focus_)] == Footer::Pointer) {
-                        result.cursor_mode_changed = true;
-                    }
-                    if (focus_ >= 0 && focus_ < footer_count() &&
-                        footer_[static_cast<std::size_t>(focus_)] == Footer::SwapScreens) {
-                        result.screens_swap_toggled = true;
-                    }
-                    break;
-                // Nothing to close where the menu is the screen itself.
-                case UiAction::Cancel:
-                case UiAction::ToggleMenu:
-                    if (!state_.embedded) result.close_requested = true;
-                    break;
-                case UiAction::Quit: result.quit_requested = true; break;
-                // Minus, as on every console's menu.
-                case UiAction::MenuSettings: result.settings_requested = true; break;
-                // Everything else is in the list, reached by A; a controller
-                // that sends one of the DS menu's shortcuts anyway (a shared
-                // keybinding, a macro) should not reach past it.
-                default: break;
-            }
-        }
-        for (const PointerEvent& pointer : pointers) {
-            if (!pointer.released) continue;
-            for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
-                // A first tap highlights; a second on the same row chooses.
-                if (tapped(pointer, geometry.footer[index]) &&
-                    tap_chooses(focus_, static_cast<int>(index))) {
-                    activate_focus(result);
-                }
-            }
-        }
-    } else {
+    {
         for (const UiAction action : pressed) {
             handle_menu_action(action, result);
             if (confirming()) break;
@@ -997,7 +928,11 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 hit = true;
             }
             for (std::size_t index = 0; index < geometry.items.size() && !hit; ++index) {
-                if (!tapped(pointer, geometry.items[index])) continue;
+                // A long list's rows past the area are not on screen to tap.
+                if (!tapped(pointer, geometry.items[index]) ||
+                    !geometry.content.contains(pointer.x, pointer.y)) {
+                    continue;
+                }
                 const bool highlighted = on_content_ && item_ == static_cast<int>(index);
                 on_content_ = true;
                 item_ = static_cast<int>(index);
@@ -1008,6 +943,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 hit = true;
             }
         }
+        keep_item_in_view(output_width, output_height);
     }
 
     if (confirming()) {
@@ -1301,6 +1237,46 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     }
 }
 
+void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
+                                 const MenuGeometry& geometry) {
+    const UiTheme& theme = ui_theme();
+    const float scale = geometry.scale;
+    const float line = TextRenderer::line_height(scale);
+    const float row_scale = scale * 1.1f;
+    // Rows past the bottom are scrolled to, not drawn over the prompts.
+    quads.set_clip(geometry.content);
+    const int count = static_cast<int>(geometry.items.size());
+    for (int index = 0; index < count; ++index) {
+        const PixelRect& row = geometry.items[static_cast<std::size_t>(index)];
+        const bool focused = on_content_ && index == item_;
+        draw_quick_menu_row(quads, row, focused, scale);
+        const bool folder_row = index >= static_cast<int>(state_.amiibo.size());
+        const std::string label =
+            folder_row ? std::string("Choose a Folder...") : state_.amiibo[static_cast<std::size_t>(index)];
+        const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
+        text.draw(quads, TextRenderer::elide_right(label, row.w - line * 1.6f, row_scale),
+                  row.x + line * 0.8f, baseline, row_scale,
+                  folder_row && !focused ? theme.text_dim : menu_row_text(focused));
+    }
+    quads.clear_clip();
+    // A word under the folder row when it is the only one: why there is
+    // nothing else, and where it looked.
+    if (state_.amiibo.empty() && count > 0) {
+        const PixelRect& row = geometry.items.back();
+        const std::string why = state_.amiibo_folder.empty()
+                                    ? "Choose the folder your amiibo are kept in."
+                                    : "No amiibo in " + state_.amiibo_folder + ".";
+        text.draw_wrapped(quads, why, row.x, row.y + row.h + line * 0.6f, row.w, scale * 0.9f,
+                          theme.text_dim);
+    }
+    const int rows = content_rows_fitting(geometry);
+    if (count > rows) {
+        const float span = static_cast<float>(count);
+        draw_scroll_bar(quads, geometry.content, static_cast<float>(content_first_) / span,
+                        static_cast<float>(rows) / span, line, scale);
+    }
+}
+
 namespace {
 
 // How wide draw_battery() is at `scale`, so the heading can leave it room.
@@ -1361,7 +1337,6 @@ void LayoutPicker::render(QuadRenderer& quads,
     }
 
     const float scale = UiTheme::base_scale(output_height);
-    const float line = TextRenderer::line_height(scale);
     const bool wii_u = system_ == SystemId::WiiU;
 
     // The game the menu was opened over, where the heading used to say what
@@ -1389,37 +1364,7 @@ void LayoutPicker::render(QuadRenderer& quads,
     }
 
     std::vector<GuidePrompt> guide;
-    if (wii_u) {
-        // A plain list, drawn the same way LauncherScreen draws the main
-        // menu's rows.
-        const Geometry geometry = compute_geometry(output_width, output_height);
-        for (std::size_t index = 0; index < geometry.footer.size(); ++index) {
-            const PixelRect& row = geometry.footer[index];
-            const bool focused = (static_cast<int>(index) == focus_);
-            draw_quick_menu_row(quads, row, focused, scale);
-
-            const float pad = line * 0.7f;
-            text.draw(quads, footer_label(footer_[index]), row.x + pad,
-                      page_row_text_y(row, scale * 1.1f), scale * 1.1f, menu_row_text(focused));
-            if (footer_[index] == Footer::SwapScreens && state_.screens_swap_value_shown) {
-                text.draw(quads, state_.screens_swapped ? "On" : "Off", row.x + row.w - pad,
-                          page_row_text_y(row, scale * 1.1f), scale * 1.1f,
-                          focused ? ui_theme().background : ui_theme().text_dim, TextAlign::Right);
-            }
-            if (footer_[index] == Footer::Pointer) {
-                text.draw(quads, to_string(state_.cursor_mode), row.x + row.w - pad,
-                          page_row_text_y(row, scale * 1.1f), scale * 1.1f,
-                          focused ? ui_theme().background : ui_theme().text_dim, TextAlign::Right);
-            }
-        }
-        // Everything else this menu can do lives in the list above, reached
-        // by A; Settings is minus, leftmost, as on the DS menu.
-        guide.push_back({ButtonGlyph::Minus, "Settings"});
-        if (!state_.embedded) {
-            guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
-        }
-        guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
-    } else {
+    {
         const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
         render_sections(quads, text, geometry);
         switch (section_) {
@@ -1430,10 +1375,13 @@ void LayoutPicker::render(QuadRenderer& quads,
             case MenuSection::CreateSavePoint:
             case MenuSection::LoadSavePoint: render_slots(quads, text, geometry); break;
             case MenuSection::Options: render_options(quads, text, geometry); break;
+            case MenuSection::Amiibo: render_amiibo(quads, text, geometry); break;
             // Nothing to choose between, so nothing on the right: these are
             // only things to pick.
             case MenuSection::Continue:
             case MenuSection::SaveSync:
+            case MenuSection::ControllerOrder:
+            case MenuSection::GraphicPacks:
             case MenuSection::Disconnect:
             case MenuSection::Reset:
             case MenuSection::Quit: break;
@@ -1444,8 +1392,12 @@ void LayoutPicker::render(QuadRenderer& quads,
         // Everything else the face buttons used to do is in the list now.
         guide.push_back({ButtonGlyph::Minus, "Settings"});
         // Back either way: off the right-hand side, or out of the menu. One
-        // word for B wherever the cursor is, rather than one that changes.
-        guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+        // word for B wherever the cursor is, rather than one that changes --
+        // and none on the list shown in place of a Wii U game, which B does
+        // not leave.
+        if (!state_.embedded || on_content_) {
+            guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+        }
         // A tile is tapped directly, so this names a button nobody has.
         guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
     }
@@ -1472,7 +1424,6 @@ void LayoutPicker::render(QuadRenderer& quads,
 }
 
 void LayoutPicker::describe_for_sound(UiSoundView& view) const {
-    mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.focus, static_cast<uint64_t>(section_));
     mix_sound_state(view.focus, on_content_ ? 1u : 0u);
     mix_sound_state(view.focus, static_cast<uint64_t>(item_));
@@ -1494,6 +1445,8 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, state_.rumble_pak ? 1u : 0u);
     mix_sound_state(view.rest, state_.resume_from_save_state ? 1u : 0u);
     mix_sound_state(view.rest, save_status_);
+    mix_sound_state(view.rest, state_.screens_swapped ? 1u : 0u);
+    for (const auto& option : state_.producer_options) mix_sound_state(view.rest, option.second);
     for (const SavePointInfo& slot : save_slots_) {
         mix_sound_state(view.rest, static_cast<uint64_t>(slot.exists ? slot.saved_at : -1));
     }

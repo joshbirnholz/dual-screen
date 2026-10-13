@@ -234,11 +234,10 @@ void test_smoothing_is_hidden_where_the_console_owns_it() {
     CHECK(!wii_u.smoothing_available);
     CHECK_EQ(taps_that_toggle_smoothing(registry, wii_u), 0);
 
-    // Reset on a Wii U's list: Continue, Controller Order, Pointer, Reset.
+    // Reset on a Wii U's menu.
     LayoutPicker list(registry);
     list.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    list.open(wii_u);
-    for (int step = 0; step < 3; ++step) list.update({UiAction::Down}, {}, kWidth, kHeight);
+    open_on(list, wii_u, MenuSection::Reset);
     const LayoutPickerResult asked = list.update({UiAction::Confirm}, {}, kWidth, kHeight);
     CHECK_MSG(!asked.reset_requested && list.awaiting_confirmation(),
               "Reset on a Wii U's list was not asked about first");
@@ -944,98 +943,87 @@ void test_the_sections_that_end_something() {
     CHECK(!across.on_content());
 }
 
-// A Wii U's quick menu is a plain list -- Continue, Controllers, Disconnect
-// (only with a companion attached), Quit -- with Settings on minus as on every
-// console's menu, and nothing else: no layout tiles (see
-// test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape), no
-// audio, hands, pointer, right-stick or render-scale buttons, and no
-// face-button shortcuts standing in for any of them. Which screen is shown
-// was decided once, at connect; everything else here now lives in Settings.
-void test_wii_u_menu_is_a_plain_list() {
+// Opens a Wii U's menu with what the device running Cemu would offer.
+LayoutPicker& open_wii_u(LayoutPicker& picker, const LayoutPickerState& state) {
+    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
+    picker.open(state);
+    return picker;
+}
+
+// The sections down the left of a Wii U's menu, top to bottom, as the cursor
+// finds them.
+std::vector<MenuSection> wii_u_sections(const LayoutRegistry& registry, const LayoutPickerState& state) {
+    LayoutPicker picker(registry);
+    open_wii_u(picker, state);
+    std::vector<MenuSection> found{picker.section()};
+    for (int step = 0; step < 12; ++step) {
+        picker.set_repeat_source([](UiAction) { return true; });  // stop at the end
+        picker.update({UiAction::Down}, {}, kWidth, kHeight);
+        if (picker.section() == found.back()) break;
+        found.push_back(picker.section());
+    }
+    return found;
+}
+
+// A Wii U's quick menu is laid out as a DS or 3DS game's is: sections down
+// the left -- Continue, Options, Scan amiibo and Graphics Packs where Cemu
+// offers them, Controller Order, Disconnect with a second device, Reset Game
+// and Quit -- and whichever is highlighted showing its things on the right.
+// No layouts and no save states: Cemu owns which screen is shown, and has
+// none. Settings is minus, as on every console's menu.
+void test_wii_u_menu_has_its_own_sections() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
-    // A device with no pointer: the one row that holds a value is checked on
-    // its own, below.
-    state.cursor_choosable = false;
-
-    for (const bool session_active : {false, true}) {
-        state.session_active = session_active;
-
-        int controllers = 0, closed = 0, settings = 0, disconnect = 0, quit = 0;
-        int anything_else = 0;
-        for (float y = 4.0f; y < kHeight; y += 8.0f) {
-            for (float x = 4.0f; x < kWidth; x += 8.0f) {
-                LayoutPicker picker(registry);
-                picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-                picker.open(state);
-                const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
-                if (result.close_requested) ++closed;
-                if (result.controllers_requested) ++controllers;
-                if (result.settings_requested) ++settings;
-                if (result.disconnect_requested) ++disconnect;
-                if (picker.awaiting_confirmation()) ++quit;
-                if (result.selection_changed || result.audio_target_changed ||
-                    result.handedness_changed || result.cursor_mode_changed ||
-                    result.render_scale_changed || result.right_stick_mode_changed ||
-                    result.screen_gap_toggled || result.filtering_toggled ||
-                    result.reset_requested) {
-                    ++anything_else;
-                }
-            }
-        }
-        CHECK_MSG(controllers > 0, "no tap reached Controllers on a Wii U's menu");
-        CHECK_MSG(closed > 0, "no tap reached Continue on a Wii U's menu");
-        CHECK_MSG(settings == 0, "a row of a Wii U's menu still opens Settings; minus does");
-        CHECK_MSG(quit > 0, "no tap reached Quit on a Wii U's menu");
-        CHECK_MSG(session_active == (disconnect > 0),
-                  "Disconnect did not follow whether a companion is attached");
-        CHECK_MSG(anything_else == 0,
-                  "a Wii U's menu still offered something outside its plain list");
-    }
-
-    // The shortcuts every other console's menu answers to are not offered
-    // here either -- see update()'s Wii U branch -- so a press that arrives
-    // anyway (a shared keybinding, a macro) does nothing rather than reaching
-    // past the list.
+    state.reset_available = true;
+    CHECK(wii_u_sections(registry, state) ==
+          std::vector<MenuSection>({MenuSection::Continue, MenuSection::Options,
+                                    MenuSection::ControllerOrder, MenuSection::Reset,
+                                    MenuSection::Quit}));
+    state.amiibo_available = true;
+    state.graphic_packs_available = true;
     state.session_active = true;
-    LayoutPicker shortcuts(registry);
-    shortcuts.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    shortcuts.open(state);
-    for (const UiAction action : {UiAction::MenuQuit, UiAction::MenuDisconnect}) {
-        const LayoutPickerResult result = shortcuts.update({action}, {}, kWidth, kHeight);
-        CHECK_MSG(!result.settings_requested && !result.disconnect_requested &&
-                      !shortcuts.awaiting_confirmation(),
-                  "a face-button shortcut still worked on a Wii U's plain-list menu");
-    }
-    // Except minus, which is Settings on every console's menu.
-    CHECK(shortcuts.update({UiAction::MenuSettings}, {}, kWidth, kHeight).settings_requested);
+    CHECK(wii_u_sections(registry, state) ==
+          std::vector<MenuSection>({MenuSection::Continue, MenuSection::Options, MenuSection::Amiibo,
+                                    MenuSection::GraphicPacks, MenuSection::ControllerOrder,
+                                    MenuSection::Disconnect, MenuSection::Reset, MenuSection::Quit}));
 
-    // And the reverse: a DS keeps every one of its own buttons and never
-    // shrinks to the Wii U's plain list.
-    int sound = 0;
-    for (float y = 4.0f; y < kHeight; y += 8.0f) {
-        for (float x = 4.0f; x < kWidth; x += 8.0f) {
-            LayoutPicker picker(registry);
-            picker.set_screens(system_profile(SystemId::Ds).screens, SystemId::Ds);
-            open_on(picker, state, MenuSection::Options);
-            if (picker.update({}, choose_at(x, y), kWidth, kHeight).audio_target_changed) ++sound;
-        }
+    // Each does what it says from the left.
+    LayoutPicker picker(registry);
+    open_wii_u(picker, state);
+    CHECK(press(picker, UiAction::Confirm).close_requested);
+    open_on(open_wii_u(picker, state), state, MenuSection::ControllerOrder);
+    CHECK(press(picker, UiAction::Confirm).controllers_requested);
+    open_on(picker, state, MenuSection::GraphicPacks);
+    CHECK(press(picker, UiAction::Confirm).graphic_packs_requested);
+    open_on(picker, state, MenuSection::Disconnect);
+    CHECK(press(picker, UiAction::Confirm).disconnect_requested);
+    open_on(picker, state, MenuSection::Quit);
+    press(picker, UiAction::Confirm);
+    CHECK(picker.confirmation() == MenuConfirm::Quit);
+
+    // The face-button shortcuts a DS menu answers to are not a Wii U's -- a
+    // real GamePad has none -- except minus, which is Settings everywhere.
+    LayoutPicker shortcuts(registry);
+    open_wii_u(shortcuts, state);
+    for (const UiAction action : {UiAction::MenuQuit, UiAction::MenuReset, UiAction::MenuDisconnect}) {
+        const LayoutPickerResult result = press(shortcuts, action);
+        CHECK_MSG(!result.disconnect_requested && !shortcuts.awaiting_confirmation(),
+                  "a face-button shortcut worked on a Wii U's menu");
     }
-    CHECK(sound > 0);
+    CHECK(press(shortcuts, UiAction::MenuSettings).settings_requested);
 
     // Shown in place of the waiting screen rather than over a paused game,
-    // Back has nothing to close.
+    // there is no Continue, and Back has nothing to close.
     state.embedded = true;
     LayoutPicker embedded(registry);
-    embedded.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    embedded.open(state);
+    open_wii_u(embedded, state);
     CHECK(embedded.embedded());
+    CHECK(embedded.section() == MenuSection::Options);
     for (const UiAction action : {UiAction::Cancel, UiAction::ToggleMenu}) {
-        CHECK_MSG(!embedded.update({action}, {}, kWidth, kHeight).close_requested,
+        CHECK_MSG(!press(embedded, action).close_requested,
                   "Back closed a menu that is the screen itself");
     }
-    CHECK(embedded.update({UiAction::Confirm}, {}, kWidth, kHeight).controllers_requested);
 }
 
 // The control guide is what actually tells a player what a press does, so the
@@ -1413,7 +1401,7 @@ void test_a_console_with_no_shape_of_its_own_is_not_offered_its_own_shape() {
 
     // A Wii U itself offers no layout at all any more: which single screen it
     // shows was decided once, at connect, and its menu is the plain list
-    // test_wii_u_menu_is_a_plain_list covers instead -- see rebuild_tiles().
+    // test_wii_u_menu_has_its_own_sections covers instead -- see rebuild_tiles().
     const std::vector<std::string> wii_u =
         layouts_offered_for(registry, SystemId::WiiU, system_profile(SystemId::WiiU).screens);
     CHECK_MSG(wii_u.empty(), "a Wii U's menu still offered a layout to pick");
@@ -1574,114 +1562,94 @@ void test_the_resume_popup_is_put_away_with_ok() {
 // Where there is a mouse to point with, a Wii U's list has a Pointer row too,
 // under Continue and Controller Order: the DS menu's Options entry, for Cemu's window. A
 // flips it in place, as do Left and Right; nothing else on the list does.
-void test_wii_u_menu_offers_the_pointer_where_there_is_one() {
-    LayoutRegistry registry;
-    LayoutPickerState state;
-    state.layout_id = registry.at(0).id;
-    state.cursor_choosable = true;
-    state.cursor_mode = CursorMode::Shown;
-
-    LayoutPicker picker(registry);
-    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    picker.open(state);
-    CHECK(!picker.update({UiAction::Left}, {}, kWidth, kHeight).cursor_mode_changed);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    const LayoutPickerResult flipped = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(flipped.cursor_mode_changed);
-    CHECK(!flipped.settings_requested && !flipped.controllers_requested);
-    CHECK(picker.is_open());
-    CHECK(picker.update({UiAction::Right}, {}, kWidth, kHeight).cursor_mode_changed);
-    CHECK(picker.update({UiAction::Left}, {}, kWidth, kHeight).cursor_mode_changed);
-    // Continue is at the top, and closes the menu.
-    picker.update({UiAction::Up}, {}, kWidth, kHeight);
-    picker.update({UiAction::Up}, {}, kWidth, kHeight);
-    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).close_requested);
-}
-
-// A Wii U played alone has Swap Screens under Controller Order: the other
-// screen from the setting's, for this game. A or Left/Right flips it; with a
-// second device, each already shows one, and it is not offered.
-void test_wii_u_menu_swaps_screens_when_alone() {
+void test_wii_u_options_are_this_games() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
     state.screens_swappable = true;
+    state.screens_swap_value_shown = true;
+    state.cursor_choosable = true;
+    state.producer_options = {{"Upscaling", "Bicubic"}, {"CPU mode", "Auto"}};
 
+    // Swap Screens, the pointer, then Cemu's own, each stepped by A as a DS
+    // menu's options are; Left goes back to the sections.
     LayoutPicker picker(registry);
-    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    picker.open(state);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).screens_swap_toggled);
-    CHECK(picker.update({UiAction::Right}, {}, kWidth, kHeight).screens_swap_toggled);
+    open_wii_u(picker, state);
+    open_on(picker, state, MenuSection::Options);
+    press(picker, UiAction::Right);
+    CHECK(picker.on_content());
+    CHECK(press(picker, UiAction::Confirm).screens_swap_toggled);
+    press(picker, UiAction::Down);
+    CHECK(press(picker, UiAction::Confirm).cursor_mode_changed);
+    press(picker, UiAction::Down);
+    CHECK_EQ(press(picker, UiAction::Confirm).producer_option, 0);
+    press(picker, UiAction::Down);
+    CHECK_EQ(press(picker, UiAction::Confirm).producer_option, 1);
+    press(picker, UiAction::Down);
+    CHECK_EQ(press(picker, UiAction::Confirm).producer_option, 1);  // the last, and no further
+    press(picker, UiAction::Left);
+    CHECK(!picker.on_content() && picker.section() == MenuSection::Options);
 
-    state.screens_swappable = false;
+    // Cemu's arriving while the menu is up adds its rows in place.
+    picker.set_producer_options({{"Upscaling", "Bicubic"}, {"Aspect ratio", "Original"},
+                                 {"CPU mode", "Auto"}});
+    press(picker, UiAction::Right);
+    for (int step = 0; step < 4; ++step) press(picker, UiAction::Down);
+    CHECK_EQ(press(picker, UiAction::Confirm).producer_option, 2);
+
+    // With a second device, the screens trade there and then: no value.
+    state.screens_swap_value_shown = false;
+    state.cursor_choosable = false;
+    state.producer_options.clear();
     LayoutPicker paired(registry);
-    paired.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    paired.open(state);
-    for (int row = 0; row < 8; ++row) {
-        CHECK(!paired.update({UiAction::Confirm}, {}, kWidth, kHeight).screens_swap_toggled);
-        paired.close();
-        paired.open(state);
-        paired.update({UiAction::Down}, {}, kWidth, kHeight);
-    }
+    open_wii_u(paired, state);
+    open_on(paired, state, MenuSection::Options);
+    press(paired, UiAction::Right);
+    CHECK(press(paired, UiAction::Confirm).screens_swap_toggled);
 }
 
-// Graphics Packs, under Controller Order, where Cemu offers them: A asks for
-// the page, and nothing else on the row does anything.
-void test_wii_u_menu_offers_graphics_packs_where_cemu_does() {
+void test_wii_u_amiibo_are_listed_to_choose_from() {
     LayoutRegistry registry;
     LayoutPickerState state;
     state.layout_id = registry.at(0).id;
-    state.graphic_packs_available = true;
-
-    LayoutPicker picker(registry);
-    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    picker.open(state);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    CHECK(!picker.update({UiAction::Right}, {}, kWidth, kHeight).graphic_packs_requested);
-    const LayoutPickerResult chosen = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(chosen.graphic_packs_requested);
-    CHECK(!chosen.controllers_requested && !chosen.close_requested);
-
-    state.graphic_packs_available = false;
-    LayoutPicker without(registry);
-    without.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    without.open(state);
-    for (int row = 0; row < 8; ++row) {
-        CHECK(!without.update({UiAction::Confirm}, {}, kWidth, kHeight).graphic_packs_requested);
-        without.close();
-        without.open(state);
-        without.update({UiAction::Down}, {}, kWidth, kHeight);
-    }
-}
-
-// Options and Scan amiibo follow Graphics Packs, where Cemu offers them, each
-// asking for its own page.
-void test_wii_u_menu_offers_options_and_amiibo_where_cemu_does() {
-    LayoutRegistry registry;
-    LayoutPickerState state;
-    state.layout_id = registry.at(0).id;
-    state.graphic_packs_available = true;
-    state.options_available = true;
     state.amiibo_available = true;
+    for (int index = 0; index < 40; ++index) state.amiibo.push_back("Amiibo " + std::to_string(index));
+    state.amiibo_folder = "/home/deck/amiibo";
 
     LayoutPicker picker(registry);
-    picker.set_screens(system_profile(SystemId::WiiU).screens, SystemId::WiiU);
-    picker.open(state);
-    for (int row = 0; row < 3; ++row) picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    const LayoutPickerResult options = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(options.options_requested && !options.graphic_packs_requested && !options.amiibo_requested);
-    picker.update({UiAction::Down}, {}, kWidth, kHeight);
-    const LayoutPickerResult amiibo = picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
-    CHECK(amiibo.amiibo_requested && !amiibo.options_requested);
+    open_wii_u(picker, state);
+    open_on(picker, state, MenuSection::Amiibo);
+    CHECK(press(picker, UiAction::Confirm).amiibo_chosen == -1);  // into the list first
+    CHECK(picker.on_content());
+    CHECK_EQ(press(picker, UiAction::Confirm).amiibo_chosen, 0);
+    // Down a long way, past what fits: the list follows, and its last row
+    // looks in another folder.
+    for (int step = 0; step < 39; ++step) press(picker, UiAction::Down);
+    CHECK_EQ(press(picker, UiAction::Confirm).amiibo_chosen, 39);
+    press(picker, UiAction::Down);
+    const LayoutPickerResult folder = press(picker, UiAction::Confirm);
+    CHECK(folder.amiibo_folder_requested && folder.amiibo_chosen == -1);
+    // The focus says where, past what a byte holds, and comes back the same.
+    const int focus = picker.focus();
+    CHECK(focus >= LayoutPicker::kWideFocusBase);
+    LayoutPicker other(registry);
+    open_wii_u(other, state);
+    other.set_focus(focus);
+    CHECK(other.section() == MenuSection::Amiibo && other.on_content());
+    CHECK_EQ(press(other, UiAction::Confirm).amiibo_folder_requested, true);
+
+    // None found: only the row that looks elsewhere.
+    state.amiibo.clear();
+    LayoutPicker empty(registry);
+    open_wii_u(empty, state);
+    open_on(empty, state, MenuSection::Amiibo);
+    press(empty, UiAction::Confirm);
+    CHECK(press(empty, UiAction::Confirm).amiibo_folder_requested);
 }
 
 int main() {
-    test_wii_u_menu_offers_graphics_packs_where_cemu_does();
-    test_wii_u_menu_offers_options_and_amiibo_where_cemu_does();
+    test_wii_u_options_are_this_games();
+    test_wii_u_amiibo_are_listed_to_choose_from();
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_where_it_was_closed();
     test_the_layout_swap_keeps_the_stylus_hand();
@@ -1705,9 +1673,7 @@ int main() {
     test_the_gap_option_is_always_offered();
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
-    test_wii_u_menu_is_a_plain_list();
-    test_wii_u_menu_offers_the_pointer_where_there_is_one();
-    test_wii_u_menu_swaps_screens_when_alone();
+    test_wii_u_menu_has_its_own_sections();
     test_wii_u_menu_guide_is_ok_back_and_settings();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();

@@ -272,7 +272,6 @@ target_sources(test_forwarder_nca PRIVATE ${CMAKE_SOURCE_DIR}/switch/forwarder/f
 target_include_directories(test_forwarder_nca PRIVATE ${CMAKE_SOURCE_DIR}/switch)
 dualscreen_add_test(test_quick_settings)
 dualscreen_add_test(test_graphic_packs)
-dualscreen_add_test(test_wii_u_options)
 dualscreen_add_test(test_touch_hints)
 dualscreen_add_test(test_pad_glyphs)
 dualscreen_add_test(test_touch_gesture)

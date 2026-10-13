@@ -75,9 +75,13 @@ struct LayoutPickerResult {
     // And for the Wii U game's graphics packs, which are Cemu's, on the
     // machine running it.
     bool graphic_packs_requested = false;
-    // And for Cemu's own options, and for an amiibo to scan.
-    bool options_requested = false;
-    bool amiibo_requested = false;
+    // One of Cemu's own options in a Wii U's Options, stepped on: its index
+    // in LayoutPickerState::producer_options. -1 for none.
+    int producer_option = -1;
+    // An amiibo in the Scan amiibo list chosen, by its index in
+    // LayoutPickerState::amiibo, or the row after them that looks elsewhere.
+    int amiibo_chosen = -1;
+    bool amiibo_folder_requested = false;
     // And for this game's page in Data Management.
     bool save_sync_requested = false;
     // A save point slot to save into or to load, already confirmed where
@@ -126,9 +130,15 @@ struct LayoutPickerState {
     // GraphicPacksScreen. The host's to say, and told to the other device,
     // so that their lists line up row for row.
     bool graphic_packs_available = false;
-    // The same for Cemu's own options, and for scanning an amiibo.
-    bool options_available = false;
+    // Cemu's own options, which a Wii U's Options lists after its own: each
+    // one's name and the value it has. The host's, read off Cemu, and told to
+    // the other device so the two lists line up.
+    std::vector<std::pair<std::string, std::string>> producer_options;
+    // Scan amiibo, where Cemu can: the amiibo found in `amiibo_folder`, by
+    // name, listed on the right to be chosen from directly. The host's too.
     bool amiibo_available = false;
+    std::vector<std::string> amiibo;
+    std::string amiibo_folder;
     // Which layouts are flipped for a left hand, by id: each is chosen on its
     // own, with the stylus button under the layouts, and each preview is
     // drawn the way round its own layout is.
@@ -227,6 +237,12 @@ enum class MenuSection : uint8_t {
     // byte has room for, so it travels as a number of its own -- see
     // LayoutPicker::kSaveSyncFocus.
     SaveSync = 8,
+    // A Wii U's: pages of the device running Cemu, and the amiibo it can
+    // scan. Past a focus byte too, so they travel in the wider focus -- see
+    // LayoutPicker::kWideFocusBase.
+    ControllerOrder = 9,
+    GraphicPacks = 10,
+    Amiibo = 11,
 };
 
 // The quick menu. On a DS or a 3DS, two columns: the sections down the left
@@ -272,9 +288,20 @@ public:
     // Save Sync's focus: the last number Continue's stride holds, which no
     // item of Continue's -- it has none -- will ever need.
     static constexpr int kSaveSyncFocus = 255;
+    // The sections past those, and their things -- an amiibo list can be
+    // long -- from here on, 1024 apart: these need the focus's wider form,
+    // which a peer that predates them never sees.
+    static constexpr int kWideFocusBase = 256;
+    static constexpr int kWideStride = 1024;
     static int focus_of(MenuSection section, int item = -1) {
         if (section == MenuSection::SaveSync) return kSaveSyncFocus;
-        return static_cast<int>(section) * kSectionStride + (item >= 0 ? item + 1 : 0);
+        const int section_number = static_cast<int>(section);
+        if (section_number >= static_cast<int>(MenuSection::ControllerOrder)) {
+            return kWideFocusBase +
+                   (section_number - static_cast<int>(MenuSection::ControllerOrder)) * kWideStride +
+                   (item >= 0 ? item + 1 : 0);
+        }
+        return section_number * kSectionStride + (item >= 0 ? item + 1 : 0);
     }
     MenuSection section() const { return section_; }
     bool on_content() const { return on_content_; }
@@ -332,6 +359,20 @@ public:
     void set_audio_target(AudioTarget target) { state_.audio_target = target; }
     void set_cursor_mode(CursorMode mode) { state_.cursor_mode = mode; }
     void set_screens_swapped(bool swapped) { state_.screens_swapped = swapped; }
+    // What it was opened with, as kept up since: for telling the other device.
+    const LayoutPickerState& state() const { return state_; }
+    // Cemu's options, and the amiibo in the folder, as they are now -- see
+    // LayoutPickerState. Either can change while the menu is up: an option
+    // just stepped, Cemu's list arriving, a folder chosen.
+    void set_producer_options(std::vector<std::pair<std::string, std::string>> options) {
+        state_.producer_options = std::move(options);
+        rebuild_footer();
+    }
+    void set_amiibo(std::vector<std::string> amiibo, std::string folder) {
+        state_.amiibo = std::move(amiibo);
+        state_.amiibo_folder = std::move(folder);
+        rebuild_footer();
+    }
     // This device's battery in the heading's corner -- Settings' "Battery in
     // the quick menu". Shown only where there is a battery to show.
     void set_show_battery(bool show) { show_battery_ = show; }
@@ -425,27 +466,7 @@ public:
                              bool smoothing);
 
 private:
-    // A Wii U session's whole menu, as a plain list: there is no layout to
-    // pick (see rebuild_tiles()) and nothing else here is a value worth
-    // cycling -- see rebuild_footer()'s Wii U branch and render()'s.
-    enum class Footer {
-        // Back to the game, as the DS menu's Continue is.
-        Continue,
-        OpenControllers,
-        GraphicPacks,
-        Options,
-        ScanAmiibo,
-        // The Pointer setting, as the DS menu's Options has it: a value
-        // flipped in place rather than a page opened.
-        Pointer,
-        SwapScreens,
-        // Asked about first, as on the DS menu.
-        Reset,
-        Disconnect,
-        Quit,
-    };
-
-    // The rows of a DS or 3DS menu's Options section.
+    // The rows of a quick menu's Options section.
     enum class Option {
         RenderScale,
         Sound,
@@ -456,15 +477,16 @@ private:
         ScreenGap,
         Smoothing,
         Resume,
+        // A Wii U's: this game's screen, alone, or the two devices trading.
+        SwapScreens,
+        // One of Cemu's own -- see LayoutPickerState::producer_options.
+        Producer,
     };
-
-    struct Geometry {
-        std::vector<PixelRect> footer;
-        PixelRect panel;
-        float scale = 1.0f;
+    struct OptionRow {
+        Option option = Option::Cursor;
+        // Which of Cemu's, for a Producer row.
+        int index = -1;
     };
-    // The Wii U list.
-    Geometry compute_geometry(float output_width, float output_height) const;
 
     // The two columns of a DS or 3DS menu. `items` are the right-hand side's
     // things for the section showing there, in its own order.
@@ -499,12 +521,11 @@ private:
     // registry, because not every layout is offered on every console.
     const Layout& tile_layout(int index) const;
     int tile_index_of(const std::string& layout_id) const;
-    int footer_count() const { return static_cast<int>(footer_.size()); }
-    void move_focus(int delta_y);
-    bool activate_focus(LayoutPickerResult& result);
-    std::string footer_label(Footer kind) const;
+    // How many of the right-hand side's rows fit, and keeping the cursor's
+    // among them -- see content_first_.
+    int content_rows_fitting(const MenuGeometry& geometry) const;
+    void keep_item_in_view(float output_width, float output_height);
 
-    // The DS and 3DS menu.
     bool has_section(MenuSection section) const;
     // How many things a section shows on the right; 0 for one that does
     // something instead.
@@ -529,14 +550,15 @@ private:
     void activate_section(LayoutPickerResult& result);
     void activate_item(LayoutPickerResult& result);
     void handle_menu_action(UiAction action, LayoutPickerResult& result);
-    std::string option_name(Option option) const;
-    std::string option_value(Option option) const;
+    std::string option_name(const OptionRow& row) const;
+    std::string option_value(const OptionRow& row) const;
     void render_sections(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
     void render_layouts(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                         const MenuGeometry& geometry, float output_width, float output_height,
                         const ScreenTextures* textures);
     void render_slots(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
     void render_options(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
+    void render_amiibo(QuadRenderer& quads, TextRenderer& text, const MenuGeometry& geometry);
 
     // What the menu has depends on the session and the console -- a
     // companion, a render scale, a stick -- so it is built per-open rather
@@ -557,12 +579,13 @@ private:
     const Texture* game_icon_ = nullptr;
     Texture ui_icons_;
     bool ui_icons_tried_ = false;
-    // The Wii U list's row.
-    int focus_ = 0;
-    // The DS and 3DS menu's cursor: which section, and whether it is over on
-    // that section's things, and on which.
+    // The cursor: which section, and whether it is over on that section's
+    // things, and on which.
     std::vector<MenuSection> sections_;
-    std::vector<Option> options_;
+    std::vector<OptionRow> options_;
+    // The first of a long list's things in view -- Scan amiibo's, the one
+    // list here that can run past the bottom.
+    int content_first_ = 0;
     MenuSection section_ = MenuSection::Layout;
     std::function<bool(UiAction)> repeating_;
     // Whether this menu has been opened before in this run, so the next open
@@ -576,7 +599,6 @@ private:
     std::string save_status_;
     bool save_status_failed_ = false;
     std::string selected_layout_id_;
-    std::vector<Footer> footer_;
     LayoutPickerState state_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = true;

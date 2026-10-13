@@ -184,8 +184,10 @@ public:
         bool menu_unavailable_notice = false;
         // See SessionStateMessage::graphic_packs_available.
         bool graphic_packs_available = false;
-        bool options_available = false;
         bool amiibo_available = false;
+        std::vector<std::pair<std::string, std::string>> producer_options;
+        std::vector<std::string> amiibo;
+        std::string amiibo_folder;
         // The settings screen, which is this device's own rather than shared:
         // the companion is told only that it is up. See
         // SessionStateMessage::settings_open.

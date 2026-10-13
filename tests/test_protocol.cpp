@@ -12,6 +12,12 @@
 #include "net/protocol.hpp"
 
 using namespace ds;
+
+namespace {
+// What every session state ends with now, empty: the whole focus, then no
+// Cemu options, no amiibo and no amiibo folder.
+constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2;
+}  // namespace
 using namespace ds::net;
 
 namespace {
@@ -167,7 +173,7 @@ void test_welcome_and_session_round_trip() {
     // popup cursor's, the menu-unavailable notice's and Graphics Packs' bytes
     // go after the list, so a host from before the list stops eight bytes
     // earlier still.)
-    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 8;
+    const std::size_t list_bytes = 1 + (2 + 11) + (2 + 12) + 8 + kWiiUTail;
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes, received_state));
     CHECK(received_state.left_handed_layouts == std::vector<std::string>({"upper_on_tv"}));
     CHECK(decode_session_state(payload.data(), payload.size() - list_bytes - 1, received_state));
@@ -187,7 +193,7 @@ void test_welcome_and_session_round_trip() {
         CHECK(decode_session_state(payload.data(), payload.size(), received_state));
         CHECK_EQ(received_state.left_stick_choosable, true);
         CHECK(received_state.left_stick_press == press);
-        CHECK(decode_session_state(payload.data(), payload.size() - 8, received_state));
+        CHECK(decode_session_state(payload.data(), payload.size() - 8 - kWiiUTail, received_state));
         CHECK_EQ(received_state.left_stick_choosable, false);
         CHECK(received_state.left_handed_layouts ==
               std::vector<std::string>({"upper_focus", "side_by_side"}));
@@ -208,7 +214,7 @@ void test_welcome_and_session_round_trip() {
         // Without the bytes after it: the resume option, its popup, Save
         // Sync, the popup cursor, the menu-unavailable notice and Graphics
         // Packs.
-        CHECK(decode_session_state(payload.data(), payload.size() - 7, received_state));
+        CHECK(decode_session_state(payload.data(), payload.size() - 7 - kWiiUTail, received_state));
         CHECK_EQ(received_state.rumble_choosable, false);
         CHECK_EQ(received_state.left_stick_choosable, true);
     }
@@ -248,7 +254,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.save_sync_available, true);
-    CHECK(decode_session_state(payload.data(), payload.size() - 4, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 4 - kWiiUTail, received_state));
     CHECK_EQ(received_state.save_sync_available, false);
 
     // Where the cursor is on the menu's popup, last of all: none from a host
@@ -259,7 +265,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.menu_confirm_focus, static_cast<uint8_t>(2));
-    CHECK(decode_session_state(payload.data(), payload.size() - 3, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 3 - kWiiUTail, received_state));
     CHECK_EQ(received_state.menu_confirm_focus, static_cast<uint8_t>(0));
 
     // The menu can't be opened right now, after that: not up, from a host
@@ -270,7 +276,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.menu_unavailable_notice, true);
-    CHECK(decode_session_state(payload.data(), payload.size() - 2, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 2 - kWiiUTail, received_state));
     CHECK_EQ(received_state.menu_unavailable_notice, false);
 
     // Graphics Packs in the host's menu, after that: not there, from a host
@@ -281,19 +287,42 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.graphic_packs_available, true);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - kWiiUTail, received_state));
     CHECK_EQ(received_state.graphic_packs_available, false);
 
-    // Options and Scan amiibo share its byte, a bit each.
+    // Scan amiibo shares its byte, a bit each.
     state.graphic_packs_available = false;
-    state.options_available = true;
     state.amiibo_available = true;
     buffer.clear();
     encode_session_state(state, buffer);
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
-    CHECK(!received_state.graphic_packs_available && received_state.options_available &&
-          received_state.amiibo_available);
+    CHECK(!received_state.graphic_packs_available && received_state.amiibo_available);
+
+    // Then the focus whole, past what its byte holds -- a Wii U menu's newer
+    // sections -- which a host from before it sends as 0; Cemu's options for
+    // the Options list; and the amiibo to list.
+    state.menu_focus = 300;
+    state.producer_options = {{"Upscaling", "Bicubic"}, {"CPU mode", "Auto"}};
+    state.amiibo = {"Link", "Mario"};
+    state.amiibo_folder = "/home/deck/amiibo";
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK_EQ(received_state.menu_focus, static_cast<uint16_t>(300));
+    CHECK(received_state.producer_options == state.producer_options);
+    CHECK(received_state.amiibo == state.amiibo);
+    CHECK(received_state.amiibo_folder == "/home/deck/amiibo");
+    state.menu_focus = 40;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    const std::size_t tail =
+        2 + 2 + (2 + 9 + 2 + 7) + (2 + 8 + 2 + 4) + 2 + (2 + 4) + (2 + 5) + (2 + 17);
+    CHECK(decode_session_state(payload.data(), payload.size() - tail, received_state));
+    CHECK_EQ(received_state.menu_focus, static_cast<uint16_t>(40));
+    CHECK(received_state.producer_options.empty() && received_state.amiibo.empty());
 }
 
 // Everything a companion can ask the host for travels in one message, each
@@ -405,21 +434,22 @@ void test_request_round_trip() {
     CHECK_EQ(received.wants_screen_swap, true);
     // From a companion from before Separate Screens' swap: asks for none.
     RequestMessage unswapped;
-    CHECK(decode_request(payload.data(), payload.size() - 1, unswapped));
+    // (Each counts past the whole menu focus at the very end, two bytes.)
+    CHECK(decode_request(payload.data(), payload.size() - 3, unswapped));
     CHECK_EQ(unswapped.wants_screen_swap, false);
     CHECK_EQ(unswapped.wants_resume_from_save_state, true);
     // Without that and the byte before it: nothing asked about resuming.
     RequestMessage shorter;
-    CHECK(decode_request(payload.data(), payload.size() - 2, shorter));
+    CHECK(decode_request(payload.data(), payload.size() - 4, shorter));
     CHECK_EQ(shorter.wants_resume_from_save_state, false);
     CHECK_EQ(shorter.wants_rumble_pak, true);
     // From a companion from before the Rumble Pak: asks nothing about it.
     RequestMessage older;
-    CHECK(decode_request(payload.data(), payload.size() - 3, older));
+    CHECK(decode_request(payload.data(), payload.size() - 5, older));
     CHECK_EQ(older.wants_rumble_pak, false);
     CHECK_EQ(older.wants_left_stick_press, true);
     // And from before the left stick: nothing about that either.
-    CHECK(decode_request(payload.data(), payload.size() - 4, older));
+    CHECK(decode_request(payload.data(), payload.size() - 6, older));
     CHECK_EQ(older.wants_left_stick_press, false);
     CHECK_EQ(older.wants_right_stick_mode, true);
 
@@ -464,30 +494,30 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 25, 1u,
+        {"audio target", 27, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 23, 1u,
+        {"handedness", 25, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 9, 2u,
+        {"right stick mode", 11, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 4, 2u,
+        {"left stick click", 6, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
          }},
-        {"rumble pak", 3, 2u,
+        {"rumble pak", 5, 2u,
          [](const RequestMessage& message) {
              return message.wants_rumble_pak && message.rumble_pak;
          }},
-        {"resume from save state", 2, 2u,
+        {"resume from save state", 4, 2u,
          [](const RequestMessage& message) {
              return message.wants_resume_from_save_state && message.resume_from_save_state;
          }},
-        {"screen swap", 1, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
+        {"screen swap", 3, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
     };
 
     for (const EnumByte& field : kEnumBytes) {
@@ -524,6 +554,15 @@ void test_request_round_trip() {
     CHECK(received_press.menu_action == MenuAction::Settings);
     CHECK_EQ(received_press.wants_menu_focus, true);
     CHECK_EQ(static_cast<int>(received_press.menu_focus), 7);
+    // A focus past what its byte holds -- a Wii U menu's newer sections --
+    // arrives whole; a host from before it would read 0 there.
+    pressed.menu_focus = 1300;
+    buffer.clear();
+    encode_request(pressed, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_request(payload.data(), payload.size(), received_press));
+    CHECK_EQ(static_cast<int>(received_press.menu_focus), 1300);
+    pressed.menu_focus = 7;
 
     // The menu button's own action, which closes rather than steps back.
     pressed.menu_action = MenuAction::Close;
@@ -535,7 +574,7 @@ void test_request_round_trip() {
     CHECK(received_close.menu_action == MenuAction::Close);
 
     std::vector<uint8_t> impossible(payload);
-    impossible[impossible.size() - 7] = 200;
+    impossible[impossible.size() - 9] = 200;
     RequestMessage refused;
     CHECK_MSG(!decode_request(impossible.data(), impossible.size(), refused),
               "a press no button could have made was accepted");

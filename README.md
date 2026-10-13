@@ -321,13 +321,11 @@ Three things are different about a Wii U session:
 
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
-  "Playing on Cemu" notice: **Controller Order**, **Graphics Packs**,
-  **Options** and **Scan amiibo** (see below), **Swap Screens** (played
-  alone: the other screen from **Default Wii U screen**, remembered for that
-  game until swapped back -- **F3** does the same; with a second device
-  connected, the two trade screens), **Pointer**, **Reset**,
-  **Disconnect** and **Quit**, with **Settings** on minus as on every
-  console's menu. Cemu cannot restart a game itself, so **Reset** closes the
+  "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
+  down the left, and the highlighted one's things on the right: **Options**,
+  **Scan amiibo**, **Graphics Packs** (see below), **Controller Order**,
+  **Disconnect**, **Reset Game** and **Quit**, with **Settings** on minus as
+  on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
   Cemu this app started and starts it again on the same game. It
   answers only while its window has the focus, so a press meant for the game
   never picks Quit. Opened over the game, the menu also starts with
@@ -355,16 +353,26 @@ Three things are different about a Wii U session:
   does. It needs this project's Cemu build, and is offered only on the
   device running Cemu; a second device is told to look at that one.
 
-- **Options**, in the quick menu, has the Cemu settings worth changing while
-  playing, each taking effect at once and kept in Cemu's own settings:
-  **Upscaling** (how Cemu enlarges a picture smaller than its window:
-  bilinear, bicubic, Hermite or nearest neighbor), **Aspect ratio** (the
-  game's own, or stretched to the screen) and **Performance overlay** (off,
-  frame rate, frame rate and CPU, or everything Cemu can show). **Left** and
-  **Right** step a value either way, and **A** steps it on.
+- **Options**, in the quick menu, are this game's, as a DS or 3DS game's
+  are, each stepped on with **A**: **Swap Screens** (played alone: the other
+  screen from **Default Wii U screen** -- **F3** does the same; with a second
+  device connected, the two trade screens), **Pointer** (this device's own,
+  as on every console's menu), then Cemu's: **Upscaling** (how Cemu enlarges
+  a picture smaller than its window: bilinear, bicubic, Hermite or nearest
+  neighbor), **Aspect ratio** (the game's own, or stretched to the screen),
+  **Performance overlay** (off, frame rate, frame rate and CPU, or
+  everything Cemu can show) and **CPU mode** (auto, multi-core or
+  single-core, for a game that misbehaves). Cemu keeps the first three for
+  every game alike, so Dualscreen keeps each game's choice and sets it as the
+  game starts, Cemu's default where the game has none; they change at once.
+  CPU mode is kept in Cemu's own profile for the game, and changes when the
+  game is reset.
 
-- **Scan amiibo**, in the quick menu, picks an amiibo's dump (`.bin`, `.nfc`
-  or `.dat`) from a folder, which is remembered for next time. Choosing one
+- **Scan amiibo**, in the quick menu, lists the amiibo dumps (`.bin`, `.nfc`
+  or `.dat`) in the amiibo folder, and a level or two of folders inside it,
+  by name on the right. The folder is `~/amiibo` (or `~/Documents/amiibo`)
+  until another is chosen with **Choose a Folder...** at the end of the list,
+  which browses to one and scans the amiibo picked there. Choosing one
   closes the menu, and once the game is going again it is held to the
   GamePad, as Cemu's own "Scan NFC tag/amiibo from file" does -- a game only
   sees a figure for the couple of seconds it is there, which a paused one

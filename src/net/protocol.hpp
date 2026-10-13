@@ -263,7 +263,10 @@ struct RequestMessage {
     // two devices' menus are laid out for different-sized screens, so only
     // this one knows what its own tap was on.
     bool wants_menu_focus = false;
-    uint8_t menu_focus = 0;
+    // A quick menu focus -- see LayoutPicker::focus_of(). One byte on the
+    // wire for a peer from before the wider ones, which gets 0 for those, and
+    // the whole of it again at the end.
+    uint16_t menu_focus = 0;
     // Restart the running game. One-shot rather than a value to agree on: it is
     // not echoed back in SessionState, since there is nothing to stay in sync
     // about once the moment has passed.
@@ -321,7 +324,8 @@ struct SessionStateMessage {
     // rather than running a menu of its own, which is what lets the player
     // watch either screen while working the same menu from either pad.
     bool menu_open = false;
-    uint8_t menu_focus = 0;
+    // As RequestMessage::menu_focus: a byte, and the whole of it at the end.
+    uint16_t menu_focus = 0;
     // 0 none, 1 reset, 2 quit, and so on -- see MenuConfirm.
     uint8_t menu_confirm = 0;
     // The host's settings screen, which unlike the menu is not mirrored: it is
@@ -391,8 +395,14 @@ struct SessionStateMessage {
     // whichever Cemu offered -- so the companion's has the rows too, and the
     // two line up. One byte, a bit each; last, and optional.
     bool graphic_packs_available = false;
-    bool options_available = false;
     bool amiibo_available = false;
+    // A Wii U's Options: Cemu's own rows, each one's name and value, after
+    // the menu's own -- see LayoutPickerState::producer_options. Last, and
+    // optional, as are the two below.
+    std::vector<std::pair<std::string, std::string>> producer_options;
+    // Scan amiibo's list, by name -- see LayoutPickerState::amiibo.
+    std::vector<std::string> amiibo;
+    std::string amiibo_folder;
 };
 
 struct FrameMessage {

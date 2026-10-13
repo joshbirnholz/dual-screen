@@ -180,7 +180,6 @@ add_library(dualscreen_core STATIC
     src/ui/settings_screen.cpp
     src/ui/controllers_screen.cpp
     src/ui/graphic_packs_screen.cpp
-    src/ui/wii_u_options_screen.cpp
     src/ui/data_management_screen.cpp
     src/ui/forwarder_screen.cpp
     src/util/battery.cpp

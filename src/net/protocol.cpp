@@ -273,7 +273,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.screen_gap ? 1u : 0u);
     put_u8(out, right_stick_mode_to_wire(message.right_stick_mode));
     put_u8(out, message.menu_open ? 1u : 0u);
-    put_u8(out, message.menu_focus);
+    put_u8(out, message.menu_focus < 256 ? static_cast<uint8_t>(message.menu_focus) : 0u);
     put_u8(out, message.menu_confirm);
     put_u8(out, message.max_render_scale);
     put_u8(out, message.cursor_choosable ? 1u : 0u);
@@ -299,9 +299,20 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u8(out, message.save_sync_available ? 1u : 0u);
     put_u8(out, message.menu_confirm_focus);
     put_u8(out, message.menu_unavailable_notice ? 1u : 0u);
+    // Bit 1 was Options, which every Wii U menu has now.
     put_u8(out, static_cast<uint8_t>((message.graphic_packs_available ? 1u : 0u) |
-                                     (message.options_available ? 2u : 0u) |
                                      (message.amiibo_available ? 4u : 0u)));
+    put_u16(out, message.menu_focus);
+    const std::size_t options = std::min<std::size_t>(message.producer_options.size(), 64);
+    put_u16(out, static_cast<uint16_t>(options));
+    for (std::size_t index = 0; index < options; ++index) {
+        put_string(out, message.producer_options[index].first);
+        put_string(out, message.producer_options[index].second);
+    }
+    const std::size_t amiibo = std::min<std::size_t>(message.amiibo.size(), 1000);
+    put_u16(out, static_cast<uint16_t>(amiibo));
+    for (std::size_t index = 0; index < amiibo; ++index) put_string(out, message.amiibo[index]);
+    put_string(out, message.amiibo_folder);
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -723,7 +734,7 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.wants_menu_action ? 1u : 0u);
     put_u8(out, static_cast<uint8_t>(message.menu_action));
     put_u8(out, message.wants_menu_focus ? 1u : 0u);
-    put_u8(out, message.menu_focus);
+    put_u8(out, message.menu_focus < 256 ? static_cast<uint8_t>(message.menu_focus) : 0u);
     // 0 for no change, otherwise which way it should be set.
     put_u8(out, !message.wants_left_stick_press ? 0u
                 : message.left_stick_press == LeftStickPress::Microphone ? 1u
@@ -735,6 +746,7 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
                 : message.resume_from_save_state   ? 2u
                                                    : 1u);
     put_u8(out, message.wants_screen_swap ? 1u : 0u);
+    put_u16(out, message.menu_focus);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -780,7 +792,9 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
     reader.u8(wants_menu_action);
     reader.u8(menu_action);
     reader.u8(wants_menu_focus);
-    reader.u8(out.menu_focus);
+    uint8_t narrow_focus = 0;
+    reader.u8(narrow_focus);
+    out.menu_focus = narrow_focus;
     if (!reader.ok()) return false;
     out.wants_left_stick_press = false;
     if (reader.remaining() > 0) {
@@ -816,6 +830,7 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         if (swap > 1) return false;
         out.wants_screen_swap = swap != 0;
     }
+    if (reader.remaining() >= 2) reader.u16(out.menu_focus);
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);
     if (out.wants_menu_action && !menu_action_from_wire(menu_action, out.menu_action)) return false;
@@ -962,7 +977,9 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     uint8_t cursor_choosable = 0;
     uint8_t right_stick_choosable = 0;
     reader.u8(menu_open);
-    reader.u8(out.menu_focus);
+    uint8_t narrow_focus = 0;
+    reader.u8(narrow_focus);
+    out.menu_focus = narrow_focus;
     reader.u8(out.menu_confirm);
     reader.u8(out.max_render_scale);
     reader.u8(cursor_choosable);
@@ -1041,14 +1058,38 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         out.menu_unavailable_notice = notice != 0;
     }
     out.graphic_packs_available = false;
-    out.options_available = false;
     out.amiibo_available = false;
     if (reader.remaining() > 0) {
         uint8_t cemu_pages = 0;
         reader.u8(cemu_pages);
         out.graphic_packs_available = (cemu_pages & 1u) != 0;
-        out.options_available = (cemu_pages & 2u) != 0;
         out.amiibo_available = (cemu_pages & 4u) != 0;
+    }
+    if (reader.remaining() >= 2) reader.u16(out.menu_focus);
+    out.producer_options.clear();
+    out.amiibo.clear();
+    out.amiibo_folder.clear();
+    if (reader.remaining() >= 2) {
+        uint16_t options = 0;
+        reader.u16(options);
+        if (options > 64) return false;
+        for (uint16_t index = 0; index < options && reader.ok(); ++index) {
+            std::pair<std::string, std::string> option;
+            reader.string(option.first);
+            reader.string(option.second);
+            out.producer_options.push_back(std::move(option));
+        }
+    }
+    if (reader.remaining() >= 2) {
+        uint16_t amiibo = 0;
+        reader.u16(amiibo);
+        if (amiibo > 1000) return false;
+        for (uint16_t index = 0; index < amiibo && reader.ok(); ++index) {
+            std::string name;
+            reader.string(name);
+            out.amiibo.push_back(std::move(name));
+        }
+        reader.string(out.amiibo_folder);
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

@@ -143,8 +143,17 @@ Management have no layout problems at 4K.
   FPS++ preset changes while paused (patches reload under a paused game),
   turning a resolution pack on (should say it waits for Reset), and the
   list for a game with no packs installed.
+- **The Wii U quick menu is now two panes (new, untested on the PC)**, the
+  DS/3DS layout with Wii U sections (`MenuSection::ControllerOrder`,
+  `GraphicPacks`, `Amiibo`), whose focus numbers start at 256 and travel in
+  a trailing u16 on the request and session state (the old byte gets 0).
+  Options holds Swap Screens, Pointer and Cemu's options; the ones with an
+  `ExternalOption::default_choice` are kept per game in the game config's
+  `wii_u_options` and set when Cemu connects. Scan amiibo lists the amiibo
+  folder on the right; the companion gets the option rows and amiibo names
+  in the session state.
 - **Options and Scan amiibo (new, untested on the PC):** two more quick-menu
-  rows. Options is generic on the link (`OptionsWanted`/`Options`/
+  rows (since folded into the two-pane menu above). Options is generic on the link (`OptionsWanted`/`Options`/
   `OptionChange`): the fork describes each option itself in
   `DualscreenRequests.cpp` (Upscaling, Aspect ratio, Performance overlay so
   far), so adding one there needs no Dualscreen change. Scan amiibo sends

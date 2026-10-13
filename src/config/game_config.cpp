@@ -102,6 +102,13 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.resume_from_save_state =
         get_bool(document, "resume_from_save_state", config.resume_from_save_state);
     config.screens_swapped = get_bool(document, "screens_swapped", config.screens_swapped);
+    config.wii_u_options.clear();
+    if (const auto found = document.find("wii_u_options");
+        found != document.end() && found->is_object()) {
+        for (const auto& [id, choice] : found->items()) {
+            if (choice.is_number_integer()) config.wii_u_options[id] = choice.get<int>();
+        }
+    }
     config.last_played = get_string(document, "last_played", config.last_played);
     config.role_default = get_string(document, "role_default", config.role_default);
     config.companion_device_id = get_string(document, "companion_device_id", config.companion_device_id);
@@ -147,6 +154,8 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["rumble_pak"] = rumble_pak;
     document["resume_from_save_state"] = resume_from_save_state;
     document["screens_swapped"] = screens_swapped;
+    document["wii_u_options"] = json::object();
+    for (const auto& [id, choice] : wii_u_options) document["wii_u_options"][id] = choice;
     document["last_played"] = last_played;
     // Reserved keys are written as nulls until the networked phase fills them,
     // so the shape of the file is stable from V1 onwards.

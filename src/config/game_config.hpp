@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 
 #include "config/paths.hpp"
@@ -48,6 +49,10 @@ struct GameConfig {
     // F3 -- until swapped back. Per game, since which screen a game is best
     // played on is a fact about that game.
     bool screens_swapped = false;
+    // A Wii U game's choices among Cemu's own options that Cemu keeps for
+    // every game alike -- see ExternalOption::default_choice -- by the
+    // option's id: set again each time this game starts.
+    std::map<std::string, int> wii_u_options;
     std::string last_played;  // ISO-8601 UTC
 
     // Reserved for the networked phase; unset in V1 but round-tripped so V1
