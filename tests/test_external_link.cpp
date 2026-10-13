@@ -949,6 +949,15 @@ void test_the_game_pauses_only_when_it_says_so() {
     CHECK(state == ExternalPauseState::Refused);
     CHECK(wait_for([&]() { return link.take_pause_state(state); }));
     CHECK(state == ExternalPauseState::Running);
+
+    // And a game that never listens for the HOME Menu, which says so at once.
+    link.request_pause(false);
+    CHECK(wait_for([&]() { return producer.take_pause_request(pause); }));
+    link.request_pause(true);
+    CHECK(wait_for([&]() { return producer.take_pause_request(pause); }));
+    producer.send_pause_state(ExternalPauseState::NotListening);
+    CHECK(wait_for([&]() { return link.take_pause_state(state); }));
+    CHECK(state == ExternalPauseState::NotListening);
 }
 
 int main() {
