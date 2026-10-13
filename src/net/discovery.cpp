@@ -12,11 +12,15 @@ bool HostAnnouncer::start(std::string* error) {
     // Send-only: the announcer never needs to receive anything, so it does not
     // bind the discovery port and cannot collide with a browser on the same
     // machine.
+    stop();
     if (!socket_.start(0, true, error)) {
         return false;
     }
-    last_sent_ms_ = 0;
-    dirty_ = true;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        dirty_ = true;
+        stopping_ = false;
+    }
 
     std::string where;
     for (const LocalNetwork& network : announce_networks()) {
@@ -30,29 +34,44 @@ bool HostAnnouncer::start(std::string* error) {
     if (!shared.empty()) {
         log_warn(shared);
     }
+    worker_ = std::thread([this] { run(); });
     return true;
 }
 
-void HostAnnouncer::stop() { socket_.stop(); }
+HostAnnouncer::~HostAnnouncer() { stop(); }
+
+void HostAnnouncer::stop() {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        stopping_ = true;
+    }
+    wake_.notify_all();
+    if (worker_.joinable()) worker_.join();
+    socket_.stop();
+}
 
 void HostAnnouncer::set_beacon(const BeaconMessage& beacon) {
+    std::lock_guard<std::mutex> lock(mutex_);
     beacon_ = beacon;
     dirty_ = true;
 }
 
-void HostAnnouncer::poll(uint64_t now_ms) {
-    if (!socket_.open()) {
-        return;
+void HostAnnouncer::run() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (!stopping_) {
+        if (dirty_ || encoded_.empty()) {
+            encode_beacon(beacon_, encoded_);
+            dirty_ = false;
+        }
+        const std::vector<uint8_t> beacon = encoded_;
+        // Sent without the lock: however long the network takes, the game's
+        // loop handing over a new beacon never waits for it.
+        lock.unlock();
+        socket_.broadcast(kDiscoveryPort, beacon.data(), beacon.size());
+        lock.lock();
+        wake_.wait_for(lock, std::chrono::milliseconds(kBeaconIntervalMs),
+                       [this] { return stopping_; });
     }
-    if (last_sent_ms_ != 0 && now_ms - last_sent_ms_ < kBeaconIntervalMs) {
-        return;
-    }
-    if (dirty_ || encoded_.empty()) {
-        encode_beacon(beacon_, encoded_);
-        dirty_ = false;
-    }
-    socket_.broadcast(kDiscoveryPort, encoded_.data(), encoded_.size());
-    last_sent_ms_ = now_ms;
 }
 
 // --- HostBrowser ------------------------------------------------------------

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <thread>
+
+#include <mutex>
+
+#include <condition_variable>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -27,22 +33,36 @@ struct DiscoveredHost {
 
 // Broadcast while a game is running so companions can find this device without
 // anyone typing an address.
+//
+// On a thread of its own, every kBeaconIntervalMs: finding which networks to
+// announce on asks the system, and on a Switch waking from sleep, with its
+// Wi-Fi still coming back, that and the send could each take a second or
+// more -- on the game's own loop, once a beacon, which played the game at a
+// fifth of its speed until the network settled.
 class HostAnnouncer {
 public:
+    ~HostAnnouncer();
     bool start(std::string* error);
     void stop();
     bool running() const { return socket_.open(); }
 
-    // Cheap to call every frame; the beacon only goes out on its own interval.
+    // Cheap to call every frame: it only hands the beacon over.
     void set_beacon(const BeaconMessage& beacon);
-    void poll(uint64_t now_ms);
+    // Nothing to do any more -- the thread sends -- and kept so callers need
+    // not change.
+    void poll(uint64_t now_ms) { (void)now_ms; }
 
 private:
+    void run();
+
     UdpSocket socket_;
+    std::mutex mutex_;
+    std::condition_variable wake_;
+    bool stopping_ = false;
     BeaconMessage beacon_;
     std::vector<uint8_t> encoded_;
-    uint64_t last_sent_ms_ = 0;
     bool dirty_ = true;
+    std::thread worker_;
 };
 
 // Listens for beacons and keeps a list of hosts, dropping ones that go quiet.
