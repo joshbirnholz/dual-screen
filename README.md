@@ -381,7 +381,7 @@ Three things are different about a Wii U session:
   by name on the right. The folder is `~/amiibo` (or `~/Documents/amiibo`)
   until another is chosen with **Choose a Folder...** at the end of the list,
   which browses to one and scans the amiibo picked there. Choosing one
-  closes the menu, and three seconds after the game is going again it is
+  closes the menu, and four seconds after the game is going again it is
   held to the GamePad, as Cemu's own "Scan NFC tag/amiibo from file" does --
   a game only sees a figure for the couple of seconds it is there, which a
   paused one would miss, and one coming back from its HOME Menu (Breath of

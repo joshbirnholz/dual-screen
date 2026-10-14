@@ -2135,7 +2135,7 @@ void App::Impl::send_pending_amiibo() {
         pending_amiibo.clear();
         return;
     }
-    // Three seconds after the menu is down and the game going again: a game
+    // Four seconds after the menu is down and the game going again: a game
     // coming back from its HOME Menu shows a loading icon of its own for a
     // while -- Breath of the Wild does, for about that long -- and does not
     // see a figure held to the GamePad before it is back. Or after twelve
@@ -2147,7 +2147,7 @@ void App::Impl::send_pending_amiibo() {
     } else if (!amiibo_game_going_since) {
         amiibo_game_going_since = now;
     }
-    const bool settled = amiibo_game_going_since && now - *amiibo_game_going_since >= std::chrono::seconds(3);
+    const bool settled = amiibo_game_going_since && now - *amiibo_game_going_since >= std::chrono::seconds(4);
     if (!pending_amiibo.empty() && (settled || now - pending_amiibo_at > std::chrono::seconds(12))) {
         amiibo_game_going_since.reset();
         external_source->scan_amiibo(pending_amiibo);
