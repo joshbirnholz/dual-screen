@@ -39,65 +39,44 @@ bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out) {
 //   Sony       circle      cross       triangle    square
 //   Positional four dots, the one in that corner filled in
 //
-// Xbox needs no new letters, only the two middle columns swapped over: a
-// Nintendo pad and an Xbox pad print the same four letters in different
-// corners, which is exactly the confusion this setting exists to end.
+// and every other button as that pad prints it. Positional has no printing
+// of its own past the face buttons: a Switch's, but for the shoulders and
+// triggers, a Steam Controller's plain ones.
 GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
-    switch (glyph) {
-        case ButtonGlyph::LeftStick: return GlyphCell::LeftStick;
-        case ButtonGlyph::RightStick: return GlyphCell::RightStick;
-        case ButtonGlyph::A:  // east
-            switch (style) {
-                case PadGlyphStyle::PlayStation: return GlyphCell::Circle;
-                case PadGlyphStyle::Xbox: return GlyphCell::LetterB;
-                case PadGlyphStyle::Positional: return GlyphCell::DotsEast;
-                default: return GlyphCell::LetterA;
-            }
-        case ButtonGlyph::B:  // south
-            switch (style) {
-                case PadGlyphStyle::PlayStation: return GlyphCell::Cross;
-                case PadGlyphStyle::Xbox: return GlyphCell::LetterA;
-                case PadGlyphStyle::Positional: return GlyphCell::DotsSouth;
-                default: return GlyphCell::LetterB;
-            }
-        case ButtonGlyph::X:  // north
-            switch (style) {
-                case PadGlyphStyle::PlayStation: return GlyphCell::Triangle;
-                case PadGlyphStyle::Xbox: return GlyphCell::LetterY;
-                case PadGlyphStyle::Positional: return GlyphCell::DotsNorth;
-                default: return GlyphCell::LetterX;
-            }
-        case ButtonGlyph::Y:  // west
-            switch (style) {
-                case PadGlyphStyle::PlayStation: return GlyphCell::Square;
-                case PadGlyphStyle::Xbox: return GlyphCell::LetterX;
-                case PadGlyphStyle::Positional: return GlyphCell::DotsWest;
-                default: return GlyphCell::LetterY;
-            }
-        case ButtonGlyph::Plus:  // start
-            switch (style) {
-                case PadGlyphStyle::PlayStation:
-                case PadGlyphStyle::Xbox: return GlyphCell::Bars;
-                default: return GlyphCell::Plus;
-            }
-        case ButtonGlyph::Minus:  // back
-            switch (style) {
-                case PadGlyphStyle::PlayStation: return GlyphCell::Create;
-                case PadGlyphStyle::Xbox: return GlyphCell::View;
-                default: return GlyphCell::Minus;
-            }
-        case ButtonGlyph::L:
-        case ButtonGlyph::R: {
-            const bool right = glyph == ButtonGlyph::R;
-            switch (style) {
-                case PadGlyphStyle::Nintendo: return right ? GlyphCell::SwitchR : GlyphCell::SwitchL;
-                case PadGlyphStyle::Xbox: return right ? GlyphCell::XboxRB : GlyphCell::XboxLB;
-                default: return right ? GlyphCell::SteamR1 : GlyphCell::SteamL1;
-            }
-        }
-        case ButtonGlyph::Count: break;
+    using C = GlyphCell;
+    constexpr int kGlyphs = static_cast<int>(ButtonGlyph::Count);
+    // In ButtonGlyph order: A B X Y, the stick clicks, Plus Minus, L R ZL ZR,
+    // the d-pad's four and itself, the sticks, Home, Capture.
+    static constexpr GlyphCell kNintendo[kGlyphs] = {
+        C::LetterA, C::LetterB, C::LetterX, C::LetterY, C::LeftStick, C::RightStick, C::Plus,
+        C::Minus, C::SwitchL, C::SwitchR, C::SwitchZL, C::SwitchZR, C::SwitchDpadUp,
+        C::SwitchDpadDown, C::SwitchDpadLeft, C::SwitchDpadRight, C::SwitchDpad, C::SwitchStickL,
+        C::SwitchStickR, C::SwitchHome, C::SwitchCapture};
+    static constexpr GlyphCell kPlayStation[kGlyphs] = {
+        C::Circle, C::Cross, C::Triangle, C::Square, C::PlayStationL3, C::PlayStationR3,
+        C::PlayStationOptions, C::PlayStationCreate, C::PlayStationL1, C::PlayStationR1,
+        C::PlayStationL2, C::PlayStationR2, C::PlayStationDpadUp, C::PlayStationDpadDown,
+        C::PlayStationDpadLeft, C::PlayStationDpadRight, C::PlayStationDpad, C::PlayStationStickL,
+        // No PS button among Kenney's: Home is a house, as on a Switch.
+        C::PlayStationStickR, C::SwitchHome, C::PlayStationMute};
+    static constexpr GlyphCell kXbox[kGlyphs] = {
+        C::XboxB, C::XboxA, C::XboxY, C::XboxX, C::XboxLS, C::XboxRS, C::XboxMenu, C::XboxView,
+        C::XboxLB, C::XboxRB, C::XboxLT, C::XboxRT, C::XboxDpadUp, C::XboxDpadDown,
+        C::XboxDpadLeft, C::XboxDpadRight, C::XboxDpad, C::XboxStickL, C::XboxStickR,
+        C::XboxGuide, C::XboxShare};
+    static constexpr GlyphCell kPositional[kGlyphs] = {
+        C::DotsEast, C::DotsSouth, C::DotsNorth, C::DotsWest, C::LeftStick, C::RightStick,
+        C::Plus, C::Minus, C::SteamL1, C::SteamR1, C::SteamL2, C::SteamR2, C::SwitchDpadUp,
+        C::SwitchDpadDown, C::SwitchDpadLeft, C::SwitchDpadRight, C::SwitchDpad, C::SwitchStickL,
+        C::SwitchStickR, C::SwitchHome, C::SwitchCapture};
+    const int index = static_cast<int>(glyph);
+    if (index < 0 || index >= kGlyphs) return C::LetterA;
+    switch (style) {
+        case PadGlyphStyle::PlayStation: return kPlayStation[index];
+        case PadGlyphStyle::Xbox: return kXbox[index];
+        case PadGlyphStyle::Positional: return kPositional[index];
+        default: return kNintendo[index];
     }
-    return GlyphCell::LetterA;
 }
 
 namespace {
@@ -186,8 +165,11 @@ bool ButtonGlyphSheet::initialize(std::string* error) {
     swap_screens_.upload_alpha8(arrows.data(), kSwapSize, kSwapSize);
     swap_screens_.set_linear_filtering(true);
 
-    cell_width_ = image.width / static_cast<int>(GlyphCell::Count);
-    cell_height_ = image.height;
+    // Square cells, a row of them across the sheet.
+    cell_width_ = image.width / kGlyphSheetColumns;
+    cell_height_ = cell_width_;
+    sheet_width_ = image.width;
+    sheet_height_ = image.height;
     texture_.upload_alpha8(coverage.data(), image.width, image.height);
     texture_.set_linear_filtering(true);
     if (!texture_.valid()) {
@@ -218,13 +200,7 @@ float ButtonGlyphSheet::width_for(float height) const {
     return height * static_cast<float>(cell_width_) / static_cast<float>(cell_height_);
 }
 
-float ButtonGlyphSheet::button_centre() const {
-    if (cell_height_ <= 0) {
-        return 0.5f;
-    }
-    return (static_cast<float>(cell_height_) - static_cast<float>(cell_width_) * 0.5f) /
-           static_cast<float>(cell_height_);
-}
+float ButtonGlyphSheet::button_centre() const { return 0.5f; }
 
 void ButtonGlyphSheet::draw(QuadRenderer& quads,
                             ButtonGlyph glyph,
@@ -247,11 +223,13 @@ void ButtonGlyphSheet::draw(QuadRenderer& quads,
         }
     }
     const int cell = static_cast<int>(glyph_cell(style_, glyph));
-    const float cells = static_cast<float>(static_cast<int>(GlyphCell::Count));
-    const float u0 = static_cast<float>(cell) / cells;
-    const float u1 = static_cast<float>(cell + 1) / cells;
-    quads.draw_alpha_mask(PixelRect{x, y, width_for(height), height}, texture_, color, u0, 0.0f,
-                          u1, 1.0f);
+    const float left = static_cast<float>((cell % kGlyphSheetColumns) * cell_width_);
+    const float top = static_cast<float>((cell / kGlyphSheetColumns) * cell_height_);
+    const float width = static_cast<float>(sheet_width_);
+    const float tall = static_cast<float>(sheet_height_);
+    quads.draw_alpha_mask(PixelRect{x, y, width_for(height), height}, texture_, color, left / width,
+                          top / tall, (left + static_cast<float>(cell_width_)) / width,
+                          (top + static_cast<float>(cell_height_)) / tall);
 }
 
 }  // namespace ds

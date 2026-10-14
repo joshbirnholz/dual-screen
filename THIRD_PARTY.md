@@ -131,13 +131,14 @@ No Nintendo BIOS, firmware, NAND image, ROM, or font is included here, and none
 is downloaded. BIOS and firmware files have to be supplied by the user; the app
 locates and validates them and reports what is missing.
 
-## Kenney's Input Prompts — `assets/positional/`, `assets/shoulders/`, `assets/ui_icons/steamdeck.png`, `assets/ui_icons/wiiu_gamepad.png`
+## Kenney's Input Prompts — `assets/kenney/`, `assets/ui_icons/steamdeck.png`, `assets/ui_icons/wiiu_gamepad.png`
 
 Button and device artwork by Kenney (www.kenney.nl), Input Prompts 1.5A,
-released under Creative Commons Zero (CC0): the positional face-button dots,
-the shoulder buttons (a Switch's L and R, a Steam Controller's L1 and R1, an
-Xbox pad's LB and RB), the Steam Deck shown on Data Management's game
-page, and the solid Wii U GamePad on Controller Order. Only their shapes are used — see
+released under Creative Commons Zero (CC0; the licence is in
+`assets/kenney/License.txt`): every button prompt -- a Switch's, a
+PlayStation's, an Xbox pad's, a Steam Controller's shoulders and triggers,
+and the positional face-button dots -- the Steam Deck shown on Data
+Management's game page, and the solid Wii U GamePad on Controller Order. Only their shapes are used — see
 `assets/make_button_icons.py` and `assets/make_ui_icons.py`.
 
 ## Phosphor Icons — `assets/ui_icons/pc.svg`, `assets/ui_icons/pc.png`

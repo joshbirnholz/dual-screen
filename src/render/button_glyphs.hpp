@@ -19,9 +19,35 @@ namespace ds {
 //
 // which is the whole of why a style can be chosen at all: the position is
 // fixed and only the printing changes.
-// L and R are the shoulder buttons, which every pad has in the same place and
-// prints its own way: L and R, L1 and R1, LB and RB.
-enum class ButtonGlyph { A, B, X, Y, LeftStick, RightStick, Plus, Minus, L, R, Count };
+// LeftStick and RightStick are the sticks clicked in; LeftStickMove and
+// RightStickMove the sticks themselves. Plus and Minus are start and select,
+// L and R the shoulder buttons and ZL and ZR the triggers -- every pad has
+// them in the same places and prints them its own way. Every button a pad
+// has is here, so any of them can be named.
+enum class ButtonGlyph {
+    A,
+    B,
+    X,
+    Y,
+    LeftStick,
+    RightStick,
+    Plus,
+    Minus,
+    L,
+    R,
+    ZL,
+    ZR,
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight,
+    Dpad,
+    LeftStickMove,
+    RightStickMove,
+    Home,
+    Capture,
+    Count
+};
 
 // Whose buttons the prompts are drawn as. The choice is the player's, not the
 // pad's: somebody who has used a PlayStation for twenty years reads a circle
@@ -38,10 +64,11 @@ enum class PadGlyphStyle { Nintendo, PlayStation, Xbox, Positional, Count };
 const char* to_string(PadGlyphStyle style);
 bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out);
 
-// The cells in assets/button_icons.png, in the order they sit in the strip.
-// The first eight are the original hand-drawn artwork; the rest are generated
-// by assets/make_button_icons.py to the geometry measured off them.
+// The cells in assets/button_icons.png, in the order they sit in the sheet --
+// see assets/make_button_icons.py, which draws it from Kenney's Input Prompts.
+// Each pad's whole set, in ButtonGlyph order.
 enum class GlyphCell {
+    // A Switch's.
     LetterA,
     LetterB,
     LetterX,
@@ -50,38 +77,84 @@ enum class GlyphCell {
     RightStick,
     Plus,
     Minus,
-    Cross,
+    SwitchL,
+    SwitchR,
+    SwitchZL,
+    SwitchZR,
+    SwitchDpadUp,
+    SwitchDpadDown,
+    SwitchDpadLeft,
+    SwitchDpadRight,
+    SwitchDpad,
+    SwitchStickL,
+    SwitchStickR,
+    SwitchHome,
+    SwitchCapture,
+    // A PlayStation's.
     Circle,
+    Cross,
     Triangle,
     Square,
-    // Three horizontal lines: an Xbox Menu button and a PlayStation Options
-    // button are the same icon, so they are the same cell.
-    Bars,
-    View,
-    Create,
-    // Four dots, the one to press filled in -- see PadGlyphStyle::Positional.
+    PlayStationL3,
+    PlayStationR3,
+    PlayStationOptions,
+    PlayStationCreate,
+    PlayStationL1,
+    PlayStationR1,
+    PlayStationL2,
+    PlayStationR2,
+    PlayStationDpadUp,
+    PlayStationDpadDown,
+    PlayStationDpadLeft,
+    PlayStationDpadRight,
+    PlayStationDpad,
+    PlayStationStickL,
+    PlayStationStickR,
+    PlayStationMute,
+    // An Xbox pad's.
+    XboxA,
+    XboxB,
+    XboxX,
+    XboxY,
+    XboxLS,
+    XboxRS,
+    XboxMenu,
+    XboxView,
+    XboxLB,
+    XboxRB,
+    XboxLT,
+    XboxRT,
+    XboxDpadUp,
+    XboxDpadDown,
+    XboxDpadLeft,
+    XboxDpadRight,
+    XboxDpad,
+    XboxStickL,
+    XboxStickR,
+    XboxGuide,
+    XboxShare,
+    // Four dots, the one to press filled in -- see PadGlyphStyle::Positional
+    // -- and a Steam Controller's shoulders and triggers, the plainest.
     DotsEast,
     DotsSouth,
     DotsNorth,
     DotsWest,
-    // The shoulders, from Kenney's Input Prompts: a Switch's, a Steam
-    // Controller's L1 and R1 -- which the PlayStation and positional styles
-    // share, plain enough to read as either -- and an Xbox pad's.
-    SwitchL,
-    SwitchR,
     SteamL1,
     SteamR1,
-    XboxLB,
-    XboxRB,
+    SteamL2,
+    SteamR2,
     Count
 };
+
+// How many cells a row of the sheet holds.
+inline constexpr int kGlyphSheetColumns = 16;
 
 // Which cell a prompt is drawn from, in a given style. Pure arithmetic over
 // the table above, so it can be checked without a GL context.
 GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph);
 
-// The strip of button artwork, drawn a cell at a time. Every glyph is a black
-// disc with its letter knocked out of it, so the letter picks up whatever is
+// The sheet of button artwork, drawn a cell at a time. Every glyph is a
+// shape with its letter knocked out of it, so the letter picks up whatever is
 // behind the prompt and one image reads correctly on a dark backdrop and on a
 // white dialog alike.
 class ButtonGlyphSheet {
@@ -98,15 +171,12 @@ public:
     float width_for(float height) const;
 
     // Where the button itself sits inside the box a glyph is drawn into, as a
-    // fraction of that box's height. The strip packs every button square and
-    // bottom-aligned, so that whatever stands above one -- the arrow over a
-    // stick click -- takes the headroom and the buttons stay on one line. Text
-    // beside a glyph lines up with this rather than with the box, which would
-    // leave it sitting above the circle it is labelling.
+    // fraction of that box's height: the middle, every cell being a square
+    // with its button centred in it. Text beside a glyph lines up with this.
     float button_centre() const;
 
-    // Drawn in `color`: the artwork is a disc with its letter knocked out of
-    // it, so the colour is the disc and whatever is behind shows through the
+    // Drawn in `color`: the artwork is a shape with its letter knocked out of
+    // it, so the colour is the shape and whatever is behind shows through the
     // letter. Prompts pass their own text colour, which keeps a glyph and the
     // words beside it looking like one thing.
     void draw(QuadRenderer& quads,
@@ -145,6 +215,8 @@ private:
     bool by_letter_ = false;
     int cell_width_ = 0;
     int cell_height_ = 0;
+    int sheet_width_ = 0;
+    int sheet_height_ = 0;
 };
 
 }  // namespace ds

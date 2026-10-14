@@ -33,13 +33,13 @@ void test_nintendo_is_the_artwork_this_started_with() {
 // corners. That swap is the confusion this setting exists to end, so it is
 // the thing most worth pinning down.
 void test_xbox_is_the_same_letters_in_the_other_corners() {
-    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::A) == GlyphCell::LetterB,
+    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::A) == GlyphCell::XboxB,
               "east is printed B on an Xbox pad");
-    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::B) == GlyphCell::LetterA,
+    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::B) == GlyphCell::XboxA,
               "south is printed A on an Xbox pad");
-    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::X) == GlyphCell::LetterY,
+    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::X) == GlyphCell::XboxY,
               "north is printed Y on an Xbox pad");
-    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::Y) == GlyphCell::LetterX,
+    CHECK_MSG(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::Y) == GlyphCell::XboxX,
               "west is printed X on an Xbox pad");
 }
 
@@ -77,27 +77,49 @@ void test_no_style_draws_two_face_buttons_the_same() {
     }
 }
 
-// A stick click is a stick click: no pad prints anything else on it, so no
-// style may quietly move it.
-void test_the_stick_clicks_never_change() {
-    for (int index = 0; index < static_cast<int>(PadGlyphStyle::Count); ++index) {
-        const PadGlyphStyle style = static_cast<PadGlyphStyle>(index);
-        CHECK(glyph_cell(style, ButtonGlyph::LeftStick) == GlyphCell::LeftStick);
-        CHECK(glyph_cell(style, ButtonGlyph::RightStick) == GlyphCell::RightStick);
-    }
+// A stick click as each pad prints it: a Switch's clicked stick, a
+// PlayStation's L3 and R3, an Xbox pad's LS and RS.
+void test_the_stick_clicks() {
+    CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::LeftStick) == GlyphCell::LeftStick);
+    CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::RightStick) == GlyphCell::RightStick);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::LeftStick) == GlyphCell::PlayStationL3);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::RightStick) == GlyphCell::PlayStationR3);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::LeftStick) == GlyphCell::XboxLS);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::RightStick) == GlyphCell::XboxRS);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::LeftStick) == GlyphCell::LeftStick);
 }
 
-// The shoulders, as each pad prints them. PlayStation and positional share
-// the Steam Controller's L1 and R1.
+// The shoulders, triggers, start and select, as each pad prints them;
+// positional has a Steam Controller's plain shoulders and triggers.
 void test_the_shoulders() {
     CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::L) == GlyphCell::SwitchL);
-    CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::R) == GlyphCell::SwitchR);
+    CHECK(glyph_cell(PadGlyphStyle::Nintendo, ButtonGlyph::ZR) == GlyphCell::SwitchZR);
     CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::L) == GlyphCell::XboxLB);
     CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::R) == GlyphCell::XboxRB);
-    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::L) == GlyphCell::SteamL1);
-    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::R) == GlyphCell::SteamR1);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::ZL) == GlyphCell::XboxLT);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::Plus) == GlyphCell::XboxMenu);
+    CHECK(glyph_cell(PadGlyphStyle::Xbox, ButtonGlyph::Minus) == GlyphCell::XboxView);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::L) == GlyphCell::PlayStationL1);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::R) == GlyphCell::PlayStationR1);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::ZR) == GlyphCell::PlayStationR2);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::Plus) == GlyphCell::PlayStationOptions);
+    CHECK(glyph_cell(PadGlyphStyle::PlayStation, ButtonGlyph::Minus) == GlyphCell::PlayStationCreate);
     CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::L) == GlyphCell::SteamL1);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::R) == GlyphCell::SteamR1);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::ZR) == GlyphCell::SteamR2);
+}
+
+// Every button a pad has, drawn as something of that pad's own: no two
+// buttons of one style share a cell, but for Home, which Kenney draws for
+// no PlayStation and so is a house there as on a Switch.
+void test_every_button_of_a_style_is_its_own() {
+    for (int s = 0; s < static_cast<int>(PadGlyphStyle::Count); ++s) {
+        std::set<GlyphCell> seen;
+        for (int g = 0; g < static_cast<int>(ButtonGlyph::Count); ++g) {
+            seen.insert(glyph_cell(static_cast<PadGlyphStyle>(s), static_cast<ButtonGlyph>(g)));
+        }
+        CHECK_MSG(seen.size() == static_cast<std::size_t>(ButtonGlyph::Count),
+                  to_string(static_cast<PadGlyphStyle>(s)));
+    }
 }
 
 // Every cell a style asks for has to be in the strip, or it samples past the
@@ -196,7 +218,8 @@ int main() {
     test_xbox_is_the_same_letters_in_the_other_corners();
     test_playstation_is_shapes();
     test_no_style_draws_two_face_buttons_the_same();
-    test_the_stick_clicks_never_change();
+    test_the_stick_clicks();
+    test_every_button_of_a_style_is_its_own();
     test_the_shoulders();
     test_every_cell_is_in_the_sheet();
     test_a_style_survives_the_round_trip_through_settings_json();

@@ -1337,7 +1337,7 @@ Full options:
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |
-| Change how button prompts are drawn | **Controller icons** in Settings: Nintendo letters, PlayStation symbols, Xbox letters, or **Positional** -- four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
+| Change how button prompts are drawn | **Controller icons** in Settings: a Switch's, a PlayStation's or an Xbox pad's buttons -- face buttons, shoulders, triggers, start and select, sticks and d-pad, each as that pad prints them, from Kenney's Input Prompts -- or **Positional**: four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
 | Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. A pad read through Steam Input always confirms with Steam's A -- see Face buttons. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
 
 ### If it quits immediately in Game Mode
