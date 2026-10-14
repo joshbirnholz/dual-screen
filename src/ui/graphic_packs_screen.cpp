@@ -107,6 +107,7 @@ void GraphicPacksScreen::open() {
     restart_pending_ = false;
     changed_.clear();
     packs_.clear();
+    ++packs_revision_;
     lines_.clear();
     focus_ = 0;
     in_pack_ = false;
@@ -131,6 +132,7 @@ void GraphicPacksScreen::set_packs(std::vector<ExternalGraphicPack> packs) {
     }
     waiting_ = false;
     packs_ = std::move(packs);
+    ++packs_revision_;
     for (const ExternalGraphicPack& pack : packs_) {
         if (pack.restart_needed && changed_.count(pack.id) != 0) restart_pending_ = true;
     }
@@ -219,6 +221,7 @@ void GraphicPacksScreen::adjust(GraphicPacksScreenResult& result) {
     change.id = pack->id;
     if (item_ == 0) {
         pack->enabled = !pack->enabled;
+        ++packs_revision_;
         change.kind = ExternalGraphicPackChange::Kind::Enabled;
         change.enabled = pack->enabled;
     } else {
@@ -250,6 +253,7 @@ void GraphicPacksScreen::choose(int index, GraphicPacksScreenResult& result) {
     if (index < 0 || index >= static_cast<int>(choice.presets.size())) return;
     if (index == (choice.active >= 0 ? choice.active : 0) && choice.active >= 0) return;
     choice.active = index;
+    ++packs_revision_;
     ExternalGraphicPackChange change;
     change.id = pack->id;
     change.kind = ExternalGraphicPackChange::Kind::Preset;
@@ -310,17 +314,46 @@ GraphicPacksScreen::Geometry GraphicPacksScreen::compute_geometry(float output_w
     geometry.description_y = item_y + line * 0.9f;
     float end = geometry.description_y;
     if (const ExternalGraphicPack* pack = focused_pack()) {
-        const float description_scale = geometry.scale * 0.85f;
-        for (const std::string& paragraph : split(pack->description, '\n')) {
-            end += paragraph.empty()
-                       ? TextRenderer::wrapped_line_step(description_scale) * 0.6f
-                       : TextRenderer::wrapped_line_step(description_scale) *
-                             static_cast<float>(
-                                 TextRenderer::wrap(paragraph, detail_width, description_scale).size());
-        }
+        end += description_height(pack->description, detail_width, geometry.scale * 0.85f);
     }
     geometry.detail_height = end + line * 0.5f - detail_top;
     return geometry;
+}
+
+float GraphicPacksScreen::description_height(const std::string& description, float width,
+                                             float scale) const {
+    DescriptionHeight& cached = description_height_;
+    if (cached.width == width && cached.scale == scale && cached.text == description) return cached.height;
+    float height = 0.0f;
+    for (const std::string& paragraph : split(description, '\n')) {
+        height += paragraph.empty() ? TextRenderer::wrapped_line_step(scale) * 0.6f
+                                    : TextRenderer::wrapped_line_step(scale) *
+                                          static_cast<float>(TextRenderer::wrap(paragraph, width, scale).size());
+    }
+    cached = DescriptionHeight{description, width, scale, height};
+    return height;
+}
+
+bool GraphicPacksScreen::same_packs(const std::vector<net::GraphicPacksViewPack>& wire) const {
+    if (wire.size() != packs_.size()) return false;
+    for (std::size_t index = 0; index < wire.size(); ++index) {
+        const ExternalGraphicPack& here = packs_[index];
+        const net::GraphicPacksViewPack& there = wire[index];
+        if (here.id != there.id || here.enabled != there.enabled ||
+            here.restart_needed != there.restart_needed || here.name != there.name ||
+            here.path != there.path || here.description != there.description ||
+            here.choices.size() != there.choices.size()) {
+            return false;
+        }
+        for (std::size_t choice = 0; choice < here.choices.size(); ++choice) {
+            if (here.choices[choice].category != there.choices[choice].category ||
+                here.choices[choice].presets != there.choices[choice].presets ||
+                here.choices[choice].active != there.choices[choice].active) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void GraphicPacksScreen::scroll_focus_into_view(const Geometry& geometry) {
@@ -659,21 +692,26 @@ void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
     open_ = true;
     waiting_ = view.waiting;
     restart_pending_ = view.restart_pending;
-    packs_.clear();
-    for (const net::GraphicPacksViewPack& wire : view.packs) {
-        ExternalGraphicPack pack;
-        pack.id = wire.id;
-        pack.path = wire.path;
-        pack.name = wire.name;
-        pack.description = wire.description;
-        pack.enabled = wire.enabled;
-        pack.restart_needed = wire.restart_needed;
-        for (const net::GraphicPacksViewChoice& choice : wire.choices) {
-            pack.choices.push_back({choice.category, choice.presets, choice.active});
+    // Drawn every frame from the last thing the other device said, which is
+    // the same packs nearly always: only taken in again when they are not.
+    if (!same_packs(view.packs)) {
+        packs_.clear();
+        ++packs_revision_;
+        for (const net::GraphicPacksViewPack& wire : view.packs) {
+            ExternalGraphicPack pack;
+            pack.id = wire.id;
+            pack.path = wire.path;
+            pack.name = wire.name;
+            pack.description = wire.description;
+            pack.enabled = wire.enabled;
+            pack.restart_needed = wire.restart_needed;
+            for (const net::GraphicPacksViewChoice& choice : wire.choices) {
+                pack.choices.push_back({choice.category, choice.presets, choice.active});
+            }
+            packs_.push_back(std::move(pack));
         }
-        packs_.push_back(std::move(pack));
+        rebuild_lines();
     }
-    rebuild_lines();
     // Laid out from the same list, so the host's numbers mean the same
     // things here.
     focus_ = std::max(0, std::min(view.focus, pack_count() - 1));

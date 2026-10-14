@@ -7,6 +7,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -508,6 +509,10 @@ struct App::Impl {
     ControllersScreen mirrored_controllers;
     // And its Graphics Packs page, the same way.
     GraphicPacksScreen mirrored_graphic_packs;
+    // What the companion was last told of the Graphics Packs page -- see
+    // GraphicPacksScreen::packs_revision().
+    bool graphic_packs_view_sent = false;
+    std::array<int64_t, 7> graphic_packs_view_key{};
     // The game running here, which its save points are named after.
     std::string game_path;
     std::unique_ptr<GameBrowser> browser;
@@ -5947,11 +5952,24 @@ int App::run(const AppOptions& options) {
             } else {
                 impl.host_session->set_controllers_view(net::ControllersViewMessage());
             }
-            // And the Graphics Packs page, the same way.
-            impl.host_session->set_graphic_packs_view(
-                impl.state == Impl::State::GraphicPacks
-                    ? graphic_packs_view_of(impl.graphic_packs_screen)
-                    : net::GraphicPacksViewMessage());
+            // And the Graphics Packs page, the same way -- made again only
+            // when something on it has changed: it is every pack Cemu has,
+            // descriptions and all, and the cursor moving is most changes.
+            if (impl.state == Impl::State::GraphicPacks) {
+                const GraphicPacksScreen& packs = impl.graphic_packs_screen;
+                const std::array<int64_t, 7> key{
+                    static_cast<int64_t>(packs.packs_revision()), packs.focus(), packs.in_pack() ? 1 : 0,
+                    packs.item(), packs.choosing() ? packs.choice_focus() + 1 : 0, packs.waiting() ? 1 : 0,
+                    packs.restart_pending() ? 1 : 0};
+                if (!impl.graphic_packs_view_sent || key != impl.graphic_packs_view_key) {
+                    impl.host_session->set_graphic_packs_view(graphic_packs_view_of(packs));
+                    impl.graphic_packs_view_key = key;
+                    impl.graphic_packs_view_sent = true;
+                }
+            } else if (impl.graphic_packs_view_sent) {
+                impl.host_session->set_graphic_packs_view(net::GraphicPacksViewMessage());
+                impl.graphic_packs_view_sent = false;
+            }
             const uint64_t poll_began_us = steady_micros();
             impl.host_session->poll(network_now);
             impl.pass_times.network_us += steady_micros() - poll_began_us;

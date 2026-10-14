@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
@@ -70,6 +71,9 @@ public:
     bool in_pack() const { return in_pack_; }
     int item() const { return item_; }
     const std::vector<ExternalGraphicPack>& packs() const { return packs_; }
+    // Counts up whenever the packs, or anything about them, change: what the
+    // other device is sent is only made again when it has.
+    uint64_t packs_revision() const { return packs_revision_; }
     // Whether a change was made to a pack that only takes effect once the
     // game starts again -- which the page then says.
     bool restart_pending() const { return restart_pending_; }
@@ -148,7 +152,20 @@ private:
     // was off it has not, so its answer can say so after the change.
     std::set<std::string> changed_;
     std::vector<ExternalGraphicPack> packs_;
+    uint64_t packs_revision_ = 0;
     std::vector<GraphicPackLine> lines_;
+    // How tall the highlighted pack's description is, wrapped: wrapping is
+    // measuring every word, and the layout is asked for many times a frame.
+    struct DescriptionHeight {
+        std::string text;
+        float width = -1.0f;
+        float scale = -1.0f;
+        float height = 0.0f;
+    };
+    mutable DescriptionHeight description_height_;
+    float description_height(const std::string& description, float width, float scale) const;
+    // Whether the other device's packs are the ones already here.
+    bool same_packs(const std::vector<net::GraphicPacksViewPack>& wire) const;
     int focus_ = 0;
     bool in_pack_ = false;
     int item_ = 0;
