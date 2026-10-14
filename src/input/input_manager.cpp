@@ -886,9 +886,6 @@ void InputManager::handle_event(const SDL_Event& event) {
             } else if (button == kMenuResetButton) {
                 push_action(UiAction::MenuReset);
                 meaning = "the menu's reset";
-            } else if (button == kMenuDisconnectButton) {
-                push_action(UiAction::MenuDisconnect);
-                meaning = "disconnect";
             } else if (button == kMenuSettingsButton) {
                 push_action(UiAction::MenuSettings);
                 meaning = "settings";

@@ -80,7 +80,7 @@ it was last closed on. Up and down move through the list, and the right-hand
 side follows. Right or A goes across onto it, always onto its first thing, top
 left; left from its edge comes back. B resumes the game from anywhere in the
 menu, the list or the right-hand side. **+** opens Settings, and the old face-button
-shortcuts (X quit, Y reset, − disconnect, R3 smoothing) still work, though the
+shortcuts (X quit, Y reset, R3 smoothing) still work, though the
 guide no longer shows them. A Wii U game's menu stays a plain list.
 
 ### Your DS's name and favorite color

@@ -61,7 +61,8 @@ constexpr SDL_GameControllerButton kMenuQuitButton = SDL_CONTROLLER_BUTTON_Y;   
 constexpr SDL_GameControllerButton kMenuResetButton = SDL_CONTROLLER_BUTTON_X;   // west
 // Settings on plus, where a Switch's own games keep their options.
 constexpr SDL_GameControllerButton kMenuSettingsButton = SDL_CONTROLLER_BUTTON_START;    // plus
-constexpr SDL_GameControllerButton kMenuDisconnectButton = SDL_CONTROLLER_BUTTON_BACK;   // minus
+// Disconnect has no button: it is picked from the list, never pressed by
+// accident on the way to something else.
 
 // Maps a controller button to a DS button. Returns false for buttons the DS has
 // no equivalent for.

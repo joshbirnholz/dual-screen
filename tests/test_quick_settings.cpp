@@ -1080,7 +1080,7 @@ std::vector<MenuSection> wii_u_sections(const LayoutRegistry& registry, const La
 // offers them, Controller Order, Disconnect with a second device, Reset Game
 // and Quit -- and whichever is highlighted showing its things on the right.
 // No layouts and no save states: Cemu owns which screen is shown, and has
-// none. Settings is minus, as on every console's menu.
+// none. Settings is plus, as on every console's menu.
 void test_wii_u_menu_has_its_own_sections() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -1111,7 +1111,7 @@ void test_wii_u_menu_has_its_own_sections() {
     CHECK(picker.confirmation() == MenuConfirm::Quit);
 
     // The face-button shortcuts a DS menu answers to are not a Wii U's -- a
-    // real GamePad has none -- except minus, which is Settings everywhere.
+    // real GamePad has none -- except plus, which is Settings everywhere.
     LayoutPicker shortcuts(registry);
     open_wii_u(shortcuts, state);
     for (const UiAction action : {UiAction::MenuQuit, UiAction::MenuReset, UiAction::MenuDisconnect}) {
@@ -1135,7 +1135,7 @@ void test_wii_u_menu_has_its_own_sections() {
 }
 
 // The control guide is what actually tells a player what a press does, so the
-// list has to shrink there too: A, B and minus for Settings, nothing named for
+// list has to shrink there too: A, B and plus for Settings, nothing named for
 // a control that no longer does anything on this menu.
 void test_wii_u_menu_guide_is_ok_back_and_settings() {
     LayoutRegistry registry;
