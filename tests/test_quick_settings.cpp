@@ -847,7 +847,7 @@ void test_saving_asks_only_before_overwriting() {
 
 // Saving says so in a popup with one answer, OK -- which A, B or a tap on it
 // all give -- and the menu is back as it was once it is put away.
-void test_a_save_is_announced_in_a_popup() {
+void test_a_failed_save_is_announced_in_a_popup() {
     LayoutRegistry registry;
     for (const UiAction answer : {UiAction::Confirm, UiAction::Cancel}) {
         LayoutPicker picker(registry);
@@ -857,8 +857,9 @@ void test_a_save_is_announced_in_a_popup() {
         press(picker, UiAction::Right);
         CHECK_EQ(press(picker, UiAction::Confirm).save_slot, 1);
 
-        // What the device running the game does once the save is written.
-        picker.set_save_status("Save state saved to slot 2.", false);
+        // What the device running the game does when the save fails -- one
+        // that works is a chime, and nothing to put away.
+        picker.set_save_status("The disk is full.", true);
         picker.show_notice();
         CHECK(picker.confirmation() == MenuConfirm::Notice);
         // Nothing behind it moves while it is up.
@@ -985,8 +986,8 @@ void test_wii_u_menu_has_its_own_sections() {
     state.session_active = true;
     CHECK(wii_u_sections(registry, state) ==
           std::vector<MenuSection>({MenuSection::Continue, MenuSection::Options, MenuSection::Amiibo,
-                                    MenuSection::GraphicPacks, MenuSection::ControllerOrder,
-                                    MenuSection::Disconnect, MenuSection::Reset, MenuSection::Quit}));
+                                    MenuSection::ControllerOrder, MenuSection::Disconnect,
+                                    MenuSection::Reset, MenuSection::Quit}));
 
     // Each does what it says from the left.
     LayoutPicker picker(registry);
@@ -994,8 +995,6 @@ void test_wii_u_menu_has_its_own_sections() {
     CHECK(press(picker, UiAction::Confirm).close_requested);
     open_on(open_wii_u(picker, state), state, MenuSection::ControllerOrder);
     CHECK(press(picker, UiAction::Confirm).controllers_requested);
-    open_on(picker, state, MenuSection::GraphicPacks);
-    CHECK(press(picker, UiAction::Confirm).graphic_packs_requested);
     open_on(picker, state, MenuSection::Disconnect);
     CHECK(press(picker, UiAction::Confirm).disconnect_requested);
     open_on(picker, state, MenuSection::Quit);
@@ -1597,6 +1596,18 @@ void test_wii_u_options_are_this_games() {
     for (int step = 0; step < 4; ++step) press(picker, UiAction::Down);
     CHECK_EQ(press(picker, UiAction::Confirm).producer_option, 2);
 
+    // Graphics packs last, a page of their own, where Cemu has them.
+    state.graphic_packs_available = true;
+    LayoutPicker packs(registry);
+    open_wii_u(packs, state);
+    open_on(packs, state, MenuSection::Options);
+    press(packs, UiAction::Right);
+    for (int step = 0; step < 4; ++step) press(packs, UiAction::Down);
+    const LayoutPickerResult opened = press(packs, UiAction::Confirm);
+    CHECK_MSG(opened.graphic_packs_requested && opened.producer_option < 0,
+              "the last of the Options did not open Graphics Packs");
+    state.graphic_packs_available = false;
+
     // With a second device, the screens trade there and then: no value.
     state.screens_swap_value_shown = false;
     state.cursor_choosable = false;
@@ -1658,7 +1669,7 @@ int main() {
     test_moving_between_the_list_and_what_it_shows();
     test_loading_a_save_point_asks_first();
     test_saving_asks_only_before_overwriting();
-    test_a_save_is_announced_in_a_popup();
+    test_a_failed_save_is_announced_in_a_popup();
     test_save_points_only_where_the_core_can_make_them();
     test_the_sections_that_end_something();
     test_the_stylus_button();

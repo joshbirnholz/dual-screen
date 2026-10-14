@@ -135,19 +135,20 @@ void LayoutPicker::rebuild_footer() {
         if (!state_.embedded) sections_.push_back(MenuSection::Continue);
         sections_.push_back(MenuSection::Options);
         if (state_.amiibo_available) sections_.push_back(MenuSection::Amiibo);
-        if (state_.graphic_packs_available) sections_.push_back(MenuSection::GraphicPacks);
         sections_.push_back(MenuSection::ControllerOrder);
         if (state_.session_active) sections_.push_back(MenuSection::Disconnect);
         if (state_.reset_available) sections_.push_back(MenuSection::Reset);
         sections_.push_back(MenuSection::Quit);
 
         // This game's Options: its screen, kept for it, the pointer, which
-        // is this device's own as on a DS menu, and then whatever Cemu offers.
+        // is this device's own as on a DS menu, whatever Cemu offers, and
+        // last its graphics packs, a page of their own.
         if (state_.screens_swappable) options_.push_back(OptionRow{Option::SwapScreens});
         if (state_.cursor_choosable) options_.push_back(OptionRow{Option::Cursor});
         for (std::size_t index = 0; index < state_.producer_options.size(); ++index) {
             options_.push_back(OptionRow{Option::Producer, static_cast<int>(index)});
         }
+        if (state_.graphic_packs_available) options_.push_back(OptionRow{Option::GraphicPacks});
     } else {
 
     // The sections, in the order the player asked for them: back to the game,
@@ -271,6 +272,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::Smoothing: return "Screen Smoothing";
         case Option::Resume: return "Resume from Save State";
         case Option::SwapScreens: return "Swap Screens";
+        case Option::GraphicPacks: return "Graphics Packs";
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].first;
@@ -302,6 +304,8 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
         // with a second device, nothing to say -- it swaps them, there and then.
         case Option::SwapScreens:
             return state_.screens_swap_value_shown ? (state_.screens_swapped ? "On" : "Off") : "";
+        // A page, not a value.
+        case Option::GraphicPacks: return std::string();
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].second;
@@ -703,6 +707,10 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Smoothing: result.filtering_toggled = true; break;
                 case Option::Resume: result.resume_toggled = true; break;
                 case Option::SwapScreens: result.screens_swap_toggled = true; break;
+                // Cemu's, on the device running it, which the caller puts up.
+                case Option::GraphicPacks:
+                    if (state_.graphic_packs_available) result.graphic_packs_requested = true;
+                    break;
                 case Option::Producer:
                     result.producer_option = options_[static_cast<std::size_t>(item_)].index;
                     break;

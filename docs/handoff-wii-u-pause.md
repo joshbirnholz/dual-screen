@@ -131,8 +131,8 @@ Management have no layout problems at 4K.
   first byte is now 2 for a notice, and Cemu holds pads, keys and clicks back
   only for a menu (1), so a game that refused to pause keeps its controls
   under the 2.5 s notice.
-- **Graphics Packs (new, untested on the PC):** a quick-menu row under
-  Controller Order, offered when Cemu's Hello has `kExternalFeatureGraphicPacks`.
+- **Graphics Packs (new, untested on the PC):** the last row of the quick
+  menu's Options, offered when Cemu's Hello has `kExternalFeatureGraphicPacks`.
   The page (`src/ui/graphic_packs_screen.*`) asks with `GraphicPacksWanted`,
   Cemu answers with `GraphicPacks`, and each press sends a
   `GraphicPackChange` that Cemu applies on its UI thread exactly as its own

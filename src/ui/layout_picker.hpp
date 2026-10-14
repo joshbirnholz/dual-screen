@@ -476,6 +476,9 @@ private:
         Resume,
         // A Wii U's: this game's screen, alone, or the two devices trading.
         SwapScreens,
+        // A Wii U's graphics packs, a page of their own -- see
+        // LayoutPickerState::graphic_packs_available.
+        GraphicPacks,
         // One of Cemu's own -- see LayoutPickerState::producer_options.
         Producer,
     };

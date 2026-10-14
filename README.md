@@ -310,7 +310,7 @@ Three things are different about a Wii U session:
   the game, this app's own window shows the Wii U menu in place of a
   "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
   down the left, and the highlighted one's things on the right: **Options**,
-  **amiibo**, **Graphics Packs** (see below), **Controller Order**,
+  **amiibo**, **Controller Order**,
   **Disconnect**, **Reset Game** and **Quit**, with **Settings** on minus as
   on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
   Cemu this app started and starts it again on the same game. It
@@ -326,7 +326,8 @@ Three things are different about a Wii U session:
   Cemu's window too. **F1** or **B** on the list puts it away. Not **Tab**,
   which Cemu keeps for itself: held, it shows the GamePad's screen.
 
-- **Graphics Packs**, in the quick menu, is Cemu's own Graphic Packs window
+- **Graphics Packs**, the last of a Wii U game's **Options** in the quick
+  menu, is Cemu's own Graphic Packs window
   laid out as the quick menu is, so the packs can be changed with a controller
   in Game Mode, where that window is out of reach: the game's packs down the
   left, grouped as Mods, Enhancements and so on, and on the right the one
