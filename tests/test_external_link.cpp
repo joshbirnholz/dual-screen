@@ -885,6 +885,29 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
     CHECK(std::abs(press_x - 0.25f) < 0.001f && std::abs(press_y - 0.5f) < 0.001f);
     CHECK(std::abs(tap_x - 0.75f) < 0.001f && std::abs(tap_y - 1.0f) < 0.001f);
 
+    // The pointer over the menu, streamed: down, a move, the wheel and up,
+    // in order and where they were.
+    ExternalOverlayPointer over;
+    CHECK(!link.take_overlay_pointer(over));
+    producer.send_overlay_pointer(ExternalOverlayPointerKind::Down, 0.1f, 0.2f);
+    producer.send_overlay_pointer(ExternalOverlayPointerKind::Move, 0.1f, 0.6f);
+    producer.send_overlay_pointer(ExternalOverlayPointerKind::Wheel, 0.5f, 0.5f, -1.5f);
+    producer.send_overlay_pointer(ExternalOverlayPointerKind::Up, 0.1f, 0.6f);
+    std::vector<ExternalOverlayPointer> stream;
+    CHECK_MSG(wait_for([&]() {
+                  while (link.take_overlay_pointer(over)) stream.push_back(over);
+                  return stream.size() >= 4;
+              }),
+              "the pointer over the menu never came back");
+    CHECK_EQ(stream.size(), 4u);
+    if (stream.size() == 4u) {
+        CHECK(stream[0].kind == ExternalOverlayPointerKind::Down);
+        CHECK(std::abs(stream[0].x - 0.1f) < 0.001f && std::abs(stream[0].y - 0.2f) < 0.001f);
+        CHECK(stream[1].kind == ExternalOverlayPointerKind::Move && std::abs(stream[1].y - 0.6f) < 0.001f);
+        CHECK(stream[2].kind == ExternalOverlayPointerKind::Wheel && std::abs(stream[2].wheel + 1.5f) < 0.01f);
+        CHECK(stream[3].kind == ExternalOverlayPointerKind::Up);
+    }
+
     // Tab in the game's window, which only it can hear.
     CHECK(!link.take_menu_key());
     producer.send_menu_key();

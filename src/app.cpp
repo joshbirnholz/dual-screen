@@ -402,6 +402,14 @@ struct App::Impl {
     bool wii_u_still_ready[2] = {false, false};
     std::chrono::steady_clock::time_point wii_u_paused_at;
     std::chrono::steady_clock::time_point menu_pause_asked_at;
+    // The pointer over the menu drawn in Cemu's window -- see
+    // ExternalControl::OverlayPointer: down or not, where it is, and where it
+    // went down, in this window's pixels.
+    bool overlay_pointer_down = false;
+    float overlay_pointer_x = 0.0f;
+    float overlay_pointer_y = 0.0f;
+    float overlay_press_x = 0.0f;
+    float overlay_press_y = 0.0f;
     // A few words in the top right corner, until `corner_notice_until`.
     std::string corner_notice;
     std::chrono::steady_clock::time_point corner_notice_until;
@@ -6453,7 +6461,69 @@ int App::run(const AppOptions& options) {
             // where they would on this window's copy of it: the two are
             // drawn at the same shape. See wants_menu_overlay(). Only the
             // menu's: a corner notice has nothing to tap.
-            if (impl.external_source) {
+            if (impl.external_source && impl.external_source->overlay_pointer_supported()) {
+                // The whole of what the pointer did over it -- down, every
+                // move, up, the wheel -- handed to the menu exactly as this
+                // window's own pointer is: a finger drags a list there, and
+                // the wheel turns it, as they do here.
+                const float width = static_cast<float>(impl.output_width);
+                const float height = static_cast<float>(impl.output_height);
+                ExternalOverlayPointer over;
+                float wheel = 0.0f;
+                float wheel_x = 0.0f;
+                float wheel_y = 0.0f;
+                bool moved = false;
+                while (impl.external_source->take_overlay_pointer(over)) {
+                    const float x = over.x * width;
+                    const float y = over.y * height;
+                    if (!impl.menu_over_wii_u_game()) {
+                        impl.overlay_pointer_down = false;
+                        continue;
+                    }
+                    moved = true;
+                    switch (over.kind) {
+                        case ExternalOverlayPointerKind::Down: {
+                            impl.overlay_pointer_down = true;
+                            impl.overlay_press_x = x;
+                            impl.overlay_press_y = y;
+                            PointerEvent pressed;
+                            pressed.normalized = false;
+                            pressed.pressed = true;
+                            pressed.x = pressed.press_x = x;
+                            pressed.y = pressed.press_y = y;
+                            pointers.push_back(pressed);
+                            break;
+                        }
+                        case ExternalOverlayPointerKind::Move: break;
+                        case ExternalOverlayPointerKind::Up: {
+                            if (!impl.overlay_pointer_down) break;
+                            impl.overlay_pointer_down = false;
+                            PointerEvent released;
+                            released.normalized = false;
+                            released.released = true;
+                            released.x = x;
+                            released.y = y;
+                            released.press_x = impl.overlay_press_x;
+                            released.press_y = impl.overlay_press_y;
+                            pointers.push_back(released);
+                            break;
+                        }
+                        case ExternalOverlayPointerKind::Wheel:
+                            wheel += over.wheel;
+                            wheel_x = x;
+                            wheel_y = y;
+                            break;
+                    }
+                    if (over.kind != ExternalOverlayPointerKind::Wheel) {
+                        impl.overlay_pointer_x = x;
+                        impl.overlay_pointer_y = y;
+                    }
+                }
+                if (moved || impl.overlay_pointer_down) {
+                    set_live_pointer(impl.overlay_pointer_down, impl.overlay_pointer_x, impl.overlay_pointer_y);
+                }
+                if (wheel != 0.0f) set_live_wheel(wheel, wheel_x, wheel_y);
+            } else if (impl.external_source) {
                 float press_x = 0.0f, press_y = 0.0f, x = 0.0f, y = 0.0f;
                 while (impl.external_source->take_overlay_tap(press_x, press_y, x, y)) {
                     if (!impl.menu_over_wii_u_game()) continue;
