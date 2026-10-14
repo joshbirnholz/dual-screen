@@ -6744,17 +6744,26 @@ int App::run(const AppOptions& options) {
             impl.source && impl.source->core_frame_for_test().valid()) {
             open_layout_menu_when_playing = false;
             impl.set_menu_open(true);
+            // Up from the start, as the screen asked for: there is nothing it
+            // came up over, so nothing to animate.
+            impl.menu_entrance.finish();
         }
         if (open_save_points_when_playing && impl.state == Impl::State::Playing &&
             impl.source && impl.source->core_frame_for_test().valid()) {
             open_save_points_when_playing = false;
             impl.set_menu_open(true);
+            // Up from the start, as the screen asked for: there is nothing it
+            // came up over, so nothing to animate.
+            impl.menu_entrance.finish();
             impl.picker->set_focus(LayoutPicker::focus_of(MenuSection::CreateSavePoint));
         }
         if (open_options_when_playing && impl.state == Impl::State::Playing &&
             impl.source && impl.source->core_frame_for_test().valid()) {
             open_options_when_playing = false;
             impl.set_menu_open(true);
+            // Up from the start, as the screen asked for: there is nothing it
+            // came up over, so nothing to animate.
+            impl.menu_entrance.finish();
             impl.picker->set_focus(LayoutPicker::focus_of(MenuSection::Options, 0));
         }
 
