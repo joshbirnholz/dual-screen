@@ -521,7 +521,8 @@ enum class MenuSound : uint8_t {
     Cancel = 3,
     Error = 4,
     OpenQuickMenu = 5,
-    // 6 was the quick menu closing, which is Cancel now.
+    // Once the quick menu closing, which is Cancel now.
+    SaveState = 6,
 };
 
 struct MenuSoundMessage {

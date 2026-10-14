@@ -36,7 +36,7 @@ std::vector<uint8_t> make_pack(const std::vector<std::string>& names, uint32_t f
     return out;
 }
 
-const std::vector<std::string> kAll = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu"};
+const std::vector<std::string> kAll = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu", "save_state"};
 
 void test_the_carried_pack_has_every_sound_at_48k() {
     UiSoundPack pack;
@@ -78,7 +78,7 @@ void test_a_pack_cut_short_or_missing_a_sound_is_refused() {
     std::vector<std::string> all_but_one(kAll.begin(), kAll.end() - 1);
     std::vector<uint8_t> missing = make_pack(all_but_one, 10, 100);
     CHECK(!decode_ui_sound_pack(missing.data(), missing.size(), pack, &error));
-    CHECK_MSG(error.find("open_quick_menu") != std::string::npos, error);
+    CHECK_MSG(error.find("save_state") != std::string::npos, error);
 
     std::vector<uint8_t> other = whole;
     other[4] = 3;
@@ -194,6 +194,23 @@ void test_a_tap_is_a_move_or_a_choice_by_what_it_did() {
     CHECK(sound && *sound == UiSound::Confirm);
 }
 
+// A save state made chimes, in place of the A press's own sound -- whichever
+// device's pad pressed it, and with no press here at all.
+void test_a_save_state_made_chimes() {
+    UiSoundJudge judge;
+    judge.observe(view_at(1, 2), 0.0);
+    judge.note_input({UiAction::Confirm}, false, 0.1);
+    UiSoundView saved = view_at(1, 2, 9);
+    saved.saves = 1;
+    auto sound = judge.observe(saved, 0.1);
+    CHECK_MSG(sound && *sound == UiSound::SaveState, "a save state made did not chime");
+    CHECK_MSG(!judge.observe(saved, 0.15), "the A press sounded as well, after the chime");
+    UiSoundView again = saved;
+    again.saves = 2;
+    sound = judge.observe(again, 0.5);
+    CHECK(sound && *sound == UiSound::SaveState);
+}
+
 void test_a_popups_cancel_sounds_like_backing_out() {
     UiSoundJudge judge;
     UiSoundView asking = view_at(1, 1, 5);
@@ -274,12 +291,13 @@ void test_a_sound_crosses_the_wire_as_itself() {
         {UiSound::Cancel, net::MenuSound::Cancel},
         {UiSound::Error, net::MenuSound::Error},
         {UiSound::OpenQuickMenu, net::MenuSound::OpenQuickMenu},
+        {UiSound::SaveState, net::MenuSound::SaveState},
     };
     for (const auto& [sound, wire] : pairs) {
         CHECK(ui_sound_to_wire(sound) == static_cast<uint8_t>(wire));
         CHECK(ui_sound_from_wire(static_cast<uint8_t>(wire)) == sound);
     }
-    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(6));
+    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(7));
     const uint8_t unknown = 9;
     net::MenuSoundMessage back;
     CHECK(!net::decode_menu_sound(&unknown, 1, back));
@@ -299,6 +317,7 @@ int main() {
     test_a_tap_is_a_move_or_a_choice_by_what_it_did();
     test_the_quick_menu_and_errors_have_their_own_sounds();
     test_a_popups_cancel_sounds_like_backing_out();
+    test_a_save_state_made_chimes();
     test_the_launcher_describes_its_cursor();
     test_a_sound_crosses_the_wire_as_itself();
     return test::finish("ui_sounds");

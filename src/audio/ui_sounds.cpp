@@ -21,7 +21,8 @@
 namespace ds {
 namespace {
 
-constexpr const char* kNames[kUiSoundCount] = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu"};
+constexpr const char* kNames[kUiSoundCount] = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu",
+                                                 "save_state"};
 
 uint32_t le32(const uint8_t* at) {
     return uint32_t(at[0]) | uint32_t(at[1]) << 8 | uint32_t(at[2]) << 16 | uint32_t(at[3]) << 24;
@@ -210,6 +211,8 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
     std::optional<UiSound> sound;
     if (view.error && !before.error) {
         sound = UiSound::Error;
+    } else if (view.saves != before.saves) {
+        sound = UiSound::SaveState;
     } else if (before.in_game && view.menu) {
         sound = UiSound::OpenQuickMenu;
     } else if (before.menu && view.in_game) {

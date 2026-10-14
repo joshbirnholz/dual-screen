@@ -17,6 +17,7 @@ struct UiSoundView {
     bool error = false;      // an error being shown
     bool on_cancel = false;  // the cursor on a popup's Cancel, which A backs
                              // out with as B does -- and sounds like it
+    uint32_t saves = 0;      // save states made so far, each one chimed
 };
 
 // Hashes a screen's state into a view's focus or rest.

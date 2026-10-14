@@ -644,7 +644,7 @@ void test_input_round_trip() {
 }
 
 void test_menu_sound_round_trip() {
-    for (const MenuSound sound : {MenuSound::MoveCursor, MenuSound::Cancel, MenuSound::OpenQuickMenu}) {
+    for (const MenuSound sound : {MenuSound::MoveCursor, MenuSound::Cancel, MenuSound::OpenQuickMenu, MenuSound::SaveState}) {
         MenuSoundMessage sent;
         sent.sound = sound;
         std::vector<uint8_t> buffer;

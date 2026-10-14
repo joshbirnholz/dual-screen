@@ -1481,7 +1481,9 @@ the system locale; on a Switch, its system language. A companion shows them its
 own way, whatever the host does.
 
 - **Create** into an empty slot saves straight away. Saving over a slot that
-  already has something in it asks *Overwrite this save state?* first.
+  already has something in it asks *Overwrite this save state?* first. A save
+  made is heard as a short chime, on both devices, and seen as the slot's new
+  picture; only a save that fails says so in a popup.
 - **Load** asks *Load this save state?* and then goes straight back into the
   game, from that moment. Empty slots are dimmed and do nothing.
 

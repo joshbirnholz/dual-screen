@@ -1149,6 +1149,9 @@ struct App::Impl {
     UiSoundPlayer ui_sounds;
     UiSoundJudge ui_sound_judge;
     UiSoundView sound_view() const;
+    // Save states made since the app started: each one is heard -- see
+    // UiSoundView::saves.
+    uint32_t save_states_made = 0;
     // What the judge decided, played -- and, with a companion mirroring the
     // menu, sent for it to play too. A companion does the reverse: while it
     // is in a session the host's sounds are the ones it plays.
@@ -2204,11 +2207,14 @@ void App::Impl::make_save_point(int slot) {
         write_save_point(path, state_bytes, thumbnail, static_cast<int64_t>(std::time(nullptr)),
                          &error)) {
         log_info(name + " saved (" + std::to_string(state_bytes.size()) + " bytes) to " + path);
-        refresh_save_points("Save state saved to slot " + std::to_string(slot + 1) + ".", false);
-    } else {
-        log_warn(name + " could not be saved: " + error);
-        refresh_save_points(error, true);
+        // Said with a chime, as Nintendo's own classics say it, and the
+        // slot's new picture: nothing to put away.
+        refresh_save_points();
+        ++save_states_made;
+        return;
     }
+    log_warn(name + " could not be saved: " + error);
+    refresh_save_points(error, true);
     // Said in a popup, put away with OK, rather than a line in the corner
     // that was easy to miss.
     if (picker) picker->show_notice();
@@ -4269,6 +4275,7 @@ void App::Impl::persist_game_config() {
 UiSoundView App::Impl::sound_view() const {
     UiSoundView view;
     view.screen = static_cast<int>(state);
+    view.saves = save_states_made;
     // A companion's game is the host's, and on screen here once connected.
     const bool game_here = local_game() != nullptr || is_companion();
     view.in_game = state == State::Playing || (state == State::Companion && is_companion());
