@@ -147,21 +147,21 @@ void LayoutPicker::rebuild_footer() {
         // button, as on every other console's menu, rather than a section.
         if (!state_.embedded) sections_.push_back(MenuSection::Continue);
         sections_.push_back(MenuSection::Options);
-        if (state_.amiibo_available) sections_.push_back(MenuSection::Amiibo);
         sections_.push_back(MenuSection::ControllerOrder);
+        if (state_.amiibo_available) sections_.push_back(MenuSection::Amiibo);
         if (state_.session_active) sections_.push_back(MenuSection::Disconnect);
         if (state_.reset_available) sections_.push_back(MenuSection::Reset);
         sections_.push_back(MenuSection::Quit);
 
-        // This game's Options: its screen, kept for it, the pointer, which
-        // is this device's own as on a DS menu, whatever Cemu offers, and
-        // last its graphics packs, a page of their own.
+        // This game's Options: first its graphics packs, a page of their
+        // own, then its screen, kept for it, the pointer, which is this
+        // device's own as on a DS menu, and whatever Cemu offers.
+        if (state_.graphic_packs_available) options_.push_back(OptionRow{Option::GraphicPacks});
         if (state_.screens_swappable) options_.push_back(OptionRow{Option::SwapScreens});
         if (state_.cursor_choosable) options_.push_back(OptionRow{Option::Cursor});
         for (std::size_t index = 0; index < state_.producer_options.size(); ++index) {
             options_.push_back(OptionRow{Option::Producer, static_cast<int>(index)});
         }
-        if (state_.graphic_packs_available) options_.push_back(OptionRow{Option::GraphicPacks});
     } else {
 
     // The sections, in the order the player asked for them: back to the game,

@@ -1094,8 +1094,8 @@ void test_wii_u_menu_has_its_own_sections() {
     state.graphic_packs_available = true;
     state.session_active = true;
     CHECK(wii_u_sections(registry, state) ==
-          std::vector<MenuSection>({MenuSection::Continue, MenuSection::Options, MenuSection::Amiibo,
-                                    MenuSection::ControllerOrder, MenuSection::Disconnect,
+          std::vector<MenuSection>({MenuSection::Continue, MenuSection::Options,
+                                    MenuSection::ControllerOrder, MenuSection::Amiibo, MenuSection::Disconnect,
                                     MenuSection::Reset, MenuSection::Quit}));
 
     // Each does what it says from the left.
@@ -1738,16 +1738,15 @@ void test_wii_u_options_are_this_games() {
     for (int step = 0; step < 4; ++step) press(picker, UiAction::Down);
     CHECK_EQ(press(picker, UiAction::Confirm).producer_option, 2);
 
-    // Graphics packs last, a page of their own, where Cemu has them.
+    // Graphics packs first, a page of their own, where Cemu has them.
     state.graphic_packs_available = true;
     LayoutPicker packs(registry);
     open_wii_u(packs, state);
     open_on(packs, state, MenuSection::Options);
     press(packs, UiAction::Right);
-    for (int step = 0; step < 4; ++step) press(packs, UiAction::Down);
     const LayoutPickerResult opened = press(packs, UiAction::Confirm);
     CHECK_MSG(opened.graphic_packs_requested && opened.producer_option < 0,
-              "the last of the Options did not open Graphics Packs");
+              "the first of the Options did not open Graphics Packs");
     state.graphic_packs_available = false;
 
     // One of Cemu's, with its choices: a popup, beside the row, on both

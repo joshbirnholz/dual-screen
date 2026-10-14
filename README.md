@@ -324,7 +324,7 @@ Three things are different about a Wii U session:
   the game, this app's own window shows the Wii U menu in place of a
   "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
   down the left, and the highlighted one's things on the right: **Game Options**,
-  **amiibo**, **Controller Order**,
+  **Controller Order**, **amiibo**,
   **Disconnect**, **Reset Game** and **Quit**, with **Settings** on plus as
   on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
   Cemu this app started and starts it again on the same game. It
@@ -351,12 +351,13 @@ Three things are different about a Wii U session:
   Cemu makes each change as it is chosen and keeps it, exactly as its own
   window would. A pack that replaces textures (most resolution
   packs) is only read as the game starts, and the page then says its change
-  will take effect once the game is reset -- which **Reset**, a step back,
+  will take effect once the game is restarted -- which **Reset**, a step back,
   does. It needs this project's Cemu build. A second device shows the same
   page, the cursor where it is, and works it with its own pad.
 
 - **Game Options**, in the quick menu, are this game's, as a DS or 3DS game's
-  are, each stepped on with **A**: **Swap Screens** (played alone: the other
+  are, each stepped on with **A**: first **Graphics Packs**, which opens the
+  page above, then **Swap Screens** (played alone: the other
   screen from **Default Wii U screen** -- **F3** does the same; with a second
   device connected, the two trade screens), **Show Pointer** (this device's own,
   as on every console's menu), then Cemu's: **Upscaling** (how Cemu enlarges
@@ -368,7 +369,7 @@ Three things are different about a Wii U session:
   every game alike, so Dualscreen keeps each game's choice and sets it as the
   game starts, Cemu's default where the game has none; they change at once.
   CPU mode is kept in Cemu's own profile for the game, and changes when the
-  game is reset. Last, **Graphics Packs** opens the page above.
+  game is reset.
 
 - **Wii U TV audio**, in Settings, is Cemu's TV channels -- **Mono**,
   **Stereo** (Cemu's default) or **Surround** -- the same for every game.
