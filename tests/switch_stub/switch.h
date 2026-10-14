@@ -126,3 +126,13 @@ struct AppletHookCookie {
 };
 void appletHook(AppletHookCookie* cookie, AppletHookFn callback, void* param);
 void appletUnhook(AppletHookCookie* cookie);
+
+// The software keyboard -- see ui/system_keyboard.hpp.
+typedef struct { u32 holder[4]; } SwkbdConfig;
+Result swkbdCreate(SwkbdConfig* c, s32 max_dictwords);
+void swkbdClose(SwkbdConfig* c);
+void swkbdConfigMakePresetDefault(SwkbdConfig* c);
+void swkbdConfigSetHeaderText(SwkbdConfig* c, const char* str);
+void swkbdConfigSetInitialText(SwkbdConfig* c, const char* str);
+void swkbdConfigSetStringLenMax(SwkbdConfig* c, u32 len);
+Result swkbdShow(SwkbdConfig* c, char* out_string, size_t out_string_size);
