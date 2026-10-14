@@ -1266,7 +1266,7 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
         if (natural > room && natural > 0.0f) label_scale = scale * (room / natural);
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - TextRenderer::line_height(label_scale), label_scale,
-                  theme.text, TextAlign::Center);
+                  quick_menu_row_text(focused || selected), TextAlign::Center);
     }
 
     // The stylus button: the Wii U's own symbol in a square, outlined like a
@@ -1276,8 +1276,15 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
     if (square.w <= 0.0f || !corner_button_usable()) return;
     const bool focused = on_content_ && item_ == tile_count();
     const float border = menu_border(scale);
-    // Outlined and rounded like a tile, and ringed by the cursor as one is.
-    draw_menu_tile(quads, square, focused, false, scale);
+    // Under the cursor its background takes a wash of white and the symbol
+    // stays white on it -- a highlight, not the tiles' full inversion, which
+    // on a symbol this size reads as a different symbol.
+    if (focused) {
+        Color wash = theme.text;
+        wash.a = 0.3f;
+        quads.draw_solid(square, wash);
+    }
+    quads.draw_outline(square, theme.text, border);
     if (swap_button_usable()) {
         // Separate Screens' swap button, in the same place.
         glyphs.draw_swap_screens(quads,

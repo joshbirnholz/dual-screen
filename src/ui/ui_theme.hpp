@@ -166,33 +166,28 @@ inline void draw_scroll_bar(QuadRenderer& quads, const PixelRect& list, float fi
                      ui_theme().accent);
 }
 
-// How round a tile's corners are -- a layout's, a save point's.
-inline float menu_tile_radius(float scale) { return std::round(scale * 6.0f); }
-
 // A tile in the quick menu's grid, which is a different job: the tiles are the
-// choice itself rather than lines of a list, so each one is outlined, rounded
-// as everything else is, and the cursor rings its own. The layout actually in
-// use is washed faintly, so the menu still says which one the game is drawn in
-// without competing with the cursor.
+// choice itself rather than lines of a list, so each one is outlined and the
+// cursor fills its own. The layout actually in use is filled too, but faintly,
+// so the menu still says which one the game is drawn in without competing with
+// the cursor.
 inline void draw_menu_tile(QuadRenderer& quads,
                            const PixelRect& rect,
                            bool focused,
                            bool selected,
                            float scale) {
     const UiTheme& theme = ui_theme();
-    const float radius = menu_tile_radius(scale);
-    if (selected && !focused) {
-        Color faint = theme.text;
-        faint.a = 0.14f;
-        quads.draw_rounded_ring(rect, radius, rect.w + rect.h, faint, faint);
-    }
     if (focused) {
-        draw_menu_cursor(quads, rect, radius, scale);
+        quads.draw_solid(rect, theme.text);
         return;
     }
-    Color outline = theme.text;
-    outline.a = 0.45f;
-    quads.draw_rounded_ring(rect, radius, menu_border(scale) * 0.5f, outline, outline);
+    if (selected) {
+        Color faint = theme.text;
+        faint.a = kSelectedTileOpacity;
+        quads.draw_solid(rect, faint);
+        return;
+    }
+    quads.draw_outline(rect, theme.text, menu_border(scale));
 }
 
 // What text on a list's row is: the same with the cursor on it or not, the
@@ -202,5 +197,11 @@ inline const Color& menu_row_text(bool focused) {
     return ui_theme().text;
 }
 
+// What text on the quick menu's rows is, which flips with the solid fill
+// under the cursor.
+inline const Color& quick_menu_row_text(bool focused) {
+    const UiTheme& theme = ui_theme();
+    return focused ? theme.background : theme.text;
+}
 
 }  // namespace ds
