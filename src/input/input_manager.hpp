@@ -2,7 +2,9 @@
 
 #include <SDL.h>
 
+#include <chrono>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -375,6 +377,10 @@ private:
     bool left_stick_is_mic_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
+    // The pads Steam has been seen presenting as one of its own, and when a
+    // pad that has just arrived may be read directly -- see pad_connected().
+    mutable std::set<SDL_JoystickID> steam_presented_;
+    std::chrono::steady_clock::time_point steam_settled_at_{};
     // See single_joycon_in_use(). -1 until anything is pressed.
     SDL_JoystickID last_pad_pressed_ = -1;
     MotionReader motion_;

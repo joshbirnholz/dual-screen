@@ -352,15 +352,29 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
         // Steam's is the one, and this is passed over: a pad of the same kind
         // that Steam has a controller behind. A pad Steam Input is turned off
         // for has none, and is read as it is.
+        //
+        // Steam's pads go without their handles for a moment now and then --
+        // as the app starts, and as another window (Cemu's) takes the focus
+        // and Steam sets its pads up again -- and read in that moment, the
+        // pad's presses came through without the remapping, the wrong
+        // buttons until the handles were back. So a pad Steam has presented
+        // stays passed over while Steam has any pads here, and one that has
+        // only just arrived beside Steam's waits a moment for them to say.
+        if (handle_of == nullptr) return true;
         const SDL_GameControllerType type = SDL_GameControllerGetType(it->second);
-        if (handle_of == nullptr || type == SDL_CONTROLLER_TYPE_UNKNOWN) return true;
+        bool steam_has_pads = false;
         for (const auto& [other_id, other] : controllers_) {
-            if (other != nullptr && is_steam_virtual_pad(other) && handle_of(other) != 0 &&
+            if (other == nullptr || !is_steam_virtual_pad(other)) continue;
+            steam_has_pads = true;
+            if (type != SDL_CONTROLLER_TYPE_UNKNOWN && handle_of(other) != 0 &&
                 SDL_GameControllerGetType(other) == type) {
+                steam_presented_.insert(id);
                 return false;
             }
         }
-        return true;
+        if (!steam_has_pads) return true;
+        if (steam_presented_.count(id) != 0) return false;
+        return std::chrono::steady_clock::now() >= steam_settled_at_;
     }
     if (handle_of == nullptr || handle_of(it->second) != 0) {
         return true;
@@ -481,6 +495,10 @@ void InputManager::open_controller(int device_index) {
         return;
     }
     controllers_[id] = controller;
+    // A pad arriving -- or Steam's arriving -- gives Steam a moment to say
+    // which of its pads is which before a pad it may be presenting is read
+    // directly. See pad_connected().
+    steam_settled_at_ = std::chrono::steady_clock::now() + std::chrono::seconds(2);
     // Sensors are per controller and have to be switched on before SDL will
     // report them, so one arriving mid-session has to be told -- see
     // MotionReader::controller_added().
@@ -580,6 +598,7 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
         SDL_GameControllerClose(it->second);
     }
     controllers_.erase(it);
+    steam_presented_.erase(instance_id);
     log_info("controller disconnected");
 }
 
