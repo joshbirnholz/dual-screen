@@ -269,9 +269,9 @@ std::string find_cemu_mlc(const std::string& configured, const std::string& cemu
 }
 
 std::string save_system_name(const std::string& system) {
-    if (system == kSaveSystem3ds) return "3DS";
+    if (system == kSaveSystem3ds) return "Nintendo 3DS";
     if (system == kSaveSystemWiiU) return "Wii U";
-    return "DS";
+    return "Nintendo DS";
 }
 
 bool save_is_folder(const std::string& system) {

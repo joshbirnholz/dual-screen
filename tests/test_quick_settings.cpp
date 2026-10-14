@@ -966,7 +966,7 @@ std::vector<MenuSection> wii_u_sections(const LayoutRegistry& registry, const La
 }
 
 // A Wii U's quick menu is laid out as a DS or 3DS game's is: sections down
-// the left -- Continue, Options, Scan amiibo and Graphics Packs where Cemu
+// the left -- Continue, Options, amiibo and Graphics Packs where Cemu
 // offers them, Controller Order, Disconnect with a second device, Reset Game
 // and Quit -- and whichever is highlighted showing its things on the right.
 // No layouts and no save states: Cemu owns which screen is shown, and has

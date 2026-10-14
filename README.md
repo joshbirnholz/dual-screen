@@ -323,7 +323,7 @@ Three things are different about a Wii U session:
   the game, this app's own window shows the Wii U menu in place of a
   "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
   down the left, and the highlighted one's things on the right: **Options**,
-  **Scan amiibo**, **Graphics Packs** (see below), **Controller Order**,
+  **amiibo**, **Graphics Packs** (see below), **Controller Order**,
   **Disconnect**, **Reset Game** and **Quit**, with **Settings** on minus as
   on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
   Cemu this app started and starts it again on the same game. It
@@ -356,7 +356,7 @@ Three things are different about a Wii U session:
 - **Options**, in the quick menu, are this game's, as a DS or 3DS game's
   are, each stepped on with **A**: **Swap Screens** (played alone: the other
   screen from **Default Wii U screen** -- **F3** does the same; with a second
-  device connected, the two trade screens), **Pointer** (this device's own,
+  device connected, the two trade screens), **Show Pointer** (this device's own,
   as on every console's menu), then Cemu's: **Upscaling** (how Cemu enlarges
   a picture smaller than its window: bilinear, bicubic, Hermite or nearest
   neighbor), **Aspect ratio** (the game's own, or stretched to the screen),
@@ -368,7 +368,7 @@ Three things are different about a Wii U session:
   CPU mode is kept in Cemu's own profile for the game, and changes when the
   game is reset.
 
-- **Scan amiibo**, in the quick menu, lists the amiibo dumps (`.bin`, `.nfc`
+- **amiibo**, in the quick menu, lists the amiibo dumps (`.bin`, `.nfc`
   or `.dat`) in the amiibo folder, and a level or two of folders inside it,
   by name on the right. The folder is `~/amiibo` (or `~/Documents/amiibo`)
   until another is chosen with **Choose a Folder...** at the end of the list,
@@ -378,7 +378,7 @@ Three things are different about a Wii U session:
   sees a figure for the couple of seconds it is there, which a paused one
   would miss. A notice at the top right says it was scanned, or why not.
 
-- **Pointer** shows or hides the mouse pointer over Cemu's window, as it does
+- **Show Pointer** shows or hides the mouse pointer over Cemu's window, as it does
   over a DS game. Shown, it appears when a mouse or trackpad moves it -- even
   with Cemu filling the screen, as in Game Mode -- and hides again when it is
   still, and a click with it on the GamePad's screen is a touch there. Hidden,
@@ -626,7 +626,7 @@ another PC, and neither can the menu.
 Its in-session menu *is* this menu — the same source, the same list, the same
 previews, the same options — because the device showing a screen is usually the
 one being held, and the alternative is reaching for a pad plugged into the
-other machine. The only entry it drops is **Pointer**, which is the one thing
+other machine. The only entry it drops is **Show Pointer**, which is the one thing
 on that menu belonging to the device rather than the host, and a console has no
 arrow to show or hide.
 
@@ -1313,7 +1313,7 @@ Full options:
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Turn the pointer off entirely | **Pointer**, under **Options** in the quick menu — on a Wii U, in its list, for Cemu's window |
+| Turn the pointer off entirely | **Show Pointer**, under **Options** in the quick menu — on a Wii U too, for Cemu's window |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |

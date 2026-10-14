@@ -263,7 +263,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
     switch (row.option) {
         case Option::RenderScale: return "Render Scale";
         case Option::Sound: return "Sound";
-        case Option::Cursor: return "Pointer";
+        case Option::Cursor: return "Show Pointer";
         case Option::RightStick: return "Right Stick";
         case Option::LeftStick: return "Left Stick Click";
         case Option::Rumble: return "Rumble";
@@ -326,7 +326,7 @@ const char* section_label(MenuSection section) {
         case MenuSection::Quit: return "Quit";
         case MenuSection::ControllerOrder: return "Controller Order";
         case MenuSection::GraphicPacks: return "Graphics Packs";
-        case MenuSection::Amiibo: return "Scan amiibo";
+        case MenuSection::Amiibo: return "amiibo";
     }
     return "";
 }

@@ -1248,10 +1248,10 @@ void DataManagementScreen::follow_focus(float output_width, float output_height)
 bool DataManagementScreen::ensure_icons() { return load_ui_icons(ui_icons_, ui_icons_tried_); }
 
 std::string DataManagementScreen::subtitle(const SaveInfo& info) const {
-    // Which console it is, once there is more than one it could be.
-    if (systems_.size() < 2) return info.publisher;
-    const std::string system = save_system_name(info.system);
-    return info.publisher.empty() ? system : system + " \xC2\xB7 " + info.publisher;
+    // Which console it is, once there is more than one it could be; the
+    // publisher is not worth the line.
+    if (systems_.size() < 2) return std::string();
+    return save_system_name(info.system);
 }
 
 const Texture* DataManagementScreen::game_icon(const SaveInfo& info) {
@@ -1351,10 +1351,17 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const float room = row.x + row.w - pad * 2.0f - date_w - text_x;
             const float sub_scale = scale * 0.75f;
             const float step = line * 1.3f;
-            const float block = step + TextRenderer::line_height(sub_scale);
+            const std::string under = subtitle(info);
+            // The title alone sits in the middle of its row; with a line
+            // under it, the two do together.
+            const float block = under.empty() ? TextRenderer::line_height(scale)
+                                              : step + TextRenderer::line_height(sub_scale);
             const float top = row.y + (row.h - block) * 0.5f;
             text.draw(quads, TextRenderer::elide_right(info.display_title(), room, scale), text_x, top, scale, ink);
-            text.draw(quads, TextRenderer::elide_right(subtitle(info), room, sub_scale), text_x, top + step, sub_scale, dim);
+            if (!under.empty()) {
+                text.draw(quads, TextRenderer::elide_right(under, room, sub_scale), text_x, top + step,
+                          sub_scale, dim);
+            }
             text.draw(quads, when, row.x + row.w - pad, row.y + (row.h - TextRenderer::line_height(date_scale)) * 0.5f,
                       date_scale, dim, TextAlign::Right);
         }
