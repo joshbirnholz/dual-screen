@@ -1192,14 +1192,18 @@ void InputManager::handle_event(const SDL_Event& event) {
 void InputManager::emit_navigation_from_axes() {
     float x = 0.0f;
     float y = 0.0f;
+    // Either stick: whichever is pushed further.
+    const SDL_GameControllerAxis sticks[2][2] = {
+        {SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_LEFTY},
+        {SDL_CONTROLLER_AXIS_RIGHTX, SDL_CONTROLLER_AXIS_RIGHTY}};
     for (const auto& entry : controllers_) {
         if (entry.second == nullptr || !reads_pad(entry.first)) continue;
-        const float axis_x =
-            SDL_GameControllerGetAxis(entry.second, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
-        const float axis_y =
-            SDL_GameControllerGetAxis(entry.second, SDL_CONTROLLER_AXIS_LEFTY) / 32767.0f;
-        if (std::fabs(axis_x) > std::fabs(x)) x = axis_x;
-        if (std::fabs(axis_y) > std::fabs(y)) y = axis_y;
+        for (const auto& stick : sticks) {
+            const float axis_x = SDL_GameControllerGetAxis(entry.second, stick[0]) / 32767.0f;
+            const float axis_y = SDL_GameControllerGetAxis(entry.second, stick[1]) / 32767.0f;
+            if (std::fabs(axis_x) > std::fabs(x)) x = axis_x;
+            if (std::fabs(axis_y) > std::fabs(y)) y = axis_y;
+        }
     }
 
     const float deadzone = settings_.stick_deadzone;
