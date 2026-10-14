@@ -151,7 +151,6 @@ struct SteamPad : VirtualPad {
 struct SteamPress {
     DsInputState held;
     std::vector<UiAction> actions;
-    bool by_letter = false;
     bool attached = false;
 };
 
@@ -173,7 +172,6 @@ SteamPress press_on_steam_pad(SDL_GameControllerButton button, ConfirmButton con
     input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f, system_profile(SystemId::Ds).screens);
     out.held = input.ds_state();
     out.actions = input.ui_actions();
-    out.by_letter = input.last_pad_reads_by_letter();
     input.shutdown();
     pad.detach();
     return out;
@@ -186,40 +184,39 @@ bool has_action(const std::vector<UiAction>& actions, UiAction wanted) {
     return false;
 }
 
-// A Steam Input pad is read by the letters Steam gives its buttons: its A is
-// the game's A, wherever Steam put it, so a Switch Pro controller set up in
-// Steam with Nintendo's layout and a Steam Controller beside it agree. And A
-// says yes in a menu, whichever place Confirm/Cancel names.
-void test_steam_input_pads_are_read_by_letter() {
+// A Steam Input pad is read exactly as Steam presents it, the same as any
+// other pad: its A is the button at the bottom, B the one on the right, as
+// SDL names them -- whatever the controller underneath prints, and whatever
+// the player mapped in Steam. Confirm/Cancel alone says which of those two
+// answers yes.
+void test_steam_input_pads_are_read_as_steam_presents_them() {
     const struct {
         SDL_GameControllerButton pressed;
         DsButton gives;
-    } kLetters[] = {
-        {SDL_CONTROLLER_BUTTON_A, DsButton::A},
-        {SDL_CONTROLLER_BUTTON_B, DsButton::B},
-        {SDL_CONTROLLER_BUTTON_X, DsButton::X},
-        {SDL_CONTROLLER_BUTTON_Y, DsButton::Y},
+    } kPlaces[] = {
+        {SDL_CONTROLLER_BUTTON_A, DsButton::B},
+        {SDL_CONTROLLER_BUTTON_B, DsButton::A},
+        {SDL_CONTROLLER_BUTTON_X, DsButton::Y},
+        {SDL_CONTROLLER_BUTTON_Y, DsButton::X},
     };
-    for (const auto& letter : kLetters) {
-        const SteamPress press = press_on_steam_pad(letter.pressed, ConfirmButton::East);
+    for (const auto& place : kPlaces) {
+        const SteamPress press = press_on_steam_pad(place.pressed, ConfirmButton::East);
         if (!press.attached) {
-            test::skip("this SDL cannot make a virtual pad that looks like Steam's");
+            std::printf("# skipped: SDL here cannot present a Steam pad\n");
             return;
         }
-        CHECK_MSG(press.held.pressed(letter.gives),
-                  std::string("Steam's ") + SDL_GameControllerGetStringForButton(letter.pressed) +
-                      " did not reach the game as the same letter");
-        CHECK(press.by_letter);
+        CHECK_MSG(press.held.pressed(place.gives),
+                  std::string("Steam's ") + SDL_GameControllerGetStringForButton(place.pressed) +
+                      " did not reach the game in its place");
     }
-    for (const ConfirmButton confirm : {ConfirmButton::East, ConfirmButton::South}) {
-        CHECK_MSG(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, confirm).actions, UiAction::Confirm),
-                  "Steam's A did not say yes");
-        CHECK_MSG(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, confirm).actions, UiAction::Cancel),
-                  "Steam's B did not say no");
-    }
-    // A pad SDL reads itself is still read by place.
-    const DsInputState placed = press_and_read(SDL_CONTROLLER_BUTTON_A);
-    CHECK_MSG(placed.pressed(DsButton::B), "a pad read by place lost its places");
+    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, ConfirmButton::East).actions,
+                     UiAction::Confirm));
+    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, ConfirmButton::East).actions,
+                     UiAction::Cancel));
+    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_A, ConfirmButton::South).actions,
+                     UiAction::Confirm));
+    CHECK(has_action(press_on_steam_pad(SDL_CONTROLLER_BUTTON_B, ConfirmButton::South).actions,
+                     UiAction::Cancel));
 }
 
 // Nintendo positional, end to end: south is DS B, east is DS A.
@@ -1202,7 +1199,7 @@ int main() {
 
     test_each_pad_is_read_on_its_own_in_order();
     test_holding_a_direction_keeps_moving();
-    test_steam_input_pads_are_read_by_letter();
+    test_steam_input_pads_are_read_as_steam_presents_them();
     test_face_buttons_follow_ds_positions();
     test_shoulders_and_dpad_are_stable();
     test_the_stick_is_the_dpad_only_where_there_is_no_stick();

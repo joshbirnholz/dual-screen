@@ -1337,7 +1337,7 @@ Full options:
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |
 | Change how button prompts are drawn | **Controller Icons** in Settings: a Switch's, a PlayStation's or an Xbox pad's buttons -- face buttons, shoulders, triggers, start and select, sticks and d-pad, each as that pad prints them, from Kenney's Input Prompts -- or **Positional**: four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
-| Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. A pad read through Steam Input always confirms with Steam's A -- see Face buttons. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
+| Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
 
 ### If it quits immediately in Game Mode
 
@@ -1572,20 +1572,15 @@ starts from the beginning and the log says why.
 
 ### Face buttons
 
-**Through Steam Input, a pad is read by the letters Steam gives its buttons.**
-Steam's A is the game's A, B is B, X is X and Y is Y, wherever Steam has put
-them -- and A says yes in every menu, B no. Steam has already decided which of
-a controller's buttons is which (with **Use Nintendo Button Layout**, a Switch
-Pro controller's printed A is A), and that one decision covers every pad at
-once: a Pro controller, a Steam Controller and the Deck's own buttons can be
-mixed in one game -- Nintendo Land with whatever is to hand -- and every one of
-them does what Steam says. The Deck's and a Steam Controller's A is the bottom
-button, so that is the one that says yes; remap it in Steam if you want the
-right-hand one instead. The prompts draw that letter in whichever symbols are
-chosen.
+**Steam Input is the one word on what a button is.** A pad is read exactly
+as SDL reports it -- for a pad Steam presents, with the player's mapping in
+it -- by place: the button reported as Xbox's A is the bottom one, B the right
+one, X the left and Y the top, whatever the controller underneath prints.
+While Steam presents controllers, the raw copy SDL may also show of one is
+never read. **Controller Icons** only changes the pictures, and
+**Confirm/Cancel** only which of the two lower buttons says yes.
 
-**A pad SDL reads itself** -- not through Steam, or on a desktop without it --
-uses **Nintendo positional** controls:
+Every pad -- through Steam or not -- uses **Nintendo positional** controls:
 
 ```
         north = X

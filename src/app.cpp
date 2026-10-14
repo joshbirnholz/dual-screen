@@ -5829,9 +5829,6 @@ int App::run(const AppOptions& options) {
 #ifdef __SWITCH__
         impl.apply_button_style();
 #endif
-        // The prompts follow whichever pad was pressed last: one Steam reads
-        // by letter, or one read by place -- see InputManager::reads_by_letter().
-        impl.button_glyphs.set_by_letter(impl.input.last_pad_reads_by_letter());
 
         // Touches are mapped against what this device is actually showing, not
         // against the shared layout. On "one screen per device" the two differ

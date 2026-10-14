@@ -1767,9 +1767,6 @@ void Client::run() {
         input_.set_confirm_button(settings_.confirm_button);
         set_confirm_button(settings_.confirm_button);
 #endif
-        // And drawn for whichever pad was pressed last -- see
-        // InputManager::reads_by_letter().
-        button_glyphs_.set_by_letter(input_.last_pad_reads_by_letter());
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
         set_live_pointer(input_.pointer_active(), input_.pointer_x(), input_.pointer_y());

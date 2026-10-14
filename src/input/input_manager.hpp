@@ -206,12 +206,6 @@ public:
     // Which face button means yes. See ConfirmButton; changing it swaps the
     // pair, never leaves both meaning the same thing.
     void set_confirm_button(ConfirmButton choice) { confirm_button_ = choice; }
-    // Whether a pad is read by the letters Steam Input gives its buttons
-    // rather than by where they are -- every pad Steam presents as one of its
-    // virtual gamepads. See reads_by_letter() in input_manager.cpp.
-    static bool reads_by_letter(SDL_GameController* controller);
-    // Whether the pad pressed last is one of those: the prompts follow it.
-    bool last_pad_reads_by_letter() const;
     // Whether a controller's input is read at all: not when Steam Input
     // presents the same controller as one of its own -- see pad_connected().
     bool reads_pad(SDL_JoystickID id) const;
@@ -377,9 +371,8 @@ private:
     bool left_stick_is_mic_ = false;
     RightStickMode right_stick_mode_ = RightStickMode::CStick;
     std::map<SDL_JoystickID, SDL_GameController*> controllers_;
-    // The pads Steam has been seen presenting as one of its own, and when a
-    // pad that has just arrived may be read directly -- see pad_connected().
-    mutable std::set<SDL_JoystickID> steam_presented_;
+    // When a pad that has just arrived may be read directly, if Steam has
+    // presented none of its own by then -- see pad_connected().
     std::chrono::steady_clock::time_point steam_settled_at_{};
     // See single_joycon_in_use(). -1 until anything is pressed.
     SDL_JoystickID last_pad_pressed_ = -1;

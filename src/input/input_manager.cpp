@@ -266,6 +266,15 @@ SteamHandleFn steam_handle_fn() {
 #endif
 }
 
+// Whether Steam started this app, and so may be about to present its
+// controllers as its own.
+bool launched_by_steam() {
+    static const bool launched = std::getenv("SteamGameId") != nullptr ||
+                                 std::getenv("SteamAppId") != nullptr ||
+                                 std::getenv("SteamDeck") != nullptr;
+    return launched;
+}
+
 // One of the virtual pads Steam Input presents in place of the real ones.
 bool is_steam_virtual_pad(SDL_GameController* controller) {
     return SDL_GameControllerGetVendor(controller) == 0x28de &&
@@ -275,39 +284,6 @@ bool is_steam_virtual_pad(SDL_GameController* controller) {
 }  // namespace
 #endif
 
-namespace {
-
-// A, B, X and Y as their letters rather than their places: the face buttons
-// of a pad read by letter, turned into the places this app reads -- A east,
-// B south, X north, Y west, a DS's own -- so that everything after reading
-// works the one way for every pad.
-SDL_GameControllerButton letter_to_place(SDL_GameControllerButton button) {
-    switch (button) {
-        case SDL_CONTROLLER_BUTTON_A: return SDL_CONTROLLER_BUTTON_B;
-        case SDL_CONTROLLER_BUTTON_B: return SDL_CONTROLLER_BUTTON_A;
-        case SDL_CONTROLLER_BUTTON_X: return SDL_CONTROLLER_BUTTON_Y;
-        case SDL_CONTROLLER_BUTTON_Y: return SDL_CONTROLLER_BUTTON_X;
-        default: return button;
-    }
-}
-
-}  // namespace
-
-// Steam Input's pads are read by letter. Steam has already decided which of
-// a controller's buttons is A -- for a Switch Pro controller, with "Use
-// Nintendo Button Layout", the one printed A, wherever it sits -- and the
-// player set that up in Steam for every controller at once. Read by place
-// instead, a Pro controller beside a Steam Controller came out with A and B
-// the wrong way round on one of them, whichever way Steam was set. A pad
-// SDL reads itself, without Steam, is still read by place.
-bool InputManager::reads_by_letter(SDL_GameController* controller) {
-#ifdef __SWITCH__
-    (void)controller;
-    return false;
-#else
-    return controller != nullptr && is_steam_virtual_pad(controller);
-#endif
-}
 
 bool InputManager::reads_pad(SDL_JoystickID id) const {
 #ifdef __SWITCH__
@@ -319,11 +295,6 @@ bool InputManager::reads_pad(SDL_JoystickID id) const {
     const auto it = controllers_.find(id);
     return it == controllers_.end() || it->second == nullptr || pad_connected(id);
 #endif
-}
-
-bool InputManager::last_pad_reads_by_letter() const {
-    const auto it = controllers_.find(last_pad_pressed_);
-    return it != controllers_.end() && reads_by_letter(it->second);
 }
 
 bool InputManager::pad_connected(SDL_JoystickID id) const {
@@ -345,36 +316,18 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
     }
     const SteamHandleFn handle_of = steam_handle_fn();
     if (!is_steam_virtual_pad(it->second)) {
-        // A controller SDL reads itself while Steam also presents it as one
-        // of its own: the same press arrives from both, and only Steam's has
-        // the player's Steam Input remapping in it -- read from both, a remap
-        // of A and B made one press both yes and no, whichever came first.
-        // Steam's is the one, and this is passed over: a pad of the same kind
-        // that Steam has a controller behind. A pad Steam Input is turned off
-        // for has none, and is read as it is.
-        //
-        // Steam's pads go without their handles for a moment now and then --
-        // as the app starts, and as another window (Cemu's) takes the focus
-        // and Steam sets its pads up again -- and read in that moment, the
-        // pad's presses came through without the remapping, the wrong
-        // buttons until the handles were back. So a pad Steam has presented
-        // stays passed over while Steam has any pads here, and one that has
-        // only just arrived beside Steam's waits a moment for them to say.
-        if (handle_of == nullptr) return true;
-        const SDL_GameControllerType type = SDL_GameControllerGetType(it->second);
-        bool steam_has_pads = false;
+        // Steam Input is the one word on what a button is. While Steam
+        // presents controllers here, every controller it can see arrives
+        // through one of its own, with the player's mapping in it -- and SDL
+        // may still show the controller underneath as well, raw. That copy is
+        // never read: read from both, a press arrived twice and meant
+        // different things depending on which copy got there first. A pad
+        // that has just arrived waits a moment for Steam's to appear before
+        // it is taken for one Steam does not present.
         for (const auto& [other_id, other] : controllers_) {
-            if (other == nullptr || !is_steam_virtual_pad(other)) continue;
-            steam_has_pads = true;
-            if (type != SDL_CONTROLLER_TYPE_UNKNOWN && handle_of(other) != 0 &&
-                SDL_GameControllerGetType(other) == type) {
-                steam_presented_.insert(id);
-                return false;
-            }
+            if (other != nullptr && is_steam_virtual_pad(other)) return false;
         }
-        if (!steam_has_pads) return true;
-        if (steam_presented_.count(id) != 0) return false;
-        return std::chrono::steady_clock::now() >= steam_settled_at_;
+        return std::chrono::steady_clock::now() >= steam_settled_at_ || !launched_by_steam();
     }
     if (handle_of == nullptr || handle_of(it->second) != 0) {
         return true;
@@ -598,7 +551,6 @@ void InputManager::close_controller(SDL_JoystickID instance_id) {
         SDL_GameControllerClose(it->second);
     }
     controllers_.erase(it);
-    steam_presented_.erase(instance_id);
     log_info("controller disconnected");
 }
 
@@ -873,13 +825,10 @@ void InputManager::handle_event(const SDL_Event& event) {
             if (!reads_pad(event.cbutton.which)) break;
             SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(event.cbutton.button);
             last_pad_pressed_ = event.cbutton.which;
-            // A Steam Input pad's A is A, wherever Steam put it -- and A says
-            // yes, whichever place Confirm/Cancel names, since on such a pad
-            // the place is Steam's to choose.
-            const auto pressed_on = controllers_.find(event.cbutton.which);
-            const bool by_letter = pressed_on != controllers_.end() && reads_by_letter(pressed_on->second);
-            if (by_letter) button = letter_to_place(button);
-            const ConfirmButton confirm_choice = by_letter ? ConfirmButton::East : confirm_button_;
+            // Every button is what SDL says it is -- for a Steam Input pad,
+            // what the player mapped it to in Steam -- and Confirm/Cancel
+            // alone says which of the two lower face buttons answers yes.
+            const ConfirmButton confirm_choice = confirm_button_;
 
             // Every press is logged under --verbose with the name SDL gives it,
             // so a pad whose buttons arrive as the wrong thing can be
@@ -1322,11 +1271,6 @@ RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
     }
     for (int index = 0; index < SDL_CONTROLLER_AXIS_MAX; ++index) {
         raw.axes[index] = SDL_GameControllerGetAxis(controller, static_cast<SDL_GameControllerAxis>(index));
-    }
-    if (reads_by_letter(controller)) {
-        // Into places: Steam's A goes where a DS's A is. See reads_by_letter().
-        std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_A], raw.buttons[SDL_CONTROLLER_BUTTON_B]);
-        std::swap(raw.buttons[SDL_CONTROLLER_BUTTON_X], raw.buttons[SDL_CONTROLLER_BUTTON_Y]);
     }
     return raw;
 }
