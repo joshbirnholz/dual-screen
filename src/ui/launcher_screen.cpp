@@ -63,6 +63,16 @@ void LauncherScreen::open(bool runs_games) {
     }
 }
 
+int LauncherScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    if (!open_) return -1;
+    float scale = 1.0f;
+    const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
+    for (std::size_t index = 0; index < rows.size() && index < rows_.size(); ++index) {
+        if (rows[index].contains(x, y)) return static_cast<int>(index);
+    }
+    return -1;
+}
+
 LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
                                       const std::vector<PointerEvent>& pointers,
                                       float output_width,
@@ -72,8 +82,6 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
         return result;
     }
 
-    float scale = 1.0f;
-    const std::vector<PixelRect> rows = compute_rows(output_width, output_height, scale);
     const int count = static_cast<int>(rows_.size());
     if (count == 0) {
         return result;
@@ -115,15 +123,10 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
         }
     }
 
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
-        for (std::size_t index = 0; index < rows.size(); ++index) {
-            // A first tap highlights a row; a second, on the same row,
-            // chooses it -- so a stray touch never starts anything.
-            if (tapped(pointer, rows[index]) && tap_chooses(focus_, static_cast<int>(index))) {
-                result.choice = rows_[index];
-            }
-        }
+    for (const int index : take_taps(pointers, output_width, output_height)) {
+        // A first tap highlights a row; a second, on the same row, chooses
+        // it -- so a stray touch never starts anything.
+        if (index < count && tap_chooses(focus_, index)) result.choice = rows_[static_cast<std::size_t>(index)];
     }
 
     if (result.choice != LauncherChoice::None) {
@@ -218,6 +221,16 @@ std::vector<PixelRect> HostPickerScreen::compute_rows(std::size_t count,
     return rows;
 }
 
+int HostPickerScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    if (!open_) return -1;
+    float scale = 1.0f;
+    const std::vector<PixelRect> rows = compute_rows(host_count_, output_width, output_height, scale);
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (rows[index].contains(x, y)) return static_cast<int>(index);
+    }
+    return -1;
+}
+
 HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredHost>& hosts,
                                           const std::vector<UiAction>& actions,
                                           const std::vector<PointerEvent>& pointers,
@@ -229,8 +242,7 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
     }
 
     const int count = static_cast<int>(hosts.size());
-    float scale = 1.0f;
-    const std::vector<PixelRect> rows = compute_rows(hosts.size(), output_width, output_height, scale);
+    host_count_ = hosts.size();
 
     for (const UiAction action : actions) {
         switch (action) {
@@ -258,13 +270,10 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
     }
     focus_ = std::max(0, std::min(focus_, std::max(0, count - 1)));
 
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
-        for (std::size_t index = 0; index < rows.size(); ++index) {
-            if (tapped(pointer, rows[index]) && tap_chooses(focus_, static_cast<int>(index))) {
-                result.chosen = true;
-                result.host = hosts[index];
-            }
+    for (const int index : take_taps(pointers, output_width, output_height)) {
+        if (index < count && tap_chooses(focus_, index)) {
+            result.chosen = true;
+            result.host = hosts[static_cast<std::size_t>(index)];
         }
     }
 

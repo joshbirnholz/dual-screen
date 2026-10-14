@@ -483,8 +483,9 @@ ForwarderScreenResult ForwarderScreen::update(const std::vector<UiAction>& actio
         }
         return result;
     }
+    const std::vector<int> taps = take_taps(pointers, output_width, output_height);
     if (overlay_ == Overlay::IconSource) {
-        const int answer = popup_cursor_.update(actions, pointers, source_popup(output_width, output_height));
+        const int answer = answer_popup(actions, taps, source_popup(output_width, output_height));
         if (answer == PopupCursor::kCancelled) {
             overlay_ = Overlay::None;
         } else if (answer == 0) {
@@ -502,7 +503,7 @@ ForwarderScreenResult ForwarderScreen::update(const std::vector<UiAction>& actio
     }
     if (overlay_ == Overlay::GameChoice) {
         const int offered = static_cast<int>(game_buttons().size()) - 1;
-        const int answer = popup_cursor_.update(actions, pointers, game_popup(output_width, output_height));
+        const int answer = answer_popup(actions, taps, game_popup(output_width, output_height));
         if (answer == PopupCursor::kCancelled) {
             overlay_ = Overlay::None;
         } else if (answer >= 0 && answer < offered) {
@@ -516,25 +517,74 @@ ForwarderScreenResult ForwarderScreen::update(const std::vector<UiAction>& actio
     }
 
     if (page_ == Page::Icons) {
-        update_icons(actions, pointers, output_width, output_height);
+        update_icons(actions, taps, output_width, output_height);
     } else {
-        update_editor(actions, pointers, output_width, output_height, result);
+        update_editor(actions, taps, result);
     }
     return result;
 }
 
-void ForwarderScreen::update_editor(const std::vector<UiAction>& input_actions,
-                                    const std::vector<PointerEvent>& pointers, float output_width,
-                                    float output_height, ForwarderScreenResult& result) {
-    std::vector<UiAction> actions = input_actions;
+int ForwarderScreen::answer_popup(const std::vector<UiAction>& actions, const std::vector<int>& taps,
+                                  const PopupGeometry& popup) {
+    int answer = popup_cursor_.update(actions, {}, popup);
+    for (const int tap : taps) {
+        if (answer != PopupCursor::kNone) break;
+        if (tap == kTapOffPopup) answer = PopupCursor::kCancelled;
+        if (tap >= kPopupEntryBase && tap < kGuideEntryBase) answer = popup_cursor_.tap(tap - kPopupEntryBase);
+    }
+    return answer;
+}
+
+bool ForwarderScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                             float output_height) {
+    if (!open_ || page_ != Page::Icons || overlay_ != Overlay::None) return false;
+    const GridGeometry grid = grid_geometry(output_width, output_height);
+    grid_drag_.update(pointers, grid.view, grid_scroll_, std::max(0.0f, grid.content_height - grid.view.h));
+    return grid_drag_.release_was_drag();
+}
+
+int ForwarderScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    if (!open_) return -1;
+    if (asking()) {
+        const int button = popup_button_at(asking_popup(output_width, output_height), x, y);
+        return button >= 0 ? kPopupEntryBase + button : -1;
+    }
+    if (overlay_ != Overlay::None) return -1;
+    const ButtonGlyph on_guide = guide_button_at(guide_hits_, x, y);
+    if (on_guide != ButtonGlyph::Count) return kGuideEntryBase + static_cast<int>(on_guide);
+    if (page_ == Page::Icons) {
+        const GridGeometry grid = grid_geometry(output_width, output_height);
+        if (!grid.view.contains(x, y)) return -1;
+        const int count = grid_count();
+        for (int index = 0; index < count; ++index) {
+            if (grid_cell(grid, index).contains(x, y)) return index;
+        }
+        return -1;
+    }
     const Geometry geometry = editor_geometry(output_width, output_height);
+    if (geometry.title_box.contains(x, y)) return kTitleEntry;
+    if (geometry.icon_box.contains(x, y)) return kIconEntry;
+    for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
+        if (geometry.rows[index].contains(x, y)) return static_cast<int>(index);
+    }
+    return -1;
+}
+
+bool ForwarderScreen::off_popup(float x, float y, float output_width, float output_height) const {
+    return open_ && asking() && !asking_popup(output_width, output_height).box.contains(x, y);
+}
+
+void ForwarderScreen::update_editor(const std::vector<UiAction>& input_actions,
+                                    const std::vector<int>& taps, ForwarderScreenResult& result) {
+    std::vector<UiAction> actions = input_actions;
     const int rows = static_cast<int>(Row::Count);
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
-        const ButtonGlyph on_guide = guide_button_at(guide_hits_, pointer.x, pointer.y);
-        if (on_guide == ButtonGlyph::A) actions.push_back(UiAction::Confirm);
-        if (on_guide == ButtonGlyph::B) actions.push_back(UiAction::Cancel);
-        if (on_guide != ButtonGlyph::Count) continue;
+    for (const int tap : taps) {
+        if (tap >= kGuideEntryBase) {
+            const ButtonGlyph on_guide = static_cast<ButtonGlyph>(tap - kGuideEntryBase);
+            if (on_guide == ButtonGlyph::A) actions.push_back(UiAction::Confirm);
+            if (on_guide == ButtonGlyph::B) actions.push_back(UiAction::Cancel);
+            continue;
+        }
         // A first tap puts the cursor on a thing; a second on it chooses it.
         const auto tap_zone = [&](Zone zone) {
             if (zone_ == zone) {
@@ -543,21 +593,16 @@ void ForwarderScreen::update_editor(const std::vector<UiAction>& input_actions,
                 zone_ = zone;
             }
         };
-        if (tapped(pointer, geometry.title_box)) {
+        if (tap == kTitleEntry) {
             tap_zone(Zone::Title);
-            continue;
-        }
-        if (tapped(pointer, geometry.icon_box)) {
+        } else if (tap == kIconEntry) {
             tap_zone(Zone::Icon);
-            continue;
-        }
-        for (int index = 0; index < rows; ++index) {
-            if (!tapped(pointer, geometry.rows[static_cast<std::size_t>(index)])) continue;
-            if (zone_ == Zone::List && list_focus_ == index) {
+        } else if (tap >= 0 && tap < rows) {
+            if (zone_ == Zone::List && list_focus_ == tap) {
                 actions.push_back(UiAction::Confirm);
             } else {
                 zone_ = Zone::List;
-                list_focus_ = index;
+                list_focus_ = tap;
             }
         }
     }
@@ -602,12 +647,10 @@ void ForwarderScreen::scroll_grid_to_focus(float output_width, float output_heig
 }
 
 void ForwarderScreen::update_icons(const std::vector<UiAction>& input_actions,
-                                   const std::vector<PointerEvent>& pointers, float output_width,
+                                   const std::vector<int>& taps, float output_width,
                                    float output_height) {
     std::vector<UiAction> actions = input_actions;
     const GridGeometry grid = grid_geometry(output_width, output_height);
-    grid_drag_.update(pointers, grid.view, grid_scroll_,
-                      std::max(0.0f, grid.content_height - grid.view.h));
     const int count = grid_count();
     const auto choose = [this](int index) {
         if (index < static_cast<int>(found_.size())) {
@@ -618,19 +661,15 @@ void ForwarderScreen::update_icons(const std::vector<UiAction>& input_actions,
             load_more();
         }
     };
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
-        const ButtonGlyph on_guide = guide_button_at(guide_hits_, pointer.x, pointer.y);
-        if (on_guide == ButtonGlyph::A) actions.push_back(UiAction::Confirm);
-        if (on_guide == ButtonGlyph::B) actions.push_back(UiAction::Cancel);
-        if (on_guide == ButtonGlyph::Y) actions.push_back(UiAction::MenuReset);
-        if (on_guide != ButtonGlyph::Count || grid_drag_.release_was_drag()) continue;
-        if (!grid.view.contains(pointer.x, pointer.y)) continue;
-        for (int index = 0; index < count; ++index) {
-            if (!tapped(pointer, grid_cell(grid, index))) continue;
-            if (tap_chooses(grid_focus_, index)) choose(index);
-            break;
+    for (const int tap : taps) {
+        if (tap >= kGuideEntryBase) {
+            const ButtonGlyph on_guide = static_cast<ButtonGlyph>(tap - kGuideEntryBase);
+            if (on_guide == ButtonGlyph::A) actions.push_back(UiAction::Confirm);
+            if (on_guide == ButtonGlyph::B) actions.push_back(UiAction::Cancel);
+            if (on_guide == ButtonGlyph::Y) actions.push_back(UiAction::MenuReset);
+            continue;
         }
+        if (tap >= 0 && tap < count && tap_chooses(grid_focus_, tap)) choose(tap);
     }
     grid_drag_.settle();
     bool moved = false;

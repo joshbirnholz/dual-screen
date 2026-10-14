@@ -17,6 +17,7 @@
 #include "render/texture.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
 
@@ -42,7 +43,7 @@ struct DataManagementResult {
 // Nothing here happens without being chosen. Searching and every transfer run
 // on a thread of their own, so the screen keeps drawing while the network is
 // asked; the store's own operations are quick file moves and run here.
-class DataManagementScreen {
+class DataManagementScreen : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
@@ -82,6 +83,13 @@ public:
                 const ButtonGlyphSheet& glyphs,
                 float output_width,
                 float output_height);
+
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    // A row as drawn last; a dialog's button as kDialogEntryBase plus its
+    // index; a prompt as kGuideEntryBase plus its button.
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
 
     // What is on screen, for tests and the log.
     enum class Page { List, Game, Earlier };
@@ -228,6 +236,11 @@ private:
     // A finger dragging the save list or Earlier Saves.
     ListDrag drag_;
     void drag_list(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
+    bool dialog_up() const {
+        return overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm || overlay_ == Overlay::Choice;
+    }
+    static constexpr int kDialogEntryBase = 0x8000;
+    static constexpr int kGuideEntryBase = 0x10000;
     // Scrolls the save list or Earlier Saves just far enough to show the row
     // the cursor is on.
     void follow_focus(float output_width, float output_height);

@@ -200,6 +200,51 @@ void GameBrowser::activate(int index, GameBrowserResult& result) {
     result.chosen_path = row.path;
 }
 
+bool GameBrowser::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                         float output_height) {
+    if (!open_) return false;
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    drag_.update(pointers, geometry.list, scroll_, max_scroll(geometry));
+    return drag_.release_was_drag();
+}
+
+int GameBrowser::entry_at(float x, float y, float output_width, float output_height) const {
+    if (!open_) return -1;
+    // A prompt is the button it shows.
+    const ButtonGlyph under = guide_button_at(guide_hits_, x, y);
+    if (under != ButtonGlyph::Count) return kGuideEntryBase + static_cast<int>(under);
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    if (!geometry.list.contains(x, y)) return -1;
+    const int row = static_cast<int>(std::floor((y - geometry.list.y + scroll_) / geometry.row_height));
+    return row >= 0 && row < static_cast<int>(rows_.size()) ? row : -1;
+}
+
+bool GameBrowser::handle_tap(int entry, GameBrowserResult& result) {
+    if (entry >= kGuideEntryBase) {
+        const ButtonGlyph under = static_cast<ButtonGlyph>(entry - kGuideEntryBase);
+        std::string path;
+        if (under == ButtonGlyph::Plus && !amiibo_) {
+            result.back_requested = true;
+        } else if (under == ButtonGlyph::X && forwarder_target(path)) {
+            result.forwarder_requested = true;
+            result.chosen_path = path;
+        } else if (under == ButtonGlyph::A) {
+            activate(focus_, result);
+        } else if (under == ButtonGlyph::B) {
+            if (!rows_.empty() && rows_.front().is_parent) {
+                result.directory_changed = navigate_to(rows_.front().path);
+            } else {
+                result.back_requested = true;
+            }
+        }
+        return true;
+    }
+    if (entry < 0 || entry >= static_cast<int>(rows_.size())) return false;
+    // A first tap highlights the row; a second, on the same row, opens it.
+    if (tap_chooses(focus_, entry)) activate(entry, result);
+    return true;
+}
+
 GameBrowserResult GameBrowser::update(const InputManager& input,
                                       const std::vector<UiAction>& actions,
                                       const std::vector<PointerEvent>& pointers,
@@ -305,44 +350,9 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
 
     // Touch: the list follows a finger dragged on it and glides on after
     // one flicked; a release that never became a drag is a tap.
-    drag_.update(pointers, geometry.list, scroll_, max_scroll(geometry));
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
-        // A prompt tapped is that button pressed, where it came down on the
-        // same one it left.
-        const ButtonGlyph under = guide_button_at(guide_hits_, pointer.x, pointer.y);
-        if (!navigated && under != ButtonGlyph::Count &&
-            under == guide_button_at(guide_hits_, pointer.press_x, pointer.press_y)) {
-            std::string path;
-            if (under == ButtonGlyph::Plus && !amiibo_) {
-                result.back_requested = true;
-            } else if (under == ButtonGlyph::X && forwarder_target(path)) {
-                result.forwarder_requested = true;
-                result.chosen_path = path;
-            } else if (under == ButtonGlyph::A) {
-                activate(focus_, result);
-            } else if (under == ButtonGlyph::B) {
-                if (!rows_.empty() && rows_.front().is_parent) {
-                    result.directory_changed = navigate_to(rows_.front().path);
-                } else {
-                    result.back_requested = true;
-                }
-            }
-            navigated = true;
-        } else if (!navigated && !drag_.release_was_drag() &&
-                   geometry.list.contains(pointer.x, pointer.y)) {
-            const auto row_under = [&](float y) {
-                return static_cast<int>(std::floor((y - geometry.list.y + scroll_) / geometry.row_height));
-            };
-            const int row = row_under(pointer.y);
-            // The finger has to have come down on the same row it left on,
-            // not merely somewhere in the list. A first tap highlights the
-            // row; a second, on the same row, opens it.
-            if (row >= 0 && row < count && row == row_under(pointer.press_y)) {
-                if (tap_chooses(focus_, row)) activate(row, result);
-                navigated = true;
-            }
-        }
+    for (const int entry : take_taps(pointers, output_width, output_height)) {
+        if (navigated) break;
+        navigated = handle_tap(entry, result);
     }
     drag_.settle();
 

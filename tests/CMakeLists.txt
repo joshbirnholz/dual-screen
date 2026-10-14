@@ -170,6 +170,11 @@ add_test(NAME switch_makefile_sources
         -DSWITCH_MAKEFILE=${CMAKE_SOURCE_DIR}/switch/Makefile
         -DDESKTOP_CMAKE=${CMAKE_SOURCE_DIR}/CMakeLists.txt
         -P ${CMAKE_CURRENT_SOURCE_DIR}/run_switch_sources_test.cmake)
+# And whether every page of menu is a MenuPage, so a tap on either device
+# reaches it. See the script.
+add_test(NAME lint_menu_pages
+    COMMAND ${CMAKE_COMMAND} -DUI_DIR=${CMAKE_SOURCE_DIR}/src/ui
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/lint_menu_pages.cmake)
 # And the configuration iOS and tvOS actually ship: no FFmpeg, VideoToolbox
 # doing the decoding. Linux always finds FFmpeg, so that half of the fork is
 # dead code to every build here and would rot unwatched.

@@ -8,6 +8,7 @@
 #include "net/discovery.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
@@ -31,7 +32,7 @@ struct LauncherResult {
 
 // The opening screen when no ROM was named: play a game here, or join one
 // already running on another device and be one of its screens.
-class LauncherScreen {
+class LauncherScreen : public MenuPage {
 public:
     // `runs_games` is false on a companion client, which has no ROMs of its
     // own to load and nothing in Settings that would mean anything there --
@@ -76,6 +77,12 @@ public:
                           const std::vector<PointerEvent>& pointers,
                           float output_width,
                           float output_height);
+
+    // A short list, all on screen: nothing scrolls.
+    bool scroll(const std::vector<PointerEvent>&, float, float) override { return false; }
+    // A row by its index.
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float, float, float, float) const override { return false; }
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
@@ -126,7 +133,7 @@ struct HostPickerResult {
 // is both meaningless to them and a detail of their network to leave on screen.
 std::string host_row_detail(const ds::net::DiscoveredHost& host, bool available);
 
-class HostPickerScreen {
+class HostPickerScreen : public MenuPage {
 public:
     void open(ScreenId wanted_screen);
     void close() { open_ = false; }
@@ -140,6 +147,12 @@ public:
                             const std::vector<PointerEvent>& pointers,
                             float output_width,
                             float output_height);
+
+    // A short list, all on screen: nothing scrolls.
+    bool scroll(const std::vector<PointerEvent>&, float, float) override { return false; }
+    // A host by its index in the list last handed to update().
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float, float, float, float) const override { return false; }
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
@@ -162,6 +175,8 @@ private:
     bool open_ = false;
     int focus_ = 0;
     ScreenId wanted_screen_ = ScreenId::Bottom;
+    // How many hosts update() was last given, which entry_at() lays out.
+    std::size_t host_count_ = 0;
     std::vector<GuideHit> guide_hits_;
 
 public:

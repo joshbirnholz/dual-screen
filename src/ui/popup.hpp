@@ -261,12 +261,20 @@ public:
         for (const PointerEvent& pointer : pointers) {
             for (std::size_t index = 0; index < geometry.buttons.size(); ++index) {
                 if (!tapped(pointer, geometry.buttons[index])) continue;
-                const int tapped_index = static_cast<int>(index);
-                if (count_ == 1 || (shown_ && focus_ == tapped_index)) return tapped_index;
-                focus_ = tapped_index;
-                shown_ = true;
+                const int answer = tap(static_cast<int>(index));
+                if (answer != kNone) return answer;
             }
         }
+        return kNone;
+    }
+    // A tap on a button, by its index: pressed, where it is the only one or
+    // already under the cursor; otherwise the cursor goes to it. What is
+    // pressed, or kNone.
+    int tap(int index) {
+        if (index < 0 || index >= count_) return kNone;
+        if (count_ == 1 || (shown_ && focus_ == index)) return index;
+        focus_ = index;
+        shown_ = true;
         return kNone;
     }
 

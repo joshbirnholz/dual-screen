@@ -1084,11 +1084,18 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
     // A dialog is answered with its buttons, and the answer handed on below
     // as the press it stands for: its last button, or a save, as A; Cancel or
     // Skip, or B, as B.
-    const bool dialog = overlay_ == Overlay::Confirm || overlay_ == Overlay::ResumeConfirm ||
-                        overlay_ == Overlay::Choice;
+    const bool dialog = dialog_up();
+    const std::vector<int> taps = take_taps(pointers, output_width, output_height);
     if (dialog) {
         const PopupGeometry popup = dialog_popup(output_width, output_height);
-        const int answer = popup_cursor_.update(input_actions, pointers, popup);
+        int answer = popup_cursor_.update(input_actions, {}, popup);
+        // A tap on one of its buttons, from either device, as it would be
+        // here; off it, as B.
+        for (const int tap : taps) {
+            if (answer != PopupCursor::kNone) break;
+            if (tap == kTapOffPopup) answer = PopupCursor::kCancelled;
+            if (tap >= kDialogEntryBase && tap < kGuideEntryBase) answer = popup_cursor_.tap(tap - kDialogEntryBase);
+        }
         const int cancel = overlay_ == Overlay::Choice ? 2 : 0;
         if (overlay_ == Overlay::Choice && popup_cursor_.focus() < 2) choice_focus_ = popup_cursor_.focus();
         actions.clear();
@@ -1099,27 +1106,20 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             actions.push_back(UiAction::Confirm);
         }
     }
-    if (overlay_ == Overlay::None) drag_list(pointers, output_width, output_height);
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released || dialog) continue;
-        const ButtonGlyph on_guide = guide_button_at(guide_hits_, pointer.x, pointer.y);
-        if (on_guide != ButtonGlyph::Count) {
-            handle_guide_tap(on_guide, actions);
+    for (const int tap : taps) {
+        if (dialog) break;
+        if (tap >= kGuideEntryBase) {
+            handle_guide_tap(static_cast<ButtonGlyph>(tap - kGuideEntryBase), actions);
             continue;
         }
         // Everywhere here, a first tap highlights and a second, on the same
         // thing, chooses it.
-        if (overlay_ != Overlay::None || drag_.release_was_drag()) continue;
-        for (std::size_t index = 0; index < row_rects_.size(); ++index) {
-            if (!tapped(pointer, row_rects_[index])) continue;
-            bool chosen = false;
-            if (page_ == Page::List) chosen = tap_chooses(list_focus_, row_first_ + static_cast<int>(index));
-            if (page_ == Page::Game) chosen = tap_chooses(action_focus_, static_cast<int>(index));
-            if (page_ == Page::Earlier) {
-                chosen = tap_chooses(earlier_focus_, row_first_ + static_cast<int>(index));
-            }
-            if (chosen) actions.push_back(UiAction::Confirm);
-        }
+        if (overlay_ != Overlay::None || tap < 0) continue;
+        bool chosen = false;
+        if (page_ == Page::List) chosen = tap_chooses(list_focus_, tap);
+        if (page_ == Page::Game) chosen = tap_chooses(action_focus_, tap);
+        if (page_ == Page::Earlier) chosen = tap_chooses(earlier_focus_, tap);
+        if (chosen) actions.push_back(UiAction::Confirm);
     }
 
     for (const UiAction action : actions) {
@@ -1214,6 +1214,33 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
         open_ = false;
     }
     return result;
+}
+
+bool DataManagementScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                                  float output_height) {
+    if (!open_ || overlay_ != Overlay::None) return false;
+    drag_list(pointers, output_width, output_height);
+    return drag_.release_was_drag();
+}
+
+int DataManagementScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    if (!open_) return -1;
+    if (dialog_up()) {
+        const int button = popup_button_at(dialog_popup(output_width, output_height), x, y);
+        return button >= 0 ? kDialogEntryBase + button : -1;
+    }
+    const ButtonGlyph on_guide = guide_button_at(guide_hits_, x, y);
+    if (on_guide != ButtonGlyph::Count) return kGuideEntryBase + static_cast<int>(on_guide);
+    if (overlay_ != Overlay::None) return -1;
+    for (std::size_t index = 0; index < row_rects_.size(); ++index) {
+        if (!row_rects_[index].contains(x, y)) continue;
+        return (page_ == Page::Game ? 0 : row_first_) + static_cast<int>(index);
+    }
+    return -1;
+}
+
+bool DataManagementScreen::off_popup(float x, float y, float output_width, float output_height) const {
+    return open_ && dialog_up() && !dialog_popup(output_width, output_height).box.contains(x, y);
 }
 
 void DataManagementScreen::drag_list(const std::vector<PointerEvent>& pointers, float output_width,

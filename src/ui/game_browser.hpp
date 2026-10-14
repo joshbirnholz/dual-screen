@@ -10,6 +10,7 @@
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/sound_view.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -41,7 +42,7 @@ struct GameBrowserResult {
 // A file browser for picking a ROM, used when the app is launched with no
 // --game. Navigable with a controller and by touch, including drag scrolling,
 // because on a Deck in Game Mode both are the only inputs there are.
-class GameBrowser {
+class GameBrowser : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
@@ -65,6 +66,12 @@ public:
                              const std::vector<PointerEvent>& pointers,
                              float output_width,
                              float output_height);
+
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    // A row by its index; a prompt as kGuideEntryBase plus its button.
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float, float, float, float) const override { return false; }
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
@@ -93,6 +100,10 @@ private:
     };
 
     Geometry compute_geometry(float output_width, float output_height) const;
+    static constexpr int kGuideEntryBase = 0x10000;
+    // A tap on `entry`; whether it did anything, which is the one thing a
+    // pass does.
+    bool handle_tap(int entry, GameBrowserResult& result);
     // By value on purpose: see the definition. Returns whether the browser
     // actually moved, so a refused directory is not reported as a change.
     bool navigate_to(std::string directory);

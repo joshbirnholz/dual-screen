@@ -16,6 +16,7 @@
 #include "render/texture.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
 
@@ -35,7 +36,7 @@ struct ForwarderScreenResult {
 // way Sphaira's own forwarder editor is. The title starts as the one the ROM
 // gives itself and the publisher as the one its banner names; the icon as
 // the ROM's own, or one found on SteamGridDB instead.
-class ForwarderScreen {
+class ForwarderScreen : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
@@ -51,6 +52,14 @@ public:
     ForwarderScreenResult update(const std::vector<UiAction>& actions,
                                  const std::vector<PointerEvent>& pointers,
                                  float output_width, float output_height);
+
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    // A popup's button as kPopupEntryBase plus its index; a prompt as
+    // kGuideEntryBase plus its button; the title and icon by their own; a
+    // row, or a picture in the grid, by its index.
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
     void render(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                 float output_width, float output_height);
 
@@ -119,9 +128,22 @@ private:
     int grid_count() const;
     bool has_more() const { return next_url_ < urls_.size(); }
 
-    void update_editor(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers,
-                       float output_width, float output_height, ForwarderScreenResult& result);
-    void update_icons(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers,
+    static constexpr int kTitleEntry = 0x4000;
+    static constexpr int kIconEntry = 0x4001;
+    static constexpr int kPopupEntryBase = 0x8000;
+    static constexpr int kGuideEntryBase = 0x10000;
+    // The popup up, if a question is: IconSource's or GameChoice's.
+    bool asking() const { return overlay_ == Overlay::IconSource || overlay_ == Overlay::GameChoice; }
+    PopupGeometry asking_popup(float output_width, float output_height) const {
+        return overlay_ == Overlay::IconSource ? source_popup(output_width, output_height)
+                                               : game_popup(output_width, output_height);
+    }
+    // A popup's answer this pass, from a press or a tap on either device.
+    int answer_popup(const std::vector<UiAction>& actions, const std::vector<int>& taps,
+                     const PopupGeometry& popup);
+    void update_editor(const std::vector<UiAction>& actions, const std::vector<int>& taps,
+                       ForwarderScreenResult& result);
+    void update_icons(const std::vector<UiAction>& actions, const std::vector<int>& taps,
                       float output_width, float output_height);
     void activate(ForwarderScreenResult& result);
     void edit_title();
