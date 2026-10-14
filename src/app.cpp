@@ -948,6 +948,8 @@ struct App::Impl {
     void open_graphic_packs();
     void update_graphic_packs_screen(const std::vector<UiAction>& actions,
                                      const std::vector<PointerEvent>& pointers);
+    // What a press on the page asked for: a pack changed, or the page left.
+    void apply_graphic_packs_result(const GraphicPacksScreenResult& result);
     // Cemu's own options -- see cemu_options -- asked for once Cemu is up,
     // set to this game's, and stepped from the menu.
     void update_cemu_options();
@@ -2261,8 +2263,11 @@ void App::Impl::update_graphic_packs_screen(const std::vector<UiAction>& actions
     if (external_source->take_graphic_packs(packs)) {
         graphic_packs_screen.set_packs(std::move(packs));
     }
-    const GraphicPacksScreenResult result = graphic_packs_screen.update(
-        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    apply_graphic_packs_result(graphic_packs_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height)));
+}
+
+void App::Impl::apply_graphic_packs_result(const GraphicPacksScreenResult& result) {
     if (result.change) {
         const ExternalGraphicPackChange& change = *result.change;
         external_source->change_graphic_pack(change);
@@ -4695,9 +4700,16 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_graphic_packs.guide_hits(), forwarded, rest);
                     // Scrolled under a finger here, as this device's own view
-                    // of the page; the cursor stays the host's.
-                    mirrored_graphic_packs.drag(rest, static_cast<float>(output_width),
-                                                static_cast<float>(output_height));
+                    // of the page; a tap goes over as what it landed on.
+                    for (const int tap : mirrored_graphic_pack_taps(mirrored_graphic_packs, rest,
+                                                                    static_cast<float>(output_width),
+                                                                    static_cast<float>(output_height))) {
+                        if (tap == kMirroredTapCancel) {
+                            companion_session->request_menu_action(net::MenuAction::Cancel);
+                        } else {
+                            companion_session->request_menu_focus(tap);
+                        }
+                    }
                 }
                 for (const UiAction action : forwarded) {
                     net::MenuAction wire = net::MenuAction::Confirm;
@@ -6201,6 +6213,11 @@ int App::run(const AppOptions& options) {
                 if (!for_menu && !for_settings) continue;
                 if (press.has_focus && for_menu) {
                     impl.picker->set_focus(press.focus);
+                }
+                // A tap on the other device's drawing of the page, resolved
+                // there to what it landed on, answered as a tap here would be.
+                if (press.has_focus && impl.state == Impl::State::GraphicPacks) {
+                    impl.apply_graphic_packs_result(impl.graphic_packs_screen.press_entry(press.focus));
                 }
                 if (!press.has_action) continue;
                 const UiAction action = ui_action_for(press.action);

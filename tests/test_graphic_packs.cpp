@@ -373,6 +373,76 @@ void test_the_other_devices_page_scrolls_under_a_finger() {
     CHECK_EQ(mirror.detail_scroll(), 0.0f);
 }
 
+// Where on a page drawn at a size an entry is, found by looking.
+bool point_on(const GraphicPacksScreen& page, int entry, float width, float height, float& x, float& y) {
+    for (y = 2.0f; y < height; y += 3.0f) {
+        for (x = 2.0f; x < width; x += 6.0f) {
+            if (page.entry_at(x, y, width, height) == entry) return true;
+        }
+    }
+    return false;
+}
+
+PointerEvent tap_at(float x, float y) {
+    PointerEvent event;
+    event.x = x;
+    event.y = y;
+    event.press_x = x;
+    event.press_y = y;
+    event.released = true;
+    event.normalized = false;
+    return event;
+}
+
+// Taps on the other device's drawing of the page, at its own size, go over
+// as what they landed on and are answered as taps on the page itself: a
+// first highlights, a second goes in or changes the row, and a popup's
+// choice is chosen at once.
+void test_taps_on_the_other_devices_page_work_it() {
+    constexpr float kOtherWidth = 1920.0f;
+    constexpr float kOtherHeight = 1080.0f;
+    GraphicPacksScreen host;
+    host.open();
+    host.set_packs(game_packs());
+    GraphicPacksScreen mirror;
+    const auto tap_on_mirror = [&](int entry) {
+        mirror.show_mirrored(graphic_packs_view_of(host), kOtherWidth, kOtherHeight);
+        float x = 0.0f;
+        float y = 0.0f;
+        CHECK_MSG(point_on(mirror, entry, kOtherWidth, kOtherHeight, x, y), "no such entry on the page");
+        const std::vector<int> taps =
+            mirrored_graphic_pack_taps(mirror, {tap_at(x, y)}, kOtherWidth, kOtherHeight);
+        CHECK_EQ(taps.size(), 1u);
+        return taps.empty() ? GraphicPacksScreenResult() : host.press_entry(taps.front());
+    };
+    // The fourth pack down the list, FPS++: highlighted, then gone into.
+    tap_on_mirror(3 * 2);
+    CHECK_EQ(host.focus(), 3);
+    CHECK(!host.in_pack());
+    tap_on_mirror(3 * 2);
+    CHECK(host.in_pack());
+    // Its on/off row, from its preset: highlighted, then turned on.
+    tap_on_mirror(1 * 2 + 1);
+    CHECK(host.in_pack() && host.item() == 1 && !host.choosing());
+    tap_on_mirror(0 * 2 + 1);
+    CHECK(host.in_pack() && host.item() == 0);
+    const GraphicPacksScreenResult turned = tap_on_mirror(0 * 2 + 1);
+    CHECK(turned.change.has_value() && turned.change->enabled);
+    // Its preset, by its popup: the choice tapped is the one taken.
+    tap_on_mirror(1 * 2 + 1);
+    tap_on_mirror(1 * 2 + 1);
+    CHECK(host.choosing());
+    const GraphicPacksScreenResult chosen = tap_on_mirror(GraphicPacksScreen::kChoiceEntryBase + 1);
+    CHECK(!host.choosing());
+    CHECK(chosen.change.has_value() && chosen.change->preset == "60FPS");
+    // And a tap off an open popup puts it away.
+    tap_on_mirror(1 * 2 + 1);
+    CHECK(host.choosing());
+    mirror.show_mirrored(graphic_packs_view_of(host), kOtherWidth, kOtherHeight);
+    const std::vector<int> off = mirrored_graphic_pack_taps(mirror, {tap_at(4.0f, 4.0f)}, kOtherWidth, kOtherHeight);
+    CHECK(off.size() == 1u && off.front() == kMirroredTapCancel);
+}
+
 int main() {
     test_packs_are_grouped_as_cemu_files_them();
     test_into_a_pack_and_back_out_as_in_the_quick_menu();
@@ -382,5 +452,6 @@ int main() {
     test_a_menus_face_buttons_are_not_this_pages();
     test_the_page_is_drawn_on_the_other_device_as_it_is();
     test_the_other_devices_page_scrolls_under_a_finger();
+    test_taps_on_the_other_devices_page_work_it();
     return test::finish("graphic-packs");
 }

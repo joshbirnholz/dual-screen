@@ -405,13 +405,75 @@ void GraphicPacksScreen::scroll_item_into_view(const Geometry& geometry) {
     detail_scroll_ = std::max(0.0f, std::min(detail_scroll_, geometry.detail_max_scroll()));
 }
 
-void GraphicPacksScreen::drag(const std::vector<PointerEvent>& pointers, float output_width,
+bool GraphicPacksScreen::drag(const std::vector<PointerEvent>& pointers, float output_width,
                               float output_height) {
+    if (choice_.is_open()) return choice_.scroll(pointers, output_width, output_height);
     const Geometry geometry = compute_geometry(output_width, output_height);
     drag_.update(pointers, geometry.list, scroll_, geometry.max_scroll());
     const PixelRect detail_view{geometry.detail.x, geometry.view_top, geometry.detail.w,
                                 geometry.view_height};
     detail_drag_.update(pointers, detail_view, detail_scroll_, geometry.detail_max_scroll());
+    return drag_.release_was_drag() || detail_drag_.release_was_drag();
+}
+
+int GraphicPacksScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    if (choice_.is_open()) {
+        const int choice = choice_.choice_at(x, y, output_width, output_height);
+        return choice >= 0 ? kChoiceEntryBase + choice : -1;
+    }
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    int focus = 0;
+    for (std::size_t index = 0; index < lines_.size() && index < geometry.lines.size(); ++index) {
+        if (!lines_[index].focusable()) continue;
+        if (y >= geometry.list.y && geometry.list.contains(x, y) && geometry.lines[index].contains(x, y)) {
+            return focus * 2;
+        }
+        ++focus;
+    }
+    const PixelRect detail_view{geometry.detail.x, geometry.view_top, geometry.detail.w,
+                                geometry.view_height};
+    for (std::size_t index = 0; index < geometry.items.size(); ++index) {
+        if (detail_view.contains(x, y) && geometry.items[index].contains(x, y)) {
+            return static_cast<int>(index) * 2 + 1;
+        }
+    }
+    return -1;
+}
+
+bool GraphicPacksScreen::off_choice_popup(float x, float y, float output_width,
+                                          float output_height) const {
+    return choice_.is_open() && !choice_.contains(x, y, output_width, output_height);
+}
+
+GraphicPacksScreenResult GraphicPacksScreen::press_entry(int entry) {
+    GraphicPacksScreenResult result;
+    if (!open_ || entry < 0) return result;
+    if (entry >= kChoiceEntryBase) {
+        if (!choice_.is_open()) return result;
+        const int index = entry - kChoiceEntryBase;
+        if (index < 0 || index >= static_cast<int>(choice_.choices().size())) return result;
+        choice_.close();
+        choose(index, result);
+        return result;
+    }
+    if (choice_.is_open()) return result;
+    const int index = entry / 2;
+    if (entry % 2 == 0) {
+        if (index >= pack_count()) return result;
+        const bool highlighted = !in_pack_ && focus_ == index;
+        focus_ = index;
+        in_pack_ = highlighted;
+        item_ = 0;
+        if (!highlighted) detail_scroll_ = 0.0f;
+        scroll_focus_into_view(compute_geometry(last_width_, last_height_));
+        return result;
+    }
+    if (index >= item_count()) return result;
+    const bool highlighted = in_pack_ && item_ == index;
+    in_pack_ = true;
+    item_ = index;
+    if (highlighted) adjust(result);
+    return result;
 }
 
 GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>& pressed,
@@ -740,6 +802,26 @@ void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
         if (!choice_.is_open()) open_choice(compute_geometry(output_width, output_height));
         choice_.set_focus(view.choice_focus - 1);
     }
+}
+
+std::vector<int> mirrored_graphic_pack_taps(GraphicPacksScreen& page,
+                                            const std::vector<PointerEvent>& pointers,
+                                            float output_width, float output_height) {
+    std::vector<int> taps;
+    const bool dragged = page.drag(pointers, output_width, output_height);
+    for (const PointerEvent& pointer : pointers) {
+        if (!pointer.released || dragged) continue;
+        if (page.off_choice_popup(pointer.x, pointer.y, output_width, output_height) &&
+            page.off_choice_popup(pointer.press_x, pointer.press_y, output_width, output_height)) {
+            taps.push_back(kMirroredTapCancel);
+            continue;
+        }
+        const int entry = page.entry_at(pointer.x, pointer.y, output_width, output_height);
+        if (entry >= 0 && entry == page.entry_at(pointer.press_x, pointer.press_y, output_width, output_height)) {
+            taps.push_back(entry);
+        }
+    }
+    return taps;
 }
 
 net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& screen) {

@@ -1154,10 +1154,18 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     // press on the host would.
     if (state_ == State::Playing && session_.host_settings_open()) {
         // The host's Graphics Packs page, drawn here, scrolls under a finger
-        // here -- its own view of the page; the cursor stays the host's.
+        // here -- its own view of the page -- and a tap goes over as what it
+        // landed on.
         if (session_.host_graphic_packs_view().open) {
-            mirrored_graphic_packs_.drag(pointers, static_cast<float>(output_width_),
-                                         static_cast<float>(output_height_));
+            for (const int tap : mirrored_graphic_pack_taps(mirrored_graphic_packs_, pointers,
+                                                            static_cast<float>(output_width_),
+                                                            static_cast<float>(output_height_))) {
+                if (tap == kMirroredTapCancel) {
+                    session_.request_menu_action(net::MenuAction::Cancel);
+                } else {
+                    session_.request_menu_focus(tap);
+                }
+            }
         }
         for (const UiAction action : actions) {
             net::MenuAction wire = net::MenuAction::Confirm;

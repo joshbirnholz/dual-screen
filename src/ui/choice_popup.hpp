@@ -63,6 +63,10 @@ public:
     void render(QuadRenderer& quads, TextRenderer& text, float output_width, float output_height,
                 const ButtonGlyphSheet* glyphs = nullptr);
 
+    // A finger dragging the list, or the wheel turning it, and nothing else:
+    // for a device drawing the other's popup, whose cursor is the other's.
+    // True when this pass's release ended a drag rather than tapped.
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
     // Which choice is under a point, or -1: for a device drawing the
     // other's popup, to send it as a focus.
     int choice_at(float x, float y, float output_width, float output_height) const;

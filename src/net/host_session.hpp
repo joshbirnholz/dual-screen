@@ -294,7 +294,7 @@ public:
     // moves. False when there are none left.
     struct MenuPress {
         bool has_focus = false;
-        uint8_t focus = 0;
+        uint16_t focus = 0;
         bool has_action = false;
         MenuAction action = MenuAction::Confirm;
     };

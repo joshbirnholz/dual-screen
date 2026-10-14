@@ -167,6 +167,17 @@ bool ChoicePopup::contains(float x, float y, float output_width, float output_he
     return open_ && geometry(output_width, output_height).box.contains(x, y);
 }
 
+bool ChoicePopup::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                         float output_height) {
+    if (!open_ || grid()) return false;
+    const Geometry shape = geometry(output_width, output_height);
+    float pixels = scroll_rows_ * shape.row_height;
+    drag_.set_wheel_row(shape.row_height);
+    drag_.update(pointers, shape.list, pixels, max_scroll_rows(shape.visible) * shape.row_height);
+    scroll_rows_ = shape.row_height > 0.0f ? pixels / shape.row_height : 0.0f;
+    return drag_.release_was_drag();
+}
+
 ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
                                       const std::vector<PointerEvent>& pointers, float output_width,
                                       float output_height) {
@@ -213,14 +224,8 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
         keep_focus_in_view(visible);
     }
     if (result.chosen < 0 && !result.closed) {
-        Geometry shape = geometry(output_width, output_height);
-        if (!grid()) {
-            float scroll = scroll_rows_ * shape.row_height;
-            drag_.set_wheel_row(shape.row_height);
-            drag_.update(pointers, shape.list, scroll, max_scroll_rows(shape.visible) * shape.row_height);
-            scroll_rows_ = shape.row_height > 0.0f ? scroll / shape.row_height : 0.0f;
-            shape = geometry(output_width, output_height);
-        }
+        scroll(pointers, output_width, output_height);
+        const Geometry shape = geometry(output_width, output_height);
         for (const PointerEvent& pointer : pointers) {
             if (!pointer.released) continue;
             if (!shape.box.contains(pointer.press_x, pointer.press_y) &&

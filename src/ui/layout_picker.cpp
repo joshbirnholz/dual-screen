@@ -77,7 +77,7 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     save_status_failed_ = false;
 
     rebuild_footer();
-    content_first_ = 0;
+    content_scroll_ = 0.0f;
     // The first time, the list at its top -- the way NSO's menu opens -- with
     // the layouts already showing beside it. After that, exactly where it was
     // closed: the section, and the entry inside it when the cursor was in
@@ -518,14 +518,15 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             // A list, as tall as the sections' rows. Scan amiibo's can run
             // past the bottom, so it starts from the first of it in view.
             const float option_height = line * 2.2f;
-            const bool amiibo = section_ == MenuSection::Amiibo;
-            const int first = amiibo ? content_first_ : 0;
-            // Short of the right-hand edge by a scroll bar, where there can be one.
-            const float width = amiibo ? area.w - scroll_bar_width(scale) - line * 0.5f : area.w;
+            const float step = option_height + line * 0.25f;
+            const int fitting = std::max(1, static_cast<int>((area.h + line * 0.25f) / step));
+            const bool scrolls = count > fitting;
+            const float first = scrolls ? std::clamp(content_scroll_, 0.0f, static_cast<float>(count - fitting)) : 0.0f;
+            // Short of the right-hand edge by a scroll bar, where there is one.
+            const float width = scrolls ? area.w - scroll_bar_width(scale) - line * 0.5f : area.w;
             for (int index = 0; index < count; ++index) {
-                geometry.items.push_back(
-                    PixelRect{area.x, area.y + (index - first) * (option_height + line * 0.25f), width,
-                              option_height});
+                geometry.items.push_back(PixelRect{
+                    area.x, std::round(area.y + (static_cast<float>(index) - first) * step), width, option_height});
             }
             break;
         }
@@ -603,18 +604,33 @@ int LayoutPicker::content_rows_fitting(const MenuGeometry& geometry) const {
     return std::max(1, static_cast<int>((geometry.content.h + line * 0.25f) / step));
 }
 
+float LayoutPicker::content_row_step(const MenuGeometry& geometry) const {
+    const float line = TextRenderer::line_height(geometry.scale);
+    return line * 2.2f + line * 0.25f;
+}
+
+float LayoutPicker::content_max_scroll(const MenuGeometry& geometry) const {
+    if (!content_is_list()) return 0.0f;
+    return std::max(0.0f, static_cast<float>(content_count(section_) - content_rows_fitting(geometry)));
+}
+
+bool LayoutPicker::content_is_list() const {
+    return section_ == MenuSection::Options || section_ == MenuSection::Amiibo;
+}
+
 void LayoutPicker::keep_item_in_view(float output_width, float output_height) {
-    if (section_ != MenuSection::Amiibo) {
-        content_first_ = 0;
+    if (!content_is_list()) {
+        content_scroll_ = 0.0f;
         return;
     }
-    const int rows = content_rows_fitting(compute_menu_geometry(output_width, output_height));
-    const int count = content_count(section_);
+    const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
+    const float rows = static_cast<float>(content_rows_fitting(geometry));
     if (on_content_) {
-        if (item_ < content_first_) content_first_ = item_;
-        if (item_ >= content_first_ + rows) content_first_ = item_ - rows + 1;
+        const float at = static_cast<float>(item_);
+        if (at < content_scroll_) content_scroll_ = at;
+        if (at + 1.0f > content_scroll_ + rows) content_scroll_ = at + 1.0f - rows;
     }
-    content_first_ = std::clamp(content_first_, 0, std::max(0, count - rows));
+    content_scroll_ = std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry));
 }
 
 void LayoutPicker::set_focus(int focus) {
@@ -642,9 +658,17 @@ void LayoutPicker::set_focus(int focus) {
         item = focus % kSectionStride - 1;
     }
     if (!has_section(section) || item >= content_count(section)) return;
+    const bool moved = section != section_ || std::max(0, item) != item_ || (item >= 0) != on_content_;
+    if (section != section_) content_scroll_ = 0.0f;
     section_ = section;
     on_content_ = item >= 0;
     item_ = std::max(0, item);
+    // Another device's cursor, or one put here: the list follows it when it
+    // moves, and is otherwise where a finger here left it.
+    if (moved) {
+        content_drag_.stop();
+        keep_item_in_view(last_width_, last_height_);
+    }
 }
 
 ButtonGlyph LayoutPicker::guide_button_at(float x, float y) const {
@@ -1069,9 +1093,28 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     }
 
     {
+        const MenuSection section_before = section_;
+        const int item_before = item_;
+        const bool on_content_before = on_content_;
         for (const UiAction action : pressed) {
             handle_menu_action(action, result);
             if (confirming()) break;
+        }
+        // The cursor brings a list with it when it moves -- and only then, so
+        // a list a finger or the wheel moved stays where it was left.
+        if (section_ != section_before || item_ != item_before || on_content_ != on_content_before) {
+            if (section_ != section_before) content_scroll_ = 0.0f;
+            content_drag_.stop();
+            keep_item_in_view(output_width, output_height);
+        }
+        // A list on the right, dragged by a finger or turned by the wheel.
+        if (content_is_list()) {
+            const MenuGeometry before = compute_menu_geometry(output_width, output_height);
+            const float step = content_row_step(before);
+            float scroll = content_scroll_ * step;
+            content_drag_.set_wheel_row(step);
+            content_drag_.update(pointers, before.content, scroll, content_max_scroll(before) * step);
+            content_scroll_ = step > 0.0f ? scroll / step : 0.0f;
         }
         // Touch: a first tap highlights the thing under the finger, and a
         // second on the same thing chooses it -- so a finger landing on the
@@ -1079,6 +1122,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
         const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
         for (const PointerEvent& pointer : pointers) {
             if (!pointer.released || confirming()) continue;
+            if (content_drag_.release_was_drag()) continue;
             bool hit = false;
             for (std::size_t index = 0; index < geometry.sections.size() && !hit; ++index) {
                 if (!tapped(pointer, geometry.sections[index])) continue;
@@ -1104,7 +1148,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 hit = true;
             }
         }
-        keep_item_in_view(output_width, output_height);
+        content_drag_.settle();
+        content_scroll_ = std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry));
     }
 
     if (confirming()) {
@@ -1398,6 +1443,8 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     const float scale = geometry.scale;
     const float line = TextRenderer::line_height(scale);
     const float row_scale = scale * 1.1f;
+    // Rows past the bottom are scrolled to, not drawn over the prompts.
+    quads.set_clip(geometry.content);
     for (std::size_t index = 0; index < geometry.items.size() && index < options_.size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
@@ -1413,6 +1460,14 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
             text.draw(quads, value, row.x + row.w - line * 0.8f, baseline, row_scale,
                       theme.text_dim, TextAlign::Right);
         }
+    }
+    quads.clear_clip();
+    const int rows = content_rows_fitting(geometry);
+    const int count = static_cast<int>(options_.size());
+    if (count > rows) {
+        const float span = static_cast<float>(count);
+        draw_scroll_bar(quads, geometry.content, std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry)) / span,
+                        static_cast<float>(rows) / span, line, scale);
     }
 }
 
@@ -1451,7 +1506,7 @@ void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
     const int rows = content_rows_fitting(geometry);
     if (count > rows) {
         const float span = static_cast<float>(count);
-        draw_scroll_bar(quads, geometry.content, static_cast<float>(content_first_) / span,
+        draw_scroll_bar(quads, geometry.content, std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry)) / span,
                         static_cast<float>(rows) / span, line, scale);
     }
 }

@@ -549,9 +549,15 @@ private:
     const Layout& tile_layout(int index) const;
     int tile_index_of(const std::string& layout_id) const;
     // How many of the right-hand side's rows fit, and keeping the cursor's
-    // among them -- see content_first_.
+    // among them -- see content_scroll_.
     int content_rows_fitting(const MenuGeometry& geometry) const;
+    // How far apart a list's rows are, and how far it can scroll, in rows.
+    float content_row_step(const MenuGeometry& geometry) const;
+    float content_max_scroll(const MenuGeometry& geometry) const;
     void keep_item_in_view(float output_width, float output_height);
+    // Whether the right-hand side is a list -- Game Options, amiibo -- that
+    // can run past the bottom and scroll.
+    bool content_is_list() const;
 
     bool has_section(MenuSection section) const;
     // How many things a section shows on the right; 0 for one that does
@@ -609,9 +615,10 @@ private:
     // things, and on which.
     std::vector<MenuSection> sections_;
     std::vector<OptionRow> options_;
-    // The first of a long list's things in view -- Scan amiibo's, the one
-    // list here that can run past the bottom.
-    int content_first_ = 0;
+    // How far a list on the right is scrolled, in rows, and the finger or
+    // wheel moving it -- the cursor brings it with it only when it moves.
+    float content_scroll_ = 0.0f;
+    ListDrag content_drag_;
     MenuSection section_ = MenuSection::Layout;
     std::function<bool(UiAction)> repeating_;
     // Whether this menu has been opened before in this run, so the next open
