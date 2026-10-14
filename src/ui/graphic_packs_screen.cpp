@@ -639,7 +639,7 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
     // read as the game starts, so its change waits for Reset.
     if (restart_pending_) {
         draw_page_status(quads, text, glyphs, frame,
-                         "Some changes will take effect when the game is reset.", theme.text_dim);
+                         "Some changes will take effect when the game is restarted.", theme.text_dim);
     }
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
