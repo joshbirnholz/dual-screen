@@ -188,6 +188,31 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
             }
             current = static_cast<int>(settings_.pad_glyphs);
             break;
+        case Row::ConfirmButtonRow: {
+            // Named as the chosen controller icons name the two buttons: the
+            // right-hand one first, then the bottom one.
+            const char* east = "A";
+            const char* south = "B";
+            switch (settings_.pad_glyphs) {
+                case PadGlyphStyle::Xbox:
+                    east = "B";
+                    south = "A";
+                    break;
+                case PadGlyphStyle::PlayStation:
+                    east = "Circle";
+                    south = "Cross";
+                    break;
+                case PadGlyphStyle::Positional:
+                    east = "Right button";
+                    south = "Bottom button";
+                    break;
+                default: break;
+            }
+            choices = {std::string(east) + " to confirm, " + south + " to go back",
+                       std::string(south) + " to confirm, " + east + " to go back"};
+            current = settings_.confirm_button == ConfirmButton::South ? 1 : 0;
+            break;
+        }
 #endif
         case Row::VideoHold:
             for (const video::VideoHold hold :
@@ -237,6 +262,10 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
         case Row::PadGlyphs:
             if (index < 0 || index >= static_cast<int>(PadGlyphStyle::Count)) return;
             settings_.pad_glyphs = static_cast<PadGlyphStyle>(index);
+            break;
+        case Row::ConfirmButtonRow:
+            if (index < 0 || index > 1) return;
+            settings_.confirm_button = index == 1 ? ConfirmButton::South : ConfirmButton::East;
             break;
 #endif
         case Row::VideoHold: {
