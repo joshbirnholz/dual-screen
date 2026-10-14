@@ -36,6 +36,18 @@ PointerEvent tap(float x, float y) {
 // second chooses it, which is what choosing something with a finger takes.
 std::vector<PointerEvent> choose_at(float x, float y) { return {tap(x, y), tap(x, y)}; }
 
+// An option with several values opens them in a popup rather than stepping:
+// this chooses the one after the value in effect (or before, at the end of
+// the list), which is a change, and gives what that asked for. Anything
+// else is handed back as it was.
+LayoutPickerResult through_popup(LayoutPicker& picker, const LayoutPickerResult& result) {
+    if (picker.confirmation() != MenuConfirm::Choice) return result;
+    const int before = picker.confirm_focus_wire();
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    if (picker.confirm_focus_wire() == before) picker.update({UiAction::Up}, {}, kWidth, kHeight);
+    return picker.update({UiAction::Confirm}, {}, kWidth, kHeight);
+}
+
 // One that came down somewhere else and lifted here.
 PointerEvent slide_onto(float from_x, float from_y, float to_x, float to_y) {
     PointerEvent pointer = tap(to_x, to_y);
@@ -96,7 +108,7 @@ int taps_that_cycle_the_scale(const LayoutRegistry& registry, const LayoutPicker
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
             const LayoutPickerResult result =
-                picker.update({}, choose_at(x, y), kWidth, kHeight);
+                through_popup(picker, picker.update({}, choose_at(x, y), kWidth, kHeight));
             if (result.render_scale_changed) ++hits;
         }
     }
@@ -144,7 +156,8 @@ int taps_that_cycle_the_right_stick(const LayoutRegistry& registry, const Layout
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
-            const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
+            const LayoutPickerResult result =
+                through_popup(picker, picker.update({}, choose_at(x, y), kWidth, kHeight));
             if (result.right_stick_mode_changed) ++hits;
         }
     }
@@ -380,7 +393,8 @@ void test_the_other_buttons_still_work() {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
             open_on(picker, state, MenuSection::Options);
-            const LayoutPickerResult result = picker.update({}, choose_at(x, y), kWidth, kHeight);
+            const LayoutPickerResult result =
+                through_popup(picker, picker.update({}, choose_at(x, y), kWidth, kHeight));
             const int intents = result.audio_target_changed + result.handedness_changed +
                                 result.cursor_mode_changed + result.screen_gap_toggled +
                                 result.right_stick_mode_changed + result.render_scale_changed +
@@ -565,16 +579,41 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(cycled.cursor_mode_changed);
     CHECK(options.on_content());
 
-    // A render scale is changed as soon as it is pressed, with no question.
+    // A render scale is chosen from its popup, beside the row, with no
+    // question after: 1x, 2x and 3x, the one in effect first under the
+    // cursor, and the one chosen two along from it.
     {
         LayoutPickerState scaled = state;
         scaled.max_render_scale = 3;
+        scaled.render_scale = 1;
         LayoutPicker asked(registry);
         open_on(asked, scaled, MenuSection::Options);
         asked.update({UiAction::Right}, {}, kWidth, kHeight);
+        const LayoutPickerResult opened = asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK(!opened.render_scale_changed);
+        CHECK(asked.confirmation() == MenuConfirm::Choice);
+        CHECK_EQ(asked.confirm_focus_wire(), 1);
+        asked.update({UiAction::Down}, {}, kWidth, kHeight);
+        asked.update({UiAction::Down}, {}, kWidth, kHeight);
+        asked.update({UiAction::Down}, {}, kWidth, kHeight);  // the last, and no further
         const LayoutPickerResult pressed = asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
         CHECK(pressed.render_scale_changed);
+        CHECK_EQ(pressed.option_steps, 2);
         CHECK(!asked.awaiting_confirmation());
+
+        // B puts it away, changing nothing; the one in effect chosen again
+        // changes nothing either.
+        asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK(!asked.update({UiAction::Cancel}, {}, kWidth, kHeight).render_scale_changed);
+        CHECK(asked.confirmation() == MenuConfirm::None);
+        CHECK(asked.is_open());
+        asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK(!asked.update({UiAction::Confirm}, {}, kWidth, kHeight).render_scale_changed);
+
+        // The menu's own button puts the popup and the menu away together.
+        asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK(asked.update({UiAction::ToggleMenu}, {}, kWidth, kHeight).close_requested);
+        CHECK(!asked.is_open());
     }
 
     // A Rumble Pak, where the core can put one in, and nowhere else.

@@ -158,6 +158,128 @@ void SettingsScreen::adjust_melonds(MelonRow row, int direction) {
         case MelonRow::CpuClock: tuning_.cpu_mhz = next_melonds_cpu_mhz(tuning_.cpu_mhz, direction); break;
         case MelonRow::Pipeline: tuning_.pipeline = !tuning_.pipeline; break;
     }
+    save_melonds();
+}
+
+std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
+    current = -1;
+    std::vector<std::string> choices;
+    if (page_ == Page::Emulators) {
+        const Entry* entry = focused_entry();
+        if (entry == nullptr || entry->kind != Entry::Kind::Melon) return choices;
+        if (entry->melon == MelonRow::CpuClock) {
+            for (const int mhz : kMelonDsCpuMhz) {
+                if (mhz == tuning_.cpu_mhz) current = static_cast<int>(choices.size());
+                choices.push_back(std::to_string(mhz) + " MHz");
+            }
+        } else {
+            choices = {"As soon as drawn", "A frame later"};
+            current = tuning_.pipeline ? 1 : 0;
+        }
+        return choices;
+    }
+    const int index = focus_ - first_setting_row();
+    if (index < 0 || index >= kRowCount) return choices;
+    switch (static_cast<Row>(index)) {
+#ifndef __SWITCH__
+        case Row::PadGlyphs:
+            for (int style = 0; style < static_cast<int>(PadGlyphStyle::Count); ++style) {
+                choices.push_back(to_string(static_cast<PadGlyphStyle>(style)));
+            }
+            current = static_cast<int>(settings_.pad_glyphs);
+            break;
+#endif
+        case Row::VideoHold:
+            for (const video::VideoHold hold :
+                 {video::VideoHold::Responsive, video::VideoHold::Balanced, video::VideoHold::Smooth}) {
+                if (hold == settings_.video_hold) current = static_cast<int>(choices.size());
+                choices.push_back(video::to_string(hold));
+            }
+            break;
+        case Row::RunAheadDs:
+            choices = {"Off", "1 frame", "2 frames"};
+            current = static_cast<int>(settings_.run_ahead_ds);
+            break;
+#if DS_PLAYS_WII_U
+        case Row::WiiUScreenAlone:
+            for (const WiiUScreenAlone screen :
+                 {WiiUScreenAlone::Auto, WiiUScreenAlone::Television, WiiUScreenAlone::GamePad}) {
+                if (screen == settings_.wii_u_screen_alone) current = static_cast<int>(choices.size());
+                choices.push_back(to_string(screen));
+            }
+            break;
+        case Row::WiiUTvAudio:
+            choices.assign(std::begin(kWiiUTvAudioChoices), std::end(kWiiUTvAudioChoices));
+            current = std::clamp(settings_.wii_u_tv_audio, 0, 2);
+            break;
+#endif
+        default: break;
+    }
+    return choices;
+}
+
+void SettingsScreen::choose(int index, SettingsScreenResult& result) {
+    if (page_ == Page::Emulators) {
+        const Entry* entry = focused_entry();
+        if (entry == nullptr || entry->kind != Entry::Kind::Melon) return;
+        if (entry->melon == MelonRow::CpuClock) {
+            if (index < 0 || index >= static_cast<int>(std::size(kMelonDsCpuMhz))) return;
+            tuning_.cpu_mhz = kMelonDsCpuMhz[index];
+        } else {
+            tuning_.pipeline = index == 1;
+        }
+        save_melonds();
+        refresh_entries();
+        return;
+    }
+    switch (static_cast<Row>(focus_ - first_setting_row())) {
+#ifndef __SWITCH__
+        case Row::PadGlyphs:
+            if (index < 0 || index >= static_cast<int>(PadGlyphStyle::Count)) return;
+            settings_.pad_glyphs = static_cast<PadGlyphStyle>(index);
+            break;
+#endif
+        case Row::VideoHold: {
+            const video::VideoHold holds[] = {video::VideoHold::Responsive, video::VideoHold::Balanced,
+                                              video::VideoHold::Smooth};
+            if (index < 0 || index >= 3) return;
+            settings_.video_hold = holds[index];
+            break;
+        }
+        case Row::RunAheadDs:
+            if (index < 0 || index >= 3) return;
+            settings_.run_ahead_ds = static_cast<unsigned>(index);
+            break;
+#if DS_PLAYS_WII_U
+        case Row::WiiUScreenAlone: {
+            const WiiUScreenAlone screens[] = {WiiUScreenAlone::Auto, WiiUScreenAlone::Television,
+                                               WiiUScreenAlone::GamePad};
+            if (index < 0 || index >= 3) return;
+            settings_.wii_u_screen_alone = screens[index];
+            break;
+        }
+        case Row::WiiUTvAudio:
+            if (index < 0 || index >= 3) return;
+            settings_.wii_u_tv_audio = index;
+            break;
+#endif
+        default: return;
+    }
+    result.settings_changed = true;
+}
+
+void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geometry) {
+    int current = -1;
+    std::vector<std::string> choices = focused_choices(current);
+    if (choices.empty()) {
+        adjust(1, result);
+        return;
+    }
+    if (focus_ < 0 || focus_ >= static_cast<int>(geometry.rows.size())) return;
+    choice_.open(std::move(choices), current, geometry.rows[static_cast<std::size_t>(focus_)]);
+}
+
+void SettingsScreen::save_melonds() {
     std::string error;
     if (write_melonds_tuning(tuning_, melonds_path_, &error)) {
         melonds_error_.clear();
@@ -393,14 +515,35 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
 
     const Geometry geometry = compute_geometry(output_width, output_height);
 
+    // A row's choices, up beside it, take every press until put away.
+    if (choice_.is_open()) {
+        const ChoicePopupResult chosen = choice_.update(actions, pointers, output_width, output_height);
+        if (chosen.chosen >= 0) choose(chosen.chosen, result);
+        if (chosen.close_everything) {
+            result.close_requested = true;
+            open_ = false;
+        }
+        return result;
+    }
+
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
             case UiAction::Down: focus_ = std::min(row_count() - 1, focus_ + 1); break;
-            case UiAction::Left: adjust(-1, result); break;
-            case UiAction::Right: adjust(1, result); break;
+            // Values are not stepped from the side any more: A opens a row's
+            // choices, or flips its switch. Right still goes into a page.
+            case UiAction::Left: break;
+            case UiAction::Right: {
+                int current = -1;
+                const bool way_in = focus_ == emulators_row() || focus_ == data_management_row() ||
+                                    focus_ == updates_row() ||
+                                    (page_ == Page::Emulators && focused_entry() != nullptr &&
+                                     focused_entry()->kind == Entry::Kind::Download);
+                if (way_in && focused_choices(current).empty()) adjust(1, result);
+                break;
+            }
             case UiAction::Confirm:
-                adjust(1, result);
+                press_row(result, geometry);
                 break;
             case UiAction::Cancel:
             case UiAction::ToggleMenu:
@@ -456,7 +599,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             // A first tap highlights a row; a second changes its value.
             if (tapped(pointer, settled.rows[index]) &&
                 tap_chooses(focus_, static_cast<int>(index))) {
-                adjust(1, result);
+                press_row(result, settled);
             }
         }
     }
@@ -632,6 +775,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         draw_scroll_bar(quads, PixelRect{geometry.panel.x, view_top, geometry.panel.w, view},
                         scroll_ / span, view / span, line, scale);
     }
+    choice_.render(quads, text, output_width, output_height);
 }
 
 void SettingsScreen::describe_for_sound(UiSoundView& view) const {
@@ -650,6 +794,8 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_tv_audio));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
+    mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
+    if (choice_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
 }
 

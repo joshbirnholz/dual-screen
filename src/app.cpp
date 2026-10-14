@@ -938,7 +938,8 @@ struct App::Impl {
     // set to this game's, and stepped from the menu.
     void update_cemu_options();
     std::vector<std::pair<std::string, std::string>> cemu_option_rows() const;
-    void step_cemu_option(int index);
+    void step_cemu_option(int index, int steps = 1);
+    std::vector<std::vector<std::string>> cemu_option_choices() const;
     // Settings' Wii U TV audio, told to a Cemu that is up, when it is not
     // what it was. Cemu reads it as a game starts, so a game already
     // running hears it once it is reset.
@@ -1953,7 +1954,7 @@ void App::Impl::update_cemu_options() {
         }
     }
     if (picker && picker->is_open() && system == SystemId::WiiU && !is_companion()) {
-        picker->set_producer_options(cemu_option_rows());
+        picker->set_producer_options(cemu_option_rows(), cemu_option_choices());
     }
 }
 
@@ -1968,14 +1969,20 @@ std::vector<std::pair<std::string, std::string>> App::Impl::cemu_option_rows() c
     return rows;
 }
 
-void App::Impl::step_cemu_option(int index) {
+std::vector<std::vector<std::string>> App::Impl::cemu_option_choices() const {
+    std::vector<std::vector<std::string>> choices;
+    for (const ExternalOption& option : cemu_options) choices.push_back(option.choices);
+    return choices;
+}
+
+void App::Impl::step_cemu_option(int index, int steps) {
     if (index < 0 || index >= static_cast<int>(cemu_options.size()) || !external_source) return;
     ExternalOption& option = cemu_options[static_cast<std::size_t>(index)];
     const int count = static_cast<int>(option.choices.size());
     if (count < 2) return;
-    // On one, and round from the last to the first, as every value in the
-    // menu's Options goes.
-    option.active = ((option.active >= 0 ? option.active : 0) + 1) % count;
+    // On as many as its popup chose, round from the last to the first, as
+    // every value in the menu's Options goes.
+    option.active = ((option.active >= 0 ? option.active : 0) + std::max(1, steps)) % count;
     external_source->change_option(option.id, option.active);
     const std::string& value = option.choices[static_cast<std::size_t>(option.active)];
     log_info("Cemu: " + option.label + ", " + value);
@@ -1984,7 +1991,7 @@ void App::Impl::step_cemu_option(int index) {
         persist_game_config();
     }
     if (option.restart_needed) show_corner_notice(option.label + " will change when the game is reset.");
-    if (picker) picker->set_producer_options(cemu_option_rows());
+    if (picker) picker->set_producer_options(cemu_option_rows(), cemu_option_choices());
 }
 
 void App::Impl::apply_wii_u_tv_audio(int previous) {
@@ -2618,11 +2625,19 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.filtering_toggled) {
                 request_filtering(!bilinear_filtering);
             }
+            // Each changed by however many steps its popup chose -- see
+            // LayoutPickerResult::option_steps -- in the order it steps.
+            const int steps = std::max(1, result.option_steps);
             if (result.render_scale_changed) {
-                request_render_scale(next_render_scale());
+                const int maximum = std::max(1, system_profile(system).max_render_scale);
+                int scale = render_scale;
+                for (int step = 0; step < steps; ++step) scale = scale >= maximum ? 1 : scale + 1;
+                request_render_scale(scale);
             }
             if (result.audio_target_changed) {
-                request_audio_target(next_audio_target(audio_target));
+                AudioTarget target = audio_target;
+                for (int step = 0; step < steps; ++step) target = next_audio_target(target);
+                request_audio_target(target);
             }
             if (result.handedness_changed) {
                 request_handedness(other_hand(current_handedness()));
@@ -2634,10 +2649,19 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 request_screen_gap(!screen_gap);
             }
             if (result.right_stick_mode_changed) {
-                request_right_stick_mode(next_right_stick_mode(right_stick_mode));
+                RightStickMode mode = right_stick_mode;
+                for (int step = 0; step < steps; ++step) mode = next_right_stick_mode(mode);
+                request_right_stick_mode(mode);
             }
             if (result.left_stick_press_changed) {
-                request_left_stick_press(next_left_stick_press(left_stick_press_in_effect()));
+                LeftStickPress press = left_stick_press_in_effect();
+                for (int step = 0; step < steps; ++step) press = next_left_stick_press(press);
+                request_left_stick_press(press);
+            }
+            // One of Cemu's, which only the device running it can change; a
+            // companion's press reaches the host's menu and lands here there.
+            if (result.producer_option >= 0 && !is_companion()) {
+                step_cemu_option(result.producer_option, steps);
             }
             if (result.lcd_filter_toggled) {
                 request_lcd_filter(!lcd_filter_in_effect());
@@ -2760,6 +2784,7 @@ void App::Impl::open_picker(bool embedded) {
         picker_state.amiibo_folder = companion_session->host_amiibo_folder();
     } else if (system == SystemId::WiiU) {
         picker_state.producer_options = cemu_option_rows();
+        picker_state.producer_choices = cemu_option_choices();
         // Looked for afresh each time the menu opens, so a file added since
         // is there.
         if (amiibo_available()) scan_amiibo_folder();

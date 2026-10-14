@@ -285,6 +285,83 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
     return std::string();
 }
 
+std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int& current) const {
+    current = -1;
+    std::vector<std::string> choices;
+    switch (row.option) {
+        case Option::RenderScale:
+            // 1x up to the most, which is the order the caller steps them.
+            for (int scale = 1; scale <= std::max(1, state_.max_render_scale); ++scale) {
+                choices.push_back(std::to_string(scale) + "x");
+            }
+            current = state_.render_scale - 1;
+            break;
+        case Option::Sound: {
+            // From each to the next, as next_audio_target() goes.
+            const AudioTarget targets[] = {AudioTarget::TopScreen, AudioTarget::BottomScreen,
+                                           AudioTarget::Both};
+            for (const AudioTarget target : targets) {
+                if (target == state_.audio_target) current = static_cast<int>(choices.size());
+                choices.push_back(target == AudioTarget::TopScreen      ? "Top"
+                                  : target == AudioTarget::BottomScreen ? "Bottom"
+                                                                        : "Both");
+            }
+            break;
+        }
+        case Option::RightStick: {
+            const RightStickMode modes[] = {RightStickMode::CStick, RightStickMode::CirclePad,
+                                            RightStickMode::DPad, RightStickMode::Off};
+            for (const RightStickMode mode : modes) {
+                if (mode == state_.right_stick_mode) current = static_cast<int>(choices.size());
+                choices.push_back(to_string(mode));
+            }
+            break;
+        }
+        case Option::LeftStick:
+            choices = {to_string(LeftStickPress::Microphone), to_string(LeftStickPress::SwapLayout)};
+            current = state_.left_stick_press == LeftStickPress::SwapLayout ? 1 : 0;
+            break;
+        case Option::Producer:
+            if (row.index >= 0 && row.index < static_cast<int>(state_.producer_choices.size())) {
+                choices = state_.producer_choices[static_cast<std::size_t>(row.index)];
+                const std::string value = option_value(row);
+                for (std::size_t at = 0; at < choices.size(); ++at) {
+                    if (choices[at] == value) current = static_cast<int>(at);
+                }
+            }
+            break;
+        // Switches, and a page.
+        case Option::Cursor:
+        case Option::Rumble:
+        case Option::ScreenGap:
+        case Option::Smoothing:
+        case Option::LcdFilter:
+        case Option::Resume:
+        case Option::SwapScreens:
+        case Option::GraphicPacks: break;
+    }
+    // One value is nothing to choose between.
+    if (choices.size() < 2) choices.clear();
+    return choices;
+}
+
+void LayoutPicker::open_choice() {
+    if (section_ != MenuSection::Options || item_ < 0 || item_ >= static_cast<int>(options_.size())) {
+        return;
+    }
+    int current = -1;
+    std::vector<std::string> choices = option_choices(options_[static_cast<std::size_t>(item_)], current);
+    if (choices.empty()) return;
+    const float width = last_width_ > 0.0f ? last_width_ : 1280.0f;
+    const float height = last_height_ > 0.0f ? last_height_ : 800.0f;
+    const MenuGeometry geometry = compute_menu_geometry(width, height);
+    const PixelRect row = item_ < static_cast<int>(geometry.items.size())
+                              ? geometry.items[static_cast<std::size_t>(item_)]
+                              : geometry.content;
+    choice_.open(std::move(choices), current, row);
+    confirm_ = MenuConfirm::Choice;
+}
+
 std::string LayoutPicker::option_value(const OptionRow& row) const {
     switch (row.option) {
         case Option::RenderScale: return std::to_string(state_.render_scale) + "x";
@@ -478,12 +555,17 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
     if (confirm != confirm_) {
         if (confirm == MenuConfirm::None) {
             confirm_ = MenuConfirm::None;
+            choice_.close();
+        } else if (confirm == MenuConfirm::Choice) {
+            open_choice();
         } else {
             ask(confirm);
         }
     }
     // The host's cursor, on the host's popup.
-    if (confirming()) {
+    if (confirm_ == MenuConfirm::Choice) {
+        if (confirm_focus_wire > 0) choice_.set_focus(confirm_focus_wire - 1);
+    } else if (confirming()) {
         if (confirm_focus_wire > 0) {
             confirm_cursor_.set_focus(confirm_focus_wire - 1);
         } else {
@@ -524,6 +606,10 @@ void LayoutPicker::keep_item_in_view(float output_width, float output_height) {
 
 void LayoutPicker::set_focus(int focus) {
     // One of the popup's buttons, from the other device's finger.
+    if (confirm_ == MenuConfirm::Choice) {
+        if (focus >= kPopupFocusBase && focus < kWideFocusBase) choice_.set_focus(focus - kPopupFocusBase);
+        return;
+    }
     if (confirming() && focus >= kPopupFocusBase &&
         focus < kPopupFocusBase + confirm_cursor_.count()) {
         confirm_cursor_.set_focus(focus - kPopupFocusBase);
@@ -558,6 +644,10 @@ ButtonGlyph LayoutPicker::guide_button_at(float x, float y) const {
 }
 
 int LayoutPicker::entry_at(float x, float y, float output_width, float output_height) const {
+    if (confirm_ == MenuConfirm::Choice) {
+        const int choice = choice_.choice_at(x, y, output_width, output_height);
+        return choice >= 0 ? kPopupFocusBase + choice : -1;
+    }
     if (confirming()) {
         const int button = popup_button_at(confirm_popup(output_width, output_height), x, y);
         return button >= 0 ? kPopupFocusBase + button : -1;
@@ -600,6 +690,7 @@ PopupText LayoutPicker::confirm_text() const {
         case MenuConfirm::LoadSavePoint: words.message = "Load this save state?"; break;
         case MenuConfirm::OverwriteSavePoint: words.message = "Overwrite this save state?"; break;
         case MenuConfirm::Notice: words.message = save_status_; break;
+        case MenuConfirm::Choice:
         case MenuConfirm::None: break;
     }
     return words;
@@ -612,6 +703,7 @@ std::vector<PopupButton> LayoutPicker::confirm_buttons() const {
         case MenuConfirm::LoadSavePoint: return {{"Cancel", ""}, {"Load", ""}};
         case MenuConfirm::OverwriteSavePoint: return {{"Cancel", ""}, {"Overwrite", ""}};
         case MenuConfirm::Notice: return {{"OK", ""}};
+        case MenuConfirm::Choice:
         case MenuConfirm::None: break;
     }
     return {};
@@ -695,8 +787,16 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             // An empty slot has nothing to load, and says Empty.
             if (slot_filled(item_)) ask(MenuConfirm::LoadSavePoint);
             return;
-        case MenuSection::Options:
+        case MenuSection::Options: {
             if (item_ >= static_cast<int>(options_.size())) return;
+            // One with several values to choose between opens them beside
+            // its row; a switch flips; a page opens.
+            int current = -1;
+            if (!option_choices(options_[static_cast<std::size_t>(item_)], current).empty()) {
+                open_choice();
+                return;
+            }
+        }
             // Each is cycled by the caller, which tells the menu what it
             // landed on -- so the menu never shows a value that was not
             // actually applied, and on a companion the host decides.
@@ -869,6 +969,38 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     if (!open_) {
         return result;
     }
+    last_width_ = output_width;
+    last_height_ = output_height;
+
+    // An option's choices, beside its row: the answer is the option changed
+    // by however far along the choice is from what it was.
+    if (confirm_ == MenuConfirm::Choice) {
+        const int was = choice_.current();
+        const int count = static_cast<int>(choice_.choices().size());
+        const ChoicePopupResult answer = choice_.update(actions, pointers, output_width, output_height);
+        if (answer.chosen >= 0 && item_ < static_cast<int>(options_.size()) && count > 0) {
+            const int steps = was < 0 ? answer.chosen : ((answer.chosen - was) % count + count) % count;
+            if (steps > 0 || was < 0) {
+                result.option_steps = was < 0 ? answer.chosen + 1 : steps;
+                switch (options_[static_cast<std::size_t>(item_)].option) {
+                    case Option::RenderScale: result.render_scale_changed = true; break;
+                    case Option::Sound: result.audio_target_changed = true; break;
+                    case Option::RightStick: result.right_stick_mode_changed = true; break;
+                    case Option::LeftStick: result.left_stick_press_changed = true; break;
+                    case Option::Producer:
+                        result.producer_option = options_[static_cast<std::size_t>(item_)].index;
+                        break;
+                    default: break;
+                }
+            }
+        }
+        if (!choice_.is_open()) confirm_ = MenuConfirm::None;
+        if (answer.close_everything) {
+            result.close_requested = true;
+            open_ = false;
+        }
+        return result;
+    }
 
     // A confirmation takes the whole menu: while one is up it is the only
     // question on screen, so nothing behind it moves, cycles or opens.
@@ -897,6 +1029,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 case MenuConfirm::LoadSavePoint: result.load_slot = item_; break;
                 case MenuConfirm::OverwriteSavePoint: result.save_slot = item_; break;
                 case MenuConfirm::Notice:
+                case MenuConfirm::Choice:
                 case MenuConfirm::None: break;
             }
             confirm_ = MenuConfirm::None;
@@ -1353,6 +1486,15 @@ void LayoutPicker::render(QuadRenderer& quads,
     if (!open_) {
         return;
     }
+    last_width_ = output_width;
+    last_height_ = output_height;
+    // Over the row it belongs to, wherever that is drawn now.
+    if (confirm_ == MenuConfirm::Choice) {
+        const MenuGeometry placed = compute_menu_geometry(output_width, output_height);
+        if (item_ >= 0 && item_ < static_cast<int>(placed.items.size())) {
+            choice_.set_row(placed.items[static_cast<std::size_t>(item_)]);
+        }
+    }
 
     const float scale = UiTheme::base_scale(output_height);
     const bool wii_u = system_ == SystemId::WiiU;
@@ -1431,7 +1573,9 @@ void LayoutPicker::render(QuadRenderer& quads,
                      ui_theme().text);
     }
 
-    if (confirming()) {
+    if (confirm_ == MenuConfirm::Choice) {
+        choice_.render(quads, text, output_width, output_height);
+    } else if (confirming()) {
         // The popup every question in the app is asked in: see ui/popup.hpp.
         const PopupGeometry popup = confirm_popup(output_width, output_height);
         draw_popup(quads, text, output_width, output_height, popup, confirm_buttons(),
@@ -1446,6 +1590,7 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, on_content_ ? 1u : 0u);
     mix_sound_state(view.focus, static_cast<uint64_t>(item_));
     if (confirm_ != MenuConfirm::None) mix_sound_state(view.focus, static_cast<uint64_t>(confirm_cursor_.focus()));
+    if (confirm_ == MenuConfirm::Choice) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     mix_sound_state(view.rest, open_ ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(confirm_));
     mix_sound_state(view.rest, selected_layout_id_);

@@ -16,6 +16,7 @@
 #include "render/compositor.hpp"
 #include "render/texture.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/choice_popup.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
@@ -80,6 +81,10 @@ struct LayoutPickerResult {
     // One of Cemu's own options in a Wii U's Options, stepped on: its index
     // in LayoutPickerState::producer_options. -1 for none.
     int producer_option = -1;
+    // How many values on the option changed above goes: what was chosen in
+    // its popup, counted from what it was in the order each one steps. One
+    // for a switch flipped.
+    int option_steps = 1;
     // An amiibo in the Scan amiibo list chosen, by its index in
     // LayoutPickerState::amiibo, or the row after them that looks elsewhere.
     int amiibo_chosen = -1;
@@ -136,6 +141,9 @@ struct LayoutPickerState {
     // one's name and the value it has. The host's, read off Cemu, and told to
     // the other device so the two lists line up.
     std::vector<std::pair<std::string, std::string>> producer_options;
+    // Each of those's choices, in Cemu's order, for its popup. Told to the
+    // other device with them.
+    std::vector<std::vector<std::string>> producer_choices;
     // Scan amiibo, where Cemu can: the amiibo found in `amiibo_folder`, by
     // name, listed on the right to be chosen from directly. The host's too.
     bool amiibo_available = false;
@@ -221,6 +229,9 @@ enum class MenuConfirm : uint8_t {
     // state was saved, or why one could not be saved or loaded. The words are
     // the save status; see set_save_status().
     Notice = 6,
+    // Not a question either: an option's choices, beside its row -- see
+    // ChoicePopup. Its cursor travels as the popup's focus.
+    Choice = 7,
 };
 
 // The list down the left of a DS or 3DS quick menu, the way Nintendo Switch
@@ -335,6 +346,7 @@ public:
     // Which of the popup's buttons the cursor is on, plus one, or 0 when it
     // is not showing: what the other device is told, to draw the same.
     int confirm_focus_wire() const {
+        if (confirm_ == MenuConfirm::Choice) return choice_.focus() + 1;
         return confirming() && confirm_cursor_.shown() ? confirm_cursor_.focus() + 1 : 0;
     }
     // A focus that stands for one of the popup's buttons rather than for
@@ -370,8 +382,10 @@ public:
     // Cemu's options, and the amiibo in the folder, as they are now -- see
     // LayoutPickerState. Either can change while the menu is up: an option
     // just stepped, Cemu's list arriving, a folder chosen.
-    void set_producer_options(std::vector<std::pair<std::string, std::string>> options) {
+    void set_producer_options(std::vector<std::pair<std::string, std::string>> options,
+                              std::vector<std::vector<std::string>> choices = {}) {
         state_.producer_options = std::move(options);
+        state_.producer_choices = std::move(choices);
         rebuild_footer();
     }
     void set_amiibo(std::vector<std::string> amiibo, std::string folder) {
@@ -611,6 +625,17 @@ private:
     bool smoothing_ = true;
     MenuConfirm confirm_ = MenuConfirm::None;
     PopupCursor confirm_cursor_;
+    // An option's choices, while MenuConfirm::Choice is up, beside its row.
+    ChoicePopup choice_;
+    // The window the menu was last laid out for, which the popup is placed
+    // in when it is opened from a press.
+    float last_width_ = 0.0f;
+    float last_height_ = 0.0f;
+    // The options row's choices, in the order it steps, and which is in
+    // effect; empty for a switch or a way into a page.
+    std::vector<std::string> option_choices(const OptionRow& row, int& current) const;
+    // The popup up for the option the cursor is on.
+    void open_choice();
     // Where the control prompts landed when they were last drawn, so a tap can
     // find them. Laid out from the glyph artwork, which only drawing knows.
     std::vector<GuideHit> guide_hits_;

@@ -122,11 +122,18 @@ void test_page(const std::string& sandbox) {
     CHECK(screen.on_emulators_page());
     CHECK_EQ(screen.focus(), 0);
 
-    // The clock, one step slower; then each frame shown as soon as drawn.
-    // Each is in the file at once.
-    press(screen, UiAction::Left);
+    // The clock, one step slower, chosen from its popup -- fastest first,
+    // the one in effect under the cursor; then each frame shown as soon as
+    // drawn. Each is in the file at once.
+    press(screen, UiAction::Left);  // nothing: values are not stepped from the side
+    CHECK_EQ(read_melonds_tuning(path).cpu_mhz, MelonDsTuning().cpu_mhz);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
     CHECK_EQ(read_melonds_tuning(path).cpu_mhz, 1581);
     press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Up);
     press(screen, UiAction::Confirm);
     CHECK(!read_melonds_tuning(path).pipeline);
     CHECK_STR_EQ(read_text(path), "# mine\ncpu_mhz=1581\npipeline=0\n");
@@ -149,7 +156,9 @@ void test_page(const std::string& sandbox) {
     screen.open(Settings(), {});
     press(screen, UiAction::Down, 20);
     press(screen, UiAction::Confirm);
-    press(screen, UiAction::Right);  // 714 -> 816
+    press(screen, UiAction::Confirm);  // the popup, on 714
+    press(screen, UiAction::Up);       // 816
+    press(screen, UiAction::Confirm);
     CHECK_EQ(read_melonds_tuning(path).cpu_mhz, 816);
 
     // With libretro's melonDS, only the clock.

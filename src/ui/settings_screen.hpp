@@ -14,6 +14,7 @@
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/choice_popup.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/sound_view.hpp"
@@ -189,6 +190,14 @@ private:
     // cannot see is the same as no cursor.
     void scroll_focus_into_view(const Geometry& geometry);
     void adjust(int direction, SettingsScreenResult& result);
+    // The cursor's row's choices, in order, and which is in effect, where it
+    // has more to choose between than on and off -- chosen in a popup. Empty
+    // for a switch, a way into a page, or the button row.
+    std::vector<std::string> focused_choices(int& current) const;
+    void choose(int index, SettingsScreenResult& result);
+    // A press on the cursor's row: a popup of its choices, or what adjust()
+    // does with it.
+    void press_row(SettingsScreenResult& result, const Geometry& geometry);
     // A line said under a row, or null. Only Vsync has one.
     const char* row_description(int index) const;
     float description_height(float scale) const;
@@ -233,6 +242,7 @@ private:
                    : -1;
     }
     void adjust_melonds(MelonRow row, int direction);
+    void save_melonds();
     static std::string melon_label(MelonRow row);
     std::string melon_value(MelonRow row) const;
     std::string footnote() const;
@@ -255,6 +265,8 @@ private:
     std::string melonds_error_;
     Page page_ = Page::Main;
     std::vector<Entry> entries_;
+    // A row's choices, up beside it -- see focused_choices().
+    ChoicePopup choice_;
 
     // How far down the list has been pushed, in pixels. Pixels rather than
     // rows, because what is below the rows -- the cores, then the BIOS files
