@@ -504,6 +504,12 @@ struct App::Impl {
     // Its name, for the notice that says how the scan went.
     std::string pending_amiibo_name;
     std::chrono::steady_clock::time_point pending_amiibo_at;
+    // From the amiibo being chosen until Cemu says how its scan went: the
+    // corner says "Scanning..." meanwhile, over the game -- see
+    // shown_corner_notice(). Given up on a while after it is sent, should
+    // Cemu never answer.
+    bool amiibo_scanning = false;
+    std::chrono::steady_clock::time_point amiibo_sent_at;
     // The host's, drawn here while this device is its companion -- see
     // render_mirrored_controllers().
     ControllersScreen mirrored_controllers;
@@ -1012,6 +1018,10 @@ struct App::Impl {
     bool wants_menu_overlay() const;
     bool corner_notice_up() const;
     void show_corner_notice(const std::string& message);
+    // What the corner says now, if anything: a notice for its moment, or
+    // while an amiibo is on its way to the game with the menu closed,
+    // "Scanning...".
+    std::string shown_corner_notice() const;
     // Whether opening the menu pauses the game first -- see set_menu_open().
     bool pauses_wii_u_for_menu() const;
     // Hears Cemu out on the pause, opens a menu that was waiting for it, and
@@ -2105,6 +2115,7 @@ void App::Impl::choose_amiibo(const std::string& path) {
     // first -- all of it, as loading a save state does.
     pending_amiibo = path;
     pending_amiibo_at = std::chrono::steady_clock::now();
+    amiibo_scanning = true;
     log_info("amiibo chosen: " + path_basename(path) + ", to scan once the game is going again");
     if (state == State::Amiibo) amiibo_browser.close();
     state = State::Menu;
@@ -2172,6 +2183,7 @@ void App::Impl::show_steam_keyboard(bool typing) {
 void App::Impl::send_pending_amiibo() {
     if (!external_source || !external_source->running()) {
         pending_amiibo.clear();
+        amiibo_scanning = false;
         return;
     }
     // Four seconds after the menu is down and the game going again: a game
@@ -2190,12 +2202,18 @@ void App::Impl::send_pending_amiibo() {
     if (!pending_amiibo.empty() && (settled || now - pending_amiibo_at > std::chrono::seconds(12))) {
         amiibo_game_going_since.reset();
         external_source->scan_amiibo(pending_amiibo);
+        amiibo_sent_at = now;
         log_info("amiibo: holding " + path_basename(pending_amiibo) + " to the GamePad");
         pending_amiibo_name = path_stem(pending_amiibo);
         pending_amiibo.clear();
     }
+    // Sent, and no word back from Cemu: not "Scanning..." for ever.
+    if (amiibo_scanning && pending_amiibo.empty() && now - amiibo_sent_at > std::chrono::seconds(5)) {
+        amiibo_scanning = false;
+    }
     ExternalAmiiboResult result = ExternalAmiiboResult::Scanned;
     while (external_source->take_amiibo_result(result)) {
+        amiibo_scanning = false;
         switch (result) {
             // The game says so itself.
             case ExternalAmiiboResult::Scanned: log_info("amiibo: scanned"); break;
@@ -2437,13 +2455,19 @@ bool App::Impl::menu_over_wii_u_game() const {
 
 bool App::Impl::wants_menu_overlay() const {
     if (menu_over_wii_u_game()) return true;
-    return corner_notice_up() && system == SystemId::WiiU && !is_companion() && external_source &&
+    return !shown_corner_notice().empty() && system == SystemId::WiiU && !is_companion() && external_source &&
            external_source->running() && external_source->overlay_supported() &&
            MenuOverlay::supported();
 }
 
 bool App::Impl::corner_notice_up() const {
     return !corner_notice.empty() && std::chrono::steady_clock::now() < corner_notice_until;
+}
+
+std::string App::Impl::shown_corner_notice() const {
+    if (corner_notice_up()) return corner_notice;
+    if (amiibo_scanning && state == State::Playing) return "Scanning\u2026";
+    return std::string();
 }
 
 void App::Impl::show_corner_notice(const std::string& message) {
@@ -2622,7 +2646,8 @@ void App::Impl::render_menu_overlay() {
         }
         render_pages(w, h, /*over_game=*/true, nullptr);
     }
-    if (corner_notice_up()) render_corner_notice(quads, text, w, h, corner_notice);
+    const std::string notice = shown_corner_notice();
+    if (!notice.empty()) render_corner_notice(quads, text, w, h, notice);
     const bool changed = menu_overlay.finish();
     gl::reset_render_state();
     // A notice alone, the game running under it and refused the pause, keeps
@@ -5234,8 +5259,8 @@ void App::Impl::render() {
         menu_backdrop.forget();
     }
     render_pages(width, height, show_menu_backdrop, frames);
-    if (corner_notice_up()) {
-        render_corner_notice(quads, text, width, height, corner_notice);
+    if (const std::string notice = shown_corner_notice(); !notice.empty()) {
+        render_corner_notice(quads, text, width, height, notice);
     } else if (state == State::Companion && companion_session &&
                companion_session->host_menu_unavailable_notice()) {
         render_corner_notice(quads, text, width, height, kMenuUnavailableNotice);
