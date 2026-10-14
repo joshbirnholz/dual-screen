@@ -418,7 +418,7 @@ const char* section_label(MenuSection section) {
         case MenuSection::CreateSavePoint: return "Create Save State";
         case MenuSection::LoadSavePoint: return "Load Save State";
         case MenuSection::SaveSync: return "Save Sync";
-        case MenuSection::Options: return "Options";
+        case MenuSection::Options: return "Game Options";
         case MenuSection::Disconnect: return "Disconnect";
         case MenuSection::Reset: return "Reset Game";
         case MenuSection::Quit: return "Quit";

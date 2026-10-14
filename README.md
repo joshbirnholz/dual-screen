@@ -70,7 +70,7 @@ without choosing anything.
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
 | **Save Sync** | this game's page in [Data Management](#data-management), to sync its save with another device or go back to an earlier one (DS and 3DS). Leaving the page comes back to this menu |
-| **Options** | the settings you might change mid-game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, LCD filter (DS: the screens drawn with a handheld LCD's pixel grid over them, as Nintendo's own classics apps offer, kept for each game and shown on both devices), and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
+| **Game Options** | the settings you might change mid-game, kept for each game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, LCD filter (DS: the screens drawn with a handheld LCD's pixel grid over them, as Nintendo's own classics apps offer, kept for each game and shown on both devices), and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking. Chosen on the companion, it closes the app there too rather than going back to its main menu (except on an iPhone, iPad or Apple TV, where apps do not close themselves) |
@@ -309,7 +309,7 @@ Three things are different about a Wii U session:
 - **The quick menu is on screen the whole time.** While Cemu's window plays
   the game, this app's own window shows the Wii U menu in place of a
   "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
-  down the left, and the highlighted one's things on the right: **Options**,
+  down the left, and the highlighted one's things on the right: **Game Options**,
   **amiibo**, **Controller Order**,
   **Disconnect**, **Reset Game** and **Quit**, with **Settings** on minus as
   on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
@@ -326,7 +326,7 @@ Three things are different about a Wii U session:
   Cemu's window too. **F1** or **B** on the list puts it away. Not **Tab**,
   which Cemu keeps for itself: held, it shows the GamePad's screen.
 
-- **Graphics Packs**, the last of a Wii U game's **Options** in the quick
+- **Graphics Packs**, the last of a Wii U game's **Game Options** in the quick
   menu, is Cemu's own Graphic Packs window
   laid out as the quick menu is, so the packs can be changed with a controller
   in Game Mode, where that window is out of reach: the game's packs down the
@@ -341,7 +341,7 @@ Three things are different about a Wii U session:
   does. It needs this project's Cemu build. A second device shows the same
   page, the cursor where it is, and works it with its own pad.
 
-- **Options**, in the quick menu, are this game's, as a DS or 3DS game's
+- **Game Options**, in the quick menu, are this game's, as a DS or 3DS game's
   are, each stepped on with **A**: **Swap Screens** (played alone: the other
   screen from **Default Wii U screen** -- **F3** does the same; with a second
   device connected, the two trade screens), **Show Pointer** (this device's own,
@@ -1310,7 +1310,7 @@ Full options:
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Turn the pointer off entirely | **Show Pointer**, under **Options** in the quick menu — on a Wii U too, for Cemu's window |
+| Turn the pointer off entirely | **Show Pointer**, under **Game Options** in the quick menu — on a Wii U too, for Cemu's window |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |
@@ -1516,7 +1516,7 @@ pictures and all, and saves and loads through the host like any other press.
 
 ### Resume from save state
 
-**Resume from Save State**, under **Options** in a DS game's quick menu, is
+**Resume from Save State**, under **Game Options** in a DS game's quick menu, is
 per game and off until it is turned on. Off, the game starts from the
 beginning as always. On, it starts from wherever it was when the app last
 closed -- paused, under a popup that says *Resuming from save state.* with an
