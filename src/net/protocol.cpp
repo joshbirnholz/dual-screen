@@ -662,6 +662,69 @@ void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vect
     finish_message(out, start, MessageType::GraphicPacksView);
 }
 
+void encode_game_dialog(const GameDialogMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, message.kind);
+    put_u32(out, message.serial);
+    put_string(out, message.title);
+    put_string(out, message.text);
+    const std::size_t buttons = std::min<std::size_t>(message.buttons.size(), 8);
+    put_u8(out, static_cast<uint8_t>(buttons));
+    for (std::size_t index = 0; index < buttons; ++index) put_string(out, message.buttons[index]);
+    put_u32(out, message.max_length);
+    put_u8(out, message.typed_here ? 1u : 0u);
+    finish_message(out, start, MessageType::GameDialog);
+}
+
+bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage& out) {
+    Reader reader(data, size);
+    GameDialogMessage message;
+    uint8_t buttons = 0;
+    uint8_t typed_here = 0;
+    reader.u8(message.kind);
+    reader.u32(message.serial);
+    reader.string(message.title);
+    reader.string(message.text);
+    reader.u8(buttons);
+    if (!reader.ok() || message.kind > 2 || buttons > 8) return false;
+    for (uint8_t index = 0; index < buttons && reader.ok(); ++index) {
+        std::string label;
+        reader.string(label);
+        message.buttons.push_back(std::move(label));
+    }
+    reader.u32(message.max_length);
+    reader.u8(typed_here);
+    if (!reader.ok()) return false;
+    message.typed_here = typed_here != 0;
+    out = std::move(message);
+    return true;
+}
+
+void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u32(out, message.serial);
+    put_u8(out, message.final ? 1u : 0u);
+    put_u8(out, static_cast<uint8_t>(std::clamp<int32_t>(message.button, 0, 255)));
+    put_string(out, message.text);
+    finish_message(out, start, MessageType::GameDialogAnswer);
+}
+
+bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out) {
+    Reader reader(data, size);
+    GameDialogAnswerMessage message;
+    uint8_t final = 0;
+    uint8_t button = 0;
+    reader.u32(message.serial);
+    reader.u8(final);
+    reader.u8(button);
+    reader.string(message.text);
+    if (!reader.ok()) return false;
+    message.final = final != 0;
+    message.button = button;
+    out = std::move(message);
+    return true;
+}
+
 bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out) {
     Reader reader(data, size);
     uint8_t flags = 0;

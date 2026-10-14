@@ -584,6 +584,21 @@ void HostSession::set_graphic_packs_view(const GraphicPacksViewMessage& view) {
     graphic_packs_view_dirty_ = true;
 }
 
+void HostSession::set_game_dialog(const GameDialogMessage& dialog) {
+    std::vector<uint8_t> encoded;
+    encode_game_dialog(dialog, encoded);
+    if (encoded == game_dialog_) return;
+    game_dialog_ = std::move(encoded);
+    game_dialog_dirty_ = true;
+}
+
+bool HostSession::take_game_dialog_answer(GameDialogAnswerMessage& out) {
+    if (game_dialog_answers_.empty()) return false;
+    out = std::move(game_dialog_answers_.front());
+    game_dialog_answers_.pop_front();
+    return true;
+}
+
 void HostSession::set_session_state(const SharedState& state) {
     if (state.per_device_layout != shared_.per_device_layout ||
         state.menu_open != shared_.menu_open) {
@@ -851,12 +866,21 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             save_slots_dirty_ = save_slots_known_;
             controllers_view_dirty_ = !controllers_view_.empty();
             graphic_packs_view_dirty_ = !graphic_packs_view_.empty();
+            game_dialog_dirty_ = !game_dialog_.empty();
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
             log_info(companion_name_ + " connected as the " +
                      std::string(to_string(companion_screen_)) + " screen");
             refresh_beacon();
+            break;
+        }
+        case MessageType::GameDialogAnswer: {
+            GameDialogAnswerMessage answer;
+            if (decode_game_dialog_answer(payload.data(), payload.size(), answer) &&
+                game_dialog_answers_.size() < 64) {
+                game_dialog_answers_.push_back(std::move(answer));
+            }
             break;
         }
         case MessageType::Request: {
@@ -1293,6 +1317,10 @@ void HostSession::poll(uint64_t now_ms) {
     if (graphic_packs_view_dirty_ && handshake_done_) {
         companion_.send(graphic_packs_view_);
         graphic_packs_view_dirty_ = false;
+    }
+    if (game_dialog_dirty_ && handshake_done_) {
+        companion_.send(game_dialog_);
+        game_dialog_dirty_ = false;
     }
 
     std::string error;

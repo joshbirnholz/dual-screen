@@ -1924,6 +1924,55 @@ void test_graphic_packs_view_round_trip() {
     CHECK(!received.open && received.packs.empty());
 }
 
+// A game's own dialog, to the companion, and its answer back.
+void test_game_dialog_round_trip() {
+    GameDialogMessage sent;
+    sent.kind = 2;
+    sent.serial = 9;
+    sent.title = "Name your horse";
+    sent.text = "Epona";
+    sent.max_length = 10;
+    sent.typed_here = true;
+    std::vector<uint8_t> buffer;
+    encode_game_dialog(sent, buffer);
+    MessageType type{};
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::GameDialog);
+    GameDialogMessage got;
+    CHECK(decode_game_dialog(payload.data(), payload.size(), got));
+    CHECK(got.kind == 2 && got.serial == 9u && got.title == sent.title && got.text == "Epona");
+    CHECK(got.max_length == 10u && got.typed_here && got.buttons.empty());
+    sent.kind = 1;
+    sent.buttons = {"Retry", "Cancel"};
+    sent.typed_here = false;
+    buffer.clear();
+    encode_game_dialog(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_game_dialog(payload.data(), payload.size(), got));
+    CHECK(got.buttons == sent.buttons && !got.typed_here);
+    CHECK(!decode_game_dialog(payload.data(), 3, got));
+
+    GameDialogAnswerMessage answer;
+    answer.serial = 9;
+    answer.final = false;
+    answer.text = "Roa";
+    buffer.clear();
+    encode_game_dialog_answer(answer, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::GameDialogAnswer);
+    GameDialogAnswerMessage back;
+    CHECK(decode_game_dialog_answer(payload.data(), payload.size(), back));
+    CHECK(back.serial == 9u && !back.final && back.text == "Roa");
+    answer.final = true;
+    answer.button = 1;
+    buffer.clear();
+    encode_game_dialog_answer(answer, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_game_dialog_answer(payload.data(), payload.size(), back));
+    CHECK(back.final && back.button == 1);
+}
+
 int main() {
     test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
@@ -1960,5 +2009,6 @@ int main() {
     test_a_fragment_can_be_restamped_as_it_leaves();
     test_controllers_view_round_trip();
     test_graphic_packs_view_round_trip();
+    test_game_dialog_round_trip();
     return test::finish("protocol");
 }

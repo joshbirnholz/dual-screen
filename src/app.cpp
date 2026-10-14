@@ -61,6 +61,7 @@
 #include "ui/notice_popup.hpp"
 #include "ui/corner_notice.hpp"
 #include "ui/game_dialog.hpp"
+#include "ui/mirrored_game_dialog.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "net/save_exchange.hpp"
@@ -994,6 +995,16 @@ struct App::Impl {
     std::optional<ExternalGameDialog> pending_game_dialog;
     void update_game_dialogs();
     void leave_game_dialog();
+    // What is up for the companion to show too: every frame, sent on change.
+    void publish_game_dialog();
+    // Whether the game's keyboard is typed on the companion: it is the
+    // GamePad, the device in the player's hands.
+    bool companion_types_game_dialog() const {
+        return host_session && host_session->has_companion() &&
+               host_session->companion_screen() == ScreenId::Bottom;
+    }
+    // The companion's copy of the host's game dialog, while this device is one.
+    MirroredGameDialog mirrored_game_dialog;
     void show_steam_keyboard(bool typing);
     // Steam's keyboard was asked for by its URL rather than raised by SDL,
     // so it is put away the same way.
@@ -2652,6 +2663,26 @@ void App::Impl::update_game_dialogs() {
         if (pending_game_dialog && pending_game_dialog->serial == dialog.serial) pending_game_dialog.reset();
         if (state == State::GameDialog && game_dialog_screen.serial() == dialog.serial) leave_game_dialog();
     }
+    // Answered on the companion, or typed there as it goes.
+    if (host_session) {
+        net::GameDialogAnswerMessage answer;
+        while (host_session->take_game_dialog_answer(answer)) {
+            if (state != State::GameDialog || answer.serial != game_dialog_screen.serial()) continue;
+            if (!answer.final) {
+                ExternalGameDialog typed = game_dialog_screen.current();
+                typed.text = answer.text;
+                game_dialog_screen.refresh(typed);
+                continue;
+            }
+            ExternalGameDialogAnswer given;
+            given.serial = answer.serial;
+            given.button = answer.button;
+            given.text = answer.text;
+            external_source->answer_game_dialog(given);
+            log_info("the game's dialog was answered on " + host_session->companion_name());
+            leave_game_dialog();
+        }
+    }
     // Shown once nothing else is over the game: a menu up first stays up.
     if (pending_game_dialog && state == State::Playing) {
         game_dialog_screen.show(*pending_game_dialog);
@@ -2669,6 +2700,22 @@ void App::Impl::leave_game_dialog() {
     if (state != State::GameDialog) return;
     state = State::Playing;
     input.set_game_input_enabled(true);
+}
+
+void App::Impl::publish_game_dialog() {
+    if (!host_session) return;
+    net::GameDialogMessage message;
+    if (state == State::GameDialog && game_dialog_screen.is_open()) {
+        const ExternalGameDialog dialog = game_dialog_screen.current();
+        message.kind = static_cast<uint8_t>(dialog.kind);
+        message.serial = dialog.serial;
+        message.title = dialog.title;
+        message.text = dialog.text;
+        message.buttons = dialog.buttons;
+        message.max_length = dialog.max_length;
+        message.typed_here = companion_types_game_dialog();
+    }
+    host_session->set_game_dialog(message);
 }
 
 bool App::Impl::wii_u_backdrop_ready() {
@@ -4826,6 +4873,19 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
+            // The game's own dialog, up over it on the host: the same popup
+            // here, answered here as it would be there -- and the keyboard
+            // typed here when this device is the GamePad.
+            if (mirrored_game_dialog.follow(companion_session->host_game_dialog())) {
+                input.set_game_input_enabled(false);
+                mirrored_game_dialog.type(input.typed_text(), input.backspaces());
+                for (const net::GameDialogAnswerMessage& said :
+                     mirrored_game_dialog.update(actions, pointers, static_cast<float>(output_width),
+                                                 static_cast<float>(output_height))) {
+                    companion_session->answer_game_dialog(said);
+                }
+                break;
+            }
             // Connected: the companion's own touchscreen and buttons drive the
             // host's game from here on.
             input.set_game_input_enabled(true);
@@ -5396,6 +5456,9 @@ void App::Impl::render() {
                 companion_session->host_resume_notice())) {
         render_notice_popup(quads, text, button_glyphs, width, height,
                             state == State::ResumeNotice ? game_notice : std::string(kResumedNotice));
+    }
+    if (state == State::Companion && mirrored_game_dialog.is_open()) {
+        mirrored_game_dialog.render(quads, text, width, height);
     }
 
     swap();
@@ -6092,6 +6155,7 @@ int App::run(const AppOptions& options) {
             shared.resume_from_save_state = impl.resume_in_effect();
             shared.resume_notice = impl.state == Impl::State::ResumeNotice;
             impl.host_session->set_session_state(shared);
+            impl.publish_game_dialog();
             // And the Controller Order screen, for the other device to show
             // the same -- see ControllersViewMessage. Closed is a message too:
             // it is how the other device learns to put it away.
@@ -6707,9 +6771,14 @@ int App::run(const AppOptions& options) {
             // frame's events on -- and on a Steam Deck, Steam's own keyboard
             // comes up for it, there being no other.
             {
+                // A game's keyboard is typed on the companion when it is the
+                // GamePad; here otherwise.
                 const bool typing = (impl.state == Impl::State::Settings && impl.settings_screen &&
                                      impl.settings_screen->wants_text()) ||
-                                    (impl.state == Impl::State::GameDialog && impl.game_dialog_screen.typing());
+                                    (impl.state == Impl::State::GameDialog && impl.game_dialog_screen.typing() &&
+                                     !impl.companion_types_game_dialog()) ||
+                                    (impl.state == Impl::State::Companion &&
+                                     impl.mirrored_game_dialog.typing_here());
                 if (typing != impl.input.text_entry()) impl.show_steam_keyboard(typing);
                 impl.input.set_text_entry(typing);
             }

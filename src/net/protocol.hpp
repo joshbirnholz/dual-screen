@@ -67,6 +67,9 @@ enum class MessageType : uint16_t {
     // before this ignores it, and the companion falls back to asking for a
     // keyframe. See CompanionSession's repair and HostSession::resend_pieces().
     RepairRequest = 7,
+    // The answer to the game's dialog shown here -- see
+    // GameDialogAnswerMessage. A host from before this ignores it.
+    GameDialogAnswer = 8,
     // host -> companion
     Welcome = 10,
     Reject = 11,
@@ -101,6 +104,10 @@ enum class MessageType : uint16_t {
     // while it is up -- see GraphicPacksViewMessage. Sent when it changes. A
     // companion from before this ignores it and says where to look instead.
     GraphicPacksView = 21,
+    // A Wii U game's own dialog -- an error, its keyboard -- up over it, for
+    // the companion to show too; see GameDialogMessage. Sent when it changes.
+    // A companion from before this ignores it.
+    GameDialog = 22,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -490,6 +497,31 @@ struct ControllersViewPad {
 // same: the packs Cemu listed, and where the cursor is among them. Presses on
 // the companion already reach the host's page (see settings_open); this is
 // only what it looks like.
+// A game's own dialog, as the host shows it -- see ExternalGameDialog, which
+// it carries. The companion shows the same popup, and answers it as the host
+// would; the keyboard is typed on the companion when `typed_here`, the
+// device in the player's hands being the GamePad.
+struct GameDialogMessage {
+    uint8_t kind = 0;  // ExternalGameDialogKind: 0 none, 1 message, 2 keyboard
+    uint32_t serial = 0;
+    std::string title;
+    // A message's words; a keyboard's field as it now stands.
+    std::string text;
+    std::vector<std::string> buttons;
+    uint32_t max_length = 0;
+    bool typed_here = false;
+};
+
+// The companion's answer: a message's button, or a keyboard's field -- as it
+// is typed (`final` false), so the host's popup shows it, and then as
+// accepted.
+struct GameDialogAnswerMessage {
+    uint32_t serial = 0;
+    bool final = true;
+    int32_t button = 0;
+    std::string text;
+};
+
 struct GraphicPacksViewChoice {
     std::string category;
     std::vector<std::string> presets;
@@ -679,6 +711,8 @@ void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& ou
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
 void encode_controllers_view(const ControllersViewMessage& message, std::vector<uint8_t>& out);
 void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vector<uint8_t>& out);
+void encode_game_dialog(const GameDialogMessage& message, std::vector<uint8_t>& out);
+void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
 // companion closes its own app rather than going back to its main menu. One
@@ -718,6 +752,8 @@ bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& 
 bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& out);
 bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersViewMessage& out);
 bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out);
+bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage& out);
+bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one
 // device; a bound so a malformed message cannot ask for a million.

@@ -35,6 +35,9 @@ public:
     // The same dialog said again by the game: a keyboard's field as typed
     // where the game is.
     void refresh(const ExternalGameDialog& dialog);
+    // The dialog as it stands, the keyboard's field as typed so far: for the
+    // other device to show the same.
+    ExternalGameDialog current() const;
     void close() { open_ = false; }
     bool is_open() const { return open_; }
     uint32_t serial() const { return serial_; }
@@ -70,6 +73,7 @@ private:
     std::string title_;
     std::string text_;
     std::vector<std::string> button_labels_;
+    uint32_t max_length_ = 0;
     // What the keyboard's field held to begin with, which Cancel hands back.
     std::string initial_;
     PopupCursor cursor_;

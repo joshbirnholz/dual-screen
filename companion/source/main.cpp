@@ -96,6 +96,7 @@ extern "C" {
 #include "ui/accent.hpp"
 #include "ui/system_keyboard.hpp"
 #include "ui/menu_actions.hpp"
+#include "ui/mirrored_game_dialog.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -524,6 +525,8 @@ private:
     ControllersScreen mirrored_controllers_;
     // The host's Graphics Packs page, drawn the same way.
     GraphicPacksScreen mirrored_graphic_packs_;
+    // The host's game dialog -- an error, its keyboard -- shown here too.
+    MirroredGameDialog mirrored_game_dialog_;
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
     uint32_t save_slots_shown_ = 0;
@@ -1145,6 +1148,36 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     if (state_ == State::Playing && menu_open_) {
         handle_menu(actions, pointers);
         return;
+    }
+    // The game's own dialog, up over it on the host: the same popup here,
+    // answered here as it would be there -- and its keyboard typed here when
+    // this device is the GamePad, on a Switch with its own keyboard.
+    if (state_ == State::Playing && mirrored_game_dialog_.follow(session_.host_game_dialog())) {
+        const net::GameDialogMessage& dialog = session_.host_game_dialog();
+        if (dialog.kind == 2 && dialog.typed_here && system_keyboard_available()) {
+            net::GameDialogAnswerMessage answer;
+            answer.serial = dialog.serial;
+            answer.text = dialog.text;
+            std::string typed;
+            if (edit_with_system_keyboard(dialog.title.empty() ? std::string("Enter Text") : dialog.title,
+                                          dialog.text, dialog.max_length > 0 ? dialog.max_length : 256u, typed)) {
+                answer.text = typed;
+            }
+            session_.answer_game_dialog(answer);
+            mirrored_game_dialog_.answered(dialog.serial);
+            return;
+        }
+        mirrored_game_dialog_.type(input_.typed_text(), input_.backspaces());
+        for (const net::GameDialogAnswerMessage& said :
+             mirrored_game_dialog_.update(actions, pointers, static_cast<float>(output_width_),
+                                          static_cast<float>(output_height_))) {
+            session_.answer_game_dialog(said);
+        }
+        input_.set_text_entry(mirrored_game_dialog_.typing_here());
+        return;
+    }
+    if (state_ == State::Playing && input_.text_entry() && !mirrored_game_dialog_.is_open()) {
+        input_.set_text_entry(false);
     }
     // The host's Settings or Controllers are up. This device is not drawing
     // them, but the player is still holding a pad here, and it is still
@@ -2014,6 +2047,7 @@ void Client::draw_scene() {
     // All three are drawn over the game with GL, so the game has to be drawn
     // that way too while any is up.
     const bool resume_notice = session_.host_resume_notice();
+    const bool game_dialog = mirrored_game_dialog_.follow(session_.host_game_dialog());
     // The host's corner notice, shown here too while it shows it; a host
     // from before those were sent says only that its menu would not open.
     const std::string corner_notice = !session_.host_corner_notice().empty()
@@ -2021,7 +2055,7 @@ void Client::draw_scene() {
                                           : session_.host_menu_unavailable_notice()
                                                 ? std::string(kMenuUnavailableNotice)
                                                 : std::string();
-    router_.decide(!menu_open_ && !resume_notice && corner_notice.empty());
+    router_.decide(!menu_open_ && !resume_notice && !game_dialog && corner_notice.empty());
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -2066,6 +2100,7 @@ void Client::draw_scene() {
             render_notice_popup(quads_, text_, button_glyphs_, width, height, kResumedNotice);
         }
     }
+    if (game_dialog && !menu_open_) mirrored_game_dialog_.render(quads_, text_, width, height);
     // For as long as the host shows it.
     if (!corner_notice.empty()) render_corner_notice(quads_, text_, width, height, corner_notice);
 }

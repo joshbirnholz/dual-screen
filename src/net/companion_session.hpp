@@ -618,6 +618,10 @@ public:
     const ControllersViewMessage& host_controllers_view() const { return host_controllers_view_; }
     // And its Graphics Packs page. See GraphicPacksViewMessage.
     const GraphicPacksViewMessage& host_graphic_packs_view() const { return host_graphic_packs_view_; }
+    // And the game's own dialog up over it, kind 0 for none. See
+    // GameDialogMessage; answered with answer_game_dialog().
+    const GameDialogMessage& host_game_dialog() const { return host_game_dialog_; }
+    void answer_game_dialog(const GameDialogAnswerMessage& answer);
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
     // Sends this device's input to the host. Only what changed goes out.
@@ -1154,6 +1158,7 @@ private:
     SaveSlotsMessage host_save_slots_;
     ControllersViewMessage host_controllers_view_;
     GraphicPacksViewMessage host_graphic_packs_view_;
+    GameDialogMessage host_game_dialog_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;

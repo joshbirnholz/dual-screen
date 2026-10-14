@@ -32,6 +32,9 @@ set(not_pages
     UpdatePrompt
     # A message that any press or tap at all puts away: nothing to land on.
     MessageScreen
+    # The host's game dialog on the companion: hands it all to its
+    # GameDialogScreen, which is a MenuPage.
+    MirroredGameDialog
 )
 
 file(GLOB headers "${UI_DIR}/*.hpp")

@@ -158,6 +158,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
     host_graphic_packs_view_ = GraphicPacksViewMessage();
+    host_game_dialog_ = GameDialogMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -328,6 +329,7 @@ void CompanionSession::disconnect() {
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
     host_graphic_packs_view_ = GraphicPacksViewMessage();
+    host_game_dialog_ = GameDialogMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -440,6 +442,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
     host_graphic_packs_view_ = GraphicPacksViewMessage();
+    host_game_dialog_ = GameDialogMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -632,6 +635,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             host_save_slots_ = std::move(slots);
             ++host_save_slots_revision_;
+            break;
+        }
+        case MessageType::GameDialog: {
+            GameDialogMessage dialog;
+            if (decode_game_dialog(payload.data(), payload.size(), dialog)) host_game_dialog_ = std::move(dialog);
             break;
         }
         case MessageType::GraphicPacksView: {
@@ -2265,6 +2273,13 @@ void CompanionSession::request_menu_action(MenuAction action) {
     request.wants_menu_action = true;
     request.menu_action = action;
     send_request(request);
+}
+
+void CompanionSession::answer_game_dialog(const GameDialogAnswerMessage& answer) {
+    if (status_ != Status::Connected || !stream_.connected()) return;
+    std::vector<uint8_t> out;
+    encode_game_dialog_answer(answer, out);
+    stream_.send(out);
 }
 
 void CompanionSession::request_menu_focus(int focus) {

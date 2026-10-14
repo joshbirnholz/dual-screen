@@ -183,6 +183,7 @@ add_library(dualscreen_core STATIC
     src/ui/choice_popup.cpp
     src/ui/text_entry.cpp
     src/ui/game_dialog.cpp
+    src/ui/mirrored_game_dialog.cpp
     src/ui/data_management_screen.cpp
     src/ui/forwarder_screen.cpp
     src/util/battery.cpp

@@ -5,6 +5,7 @@
 
 #include "test_support.hpp"
 #include "ui/game_dialog.hpp"
+#include "ui/mirrored_game_dialog.hpp"
 
 using namespace ds;
 
@@ -107,6 +108,47 @@ void test_the_keyboard_types_and_hands_back() {
     CHECK(result.answer.text == "Epona");
 }
 
+// On the companion, when it is the GamePad: typed there, what is typed goes
+// over as it is typed, then the answer; and it is gone once answered.
+void test_the_companion_types_into_the_hosts_keyboard() {
+    net::GameDialogMessage host;
+    host.kind = 2;
+    host.serial = 4;
+    host.text = "Epona";
+    host.max_length = 10;
+    host.typed_here = true;
+
+    MirroredGameDialog mirror;
+    CHECK(mirror.follow(host));
+    CHECK(mirror.typing_here());
+    mirror.type("!", 0);
+    std::vector<net::GameDialogAnswerMessage> said = mirror.update({}, {}, kWidth, kHeight);
+    CHECK_EQ(said.size(), std::size_t{1});
+    if (!said.empty()) CHECK(!said[0].final && said[0].text == "Epona!" && said[0].serial == 4u);
+    // The host echoes it back; typed here, this device's field stands.
+    host.text = "Epona!";
+    CHECK(mirror.follow(host));
+    CHECK(mirror.update({}, {}, kWidth, kHeight).empty());
+    said = mirror.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK_EQ(said.size(), std::size_t{1});
+    if (!said.empty()) CHECK(said[0].final && said[0].text == "Epona!");
+    CHECK_MSG(!mirror.follow(host), "an answered dialog came back while the host caught up");
+    host.kind = 0;
+    CHECK(!mirror.follow(host));
+
+    // Not the GamePad: shown as typed on the host, no keyboard here.
+    net::GameDialogMessage elsewhere = host;
+    elsewhere.kind = 2;
+    elsewhere.serial = 5;
+    elsewhere.typed_here = false;
+    CHECK(mirror.follow(elsewhere));
+    CHECK(!mirror.typing_here());
+    elsewhere.text = "Agro";
+    mirror.follow(elsewhere);
+    said = mirror.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    CHECK(!said.empty() && said.back().text == "Agro");
+}
+
 }  // namespace
 
 int main() {
@@ -114,5 +156,6 @@ int main() {
     test_a_question_is_the_players_to_answer();
     test_a_tap_from_either_device_presses_a_button();
     test_the_keyboard_types_and_hands_back();
+    test_the_companion_types_into_the_hosts_keyboard();
     return test::finish("game-dialog");
 }

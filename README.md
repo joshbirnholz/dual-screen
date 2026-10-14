@@ -401,7 +401,10 @@ Three things are different about a Wii U session:
   Cemu's window shows in it as it is typed, OK hands it to the game, and
   Cancel leaves the game what it started with. A message has the game's own
   buttons, or OK; with only one, B presses it. The game goes on underneath,
-  and one put up while the quick menu is open waits until it closes.
+  and one put up while the quick menu is open waits until it closes. A
+  connected device shows the same popup and can answer it; when it is the
+  GamePad -- the device in your hands -- the keyboard comes up there instead
+  (a Switch's own keyboard on a Switch), and what is typed shows on both.
 
 - **Wii U TV Audio**, in Settings, is Cemu's TV channels -- **Mono**,
   **Stereo** (Cemu's default) or **Surround** -- the same for every game.

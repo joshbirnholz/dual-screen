@@ -10,6 +10,7 @@ void GameDialogScreen::show(const ExternalGameDialog& dialog) {
     title_ = dialog.title;
     text_ = dialog.text;
     button_labels_ = dialog.buttons;
+    max_length_ = dialog.max_length;
     initial_ = dialog.text;
     typed_.clear();
     backspaces_ = 0;
@@ -25,6 +26,18 @@ void GameDialogScreen::show(const ExternalGameDialog& dialog) {
 void GameDialogScreen::refresh(const ExternalGameDialog& dialog) {
     if (!open_ || dialog.serial != serial_ || kind_ != ExternalGameDialogKind::Keyboard) return;
     entry_.set_text(dialog.text);
+}
+
+ExternalGameDialog GameDialogScreen::current() const {
+    ExternalGameDialog dialog;
+    if (!open_) return dialog;
+    dialog.kind = kind_;
+    dialog.serial = serial_;
+    dialog.title = title_;
+    dialog.text = kind_ == ExternalGameDialogKind::Keyboard ? entry_.text() : text_;
+    dialog.buttons = button_labels_;
+    dialog.max_length = max_length_;
+    return dialog;
 }
 
 PopupText GameDialogScreen::words() const {

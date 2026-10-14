@@ -62,6 +62,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/choice_popup.cpp
     src/ui/text_entry.cpp
     src/ui/game_dialog.cpp
+    src/ui/mirrored_game_dialog.cpp
     src/ui/menu_state.cpp
     src/ui/notice_popup.cpp
     src/util/battery.cpp
