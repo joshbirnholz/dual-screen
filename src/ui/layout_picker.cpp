@@ -1318,7 +1318,13 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
         const PixelRect& cell = geometry.items[index];
         const bool focused = on_content_ && slot == item_;
         const bool filled = slot_filled(slot);
-        draw_menu_tile(quads, cell, focused, false, scale);
+        // Square, as a Switch's own suspend points are: solid white under
+        // the cursor, outlined otherwise.
+        if (focused) {
+            quads.draw_solid(cell, theme.text);
+        } else {
+            quads.draw_outline(cell, theme.text, border);
+        }
 
         // The picture takes the tile's height, its two screens one above the
         // other the way the console holds them; its name and time go beside
@@ -1329,9 +1335,7 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
                                cell.h - border * 2.0f};
         const float box_width = std::min(inside.w * 0.5f, inside.h * 0.82f);
         const PixelRect box{inside.x, inside.y, box_width, inside.h};
-        const float box_radius = std::max(0.0f, menu_tile_radius(scale) - border);
-        quads.draw_rounded_ring(box, box_radius, box.w + box.h, Color{0.0f, 0.0f, 0.0f, 1.0f},
-                                Color{0.0f, 0.0f, 0.0f, 1.0f});
+        quads.draw_solid(box, Color{0.0f, 0.0f, 0.0f, 1.0f});
         if (filled && slot_pictures_[index].valid()) {
             const SavePointThumbnail& picture = save_slots_[index].thumbnail;
             // Fitted into the box without stretching.
@@ -1342,11 +1346,14 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
                                         box.y + (box.h - height) * 0.5f, width, height},
                               slot_pictures_[index]);
         } else if (!filled) {
-            quads.draw_rounded_ring(box, box_radius, box.w + box.h, theme.panel, theme.panel);
+            quads.draw_solid(box, focused ? theme.text_dim : theme.panel);
         }
+        quads.draw_solid(PixelRect{box.x + box.w, cell.y, border, cell.h},
+                         focused ? theme.background : theme.text);
 
-        const Color& ink = theme.text;
-        const Color& dim = theme.text_dim;
+        // On the white under the cursor, its words in the favorite color.
+        const Color& ink = focused ? theme.accent : theme.text;
+        const Color& dim = focused ? theme.accent : theme.text_dim;
         const float text_x = box.x + box.w + border + line * 0.8f;
         const float text_room = cell.x + cell.w - border - line * 0.6f - text_x;
         // The time on two lines, date over clock, where one will not fit.
