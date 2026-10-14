@@ -59,13 +59,11 @@ inline AccentRing& accent_ring() {
 
 // The accent everything is drawn in -- the cursor's ring, a chosen tab's
 // words, a switch turned on -- made the player's favorite color, exactly as
-// the DS shows it: solid where it is words or a fill, and round the ring
-// running from a lighter shade of it into the color itself.
+// the DS shows it, solid throughout.
 inline void set_ui_accent(const Color& color) {
     const Color solid{color.r, color.g, color.b, 1.0f};
     mutable_ui_theme().accent = solid;
-    accent_ring().left = Color{solid.r + (1.0f - solid.r) * 0.35f, solid.g + (1.0f - solid.g) * 0.35f,
-                               solid.b + (1.0f - solid.b) * 0.35f, 1.0f};
+    accent_ring().left = solid;
     accent_ring().right = solid;
 }
 // Back to the app's own blue, and its ring's run into violet.

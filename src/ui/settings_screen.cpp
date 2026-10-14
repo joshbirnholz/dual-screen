@@ -335,7 +335,7 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
 
 void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geometry) {
     if (page_ == Page::Main && focus_ == first_setting_row() + static_cast<int>(Row::DsNickname)) {
-        const char* header = "Your name, as a DS game greets you";
+        const char* header = "Nickname";
         std::string typed;
         if (text_editor_) {
             // The platform's own keyboard, there and then.
@@ -846,6 +846,15 @@ void SettingsScreen::render(QuadRenderer& quads,
             continue;
         }
 #endif
+        if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::DsFavoriteColor)) {
+            // The color itself, unnamed, where a value goes.
+            const DsFavoriteColor& color = kDsFavoriteColors[static_cast<std::size_t>(
+                std::clamp(settings_.ds_favorite_color, 0, static_cast<int>(kDsFavoriteColors.size()) - 1))];
+            const float dot = std::round(line * 1.3f);
+            quads.draw_capsule(PixelRect{row.x + row.w - pad - dot, std::round(row.y + (row.h - dot) * 0.5f), dot, dot},
+                               Color{color.r, color.g, color.b, 1.0f});
+            continue;
+        }
         // "Off" is also one of Run Ahead's three: a switch only where there
         // is nothing else to choose.
         const bool has_choices = page_ == Page::Main &&
@@ -858,16 +867,6 @@ void SettingsScreen::render(QuadRenderer& quads,
             const float available = row.w - label_width - pad * 4.0f;
             const std::string value =
                 TextRenderer::elide_left(rows[index][1], available, scale * 0.9f);
-            if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::DsFavoriteColor)) {
-                // The color itself, beside its name.
-                const DsFavoriteColor& color = kDsFavoriteColors[static_cast<std::size_t>(
-                    std::clamp(settings_.ds_favorite_color, 0, static_cast<int>(kDsFavoriteColors.size()) - 1))];
-                const float dot = std::round(line * 1.0f);
-                const float dot_x = row.x + row.w - pad - TextRenderer::measure_width(value, scale * 0.9f) -
-                                    std::round(line * 0.5f) - dot;
-                quads.draw_capsule(PixelRect{dot_x, std::round(row.y + (row.h - dot) * 0.5f), dot, dot},
-                                   Color{color.r, color.g, color.b, 1.0f});
-            }
             text.draw(quads, value, row.x + row.w - pad, page_row_text_y(row, scale * 0.9f),
                       scale * 0.9f, value_color, TextAlign::Right);
         }

@@ -245,14 +245,14 @@ void test_the_ds_owner(const std::string& sandbox) {
     CHECK(!press(screen, UiAction::Cancel).settings_changed);
     CHECK_STR_EQ(screen.settings().ds_nickname, "Josh Bir");
 
-    // The next row: the favorite color, Light Blue to begin with, from a
-    // grid of the sixteen four to a line, as a DS lays them out -- Up a line
-    // and Right one along from Light Blue is Green.
-    CHECK_EQ(Settings().ds_favorite_color, 10);
+    // The next row: the favorite color, Gray to begin with, from a grid of
+    // the sixteen four to a line, as a DS lays them out -- Down a line and
+    // Right three along from Gray is Green.
+    CHECK_EQ(Settings().ds_favorite_color, 0);
     press(screen, UiAction::Down);
     press(screen, UiAction::Confirm);
-    press(screen, UiAction::Up);
-    press(screen, UiAction::Right);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Right, 3);
     CHECK(press(screen, UiAction::Confirm).settings_changed);
     CHECK_EQ(screen.settings().ds_favorite_color, 7);
     CHECK_STR_EQ(kDsFavoriteColors[7].name, "Green");
@@ -278,15 +278,14 @@ void test_the_ds_owner(const std::string& sandbox) {
     CHECK_EQ(screen.settings().ds_birth_month, 3);
     CHECK_EQ(screen.settings().ds_birth_day, 14);
 
-    // As the accent: the color exactly, and the ring running from a lighter
-    // shade of it into it.
+    // As the accent: the color exactly, the ring solid in it.
     apply_favorite_color_accent(12);  // Dark Blue
     CHECK_EQ(ui_theme().accent.b, kDsFavoriteColors[12].b);
     CHECK_EQ(menu_ring_right().b, kDsFavoriteColors[12].b);
-    CHECK(menu_ring_left().r > kDsFavoriteColors[12].r && menu_ring_left().b > kDsFavoriteColors[12].b);
-    // None chosen: Light Blue.
+    CHECK_EQ(menu_ring_left().b, kDsFavoriteColors[12].b);
+    // None chosen: Gray.
     apply_favorite_color_accent(-1);
-    CHECK_EQ(ui_theme().accent.g, kDsFavoriteColors[10].g);
+    CHECK_EQ(ui_theme().accent.g, kDsFavoriteColors[0].g);
 }
 
 }  // namespace

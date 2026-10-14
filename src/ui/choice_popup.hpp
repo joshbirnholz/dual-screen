@@ -36,8 +36,8 @@ class ChoicePopup {
 public:
     // Up over `row`, the row whose value it is, with `current` filled.
     void open(std::vector<std::string> choices, int current, const PixelRect& row);
-    // A grid of colored circles, `columns` across, named under the grid as the
-    // cursor moves; Left and Right move along a line of them too.
+    // A grid of colored circles, `columns` across, unnamed; Left and Right
+    // move along a line of them too. `names` are for anything that reads them.
     void open_colors(std::vector<Color> colors, std::vector<std::string> names, int columns,
                      int current, const PixelRect& row);
     // After open(): each choice drawn as two buttons, "first / second", in

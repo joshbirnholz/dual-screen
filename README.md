@@ -92,9 +92,8 @@ your birthday uses that. melonDS DS is told all three as a DS game starts.
 The name is typed into a field -- on a Steam Deck, Steam's on-screen keyboard
 comes up for it; on a Switch, the system keyboard -- and is ten characters at
 most, as on a DS. The color is picked from a grid of the DS's sixteen, in the
-DS's own order, and is Light Blue until another is chosen; it is the menus'
-accent too, exactly as the DS shows it, with the cursor's ring running from a
-lighter shade of it into it. The birthday is a month, then a day of it; until
+DS's own order, and is Gray until another is chosen; it is the menus' accent
+too, exactly as the DS shows it -- the cursor's ring is drawn in it. The birthday is a month, then a day of it; until
 one is chosen melonDS DS keeps its own. A 3DS has none of these to set:
 Azahar's libretro core takes no name, color or birthday.
 

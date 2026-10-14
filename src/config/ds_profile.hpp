@@ -32,9 +32,9 @@ inline constexpr std::array<DsFavoriteColor, 16> kDsFavoriteColors = {{
     {"Magenta", 0xFB / 255.0f, 0x00 / 255.0f, 0x92 / 255.0f},
 }};
 
-// Light Blue: a DS always has a favorite color, and this is the one an owner
-// who never chose keeps.
-inline constexpr int kDsDefaultFavoriteColor = 10;
+// Gray: a DS always has a favorite color, and this is the one an owner who
+// never chose keeps.
+inline constexpr int kDsDefaultFavoriteColor = 0;
 
 // The months, for the birthday a DS keeps, and how many days each can have --
 // February's 29, since a birthday is not in any one year.

@@ -85,7 +85,8 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
         const int lines = (count + columns_ - 1) / columns_;
         geometry.row_height = cell;
         geometry.visible = lines;
-        const float name_height = std::round(line * 2.0f);
+        // The colors are the whole of it: nothing is written under them.
+        const float name_height = 0.0f;
         const float width = std::max(pad_x * 2.0f + cell * static_cast<float>(columns_), line * 10.0f);
         const float height = pad_y * 2.0f + cell * static_cast<float>(lines) + name_height;
         // Beside its row, at the row's right-hand end where its value is, and
@@ -294,11 +295,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
                                         Color{0.0f, 0.0f, 0.0f, 0.4f}, Color{0.0f, 0.0f, 0.0f, 0.4f});
             }
         }
-        if (focus_ >= 0 && focus_ < static_cast<int>(choices_.size())) {
-            text.draw(quads, choices_[static_cast<std::size_t>(focus_)],
-                      shape.box.x + shape.box.w * 0.5f, shape.name_y, scale, theme.text,
-                      TextAlign::Center);
-        }
+        (void)theme;
         return;
     }
 
