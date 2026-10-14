@@ -98,6 +98,10 @@ int ChoicePopup::choice_at(float x, float y, float output_width, float output_he
     return -1;
 }
 
+bool ChoicePopup::contains(float x, float y, float output_width, float output_height) const {
+    return open_ && geometry(output_width, output_height).box.contains(x, y);
+}
+
 ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
                                       const std::vector<PointerEvent>& pointers, float output_width,
                                       float output_height) {
@@ -137,7 +141,10 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
                     !shape.list.contains(pointer.x, pointer.y)) {
                     continue;
                 }
-                if (tap_chooses(focus_, static_cast<int>(index))) result.chosen = focus_;
+                // Chosen at once: the list is already the question, and a
+                // tap on one of its answers is the answer.
+                focus_ = static_cast<int>(index);
+                result.chosen = focus_;
                 break;
             }
             if (result.chosen >= 0) break;

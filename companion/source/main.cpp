@@ -1080,6 +1080,12 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
             return picker_.entry_at(x, y, static_cast<float>(output_width_),
                                     static_cast<float>(output_height_));
         };
+        // Off an option's popup altogether: put away, as a tap there is here.
+        if (picker_.off_choice_popup(pointer.x, pointer.y, static_cast<float>(output_width_), static_cast<float>(output_height_)) &&
+            picker_.off_choice_popup(pointer.press_x, pointer.press_y, static_cast<float>(output_width_), static_cast<float>(output_height_))) {
+            session_.request_menu_action(net::MenuAction::Cancel);
+            continue;
+        }
         const int entry = entry_under(pointer.x, pointer.y);
         // Only where the finger came down on the same entry it left on.
         if (entry >= 0 && entry == entry_under(pointer.press_x, pointer.press_y)) {

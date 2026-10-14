@@ -363,6 +363,11 @@ public:
     // Which entry a tap landed on, or -1 for none. Resolved on the device the
     // finger touched, since only that one knows how its own menu is laid out.
     int entry_at(float x, float y, float output_width, float output_height) const;
+    // Whether a tap at a point lands off an option's popup altogether --
+    // which puts it away. False when none is up.
+    bool off_choice_popup(float x, float y, float output_width, float output_height) const {
+        return confirm_ == MenuConfirm::Choice && !choice_.contains(x, y, output_width, output_height);
+    }
     // The button a tap on the row of control prompts stands for, or Count for
     // a tap that missed them. Answered from where they were last drawn, since
     // the row is laid out from the glyph artwork's own proportions.

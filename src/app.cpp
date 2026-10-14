@@ -4682,6 +4682,12 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                         return picker->entry_at(x, y, static_cast<float>(output_width),
                                                 static_cast<float>(output_height));
                     };
+                    // Off an option's popup altogether: put away, as a tap there is here.
+                    if (picker->off_choice_popup(pointer.x, pointer.y, static_cast<float>(output_width), static_cast<float>(output_height)) &&
+                        picker->off_choice_popup(pointer.press_x, pointer.press_y, static_cast<float>(output_width), static_cast<float>(output_height))) {
+                        companion_session->request_menu_action(net::MenuAction::Cancel);
+                        continue;
+                    }
                     const int entry = entry_under(pointer.x, pointer.y);
                     // Only where the finger came down on the same entry it
                     // left on.

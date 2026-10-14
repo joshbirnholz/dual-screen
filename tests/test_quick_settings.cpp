@@ -610,6 +610,38 @@ void test_moving_between_the_list_and_what_it_shows() {
         asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
         CHECK(!asked.update({UiAction::Confirm}, {}, kWidth, kHeight).render_scale_changed);
 
+        // A tap on a choice chooses it at once; a tap off the popup puts it
+        // away and changes nothing.
+        {
+            asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+            CHECK(asked.confirmation() == MenuConfirm::Choice);
+            int first = -1;
+            float first_x = 0.0f, first_y = 0.0f;
+            for (float y = 4.0f; y < kHeight && first < 0; y += 4.0f) {
+                for (float x = 4.0f; x < kWidth && first < 0; x += 4.0f) {
+                    const int entry = asked.entry_at(x, y, kWidth, kHeight);
+                    if (entry == LayoutPicker::kPopupFocusBase + 1) {
+                        first = entry;
+                        first_x = x;
+                        first_y = y;
+                    }
+                }
+            }
+            CHECK_MSG(first >= 0, "no choice of the popup was there to tap");
+            const LayoutPickerResult tapped_once =
+                asked.update({}, {tap(first_x, first_y)}, kWidth, kHeight);
+            CHECK_MSG(tapped_once.render_scale_changed && tapped_once.option_steps == 1,
+                      "a single tap on a choice did not choose it");
+            CHECK(asked.confirmation() == MenuConfirm::None);
+
+            asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+            CHECK(asked.off_choice_popup(2.0f, 2.0f, kWidth, kHeight));
+            const LayoutPickerResult outside = asked.update({}, {tap(2.0f, 2.0f)}, kWidth, kHeight);
+            CHECK(!outside.render_scale_changed);
+            CHECK(asked.confirmation() == MenuConfirm::None);
+            CHECK(asked.is_open());
+        }
+
         // The menu's own button puts the popup and the menu away together.
         asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
         CHECK(asked.update({UiAction::ToggleMenu}, {}, kWidth, kHeight).close_requested);

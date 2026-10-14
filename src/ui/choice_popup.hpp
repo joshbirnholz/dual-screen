@@ -22,8 +22,8 @@ struct ChoicePopupResult {
 // one: a small, well-rounded box beside its row, each choice with a radio
 // circle and the one in effect filled, the cursor on that one to begin with.
 // Up and Down move, stopping at the ends; A chooses; B puts it away. A long
-// list scrolls, with a bar. A first tap on a choice puts the cursor there and
-// a second chooses it; a tap outside puts it away.
+// list scrolls, with a bar. A tap on a choice chooses it; a tap outside puts
+// it away, changing nothing.
 class ChoicePopup {
 public:
     // Up over `row`, the row whose value it is, with `current` filled.
@@ -46,6 +46,9 @@ public:
     // Which choice is under a point, or -1: for a device drawing the
     // other's popup, to send it as a focus.
     int choice_at(float x, float y, float output_width, float output_height) const;
+    // Whether a point is on the popup at all: a tap anywhere else puts it
+    // away, changing nothing.
+    bool contains(float x, float y, float output_width, float output_height) const;
 
 private:
     struct Geometry {
