@@ -4890,6 +4890,16 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
         picker->set_preview_screen(own_separate_screen());
+        // And judged as the render behind them is this frame: a companion
+        // fills its display with the bottom screen and not the top, so a swap
+        // changes which -- see device_layout().
+        {
+            float panel_width = 0.0f;
+            float panel_height = 0.0f;
+            panel_size(panel_width, panel_height);
+            picker->set_display_size(panel_width, panel_height,
+                                     is_companion() && local_screen == ScreenId::Bottom);
+        }
         picker->set_device_screen(wii_u_screen_here());
         refresh_game_icon();
         picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
