@@ -1051,11 +1051,12 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
         if (!menu_action_for(action, wire)) continue;
         session_.request_menu_action(wire);
     }
+    std::vector<PointerEvent> rest;
     for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released) continue;
-        // Resolved here rather than there: the two devices lay the menu out for
-        // different-sized screens, so only this one knows what its own tap was
-        // on.
+        if (!pointer.released) {
+            rest.push_back(pointer);
+            continue;
+        }
         // A finger on one of the control prompts is that button being
         // pressed, forwarded like any other press.
         const ButtonGlyph on_guide = picker_.guide_button_at(pointer.x, pointer.y);
@@ -1080,20 +1081,17 @@ void Client::handle_menu(const std::vector<UiAction>& actions,
             if (forward) session_.request_menu_action(wire);
             continue;
         }
-        const auto entry_under = [&](float x, float y) {
-            return picker_.entry_at(x, y, static_cast<float>(output_width_),
-                                    static_cast<float>(output_height_));
-        };
-        // Off an option's popup altogether: put away, as a tap there is here.
-        if (picker_.off_choice_popup(pointer.x, pointer.y, static_cast<float>(output_width_), static_cast<float>(output_height_)) &&
-            picker_.off_choice_popup(pointer.press_x, pointer.press_y, static_cast<float>(output_width_), static_cast<float>(output_height_))) {
+        rest.push_back(pointer);
+    }
+    // Everything else a finger did on the menu drawn here: scrolled here,
+    // as this device's own view of it, and each tap sent over as what it
+    // landed on, heard there as a tap made there would be -- see MenuPage.
+    for (const int tap : MenuPage::taps_on(picker_, rest, static_cast<float>(output_width_),
+                                           static_cast<float>(output_height_))) {
+        if (tap == MenuPage::kTapOffPopup) {
             session_.request_menu_action(net::MenuAction::Cancel);
-            continue;
-        }
-        const int entry = entry_under(pointer.x, pointer.y);
-        // Only where the finger came down on the same entry it left on.
-        if (entry >= 0 && entry == entry_under(pointer.press_x, pointer.press_y)) {
-            session_.request_menu_press(entry, net::MenuAction::Confirm);
+        } else {
+            session_.request_menu_focus(tap);
         }
     }
 }
@@ -1157,10 +1155,10 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         // here -- its own view of the page -- and a tap goes over as what it
         // landed on.
         if (session_.host_graphic_packs_view().open) {
-            for (const int tap : mirrored_graphic_pack_taps(mirrored_graphic_packs_, pointers,
-                                                            static_cast<float>(output_width_),
-                                                            static_cast<float>(output_height_))) {
-                if (tap == kMirroredTapCancel) {
+            for (const int tap : MenuPage::taps_on(mirrored_graphic_packs_, pointers,
+                                                   static_cast<float>(output_width_),
+                                                   static_cast<float>(output_height_))) {
+                if (tap == MenuPage::kTapOffPopup) {
                     session_.request_menu_action(net::MenuAction::Cancel);
                 } else {
                     session_.request_menu_focus(tap);

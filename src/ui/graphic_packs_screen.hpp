@@ -15,6 +15,7 @@
 #include "ui/choice_popup.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/sound_view.hpp"
 
 namespace ds {
@@ -45,7 +46,7 @@ std::vector<GraphicPackLine> graphic_pack_lines(const std::vector<ExternalGraphi
 //
 // The packs are Cemu's; this only shows what Cemu last said and asks it for
 // changes, showing each as made rather than waiting to hear it back.
-class GraphicPacksScreen {
+class GraphicPacksScreen : public MenuPage {
 public:
     // Up, and waiting for Cemu's list.
     void open();
@@ -93,25 +94,15 @@ public:
     // cursor here, and nothing changed here. Opens the page if it is not.
     void show_mirrored(const net::GraphicPacksViewMessage& view, float output_width,
                        float output_height);
-    // A finger dragging either side of the page, which scrolls it -- on
-    // the device drawing the other's page too, where a finger has nothing
-    // else here to do. See update().
-    // True when this pass's release ended a drag rather than tapped. A
-    // preset's popup, drawn from the other device's, scrolls the same way.
-    bool drag(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
-
-    // For a device drawing the other's page: what is under a point, as an
-    // entry to tell the other device -- see press_entry() -- or -1.
-    int entry_at(float x, float y, float output_width, float output_height) const;
-    // Whether a point is off an open preset popup altogether.
-    bool off_choice_popup(float x, float y, float output_width, float output_height) const;
-    // A tap the other device resolved to an entry, answered as a tap on that
-    // entry here would be: a first tap highlights, a second chooses; a
-    // popup's choice is chosen at once.
-    GraphicPacksScreenResult press_entry(int entry);
-    // Entries: a pack in the list is its index times two, a row of the pack
-    // shown is its index times two plus one, and a popup's choice is this
-    // plus its index.
+    // MenuPage: either side scrolls under a finger, the mouse and the wheel,
+    // and a preset's popup does while it is up -- on the device drawing the
+    // other's page too, as its own view of it. Entries: a pack in the list
+    // is its index times two, a row of the pack shown is its index times two
+    // plus one, and a popup's choice is kChoiceEntryBase plus its index.
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
     static constexpr int kChoiceEntryBase = 0x8000;
 
 private:
@@ -158,6 +149,8 @@ private:
     void choose(int index, GraphicPacksScreenResult& result);
     std::string item_label(int item) const;
     std::string item_value(int item) const;
+    // A tap on an entry, from this device or the other -- see take_taps().
+    void handle_tap(int entry, GraphicPacksScreenResult& result);
 
     bool open_ = false;
     bool waiting_ = true;
@@ -201,16 +194,6 @@ private:
     float last_height_ = 800.0f;
     std::vector<GuideHit> guide_hits_;
 };
-
-// The other device's page, drawn here, under a finger, the mouse or the
-// wheel: scrolled here, as this device's own view of it, and each tap turned
-// into the entry it landed on -- see GraphicPacksScreen::press_entry() -- for
-// the other device to answer, or kMirroredTapCancel for a tap off an open
-// popup, which puts it away.
-inline constexpr int kMirroredTapCancel = -2;
-std::vector<int> mirrored_graphic_pack_taps(GraphicPacksScreen& page,
-                                            const std::vector<PointerEvent>& pointers,
-                                            float output_width, float output_height);
 
 // The Graphics Packs page as a message for the other device.
 net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& screen);

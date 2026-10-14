@@ -308,7 +308,7 @@ void test_the_page_is_drawn_on_the_other_device_as_it_is() {
 void drag_up(GraphicPacksScreen& page, float x, float from_y, float distance) {
     const auto pass = [&](const std::vector<PointerEvent>& pointers) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        page.drag(pointers, kWidth, kHeight);
+        page.scroll(pointers, kWidth, kHeight);
     };
     PointerEvent down;
     down.x = down.press_x = x;
@@ -410,10 +410,10 @@ void test_taps_on_the_other_devices_page_work_it() {
         float x = 0.0f;
         float y = 0.0f;
         CHECK_MSG(point_on(mirror, entry, kOtherWidth, kOtherHeight, x, y), "no such entry on the page");
-        const std::vector<int> taps =
-            mirrored_graphic_pack_taps(mirror, {tap_at(x, y)}, kOtherWidth, kOtherHeight);
+        const std::vector<int> taps = MenuPage::taps_on(mirror, {tap_at(x, y)}, kOtherWidth, kOtherHeight);
         CHECK_EQ(taps.size(), 1u);
-        return taps.empty() ? GraphicPacksScreenResult() : host.press_entry(taps.front());
+        if (!taps.empty()) host.press_entry(taps.front());
+        return host.update({}, {}, kWidth, kHeight);
     };
     // The fourth pack down the list, FPS++: highlighted, then gone into.
     tap_on_mirror(3 * 2);
@@ -439,8 +439,11 @@ void test_taps_on_the_other_devices_page_work_it() {
     tap_on_mirror(1 * 2 + 1);
     CHECK(host.choosing());
     mirror.show_mirrored(graphic_packs_view_of(host), kOtherWidth, kOtherHeight);
-    const std::vector<int> off = mirrored_graphic_pack_taps(mirror, {tap_at(4.0f, 4.0f)}, kOtherWidth, kOtherHeight);
-    CHECK(off.size() == 1u && off.front() == kMirroredTapCancel);
+    const std::vector<int> off = MenuPage::taps_on(mirror, {tap_at(4.0f, 4.0f)}, kOtherWidth, kOtherHeight);
+    CHECK(off.size() == 1u && off.front() == MenuPage::kTapOffPopup);
+    host.press_entry(off.front());
+    host.update({}, {}, kWidth, kHeight);
+    CHECK(!host.choosing());
 }
 
 int main() {

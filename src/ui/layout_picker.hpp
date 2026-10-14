@@ -17,6 +17,7 @@
 #include "render/texture.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/choice_popup.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/popup.hpp"
 #include "ui/sound_view.hpp"
@@ -273,7 +274,7 @@ enum class MenuSection : uint8_t {
 // runs the game holds it; the other draws the same menu from what it is told
 // and sends its presses back, so the player can work the menu from either pad
 // while looking at either screen.
-class LayoutPicker {
+class LayoutPicker : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
@@ -362,7 +363,13 @@ public:
               int confirm_focus_wire = 0);
     // Which entry a tap landed on, or -1 for none. Resolved on the device the
     // finger touched, since only that one knows how its own menu is laid out.
-    int entry_at(float x, float y, float output_width, float output_height) const;
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    // MenuPage: a list on the right scrolls under a finger, the mouse and the
+    // wheel, and an option's popup does while it is up; a tap off that popup
+    // puts it away.
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
     // Whether a tap at a point lands off an option's popup altogether --
     // which puts it away. False when none is up.
     bool off_choice_popup(float x, float y, float output_width, float output_height) const {
@@ -555,6 +562,11 @@ private:
     float content_row_step(const MenuGeometry& geometry) const;
     float content_max_scroll(const MenuGeometry& geometry) const;
     void keep_item_in_view(float output_width, float output_height);
+    // A focus or entry -- see focus_of() -- as the section and the item in it
+    // (-1 for the section itself). False for one that is not on the menu.
+    bool decode_focus(int focus, MenuSection& section, int& item) const;
+    // A tap on an entry, from this device or the other -- see take_taps().
+    void handle_tap(int entry, LayoutPickerResult& result);
     // Whether the right-hand side is a list -- Game Options, amiibo -- that
     // can run past the bottom and scroll.
     bool content_is_list() const;

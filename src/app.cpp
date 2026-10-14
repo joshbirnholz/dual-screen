@@ -958,6 +958,11 @@ struct App::Impl {
                                      const std::vector<PointerEvent>& pointers);
     // What a press on the page asked for: a pack changed, or the page left.
     void apply_graphic_packs_result(const GraphicPacksScreenResult& result);
+    // The page on screen now that taps reach as a MenuPage, or none -- and
+    // that page updated with these presses and no pointer, to hear the taps
+    // the other device sent it. See MenuPage.
+    MenuPage* page_shown();
+    void update_shown_page(const std::vector<UiAction>& actions);
     // Cemu's own options -- see cemu_options -- asked for once Cemu is up,
     // set to this game's, and stepped from the menu.
     void update_cemu_options();
@@ -2273,6 +2278,28 @@ void App::Impl::update_graphic_packs_screen(const std::vector<UiAction>& actions
     }
     apply_graphic_packs_result(graphic_packs_screen.update(
         actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height)));
+}
+
+MenuPage* App::Impl::page_shown() {
+    switch (state) {
+        case State::Menu: return picker.get();
+        case State::GraphicPacks: return &graphic_packs_screen;
+        default: return nullptr;
+    }
+}
+
+void App::Impl::update_shown_page(const std::vector<UiAction>& actions) {
+    switch (state) {
+        case State::Menu:
+            if (picker) {
+                apply_menu_result(picker->update(actions, {}, static_cast<float>(output_width),
+                                                 static_cast<float>(output_height)),
+                                  /*pressed_here=*/false);
+            }
+            break;
+        case State::GraphicPacks: update_graphic_packs_screen(actions, {}); break;
+        default: break;
+    }
 }
 
 void App::Impl::apply_graphic_packs_result(const GraphicPacksScreenResult& result) {
@@ -4709,10 +4736,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     take_guide_taps(mirrored_graphic_packs.guide_hits(), forwarded, rest);
                     // Scrolled under a finger here, as this device's own view
                     // of the page; a tap goes over as what it landed on.
-                    for (const int tap : mirrored_graphic_pack_taps(mirrored_graphic_packs, rest,
-                                                                    static_cast<float>(output_width),
-                                                                    static_cast<float>(output_height))) {
-                        if (tap == kMirroredTapCancel) {
+                    for (const int tap : MenuPage::taps_on(mirrored_graphic_packs, rest,
+                                                           static_cast<float>(output_width),
+                                                           static_cast<float>(output_height))) {
+                        if (tap == MenuPage::kTapOffPopup) {
                             companion_session->request_menu_action(net::MenuAction::Cancel);
                         } else {
                             companion_session->request_menu_focus(tap);
@@ -4789,8 +4816,12 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                         companion_session->request_menu_action(wire);
                     }
                 }
+                std::vector<PointerEvent> rest;
                 for (const PointerEvent& pointer : pointers) {
-                    if (!pointer.released) continue;
+                    if (!pointer.released) {
+                        rest.push_back(pointer);
+                        continue;
+                    }
                     // A finger on one of the control prompts is that button
                     // being pressed, forwarded like any other press.
                     const ButtonGlyph on_guide = picker->guide_button_at(pointer.x, pointer.y);
@@ -4815,21 +4846,17 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                         if (forward) companion_session->request_menu_action(wire);
                         continue;
                     }
-                    const auto entry_under = [&](float x, float y) {
-                        return picker->entry_at(x, y, static_cast<float>(output_width),
-                                                static_cast<float>(output_height));
-                    };
-                    // Off an option's popup altogether: put away, as a tap there is here.
-                    if (picker->off_choice_popup(pointer.x, pointer.y, static_cast<float>(output_width), static_cast<float>(output_height)) &&
-                        picker->off_choice_popup(pointer.press_x, pointer.press_y, static_cast<float>(output_width), static_cast<float>(output_height))) {
+                    rest.push_back(pointer);
+                }
+                // Everything else a finger did on the menu drawn here: scrolled here,
+                // as this device's own view of it, and each tap sent over as what it
+                // landed on, heard there as a tap made there would be -- see MenuPage.
+                for (const int tap : MenuPage::taps_on(*picker, rest, static_cast<float>(output_width),
+                                                       static_cast<float>(output_height))) {
+                    if (tap == MenuPage::kTapOffPopup) {
                         companion_session->request_menu_action(net::MenuAction::Cancel);
-                        continue;
-                    }
-                    const int entry = entry_under(pointer.x, pointer.y);
-                    // Only where the finger came down on the same entry it
-                    // left on.
-                    if (entry >= 0 && entry == entry_under(pointer.press_x, pointer.press_y)) {
-                        companion_session->request_menu_press(entry, net::MenuAction::Confirm);
+                    } else {
+                        companion_session->request_menu_focus(tap);
                     }
                 }
                 break;
@@ -6219,13 +6246,15 @@ int App::run(const AppOptions& options) {
                                           impl.state == Impl::State::DataManagement ||
                                           impl.on_cemu_page();
                 if (!for_menu && !for_settings) continue;
-                if (press.has_focus && for_menu) {
-                    impl.picker->set_focus(press.focus);
-                }
-                // A tap on the other device's drawing of the page, resolved
-                // there to what it landed on, answered as a tap here would be.
-                if (press.has_focus && impl.state == Impl::State::GraphicPacks) {
-                    impl.apply_graphic_packs_result(impl.graphic_packs_screen.press_entry(press.focus));
+                // A tap on the other device's drawing of a page, resolved
+                // there to what it landed on, heard by the page with its own
+                // taps -- see MenuPage::take_taps() -- as the update below,
+                // with or without a press, asks it for them.
+                MenuPage* const page = press.has_focus ? impl.page_shown() : nullptr;
+                if (page != nullptr) page->press_entry(press.focus);
+                if (!press.has_action && page != nullptr) {
+                    impl.update_shown_page({});
+                    continue;
                 }
                 if (!press.has_action) continue;
                 const UiAction action = ui_action_for(press.action);

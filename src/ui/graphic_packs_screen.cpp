@@ -405,8 +405,8 @@ void GraphicPacksScreen::scroll_item_into_view(const Geometry& geometry) {
     detail_scroll_ = std::max(0.0f, std::min(detail_scroll_, geometry.detail_max_scroll()));
 }
 
-bool GraphicPacksScreen::drag(const std::vector<PointerEvent>& pointers, float output_width,
-                              float output_height) {
+bool GraphicPacksScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                                float output_height) {
     if (choice_.is_open()) return choice_.scroll(pointers, output_width, output_height);
     const Geometry geometry = compute_geometry(output_width, output_height);
     drag_.update(pointers, geometry.list, scroll_, geometry.max_scroll());
@@ -440,40 +440,44 @@ int GraphicPacksScreen::entry_at(float x, float y, float output_width, float out
     return -1;
 }
 
-bool GraphicPacksScreen::off_choice_popup(float x, float y, float output_width,
-                                          float output_height) const {
+bool GraphicPacksScreen::off_popup(float x, float y, float output_width,
+                                   float output_height) const {
     return choice_.is_open() && !choice_.contains(x, y, output_width, output_height);
 }
 
-GraphicPacksScreenResult GraphicPacksScreen::press_entry(int entry) {
-    GraphicPacksScreenResult result;
-    if (!open_ || entry < 0) return result;
+void GraphicPacksScreen::handle_tap(int entry, GraphicPacksScreenResult& result) {
+    if (!open_) return;
+    if (entry == kTapOffPopup) {
+        // Off a preset's choices: put away, nothing changed.
+        choice_.close();
+        return;
+    }
+    if (entry < 0) return;
     if (entry >= kChoiceEntryBase) {
-        if (!choice_.is_open()) return result;
+        if (!choice_.is_open()) return;
         const int index = entry - kChoiceEntryBase;
-        if (index < 0 || index >= static_cast<int>(choice_.choices().size())) return result;
+        if (index < 0 || index >= static_cast<int>(choice_.choices().size())) return;
         choice_.close();
         choose(index, result);
-        return result;
+        return;
     }
-    if (choice_.is_open()) return result;
+    if (choice_.is_open()) return;
     const int index = entry / 2;
     if (entry % 2 == 0) {
-        if (index >= pack_count()) return result;
+        if (index >= pack_count()) return;
         const bool highlighted = !in_pack_ && focus_ == index;
         focus_ = index;
         in_pack_ = highlighted;
         item_ = 0;
         if (!highlighted) detail_scroll_ = 0.0f;
         scroll_focus_into_view(compute_geometry(last_width_, last_height_));
-        return result;
+        return;
     }
-    if (index >= item_count()) return result;
+    if (index >= item_count()) return;
     const bool highlighted = in_pack_ && item_ == index;
     in_pack_ = true;
     item_ = index;
     if (highlighted) adjust(result);
-    return result;
 }
 
 GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>& pressed,
@@ -489,14 +493,17 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
     last_width_ = output_width;
     last_height_ = output_height;
     const Geometry geometry = compute_geometry(output_width, output_height);
-    // A preset's choices take every press until put away.
+    // A preset's choices take every press until put away -- the buttons
+    // here, a tap the one way every tap is heard, below.
     if (choice_.is_open()) {
-        const ChoicePopupResult answer = choice_.update(actions, pointers, output_width, output_height);
+        const ChoicePopupResult answer = choice_.update(actions, {}, output_width, output_height);
         if (answer.chosen >= 0) choose(answer.chosen, result);
         if (answer.close_everything) {
             result.close_requested = true;
             open_ = false;
+            return result;
         }
+        for (const int tap : take_taps(pointers, output_width, output_height)) handle_tap(tap, result);
         return result;
     }
     const int packs = pack_count();
@@ -572,35 +579,10 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
         scroll_focus_into_view(moved);
         scroll_item_into_view(compute_geometry(output_width, output_height));
     }
-    drag(pointers, output_width, output_height);
-    const Geometry settled = compute_geometry(output_width, output_height);
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released || drag_.release_was_drag() || detail_drag_.release_was_drag()) continue;
-        // A first tap highlights; a second on the same thing chooses it --
-        // a pack, by going into it, and a row in it, by changing it.
-        int focus = 0;
-        bool hit = false;
-        for (std::size_t index = 0; index < lines_.size() && index < settled.lines.size(); ++index) {
-            if (!lines_[index].focusable()) continue;
-            if (pointer.y >= settled.list.y && tapped(pointer, settled.lines[index])) {
-                const bool highlighted = !in_pack_ && focus_ == focus;
-                focus_ = focus;
-                in_pack_ = highlighted;
-                item_ = 0;
-                hit = true;
-                break;
-            }
-            ++focus;
-        }
-        for (std::size_t index = 0; index < settled.items.size() && !hit; ++index) {
-            if (!tapped(pointer, settled.items[index])) continue;
-            const bool highlighted = in_pack_ && item_ == static_cast<int>(index);
-            in_pack_ = true;
-            item_ = static_cast<int>(index);
-            if (highlighted) adjust(result);
-            hit = true;
-        }
-    }
+    // A first tap highlights; a second on the same thing chooses it -- a
+    // pack, by going into it, and a row in it, by changing it. Heard the one
+    // way every tap is, this device's and the other's alike.
+    for (const int tap : take_taps(pointers, output_width, output_height)) handle_tap(tap, result);
     drag_.settle();
     detail_drag_.settle();
 
@@ -802,26 +784,6 @@ void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
         if (!choice_.is_open()) open_choice(compute_geometry(output_width, output_height));
         choice_.set_focus(view.choice_focus - 1);
     }
-}
-
-std::vector<int> mirrored_graphic_pack_taps(GraphicPacksScreen& page,
-                                            const std::vector<PointerEvent>& pointers,
-                                            float output_width, float output_height) {
-    std::vector<int> taps;
-    const bool dragged = page.drag(pointers, output_width, output_height);
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released || dragged) continue;
-        if (page.off_choice_popup(pointer.x, pointer.y, output_width, output_height) &&
-            page.off_choice_popup(pointer.press_x, pointer.press_y, output_width, output_height)) {
-            taps.push_back(kMirroredTapCancel);
-            continue;
-        }
-        const int entry = page.entry_at(pointer.x, pointer.y, output_width, output_height);
-        if (entry >= 0 && entry == page.entry_at(pointer.press_x, pointer.press_y, output_width, output_height)) {
-            taps.push_back(entry);
-        }
-    }
-    return taps;
 }
 
 net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& screen) {

@@ -644,20 +644,9 @@ void LayoutPicker::set_focus(int focus) {
         confirm_cursor_.set_focus(focus - kPopupFocusBase);
         return;
     }
-    if (focus < 0) return;
     MenuSection section = MenuSection::Continue;
     int item = -1;
-    if (focus >= kWideFocusBase) {
-        section = static_cast<MenuSection>(static_cast<int>(MenuSection::ControllerOrder) +
-                                           (focus - kWideFocusBase) / kWideStride);
-        item = (focus - kWideFocusBase) % kWideStride - 1;
-    } else if (focus == kSaveSyncFocus) {
-        section = MenuSection::SaveSync;
-    } else {
-        section = static_cast<MenuSection>(focus / kSectionStride);
-        item = focus % kSectionStride - 1;
-    }
-    if (!has_section(section) || item >= content_count(section)) return;
+    if (!decode_focus(focus, section, item)) return;
     const bool moved = section != section_ || std::max(0, item) != item_ || (item >= 0) != on_content_;
     if (section != section_) content_scroll_ = 0.0f;
     section_ = section;
@@ -700,6 +689,65 @@ int LayoutPicker::entry_at(float x, float y, float output_width, float output_he
         }
     }
     return -1;
+}
+
+bool LayoutPicker::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                          float output_height) {
+    if (confirm_ == MenuConfirm::Choice) return choice_.scroll(pointers, output_width, output_height);
+    if (confirming() || !content_is_list()) return false;
+    // A list on the right, dragged by a finger or turned by the wheel.
+    const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
+    const float step = content_row_step(geometry);
+    float pixels = content_scroll_ * step;
+    content_drag_.set_wheel_row(step);
+    content_drag_.update(pointers, geometry.content, pixels, content_max_scroll(geometry) * step);
+    content_scroll_ = step > 0.0f ? pixels / step : 0.0f;
+    return content_drag_.release_was_drag();
+}
+
+bool LayoutPicker::off_popup(float x, float y, float output_width, float output_height) const {
+    return off_choice_popup(x, y, output_width, output_height);
+}
+
+bool LayoutPicker::decode_focus(int focus, MenuSection& section, int& item) const {
+    if (focus < 0 || (focus >= kPopupFocusBase && focus < kWideFocusBase && focus != kSaveSyncFocus)) {
+        return false;
+    }
+    if (focus >= kWideFocusBase) {
+        section = static_cast<MenuSection>(static_cast<int>(MenuSection::ControllerOrder) +
+                                           (focus - kWideFocusBase) / kWideStride);
+        item = (focus - kWideFocusBase) % kWideStride - 1;
+    } else if (focus == kSaveSyncFocus) {
+        section = MenuSection::SaveSync;
+        item = -1;
+    } else {
+        section = static_cast<MenuSection>(focus / kSectionStride);
+        item = focus % kSectionStride - 1;
+    }
+    return has_section(section) && item < content_count(section);
+}
+
+void LayoutPicker::handle_tap(int entry, LayoutPickerResult& result) {
+    MenuSection section = MenuSection::Continue;
+    int item = -1;
+    if (!decode_focus(entry, section, item)) return;
+    if (item < 0) {
+        const bool highlighted = !on_content_ && section_ == section;
+        if (section != section_) content_scroll_ = 0.0f;
+        section_ = section;
+        on_content_ = false;
+        if (highlighted) activate_section(result);
+        return;
+    }
+    const bool highlighted = on_content_ && section_ == section && item_ == item;
+    if (section != section_) content_scroll_ = 0.0f;
+    section_ = section;
+    on_content_ = true;
+    item_ = item;
+    // A layout, and the swap or stylus button beside them, are chosen by the
+    // first tap: each is undone by tapping the one before, and seeing it is
+    // the point of trying one.
+    if (highlighted || section_ == MenuSection::Layout) activate_item(result);
 }
 
 void LayoutPicker::ask(MenuConfirm confirm) {
@@ -1016,7 +1064,19 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     if (confirm_ == MenuConfirm::Choice) {
         const int was = choice_.current();
         const int count = static_cast<int>(choice_.choices().size());
-        const ChoicePopupResult answer = choice_.update(actions, pointers, output_width, output_height);
+        ChoicePopupResult answer = choice_.update(actions, {}, output_width, output_height);
+        // A tap, from this device or the other, heard the one way every tap
+        // is: a choice is chosen at once, and off the popup puts it away.
+        for (const int tap : take_taps(pointers, output_width, output_height)) {
+            if (answer.chosen >= 0 || answer.closed) break;
+            if (tap == kTapOffPopup) {
+                choice_.close();
+                answer.closed = true;
+            } else if (tap >= kPopupFocusBase && tap - kPopupFocusBase < count) {
+                choice_.close();
+                answer.chosen = tap - kPopupFocusBase;
+            }
+        }
         if (answer.chosen >= 0 && item_ < static_cast<int>(options_.size()) && count > 0) {
             const int steps = was < 0 ? answer.chosen : ((answer.chosen - was) % count + count) % count;
             if (steps > 0 || was < 0) {
@@ -1045,8 +1105,14 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     // question on screen, so nothing behind it moves, cycles or opens.
     if (confirming()) {
         const PopupGeometry popup = confirm_popup(output_width, output_height);
-        const int answer = confirm_cursor_.update(actions, pointers, popup);
+        int answer = confirm_cursor_.update(actions, {}, popup);
         const int count = static_cast<int>(popup.buttons.size());
+        // A tap on one of its buttons, from this device or the other, presses
+        // it.
+        for (const int tap : take_taps(pointers, output_width, output_height)) {
+            if (answer != PopupCursor::kNone) break;
+            if (tap >= kPopupFocusBase && tap - kPopupFocusBase < count) answer = tap - kPopupFocusBase;
+        }
         // The last button is the thing asked about -- a notice's only one,
         // its OK -- and the first, where there are two, is Cancel. B is
         // Cancel, and for a notice, with only the one answer, is OK.
@@ -1107,47 +1173,15 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             content_drag_.stop();
             keep_item_in_view(output_width, output_height);
         }
-        // A list on the right, dragged by a finger or turned by the wheel.
-        if (content_is_list()) {
-            const MenuGeometry before = compute_menu_geometry(output_width, output_height);
-            const float step = content_row_step(before);
-            float scroll = content_scroll_ * step;
-            content_drag_.set_wheel_row(step);
-            content_drag_.update(pointers, before.content, scroll, content_max_scroll(before) * step);
-            content_scroll_ = step > 0.0f ? scroll / step : 0.0f;
-        }
         // Touch: a first tap highlights the thing under the finger, and a
         // second on the same thing chooses it -- so a finger landing on the
-        // wrong tile moves the cursor rather than changing the game.
-        const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
-        for (const PointerEvent& pointer : pointers) {
-            if (!pointer.released || confirming()) continue;
-            if (content_drag_.release_was_drag()) continue;
-            bool hit = false;
-            for (std::size_t index = 0; index < geometry.sections.size() && !hit; ++index) {
-                if (!tapped(pointer, geometry.sections[index])) continue;
-                const bool highlighted = !on_content_ && section_ == sections_[index];
-                section_ = sections_[index];
-                on_content_ = false;
-                if (highlighted) activate_section(result);
-                hit = true;
-            }
-            for (std::size_t index = 0; index < geometry.items.size() && !hit; ++index) {
-                // A long list's rows past the area are not on screen to tap.
-                if (!tapped(pointer, geometry.items[index]) ||
-                    !geometry.content.contains(pointer.x, pointer.y)) {
-                    continue;
-                }
-                const bool highlighted = on_content_ && item_ == static_cast<int>(index);
-                on_content_ = true;
-                item_ = static_cast<int>(index);
-                // A layout, and the swap or stylus button beside them, are
-                // chosen by the first tap: each is undone by tapping the one
-                // before, and seeing it is the point of trying one.
-                if (highlighted || section_ == MenuSection::Layout) activate_item(result);
-                hit = true;
-            }
+        // wrong tile moves the cursor rather than changing the game. Heard
+        // the one way every tap is, this device's and the other's alike.
+        for (const int tap : take_taps(pointers, output_width, output_height)) {
+            if (confirming()) break;
+            handle_tap(tap, result);
         }
+        const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
         content_drag_.settle();
         content_scroll_ = std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry));
     }
