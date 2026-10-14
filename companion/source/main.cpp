@@ -2014,8 +2014,14 @@ void Client::draw_scene() {
     // All three are drawn over the game with GL, so the game has to be drawn
     // that way too while any is up.
     const bool resume_notice = session_.host_resume_notice();
-    const bool unavailable_notice = session_.host_menu_unavailable_notice();
-    router_.decide(!menu_open_ && !resume_notice && !unavailable_notice);
+    // The host's corner notice, shown here too while it shows it; a host
+    // from before those were sent says only that its menu would not open.
+    const std::string corner_notice = !session_.host_corner_notice().empty()
+                                          ? session_.host_corner_notice()
+                                          : session_.host_menu_unavailable_notice()
+                                                ? std::string(kMenuUnavailableNotice)
+                                                : std::string();
+    router_.decide(!menu_open_ && !resume_notice && corner_notice.empty());
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -2060,10 +2066,8 @@ void Client::draw_scene() {
             render_notice_popup(quads_, text_, button_glyphs_, width, height, kResumedNotice);
         }
     }
-    // The menu the host could not open, for as long as the host shows it.
-    if (unavailable_notice) {
-        render_corner_notice(quads_, text_, width, height, kMenuUnavailableNotice);
-    }
+    // For as long as the host shows it.
+    if (!corner_notice.empty()) render_corner_notice(quads_, text_, width, height, corner_notice);
 }
 
 #ifdef __SWITCH__

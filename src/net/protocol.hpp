@@ -423,6 +423,10 @@ struct SessionStateMessage {
     // the other device's menus take as their accent while it is connected,
     // or -1 for none said. A byte, the index plus one. Last, and optional.
     int favorite_color = -1;
+    // The few words in the host's top right corner -- "Scanning…", a setting
+    // that changes on a reset -- for the other device to show in its own, or
+    // empty. Last, and optional.
+    std::string corner_notice;
 };
 
 struct FrameMessage {

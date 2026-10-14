@@ -5318,6 +5318,10 @@ void App::Impl::render() {
     if (const std::string notice = shown_corner_notice(); !notice.empty()) {
         render_corner_notice(quads, text, width, height, notice);
     } else if (state == State::Companion && companion_session &&
+               !companion_session->host_corner_notice().empty()) {
+        // The host's, shown here as well while it shows it.
+        render_corner_notice(quads, text, width, height, companion_session->host_corner_notice());
+    } else if (state == State::Companion && companion_session &&
                companion_session->host_menu_unavailable_notice()) {
         render_corner_notice(quads, text, width, height, kMenuUnavailableNotice);
     }
@@ -5984,6 +5988,8 @@ int App::run(const AppOptions& options) {
             shared.graphic_packs_available = impl.graphic_packs_available();
             shared.amiibo_available = impl.amiibo_available();
             shared.favorite_color = impl.settings.ds_favorite_color;
+            // Whatever is in this device's corner is in the other's too.
+            shared.corner_notice = impl.shown_corner_notice();
             if (impl.picker && impl.system == SystemId::WiiU) {
                 shared.producer_options = impl.picker->state().producer_options;
                 shared.producer_choices = impl.picker->state().producer_choices;

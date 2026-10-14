@@ -189,6 +189,8 @@ public:
         std::vector<std::vector<std::string>> producer_choices;
         // See SessionStateMessage::favorite_color.
         int favorite_color = -1;
+        // See SessionStateMessage::corner_notice.
+        std::string corner_notice;
         std::vector<std::string> amiibo;
         std::string amiibo_folder;
         // The settings screen, which is this device's own rather than shared:

@@ -581,6 +581,9 @@ public:
     // The host's favorite color, which this device's menus take as their
     // accent while connected, or -1 before it has said.
     int host_favorite_color() const { return host_favorite_color_; }
+    // SessionStateMessage::corner_notice: what to show in this device's
+    // corner while the host shows it in its own, or empty.
+    const std::string& host_corner_notice() const { return host_corner_notice_; }
     const std::vector<std::vector<std::string>>& host_producer_choices() const {
         return host_producer_choices_;
     }
@@ -1130,6 +1133,7 @@ private:
     std::vector<std::pair<std::string, std::string>> host_producer_options_;
     std::vector<std::vector<std::string>> host_producer_choices_;
     int host_favorite_color_ = -1;
+    std::string host_corner_notice_;
     std::vector<std::string> host_amiibo_;
     std::string host_amiibo_folder_;
     int host_max_render_scale_ = 1;

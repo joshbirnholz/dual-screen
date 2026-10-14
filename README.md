@@ -410,8 +410,8 @@ Three things are different about a Wii U session:
   a game only sees a figure for the couple of seconds it is there, which a
   paused one would miss, and one coming back from its HOME Menu (Breath of
   the Wild) shows a loading icon of its own for a moment first. Until Cemu
-  says it has been read, the top right corner says **Scanning…**; the game
-  says the rest. A file that is not an amiibo dump is said to be so
+  says it has been read, the top right corner says **Scanning…** -- on the
+  connected device too, as every corner alert is; the game says the rest. A file that is not an amiibo dump is said to be so
   in a popup, and the menu stays up.
 
 - **Show Pointer** shows or hides the mouse pointer over Cemu's window, as it does
