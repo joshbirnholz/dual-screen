@@ -187,6 +187,8 @@ public:
         bool amiibo_available = false;
         std::vector<std::pair<std::string, std::string>> producer_options;
         std::vector<std::vector<std::string>> producer_choices;
+        // See SessionStateMessage::favorite_color.
+        int favorite_color = -1;
         std::vector<std::string> amiibo;
         std::string amiibo_folder;
         // The settings screen, which is this device's own rather than shared:

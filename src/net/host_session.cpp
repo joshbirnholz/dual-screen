@@ -606,6 +606,7 @@ void HostSession::set_session_state(const SharedState& state) {
         state.amiibo_available != shared_.amiibo_available ||
         state.producer_options != shared_.producer_options || state.amiibo != shared_.amiibo ||
         state.producer_choices != shared_.producer_choices ||
+        state.favorite_color != shared_.favorite_color ||
         state.amiibo_folder != shared_.amiibo_folder ||
         state.max_render_scale != shared_.max_render_scale ||
         state.cursor_choosable != shared_.cursor_choosable ||
@@ -1246,6 +1247,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.amiibo_available = shared_.amiibo_available;
         state.producer_options = shared_.producer_options;
         state.producer_choices = shared_.producer_choices;
+        state.favorite_color = shared_.favorite_color;
         state.amiibo = shared_.amiibo;
         state.amiibo_folder = shared_.amiibo_folder;
         state.max_render_scale = static_cast<uint8_t>(std::max(1, shared_.max_render_scale));

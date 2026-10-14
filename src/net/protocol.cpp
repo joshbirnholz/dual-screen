@@ -323,6 +323,9 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
         put_u8(out, static_cast<uint8_t>(count));
         for (std::size_t at = 0; at < count; ++at) put_string(out, choices[at]);
     }
+    put_u8(out, static_cast<uint8_t>(message.favorite_color >= 0 && message.favorite_color < 255
+                                         ? message.favorite_color + 1
+                                         : 0));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -1219,6 +1222,12 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
             }
             out.producer_choices.push_back(std::move(choices));
         }
+    }
+    out.favorite_color = -1;
+    if (reader.remaining() > 0) {
+        uint8_t color = 0;
+        reader.u8(color);
+        out.favorite_color = static_cast<int>(color) - 1;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

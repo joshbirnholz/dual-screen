@@ -5905,6 +5905,7 @@ int App::run(const AppOptions& options) {
                                    impl.on_cemu_page();
             shared.graphic_packs_available = impl.graphic_packs_available();
             shared.amiibo_available = impl.amiibo_available();
+            shared.favorite_color = impl.settings.ds_favorite_color;
             if (impl.picker && impl.system == SystemId::WiiU) {
                 shared.producer_options = impl.picker->state().producer_options;
                 shared.producer_choices = impl.picker->state().producer_choices;
@@ -6402,6 +6403,11 @@ int App::run(const AppOptions& options) {
         set_live_pointer(impl.input.pointer_active(), impl.input.pointer_x(),
                          impl.input.pointer_y());
         set_live_wheel(impl.input.wheel(), impl.input.mouse_x(), impl.input.mouse_y());
+        // Connected to another device's game, its menus' color: the host's.
+        follow_favorite_color_accent(impl.settings.ds_favorite_color,
+                                     impl.companion_session
+                                         ? impl.companion_session->host_favorite_color()
+                                         : -1);
         {
             std::vector<PointerEvent> pointers = impl.input.pointer_events();
             // Taps on the menu as Cemu draws it over the game, which land

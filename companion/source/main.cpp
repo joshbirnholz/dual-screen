@@ -1774,6 +1774,12 @@ void Client::run() {
         std::vector<PointerEvent> pointers = input_.pointer_events();
         set_live_pointer(input_.pointer_active(), input_.pointer_x(), input_.pointer_y());
         set_live_wheel(input_.wheel(), input_.mouse_x(), input_.mouse_y());
+        // Connected to another device's game, its menus' color: the host's.
+#if DS_LOCAL_PLAY
+        follow_favorite_color_accent(settings_.ds_favorite_color, session_.host_favorite_color());
+#else
+        follow_favorite_color_accent(kDsDefaultFavoriteColor, session_.host_favorite_color());
+#endif
         route_guide_taps(actions, pointers);
         const bool tapped = std::any_of(pointers.begin(), pointers.end(),
                                         [](const PointerEvent& pointer) { return pointer.released; });

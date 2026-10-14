@@ -417,8 +417,12 @@ struct SessionStateMessage {
     bool lcd_filter_choosable = false;
     bool lcd_filter = false;
     // Each of producer_options' choices, in order, so the other device draws
-    // the same popup when one is opened. Last, and optional.
+    // the same popup when one is opened. Optional.
     std::vector<std::vector<std::string>> producer_choices;
+    // The host's favorite color -- an index into kDsFavoriteColors -- which
+    // the other device's menus take as their accent while it is connected,
+    // or -1 for none said. A byte, the index plus one. Last, and optional.
+    int favorite_color = -1;
 };
 
 struct FrameMessage {

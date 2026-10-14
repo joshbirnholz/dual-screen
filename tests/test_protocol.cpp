@@ -16,8 +16,8 @@ using namespace ds;
 namespace {
 // What every session state ends with now, empty: the whole focus, then no
 // Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
-// then no lists of Cemu's choices.
-constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2;
+// then no lists of Cemu's choices, then the favorite color's byte.
+constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2 + 1;
 }  // namespace
 using namespace ds::net;
 
@@ -323,7 +323,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 3, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 4, received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
     state.lcd_filter = false;
@@ -336,12 +336,23 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.producer_choices == state.producer_choices);
     state.producer_choices.clear();
+    // The host's favorite color, for the other device's menus; and none said
+    // by a host from before it was sent.
+    state.favorite_color = 7;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK_EQ(received_state.favorite_color, 7);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK_EQ(received_state.favorite_color, -1);
+    state.favorite_color = -1;
     state.menu_focus = 40;
     buffer.clear();
     encode_session_state(state, buffer);
     CHECK(one_message(buffer, type, payload));
     const std::size_t tail =
-        2 + 2 + (2 + 9 + 2 + 7) + (2 + 8 + 2 + 4) + 2 + (2 + 4) + (2 + 5) + (2 + 17);
+        2 + 2 + (2 + 9 + 2 + 7) + (2 + 8 + 2 + 4) + 2 + (2 + 4) + (2 + 5) + (2 + 17) + 1;
     CHECK(decode_session_state(payload.data(), payload.size() - tail, received_state));
     CHECK_EQ(received_state.menu_focus, static_cast<uint16_t>(40));
     CHECK(received_state.producer_options.empty() && received_state.amiibo.empty());
