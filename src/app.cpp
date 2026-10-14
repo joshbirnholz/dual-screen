@@ -2284,6 +2284,7 @@ MenuPage* App::Impl::page_shown() {
     switch (state) {
         case State::Menu: return picker.get();
         case State::GraphicPacks: return &graphic_packs_screen;
+        case State::Controllers: return &controllers_screen;
         default: return nullptr;
     }
 }
@@ -2298,6 +2299,7 @@ void App::Impl::update_shown_page(const std::vector<UiAction>& actions) {
             }
             break;
         case State::GraphicPacks: update_graphic_packs_screen(actions, {}); break;
+        case State::Controllers: update_controllers_screen(actions, {}); break;
         default: break;
     }
 }
@@ -4731,6 +4733,13 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 if (companion_session->host_controllers_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_controllers.guide_hits(), forwarded, rest);
+                    // Scrolled here, as this device's own view of the list;
+                    // a tap goes over as the row it landed on.
+                    for (const int tap : MenuPage::taps_on(mirrored_controllers, rest,
+                                                           static_cast<float>(output_width),
+                                                           static_cast<float>(output_height))) {
+                        if (tap >= 0) companion_session->request_menu_focus(tap);
+                    }
                 } else if (companion_session->host_graphic_packs_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_graphic_packs.guide_hits(), forwarded, rest);

@@ -197,40 +197,30 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& p
     }
 
     // The view follows the cursor when it moves, and a finger otherwise.
+    row_count_ = row_count();
+    gap_before_ = first_unused_row(rows);
     if (!actions.empty()) {
         drag_.stop();
         scroll_focus_into_view(output_width, output_height, row_count(), first_unused_row(rows));
     }
-    {
-        const Geometry before =
-            compute_geometry(output_width, output_height, row_count(), first_unused_row(rows));
-        const float view = before.view_bottom - before.view_top;
-        drag_.update(pointers,
-                     PixelRect{before.panel.x, before.view_top, before.panel.w, view}, scroll_,
-                     std::max(0.0f, before.content_height - view));
-    }
-    const Geometry geometry =
-        compute_geometry(output_width, output_height, row_count(), first_unused_row(rows));
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released || drag_.release_was_drag()) continue;
-        for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
-            if (!tapped(pointer, geometry.rows[index])) continue;
-            if (holding_) {
-                // Carried to where the finger landed, a step at a time.
-                const int target = static_cast<int>(index);
-                for (int guard = 0; guard < row_count() && focus_ != target; ++guard) {
-                    const int before = focus_;
-                    move_held(target < focus_ ? -1 : 1);
-                    if (focus_ == before || focus_ < 0) break;
-                }
-                holding_ = false;
-            } else {
-                // Highlighted by a first tap, and taken up or put down by a
-                // second on the same row.
-                if (tap_chooses(focus_, static_cast<int>(index))) activate();
+    // A tap, from this device or the other, heard the one way every tap is.
+    for (const int index : take_taps(pointers, output_width, output_height)) {
+        if (index < 0 || index >= row_count()) continue;
+        if (holding_) {
+            // Carried to where the finger landed, a step at a time.
+            for (int guard = 0; guard < row_count() && focus_ != index; ++guard) {
+                const int before = focus_;
+                move_held(index < focus_ ? -1 : 1);
+                if (focus_ == before || focus_ < 0) break;
             }
-            break;
+            holding_ = false;
+        } else {
+            // Highlighted by a first tap, and taken up or put down by a
+            // second on the same row.
+            if (tap_chooses(focus_, index)) activate();
         }
+        row_count_ = row_count();
+        gap_before_ = first_unused_row(rows);
     }
     focus_ = std::max(0, std::min(focus_, row_count() - 1));
     drag_.settle();
@@ -395,7 +385,32 @@ void ControllersScreen::show_mirrored(int focus, bool holding, float output_widt
     const std::vector<LineupRow> rows = lineup_rows(line_up_pads(pads, order, gamepad_here));
     const int row_count = static_cast<int>(rows.size()) + kExtraRows;
     focus_ = std::max(0, std::min(focus, row_count - 1));
-    scroll_focus_into_view(output_width, output_height, row_count, first_unused_row(rows));
+    row_count_ = row_count;
+    gap_before_ = first_unused_row(rows);
+    if (focus_ != mirrored_focus_ || holding_ != mirrored_holding_) {
+        drag_.stop();
+        scroll_focus_into_view(output_width, output_height, row_count, first_unused_row(rows));
+        mirrored_focus_ = focus_;
+        mirrored_holding_ = holding_;
+    }
+}
+
+bool ControllersScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                               float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height, row_count_, gap_before_);
+    const float view = geometry.view_bottom - geometry.view_top;
+    drag_.update(pointers, PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w, view}, scroll_,
+                 std::max(0.0f, geometry.content_height - view));
+    return drag_.release_was_drag();
+}
+
+int ControllersScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height, row_count_, gap_before_);
+    if (y < geometry.view_top || y > geometry.view_bottom) return -1;
+    for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
+        if (geometry.rows[index].contains(x, y)) return static_cast<int>(index);
+    }
+    return -1;
 }
 
 net::ControllersViewMessage controllers_view_of(const ControllersScreen& screen,

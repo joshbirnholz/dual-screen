@@ -12,6 +12,7 @@
 #include "render/texture.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/sound_view.hpp"
 
 namespace ds {
@@ -34,7 +35,7 @@ struct ControllersScreenResult {
 // To tell which row is which, press either upper face button -- X or Y, which
 // sit the other way round on a Nintendo pad from an Xbox one -- and the
 // controller on the focused row gives a short buzz.
-class ControllersScreen {
+class ControllersScreen : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
@@ -87,6 +88,14 @@ public:
                        const std::vector<KnownPad>& pads, bool gamepad_here,
                        const PadOrder& order);
 
+    // MenuPage: the list scrolls under a finger, the mouse and the wheel --
+    // on the device drawing the other's screen too, as its own view of it --
+    // and an entry is a row, by its index.
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float, float, float, float) const override { return false; }
+
 private:
     struct Geometry {
         std::vector<PixelRect> rows;
@@ -116,6 +125,14 @@ private:
     std::string held_;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    // How many rows the list had when last laid out, and the first of Not
+    // used -- what a point is on, and how far the list scrolls, follow them.
+    int row_count_ = 0;
+    int gap_before_ = -1;
+    // The other device's cursor as last drawn here: the view follows it only
+    // when it moves, and is otherwise where a finger here left it.
+    int mirrored_focus_ = -1;
+    bool mirrored_holding_ = false;
     // Where the prompts at the foot of the page were drawn -- see take_guide_taps().
     std::vector<GuideHit> guide_hits_;
 };

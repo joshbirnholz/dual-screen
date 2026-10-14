@@ -1154,6 +1154,14 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
         // The host's Graphics Packs page, drawn here, scrolls under a finger
         // here -- its own view of the page -- and a tap goes over as what it
         // landed on.
+        // And its Controller Order the same way: a tap goes over as the row.
+        if (session_.host_controllers_view().open) {
+            for (const int tap : MenuPage::taps_on(mirrored_controllers_, pointers,
+                                                   static_cast<float>(output_width_),
+                                                   static_cast<float>(output_height_))) {
+                if (tap >= 0) session_.request_menu_focus(tap);
+            }
+        }
         if (session_.host_graphic_packs_view().open) {
             for (const int tap : MenuPage::taps_on(mirrored_graphic_packs_, pointers,
                                                    static_cast<float>(output_width_),
