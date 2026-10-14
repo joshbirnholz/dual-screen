@@ -48,6 +48,10 @@ struct LibretroSourceConfig {
     // A Rumble Pak in the DS's GBA slot, where the core offers one -- see
     // LibretroCoreScreenSource::offers_rumble_pak().
     bool rumble_pak = false;
+    // The DS's owner -- see Settings::ds_nickname and ds_favorite_color.
+    // Empty and -1 leave the core's own.
+    std::string nickname;
+    int favorite_color = -1;
 };
 
 // The V1 ScreenSource: hosts the melonDS DS libretro core, pins it to a single

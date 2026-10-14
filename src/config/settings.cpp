@@ -151,6 +151,9 @@ Settings Settings::load(const AppPaths& paths) {
         expand_user_path(get_or<std::string>(document, "wii_u_mlc_path", settings.wii_u_mlc_path));
     settings.pause_wii_u_in_menu =
         get_or<bool>(document, "pause_wii_u_in_menu", settings.pause_wii_u_in_menu);
+    settings.ds_nickname = get_or<std::string>(document, "ds_nickname", settings.ds_nickname);
+    settings.ds_favorite_color = get_or<int>(document, "ds_favorite_color", settings.ds_favorite_color);
+    if (settings.ds_favorite_color < -1 || settings.ds_favorite_color > 15) settings.ds_favorite_color = -1;
     {
         const std::string tv = get_or<std::string>(document, "wii_u_tv_audio", "stereo");
         settings.wii_u_tv_audio = tv == "mono" ? 0 : tv == "surround" ? 2 : 1;
@@ -239,6 +242,8 @@ bool Settings::save(const AppPaths& paths) const {
     document["wii_u_arguments"] = wii_u_arguments;
     if (!wii_u_mlc_path.empty()) document["wii_u_mlc_path"] = wii_u_mlc_path;
     document["pause_wii_u_in_menu"] = pause_wii_u_in_menu;
+    if (!ds_nickname.empty()) document["ds_nickname"] = ds_nickname;
+    if (ds_favorite_color >= 0) document["ds_favorite_color"] = ds_favorite_color;
     document["wii_u_tv_audio"] = wii_u_tv_audio == 0 ? "mono" : wii_u_tv_audio == 2 ? "surround" : "stereo";
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;

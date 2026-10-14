@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -15,6 +16,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/choice_popup.hpp"
+#include "ui/text_entry.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/sound_view.hpp"
@@ -114,6 +116,22 @@ public:
     // Straight to the Emulators page, as its row does.
     void open_emulators_page();
     bool is_open() const { return open_; }
+    // A name being typed: the keyboard is to type into it -- see
+    // InputManager::set_text_entry() -- and what it typed comes in through
+    // type(), before update().
+    bool wants_text() const { return text_entry_.is_open(); }
+    void type(const std::string& typed, int backspaces) {
+        typed_ = typed;
+        backspaces_ = backspaces;
+    }
+    // A platform's own keyboard for typing a name -- a Switch's -- in place
+    // of the popup: shown at once, true with what was typed, false if put
+    // away.
+    void set_text_editor(std::function<bool(const std::string& header, const std::string& initial,
+                                            std::size_t max, std::string& out)>
+                             editor) {
+        text_editor_ = std::move(editor);
+    }
 
     const Settings& settings() const { return settings_; }
     // Whether a paused game is behind it, to be dimmed rather than covered.
@@ -152,6 +170,8 @@ private:
 #endif
         VideoHold,
         RunAheadDs,
+        DsNickname,
+        DsFavoriteColor,
         Vsync,
 #if DS_PLAYS_WII_U
         WiiUScreenAlone,
@@ -267,6 +287,13 @@ private:
     std::vector<Entry> entries_;
     // A row's choices, up beside it -- see focused_choices().
     ChoicePopup choice_;
+    // The DS nickname being typed -- see type().
+    TextEntryPopup text_entry_;
+    std::string typed_;
+    int backspaces_ = 0;
+    std::function<bool(const std::string& header, const std::string& initial, std::size_t max,
+                       std::string& out)>
+        text_editor_;
 
     // How far down the list has been pushed, in pixels. Pixels rather than
     // rows, because what is below the rows -- the cores, then the BIOS files

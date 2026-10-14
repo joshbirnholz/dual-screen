@@ -100,6 +100,10 @@ public:
 
     // --- setup, before load() ---
     void set_system_directory(const std::string& directory);
+    // The player's name, given to a core that asks the frontend for it
+    // (RETRO_ENVIRONMENT_GET_USERNAME) -- melonDS DS, for the DS's own.
+    // Empty answers that there is none.
+    void set_username(std::string username) { username_ = std::move(username); }
     void set_save_directory(const std::string& directory);
     void set_audio_callback(AudioCallback callback);
     // Whether the core wants the controller's motor running -- a DS game with
@@ -270,6 +274,7 @@ private:
     bool options_registered_ = false;
 
     std::string system_directory_;
+    std::string username_;
     std::string save_directory_;
     std::string core_name_;
     std::string core_version_;

@@ -39,9 +39,46 @@ struct UiTheme {
 // which is what rules out going much below this.
 constexpr float kSelectedTileOpacity = 0.75f;
 
-inline const UiTheme& ui_theme() {
-    static const UiTheme theme;
+// The theme, its accent the player's own where they have chosen one -- see
+// set_ui_accent().
+inline UiTheme& mutable_ui_theme() {
+    static UiTheme theme;
     return theme;
+}
+inline const UiTheme& ui_theme() { return mutable_ui_theme(); }
+
+// The cursor ring's two ends, which follow the accent: see set_ui_accent().
+struct AccentRing {
+    Color left{0.36f, 0.72f, 1.0f, 1.0f};
+    Color right{0.62f, 0.52f, 1.0f, 1.0f};
+};
+inline AccentRing& accent_ring() {
+    static AccentRing ring;
+    return ring;
+}
+
+// The accent everything is drawn in -- the cursor's ring, a chosen tab's
+// words, a switch turned on -- made the player's favorite color: solid where
+// it is words or a fill, and running from a lighter to a deeper shade of it
+// round the ring. A color too dark to read on the menus' dark background is
+// lightened until it is.
+inline void set_ui_accent(const Color& color) {
+    const auto mix = [](const Color& from, const Color& to, float amount) {
+        return Color{from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount,
+                     from.b + (to.b - from.b) * amount, 1.0f};
+    };
+    const auto luma = [](const Color& c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; };
+    const Color white{1.0f, 1.0f, 1.0f, 1.0f};
+    Color readable{color.r, color.g, color.b, 1.0f};
+    for (int step = 0; step < 10 && luma(readable) < 0.38f; ++step) readable = mix(readable, white, 0.15f);
+    mutable_ui_theme().accent = readable;
+    accent_ring().left = mix(readable, white, 0.3f);
+    accent_ring().right = mix(readable, Color{0.0f, 0.0f, 0.0f, 1.0f}, 0.25f);
+}
+// Back to the app's own blue, and its ring's run into violet.
+inline void reset_ui_accent() {
+    mutable_ui_theme().accent = UiTheme().accent;
+    accent_ring() = AccentRing();
 }
 
 // How thick a menu's outlines are: two pixels at the size the design was drawn
@@ -58,10 +95,10 @@ inline float menu_two_line_row_height(float line) { return std::round(line * 4.0
 inline float menu_row_gap(float line) { return std::round(line * 0.3f); }
 inline float menu_row_pad(float line) { return std::round(line * 0.9f); }
 
-// The cursor's ring, as a Switch draws it: the accent running into a softer
-// violet across the row.
-inline Color menu_ring_left() { return ui_theme().accent; }
-inline Color menu_ring_right() { return Color{0.62f, 0.52f, 1.0f, 1.0f}; }
+// The cursor's ring, as a Switch draws it: the accent running across the row
+// into another shade -- violet for the app's own blue -- see set_ui_accent().
+inline Color menu_ring_left() { return accent_ring().left; }
+inline Color menu_ring_right() { return accent_ring().right; }
 
 // The cursor's ring and the faint fill inside it, round `rect`.
 inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float radius, float scale) {

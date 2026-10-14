@@ -61,6 +61,10 @@ constexpr const char* kOptLegacyOpenGl = "melonds_opengl_renderer";
 // and on a Switch, whose cores are a third the speed of a Deck's, it is the
 // difference between a game that keeps up and one that does not.
 constexpr const char* kOptThreadedRenderer = "melonds_threaded_renderer";
+// The DS's firmware settings melonDS DS overrides: its owner's name -- asked
+// of the frontend with "guess_username" -- and favorite color, 0 to 15.
+constexpr const char* kOptFirmwareUsername = "melonds_firmware_username";
+constexpr const char* kOptFirmwareFavoriteColor = "melonds_firmware_favorite_color";
 // The microphone. melonDS can synthesise the blow a DS game is listening for,
 // which is the only way in here: the libretro microphone interface this app
 // does not implement is exactly what the core reports missing at start-up
@@ -226,6 +230,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     }
 
     core_->set_system_directory(config.system_directory);
+    core_->set_username(system_ == SystemId::Ds ? config.nickname : std::string());
     core_->set_save_directory(config.save_directory);
     core_->set_input_state(input_sink_.state_pointer());
 
@@ -260,6 +265,16 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             // touch arrives as a libretro pointer
             core_->force_option(kOptTouchMode, std::vector<std::string>{"touch", "Touch"});
             core_->force_option(kOptThreadedRenderer, {"enabled"}, Requirement::IfPresent);
+            // The owner's name, which melonDS DS asks the frontend for when
+            // told to guess it -- see LibretroCore::set_username() -- and
+            // their favorite color.
+            if (!config.nickname.empty()) {
+                core_->force_option(kOptFirmwareUsername, {"guess_username"}, Requirement::IfPresent);
+            }
+            if (config.favorite_color >= 0 && config.favorite_color <= 15) {
+                core_->force_option(kOptFirmwareFavoriteColor, {std::to_string(config.favorite_color)},
+                                    Requirement::IfPresent);
+            }
         }
             // Blow rather than silence, and only while the button is held --
             // "always" would have the console blown into for the whole

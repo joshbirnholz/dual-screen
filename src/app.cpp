@@ -48,6 +48,8 @@
 #include "render/frame_delay.hpp"
 #include "render/menu_backdrop.hpp"
 #include "render/menu_overlay.hpp"
+#include "ui/accent.hpp"
+#include "ui/system_keyboard.hpp"
 #include "ui/menu_actions.hpp"
 #include "render/gl_loader.hpp"
 #include "render/gl_window.hpp"
@@ -3740,6 +3742,7 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     if (result.settings_changed) {
         const int previous_tv_audio = settings.wii_u_tv_audio;
         settings = settings_screen->settings();
+        apply_favorite_color_accent(settings.ds_favorite_color);
         ui_sounds.set_enabled(settings.ui_sounds);
         apply_wii_u_tv_audio(previous_tv_audio);
         if (!settings.save(paths)) {
@@ -3919,6 +3922,8 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
     source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
     source_config.render_scale = render_scale;
     source_config.rumble_pak = have_game_config && game_config.rumble_pak;
+    source_config.nickname = settings.ds_nickname;
+    source_config.favorite_color = settings.ds_favorite_color;
 
     source.reset(new LibretroCoreScreenSource());
     source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {
@@ -4776,6 +4781,8 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 
 
         case State::Settings: {
+            // A name being typed, from the keyboard -- see wants_text().
+            settings_screen->type(input.typed_text(), input.backspaces());
             apply_settings_result(
                 settings_screen->update(actions, pointers, static_cast<float>(output_width),
                                         static_cast<float>(output_height)));
@@ -5279,6 +5286,7 @@ int App::run(const AppOptions& options) {
     }
 
     impl.settings = Settings::load(impl.paths);
+    apply_favorite_color_accent(impl.settings.ds_favorite_color);
     impl.adopt_legacy_handedness();
     impl.apply_button_style();
     if (!options.system_dir.empty()) {
@@ -5434,6 +5442,7 @@ int App::run(const AppOptions& options) {
         [&input = impl.input](UiAction direction) { return input.direction_repeating(direction); });
     impl.apply_system();
     impl.settings_screen.reset(new SettingsScreen(impl.paths));
+    if (system_keyboard_available()) impl.settings_screen->set_text_editor(&edit_with_system_keyboard);
     impl.settings_screen->set_offers_data_management(impl.save_store != nullptr);
     // Settings > melonDS: how the Switch's melonDS runs, in its melonds.ini.
     // Elsewhere only when DUALSCREEN_MELONDS_INI names a file to show it
@@ -6414,6 +6423,17 @@ int App::run(const AppOptions& options) {
             }
             impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
             impl.handle_ui(ui_actions, pointers);
+            // The keyboard types into a name being typed, from the next
+            // frame's events on -- and on a Steam Deck, Steam's own keyboard
+            // comes up for it, there being no other.
+            {
+                const bool typing = impl.state == Impl::State::Settings && impl.settings_screen &&
+                                    impl.settings_screen->wants_text();
+                if (typing && !impl.input.text_entry() && std::getenv("SteamDeck") != nullptr) {
+                    SDL_OpenURL("steam://open/keyboard");
+                }
+                impl.input.set_text_entry(typing);
+            }
             impl.update_wii_u_pause();
             const UiSoundView view = impl.sound_view();
             // Nothing for a press that closes the app: the sound would be cut

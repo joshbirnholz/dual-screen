@@ -60,6 +60,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
     src/ui/choice_popup.cpp
+    src/ui/text_entry.cpp
     src/ui/menu_state.cpp
     src/ui/notice_popup.cpp
     src/util/battery.cpp

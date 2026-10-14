@@ -15,6 +15,7 @@
 #include "config/melonds_tuning.hpp"
 #include "config/paths.hpp"
 #include "ui/settings_screen.hpp"
+#include "ui/accent.hpp"
 
 using namespace ds;
 
@@ -211,6 +212,60 @@ void test_page(const std::string& sandbox) {
     CHECK(!none.on_emulators_page());
 }
 
+// The DS's owner: a name typed into a popup -- Backspace taking characters
+// off, ten at the most, OK keeping it and B not -- and a favorite color
+// chosen from the sixteen, which is the menus' accent too.
+void test_the_ds_owner(const std::string& sandbox) {
+    (void)sandbox;
+    AppPaths paths;
+    SettingsScreen screen(paths);
+    screen.open(Settings(), {});
+    // Down to the nickname row: it says it is not set.
+    int guard = 0;
+    while (guard++ < 20) {
+        press(screen, UiAction::Confirm);
+        if (screen.wants_text()) break;
+        // A row with a popup of its choices puts it away again.
+        press(screen, UiAction::Cancel);
+        press(screen, UiAction::Down);
+    }
+    CHECK_MSG(screen.wants_text(), "no row opened a field to type the DS's name into");
+    screen.type("Josh Birnholz!", 0);
+    press(screen, UiAction::Down);  // nothing to move: the field takes it
+    CHECK(screen.wants_text());
+    screen.type("", 2);
+    CHECK(press(screen, UiAction::Confirm).settings_changed);
+    CHECK(!screen.wants_text());
+    // Ten characters, the last two taken off again.
+    CHECK_STR_EQ(screen.settings().ds_nickname, "Josh Bir");
+
+    // Typed again and backed out of: as it was.
+    press(screen, UiAction::Confirm);
+    screen.type("XYZ", 0);
+    CHECK(!press(screen, UiAction::Cancel).settings_changed);
+    CHECK_STR_EQ(screen.settings().ds_nickname, "Josh Bir");
+
+    // The next row: the favorite color, from a popup of "Not set" and the
+    // sixteen.
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down, 8);  // Green, the eighth
+    CHECK(press(screen, UiAction::Confirm).settings_changed);
+    CHECK_EQ(screen.settings().ds_favorite_color, 7);
+    CHECK_STR_EQ(kDsFavoriteColors[7].name, "Green");
+
+    // As the accent: green, and a color too dark to read on the menus'
+    // background lightened until it can be.
+    apply_favorite_color_accent(7);
+    CHECK(ui_theme().accent.g > ui_theme().accent.r && ui_theme().accent.g > ui_theme().accent.b);
+    apply_favorite_color_accent(12);  // Dark Blue
+    const Color& dark = ui_theme().accent;
+    CHECK_MSG(0.2126f * dark.r + 0.7152f * dark.g + 0.0722f * dark.b >= 0.38f,
+              "a dark favorite color was left too dark to read");
+    apply_favorite_color_accent(-1);
+    CHECK_EQ(ui_theme().accent.b, UiTheme().accent.b);
+}
+
 }  // namespace
 
 int main() {
@@ -218,5 +273,6 @@ int main() {
     CHECK(!sandbox.empty());
     test_file(sandbox);
     test_page(sandbox);
+    test_the_ds_owner(sandbox);
     return test::finish("melonDS settings");
 }

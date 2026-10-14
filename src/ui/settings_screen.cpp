@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "audio/ui_sounds.hpp"
+#include "config/ds_profile.hpp"
 #include "core/libretro_core.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
@@ -16,6 +17,8 @@ namespace {
 // Said under Vsync, which a device that only shows another device's game
 // never uses: the picture it shows is paced by the stream, not by this.
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
+constexpr const char* kDsProfileDescription =
+    "The menus' accent color too. A DS game sees both the next time one starts.";
 
 }  // namespace
 
@@ -225,6 +228,11 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
             choices = {"Off", "1 frame", "2 frames"};
             current = static_cast<int>(settings_.run_ahead_ds);
             break;
+        case Row::DsFavoriteColor:
+            choices.push_back("Not set");
+            for (const DsFavoriteColor& color : kDsFavoriteColors) choices.push_back(color.name);
+            current = settings_.ds_favorite_color + 1;
+            break;
 #if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone:
             for (const WiiUScreenAlone screen :
@@ -279,6 +287,10 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
             if (index < 0 || index >= 3) return;
             settings_.run_ahead_ds = static_cast<unsigned>(index);
             break;
+        case Row::DsFavoriteColor:
+            if (index < 0 || index > static_cast<int>(kDsFavoriteColors.size())) return;
+            settings_.ds_favorite_color = index - 1;
+            break;
 #if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone: {
             const WiiUScreenAlone screens[] = {WiiUScreenAlone::Auto, WiiUScreenAlone::Television,
@@ -298,6 +310,20 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
 }
 
 void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geometry) {
+    if (page_ == Page::Main && focus_ == first_setting_row() + static_cast<int>(Row::DsNickname)) {
+        const char* header = "Your name, as a DS game greets you";
+        std::string typed;
+        if (text_editor_) {
+            // The platform's own keyboard, there and then.
+            if (text_editor_(header, settings_.ds_nickname, kDsNicknameMax, typed)) {
+                settings_.ds_nickname = typed;
+                result.settings_changed = true;
+            }
+        } else {
+            text_entry_.open(header, settings_.ds_nickname, kDsNicknameMax);
+        }
+        return;
+    }
     int current = -1;
     std::vector<std::string> choices = focused_choices(current);
     if (choices.empty()) {
@@ -337,6 +363,9 @@ std::string SettingsScreen::footnote() const {
 const char* SettingsScreen::row_description(int index) const {
     if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::Vsync)) {
         return kVsyncDescription;
+    }
+    if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::DsFavoriteColor)) {
+        return kDsProfileDescription;
     }
     return nullptr;
 }
@@ -471,6 +500,9 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.run_ahead_ds = (settings_.run_ahead_ds + (direction < 0 ? 2 : 1)) % 3;
             result.settings_changed = true;
             break;
+        // A name is typed -- see press_row() -- and a color chosen.
+        case Row::DsNickname:
+        case Row::DsFavoriteColor: break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -544,6 +576,25 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
 
     const Geometry geometry = compute_geometry(output_width, output_height);
 
+    // A name being typed takes every press, and what was typed.
+    if (text_entry_.is_open()) {
+        const TextEntryResult typed =
+            text_entry_.update(actions, pointers, typed_, backspaces_, output_width, output_height);
+        typed_.clear();
+        backspaces_ = 0;
+        if (typed.done) {
+            // Spaces at either end are not part of a name.
+            std::string name = text_entry_.text();
+            const std::size_t first = name.find_first_not_of(' ');
+            name = first == std::string::npos ? std::string()
+                                              : name.substr(first, name.find_last_not_of(' ') - first + 1);
+            if (name != settings_.ds_nickname) {
+                settings_.ds_nickname = name;
+                result.settings_changed = true;
+            }
+        }
+        return result;
+    }
     // A row's choices, up beside it, take every press until put away.
     if (choice_.is_open()) {
         const ChoicePopupResult chosen = choice_.update(actions, pointers, output_width, output_height);
@@ -686,6 +737,12 @@ void SettingsScreen::render(QuadRenderer& quads,
              ? std::string("Off")
              : std::to_string(settings_.run_ahead_ds) +
                    (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
+        {"DS nickname", settings_.ds_nickname.empty() ? std::string("Not set") : settings_.ds_nickname},
+        {"DS favorite color",
+         settings_.ds_favorite_color >= 0 &&
+                 settings_.ds_favorite_color < static_cast<int>(kDsFavoriteColors.size())
+             ? std::string(kDsFavoriteColors[static_cast<std::size_t>(settings_.ds_favorite_color)].name)
+             : std::string("Not set")},
         {"Vsync", settings_.vsync ? "On" : "Off"},
 #if DS_PLAYS_WII_U
         {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
@@ -809,6 +866,7 @@ void SettingsScreen::render(QuadRenderer& quads,
                         scroll_ / span, view / span, line, scale);
     }
     choice_.render(quads, text, output_width, output_height);
+    text_entry_.render(quads, text, output_width, output_height);
 }
 
 void SettingsScreen::describe_for_sound(UiSoundView& view) const {
@@ -828,6 +886,9 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
+    mix_sound_state(view.rest, text_entry_.is_open() ? 1u : 0u);
+    mix_sound_state(view.rest, settings_.ds_nickname);
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.ds_favorite_color + 1));
     if (choice_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
 }

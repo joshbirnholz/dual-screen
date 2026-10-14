@@ -980,6 +980,11 @@ bool LibretroCore::on_environment(unsigned command, void* data) {
                 system_directory_.empty() ? nullptr : system_directory_.c_str();
             return !system_directory_.empty();
         }
+        case RETRO_ENVIRONMENT_GET_USERNAME: {
+            if (username_.empty()) return false;
+            *static_cast<const char**>(data) = username_.c_str();
+            return true;
+        }
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: {
             static_cast<struct retro_log_callback*>(data)->log = &core_log_printf;
             return true;

@@ -766,8 +766,20 @@ void InputManager::set_game_input_enabled(bool enabled) {
     game_input_enabled_ = enabled;
 }
 
+void InputManager::set_text_entry(bool on) {
+    if (on == text_entry_) return;
+    text_entry_ = on;
+    if (on) {
+        SDL_StartTextInput();
+    } else {
+        SDL_StopTextInput();
+    }
+}
+
 void InputManager::begin_frame() {
     ui_actions_.clear();
+    typed_text_.clear();
+    backspaces_ = 0;
     pointer_events_.clear();
     window_size_changed_ = false;
 #ifdef __SWITCH__
@@ -922,7 +934,27 @@ void InputManager::handle_event(const SDL_Event& event) {
             break;
         }
 
+        case SDL_TEXTINPUT:
+            if (text_entry_) typed_text_ += event.text.text;
+            break;
+
         case SDL_KEYDOWN: {
+            // Typing into a field: Backspace deletes, held as it repeats, and
+            // only Enter and Escape mean anything more.
+            if (text_entry_) {
+                switch (event.key.keysym.sym) {
+                    case SDLK_BACKSPACE: ++backspaces_; break;
+                    case SDLK_RETURN:
+                    case SDLK_KP_ENTER:
+                        if (event.key.repeat == 0) push_action(UiAction::Confirm);
+                        break;
+                    case SDLK_ESCAPE:
+                        if (event.key.repeat == 0) push_action(UiAction::Cancel);
+                        break;
+                    default: break;
+                }
+                break;
+            }
             if (event.key.repeat != 0) break;
 
             // Logged for the same reason controller buttons are: a Steam Input

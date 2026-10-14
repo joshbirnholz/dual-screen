@@ -169,6 +169,14 @@ public:
 
     const DsInputState& ds_state() const { return ds_state_; }
     const std::vector<UiAction>& ui_actions() const { return ui_actions_; }
+    // A text field is up: the keyboard types into it -- see typed_text() --
+    // rather than pressing things, but for Enter and Escape, which still
+    // answer it. Turns SDL's text input on and off with it.
+    void set_text_entry(bool on);
+    bool text_entry() const { return text_entry_; }
+    // What was typed this frame, UTF-8, and how many times Backspace was.
+    const std::string& typed_text() const { return typed_text_; }
+    int backspaces() const { return backspaces_; }
     const std::vector<PointerEvent>& pointer_events() const { return pointer_events_; }
     bool quit_requested() const { return quit_requested_; }
     bool window_size_changed() const { return window_size_changed_; }
@@ -368,6 +376,9 @@ private:
 
     DsInputState ds_state_;
     std::vector<UiAction> ui_actions_;
+    bool text_entry_ = false;
+    std::string typed_text_;
+    int backspaces_ = 0;
     std::vector<PointerEvent> pointer_events_;
     // Which buttons have already been named in the log, one bit each, and
     // whether menu navigation by stick has been. Once is a mapping; every

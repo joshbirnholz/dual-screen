@@ -83,6 +83,20 @@ menu, the list or the right-hand side. **+** opens Settings, and the old face-bu
 shortcuts (X quit, Y reset, − disconnect, R3 smoothing) still work, though the
 guide no longer shows them. A Wii U game's menu stays a plain list.
 
+### Your DS's name and favorite color
+
+**DS nickname** and **DS favorite color**, in Settings, are what a DS's own
+settings call its owner's name and color: a DS game that greets you by name
+uses the nickname, and one that themes itself uses the color. melonDS DS is
+told both as a DS game starts. The name is typed into a field -- on a Steam
+Deck, Steam's on-screen keyboard comes up for it; on a Switch, the system
+keyboard -- and is ten characters at most, as on a DS. The color is one of
+the DS's sixteen, and is the menus' accent too: the cursor's ring runs from a
+lighter to a deeper shade of it, and words drawn in the accent are in it,
+lightened where it would be too dark to read. **Not set** keeps melonDS DS's
+own and the app's blue. A 3DS has neither to set: Azahar's libretro core
+takes no name.
+
 ### Sound effects
 
 Every menu in the app makes a sound when a press does something: the cursor

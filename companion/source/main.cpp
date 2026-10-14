@@ -93,6 +93,8 @@ extern "C" {
 #include "render/button_glyphs.hpp"
 #include "render/frame_delay.hpp"
 #include "render/menu_backdrop.hpp"
+#include "ui/accent.hpp"
+#include "ui/system_keyboard.hpp"
 #include "ui/menu_actions.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
@@ -723,6 +725,7 @@ bool Client::start() {
         // Read now rather than when Settings is first opened: its button
         // prompts and Confirm/Cancel apply to these menus from the start.
         settings_ = Settings::load(paths);
+        apply_favorite_color_accent(settings_.ds_favorite_color);
         save_store_.reset(new SaveStore(paths.saves_dir, settings_.device_name));
         save_service_.reset(
             new net::SaveExchangeService(*save_store_, net::SaveExchangeService::Config{}));
@@ -844,8 +847,10 @@ void Client::poll_updates() {
 void Client::open_settings() {
     const AppPaths paths = AppPaths::resolve();
     settings_ = Settings::load(paths);
+    apply_favorite_color_accent(settings_.ds_favorite_color);
     if (!settings_screen_) {
         settings_screen_.reset(new SettingsScreen(paths));
+        if (system_keyboard_available()) settings_screen_->set_text_editor(&edit_with_system_keyboard);
         settings_screen_->set_offers_data_management(save_store_ != nullptr);
         settings_screen_->set_offers_updates(updater_ != nullptr);
         settings_screen_->set_updates_value(update_prompt_.row_value());
@@ -1202,6 +1207,7 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                                      static_cast<float>(output_height_));
         if (result.settings_changed) {
             settings_ = settings_screen_->settings();
+            apply_favorite_color_accent(settings_.ds_favorite_color);
             ui_sounds_.set_enabled(settings_.ui_sounds);
             if (!settings_.save(AppPaths::resolve())) log_warn("could not save settings.json");
         }

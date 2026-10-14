@@ -269,6 +269,13 @@ struct Settings {
     // menu opening -- on this device. See UiSoundPlayer.
     bool ui_sounds = true;
 
+    // The DS's owner, as its own settings have them: the name games greet
+    // the player by, and the favorite color -- an index into
+    // kDsFavoriteColors (config/ds_profile.hpp), or -1 for none chosen. Told
+    // to melonDS DS as a game starts. The color is the menus' accent too.
+    std::string ds_nickname;
+    int ds_favorite_color = -1;
+
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;
 };
