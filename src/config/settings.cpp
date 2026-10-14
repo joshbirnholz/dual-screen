@@ -153,7 +153,16 @@ Settings Settings::load(const AppPaths& paths) {
         get_or<bool>(document, "pause_wii_u_in_menu", settings.pause_wii_u_in_menu);
     settings.ds_nickname = get_or<std::string>(document, "ds_nickname", settings.ds_nickname);
     settings.ds_favorite_color = get_or<int>(document, "ds_favorite_color", settings.ds_favorite_color);
-    if (settings.ds_favorite_color < -1 || settings.ds_favorite_color > 15) settings.ds_favorite_color = -1;
+    if (settings.ds_favorite_color < 0 || settings.ds_favorite_color > 15) {
+        settings.ds_favorite_color = kDsDefaultFavoriteColor;
+    }
+    settings.ds_birth_month = get_or<int>(document, "ds_birth_month", settings.ds_birth_month);
+    settings.ds_birth_day = get_or<int>(document, "ds_birth_day", settings.ds_birth_day);
+    if (settings.ds_birth_month < 1 || settings.ds_birth_month > 12 || settings.ds_birth_day < 1 ||
+        settings.ds_birth_day > ds_days_in_month(settings.ds_birth_month)) {
+        settings.ds_birth_month = 0;
+        settings.ds_birth_day = 0;
+    }
     {
         const std::string tv = get_or<std::string>(document, "wii_u_tv_audio", "stereo");
         settings.wii_u_tv_audio = tv == "mono" ? 0 : tv == "surround" ? 2 : 1;
@@ -243,7 +252,11 @@ bool Settings::save(const AppPaths& paths) const {
     if (!wii_u_mlc_path.empty()) document["wii_u_mlc_path"] = wii_u_mlc_path;
     document["pause_wii_u_in_menu"] = pause_wii_u_in_menu;
     if (!ds_nickname.empty()) document["ds_nickname"] = ds_nickname;
-    if (ds_favorite_color >= 0) document["ds_favorite_color"] = ds_favorite_color;
+    document["ds_favorite_color"] = ds_favorite_color;
+    if (ds_birth_month > 0) {
+        document["ds_birth_month"] = ds_birth_month;
+        document["ds_birth_day"] = ds_birth_day;
+    }
     document["wii_u_tv_audio"] = wii_u_tv_audio == 0 ? "mono" : wii_u_tv_audio == 2 ? "surround" : "stereo";
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;

@@ -245,25 +245,48 @@ void test_the_ds_owner(const std::string& sandbox) {
     CHECK(!press(screen, UiAction::Cancel).settings_changed);
     CHECK_STR_EQ(screen.settings().ds_nickname, "Josh Bir");
 
-    // The next row: the favorite color, from a popup of "Not set" and the
-    // sixteen.
+    // The next row: the favorite color, Light Blue to begin with, from a
+    // grid of the sixteen four to a line, as a DS lays them out -- Up a line
+    // and Right one along from Light Blue is Green.
+    CHECK_EQ(Settings().ds_favorite_color, 10);
     press(screen, UiAction::Down);
     press(screen, UiAction::Confirm);
-    press(screen, UiAction::Down, 8);  // Green, the eighth
+    press(screen, UiAction::Up);
+    press(screen, UiAction::Right);
     CHECK(press(screen, UiAction::Confirm).settings_changed);
     CHECK_EQ(screen.settings().ds_favorite_color, 7);
     CHECK_STR_EQ(kDsFavoriteColors[7].name, "Green");
+    // The edges stop the cursor rather than wrap it.
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Right, 6);
+    press(screen, UiAction::Up, 3);
+    CHECK(press(screen, UiAction::Confirm).settings_changed);
+    CHECK_EQ(screen.settings().ds_favorite_color, 3);
 
-    // As the accent: green, and a color too dark to read on the menus'
-    // background lightened until it can be.
-    apply_favorite_color_accent(7);
-    CHECK(ui_theme().accent.g > ui_theme().accent.r && ui_theme().accent.g > ui_theme().accent.b);
+    // The birthday: a month, then a day of it; B on the day changes nothing.
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down, 2);  // March
+    CHECK(!press(screen, UiAction::Confirm).settings_changed);
+    CHECK(!press(screen, UiAction::Cancel).settings_changed);
+    CHECK_EQ(screen.settings().ds_birth_month, 0);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down, 2);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down, 13);  // the 14th
+    CHECK(press(screen, UiAction::Confirm).settings_changed);
+    CHECK_EQ(screen.settings().ds_birth_month, 3);
+    CHECK_EQ(screen.settings().ds_birth_day, 14);
+
+    // As the accent: the color exactly, and the ring running from a lighter
+    // shade of it into it.
     apply_favorite_color_accent(12);  // Dark Blue
-    const Color& dark = ui_theme().accent;
-    CHECK_MSG(0.2126f * dark.r + 0.7152f * dark.g + 0.0722f * dark.b >= 0.38f,
-              "a dark favorite color was left too dark to read");
+    CHECK_EQ(ui_theme().accent.b, kDsFavoriteColors[12].b);
+    CHECK_EQ(menu_ring_right().b, kDsFavoriteColors[12].b);
+    CHECK(menu_ring_left().r > kDsFavoriteColors[12].r && menu_ring_left().b > kDsFavoriteColors[12].b);
+    // None chosen: Light Blue.
     apply_favorite_color_accent(-1);
-    CHECK_EQ(ui_theme().accent.b, UiTheme().accent.b);
+    CHECK_EQ(ui_theme().accent.g, kDsFavoriteColors[10].g);
 }
 
 }  // namespace

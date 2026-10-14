@@ -3924,6 +3924,8 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
     source_config.rumble_pak = have_game_config && game_config.rumble_pak;
     source_config.nickname = settings.ds_nickname;
     source_config.favorite_color = settings.ds_favorite_color;
+    source_config.birth_month = settings.ds_birth_month;
+    source_config.birth_day = settings.ds_birth_day;
 
     source.reset(new LibretroCoreScreenSource());
     source->set_audio_callback([this](const int16_t* samples, std::size_t frames) {

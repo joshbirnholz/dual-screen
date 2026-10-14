@@ -17,8 +17,6 @@ namespace {
 // Said under Vsync, which a device that only shows another device's game
 // never uses: the picture it shows is paced by the stream, not by this.
 constexpr const char* kVsyncDescription = "Applies when a game is running on this device.";
-constexpr const char* kDsProfileDescription =
-    "The menus' accent color too. A DS game sees both the next time one starts.";
 
 }  // namespace
 
@@ -211,8 +209,9 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
                     break;
                 default: break;
             }
-            choices = {std::string(east) + " to confirm, " + south + " to go back",
-                       std::string(south) + " to confirm, " + east + " to go back"};
+            // Drawn as the two buttons -- see open_choice() -- and named
+            // for anything that reads them instead.
+            choices = {std::string(east) + " / " + south, std::string(south) + " / " + east};
             current = settings_.confirm_button == ConfirmButton::South ? 1 : 0;
             break;
         }
@@ -229,9 +228,13 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
             current = static_cast<int>(settings_.run_ahead_ds);
             break;
         case Row::DsFavoriteColor:
-            choices.push_back("Not set");
             for (const DsFavoriteColor& color : kDsFavoriteColors) choices.push_back(color.name);
-            current = settings_.ds_favorite_color + 1;
+            current = settings_.ds_favorite_color;
+            break;
+        case Row::DsBirthday:
+            // The month first; the day's choices follow -- see choose().
+            choices.assign(kDsMonths.begin(), kDsMonths.end());
+            current = settings_.ds_birth_month - 1;
             break;
 #if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone:
@@ -288,8 +291,29 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
             settings_.run_ahead_ds = static_cast<unsigned>(index);
             break;
         case Row::DsFavoriteColor:
-            if (index < 0 || index > static_cast<int>(kDsFavoriteColors.size())) return;
-            settings_.ds_favorite_color = index - 1;
+            if (index < 0 || index >= static_cast<int>(kDsFavoriteColors.size())) return;
+            settings_.ds_favorite_color = index;
+            break;
+        case Row::DsBirthday:
+            if (birth_month_choosing_ == 0) {
+                // The month: then which day of it, the one kept still chosen
+                // where the month has it.
+                if (index < 0 || index >= 12) return;
+                const int month = index + 1;
+                std::vector<std::string> days;
+                for (int day = 1; day <= ds_days_in_month(month); ++day) days.push_back(std::to_string(day));
+                const int current_day =
+                    settings_.ds_birth_day >= 1 && settings_.ds_birth_day <= ds_days_in_month(month)
+                        ? settings_.ds_birth_day - 1
+                        : 0;
+                birth_month_choosing_ = month;
+                choice_.open(std::move(days), current_day, choice_row_);
+                return;
+            }
+            if (index < 0 || index >= ds_days_in_month(birth_month_choosing_)) return;
+            settings_.ds_birth_month = birth_month_choosing_;
+            settings_.ds_birth_day = index + 1;
+            birth_month_choosing_ = 0;
             break;
 #if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone: {
@@ -331,7 +355,27 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
         return;
     }
     if (focus_ < 0 || focus_ >= static_cast<int>(geometry.rows.size())) return;
-    choice_.open(std::move(choices), current, geometry.rows[static_cast<std::size_t>(focus_)]);
+    choice_row_ = geometry.rows[static_cast<std::size_t>(focus_)];
+    birth_month_choosing_ = 0;
+    const int row = focus_ - first_setting_row();
+    if (page_ == Page::Main && row == static_cast<int>(Row::DsFavoriteColor)) {
+        // The DS's own sixteen, in its own order, four to a line as its
+        // settings lay them out.
+        std::vector<Color> colors;
+        for (const DsFavoriteColor& color : kDsFavoriteColors) colors.push_back(Color{color.r, color.g, color.b, 1.0f});
+        choice_.open_colors(std::move(colors), std::move(choices), 4, current, choice_row_);
+        return;
+    }
+    choice_.open(std::move(choices), current, choice_row_);
+#ifndef __SWITCH__
+    if (page_ == Page::Main && row == static_cast<int>(Row::ConfirmButtonRow)) {
+        // The two buttons, as the row shows them: yes, then no.
+        choice_.set_glyph_pairs(
+            {{confirm_glyph_for(ConfirmButton::East), cancel_glyph_for(ConfirmButton::East)},
+             {confirm_glyph_for(ConfirmButton::South), cancel_glyph_for(ConfirmButton::South)}},
+            glyph_aspect_);
+    }
+#endif
 }
 
 void SettingsScreen::save_melonds() {
@@ -363,9 +407,6 @@ std::string SettingsScreen::footnote() const {
 const char* SettingsScreen::row_description(int index) const {
     if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::Vsync)) {
         return kVsyncDescription;
-    }
-    if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::DsFavoriteColor)) {
-        return kDsProfileDescription;
     }
     return nullptr;
 }
@@ -502,7 +543,8 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             break;
         // A name is typed -- see press_row() -- and a color chosen.
         case Row::DsNickname:
-        case Row::DsFavoriteColor: break;
+        case Row::DsFavoriteColor:
+        case Row::DsBirthday: break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -598,6 +640,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
     // A row's choices, up beside it, take every press until put away.
     if (choice_.is_open()) {
         const ChoicePopupResult chosen = choice_.update(actions, pointers, output_width, output_height);
+        if (chosen.closed) birth_month_choosing_ = 0;
         if (chosen.chosen >= 0) choose(chosen.chosen, result);
         if (chosen.close_everything) {
             result.close_requested = true;
@@ -738,11 +781,15 @@ void SettingsScreen::render(QuadRenderer& quads,
              : std::to_string(settings_.run_ahead_ds) +
                    (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
         {"DS nickname", settings_.ds_nickname.empty() ? std::string("Not set") : settings_.ds_nickname},
-        {"DS favorite color",
-         settings_.ds_favorite_color >= 0 &&
-                 settings_.ds_favorite_color < static_cast<int>(kDsFavoriteColors.size())
-             ? std::string(kDsFavoriteColors[static_cast<std::size_t>(settings_.ds_favorite_color)].name)
-             : std::string("Not set")},
+        {"Favorite Color",
+         kDsFavoriteColors[static_cast<std::size_t>(
+                               std::clamp(settings_.ds_favorite_color, 0,
+                                          static_cast<int>(kDsFavoriteColors.size()) - 1))]
+             .name},
+        {"Birthday", settings_.ds_birth_month >= 1 && settings_.ds_birth_month <= 12
+                         ? std::string(kDsMonths[static_cast<std::size_t>(settings_.ds_birth_month - 1)]) +
+                               " " + std::to_string(settings_.ds_birth_day)
+                         : std::string("Not set")},
         {"Vsync", settings_.vsync ? "On" : "Off"},
 #if DS_PLAYS_WII_U
         {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
@@ -811,6 +858,16 @@ void SettingsScreen::render(QuadRenderer& quads,
             const float available = row.w - label_width - pad * 4.0f;
             const std::string value =
                 TextRenderer::elide_left(rows[index][1], available, scale * 0.9f);
+            if (page_ == Page::Main && index == first_setting_row() + static_cast<int>(Row::DsFavoriteColor)) {
+                // The color itself, beside its name.
+                const DsFavoriteColor& color = kDsFavoriteColors[static_cast<std::size_t>(
+                    std::clamp(settings_.ds_favorite_color, 0, static_cast<int>(kDsFavoriteColors.size()) - 1))];
+                const float dot = std::round(line * 1.0f);
+                const float dot_x = row.x + row.w - pad - TextRenderer::measure_width(value, scale * 0.9f) -
+                                    std::round(line * 0.5f) - dot;
+                quads.draw_capsule(PixelRect{dot_x, std::round(row.y + (row.h - dot) * 0.5f), dot, dot},
+                                   Color{color.r, color.g, color.b, 1.0f});
+            }
             text.draw(quads, value, row.x + row.w - pad, page_row_text_y(row, scale * 0.9f),
                       scale * 0.9f, value_color, TextAlign::Right);
         }
@@ -865,7 +922,8 @@ void SettingsScreen::render(QuadRenderer& quads,
         draw_scroll_bar(quads, PixelRect{geometry.panel.x, view_top, geometry.panel.w, view},
                         scroll_ / span, view / span, line, scale);
     }
-    choice_.render(quads, text, output_width, output_height);
+    glyph_aspect_ = glyphs.width_for(1.0f);
+    choice_.render(quads, text, output_width, output_height, &glyphs);
     text_entry_.render(quads, text, output_width, output_height);
 }
 

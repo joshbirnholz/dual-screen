@@ -83,19 +83,27 @@ menu, the list or the right-hand side. **+** opens Settings, and the old face-bu
 shortcuts (X quit, Y reset, R3 smoothing) still work, though the
 guide no longer shows them. A Wii U game's menu stays a plain list.
 
-### Your DS's name and favorite color
+### Your DS's name, favorite color and birthday
 
-**DS nickname** and **DS favorite color**, in Settings, are what a DS's own
-settings call its owner's name and color: a DS game that greets you by name
-uses the nickname, and one that themes itself uses the color. melonDS DS is
-told both as a DS game starts. The name is typed into a field -- on a Steam
-Deck, Steam's on-screen keyboard comes up for it; on a Switch, the system
-keyboard -- and is ten characters at most, as on a DS. The color is one of
-the DS's sixteen, and is the menus' accent too: the cursor's ring runs from a
-lighter to a deeper shade of it, and words drawn in the accent are in it,
-lightened where it would be too dark to read. **Not set** keeps melonDS DS's
-own and the app's blue. A 3DS has neither to set: Azahar's libretro core
-takes no name.
+**DS nickname**, **Favorite Color** and **Birthday**, in Settings, are what a
+DS's own settings keep about its owner: a DS game that greets you by name
+uses the nickname, one that themes itself uses the color, and one that marks
+your birthday uses that. melonDS DS is told all three as a DS game starts.
+The name is typed into a field -- on a Steam Deck, Steam's on-screen keyboard
+comes up for it; on a Switch, the system keyboard -- and is ten characters at
+most, as on a DS. The color is picked from a grid of the DS's sixteen, in the
+DS's own order, and is Light Blue until another is chosen; it is the menus'
+accent too, exactly as the DS shows it, with the cursor's ring running from a
+lighter shade of it into it. The birthday is a month, then a day of it; until
+one is chosen melonDS DS keeps its own. A 3DS has none of these to set:
+Azahar's libretro core takes no name, color or birthday.
+
+### Dropdowns
+
+A setting with several values opens them in a small box beside its row, the
+value in effect filled in. The box stays where it opened; a list longer than
+it shows scrolls inside it -- with the cursor, a finger dragged up or down, or
+the mouse wheel. Every list in the app scrolls with the mouse wheel.
 
 ### Sound effects
 

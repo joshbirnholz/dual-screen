@@ -172,6 +172,7 @@ private:
         RunAheadDs,
         DsNickname,
         DsFavoriteColor,
+        DsBirthday,
         Vsync,
 #if DS_PLAYS_WII_U
         WiiUScreenAlone,
@@ -287,6 +288,14 @@ private:
     std::vector<Entry> entries_;
     // A row's choices, up beside it -- see focused_choices().
     ChoicePopup choice_;
+    // A birthday is chosen a month, then a day: the month chosen while the
+    // day's choices are up, or 0.
+    int birth_month_choosing_ = 0;
+    // The row the popup was opened beside, for the day's to open beside too.
+    PixelRect choice_row_;
+    // A button glyph's width for its height, from the sheet last drawn with,
+    // so a popup of buttons can be sized before it is drawn.
+    float glyph_aspect_ = 1.0f;
     // The DS nickname being typed -- see type().
     TextEntryPopup text_entry_;
     std::string typed_;

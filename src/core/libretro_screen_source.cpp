@@ -65,6 +65,8 @@ constexpr const char* kOptThreadedRenderer = "melonds_threaded_renderer";
 // of the frontend with "guess_username" -- and favorite color, 0 to 15.
 constexpr const char* kOptFirmwareUsername = "melonds_firmware_username";
 constexpr const char* kOptFirmwareFavoriteColor = "melonds_firmware_favorite_color";
+constexpr const char* kOptFirmwareBirthMonth = "melonds_firmware_birth_month";
+constexpr const char* kOptFirmwareBirthDay = "melonds_firmware_birth_day";
 // The microphone. melonDS can synthesise the blow a DS game is listening for,
 // which is the only way in here: the libretro microphone interface this app
 // does not implement is exactly what the core reports missing at start-up
@@ -266,13 +268,20 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
             core_->force_option(kOptTouchMode, std::vector<std::string>{"touch", "Touch"});
             core_->force_option(kOptThreadedRenderer, {"enabled"}, Requirement::IfPresent);
             // The owner's name, which melonDS DS asks the frontend for when
-            // told to guess it -- see LibretroCore::set_username() -- and
-            // their favorite color.
+            // told to guess it -- see LibretroCore::set_username() -- their
+            // favorite color and their birthday.
             if (!config.nickname.empty()) {
                 core_->force_option(kOptFirmwareUsername, {"guess_username"}, Requirement::IfPresent);
             }
             if (config.favorite_color >= 0 && config.favorite_color <= 15) {
                 core_->force_option(kOptFirmwareFavoriteColor, {std::to_string(config.favorite_color)},
+                                    Requirement::IfPresent);
+            }
+            if (config.birth_month >= 1 && config.birth_month <= 12 && config.birth_day >= 1 &&
+                config.birth_day <= 31) {
+                core_->force_option(kOptFirmwareBirthMonth, {std::to_string(config.birth_month)},
+                                    Requirement::IfPresent);
+                core_->force_option(kOptFirmwareBirthDay, {std::to_string(config.birth_day)},
                                     Requirement::IfPresent);
             }
         }

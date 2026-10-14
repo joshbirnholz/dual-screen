@@ -58,22 +58,15 @@ inline AccentRing& accent_ring() {
 }
 
 // The accent everything is drawn in -- the cursor's ring, a chosen tab's
-// words, a switch turned on -- made the player's favorite color: solid where
-// it is words or a fill, and running from a lighter to a deeper shade of it
-// round the ring. A color too dark to read on the menus' dark background is
-// lightened until it is.
+// words, a switch turned on -- made the player's favorite color, exactly as
+// the DS shows it: solid where it is words or a fill, and round the ring
+// running from a lighter shade of it into the color itself.
 inline void set_ui_accent(const Color& color) {
-    const auto mix = [](const Color& from, const Color& to, float amount) {
-        return Color{from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount,
-                     from.b + (to.b - from.b) * amount, 1.0f};
-    };
-    const auto luma = [](const Color& c) { return 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b; };
-    const Color white{1.0f, 1.0f, 1.0f, 1.0f};
-    Color readable{color.r, color.g, color.b, 1.0f};
-    for (int step = 0; step < 10 && luma(readable) < 0.38f; ++step) readable = mix(readable, white, 0.15f);
-    mutable_ui_theme().accent = readable;
-    accent_ring().left = mix(readable, white, 0.3f);
-    accent_ring().right = mix(readable, Color{0.0f, 0.0f, 0.0f, 1.0f}, 0.25f);
+    const Color solid{color.r, color.g, color.b, 1.0f};
+    mutable_ui_theme().accent = solid;
+    accent_ring().left = Color{solid.r + (1.0f - solid.r) * 0.35f, solid.g + (1.0f - solid.g) * 0.35f,
+                               solid.b + (1.0f - solid.b) * 0.35f, 1.0f};
+    accent_ring().right = solid;
 }
 // Back to the app's own blue, and its ring's run into violet.
 inline void reset_ui_accent() {

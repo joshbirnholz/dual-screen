@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "config/ds_profile.hpp"
 #include "config/paths.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
@@ -270,11 +271,14 @@ struct Settings {
     bool ui_sounds = true;
 
     // The DS's owner, as its own settings have them: the name games greet
-    // the player by, and the favorite color -- an index into
-    // kDsFavoriteColors (config/ds_profile.hpp), or -1 for none chosen. Told
-    // to melonDS DS as a game starts. The color is the menus' accent too.
+    // the player by, the favorite color -- an index into kDsFavoriteColors
+    // (config/ds_profile.hpp), Light Blue unless another is chosen -- and the
+    // birthday, a month and a day, 0 for none chosen. Told to melonDS DS as a
+    // game starts. The color is the menus' accent too.
     std::string ds_nickname;
-    int ds_favorite_color = -1;
+    int ds_favorite_color = kDsDefaultFavoriteColor;
+    int ds_birth_month = 0;
+    int ds_birth_day = 0;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

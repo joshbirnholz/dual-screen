@@ -32,6 +32,21 @@ inline constexpr std::array<DsFavoriteColor, 16> kDsFavoriteColors = {{
     {"Magenta", 0xFB / 255.0f, 0x00 / 255.0f, 0x92 / 255.0f},
 }};
 
+// Light Blue: a DS always has a favorite color, and this is the one an owner
+// who never chose keeps.
+inline constexpr int kDsDefaultFavoriteColor = 10;
+
+// The months, for the birthday a DS keeps, and how many days each can have --
+// February's 29, since a birthday is not in any one year.
+inline constexpr std::array<const char*, 12> kDsMonths = {{"January", "February", "March", "April",
+                                                          "May", "June", "July", "August",
+                                                          "September", "October", "November",
+                                                          "December"}};
+inline constexpr int ds_days_in_month(int month) {
+    constexpr int days[] = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    return month >= 1 && month <= 12 ? days[month - 1] : 0;
+}
+
 // A DS's name is at most this many characters.
 inline constexpr std::size_t kDsNicknameMax = 10;
 

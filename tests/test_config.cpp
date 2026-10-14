@@ -417,6 +417,8 @@ void test_settings_round_trip() {
     defaults.wii_u_tv_audio = 2;
     defaults.ds_nickname = "Josh";
     defaults.ds_favorite_color = 7;
+    defaults.ds_birth_month = 2;
+    defaults.ds_birth_day = 29;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -444,6 +446,8 @@ void test_settings_round_trip() {
     CHECK_MSG(reloaded.wii_u_tv_audio == 2, "surround TV audio did not survive being written down");
     CHECK_STR_EQ(reloaded.ds_nickname, "Josh");
     CHECK_EQ(reloaded.ds_favorite_color, 7);
+    CHECK_EQ(reloaded.ds_birth_month, 2);
+    CHECK_EQ(reloaded.ds_birth_day, 29);
 
     // A config file that names arguments replaces them rather than adding to
     // them: a fork with different flags must not inherit these.
