@@ -4497,7 +4497,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                     // Asked for rather than opened. The host holds the one
                     // menu; this device puts it up when told, which is what
                     // keeps the two screens showing the same thing.
-                    companion_session->set_menu_open(true);
+                    companion_session->ask_for_menu();
                     break;
                 }
             }

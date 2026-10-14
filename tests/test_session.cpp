@@ -1286,6 +1286,59 @@ void test_companion_menu_pauses_the_host() {
     host.stop();
 }
 
+// A Wii U game can refuse the pause the host's menu waits for, and then the
+// menu never opens. The companion's ask must not outlive that: pressed again,
+// it is a new ask, and once the host says the menu cannot open, the ask is
+// withdrawn rather than left keeping the host sending both screens.
+void test_a_refused_menu_can_be_asked_for_again() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Refusing Host";
+    config.game_title = "Refusing";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv", false, AudioTarget::Both);
+
+    CompanionSession companion;
+    if (!companion.begin_search("Refused Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    companion.ask_for_menu();
+    CHECK_MSG(spin(host, companion, [&] { return host.take_menu_open_request(); }),
+              "the companion's ask for the menu never reached the host");
+    // The host's menu stays closed: its game would not pause.
+    companion.ask_for_menu();
+    CHECK_MSG(spin(host, companion, [&] { return host.take_menu_open_request(); }),
+              "a second press after a refused menu never reached the host");
+
+    HostSession::SharedState shared;
+    shared.layout_id = "upper_on_tv";
+    shared.per_device_layout = true;
+    shared.menu_unavailable_notice = true;
+    host.set_session_state(shared);
+    CHECK_MSG(spin(host, companion, [&] { return !host.companion_wants(ScreenId::Top); }),
+              "the companion's ask outlived the host saying its menu could not open");
+
+    // And asked for once more, after that.
+    companion.ask_for_menu();
+    CHECK_MSG(spin(host, companion, [&] { return host.take_menu_open_request(); }),
+              "a press after the refusal's notice never reached the host");
+
+    host.stop();
+}
+
 // Disconnecting is only reachable from the menu -- the Disconnect button is
 // on it -- so a device that just left had its own menu_open_ set at that
 // exact moment. If that survived into the next session, the very first
@@ -4390,6 +4443,7 @@ int main() {
     test_the_menu_is_one_menu_across_both_devices();
     test_shared_settings_stay_in_sync();
     test_companion_menu_pauses_the_host();
+    test_a_refused_menu_can_be_asked_for_again();
     test_a_tap_quicker_than_a_frame_still_reaches_the_game();
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
     test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it();

@@ -580,6 +580,15 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_menu_focus_ = state.menu_focus;
             host_menu_confirm_ = state.menu_confirm;
             host_menu_confirm_focus_ = state.menu_confirm_focus;
+            // The host saying its menu cannot open (a Wii U game that would not
+            // pause) is the answer to this device's ask, so the ask is over:
+            // left standing, the host would go on sending both screens for a
+            // menu that is not up.
+            if (state.menu_unavailable_notice && !host_menu_unavailable_notice_ && menu_open_ &&
+                !state.menu_open) {
+                menu_open_ = false;
+                send_request(RequestMessage());
+            }
             host_menu_unavailable_notice_ = state.menu_unavailable_notice;
             host_graphic_packs_available_ = state.graphic_packs_available;
             host_amiibo_available_ = state.amiibo_available;
@@ -2702,6 +2711,14 @@ void CompanionSession::set_menu_open(bool open) {
     }
     menu_open_ = open;
     send_request(RequestMessage());
+}
+
+void CompanionSession::ask_for_menu() {
+    // The host opens its menu only when the flag goes up, and nothing here
+    // puts it down for a menu that never opened. So an earlier ask still
+    // standing is withdrawn first, or this press would change nothing.
+    if (menu_open_) set_menu_open(false);
+    set_menu_open(true);
 }
 
 bool CompanionSession::advance_frame(std::string* error) {

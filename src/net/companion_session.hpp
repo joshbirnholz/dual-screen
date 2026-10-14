@@ -730,6 +730,10 @@ public:
     // Tells the host whether a menu is up on this device, so it pauses too.
     // Sent whenever it changes, and repeated with every other request.
     void set_menu_open(bool open);
+    // The menu key pressed here while no menu is up: asks the host to open
+    // it, which it may not (a Wii U game refusing to pause), and asks again
+    // on every press.
+    void ask_for_menu();
 
     // Called with audio received from the host, ready to play. Set before
     // connecting.
