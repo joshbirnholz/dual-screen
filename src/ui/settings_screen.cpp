@@ -378,6 +378,25 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
 #endif
 }
 
+bool SettingsScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                            float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    drag_.update(pointers,
+                 PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
+                           geometry.panel.y + geometry.panel.h - geometry.view_top},
+                 scroll_, geometry.max_scroll());
+    return drag_.release_was_drag();
+}
+
+int SettingsScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    if (y < geometry.view_top || y > geometry.panel.y + geometry.panel.h) return -1;
+    for (std::size_t index = 0; index < geometry.rows.size(); ++index) {
+        if (geometry.rows[index].contains(x, y)) return static_cast<int>(index);
+    }
+    return -1;
+}
+
 void SettingsScreen::save_melonds() {
     std::string error;
     if (write_melonds_tuning(tuning_, melonds_path_, &error)) {
@@ -701,23 +720,12 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
         drag_.stop();
         scroll_focus_into_view(compute_geometry(output_width, output_height));
     }
-    {
-        const float view_top = geometry.view_top;
-        drag_.update(pointers,
-                     PixelRect{geometry.panel.x, view_top, geometry.panel.w,
-                               geometry.panel.y + geometry.panel.h - view_top},
-                     scroll_, geometry.max_scroll());
-    }
-    const Geometry settled = compute_geometry(output_width, output_height);
-
-    for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released || drag_.release_was_drag()) continue;
-        for (std::size_t index = 0; index < settled.rows.size(); ++index) {
-            // A first tap highlights a row; a second changes its value.
-            if (tapped(pointer, settled.rows[index]) &&
-                tap_chooses(focus_, static_cast<int>(index))) {
-                press_row(result, settled);
-            }
+    // A first tap highlights a row; a second changes its value -- heard the
+    // one way every tap is.
+    for (const int index : take_taps(pointers, output_width, output_height)) {
+        const Geometry settled = compute_geometry(output_width, output_height);
+        if (index >= 0 && index < static_cast<int>(settled.rows.size()) && tap_chooses(focus_, index)) {
+            press_row(result, settled);
         }
     }
     drag_.settle();

@@ -16,6 +16,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/choice_popup.hpp"
+#include "ui/menu_page.hpp"
 #include "ui/text_entry.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
@@ -67,7 +68,7 @@ struct SettingsScreenResult {
 // settings under it -- melonDS's on a Switch, and on a PC or a Steam Deck the
 // Cemu that Dualscreen downloads and keeps up to date. Paths are edited in
 // settings.json.
-class SettingsScreen {
+class SettingsScreen : public MenuPage {
 public:
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
@@ -141,6 +142,13 @@ public:
                                 const std::vector<PointerEvent>& pointers,
                                 float output_width,
                                 float output_height);
+
+    // MenuPage: the page scrolls under a finger, the mouse and the wheel, and
+    // an entry is a row, by its index. A row's popup takes its own taps.
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float, float, float, float) const override { return false; }
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
