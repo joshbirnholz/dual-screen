@@ -27,13 +27,13 @@ inline void render_corner_notice(QuadRenderer& quads, TextRenderer& text, float 
     const float scale = line / TextRenderer::line_height(1.0f);
     const float pad_x = std::round(24.0f * unit);
     const float pad_y = std::round(16.0f * unit);
-    const float margin = std::round(24.0f * unit);
     // Up, not to the nearest: a box a fraction of a pixel narrower than its
     // words would cut the last of them off.
     const float words = std::ceil(TextRenderer::measure_width(message, scale));
-    const float width = std::min(words + pad_x * 2.0f, output_width - margin * 2.0f);
+    // Right in the corner, against both edges, as a Switch's own notices sit.
+    const float width = std::min(words + pad_x * 2.0f, output_width);
     const float height = line + pad_y * 2.0f;
-    const PixelRect box{std::round(output_width - margin - width), margin, width, height};
+    const PixelRect box{std::round(output_width - width), 0.0f, width, height};
     quads.draw_solid(box, Color{0.0f, 0.0f, 0.0f, 0.75f});
     const std::string shown = words + pad_x * 2.0f <= width
                                   ? message
