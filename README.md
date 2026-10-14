@@ -402,6 +402,16 @@ Three things are different about a Wii U session:
   CPU mode is kept in Cemu's own profile for the game, and changes when the
   game is reset.
 
+- **Player 1 Controller** to **Player 4 Controller**, in Game Options, are
+  what each player's controller is to the game -- **Pro Controller**,
+  **Classic Controller**, **Wii Remote**, **Wii Remote + Nunchuk**, **Wii
+  Remote + Classic Controller** or **None** -- kept for each game and set as
+  it starts, so a game that wants Wii Remotes and one that wants Pro
+  Controllers each get theirs without a trip to Cemu's input settings. A
+  change happens at once, as if the controller had been swapped. Cemu's own
+  saved controller profiles are left as they were: a game with nothing chosen
+  gets what Cemu started with.
+
 - **A game's own dialogs** -- its keyboard, when it asks for a name (a horse's
   in Breath of the Wild), and its error messages -- are this app's popups
   rather than Cemu's small windows. The keyboard is the popup a DS nickname is
