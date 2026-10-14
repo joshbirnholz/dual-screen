@@ -336,8 +336,8 @@ void ControllersScreen::render(QuadRenderer& quads,
         } else {
             draw_menu_row(quads, row, focused, scale);
         }
-        const Color& ink = (focused || lifted) ? theme.background : theme.text;
-        const Color dim = (focused || lifted) ? theme.panel : theme.text_dim;
+        const Color& ink = lifted ? theme.background : theme.text;
+        const Color dim = lifted ? theme.panel : theme.text_dim;
 
         const LineupRow& entry = rows[static_cast<std::size_t>(index)];
         draw_slot(entry.slot, row, ink);

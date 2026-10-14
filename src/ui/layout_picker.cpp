@@ -1113,7 +1113,7 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
         if (natural > room && natural > 0.0f) label_scale = scale * (room / natural);
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - TextRenderer::line_height(label_scale), label_scale,
-                  menu_row_text(focused || selected), TextAlign::Center);
+                  quick_menu_row_text(focused || selected), TextAlign::Center);
     }
 
     // The stylus button: the Wii U's own symbol in a square, outlined like a
@@ -1244,9 +1244,14 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         draw_quick_menu_row(quads, row, focused, scale);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, option_name(options_[index]), row.x + line * 0.8f, baseline, row_scale,
-                  menu_row_text(focused));
-        text.draw(quads, option_value(options_[index]), row.x + row.w - line * 0.8f, baseline,
-                  row_scale, focused ? theme.background : theme.text_dim, TextAlign::Right);
+                  quick_menu_row_text(focused));
+        const std::string value = option_value(options_[index]);
+        if (is_toggle_value(value)) {
+            draw_toggle(quads, row.x + row.w - line * 0.8f, row.y + row.h * 0.5f, value == "On", line);
+        } else {
+            text.draw(quads, value, row.x + row.w - line * 0.8f, baseline, row_scale,
+                      focused ? theme.background : theme.text_dim, TextAlign::Right);
+        }
     }
 }
 
@@ -1269,7 +1274,7 @@ void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, TextRenderer::elide_right(label, row.w - line * 1.6f, row_scale),
                   row.x + line * 0.8f, baseline, row_scale,
-                  folder_row && !focused ? theme.text_dim : menu_row_text(focused));
+                  folder_row && !focused ? theme.text_dim : quick_menu_row_text(focused));
     }
     quads.clear_clip();
     // A word under the folder row when it is the only one: why there is

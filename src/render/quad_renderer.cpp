@@ -32,6 +32,10 @@ uniform sampler2D u_texture;
 uniform sampler2D u_chroma;   // NV12's interleaved UV, or YUV420P's U
 uniform sampler2D u_chroma_v; // YUV420P's V
 uniform vec4 u_color;
+// A rounded ring's: the rect's width and height, its corner radius and how
+// thick the ring is; and the colour at its right-hand edge.
+uniform vec4 u_shape;
+uniform vec4 u_color2;
 // 0 solid, 1 screen (XRGB), 2 alpha mask, 3 screen (RGBA),
 // 4 screen (NV12), 5 screen (YUV420P), 6 image (RGBA, its own alpha)
 uniform int u_mode;
@@ -93,6 +97,17 @@ void main() {
         vec2 edge = 0.5 + 0.5 * cos(6.2831853 * v_texcoord);
         edge = edge * edge * edge * edge;
         gl_FragColor = vec4(u_color.rgb, u_color.a * max(edge.x, edge.y));
+    } else if (u_mode == 8) {
+        // A rounded rectangle's ring, worked out per fragment so its curve is
+        // smooth at any size: v_texcoord is in pixels across the rect. Its
+        // colour runs from u_color at the left to u_color2 at the right.
+        vec2 half_size = u_shape.xy * 0.5;
+        vec2 q = abs(v_texcoord - half_size) - (half_size - vec2(u_shape.z));
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - u_shape.z;
+        float outer = clamp(0.5 - d, 0.0, 1.0);
+        float inner = clamp(0.5 - (d + u_shape.w), 0.0, 1.0);
+        vec4 tint = mix(u_color, u_color2, clamp(v_texcoord.x / max(u_shape.x, 1.0), 0.0, 1.0));
+        gl_FragColor = vec4(tint.rgb, tint.a * (outer - inner));
     } else if (u_mode == 6) {
         // A picture with see-through parts of its own: a game's icon.
         vec4 texel = texture2D(u_texture, v_texcoord);
@@ -198,6 +213,8 @@ bool QuadRenderer::initialize(std::string* error) {
     uniform_viewport_ = gl::GetUniformLocation(program_, "u_viewport");
     uniform_color_ = gl::GetUniformLocation(program_, "u_color");
     uniform_mode_ = gl::GetUniformLocation(program_, "u_mode");
+    uniform_shape_ = gl::GetUniformLocation(program_, "u_shape");
+    uniform_color2_ = gl::GetUniformLocation(program_, "u_color2");
     uniform_sampler_ = gl::GetUniformLocation(program_, "u_texture");
     uniform_chroma_ = gl::GetUniformLocation(program_, "u_chroma");
     uniform_chroma_v_ = gl::GetUniformLocation(program_, "u_chroma_v");
@@ -371,6 +388,10 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     gl::UseProgram(program_);
     gl::Uniform1i(uniform_mode_, static_cast<GLint>(mode));
     gl::Uniform4f(uniform_color_, color.r, color.g, color.b, color.a);
+    if (mode == Mode::RoundedRing) {
+        gl::Uniform4f(uniform_shape_, ring_shape_[0], ring_shape_[1], ring_shape_[2], ring_shape_[3]);
+        gl::Uniform4f(uniform_color2_, ring_color2_.r, ring_color2_.g, ring_color2_.b, ring_color2_.a);
+    }
     gl::Uniform2f(uniform_viewport_, static_cast<float>(output_width_),
                   static_cast<float>(output_height_));
 
@@ -546,6 +567,17 @@ void QuadRenderer::draw_capsule(const PixelRect& rect, const Color& color) {
                     1.0f);
     draw_alpha_mask(PixelRect{rect.x + rect.w - radius, rect.y, radius, rect.h}, disc_, color,
                     0.5f, 0.0f, 1.0f, 1.0f);
+}
+
+void QuadRenderer::draw_rounded_ring(const PixelRect& rect, float radius, float thickness,
+                                     const Color& left, const Color& right) {
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    ring_shape_[0] = rect.w;
+    ring_shape_[1] = rect.h;
+    ring_shape_[2] = std::max(0.0f, std::min(radius, std::min(rect.w, rect.h) * 0.5f));
+    ring_shape_[3] = thickness;
+    ring_color2_ = right;
+    draw(rect, nullptr, left, Mode::RoundedRing, 0.0f, 0.0f, rect.w, rect.h);
 }
 
 void QuadRenderer::draw_rounded_rect(const PixelRect& rect, float radius, const Color& color) {

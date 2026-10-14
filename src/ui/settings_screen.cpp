@@ -550,7 +550,7 @@ void SettingsScreen::render(QuadRenderer& quads,
             // draw them -- so the row reads (A)/(B) or (B)/(A) in whichever
             // pad's symbols are chosen above, rather than a name for a
             // position that nobody reads a button by.
-            const Color value_color = focused ? theme.panel : theme.text_dim;
+            const Color value_color = theme.text_dim;
             const float height = line * 1.5f;
             const float glyph_width = glyphs.width_for(height);
             const float slash_width = TextRenderer::measure_width("/", scale * 0.9f);
@@ -570,8 +570,10 @@ void SettingsScreen::render(QuadRenderer& quads,
             continue;
         }
 #endif
-        if (!rows[index][1].empty()) {
-            const Color value_color = focused ? theme.panel : theme.text_dim;
+        if (is_toggle_value(rows[index][1])) {
+            draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, rows[index][1] == "On", line);
+        } else if (!rows[index][1].empty()) {
+            const Color value_color = theme.text_dim;
             const float label_width = TextRenderer::measure_width(rows[index][0], scale);
             const float available = row.w - label_width - pad * 4.0f;
             const std::string value =

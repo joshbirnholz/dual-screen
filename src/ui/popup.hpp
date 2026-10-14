@@ -43,6 +43,7 @@ inline Color popup_rule() { return Color{0.30f, 0.31f, 0.32f, 1.0f}; }
 inline Color popup_focus_fill() { return Color{0.10f, 0.105f, 0.11f, 1.0f}; }
 
 inline float popup_scale(float output_height) { return UiTheme::base_scale(output_height); }
+inline float popup_radius(float scale) { return std::round(scale * 6.0f); }
 
 // How wide the words can run, for wrapping them before the box is laid out.
 inline float popup_body_width(float output_width, float output_height) {
@@ -111,11 +112,11 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
     const float line = TextRenderer::line_height(scale);
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
                      Color{0.0f, 0.0f, 0.0f, 0.6f});
-    const float radius = std::max(2.0f, std::round(scale * 1.5f));
-    quads.draw_rounded_rect(geometry.box, radius, popup_rule());
-    quads.draw_rounded_rect(PixelRect{geometry.box.x + 1.0f, geometry.box.y + 1.0f,
-                                      geometry.box.w - 2.0f, geometry.box.h - 2.0f},
-                            std::max(0.0f, radius - 1.0f), popup_fill());
+    // Well rounded, as a Switch's popups are.
+    const float radius = popup_radius(scale);
+    quads.draw_rounded_ring(geometry.box, radius, geometry.box.w + geometry.box.h, popup_fill(),
+                            popup_fill());
+    quads.draw_rounded_ring(geometry.box, radius, 1.0f, popup_rule(), popup_rule());
 
     const float rule = std::max(1.0f, std::round(scale * 0.5f));
     for (std::size_t index = 0; index < geometry.buttons.size(); ++index) {
@@ -136,11 +137,9 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
             const float out = std::round(ring * 0.6f);
             const PixelRect outer{button.x - out, button.y - out, button.w + out * 2.0f,
                                   button.h + out * 2.0f};
-            const float r = std::max(3.0f, std::round(scale * 2.0f));
-            quads.draw_rounded_rect(outer, r, theme.accent);
-            quads.draw_rounded_rect(PixelRect{outer.x + ring, outer.y + ring, outer.w - ring * 2.0f,
-                                              outer.h - ring * 2.0f},
-                                    std::max(0.0f, r - ring), popup_focus_fill());
+            const float r = std::max(3.0f, std::round(scale * 3.0f));
+            quads.draw_rounded_ring(outer, r, outer.w + outer.h, popup_focus_fill(), popup_focus_fill());
+            quads.draw_rounded_ring(outer, r, ring, menu_ring_left(), menu_ring_right());
         }
         const PopupButton& label = buttons[index];
         const float text_y = std::round(button.y + (button.h - line) * 0.5f);

@@ -90,6 +90,12 @@ public:
     // A rectangle with its corners rounded to `radius` -- the capsule's disc,
     // cut in quarters.
     void draw_rounded_rect(const PixelRect& rect, float radius, const Color& color);
+    // The ring round the inside edge of a rounded rectangle, `thickness`
+    // wide, its colour running from `left` to `right` across it -- or, as
+    // thick as the rect, the whole of it filled, the edges smooth. Drawn in
+    // one quad, nothing under it covered but the ring itself.
+    void draw_rounded_ring(const PixelRect& rect, float radius, float thickness, const Color& left,
+                           const Color& right);
 
 private:
     // Matches the u_mode the fragment shader switches on. The two planar
@@ -103,6 +109,7 @@ private:
         ScreenYuv420p = 5,
         Image = 6,
         LcdGrid = 7,
+        RoundedRing = 8,
     };
 
     void draw(const PixelRect& rect,
@@ -136,6 +143,12 @@ private:
     GLint uniform_viewport_ = -1;
     GLint uniform_color_ = -1;
     GLint uniform_mode_ = -1;
+    GLint uniform_shape_ = -1;
+    GLint uniform_color2_ = -1;
+    // The next rounded ring's shape and right-hand colour -- see
+    // draw_rounded_ring().
+    float ring_shape_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    Color ring_color2_{};
     GLint uniform_sampler_ = -1;
     GLint uniform_chroma_ = -1;
     GLint uniform_chroma_v_ = -1;

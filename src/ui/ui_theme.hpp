@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 #include "render/quad_renderer.hpp"
 
@@ -57,20 +58,58 @@ inline float menu_two_line_row_height(float line) { return std::round(line * 4.0
 inline float menu_row_gap(float line) { return std::round(line * 0.3f); }
 inline float menu_row_pad(float line) { return std::round(line * 0.9f); }
 
+// The cursor's ring, as a Switch draws it: the accent running into a softer
+// violet across the row.
+inline Color menu_ring_left() { return ui_theme().accent; }
+inline Color menu_ring_right() { return Color{0.62f, 0.52f, 1.0f, 1.0f}; }
+
+// The cursor's ring and the faint fill inside it, round `rect`.
+inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float radius, float scale) {
+    const float ring = std::max(2.0f, std::round(scale * 1.1f));
+    quads.draw_rounded_ring(rect, radius, rect.w + rect.h, Color{1.0f, 1.0f, 1.0f, 0.07f},
+                            Color{1.0f, 1.0f, 1.0f, 0.07f});
+    quads.draw_rounded_ring(rect, radius, ring, menu_ring_left(), menu_ring_right());
+}
+
 // A line in a list -- the launcher, the settings, the file browser, Data
 // Management. Only the one under the cursor is drawn at all: a box around
 // every line turns a short list into a grid and makes the cursor harder to
-// find, not easier. That one is a light, rounded fill inside a ring of the
-// accent colour.
+// find, not easier. That one is ringed, the way a Switch's own menus ring it,
+// with whatever is behind it still showing through.
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale) {
     if (!focused) return;
-    const UiTheme& theme = ui_theme();
-    const float radius = std::round(std::min(rect.h * 0.18f, scale * 5.0f));
-    const float ring = menu_border(scale);
-    quads.draw_rounded_rect(rect, radius, theme.accent);
-    quads.draw_rounded_rect(PixelRect{rect.x + ring, rect.y + ring, rect.w - ring * 2.0f,
-                                      rect.h - ring * 2.0f},
-                            std::max(0.0f, radius - ring), theme.text);
+    draw_menu_cursor(quads, rect, std::round(std::min(rect.h * 0.22f, scale * 6.0f)), scale);
+}
+
+// An on/off value: a switch, on at the right in the accent colour, off at the
+// left in grey -- ending at `right`, centred on `centre_y`. Returns its width.
+inline float draw_toggle(QuadRenderer& quads, float right, float centre_y, bool on, float line) {
+    const float height = std::round(line * 1.15f);
+    const float width = std::round(height * 1.85f);
+    const PixelRect track{std::round(right - width), std::round(centre_y - height * 0.5f), width, height};
+    quads.draw_capsule(track, on ? ui_theme().accent : Color{0.36f, 0.38f, 0.43f, 1.0f});
+    const float inset = std::max(2.0f, std::round(height * 0.12f));
+    const float knob = height - inset * 2.0f;
+    const float knob_x = on ? track.x + track.w - inset - knob : track.x + inset;
+    quads.draw_capsule(PixelRect{knob_x, track.y + inset, knob, knob}, Color{0.97f, 0.97f, 0.98f, 1.0f});
+    return width;
+}
+
+// Whether a value is a switch's: what an on/off row says.
+inline bool is_toggle_value(const std::string& value) { return value == "On" || value == "Off"; }
+
+// A page's left-hand list, where a page has two panes and the right shows
+// the one chosen on the left -- the Graphics Packs page: the chosen one's
+// words in the accent colour, a bar beside it, and the cursor's ring round it
+// while the cursor is there.
+inline void draw_side_tab(QuadRenderer& quads, const PixelRect& rect, bool chosen, bool focused,
+                          float scale) {
+    if (focused) draw_menu_row(quads, rect, true, scale);
+    if (!chosen) return;
+    const float bar = std::max(3.0f, std::round(scale * 1.3f));
+    const float inset = std::round(rect.h * 0.2f);
+    quads.draw_capsule(PixelRect{rect.x + bar * 1.5f, rect.y + inset, bar, rect.h - inset * 2.0f},
+                       ui_theme().accent);
 }
 
 // A faint rule under a row, for lists whose rows run on from one another
@@ -131,8 +170,16 @@ inline void draw_menu_tile(QuadRenderer& quads,
     quads.draw_outline(rect, theme.text, menu_border(scale));
 }
 
-// What text on such a row has to be, which flips with the fill under it.
+// What text on a list's row is: the same with the cursor on it or not, the
+// ring leaving what is under it showing.
 inline const Color& menu_row_text(bool focused) {
+    (void)focused;
+    return ui_theme().text;
+}
+
+// What text on the quick menu's rows is, which flips with the solid fill
+// under the cursor.
+inline const Color& quick_menu_row_text(bool focused) {
     const UiTheme& theme = ui_theme();
     return focused ? theme.background : theme.text;
 }

@@ -447,9 +447,9 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                   std::round(content.y + (content.h - line) * 0.5f), scale, theme.text_dim,
                   TextAlign::Center);
     } else {
-        // The list. The pack whose things are showing stays marked, faintly,
-        // while the cursor is over among them -- as a quick menu section is
-        // -- and both are rounded, as every page's rows are.
+        // The list, drawn as a Switch's settings draw their left-hand side:
+        // the pack whose things are showing in the accent colour with a bar
+        // beside it, and ringed while the cursor is on it.
         quads.set_clip(geometry.list);
         const int focused_line = line_of_focus(focus_);
         for (std::size_t index = 0; index < lines_.size() && index < geometry.lines.size(); ++index) {
@@ -462,16 +462,8 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
             }
             const bool current = static_cast<int>(index) == focused_line;
             const bool focused = current && !in_pack_;
-            if (focused) {
-                draw_menu_row(quads, row, true, scale);
-            } else if (current) {
-                Color faint = theme.text;
-                faint.a = kSelectedTileOpacity;
-                quads.draw_rounded_rect(row, std::round(std::min(row.h * 0.18f, scale * 5.0f)),
-                                        faint);
-            }
-            // Dark on either fill, the faint one included.
-            const Color& ink = current ? theme.background : theme.text;
+            draw_side_tab(quads, row, current, focused, scale);
+            const Color& ink = current ? theme.accent : theme.text;
             const bool enabled = packs_[entry.pack].enabled;
             const float pad = line * 0.8f;
             const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
@@ -481,7 +473,7 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                 const float value_scale = scale * 0.9f;
                 text.draw(quads, "On", row.x + row.w - pad,
                           row.y + (row.h - TextRenderer::line_height(value_scale)) * 0.5f,
-                          value_scale, current ? theme.background : theme.text_dim,
+                          value_scale, current ? theme.accent : theme.text_dim,
                           TextAlign::Right);
                 label_room -= TextRenderer::measure_width("On", value_scale) + pad;
             }
@@ -515,15 +507,23 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                 const float pad = line * 0.8f;
                 const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
                 const std::string value = item_value(item);
+                // Turning the pack on and off is a switch; a preset, whatever
+                // it is called, is a choice.
+                const bool toggle = item == 0;
                 const float value_width =
-                    std::min(TextRenderer::measure_width(value, row_scale), row.w * 0.55f);
+                    toggle ? line * 2.2f
+                           : std::min(TextRenderer::measure_width(value, row_scale), row.w * 0.55f);
                 text.draw(quads,
                           TextRenderer::elide_right(item_label(item), row.w - pad * 3.0f - value_width,
                                                     row_scale),
                           row.x + pad, baseline, row_scale, menu_row_text(focused));
-                text.draw(quads, TextRenderer::elide_right(value, row.w * 0.55f, row_scale),
-                          row.x + row.w - pad, baseline, row_scale,
-                          focused ? theme.background : theme.text_dim, TextAlign::Right);
+                if (toggle) {
+                    draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, value == "On", line);
+                } else {
+                    text.draw(quads, TextRenderer::elide_right(value, row.w * 0.55f, row_scale),
+                              row.x + row.w - pad, baseline, row_scale, theme.text_dim,
+                              TextAlign::Right);
+                }
             }
             // Cemu's descriptions keep their own line breaks.
             float y = geometry.description_y;

@@ -1340,7 +1340,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             draw_menu_row(quads, row, focused, scale);
             if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
-            const Color dim = focused ? with_alpha(theme.background, 0.7f) : theme.text_dim;
+            const Color dim = theme.text_dim;
             const float icon_size = line * 2.0f;
             const float pad = menu_row_pad(line);
             draw_game_icon(info, PixelRect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size});
@@ -1381,7 +1381,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             draw_menu_row(quads, row, focused, scale);
             if (!focused) draw_menu_rule(quads, row);
             Color ink = menu_row_text(focused);
-            if (!enabled[static_cast<std::size_t>(index)]) ink = with_alpha(focused ? theme.background : theme.text_dim, 0.55f);
+            if (!enabled[static_cast<std::size_t>(index)]) ink = with_alpha(theme.text_dim, 0.55f);
             const float icon_size = line * 1.35f;
             const float pad = menu_row_pad(line);
             draw_icon(action_icons[index], PixelRect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size}, ink);
@@ -1459,7 +1459,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             draw_menu_row(quads, row, focused, scale);
             if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
-            const Color dim = focused ? with_alpha(theme.background, 0.7f) : theme.text_dim;
+            const Color dim = theme.text_dim;
             const float pad = menu_row_pad(line);
             const float sub_scale = scale * 0.75f;
             const float step = line * 1.3f;

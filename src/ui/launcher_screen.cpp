@@ -322,7 +322,7 @@ void HostPickerScreen::render(QuadRenderer& quads,
         text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad, top,
                   scale, available ? menu_row_text(focused) : theme.text_dim);
         text.draw(quads, host_row_detail(host, available), row.x + pad, top + step, sub_scale,
-                  focused ? theme.panel : theme.text_dim);
+                  theme.text_dim);
     }
 
     draw_page_guide(quads, text, glyphs, frame,

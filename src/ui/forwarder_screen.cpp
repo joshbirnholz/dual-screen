@@ -786,7 +786,7 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
             const float label_w = TextRenderer::measure_width(row_label(which), scale);
             text.draw(quads, TextRenderer::elide_right(value, row.w - label_w - pad * 3.0f, scale * 0.9f),
                       row.x + row.w - pad, page_row_text_y(row, scale * 0.9f), scale * 0.9f,
-                      focused ? theme.panel : theme.text_dim, TextAlign::Right);
+                      theme.text_dim, TextAlign::Right);
         }
     }
 
