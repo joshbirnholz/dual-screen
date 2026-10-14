@@ -36,6 +36,8 @@ uniform vec4 u_color;
 // thick the ring is; and the colour at its right-hand edge.
 uniform vec4 u_shape;
 uniform vec4 u_color2;
+// Each corner's radius, clockwise from the top left, where they differ.
+uniform vec4 u_radii;
 // 0 solid, 1 screen (XRGB), 2 alpha mask, 3 screen (RGBA),
 // 4 screen (NV12), 5 screen (YUV420P), 6 image (RGBA, its own alpha)
 uniform int u_mode;
@@ -102,8 +104,12 @@ void main() {
         // smooth at any size: v_texcoord is in pixels across the rect. Its
         // colour runs from u_color at the left to u_color2 at the right.
         vec2 half_size = u_shape.xy * 0.5;
-        vec2 q = abs(v_texcoord - half_size) - (half_size - vec2(u_shape.z));
-        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - u_shape.z;
+        vec2 p = v_texcoord - half_size;
+        // The radius of the corner this fragment is nearest.
+        float r = p.x < 0.0 ? (p.y < 0.0 ? u_radii.x : u_radii.w)
+                            : (p.y < 0.0 ? u_radii.y : u_radii.z);
+        vec2 q = abs(p) - (half_size - vec2(r));
+        float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
         float outer = clamp(0.5 - d, 0.0, 1.0);
         float inner = clamp(0.5 - (d + u_shape.w), 0.0, 1.0);
         vec4 tint = mix(u_color, u_color2, clamp(v_texcoord.x / max(u_shape.x, 1.0), 0.0, 1.0));
@@ -215,6 +221,7 @@ bool QuadRenderer::initialize(std::string* error) {
     uniform_mode_ = gl::GetUniformLocation(program_, "u_mode");
     uniform_shape_ = gl::GetUniformLocation(program_, "u_shape");
     uniform_color2_ = gl::GetUniformLocation(program_, "u_color2");
+    uniform_radii_ = gl::GetUniformLocation(program_, "u_radii");
     uniform_sampler_ = gl::GetUniformLocation(program_, "u_texture");
     uniform_chroma_ = gl::GetUniformLocation(program_, "u_chroma");
     uniform_chroma_v_ = gl::GetUniformLocation(program_, "u_chroma_v");
@@ -391,6 +398,7 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     if (mode == Mode::RoundedRing) {
         gl::Uniform4f(uniform_shape_, ring_shape_[0], ring_shape_[1], ring_shape_[2], ring_shape_[3]);
         gl::Uniform4f(uniform_color2_, ring_color2_.r, ring_color2_.g, ring_color2_.b, ring_color2_.a);
+        gl::Uniform4f(uniform_radii_, ring_radii_[0], ring_radii_[1], ring_radii_[2], ring_radii_[3]);
     }
     gl::Uniform2f(uniform_viewport_, static_cast<float>(output_width_),
                   static_cast<float>(output_height_));
@@ -571,10 +579,20 @@ void QuadRenderer::draw_capsule(const PixelRect& rect, const Color& color) {
 
 void QuadRenderer::draw_rounded_ring(const PixelRect& rect, float radius, float thickness,
                                      const Color& left, const Color& right) {
+    const float radii[4] = {radius, radius, radius, radius};
+    draw_rounded_ring(rect, radii, thickness, left, right);
+}
+
+void QuadRenderer::draw_rounded_ring(const PixelRect& rect, const float radii[4], float thickness,
+                                     const Color& left, const Color& right) {
     if (rect.w <= 0.0f || rect.h <= 0.0f) return;
     ring_shape_[0] = rect.w;
     ring_shape_[1] = rect.h;
-    ring_shape_[2] = std::max(0.0f, std::min(radius, std::min(rect.w, rect.h) * 0.5f));
+    const float most = std::min(rect.w, rect.h) * 0.5f;
+    for (int corner = 0; corner < 4; ++corner) {
+        ring_radii_[corner] = std::max(0.0f, std::min(radii[corner], most));
+    }
+    ring_shape_[2] = ring_radii_[0];
     ring_shape_[3] = thickness;
     ring_color2_ = right;
     draw(rect, nullptr, left, Mode::RoundedRing, 0.0f, 0.0f, rect.w, rect.h);

@@ -137,11 +137,19 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
             const float out = std::round(ring * 0.6f);
             const PixelRect outer{button.x - out, button.y - out, button.w + out * 2.0f,
                                   button.h + out * 2.0f};
-            // As round as the box's own corners, from just outside them, so
-            // a button in a corner follows the corner.
-            const float r = radius + out;
-            quads.draw_rounded_ring(outer, r, outer.w + outer.h, popup_focus_fill(), popup_focus_fill());
-            quads.draw_rounded_ring(outer, r, ring, menu_ring_left(), menu_ring_right());
+            // Barely rounded, but for a corner it shares with the box, which
+            // it follows from just outside -- as a Switch's popups draw it.
+            const float small = std::max(3.0f, std::round(scale * 2.0f));
+            const float big = radius + out;
+            const std::size_t last = geometry.buttons.size() - 1;
+            const bool bottom = geometry.stacked ? index == last : true;
+            const bool left_end = geometry.stacked || index == 0;
+            const bool right_end = geometry.stacked || index == last;
+            const float radii[4] = {small, small, bottom && right_end ? big : small,
+                                    bottom && left_end ? big : small};
+            quads.draw_rounded_ring(outer, radii, outer.w + outer.h, popup_focus_fill(),
+                                    popup_focus_fill());
+            quads.draw_rounded_ring(outer, radii, ring, menu_ring_left(), menu_ring_right());
         }
         const PopupButton& label = buttons[index];
         const float text_y = std::round(button.y + (button.h - line) * 0.5f);

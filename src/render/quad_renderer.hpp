@@ -96,6 +96,9 @@ public:
     // one quad, nothing under it covered but the ring itself.
     void draw_rounded_ring(const PixelRect& rect, float radius, float thickness, const Color& left,
                            const Color& right);
+    // The same with each corner's own radius, clockwise from the top left.
+    void draw_rounded_ring(const PixelRect& rect, const float radii[4], float thickness,
+                           const Color& left, const Color& right);
 
 private:
     // Matches the u_mode the fragment shader switches on. The two planar
@@ -145,6 +148,8 @@ private:
     GLint uniform_mode_ = -1;
     GLint uniform_shape_ = -1;
     GLint uniform_color2_ = -1;
+    GLint uniform_radii_ = -1;
+    float ring_radii_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     // The next rounded ring's shape and right-hand colour -- see
     // draw_rounded_ring().
     float ring_shape_[4] = {0.0f, 0.0f, 0.0f, 0.0f};
