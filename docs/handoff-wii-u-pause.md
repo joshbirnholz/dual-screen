@@ -98,7 +98,7 @@ foreground", stops at a safe point, and waits for "acquire foreground".
   and never again). The menu opens over the running game.
 - No answer in 2 s: the menu opens over the running game; the request stands,
   so a late pause still happens under it.
-- Setting "Pause Wii U games in the quick menu" (`pause_wii_u_in_menu`, on by
+- Setting "Pause Wii U Games in the Quick Menu" (`pause_wii_u_in_menu`, on by
   default) turns all of this off: the menu opens over the live game.
 
 **The background.** On pause Cemu sends both screens' pictures once; the menu

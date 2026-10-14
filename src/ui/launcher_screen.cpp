@@ -14,9 +14,9 @@ const LauncherScreen* unused_tag = nullptr;
 
 const char* title_for(LauncherChoice choice) {
     switch (choice) {
-        case LauncherChoice::LoadGame: return "Load a game";
-        case LauncherChoice::ConnectAsTopScreen: return "Connect as top screen";
-        case LauncherChoice::ConnectAsBottomScreen: return "Connect as bottom screen";
+        case LauncherChoice::LoadGame: return "Load a Game";
+        case LauncherChoice::ConnectAsTopScreen: return "Connect as Top Screen";
+        case LauncherChoice::ConnectAsBottomScreen: return "Connect as Bottom Screen";
         case LauncherChoice::Settings: return "Settings";
         case LauncherChoice::Quit: return "Quit";
         case LauncherChoice::None: break;

@@ -140,8 +140,8 @@ void SettingsScreen::open_emulators_page() {
 
 std::string SettingsScreen::melon_label(MelonRow row) {
     switch (row) {
-        case MelonRow::CpuClock: return "CPU clock while playing";
-        case MelonRow::Pipeline: return "Each frame shown";
+        case MelonRow::CpuClock: return "CPU Clock While Playing";
+        case MelonRow::Pipeline: return "Each Frame Shown";
     }
     return std::string();
 }
@@ -770,17 +770,17 @@ void SettingsScreen::render(QuadRenderer& quads,
     }
     const std::string main_rows[kRowCount][2] = {
 #ifndef __SWITCH__
-        {"Controller icons", to_string(settings_.pad_glyphs)},
+        {"Controller Icons", to_string(settings_.pad_glyphs)},
         // Drawn as the two buttons themselves, below.
         {"Confirm/Cancel", ""},
 #endif
-        {"Streaming quality", video::to_string(settings_.video_hold)},
-        {"Run ahead to hide a DS game's lag",
+        {"Streaming Quality", video::to_string(settings_.video_hold)},
+        {"Run Ahead to Hide a DS Game's Lag",
          settings_.run_ahead_ds == 0
              ? std::string("Off")
              : std::to_string(settings_.run_ahead_ds) +
                    (settings_.run_ahead_ds == 1 ? " frame" : " frames")},
-        {"DS nickname", settings_.ds_nickname.empty() ? std::string("Not set") : settings_.ds_nickname},
+        {"Nickname", settings_.ds_nickname.empty() ? std::string("Not set") : settings_.ds_nickname},
         {"Favorite Color",
          kDsFavoriteColors[static_cast<std::size_t>(
                                std::clamp(settings_.ds_favorite_color, 0,
@@ -792,11 +792,11 @@ void SettingsScreen::render(QuadRenderer& quads,
                          : std::string("Not set")},
         {"Vsync", settings_.vsync ? "On" : "Off"},
 #if DS_PLAYS_WII_U
-        {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
-        {"Pause Wii U games in the quick menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
-        {"Wii U TV audio", kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)]},
+        {"Default Wii U Screen", to_string(settings_.wii_u_screen_alone)},
+        {"Pause Wii U Games in the Quick Menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
+        {"Wii U TV Audio", kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)]},
 #endif
-        {"Sound effects", settings_.ui_sounds ? "On" : "Off"},
+        {"Sound Effects", settings_.ui_sounds ? "On" : "Off"},
     };
     if (page_ == Page::Main) {
         if (offers_data_management_) rows.push_back({"Data Management", ""});

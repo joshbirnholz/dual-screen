@@ -85,7 +85,7 @@ guide no longer shows them. A Wii U game's menu stays a plain list.
 
 ### Your DS's name, favorite color and birthday
 
-**DS nickname**, **Favorite Color** and **Birthday**, in Settings, are what a
+**Nickname**, **Favorite Color** and **Birthday**, in Settings, are what a
 DS's own settings keep about its owner: a DS game that greets you by name
 uses the nickname, one that themes itself uses the color, and one that marks
 your birthday uses that. melonDS DS is told all three as a DS game starts.
@@ -104,7 +104,7 @@ value in effect filled in. The box stays where it opened; a list longer than
 it shows scrolls inside it -- with the cursor, a finger dragged up or down, or
 the mouse wheel. Every list in the app scrolls with the mouse wheel.
 
-### Sound effects
+### Sound Effects
 
 Every menu in the app makes a sound when a press does something: the cursor
 moving, something chosen, backing out, an error appearing, and the quick menu
@@ -136,7 +136,7 @@ the app's own so a busy frame cannot leave it with nothing to play; voices that
 overlap are summed and then eased under full scale rather than clipped. Where SDL can open only one device at a
 time -- Android, and a run with `SDL_AUDIODRIVER=dummy` -- there are no menu
 sounds, since the game's sound needs that device; the log says which at
-start-up (`menu sounds ready`, or `no menu sounds:` and why). **Sound effects**
+start-up (`menu sounds ready`, or `no menu sounds:` and why). **Sound Effects**
 in Settings turns them on and off (`ui_sounds` in `settings.json`). A companion with
 no Settings of its own -- on a desktop, an iPhone, an iPad or an Apple TV --
 always plays them.
@@ -292,7 +292,7 @@ Three things are different about a Wii U session:
 - **One device shows one screen.** The television is the game and the GamePad is
   a second view of it, so squeezing both into one window is not the arrangement
   the console has. With a second device connected, each holds one. Alone, the
-  device is whichever screen **Default Wii U screen** on the Settings
+  device is whichever screen **Default Wii U Screen** on the Settings
   screen says — and Cemu is told, so its own window shows that screen rather
   than whatever it was last left on. **F3** swaps it for the rest of a session
   without writing anything down.
@@ -365,20 +365,20 @@ Three things are different about a Wii U session:
 - **Game Options**, in the quick menu, are this game's, as a DS or 3DS game's
   are, each stepped on with **A**: first **Graphics Packs**, which opens the
   page above, then **Swap Screens** (played alone: the other
-  screen from **Default Wii U screen** -- **F3** does the same; with a second
+  screen from **Default Wii U Screen** -- **F3** does the same; with a second
   device connected, the two trade screens), **Show Pointer** (this device's own,
   as on every console's menu), then Cemu's: **Upscaling** (how Cemu enlarges
   a picture smaller than its window: bilinear, bicubic, Hermite or nearest
-  neighbor), **Aspect ratio** (the game's own, or stretched to the screen),
-  **Performance overlay** (off, frame rate, frame rate and CPU, or
-  everything Cemu can show) and **CPU mode** (auto, multi-core or
+  neighbor), **Aspect Ratio** (the game's own, or stretched to the screen),
+  **Performance Overlay** (off, frame rate, frame rate and CPU, or
+  everything Cemu can show) and **CPU Mode** (auto, multi-core or
   single-core, for a game that misbehaves). Cemu keeps the first three for
   every game alike, so Dualscreen keeps each game's choice and sets it as the
   game starts, Cemu's default where the game has none; they change at once.
   CPU mode is kept in Cemu's own profile for the game, and changes when the
   game is reset.
 
-- **Wii U TV audio**, in Settings, is Cemu's TV channels -- **Mono**,
+- **Wii U TV Audio**, in Settings, is Cemu's TV channels -- **Mono**,
   **Stereo** (Cemu's default) or **Surround** -- the same for every game.
   Dualscreen tells Cemu as it connects, and again when it is changed; Cemu
   opens the TV's sound as a game starts, so a game already running hears the
@@ -586,8 +586,8 @@ serves DSU as the motion source.
 Start the game on whichever device you want to run it — a gaming PC, or the
 Deck. It announces itself on the network automatically.
 
-On the other device, launch dualscreen with no ROM and pick **Connect as top
-screen** or **Connect as bottom screen**. It finds anything running nearby,
+On the other device, launch dualscreen with no ROM and pick **Connect as Top
+Screen** or **Connect as Bottom Screen**. It finds anything running nearby,
 lists it, and joins. The device holding the bottom screen is the one whose
 touchscreen works, and both devices' buttons drive the game.
 
@@ -635,7 +635,7 @@ It is one program, in `companion/`, built for four kinds of device:
 - a **Mac**, as an ordinary application — see
   [apple/README.md](apple/README.md), which is also honest about the fact that
   it has not been run on one yet
-- this **desktop app** itself, with *Connect as top/bottom screen*
+- this **desktop app** itself, with *Connect as Top/Bottom Screen*
 
 It shares the parts that describe a session — the protocol, discovery, the
 layout arithmetic, the controller mapping — with this app rather than
@@ -791,7 +791,7 @@ is too long. What keeps it short:
   game's own rate shows one frame per refresh whatever happens, so the extra
   frame a Wi-Fi hiccup leaves queued would otherwise stay queued for the rest
   of the session. It is caught up on by letting one frame go unseen. How
-  promptly depends on **Streaming quality** in Settings:
+  promptly depends on **Streaming Quality** in Settings:
   Responsive does it at once, Balanced (the default) after two frames, and
   Smooth after six.
 - **A tap quicker than a frame still counts.** A press and release that both
@@ -823,8 +823,8 @@ companion delays what arrives the way the simulated link above does.
 ### Run-ahead
 
 A game has input lag of its own: it reads the touch in one frame and draws the
-result a frame or two later, on a real DS as much as here. **Run ahead to hide
-a DS game's lag** in Settings (off, 1 frame or 2 frames) hides that, the way
+result a frame or two later, on a real DS as much as here. **Run Ahead to Hide
+a DS Game's Lag** in Settings (off, 1 frame or 2 frames) hides that, the way
 RetroArch's run-ahead does. Each frame the game is run normally and its sound
 played. It is then saved, run on silently by the chosen number of frames, and
 the last of those is the picture shown. Then it is put back. What is on
@@ -1336,7 +1336,7 @@ Full options:
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |
-| Change how button prompts are drawn | **Controller icons** in Settings: a Switch's, a PlayStation's or an Xbox pad's buttons -- face buttons, shoulders, triggers, start and select, sticks and d-pad, each as that pad prints them, from Kenney's Input Prompts -- or **Positional**: four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
+| Change how button prompts are drawn | **Controller Icons** in Settings: a Switch's, a PlayStation's or an Xbox pad's buttons -- face buttons, shoulders, triggers, start and select, sticks and d-pad, each as that pad prints them, from Kenney's Input Prompts -- or **Positional**: four dots with the one to press filled in, for a pad whose letters do not match the prompts' |
 | Swap which button confirms and which goes back | **Confirm/Cancel** in Settings, shown as the two buttons themselves: (A)/(B) or (B)/(A) in the symbols chosen above. A pad read through Steam Input always confirms with Steam's A -- see Face buttons. Neither setting is on a Switch, which always draws its own letters and confirms with A -- or, with one Joy-Con held sideways, draws the buttons by position, as the Switch's own menus do |
 
 ### If it quits immediately in Game Mode
@@ -1502,7 +1502,7 @@ later; an older one is only ever asked about DS saves.
 The quick menu of a DS game has **Create Save State** and **Load Save
 State**. Either shows four slots on the right, two by two, like Nintendo
 Switch Online's suspend points: each an outlined box with a picture of both
-screens, one above the other, and its name ("Save slot 1") with the date and
+screens, one above the other, and its name ("Save Slot 1") with the date and
 time it was made, or "Empty". Going across puts the cursor on the first slot.
 
 Dates and times are written the way the device showing them writes them:
