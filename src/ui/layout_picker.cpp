@@ -1201,11 +1201,21 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
         const MenuSection section = sections_[index];
         const bool current = section == section_;
         const bool focused = current && !on_content_;
-        // As every page's left-hand list: the one whose things are showing
-        // marked by a bar and its words in the accent, the cursor's ring
-        // round it while the cursor is there.
-        draw_side_tab(quads, row, current, focused, scale);
-        const Color& ink = current ? theme.accent : theme.text;
+        // As a Switch's own game menus draw theirs: the row under the cursor
+        // solid white, running right up to the line, its words in the accent;
+        // the one whose things are showing, while the cursor is over among
+        // them, a fainter white with dark words.
+        const PixelRect bar{row.x, row.y, geometry.divider_x - row.x, row.h};
+        Color ink = theme.text;
+        if (focused) {
+            quads.draw_solid(bar, theme.text);
+            ink = theme.accent;
+        } else if (current) {
+            Color faint = theme.text;
+            faint.a = kSelectedTileOpacity;
+            quads.draw_solid(bar, faint);
+            ink = theme.background;
+        }
         text.draw(quads, section_label(section), row.x + row.w - line * 0.8f,
                   row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f, row_scale, ink,
                   TextAlign::Right);
