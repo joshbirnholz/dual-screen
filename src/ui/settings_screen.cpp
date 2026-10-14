@@ -713,7 +713,11 @@ void SettingsScreen::render(QuadRenderer& quads,
             continue;
         }
 #endif
-        if (is_toggle_value(rows[index][1])) {
+        // "Off" is also one of Run Ahead's three: a switch only where there
+        // is nothing else to choose.
+        const bool has_choices = page_ == Page::Main &&
+                                 index == first_setting_row() + static_cast<int>(Row::RunAheadDs);
+        if (is_toggle_value(rows[index][1]) && !has_choices) {
             draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, rows[index][1] == "On", line);
         } else if (!rows[index][1].empty()) {
             const Color value_color = theme.text_dim;

@@ -1379,7 +1379,8 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         text.draw(quads, option_name(options_[index]), row.x + line * 0.8f, baseline, row_scale,
                   quick_menu_row_text(focused));
         const std::string value = option_value(options_[index]);
-        if (is_toggle_value(value)) {
+        int current = -1;
+        if (is_toggle_value(value) && option_choices(options_[index], current).empty()) {
             draw_toggle(quads, row.x + row.w - line * 0.8f, row.y + row.h * 0.5f, value == "On", line);
         } else {
             text.draw(quads, value, row.x + row.w - line * 0.8f, baseline, row_scale,

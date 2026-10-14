@@ -108,8 +108,8 @@ inline void draw_side_tab(QuadRenderer& quads, const PixelRect& rect, bool chose
     if (!chosen) return;
     const float bar = std::max(3.0f, std::round(scale * 1.3f));
     const float inset = std::round(rect.h * 0.2f);
-    quads.draw_capsule(PixelRect{rect.x + bar * 1.5f, rect.y + inset, bar, rect.h - inset * 2.0f},
-                       ui_theme().accent);
+    const PixelRect line{rect.x + bar * 1.5f, rect.y + inset, bar, rect.h - inset * 2.0f};
+    quads.draw_rounded_ring(line, bar * 0.5f, line.w + line.h, ui_theme().accent, ui_theme().accent);
 }
 
 // A faint rule under a row, for lists whose rows run on from one another

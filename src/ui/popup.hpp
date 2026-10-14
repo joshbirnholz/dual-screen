@@ -137,7 +137,9 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
             const float out = std::round(ring * 0.6f);
             const PixelRect outer{button.x - out, button.y - out, button.w + out * 2.0f,
                                   button.h + out * 2.0f};
-            const float r = std::max(3.0f, std::round(scale * 3.0f));
+            // As round as the box's own corners, from just outside them, so
+            // a button in a corner follows the corner.
+            const float r = radius + out;
             quads.draw_rounded_ring(outer, r, outer.w + outer.h, popup_focus_fill(), popup_focus_fill());
             quads.draw_rounded_ring(outer, r, ring, menu_ring_left(), menu_ring_right());
         }
