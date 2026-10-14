@@ -309,6 +309,18 @@ bool InputManager::reads_by_letter(SDL_GameController* controller) {
 #endif
 }
 
+bool InputManager::reads_pad(SDL_JoystickID id) const {
+#ifdef __SWITCH__
+    (void)id;
+    return true;
+#else
+    // Not one Steam is also presenting -- see pad_connected(). A pad not
+    // opened here is nobody's copy.
+    const auto it = controllers_.find(id);
+    return it == controllers_.end() || it->second == nullptr || pad_connected(id);
+#endif
+}
+
 bool InputManager::last_pad_reads_by_letter() const {
     const auto it = controllers_.find(last_pad_pressed_);
     return it != controllers_.end() && reads_by_letter(it->second);
@@ -332,7 +344,25 @@ bool InputManager::pad_connected(SDL_JoystickID id) const {
         return false;
     }
     const SteamHandleFn handle_of = steam_handle_fn();
-    if (handle_of == nullptr || !is_steam_virtual_pad(it->second) || handle_of(it->second) != 0) {
+    if (!is_steam_virtual_pad(it->second)) {
+        // A controller SDL reads itself while Steam also presents it as one
+        // of its own: the same press arrives from both, and only Steam's has
+        // the player's Steam Input remapping in it -- read from both, a remap
+        // of A and B made one press both yes and no, whichever came first.
+        // Steam's is the one, and this is passed over: a pad of the same kind
+        // that Steam has a controller behind. A pad Steam Input is turned off
+        // for has none, and is read as it is.
+        const SDL_GameControllerType type = SDL_GameControllerGetType(it->second);
+        if (handle_of == nullptr || type == SDL_CONTROLLER_TYPE_UNKNOWN) return true;
+        for (const auto& [other_id, other] : controllers_) {
+            if (other != nullptr && is_steam_virtual_pad(other) && handle_of(other) != 0 &&
+                SDL_GameControllerGetType(other) == type) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (handle_of == nullptr || handle_of(it->second) != 0) {
         return true;
     }
     for (const auto& [other_id, other] : controllers_) {
@@ -479,10 +509,20 @@ void InputManager::open_controller(int device_index) {
 
     if (controllers_.size() > 1) {
         // Normal under Steam Input, which adds a virtual pad alongside the real
-        // device. Their inputs are merged and duplicate menu actions dropped.
+        // device. The real one is passed over where Steam has one of its own
+        // for it -- see pad_connected() -- and duplicate menu actions dropped.
         log_info("now tracking " + std::to_string(controllers_.size()) +
                  " controllers; duplicate presses are merged");
     }
+#ifndef __SWITCH__
+    // Either order of arriving can make one of them Steam's copy of the other.
+    for (const auto& [pad, opened] : controllers_) {
+        if (opened == nullptr || reads_pad(pad)) continue;
+        const char* shadowed = SDL_GameControllerName(opened);
+        log_info(std::string("reading ") + (shadowed != nullptr ? shadowed : "a controller") +
+                 " through Steam Input only, with its remapping");
+    }
+#endif
 }
 
 bool controller_is_a_remote(const char* sdl_name) {
@@ -797,6 +837,8 @@ void InputManager::handle_event(const SDL_Event& event) {
             break;
 
         case SDL_CONTROLLERBUTTONDOWN: {
+            // The same press again, from a controller Steam presents too.
+            if (!reads_pad(event.cbutton.which)) break;
             SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(event.cbutton.button);
             last_pad_pressed_ = event.cbutton.which;
             // A Steam Input pad's A is A, wherever Steam put it -- and A says
@@ -1086,7 +1128,7 @@ void InputManager::emit_navigation_from_axes() {
     float x = 0.0f;
     float y = 0.0f;
     for (const auto& entry : controllers_) {
-        if (entry.second == nullptr) continue;
+        if (entry.second == nullptr || !reads_pad(entry.first)) continue;
         const float axis_x =
             SDL_GameControllerGetAxis(entry.second, SDL_CONTROLLER_AXIS_LEFTX) / 32767.0f;
         const float axis_y =
@@ -1126,7 +1168,7 @@ void InputManager::emit_navigation_from_axes() {
         SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN,
         SDL_CONTROLLER_BUTTON_DPAD_LEFT, SDL_CONTROLLER_BUTTON_DPAD_RIGHT};
     for (const auto& entry : controllers_) {
-        if (entry.second == nullptr) continue;
+        if (entry.second == nullptr || !reads_pad(entry.first)) continue;
         for (int direction = 0; direction < 4; ++direction) {
             if (SDL_GameControllerGetButton(entry.second, dpad[direction]) != 0) {
                 held[direction] = true;
@@ -1195,7 +1237,8 @@ MenuButtonLabels InputManager::menu_labels() const {
 
 bool InputManager::stick_buttons_held(SDL_GameControllerButton button) const {
     for (const auto& entry : controllers_) {
-        if (entry.second != nullptr && SDL_GameControllerGetButton(entry.second, button) != 0) {
+        if (entry.second != nullptr && reads_pad(entry.first) &&
+            SDL_GameControllerGetButton(entry.second, button) != 0) {
             return true;
         }
     }
@@ -1359,7 +1402,7 @@ DsInputState InputManager::poll_held_state() const {
 
     for (const auto& entry : controllers_) {
         SDL_GameController* controller = entry.second;
-        if (controller == nullptr) continue;
+        if (controller == nullptr || !reads_pad(entry.first)) continue;
         merge_held(held, held_state_of(controller));
     }
 

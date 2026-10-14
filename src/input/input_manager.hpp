@@ -197,6 +197,9 @@ public:
     static bool reads_by_letter(SDL_GameController* controller);
     // Whether the pad pressed last is one of those: the prompts follow it.
     bool last_pad_reads_by_letter() const;
+    // Whether a controller's input is read at all: not when Steam Input
+    // presents the same controller as one of its own -- see pad_connected().
+    bool reads_pad(SDL_JoystickID id) const;
     ConfirmButton confirm_button() const { return confirm_button_; }
 
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
