@@ -97,6 +97,10 @@ enum class MessageType : uint16_t {
     ControllersView = 19,
     // either way
     Ping = 20,
+    // The host's Graphics Packs page, as it stands, for a companion to draw
+    // while it is up -- see GraphicPacksViewMessage. Sent when it changes. A
+    // companion from before this ignores it and says where to look instead.
+    GraphicPacksView = 21,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -462,6 +466,37 @@ struct ControllersViewPad {
     int32_t slot = -1;
 };
 
+// The host's Graphics Packs page as it stands, for a companion to draw the
+// same: the packs Cemu listed, and where the cursor is among them. Presses on
+// the companion already reach the host's page (see settings_open); this is
+// only what it looks like.
+struct GraphicPacksViewChoice {
+    std::string category;
+    std::vector<std::string> presets;
+    int32_t active = -1;
+};
+
+struct GraphicPacksViewPack {
+    std::string id;
+    std::string path;
+    std::string name;
+    std::string description;
+    bool enabled = false;
+    bool restart_needed = false;
+    std::vector<GraphicPacksViewChoice> choices;
+};
+
+struct GraphicPacksViewMessage {
+    bool open = false;
+    // Still asking Cemu: nothing to list yet.
+    bool waiting = true;
+    bool restart_pending = false;
+    int32_t focus = 0;
+    bool in_pack = false;
+    int32_t item = 0;
+    std::vector<GraphicPacksViewPack> packs;
+};
+
 struct ControllersViewMessage {
     bool open = false;
     int32_t focus = 0;
@@ -619,6 +654,7 @@ void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
 void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& out);
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
 void encode_controllers_view(const ControllersViewMessage& message, std::vector<uint8_t>& out);
+void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
 // companion closes its own app rather than going back to its main menu. One
@@ -657,6 +693,7 @@ bool decode_rumble(const uint8_t* data, std::size_t size, RumbleMessage& out);
 bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& out);
 bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& out);
 bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersViewMessage& out);
+bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one
 // device; a bound so a malformed message cannot ask for a million.

@@ -552,6 +552,72 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                     &guide_hits_);
 }
 
+void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
+                                       float output_width, float output_height) {
+    open_ = true;
+    waiting_ = view.waiting;
+    restart_pending_ = view.restart_pending;
+    packs_.clear();
+    for (const net::GraphicPacksViewPack& wire : view.packs) {
+        ExternalGraphicPack pack;
+        pack.id = wire.id;
+        pack.path = wire.path;
+        pack.name = wire.name;
+        pack.description = wire.description;
+        pack.enabled = wire.enabled;
+        pack.restart_needed = wire.restart_needed;
+        for (const net::GraphicPacksViewChoice& choice : wire.choices) {
+            pack.choices.push_back({choice.category, choice.presets, choice.active});
+        }
+        packs_.push_back(std::move(pack));
+    }
+    rebuild_lines();
+    // Laid out from the same list, so the host's numbers mean the same
+    // things here.
+    focus_ = std::max(0, std::min(view.focus, pack_count() - 1));
+    in_pack_ = view.in_pack && pack_count() > 0;
+    item_ = std::max(0, std::min(view.item, item_count() - 1));
+    scroll_focus_into_view(compute_geometry(output_width, output_height));
+}
+
+net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& screen) {
+    net::GraphicPacksViewMessage view;
+    view.open = screen.is_open();
+    if (!view.open) return view;
+    view.waiting = screen.waiting();
+    view.restart_pending = screen.restart_pending();
+    view.focus = screen.focus();
+    view.in_pack = screen.in_pack();
+    view.item = screen.item();
+    for (const ExternalGraphicPack& pack : screen.packs()) {
+        net::GraphicPacksViewPack wire;
+        wire.id = pack.id;
+        wire.path = pack.path;
+        wire.name = pack.name;
+        wire.description = pack.description;
+        wire.enabled = pack.enabled;
+        wire.restart_needed = pack.restart_needed;
+        for (const ExternalGraphicPack::Choice& choice : pack.choices) {
+            wire.choices.push_back({choice.category, choice.presets, choice.active});
+        }
+        view.packs.push_back(std::move(wire));
+    }
+    return view;
+}
+
+void render_mirrored_graphic_packs(GraphicPacksScreen& screen, QuadRenderer& quads,
+                                   TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                                   float output_width, float output_height,
+                                   const net::GraphicPacksViewMessage& view, bool over_game) {
+    if (!over_game) {
+        quads.begin_frame(static_cast<int>(output_width), static_cast<int>(output_height));
+        quads.clear(ui_theme().background);
+    }
+    screen.show_mirrored(view, output_width, output_height);
+    screen.set_over_game(over_game);
+    screen.render(quads, text, glyphs, output_width, output_height);
+}
+
 void GraphicPacksScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.focus, static_cast<uint64_t>(in_pack_ ? item_ + 1 : 0));

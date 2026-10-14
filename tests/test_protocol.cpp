@@ -1802,6 +1802,66 @@ void test_controllers_view_round_trip() {
     CHECK(!decode_controllers_view(payload.data(), payload.size() / 2, received));
 }
 
+void test_graphic_packs_view_round_trip() {
+    GraphicPacksViewMessage sent;
+    sent.open = true;
+    sent.waiting = false;
+    sent.restart_pending = true;
+    sent.focus = 2;
+    sent.in_pack = true;
+    sent.item = 1;
+    GraphicPacksViewPack pack;
+    pack.id = "graphicPacks/Game_Resolution/rules.txt";
+    pack.path = "Some Game/Graphics";
+    pack.name = "Graphics";
+    pack.description = "Renders the game at a higher resolution.";
+    pack.enabled = true;
+    pack.restart_needed = true;
+    pack.choices.push_back(GraphicPacksViewChoice{"TV Resolution", {"720p", "1080p"}, 1});
+    pack.choices.push_back(GraphicPacksViewChoice{"", {"Low", "High"}, -1});
+    sent.packs.push_back(pack);
+    sent.packs.push_back(GraphicPacksViewPack{"fps", "Some Game/Mods/FPS++", "FPS++", "", false, false, {}});
+
+    std::vector<uint8_t> buffer;
+    encode_graphic_packs_view(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::GraphicPacksView);
+
+    GraphicPacksViewMessage received;
+    CHECK(decode_graphic_packs_view(payload.data(), payload.size(), received));
+    CHECK(received.open && !received.waiting && received.restart_pending && received.in_pack);
+    CHECK_EQ(received.focus, 2);
+    CHECK_EQ(received.item, 1);
+    CHECK_EQ(received.packs.size(), static_cast<std::size_t>(2));
+    if (received.packs.size() == 2) {
+        const GraphicPacksViewPack& first = received.packs[0];
+        CHECK_STR_EQ(first.id, pack.id);
+        CHECK_STR_EQ(first.path, "Some Game/Graphics");
+        CHECK_STR_EQ(first.description, pack.description);
+        CHECK(first.enabled && first.restart_needed);
+        CHECK_EQ(first.choices.size(), static_cast<std::size_t>(2));
+        if (first.choices.size() == 2) {
+            CHECK_STR_EQ(first.choices[0].category, "TV Resolution");
+            CHECK(first.choices[0].presets == pack.choices[0].presets);
+            CHECK_EQ(first.choices[0].active, 1);
+            CHECK_EQ(first.choices[1].active, -1);
+        }
+        CHECK(!received.packs[1].enabled && received.packs[1].choices.empty());
+    }
+
+    CHECK(!decode_graphic_packs_view(payload.data(), payload.size() / 2, received));
+
+    // Closed is a message too: how the other device learns to put it away.
+    encode_graphic_packs_view(GraphicPacksViewMessage(), buffer);
+    buffer.clear();
+    encode_graphic_packs_view(GraphicPacksViewMessage(), buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_graphic_packs_view(payload.data(), payload.size(), received));
+    CHECK(!received.open && received.packs.empty());
+}
+
 int main() {
     test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
@@ -1837,5 +1897,6 @@ int main() {
     test_a_gap_in_sent_frames_is_loss();
     test_a_fragment_can_be_restamped_as_it_leaves();
     test_controllers_view_round_trip();
+    test_graphic_packs_view_round_trip();
     return test::finish("protocol");
 }

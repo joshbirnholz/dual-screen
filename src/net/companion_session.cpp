@@ -154,6 +154,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
+    host_graphic_packs_view_ = GraphicPacksViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -320,6 +321,7 @@ void CompanionSession::disconnect() {
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
+    host_graphic_packs_view_ = GraphicPacksViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -428,6 +430,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
+    host_graphic_packs_view_ = GraphicPacksViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -606,6 +609,15 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             host_save_slots_ = std::move(slots);
             ++host_save_slots_revision_;
+            break;
+        }
+        case MessageType::GraphicPacksView: {
+            GraphicPacksViewMessage view;
+            // As the Controller Order screen's: one that does not decode is
+            // only a screen that says where to look instead.
+            if (decode_graphic_packs_view(payload.data(), payload.size(), view)) {
+                host_graphic_packs_view_ = std::move(view);
+            }
             break;
         }
         case MessageType::ControllersView: {

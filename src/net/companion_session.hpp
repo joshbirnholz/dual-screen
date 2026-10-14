@@ -605,6 +605,8 @@ public:
     // The host's Controller Order screen, as it last said -- `open` false
     // until a host that sends it has it up. See ControllersViewMessage.
     const ControllersViewMessage& host_controllers_view() const { return host_controllers_view_; }
+    // And its Graphics Packs page. See GraphicPacksViewMessage.
+    const GraphicPacksViewMessage& host_graphic_packs_view() const { return host_graphic_packs_view_; }
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
     // Sends this device's input to the host. Only what changed goes out.
@@ -1130,6 +1132,7 @@ private:
     bool host_resume_notice_ = false;
     SaveSlotsMessage host_save_slots_;
     ControllersViewMessage host_controllers_view_;
+    GraphicPacksViewMessage host_graphic_packs_view_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;

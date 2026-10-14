@@ -221,6 +221,41 @@ void test_a_menus_face_buttons_are_not_this_pages() {
 
 }  // namespace
 
+// The other device draws the host's page from a message: the same packs, the
+// cursor in the same place, and nothing it can change by itself.
+void test_the_page_is_drawn_on_the_other_device_as_it_is() {
+    GraphicPacksScreen host;
+    host.open();
+    host.set_packs(game_packs());
+    press(host, UiAction::Down);   // Anti-Aliasing
+    press(host, UiAction::Down);   // No Bloom
+    press(host, UiAction::Down);   // FPS++
+    press(host, UiAction::Right);  // into it
+    press(host, UiAction::Down);   // its preset
+    const net::GraphicPacksViewMessage view = graphic_packs_view_of(host);
+    CHECK(view.open && !view.waiting);
+    CHECK_EQ(view.packs.size(), game_packs().size());
+
+    GraphicPacksScreen mirror;
+    mirror.show_mirrored(view, kWidth, kHeight);
+    CHECK(mirror.is_open());
+    CHECK_EQ(mirror.focus(), 3);
+    CHECK(mirror.in_pack());
+    CHECK_EQ(mirror.item(), 1);
+    CHECK_EQ(mirror.packs().size(), game_packs().size());
+
+    // Before Cemu has answered, the other device says so too.
+    GraphicPacksScreen asking;
+    asking.open();
+    GraphicPacksScreen asked_mirror;
+    asked_mirror.show_mirrored(graphic_packs_view_of(asking), kWidth, kHeight);
+    CHECK(asked_mirror.waiting());
+
+    // A page that is down is a message that says so.
+    host.close();
+    CHECK(!graphic_packs_view_of(host).open);
+}
+
 int main() {
     test_packs_are_grouped_as_cemu_files_them();
     test_into_a_pack_and_back_out_as_in_the_quick_menu();
@@ -228,5 +263,6 @@ int main() {
     test_presets_step_round_and_say_when_they_wait_for_a_reset();
     test_the_cursor_stays_put_when_cemu_answers();
     test_a_menus_face_buttons_are_not_this_pages();
+    test_the_page_is_drawn_on_the_other_device_as_it_is();
     return test::finish("graphic-packs");
 }

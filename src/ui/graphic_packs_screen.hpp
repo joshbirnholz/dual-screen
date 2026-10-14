@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/external_frame_link.hpp"
+#include "net/protocol.hpp"
 #include "input/input_manager.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
@@ -71,6 +72,16 @@ public:
     // Whether a change was made to a pack that only takes effect once the
     // game starts again -- which the page then says.
     bool restart_pending() const { return restart_pending_; }
+    bool waiting() const { return waiting_; }
+    // Where the prompts at the foot of the page were drawn -- see
+    // take_guide_taps() -- for a device drawing the other's page.
+    const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
+
+    // The other device's page, drawn from what it said -- see
+    // GraphicPacksViewMessage: its packs, its cursor, scrolled to show the
+    // cursor here, and nothing changed here. Opens the page if it is not.
+    void show_mirrored(const net::GraphicPacksViewMessage& view, float output_width,
+                       float output_height);
 
 private:
     struct Geometry {
@@ -125,5 +136,17 @@ private:
     ListDrag drag_;
     std::vector<GuideHit> guide_hits_;
 };
+
+// The Graphics Packs page as a message for the other device.
+net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& screen);
+
+// A whole frame of the other device's Graphics Packs page -- what a companion
+// shows while the host has it up. `screen` is one kept for this alone.
+// `over_game`: drawn over a game the caller has already put on screen,
+// darkened, the way the host draws it, rather than on the app's background.
+void render_mirrored_graphic_packs(GraphicPacksScreen& screen, QuadRenderer& quads,
+                                   TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                                   float output_width, float output_height,
+                                   const net::GraphicPacksViewMessage& view, bool over_game = false);
 
 }  // namespace ds

@@ -503,6 +503,8 @@ struct App::Impl {
     // The host's, drawn here while this device is its companion -- see
     // render_mirrored_controllers().
     ControllersScreen mirrored_controllers;
+    // And its Graphics Packs page, the same way.
+    GraphicPacksScreen mirrored_graphic_packs;
     // The game running here, which its save points are named after.
     std::string game_path;
     std::unique_ptr<GameBrowser> browser;
@@ -4464,6 +4466,9 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 if (companion_session->host_controllers_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_controllers.guide_hits(), forwarded, rest);
+                } else if (companion_session->host_graphic_packs_view().open) {
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(mirrored_graphic_packs.guide_hits(), forwarded, rest);
                 }
                 for (const UiAction action : forwarded) {
                     net::MenuAction wire = net::MenuAction::Confirm;
@@ -4825,11 +4830,22 @@ void App::Impl::render() {
     // here, and a frozen game would look like a session that had stopped.
     if (state == State::Companion && companion_session &&
         companion_session->host_settings_open()) {
-        // Its Controller Order screen is drawn here too, the way the quick
-        // menu is; anything else of the host's own -- Settings, Data
-        // Management -- is about that machine, and is looked at there.
+        // Its Controller Order screen and Graphics Packs page are drawn here
+        // too, the way the quick menu is; anything else of the host's own --
+        // Settings, Data Management -- is about that machine, and is looked
+        // at there.
         const net::ControllersViewMessage& view = companion_session->host_controllers_view();
-        if (view.open) {
+        const net::GraphicPacksViewMessage& packs = companion_session->host_graphic_packs_view();
+        const auto draw_page = [&](bool over_game) {
+            if (view.open) {
+                render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs, width,
+                                            height, view, over_game);
+            } else {
+                render_mirrored_graphic_packs(mirrored_graphic_packs, quads, text, button_glyphs,
+                                              width, height, packs, over_game);
+            }
+        };
+        if (view.open || packs.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game, which goes on, and the blurred still otherwise.
             if (ScreenSource* drawing = active_source()) {
@@ -4852,11 +4868,9 @@ void App::Impl::render() {
                     quads.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                                      Color{0.0f, 0.0f, 0.0f, 0.6f});
                 }
-                render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs,
-                                            width, height, view, /*over_game=*/true);
+                draw_page(/*over_game=*/true);
             } else {
-                render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs,
-                                            width, height, view);
+                draw_page(/*over_game=*/false);
             }
         } else {
             render_centred_message(quads, text, width, height, "Look at the other screen.");
@@ -5712,6 +5726,11 @@ int App::run(const AppOptions& options) {
             } else {
                 impl.host_session->set_controllers_view(net::ControllersViewMessage());
             }
+            // And the Graphics Packs page, the same way.
+            impl.host_session->set_graphic_packs_view(
+                impl.state == Impl::State::GraphicPacks
+                    ? graphic_packs_view_of(impl.graphic_packs_screen)
+                    : net::GraphicPacksViewMessage());
             const uint64_t poll_began_us = steady_micros();
             impl.host_session->poll(network_now);
             impl.pass_times.network_us += steady_micros() - poll_began_us;

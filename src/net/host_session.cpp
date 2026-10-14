@@ -576,6 +576,14 @@ void HostSession::set_controllers_view(const ControllersViewMessage& view) {
     controllers_view_dirty_ = true;
 }
 
+void HostSession::set_graphic_packs_view(const GraphicPacksViewMessage& view) {
+    std::vector<uint8_t> encoded;
+    encode_graphic_packs_view(view, encoded);
+    if (encoded == graphic_packs_view_) return;
+    graphic_packs_view_ = std::move(encoded);
+    graphic_packs_view_dirty_ = true;
+}
+
 void HostSession::set_session_state(const SharedState& state) {
     if (state.per_device_layout != shared_.per_device_layout ||
         state.menu_open != shared_.menu_open) {
@@ -837,6 +845,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             session_state_dirty_ = true;
             save_slots_dirty_ = save_slots_known_;
             controllers_view_dirty_ = !controllers_view_.empty();
+            graphic_packs_view_dirty_ = !graphic_packs_view_.empty();
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
@@ -1266,6 +1275,10 @@ void HostSession::poll(uint64_t now_ms) {
     if (controllers_view_dirty_ && handshake_done_) {
         companion_.send(controllers_view_);
         controllers_view_dirty_ = false;
+    }
+    if (graphic_packs_view_dirty_ && handshake_done_) {
+        companion_.send(graphic_packs_view_);
+        graphic_packs_view_dirty_ = false;
     }
 
     std::string error;

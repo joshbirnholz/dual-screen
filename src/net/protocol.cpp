@@ -616,6 +616,87 @@ void encode_controllers_view(const ControllersViewMessage& message, std::vector<
     finish_message(out, start, MessageType::ControllersView);
 }
 
+void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>((message.open ? 1u : 0u) | (message.waiting ? 2u : 0u) |
+                                     (message.restart_pending ? 4u : 0u) |
+                                     (message.in_pack ? 8u : 0u)));
+    put_u32(out, static_cast<uint32_t>(message.focus));
+    put_u32(out, static_cast<uint32_t>(message.item));
+    const std::size_t packs = std::min<std::size_t>(message.packs.size(), 1024);
+    put_u16(out, static_cast<uint16_t>(packs));
+    for (std::size_t index = 0; index < packs; ++index) {
+        const GraphicPacksViewPack& pack = message.packs[index];
+        put_string(out, pack.id);
+        put_string(out, pack.path);
+        put_string(out, pack.name);
+        put_string(out, pack.description);
+        put_u8(out, static_cast<uint8_t>((pack.enabled ? 1u : 0u) | (pack.restart_needed ? 2u : 0u)));
+        const std::size_t choices = std::min<std::size_t>(pack.choices.size(), 255);
+        put_u8(out, static_cast<uint8_t>(choices));
+        for (std::size_t c = 0; c < choices; ++c) {
+            const GraphicPacksViewChoice& choice = pack.choices[c];
+            put_string(out, choice.category);
+            put_u32(out, static_cast<uint32_t>(choice.active));
+            const std::size_t presets = std::min<std::size_t>(choice.presets.size(), 1024);
+            put_u16(out, static_cast<uint16_t>(presets));
+            for (std::size_t p = 0; p < presets; ++p) put_string(out, choice.presets[p]);
+        }
+    }
+    finish_message(out, start, MessageType::GraphicPacksView);
+}
+
+bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out) {
+    Reader reader(data, size);
+    uint8_t flags = 0;
+    uint32_t focus = 0;
+    uint32_t item = 0;
+    uint16_t packs = 0;
+    reader.u8(flags);
+    reader.u32(focus);
+    reader.u32(item);
+    reader.u16(packs);
+    if (!reader.ok() || packs > 1024) return false;
+    out = GraphicPacksViewMessage();
+    out.open = (flags & 1u) != 0;
+    out.waiting = (flags & 2u) != 0;
+    out.restart_pending = (flags & 4u) != 0;
+    out.in_pack = (flags & 8u) != 0;
+    out.focus = static_cast<int32_t>(focus);
+    out.item = static_cast<int32_t>(item);
+    for (uint16_t index = 0; index < packs && reader.ok(); ++index) {
+        GraphicPacksViewPack pack;
+        uint8_t pack_flags = 0;
+        uint8_t choices = 0;
+        reader.string(pack.id);
+        reader.string(pack.path);
+        reader.string(pack.name);
+        reader.string(pack.description);
+        reader.u8(pack_flags);
+        reader.u8(choices);
+        pack.enabled = (pack_flags & 1u) != 0;
+        pack.restart_needed = (pack_flags & 2u) != 0;
+        for (uint8_t c = 0; c < choices && reader.ok(); ++c) {
+            GraphicPacksViewChoice choice;
+            uint32_t active = 0;
+            uint16_t presets = 0;
+            reader.string(choice.category);
+            reader.u32(active);
+            reader.u16(presets);
+            if (presets > 1024) return false;
+            choice.active = static_cast<int32_t>(active);
+            for (uint16_t p = 0; p < presets && reader.ok(); ++p) {
+                std::string preset;
+                reader.string(preset);
+                choice.presets.push_back(std::move(preset));
+            }
+            pack.choices.push_back(std::move(choice));
+        }
+        out.packs.push_back(std::move(pack));
+    }
+    return reader.ok();
+}
+
 bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersViewMessage& out) {
     Reader reader(data, size);
     uint8_t open = 0, holding = 0, gamepad_here = 0, pads = 0;

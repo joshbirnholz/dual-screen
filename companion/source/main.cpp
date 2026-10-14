@@ -103,6 +103,7 @@ extern "C" {
 #include "ui/launcher_screen.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/controllers_screen.hpp"
+#include "ui/graphic_packs_screen.hpp"
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
 #include "ui/notice_popup.hpp"
@@ -519,6 +520,8 @@ private:
     LayoutPicker picker_{registry_};
     // The host's Controller Order screen, drawn here while it is up.
     ControllersScreen mirrored_controllers_;
+    // The host's Graphics Packs page, drawn the same way.
+    GraphicPacksScreen mirrored_graphic_packs_;
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
     uint32_t save_slots_shown_ = 0;
@@ -1106,6 +1109,10 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
         case State::Playing:
             if (!menu_open_ && session_.host_settings_open() && session_.host_controllers_view().open) {
                 return mirrored_controllers_.guide_hits();
+            }
+            if (!menu_open_ && session_.host_settings_open() &&
+                session_.host_graphic_packs_view().open) {
+                return mirrored_graphic_packs_.guide_hits();
             }
             return none;
         // Its prompts are its own, and so are taps on them.
@@ -1925,11 +1932,12 @@ void Client::draw_scene() {
 
     if (session_.host_settings_open()) {
         // The host's own screens, whose presses still go to it -- see
-        // handle_actions(). Its Controller Order screen is drawn here as well,
-        // as the quick menu is; Settings and Data Management are about that
-        // machine, and are looked at there.
+        // handle_actions(). Its Controller Order screen and Graphics Packs page
+        // are drawn here as well, as the quick menu is; Settings and Data
+        // Management are about that machine, and are looked at there.
         const net::ControllersViewMessage& view = session_.host_controllers_view();
-        if (view.open) {
+        const net::GraphicPacksViewMessage& packs = session_.host_graphic_packs_view();
+        if (view.open || packs.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game that goes on, and the blurred still otherwise.
             router_.decide(false);
@@ -1949,8 +1957,14 @@ void Client::draw_scene() {
                 quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                                   Color{0.0f, 0.0f, 0.0f, 0.6f});
             }
-            render_mirrored_controllers(mirrored_controllers_, quads_, text_, button_glyphs_,
-                                        width, height, view, /*over_game=*/true);
+            if (view.open) {
+                render_mirrored_controllers(mirrored_controllers_, quads_, text_, button_glyphs_,
+                                            width, height, view, /*over_game=*/true);
+            } else {
+                render_mirrored_graphic_packs(mirrored_graphic_packs_, quads_, text_,
+                                              button_glyphs_, width, height, packs,
+                                              /*over_game=*/true);
+            }
         } else {
             render_centred_message(quads_, text_, width, height, "Look at the other screen.");
         }

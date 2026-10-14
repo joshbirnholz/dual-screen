@@ -350,8 +350,8 @@ Three things are different about a Wii U session:
   window would. A pack that replaces textures (most resolution
   packs) is only read as the game starts, and the page then says its change
   will take effect once the game is reset -- which **Reset**, a step back,
-  does. It needs this project's Cemu build, and is offered only on the
-  device running Cemu; a second device is told to look at that one.
+  does. It needs this project's Cemu build. A second device shows the same
+  page, the cursor where it is, and works it with its own pad.
 
 - **Options**, in the quick menu, are this game's, as a DS or 3DS game's
   are, each stepped on with **A**: **Swap Screens** (played alone: the other
