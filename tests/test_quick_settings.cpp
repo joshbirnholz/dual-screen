@@ -8,7 +8,9 @@
 #include "core/system.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/button_glyphs.hpp"
+#include "ui/choice_popup.hpp"
 #include "ui/layout_picker.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/menu_actions.hpp"
 #include "ui/notice_popup.hpp"
 
@@ -1828,7 +1830,50 @@ void test_wii_u_amiibo_are_listed_to_choose_from() {
     CHECK(press(empty, UiAction::Confirm).amiibo_folder_requested);
 }
 
+// A dropdown stays where it opened: moving through a list longer than it
+// shows scrolls the list inside it, not the box. A finger drags the list, and
+// the mouse wheel turns it, without choosing anything.
+void test_a_dropdown_stays_where_it_opened() {
+    std::vector<std::string> choices;
+    for (int index = 0; index < 20; ++index) choices.push_back("Choice " + std::to_string(index));
+    ChoicePopup popup;
+    const PixelRect row{200.0f, 300.0f, 800.0f, 60.0f};
+    popup.open(choices, 3, row);
+    const auto top_edge = [&]() {
+        for (float y = 0.0f; y < kHeight; y += 1.0f) {
+            if (popup.contains(900.0f, y, kWidth, kHeight)) return y;
+        }
+        return -1.0f;
+    };
+    popup.update({}, {}, kWidth, kHeight);
+    const float opened_at = top_edge();
+    CHECK(opened_at >= 0.0f);
+    for (int step = 0; step < 15; ++step) {
+        popup.update({UiAction::Down}, {}, kWidth, kHeight);
+        CHECK_EQ(top_edge(), opened_at);
+    }
+    CHECK_EQ(popup.focus(), 18);
+    popup.update({UiAction::PageUp, UiAction::PageUp, UiAction::PageUp}, {}, kWidth, kHeight);
+    CHECK_EQ(top_edge(), opened_at);
+    CHECK_EQ(popup.focus(), 0);
+
+    // The wheel, over it: what is under a point in it moves on, and nothing
+    // is chosen.
+    float x = 900.0f;
+    float y = opened_at + 60.0f;
+    while (popup.choice_at(x, y, kWidth, kHeight) < 0 && y < kHeight) y += 4.0f;
+    const int under = popup.choice_at(x, y, kWidth, kHeight);
+    set_live_wheel(-1.0f, x, y);
+    const ChoicePopupResult turned = popup.update({}, {}, kWidth, kHeight);
+    set_live_wheel(0.0f, 0.0f, 0.0f);
+    CHECK(turned.chosen < 0 && !turned.closed);
+    CHECK(popup.is_open());
+    CHECK(popup.choice_at(x, y, kWidth, kHeight) > under);
+    CHECK_EQ(top_edge(), opened_at);
+}
+
 int main() {
+    test_a_dropdown_stays_where_it_opened();
     test_wii_u_options_are_this_games();
     test_wii_u_amiibo_are_listed_to_choose_from();
     test_the_resume_popup_is_put_away_with_ok();
