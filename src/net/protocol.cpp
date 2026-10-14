@@ -315,6 +315,14 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_string(out, message.amiibo_folder);
     put_u8(out, static_cast<uint8_t>((message.lcd_filter_choosable ? 1u : 0u) |
                                      (message.lcd_filter ? 2u : 0u)));
+    const std::size_t choice_lists = std::min<std::size_t>(message.producer_choices.size(), 64);
+    put_u16(out, static_cast<uint16_t>(choice_lists));
+    for (std::size_t index = 0; index < choice_lists; ++index) {
+        const std::vector<std::string>& choices = message.producer_choices[index];
+        const std::size_t count = std::min<std::size_t>(choices.size(), 255);
+        put_u8(out, static_cast<uint8_t>(count));
+        for (std::size_t at = 0; at < count; ++at) put_string(out, choices[at]);
+    }
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -1192,6 +1200,23 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         reader.u8(lcd);
         out.lcd_filter_choosable = (lcd & 1u) != 0;
         out.lcd_filter = (lcd & 2u) != 0;
+    }
+    out.producer_choices.clear();
+    if (reader.remaining() >= 2) {
+        uint16_t lists = 0;
+        reader.u16(lists);
+        if (lists > 64) return false;
+        for (uint16_t index = 0; index < lists && reader.ok(); ++index) {
+            uint8_t count = 0;
+            reader.u8(count);
+            std::vector<std::string> choices;
+            for (uint8_t at = 0; at < count && reader.ok(); ++at) {
+                std::string choice;
+                reader.string(choice);
+                choices.push_back(std::move(choice));
+            }
+            out.producer_choices.push_back(std::move(choices));
+        }
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

@@ -151,6 +151,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_graphic_packs_available_ = false;
     host_amiibo_available_ = false;
     host_producer_options_.clear();
+    host_producer_choices_.clear();
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
@@ -318,6 +319,7 @@ void CompanionSession::disconnect() {
     host_graphic_packs_available_ = false;
     host_amiibo_available_ = false;
     host_producer_options_.clear();
+    host_producer_choices_.clear();
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
@@ -427,6 +429,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_graphic_packs_available_ = false;
     host_amiibo_available_ = false;
     host_producer_options_.clear();
+    host_producer_choices_.clear();
     host_amiibo_.clear();
     host_amiibo_folder_.clear();
     host_controllers_view_ = ControllersViewMessage();
@@ -593,6 +596,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_graphic_packs_available_ = state.graphic_packs_available;
             host_amiibo_available_ = state.amiibo_available;
             host_producer_options_ = state.producer_options;
+            host_producer_choices_ = state.producer_choices;
             host_amiibo_ = state.amiibo;
             host_amiibo_folder_ = state.amiibo_folder;
             host_max_render_scale_ = state.max_render_scale;

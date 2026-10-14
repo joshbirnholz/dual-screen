@@ -578,6 +578,9 @@ public:
     bool host_graphic_packs_available() const { return host_graphic_packs_available_; }
     bool host_amiibo_available() const { return host_amiibo_available_; }
     // SessionStateMessage::producer_options and amiibo.
+    const std::vector<std::vector<std::string>>& host_producer_choices() const {
+        return host_producer_choices_;
+    }
     const std::vector<std::pair<std::string, std::string>>& host_producer_options() const {
         return host_producer_options_;
     }
@@ -1122,6 +1125,7 @@ private:
     bool host_graphic_packs_available_ = false;
     bool host_amiibo_available_ = false;
     std::vector<std::pair<std::string, std::string>> host_producer_options_;
+    std::vector<std::vector<std::string>> host_producer_choices_;
     std::vector<std::string> host_amiibo_;
     std::string host_amiibo_folder_;
     int host_max_render_scale_ = 1;

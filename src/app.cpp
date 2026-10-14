@@ -2780,6 +2780,7 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_amiibo_available() : amiibo_available();
     if (is_companion()) {
         picker_state.producer_options = companion_session->host_producer_options();
+        picker_state.producer_choices = companion_session->host_producer_choices();
         picker_state.amiibo = companion_session->host_amiibo();
         picker_state.amiibo_folder = companion_session->host_amiibo_folder();
     } else if (system == SystemId::WiiU) {
@@ -5793,6 +5794,7 @@ int App::run(const AppOptions& options) {
             shared.amiibo_available = impl.amiibo_available();
             if (impl.picker && impl.system == SystemId::WiiU) {
                 shared.producer_options = impl.picker->state().producer_options;
+                shared.producer_choices = impl.picker->state().producer_choices;
                 shared.amiibo = impl.picker->state().amiibo;
                 shared.amiibo_folder = impl.picker->state().amiibo_folder;
             }

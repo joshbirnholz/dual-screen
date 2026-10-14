@@ -36,6 +36,7 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.graphic_packs_available = session.host_graphic_packs_available();
     state.amiibo_available = session.host_amiibo_available();
     state.producer_options = session.host_producer_options();
+    state.producer_choices = session.host_producer_choices();
     state.amiibo = session.host_amiibo();
     state.amiibo_folder = session.host_amiibo_folder();
     return state;

@@ -1664,6 +1664,35 @@ void test_wii_u_options_are_this_games() {
               "the last of the Options did not open Graphics Packs");
     state.graphic_packs_available = false;
 
+    // One of Cemu's, with its choices: a popup, beside the row, on both
+    // devices -- the second drawing it from what the first says.
+    {
+        LayoutPickerState with_choices = state;
+        with_choices.producer_options = {{"Upscaling", "Bicubic"}, {"CPU mode", "Auto"}};
+        with_choices.producer_choices = {{"Bilinear", "Bicubic", "Hermite"}, {"Auto", "Multi-core"}};
+        LayoutPicker host(registry);
+        open_wii_u(host, with_choices);
+        open_on(host, with_choices, MenuSection::Options);
+        host.update({UiAction::Right}, {}, kWidth, kHeight);
+        host.update({UiAction::Down}, {}, kWidth, kHeight);
+        host.update({UiAction::Down}, {}, kWidth, kHeight);  // Upscaling
+        CHECK_EQ(host.update({UiAction::Confirm}, {}, kWidth, kHeight).producer_option, -1);
+        CHECK(host.confirmation() == MenuConfirm::Choice);
+        CHECK_EQ(host.confirm_focus_wire(), 2);  // Bicubic, in effect
+        host.update({UiAction::Down}, {}, kWidth, kHeight);
+
+        LayoutPicker other(registry);
+        open_wii_u(other, with_choices);
+        other.show(with_choices, host.focus(), host.confirmation(), host.confirm_focus_wire());
+        CHECK_MSG(other.confirmation() == MenuConfirm::Choice,
+                  "the other device did not draw the popup for one of Cemu's options");
+        CHECK_EQ(other.confirm_focus_wire(), 3);
+
+        const LayoutPickerResult chosen = host.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK_EQ(chosen.producer_option, 0);
+        CHECK_EQ(chosen.option_steps, 1);
+    }
+
     // With a second device, the screens trade there and then: no value.
     state.screens_swap_value_shown = false;
     state.cursor_choosable = false;

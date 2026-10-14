@@ -416,6 +416,9 @@ struct SessionStateMessage {
     // byte, a bit each; last, and optional.
     bool lcd_filter_choosable = false;
     bool lcd_filter = false;
+    // Each of producer_options' choices, in order, so the other device draws
+    // the same popup when one is opened. Last, and optional.
+    std::vector<std::vector<std::string>> producer_choices;
 };
 
 struct FrameMessage {

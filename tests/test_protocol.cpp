@@ -15,8 +15,9 @@ using namespace ds;
 
 namespace {
 // What every session state ends with now, empty: the whole focus, then no
-// Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte.
-constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1;
+// Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
+// then no lists of Cemu's choices.
+constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2;
 }  // namespace
 using namespace ds::net;
 
@@ -322,10 +323,19 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 3, received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
     state.lcd_filter = false;
+
+    // Each Cemu option's choices, for the popup the other device draws.
+    state.producer_choices = {{"Bilinear", "Bicubic"}, {"Auto", "Multi-core", "Single-core"}};
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(received_state.producer_choices == state.producer_choices);
+    state.producer_choices.clear();
     state.menu_focus = 40;
     buffer.clear();
     encode_session_state(state, buffer);

@@ -186,6 +186,7 @@ public:
         bool graphic_packs_available = false;
         bool amiibo_available = false;
         std::vector<std::pair<std::string, std::string>> producer_options;
+        std::vector<std::vector<std::string>> producer_choices;
         std::vector<std::string> amiibo;
         std::string amiibo_folder;
         // The settings screen, which is this device's own rather than shared:
