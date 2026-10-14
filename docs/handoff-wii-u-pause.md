@@ -127,6 +127,14 @@ Management have no layout problems at 4K.
   on title screens. That session may have been an older build; unconfirmed.
 - **Bayonetta 2: F1 reached neither window for a while after the game
   started.** Not investigated; looks like keyboard focus after boot.
+- **Sound out of step after pausing in a cutscene (Bayonetta 2):** fixed in
+  the fork, untested on the PC. Cemu went on mixing AX voices while the game
+  was in the background, so a cutscene's streamed sound ran on under the held
+  picture. AX frames are no longer queued from the game letting go until it is
+  told to go on (`DualscreenSoundHeld()` in coreinit_Misc.cpp, checked in
+  `AXOut_update()`). To try: pause and resume several times in a cutscene and
+  check the voices still match the mouths; Cemu's log says "the game's sound
+  is held while it is paused" each time.
 - **Keys during the notice:** fixed, untested on the PC. The overlay message's
   first byte is now 2 for a notice, and Cemu holds pads, keys and clicks back
   only for a menu (1), so a game that refused to pause keeps its controls
