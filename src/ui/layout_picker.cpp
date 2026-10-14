@@ -1201,16 +1201,11 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
         const MenuSection section = sections_[index];
         const bool current = section == section_;
         const bool focused = current && !on_content_;
-        if (focused) {
-            quads.draw_solid(row, theme.text);
-        } else if (current) {
-            // The same faint white as the layout in use: marked, not chosen.
-            Color faint = theme.text;
-            faint.a = kSelectedTileOpacity;
-            quads.draw_solid(row, faint);
-        }
-        // Dark on either fill, the faint one included.
-        const Color& ink = current ? theme.background : theme.text;
+        // As every page's left-hand list: the one whose things are showing
+        // marked by a bar and its words in the accent, the cursor's ring
+        // round it while the cursor is there.
+        draw_side_tab(quads, row, current, focused, scale);
+        const Color& ink = current ? theme.accent : theme.text;
         text.draw(quads, section_label(section), row.x + row.w - line * 0.8f,
                   row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f, row_scale, ink,
                   TextAlign::Right);
@@ -1261,7 +1256,7 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
         if (natural > room && natural > 0.0f) label_scale = scale * (room / natural);
         text.draw(quads, layout.display_name, tile.x + tile.w * 0.5f,
                   tile.y + tile.h - padding - TextRenderer::line_height(label_scale), label_scale,
-                  quick_menu_row_text(focused || selected), TextAlign::Center);
+                  theme.text, TextAlign::Center);
     }
 
     // The stylus button: the Wii U's own symbol in a square, outlined like a
@@ -1271,15 +1266,8 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
     if (square.w <= 0.0f || !corner_button_usable()) return;
     const bool focused = on_content_ && item_ == tile_count();
     const float border = menu_border(scale);
-    // Under the cursor its background takes a wash of white and the symbol
-    // stays white on it -- a highlight, not the tiles' full inversion, which
-    // on a symbol this size reads as a different symbol.
-    if (focused) {
-        Color wash = theme.text;
-        wash.a = 0.3f;
-        quads.draw_solid(square, wash);
-    }
-    quads.draw_outline(square, theme.text, border);
+    // Outlined and rounded like a tile, and ringed by the cursor as one is.
+    draw_menu_tile(quads, square, focused, false, scale);
     if (swap_button_usable()) {
         // Separate Screens' swap button, in the same place.
         glyphs.draw_swap_screens(quads,
@@ -1331,7 +1319,9 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
                                cell.h - border * 2.0f};
         const float box_width = std::min(inside.w * 0.5f, inside.h * 0.82f);
         const PixelRect box{inside.x, inside.y, box_width, inside.h};
-        quads.draw_solid(box, Color{0.0f, 0.0f, 0.0f, 1.0f});
+        const float box_radius = std::max(0.0f, menu_tile_radius(scale) - border);
+        quads.draw_rounded_ring(box, box_radius, box.w + box.h, Color{0.0f, 0.0f, 0.0f, 1.0f},
+                                Color{0.0f, 0.0f, 0.0f, 1.0f});
         if (filled && slot_pictures_[index].valid()) {
             const SavePointThumbnail& picture = save_slots_[index].thumbnail;
             // Fitted into the box without stretching.
@@ -1342,13 +1332,11 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
                                         box.y + (box.h - height) * 0.5f, width, height},
                               slot_pictures_[index]);
         } else if (!filled) {
-            quads.draw_solid(box, focused ? theme.text_dim : theme.panel);
+            quads.draw_rounded_ring(box, box_radius, box.w + box.h, theme.panel, theme.panel);
         }
-        quads.draw_solid(PixelRect{box.x + box.w, cell.y, border, cell.h},
-                         focused ? theme.background : theme.text);
 
-        const Color& ink = focused ? theme.background : theme.text;
-        const Color dim = focused ? theme.panel : theme.text_dim;
+        const Color& ink = theme.text;
+        const Color& dim = theme.text_dim;
         const float text_x = box.x + box.w + border + line * 0.8f;
         const float text_room = cell.x + cell.w - border - line * 0.6f - text_x;
         // The time on two lines, date over clock, where one will not fit.
@@ -1389,17 +1377,17 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     for (std::size_t index = 0; index < geometry.items.size() && index < options_.size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
-        draw_quick_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, option_name(options_[index]), row.x + line * 0.8f, baseline, row_scale,
-                  quick_menu_row_text(focused));
+                  menu_row_text(focused));
         const std::string value = option_value(options_[index]);
         int current = -1;
         if (is_toggle_value(value) && option_choices(options_[index], current).empty()) {
             draw_toggle(quads, row.x + row.w - line * 0.8f, row.y + row.h * 0.5f, value == "On", line);
         } else {
             text.draw(quads, value, row.x + row.w - line * 0.8f, baseline, row_scale,
-                      focused ? theme.background : theme.text_dim, TextAlign::Right);
+                      theme.text_dim, TextAlign::Right);
         }
     }
 }
@@ -1416,14 +1404,14 @@ void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
     for (int index = 0; index < count; ++index) {
         const PixelRect& row = geometry.items[static_cast<std::size_t>(index)];
         const bool focused = on_content_ && index == item_;
-        draw_quick_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale);
         const bool folder_row = index >= static_cast<int>(state_.amiibo.size());
         const std::string label =
             folder_row ? std::string("Choose a Folder...") : state_.amiibo[static_cast<std::size_t>(index)];
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, TextRenderer::elide_right(label, row.w - line * 1.6f, row_scale),
                   row.x + line * 0.8f, baseline, row_scale,
-                  folder_row && !focused ? theme.text_dim : quick_menu_row_text(focused));
+                  folder_row ? theme.text_dim : menu_row_text(focused));
     }
     quads.clear_clip();
     // A word under the folder row when it is the only one: why there is
