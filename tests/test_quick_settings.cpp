@@ -1154,14 +1154,14 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
 
     bool found_a = false;
     bool found_b = false;
-    bool found_minus = false;
+    bool found_plus = false;
     bool found_other = false;
     for (float y = 2.0f; y < kHeight; y += 4.0f) {
         for (float x = 2.0f; x < kWidth; x += 4.0f) {
             switch (picker.guide_button_at(x, y)) {
                 case ButtonGlyph::A: found_a = true; break;
                 case ButtonGlyph::B: found_b = true; break;
-                case ButtonGlyph::Minus: found_minus = true; break;
+                case ButtonGlyph::Plus: found_plus = true; break;
                 case ButtonGlyph::Count: break;
                 default: found_other = true; break;
             }
@@ -1169,8 +1169,8 @@ void test_wii_u_menu_guide_is_ok_back_and_settings() {
     }
     CHECK_MSG(found_a, "a Wii U's menu guide is missing A");
     CHECK_MSG(found_b, "a Wii U's menu guide is missing B");
-    CHECK_MSG(found_minus, "a Wii U's menu guide is missing Settings on minus");
-    CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and minus");
+    CHECK_MSG(found_plus, "a Wii U's menu guide is missing Settings on plus");
+    CHECK_MSG(!found_other, "a Wii U's menu guide still names a control beyond A, B and plus");
 }
 
 // Reset and Quit throw away something the player cannot get back, so neither
@@ -1414,7 +1414,7 @@ void test_tapping_a_control_prompt_presses_its_button() {
             const ButtonGlyph under = picker.guide_button_at(x, y);
             if (under == ButtonGlyph::Count) continue;
             if (under != ButtonGlyph::A && under != ButtonGlyph::B &&
-                under != ButtonGlyph::Minus) {
+                under != ButtonGlyph::Plus) {
                 found_other = true;
             }
 
@@ -1423,7 +1423,7 @@ void test_tapping_a_control_prompt_presses_its_button() {
             fresh.render(quads, text, glyphs, kWidth, kHeight, "Game");
             const LayoutPickerResult result = fresh.update({}, {tap(x, y)}, kWidth, kHeight);
             if (under == ButtonGlyph::B && result.close_requested) pressed_resume = true;
-            if (under == ButtonGlyph::Minus && result.settings_requested) {
+            if (under == ButtonGlyph::Plus && result.settings_requested) {
                 asked_for_settings = true;
             }
         }
@@ -1544,7 +1544,7 @@ void test_the_settings_prompt_is_there_and_is_leftmost() {
         for (float x = 4.0f; x < kWidth; x += 4.0f) {
             const ButtonGlyph glyph = picker.guide_button_at(x, y);
             if (glyph == ButtonGlyph::Count) continue;
-            if (glyph == ButtonGlyph::Minus) {
+            if (glyph == ButtonGlyph::Plus) {
                 found_settings = true;
                 leftmost_settings = std::min(leftmost_settings, x);
             } else {

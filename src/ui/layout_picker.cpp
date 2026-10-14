@@ -143,7 +143,7 @@ void LayoutPicker::rebuild_footer() {
         //
         // Continue at the top, except where the menu is shown in place of
         // the game (see LayoutPickerState::embedded): there is no menu to
-        // leave there, the game being one window away. Settings is the minus
+        // leave there, the game being one window away. Settings is the plus
         // button, as on every other console's menu, rather than a section.
         if (!state_.embedded) sections_.push_back(MenuSection::Continue);
         sections_.push_back(MenuSection::Options);
@@ -1062,7 +1062,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             switch (hit.glyph) {
                 case ButtonGlyph::A: pressed.push_back(UiAction::Confirm); break;
                 case ButtonGlyph::B: pressed.push_back(UiAction::Cancel); break;
-                case ButtonGlyph::Minus: pressed.push_back(UiAction::MenuSettings); break;
+                case ButtonGlyph::Plus: pressed.push_back(UiAction::MenuSettings); break;
                 default: break;
             }
         }
@@ -1566,7 +1566,7 @@ void LayoutPicker::render(QuadRenderer& quads,
         // Leftmost, and always: it is the one prompt here that is about the
         // machine rather than about the game, so it sits apart from the rest.
         // Everything else the face buttons used to do is in the list now.
-        guide.push_back({ButtonGlyph::Minus, "Settings"});
+        guide.push_back({ButtonGlyph::Plus, "Settings"});
         // Back either way: off the right-hand side, or out of the menu. One
         // word for B wherever the cursor is, rather than one that changes --
         // and none on the list shown in place of a Wii U game, which B does

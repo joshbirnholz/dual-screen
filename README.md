@@ -79,8 +79,8 @@ The menu opens on Continue the first time, and after that on whichever entry
 it was last closed on. Up and down move through the list, and the right-hand
 side follows. Right or A goes across onto it, always onto its first thing, top
 left; left from its edge comes back. B resumes the game from anywhere in the
-menu, the list or the right-hand side. **−** still opens Settings, and the old face-button
-shortcuts (X quit, Y reset, + disconnect, R3 smoothing) still work, though the
+menu, the list or the right-hand side. **+** opens Settings, and the old face-button
+shortcuts (X quit, Y reset, − disconnect, R3 smoothing) still work, though the
 guide no longer shows them. A Wii U game's menu stays a plain list.
 
 ### Sound effects
@@ -311,7 +311,7 @@ Three things are different about a Wii U session:
   "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
   down the left, and the highlighted one's things on the right: **Game Options**,
   **amiibo**, **Controller Order**,
-  **Disconnect**, **Reset Game** and **Quit**, with **Settings** on minus as
+  **Disconnect**, **Reset Game** and **Quit**, with **Settings** on plus as
   on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
   Cemu this app started and starts it again on the same game. It
   answers only while its window has the focus, so a press meant for the game
@@ -1304,7 +1304,7 @@ Full options:
 | Smooth or sharpen the screens | **R3** alone (or **F2**), in a game or in any menu |
 | Swap the two focus layouts | **L3** alone (or **F3**), while a game is on screen |
 | | *DS and 3DS only. A Wii U game reads both sticks pressed and plays through its touch screen, so none of the three shortcuts above are taken from it — not L3, not R3, not the pair, and not the two-finger tap. There the menu is **F1**, **Tab** or **Escape** alone, which Steam Input can be pointed at, and **F3** swaps which screen a lone device is showing.* |
-| Open Settings, from inside that menu | **−** (or **F4**), on every console — it is a menu shortcut rather than one taken from the game. The settings are whichever device is running the game, whoever asked; with two connected, the other one says to look over here and its buttons still work the screen |
+| Open Settings, from inside that menu | **+** (or **F4**), on every console — it is a menu shortcut rather than one taken from the game. The settings are whichever device is running the game, whoever asked; with two connected, the other one says to look over here and its buttons still work the screen |
 | Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |
 | Move with the C-Stick | the right stick, in the handful of 3DS games built for a Circle Pad Pro or New 3DS |
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
