@@ -119,8 +119,11 @@ void test_a_pack_is_turned_on_and_off() {
         CHECK(result.change->enabled);
     }
     CHECK(screen.in_pack());
-    // Right does the same as A inside a pack.
-    result = press(screen, UiAction::Right);
+    // Only A turns it on and off: the d-pad changes nothing.
+    CHECK(!press(screen, UiAction::Right).change);
+    CHECK(!press(screen, UiAction::Left).change);
+    press(screen, UiAction::Right);  // back into it
+    result = press(screen, UiAction::Confirm);
     CHECK(result.change && !result.change->enabled);
     CHECK_MSG(!screen.restart_pending(), "a pack that changes at once said it waits for a reset");
 
@@ -134,21 +137,41 @@ void test_a_pack_is_turned_on_and_off() {
     CHECK(screen.in_pack());
 }
 
-void test_presets_step_round_and_say_when_they_wait_for_a_reset() {
+void test_presets_are_chosen_from_a_popup_and_say_when_they_wait_for_a_reset() {
     GraphicPacksScreen screen;
     screen.open();
     screen.set_packs(game_packs());
     press(screen, UiAction::Right);  // into Graphics
     press(screen, UiAction::Down);   // TV Resolution, on 1080p
+    // A opens its choices, the one in effect under the cursor; nothing yet.
     GraphicPacksScreenResult result = press(screen, UiAction::Confirm);
+    CHECK(!result.change);
+    CHECK(screen.choosing());
+    CHECK_EQ(screen.choice_focus(), 1);
+    // Choosing the one in effect changes nothing.
+    CHECK(!press(screen, UiAction::Confirm).change);
+    CHECK(!screen.choosing());
+    // The last, and no further; chosen.
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Down);
+    CHECK_EQ(screen.choice_focus(), 2);
+    result = press(screen, UiAction::Confirm);
     CHECK(result.change && result.change->kind == ExternalGraphicPackChange::Kind::Preset &&
           result.change->category == "TV Resolution" && result.change->preset == "1440p");
-    // Round from the last to the first, as a quick menu option goes.
-    result = press(screen, UiAction::Right);
-    CHECK(result.change && result.change->preset == "720p");
     CHECK_MSG(screen.restart_pending(), "a resolution pack's change did not say it waits for a reset");
+    // B puts the popup away, changing nothing, and leaves the cursor in the pack.
+    press(screen, UiAction::Confirm);
+    CHECK(!press(screen, UiAction::Cancel).change);
+    CHECK(!screen.choosing());
+    CHECK(screen.in_pack());
+    // The d-pad's sideways presses step nothing.
+    CHECK(!press(screen, UiAction::Right).change);
 
-    // None chosen yet counts from the first, which is what is shown.
+    // None chosen yet counts as the first, which is what is shown.
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    CHECK_EQ(screen.choice_focus(), 0);
     press(screen, UiAction::Down);
     result = press(screen, UiAction::Confirm);
     CHECK(result.change && result.change->category == "Shadows" && result.change->preset == "High");
@@ -163,9 +186,16 @@ void test_presets_step_round_and_say_when_they_wait_for_a_reset() {
     press(screen, UiAction::Down);  // FPS++
     press(screen, UiAction::Right);
     press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down);
     result = press(screen, UiAction::Confirm);
     CHECK(result.change && result.change->id == "fps" && result.change->category.empty() &&
           result.change->preset == "60FPS");
+
+    // The menu's own button puts the popup and the page away together.
+    press(screen, UiAction::Confirm);
+    CHECK(press(screen, UiAction::ToggleMenu).close_requested);
+    CHECK(!screen.is_open());
 }
 
 void test_the_cursor_stays_put_when_cemu_answers() {
@@ -251,6 +281,19 @@ void test_the_page_is_drawn_on_the_other_device_as_it_is() {
     asked_mirror.show_mirrored(graphic_packs_view_of(asking), kWidth, kHeight);
     CHECK(asked_mirror.waiting());
 
+    // A preset's popup, cursor and all.
+    press(host, UiAction::Confirm);
+    press(host, UiAction::Down);
+    const net::GraphicPacksViewMessage choosing = graphic_packs_view_of(host);
+    CHECK_EQ(choosing.choice_focus, 2);
+    GraphicPacksScreen choosing_mirror;
+    choosing_mirror.show_mirrored(choosing, kWidth, kHeight);
+    CHECK(choosing_mirror.choosing());
+    CHECK_EQ(choosing_mirror.choice_focus(), 1);
+    press(host, UiAction::Cancel);
+    choosing_mirror.show_mirrored(graphic_packs_view_of(host), kWidth, kHeight);
+    CHECK(!choosing_mirror.choosing());
+
     // A page that is down is a message that says so.
     host.close();
     CHECK(!graphic_packs_view_of(host).open);
@@ -260,7 +303,7 @@ int main() {
     test_packs_are_grouped_as_cemu_files_them();
     test_into_a_pack_and_back_out_as_in_the_quick_menu();
     test_a_pack_is_turned_on_and_off();
-    test_presets_step_round_and_say_when_they_wait_for_a_reset();
+    test_presets_are_chosen_from_a_popup_and_say_when_they_wait_for_a_reset();
     test_the_cursor_stays_put_when_cemu_answers();
     test_a_menus_face_buttons_are_not_this_pages();
     test_the_page_is_drawn_on_the_other_device_as_it_is();

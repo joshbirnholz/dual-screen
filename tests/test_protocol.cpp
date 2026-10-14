@@ -1842,6 +1842,7 @@ void test_graphic_packs_view_round_trip() {
     sent.focus = 2;
     sent.in_pack = true;
     sent.item = 1;
+    sent.choice_focus = 3;
     GraphicPacksViewPack pack;
     pack.id = "graphicPacks/Game_Resolution/rules.txt";
     pack.path = "Some Game/Graphics";
@@ -1866,6 +1867,11 @@ void test_graphic_packs_view_round_trip() {
     CHECK(received.open && !received.waiting && received.restart_pending && received.in_pack);
     CHECK_EQ(received.focus, 2);
     CHECK_EQ(received.item, 1);
+    CHECK_EQ(received.choice_focus, 3);
+    // From a host before the popup: none up.
+    GraphicPacksViewMessage older;
+    CHECK(decode_graphic_packs_view(payload.data(), payload.size() - 2, older));
+    CHECK_EQ(older.choice_focus, 0);
     CHECK_EQ(received.packs.size(), static_cast<std::size_t>(2));
     if (received.packs.size() == 2) {
         const GraphicPacksViewPack& first = received.packs[0];

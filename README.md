@@ -333,7 +333,7 @@ Three things are different about a Wii U session:
   left, grouped as Mods, Enhancements and so on, and on the right the one
   highlighted -- on or off, each of its presets, and what it says about
   itself. **Right** or **A** goes into a pack, **Left** or **B** back to the
-  list; inside it, **A** or **Right** turns it on or off or steps a preset on.
+  list; inside it, **A** turns it on or off, or opens a preset's choices beside it.
   Cemu makes each change as it is chosen and keeps it, exactly as its own
   window would. A pack that replaces textures (most resolution
   packs) is only read as the game starts, and the page then says its change

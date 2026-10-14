@@ -11,6 +11,7 @@
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/choice_popup.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/sound_view.hpp"
@@ -73,6 +74,9 @@ public:
     // game starts again -- which the page then says.
     bool restart_pending() const { return restart_pending_; }
     bool waiting() const { return waiting_; }
+    // A preset's choices, up beside its row, and the one the cursor is on.
+    bool choosing() const { return choice_.is_open(); }
+    int choice_focus() const { return choice_.focus(); }
     // Where the prompts at the foot of the page were drawn -- see
     // take_guide_taps() -- for a device drawing the other's page.
     const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
@@ -116,6 +120,10 @@ private:
     void scroll_focus_into_view(const Geometry& geometry);
     // Turns the focused pack on or off, or steps its focused preset on.
     void adjust(GraphicPacksScreenResult& result);
+    // The focused preset's choices up beside its row.
+    void open_choice(const Geometry& geometry);
+    // The focused preset set to its `index`th choice.
+    void choose(int index, GraphicPacksScreenResult& result);
     std::string item_label(int item) const;
     std::string item_value(int item) const;
 
@@ -134,6 +142,9 @@ private:
     int item_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    ChoicePopup choice_;
+    float last_width_ = 1280.0f;
+    float last_height_ = 800.0f;
     std::vector<GuideHit> guide_hits_;
 };
 

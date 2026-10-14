@@ -653,6 +653,7 @@ void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vect
             for (std::size_t p = 0; p < presets; ++p) put_string(out, choice.presets[p]);
         }
     }
+    put_u16(out, message.choice_focus);
     finish_message(out, start, MessageType::GraphicPacksView);
 }
 
@@ -704,6 +705,7 @@ bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPac
         }
         out.packs.push_back(std::move(pack));
     }
+    if (reader.ok() && reader.remaining() >= 2) reader.u16(out.choice_focus);
     return reader.ok();
 }
 

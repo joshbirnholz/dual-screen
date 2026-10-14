@@ -219,17 +219,39 @@ void GraphicPacksScreen::adjust(GraphicPacksScreenResult& result) {
         change.kind = ExternalGraphicPackChange::Kind::Enabled;
         change.enabled = pack->enabled;
     } else {
-        // Stepped on, and round from the last to the first, as a value in
-        // the quick menu's Options is.
-        ExternalGraphicPack::Choice& choice = pack->choices[static_cast<std::size_t>(item_ - 1)];
-        const int count = static_cast<int>(choice.presets.size());
-        if (count < 2) return;
-        const int at = choice.active >= 0 ? choice.active : 0;
-        choice.active = (at + 1) % count;
-        change.kind = ExternalGraphicPackChange::Kind::Preset;
-        change.category = choice.category;
-        change.preset = choice.presets[static_cast<std::size_t>(choice.active)];
+        // A preset: its choices beside its row -- see open_choice().
+        open_choice(compute_geometry(last_width_, last_height_));
+        return;
     }
+    if (pack->restart_needed) restart_pending_ = true;
+    changed_.insert(pack->id);
+    result.change = std::move(change);
+}
+
+void GraphicPacksScreen::open_choice(const Geometry& geometry) {
+    const ExternalGraphicPack* pack = focused_pack();
+    if (pack == nullptr || item_ < 1 || item_ >= item_count()) return;
+    const ExternalGraphicPack::Choice& choice = pack->choices[static_cast<std::size_t>(item_ - 1)];
+    if (choice.presets.size() < 2) return;
+    const PixelRect row = item_ < static_cast<int>(geometry.items.size())
+                              ? geometry.items[static_cast<std::size_t>(item_)]
+                              : geometry.detail;
+    // None chosen yet is the first, as it is shown.
+    choice_.open(choice.presets, choice.active >= 0 ? choice.active : 0, row);
+}
+
+void GraphicPacksScreen::choose(int index, GraphicPacksScreenResult& result) {
+    ExternalGraphicPack* pack = focused_pack();
+    if (pack == nullptr || item_ < 1 || item_ >= item_count()) return;
+    ExternalGraphicPack::Choice& choice = pack->choices[static_cast<std::size_t>(item_ - 1)];
+    if (index < 0 || index >= static_cast<int>(choice.presets.size())) return;
+    if (index == (choice.active >= 0 ? choice.active : 0) && choice.active >= 0) return;
+    choice.active = index;
+    ExternalGraphicPackChange change;
+    change.id = pack->id;
+    change.kind = ExternalGraphicPackChange::Kind::Preset;
+    change.category = choice.category;
+    change.preset = choice.presets[static_cast<std::size_t>(index)];
     if (pack->restart_needed) restart_pending_ = true;
     changed_.insert(pack->id);
     result.change = std::move(change);
@@ -323,7 +345,19 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
     std::vector<PointerEvent> pointers = touched;
     take_guide_taps(guide_hits_, actions, pointers);
 
+    last_width_ = output_width;
+    last_height_ = output_height;
     const Geometry geometry = compute_geometry(output_width, output_height);
+    // A preset's choices take every press until put away.
+    if (choice_.is_open()) {
+        const ChoicePopupResult answer = choice_.update(actions, pointers, output_width, output_height);
+        if (answer.chosen >= 0) choose(answer.chosen, result);
+        if (answer.close_everything) {
+            result.close_requested = true;
+            open_ = false;
+        }
+        return result;
+    }
     const int packs = pack_count();
     for (const UiAction action : actions) {
         switch (action) {
@@ -341,12 +375,13 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
                     focus_ = std::max(0, std::min(packs - 1, focus_ + 1));
                 }
                 break;
-            // Into the pack from the list, on its first row; inside it, a
-            // step on, as A is.
+            // Into the pack from the list, on its first row. Inside it, A
+            // turns it on or off or opens a preset's choices; Right does
+            // nothing there, values no longer being stepped from the side.
             case UiAction::Right:
             case UiAction::Confirm:
                 if (in_pack_) {
-                    adjust(result);
+                    if (action == UiAction::Confirm) adjust(result);
                 } else if (packs > 0) {
                     in_pack_ = true;
                     item_ = 0;
@@ -550,6 +585,14 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame, {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen}},
                     &guide_hits_);
+    // A preset's choices, over its row wherever that is drawn now.
+    if (choice_.is_open()) {
+        const Geometry placed = compute_geometry(output_width, output_height);
+        if (item_ >= 0 && item_ < static_cast<int>(placed.items.size())) {
+            choice_.set_row(placed.items[static_cast<std::size_t>(item_)]);
+        }
+        choice_.render(quads, text, output_width, output_height);
+    }
 }
 
 void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
@@ -577,7 +620,17 @@ void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
     focus_ = std::max(0, std::min(view.focus, pack_count() - 1));
     in_pack_ = view.in_pack && pack_count() > 0;
     item_ = std::max(0, std::min(view.item, item_count() - 1));
-    scroll_focus_into_view(compute_geometry(output_width, output_height));
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    scroll_focus_into_view(geometry);
+    // The host's popup, with its cursor.
+    if (view.choice_focus == 0) {
+        choice_.close();
+    } else {
+        last_width_ = output_width;
+        last_height_ = output_height;
+        if (!choice_.is_open()) open_choice(compute_geometry(output_width, output_height));
+        choice_.set_focus(view.choice_focus - 1);
+    }
 }
 
 net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& screen) {
@@ -589,6 +642,7 @@ net::GraphicPacksViewMessage graphic_packs_view_of(const GraphicPacksScreen& scr
     view.focus = screen.focus();
     view.in_pack = screen.in_pack();
     view.item = screen.item();
+    view.choice_focus = screen.choosing() ? static_cast<uint16_t>(screen.choice_focus() + 1) : 0;
     for (const ExternalGraphicPack& pack : screen.packs()) {
         net::GraphicPacksViewPack wire;
         wire.id = pack.id;
@@ -621,6 +675,7 @@ void render_mirrored_graphic_packs(GraphicPacksScreen& screen, QuadRenderer& qua
 void GraphicPacksScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(focus_));
     mix_sound_state(view.focus, static_cast<uint64_t>(in_pack_ ? item_ + 1 : 0));
+    mix_sound_state(view.focus, static_cast<uint64_t>(choice_.is_open() ? choice_.focus() + 1000 : 0));
     mix_sound_state(view.rest, open_ ? 1u : 0u);
     for (const ExternalGraphicPack& pack : packs_) {
         mix_sound_state(view.rest, pack.enabled ? 1u : 0u);

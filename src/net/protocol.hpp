@@ -507,6 +507,9 @@ struct GraphicPacksViewMessage {
     bool in_pack = false;
     int32_t item = 0;
     std::vector<GraphicPacksViewPack> packs;
+    // A preset's choices up beside its row, and which the cursor is on, plus
+    // one; 0 for none. Last, and optional.
+    uint16_t choice_focus = 0;
 };
 
 struct ControllersViewMessage {
