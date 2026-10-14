@@ -630,6 +630,14 @@ private:
     bool smoothing_ = true;
     MenuConfirm confirm_ = MenuConfirm::None;
     PopupCursor confirm_cursor_;
+    // Where the menu was closed, when the menu opened since has not had that
+    // section -- see open().
+    struct HeldPlace {
+        MenuSection section = MenuSection::Continue;
+        bool inside = false;
+        int item = 0;
+    };
+    std::optional<HeldPlace> held_place_;
     // An option's choices, while MenuConfirm::Choice is up, beside its row.
     ChoicePopup choice_;
     // The window the menu was last laid out for, which the popup is placed

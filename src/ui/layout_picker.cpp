@@ -86,15 +86,28 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     // the top instead.
     on_content_ = false;
     item_ = 0;
+    // Where it was closed may not be in this menu -- Continue is not in the
+    // one a Wii U shows in place of the game -- and is kept for the next one
+    // it is in, unless the cursor is moved in the meantime.
+    MenuSection wanted = closed_on;
+    bool wanted_inside = closed_inside;
+    int wanted_item = closed_item;
+    if (held_place_ && has_section(held_place_->section)) {
+        wanted = held_place_->section;
+        wanted_inside = held_place_->inside;
+        wanted_item = held_place_->item;
+        held_place_.reset();
+    }
     if (sections_.empty()) {
         section_ = MenuSection::Layout;
-    } else if (reopening && has_section(closed_on)) {
-        section_ = closed_on;
-        if (closed_inside && closed_item < content_count(section_)) {
+    } else if (reopening && has_section(wanted)) {
+        section_ = wanted;
+        if (wanted_inside && wanted_item < content_count(section_)) {
             on_content_ = true;
-            item_ = std::max(0, closed_item);
+            item_ = std::max(0, wanted_item);
         }
     } else {
+        if (reopening && !held_place_) held_place_ = HeldPlace{wanted, wanted_inside, wanted_item};
         section_ = sections_.front();
     }
 }
@@ -971,6 +984,8 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
     }
     last_width_ = output_width;
     last_height_ = output_height;
+    // Moved by hand: where the menu was closed before no longer stands.
+    if (!actions.empty() || !pointers.empty()) held_place_.reset();
 
     // An option's choices, beside its row: the answer is the option changed
     // by however far along the choice is from what it was.

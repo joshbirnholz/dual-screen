@@ -1575,6 +1575,39 @@ void test_the_settings_prompt_is_there_and_is_leftmost() {
 // first time in a run it opens at the top, the way NSO's does, and a section
 // the menu no longer has -- save states on a game without them -- starts
 // from the top again.
+// A Wii U's menu shown in place of the game has no Continue. Closed on
+// Continue, shown there in between, and opened over the game again: still on
+// Continue, not on what the menu in between started on.
+void test_a_wii_u_menu_closed_on_continue_opens_on_it_again() {
+    LayoutRegistry registry;
+    LayoutPickerState over_game;
+    over_game.layout_id = registry.at(0).id;
+    LayoutPickerState in_place = over_game;
+    in_place.embedded = true;
+
+    LayoutPicker picker(registry);
+    open_wii_u(picker, over_game);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    picker.update({UiAction::Up}, {}, kWidth, kHeight);
+    CHECK(picker.section() == MenuSection::Continue);
+    picker.close();
+    picker.open(in_place);
+    CHECK(picker.section() == MenuSection::Options);
+    picker.close();
+    picker.open(over_game);
+    CHECK_MSG(picker.section() == MenuSection::Continue,
+              "the menu forgot it was closed on Continue");
+
+    // Moved in between, the move is what counts.
+    picker.close();
+    picker.open(in_place);
+    picker.update({UiAction::Down}, {}, kWidth, kHeight);
+    const MenuSection moved_to = picker.section();
+    picker.close();
+    picker.open(over_game);
+    CHECK(picker.section() == moved_to);
+}
+
 void test_the_menu_reopens_where_it_was_closed() {
     LayoutRegistry registry;
     LayoutPickerState state;
@@ -1801,6 +1834,7 @@ int main() {
     test_wii_u_amiibo_are_listed_to_choose_from();
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_where_it_was_closed();
+    test_a_wii_u_menu_closed_on_continue_opens_on_it_again();
     test_the_layout_swap_keeps_the_stylus_hand();
     test_the_sections_come_in_order();
     test_save_sync_asks_for_the_game_page();
