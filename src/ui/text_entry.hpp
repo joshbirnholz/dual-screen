@@ -20,7 +20,7 @@ struct TextEntryResult {
 
 // A few words typed in -- a name -- in the popup every question is asked in:
 // what it is for, the field with what has been typed so far, and Cancel and
-// OK. Typed on a keyboard, or Steam's on-screen one; the input layer hands
+// OK. In the top of the screen, clear of an on-screen keyboard. Typed on a keyboard, or Steam's on-screen one; the input layer hands
 // over what was typed each frame (see InputManager::typed_text()).
 class TextEntryPopup {
 public:

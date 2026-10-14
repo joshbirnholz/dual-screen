@@ -62,7 +62,10 @@ PopupGeometry TextEntryPopup::geometry(float output_width, float output_height) 
     const float line = TextRenderer::line_height(popup_scale(output_height));
     const float body = popup_text_height(words(), width, output_height) + line * 0.8f +
                        field_height(output_height);
-    return popup_geometry(output_width, output_height, body, buttons());
+    // In the top of the screen, where the on-screen keyboard -- a phone's,
+    // Steam's -- does not cover it.
+    return popup_at_top(popup_geometry(output_width, output_height, body, buttons()),
+                        output_height * 0.06f);
 }
 
 TextEntryResult TextEntryPopup::update(const std::vector<UiAction>& actions,

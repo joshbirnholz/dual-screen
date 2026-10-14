@@ -397,7 +397,8 @@ Three things are different about a Wii U session:
 - **A game's own dialogs** -- its keyboard, when it asks for a name (a horse's
   in Breath of the Wild), and its error messages -- are this app's popups
   rather than Cemu's small windows. The keyboard is the popup a DS nickname is
-  typed in, with Steam's on-screen keyboard on a Steam Deck: what is typed in
+  typed in, with Steam's on-screen keyboard on a Steam Deck -- both sit in the
+  top of the screen, clear of an on-screen keyboard: what is typed in
   Cemu's window shows in it as it is typed, OK hands it to the game, and
   Cancel leaves the game what it started with. A message has the game's own
   buttons, or OK; with only one, B presses it. The game goes on underneath,

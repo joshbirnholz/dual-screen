@@ -94,6 +94,17 @@ inline PopupGeometry popup_geometry(float output_width, float output_height, flo
     return geometry;
 }
 
+// The same popup moved up to `top`, everything in it with it: one asking for
+// something typed sits in the top of the screen, clear of an on-screen
+// keyboard rising from the bottom. Never lower than centred.
+inline PopupGeometry popup_at_top(PopupGeometry geometry, float top) {
+    const float dy = std::min(0.0f, std::round(top) - geometry.box.y);
+    geometry.box.y += dy;
+    geometry.body.y += dy;
+    for (PixelRect& button : geometry.buttons) button.y += dy;
+    return geometry;
+}
+
 // Which button a finger is on, or -1.
 inline int popup_button_at(const PopupGeometry& geometry, float x, float y) {
     for (std::size_t index = 0; index < geometry.buttons.size(); ++index) {
