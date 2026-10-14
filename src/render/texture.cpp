@@ -171,6 +171,7 @@ bool luminance_formats_available() {
         if (probe == 0) return true;
         gl::BindTexture(GL_TEXTURE_2D, probe);
         const uint8_t pixels[4] = {0, 0, 0, 0};
+        gl::prepare_unpack(1);
         gl::TexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(GL_LUMINANCE), 2, 2, 0, GL_LUMINANCE,
                        GL_UNSIGNED_BYTE, pixels);
         const bool ok = gl::GetError() == GL_NO_ERROR;
@@ -220,7 +221,7 @@ void Texture::upload_plane(GLuint& id, int& cached_width, int& cached_height,
     gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     // One byte a channel, so rows can start anywhere.
-    gl::PixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    gl::prepare_unpack(1);
     const int bytes_per_pixel = (format == GL_LUMINANCE_ALPHA || format == GL_RG) ? 2 : 1;
     // A decoder pads its rows, and GL_UNPACK_ROW_LENGTH is desktop-only, so a
     // padded plane is packed here first. Still far cheaper than converting it:
@@ -474,7 +475,7 @@ void Texture::upload_four_bytes_a_pixel(const uint32_t* source, int width, int h
         upload_from = staging.data();
     }
 
-    gl::PixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    gl::prepare_unpack(4);
     // The format too, not just the size: the same screen at the same size can
     // arrive as 5-6-5 tiles one frame and four bytes a pixel the next, or as
     // the one-channel luma of a video frame, and four bytes written into the
@@ -542,7 +543,7 @@ void Texture::upload_rgb565(const uint8_t* source, int width, int height) {
     }
 
     // Two bytes a pixel, so rows are only 4-byte aligned at even widths.
-    gl::PixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    gl::prepare_unpack(2);
     if (width != width_ || height != height_ || format_ != GL_RGB) {
         gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
                        GL_UNSIGNED_SHORT_5_6_5, source);
@@ -576,6 +577,7 @@ void Texture::allocate_rgba(int width, int height) {
         // guaranteed colour-renderable in a core profile -- an unsized one can
         // leave the framebuffer it is attached to incomplete, at which point a
         // copy into it quietly does nothing.
+        gl::prepare_unpack(4);
         gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width),
                        static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         width_ = width;

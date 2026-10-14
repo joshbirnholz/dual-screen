@@ -72,7 +72,9 @@ bool HwRenderTarget::create(unsigned width, unsigned height, bool want_depth, bo
     gl::BindTexture(GL_TEXTURE_2D, texture_);
     // GL_RGBA8, sized, rather than plain GL_RGBA. Only the sized formats are
     // guaranteed colour-renderable in a core profile, and this texture exists
-    // solely to be rendered into by the core.
+    // solely to be rendered into by the core. Nothing is read for it: with a
+    // pixel buffer a core left bound, the null would be read from that.
+    gl::prepare_unpack(4);
     gl::TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(width),
                    static_cast<GLsizei>(height), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     // No mipmaps and clamped, or an incomplete texture would make the whole

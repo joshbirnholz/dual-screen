@@ -244,6 +244,13 @@ bool has_vertex_arrays();
 // Whether the current context is OpenGL ES (decides which GLSL preamble the
 // shaders get).
 bool is_gles();
+// Before every texture upload: the pixel-unpack state set to what an upload
+// here expects -- rows `alignment` apart, packed, from client memory -- rather
+// than whatever an emulator core left behind. A core that uploads through a
+// pixel-unpack buffer with its own row length otherwise turns the next upload
+// here into a sheared smear: a word of a popup drawn first in a new size was
+// garbled that way.
+void prepare_unpack(GLint alignment);
 // Whether it is a desktop core profile, which removed the GLSL 1.20 syntax the
 // shaders are written in and needs the compatibility defines putting back.
 bool is_core_profile();

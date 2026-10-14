@@ -223,6 +223,28 @@ void reset_state_for_core() {
 }
 
 bool is_gles() { return g_is_gles; }
+
+namespace {
+// Whether the context has the unpack state beyond the alignment -- a desktop
+// context, or ES 3 -- or -1 until asked.
+int g_full_unpack_state = -1;
+}  // namespace
+
+void prepare_unpack(GLint alignment) {
+    if (PixelStorei == nullptr) return;
+    if (g_full_unpack_state < 0) g_full_unpack_state = (!g_is_gles || at_least(3, 0)) ? 1 : 0;
+    if (g_full_unpack_state == 1) {
+        constexpr GLenum kPixelUnpackBuffer = 0x88EC;
+        constexpr GLenum kUnpackRowLength = 0x0CF2;
+        constexpr GLenum kUnpackSkipRows = 0x0CF3;
+        constexpr GLenum kUnpackSkipPixels = 0x0CF4;
+        if (BindBuffer != nullptr) BindBuffer(kPixelUnpackBuffer, 0);
+        PixelStorei(kUnpackRowLength, 0);
+        PixelStorei(kUnpackSkipRows, 0);
+        PixelStorei(kUnpackSkipPixels, 0);
+    }
+    PixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+}
 bool is_core_profile() { return g_is_core_profile; }
 
 void version(int& out_major, int& out_minor) {
@@ -284,6 +306,7 @@ void unload() {
 
 bool load(bool gles_context, std::string* error) {
     g_is_gles = gles_context;
+    g_full_unpack_state = -1;
     g_is_core_profile = false;
 
     std::vector<std::string> missing;
