@@ -1769,6 +1769,7 @@ void Client::run() {
         std::vector<UiAction> actions = input_.ui_actions();
         std::vector<PointerEvent> pointers = input_.pointer_events();
         set_live_pointer(input_.pointer_active(), input_.pointer_x(), input_.pointer_y());
+        set_live_wheel(input_.wheel(), input_.mouse_x(), input_.mouse_y());
         route_guide_taps(actions, pointers);
         const bool tapped = std::any_of(pointers.begin(), pointers.end(),
                                         [](const PointerEvent& pointer) { return pointer.released; });

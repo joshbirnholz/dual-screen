@@ -780,6 +780,7 @@ void InputManager::begin_frame() {
     ui_actions_.clear();
     typed_text_.clear();
     backspaces_ = 0;
+    wheel_ = 0.0f;
     pointer_events_.clear();
     window_size_changed_ = false;
 #ifdef __SWITCH__
@@ -1147,6 +1148,22 @@ void InputManager::handle_event(const SDL_Event& event) {
             mouse_x_ = static_cast<float>(event.motion.x);
             mouse_y_ = static_cast<float>(event.motion.y);
             break;
+
+        case SDL_MOUSEWHEEL: {
+            if (event.wheel.which == SDL_TOUCH_MOUSEID) break;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+            float notches = event.wheel.preciseY;
+#else
+            float notches = static_cast<float>(event.wheel.y);
+#endif
+            if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) notches = -notches;
+            wheel_ += notches;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+            mouse_x_ = static_cast<float>(event.wheel.mouseX);
+            mouse_y_ = static_cast<float>(event.wheel.mouseY);
+#endif
+            break;
+        }
 
         default:
             break;

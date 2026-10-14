@@ -148,5 +148,26 @@ int main() {
         CHECK(!drag.dragging());
     }
 
+    // The mouse wheel over the list: a notch down moves it three rows down,
+    // and a notch up three back; turned anywhere else it moves nothing.
+    {
+        ListDrag drag;
+        drag.set_wheel_row(40.0f);
+        float scroll = 300.0f;
+        set_live_wheel(-1.0f, 200.0f, 300.0f);
+        pass(drag, {}, scroll);
+        CHECK_EQ(scroll, 420.0f);
+        set_live_wheel(2.0f, 200.0f, 300.0f);
+        pass(drag, {}, scroll);
+        CHECK_EQ(scroll, 180.0f);
+        set_live_wheel(-1.0f, 200.0f, 50.0f);  // above the list
+        pass(drag, {}, scroll);
+        CHECK_EQ(scroll, 180.0f);
+        set_live_wheel(10.0f, 200.0f, 300.0f);  // no further than the top
+        pass(drag, {}, scroll);
+        CHECK_EQ(scroll, 0.0f);
+        set_live_wheel(0.0f, 0.0f, 0.0f);
+    }
+
     return test::finish("list touch");
 }

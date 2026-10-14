@@ -26,6 +26,21 @@ struct LivePointer {
 void set_live_pointer(bool down, float x, float y);
 const LivePointer& live_pointer();
 
+// The mouse wheel this pass: how many notches it turned, positive up a list,
+// and where the mouse was -- a list under it scrolls. Set once a pass beside
+// the live pointer, zero when it did not turn.
+struct LiveWheel {
+    float notches = 0.0f;
+    float x = 0.0f;
+    float y = 0.0f;
+};
+void set_live_wheel(float notches, float x, float y);
+const LiveWheel& live_wheel();
+
+// How far one notch of the wheel moves a list, in pixels, at a list's row
+// height: three rows, as a desktop's lists move.
+inline float wheel_pixels(float notches, float row_height) { return -notches * row_height * 3.0f; }
+
 // A tap on a row of a list: the first highlights it, and only a tap on the
 // row already highlighted chooses it -- so a finger landing on the wrong row
 // moves the cursor there rather than doing something. True when `index` is
@@ -92,6 +107,10 @@ public:
                 }
             }
             last_y_ = live.y;
+        } else if (!active_ && wheel_turned(list)) {
+            velocity_ = 0.0f;
+            const float row = wheel_row_ > 0.0f ? wheel_row_ : list.h / 8.0f;
+            scroll = std::clamp(scroll + wheel_pixels(live_wheel().notches, row), 0.0f, max_scroll);
         } else if (!active_ && velocity_ != 0.0f && dt > 0.0f) {
             scroll += velocity_ * dt;
             velocity_ *= std::exp(-kFriction * dt);
@@ -112,6 +131,14 @@ public:
     void settle() { released_drag_ = false; }
     // Stops a glide: the cursor has moved the list somewhere else.
     void stop() { velocity_ = 0.0f; }
+    // How tall the list's rows are, so a notch of the wheel moves it a few.
+    // Unset, a list's rows are taken to be an eighth of its height.
+    void set_wheel_row(float row_height) { wheel_row_ = std::max(1.0f, row_height); }
+    // Whether the wheel turned over `list` this pass.
+    static bool wheel_turned(const PixelRect& list) {
+        const LiveWheel& wheel = live_wheel();
+        return wheel.notches != 0.0f && list.contains(wheel.x, wheel.y);
+    }
 
 private:
     static constexpr float kThresholdPixels = 14.0f;
@@ -129,6 +156,7 @@ private:
     float last_y_ = 0.0f;
     float start_scroll_ = 0.0f;
     float velocity_ = 0.0f;  // pixels a second, positive scrolling down the list
+    float wheel_row_ = 0.0f;
 };
 
 }  // namespace ds

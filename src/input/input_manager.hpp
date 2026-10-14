@@ -177,6 +177,11 @@ public:
     // What was typed this frame, UTF-8, and how many times Backspace was.
     const std::string& typed_text() const { return typed_text_; }
     int backspaces() const { return backspaces_; }
+    // How far the mouse wheel turned this frame, in notches, positive away
+    // from the player -- up a list -- and where the mouse was.
+    float wheel() const { return wheel_; }
+    float mouse_x() const { return mouse_x_; }
+    float mouse_y() const { return mouse_y_; }
     const std::vector<PointerEvent>& pointer_events() const { return pointer_events_; }
     bool quit_requested() const { return quit_requested_; }
     bool window_size_changed() const { return window_size_changed_; }
@@ -379,6 +384,7 @@ private:
     bool text_entry_ = false;
     std::string typed_text_;
     int backspaces_ = 0;
+    float wheel_ = 0.0f;
     std::vector<PointerEvent> pointer_events_;
     // Which buttons have already been named in the log, one bit each, and
     // whether menu navigation by stick has been. Once is a mapping; every

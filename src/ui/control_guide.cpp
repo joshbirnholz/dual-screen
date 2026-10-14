@@ -284,4 +284,12 @@ void set_live_pointer(bool down, float x, float y) {
 
 const LivePointer& live_pointer() { return g_live_pointer; }
 
+namespace {
+LiveWheel g_live_wheel;
+}  // namespace
+
+void set_live_wheel(float notches, float x, float y) { g_live_wheel = LiveWheel{notches, x, y}; }
+
+const LiveWheel& live_wheel() { return g_live_wheel; }
+
 }  // namespace ds

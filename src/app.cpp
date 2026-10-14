@@ -6346,6 +6346,7 @@ int App::run(const AppOptions& options) {
 
         set_live_pointer(impl.input.pointer_active(), impl.input.pointer_x(),
                          impl.input.pointer_y());
+        set_live_wheel(impl.input.wheel(), impl.input.mouse_x(), impl.input.mouse_y());
         {
             std::vector<PointerEvent> pointers = impl.input.pointer_events();
             // Taps on the menu as Cemu draws it over the game, which land
