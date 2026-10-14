@@ -654,17 +654,10 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             case UiAction::Up: focus_ = std::max(0, focus_ - 1); break;
             case UiAction::Down: focus_ = std::min(row_count() - 1, focus_ + 1); break;
             // Values are not stepped from the side any more: A opens a row's
-            // choices, or flips its switch. Right still goes into a page.
+            // choices, or flips its switch, or opens its page.
             case UiAction::Left: break;
-            case UiAction::Right: {
-                int current = -1;
-                const bool way_in = focus_ == emulators_row() || focus_ == data_management_row() ||
-                                    focus_ == updates_row() ||
-                                    (page_ == Page::Emulators && focused_entry() != nullptr &&
-                                     focused_entry()->kind == Entry::Kind::Download);
-                if (way_in && focused_choices(current).empty()) adjust(1, result);
-                break;
-            }
+            // A row that opens a page opens with A, never with a direction.
+            case UiAction::Right: break;
             case UiAction::Confirm:
                 press_row(result, geometry);
                 break;
