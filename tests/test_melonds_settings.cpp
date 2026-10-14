@@ -171,6 +171,19 @@ void test_page(const std::string& sandbox) {
     press(plain, UiAction::Down, 20);
     CHECK_EQ(plain.focus(), 0);
 
+    // A switch on the Settings page flips with A, never sideways.
+    {
+        SettingsScreen switches(paths);
+        switches.open(Settings(), {});
+        for (int row = 0; row < 12; ++row) {
+            const SettingsScreenResult sideways = press(switches, UiAction::Right);
+            const SettingsScreenResult back = press(switches, UiAction::Left);
+            CHECK_MSG(!sideways.settings_changed && !back.settings_changed,
+                      "a sideways press changed a setting");
+            press(switches, UiAction::Down);
+        }
+    }
+
     // Data Management first, on a device with saves: chosen, it asks to be
     // opened; come back from, the cursor is on it again. The melonDS row is
     // still last.

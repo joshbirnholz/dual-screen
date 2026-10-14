@@ -665,6 +665,27 @@ void test_moving_between_the_list_and_what_it_shows() {
         CHECK_EQ(offered, pak);
     }
 
+    // A switch flips with A, and only with A: the d-pad's sideways presses
+    // move between the two sides of the menu and nothing else.
+    {
+        LayoutPickerState switches = state;
+        switches.lcd_filter_choosable = true;
+        LayoutPicker listed(registry);
+        open_on(listed, switches, MenuSection::Options);
+        listed.update({UiAction::Right}, {}, kWidth, kHeight);
+        for (int row = 0; row < 8; ++row) {
+            for (const UiAction side : {UiAction::Right, UiAction::Left}) {
+                const LayoutPickerResult pressed = listed.update({side}, {}, kWidth, kHeight);
+                CHECK_MSG(!pressed.lcd_filter_toggled && !pressed.screen_gap_toggled &&
+                              !pressed.filtering_toggled && !pressed.cursor_mode_changed &&
+                              !pressed.resume_toggled && !pressed.rumble_pak_toggled,
+                          "a sideways press flipped a switch");
+                if (side == UiAction::Left) listed.update({UiAction::Right}, {}, kWidth, kHeight);
+            }
+            listed.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+    }
+
     // The LCD filter, for a DS game, and nowhere else.
     for (const bool lcd : {false, true}) {
         LayoutPickerState with_lcd = state;
