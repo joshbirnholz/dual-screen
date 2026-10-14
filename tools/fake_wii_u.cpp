@@ -238,12 +238,13 @@ int main(int argc, char** argv) {
                     ds::kExternalFeatureAmiibo;
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
     // Cemu's options, as its fork offers them, kept only in memory.
-    std::vector<ds::ExternalOption> options(4);
+    std::vector<ds::ExternalOption> options(5);
     options[0] = {"upscale_filter", "Upscaling", {"Bilinear", "Bicubic", "Hermite", "Nearest neighbor"}, 1, false, 1};
     options[1] = {"fullscreen_scaling", "Aspect ratio", {"Original", "Stretched"}, 0, false, 0};
     options[2] = {"performance_overlay", "Performance overlay",
                   {"Off", "Frame rate", "Frame rate and CPU", "Everything"}, 0, false, 0};
     options[3] = {"cpu_mode", "CPU mode", {"Auto", "Multi-core", "Single-core"}, 0, true, -1};
+    options[4] = {"tv_channels", "TV audio", {"Mono", "Stereo", "Surround"}, 1, false, 1};
 
     ds::ExternalFrameProducer producer;
     std::string error;

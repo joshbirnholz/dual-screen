@@ -411,6 +411,8 @@ void test_settings_round_trip() {
     // On by default, so off is the one worth writing down.
     CHECK(defaults.pause_wii_u_in_menu);
     defaults.pause_wii_u_in_menu = false;
+    CHECK_EQ(defaults.wii_u_tv_audio, 1);  // stereo, as Cemu's own default
+    defaults.wii_u_tv_audio = 2;
     CHECK(defaults.save(paths));
 
     const Settings reloaded = Settings::load(paths);
@@ -435,6 +437,7 @@ void test_settings_round_trip() {
               "which screen this device is on its own did not survive being written down");
     CHECK_MSG(!reloaded.pause_wii_u_in_menu,
               "Wii U games being left running in the quick menu did not survive being written down");
+    CHECK_MSG(reloaded.wii_u_tv_audio == 2, "surround TV audio did not survive being written down");
 
     // A config file that names arguments replaces them rather than adding to
     // them: a fork with different flags must not inherit these.

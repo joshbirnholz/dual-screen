@@ -333,6 +333,10 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             settings_.pause_wii_u_in_menu = !settings_.pause_wii_u_in_menu;
             result.settings_changed = true;
             break;
+        case Row::WiiUTvAudio:
+            settings_.wii_u_tv_audio = ((settings_.wii_u_tv_audio + direction) % 3 + 3) % 3;
+            result.settings_changed = true;
+            break;
 #endif
         case Row::UiSounds:
             settings_.ui_sounds = !settings_.ui_sounds;
@@ -514,6 +518,7 @@ void SettingsScreen::render(QuadRenderer& quads,
 #if DS_PLAYS_WII_U
         {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
         {"Pause Wii U games in the quick menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
+        {"Wii U TV audio", kWiiUTvAudioChoices[std::clamp(settings_.wii_u_tv_audio, 0, 2)]},
 #endif
         {"Sound effects", settings_.ui_sounds ? "On" : "Off"},
     };
@@ -640,6 +645,7 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, settings_.vsync ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_screen_alone));
     mix_sound_state(view.rest, settings_.pause_wii_u_in_menu ? 1u : 0u);
+    mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_tv_audio));
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);

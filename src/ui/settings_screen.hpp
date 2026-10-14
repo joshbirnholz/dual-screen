@@ -155,6 +155,7 @@ private:
 #if DS_PLAYS_WII_U
         WiiUScreenAlone,
         PauseWiiUInMenu,
+        WiiUTvAudio,
 #endif
         UiSounds,
         Count

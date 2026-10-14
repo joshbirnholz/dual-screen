@@ -151,6 +151,10 @@ Settings Settings::load(const AppPaths& paths) {
         expand_user_path(get_or<std::string>(document, "wii_u_mlc_path", settings.wii_u_mlc_path));
     settings.pause_wii_u_in_menu =
         get_or<bool>(document, "pause_wii_u_in_menu", settings.pause_wii_u_in_menu);
+    {
+        const std::string tv = get_or<std::string>(document, "wii_u_tv_audio", "stereo");
+        settings.wii_u_tv_audio = tv == "mono" ? 0 : tv == "surround" ? 2 : 1;
+    }
     if (document.contains("wii_u_arguments") && document["wii_u_arguments"].is_array()) {
         settings.wii_u_arguments.clear();
         for (const auto& argument : document["wii_u_arguments"]) {
@@ -235,6 +239,7 @@ bool Settings::save(const AppPaths& paths) const {
     document["wii_u_arguments"] = wii_u_arguments;
     if (!wii_u_mlc_path.empty()) document["wii_u_mlc_path"] = wii_u_mlc_path;
     document["pause_wii_u_in_menu"] = pause_wii_u_in_menu;
+    document["wii_u_tv_audio"] = wii_u_tv_audio == 0 ? "mono" : wii_u_tv_audio == 2 ? "surround" : "stereo";
     document["default_bilinear_filtering"] = default_bilinear_filtering;
     document["default_render_scale"] = default_render_scale;
     document["default_screen_gap"] = default_screen_gap;

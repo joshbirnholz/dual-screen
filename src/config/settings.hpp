@@ -52,6 +52,11 @@ inline bool display_is_a_steam_decks_own(int width, int height) {
 // Which screen that means, on a display of this size. A size of zero -- no
 // display to ask yet -- is not a Deck's panel, so Auto starts as the
 // television until it knows better.
+// Settings::wii_u_tv_audio's choices, as Settings and Cemu's option name them,
+// and that option's id over the link.
+inline constexpr const char* kWiiUTvAudioChoices[3] = {"Mono", "Stereo", "Surround"};
+inline constexpr const char* kWiiUTvAudioOption = "tv_channels";
+
 inline ScreenId resolve_wii_u_screen_alone(WiiUScreenAlone screen, int display_width,
                                            int display_height) {
     switch (screen) {
@@ -129,6 +134,10 @@ struct Settings {
     // Whether a Wii U game pauses while the quick menu is up, as it does for
     // the console's HOME Menu. Off, it plays on underneath, darkened.
     bool pause_wii_u_in_menu = true;
+    // What a Wii U game's TV sound comes out as -- Cemu's own TV channels
+    // setting, the same for every game: 0 mono, 1 stereo, 2 surround. Read
+    // by Cemu as a game starts. See kWiiUTvAudioChoices.
+    int wii_u_tv_audio = 1;
 
     const std::string& external_program_for(SystemId system) const {
         switch (system) {

@@ -354,7 +354,13 @@ Three things are different about a Wii U session:
   every game alike, so Dualscreen keeps each game's choice and sets it as the
   game starts, Cemu's default where the game has none; they change at once.
   CPU mode is kept in Cemu's own profile for the game, and changes when the
-  game is reset.
+  game is reset. Last, **Graphics Packs** opens the page above.
+
+- **Wii U TV audio**, in Settings, is Cemu's TV channels -- **Mono**,
+  **Stereo** (Cemu's default) or **Surround** -- the same for every game.
+  Dualscreen tells Cemu as it connects, and again when it is changed; Cemu
+  opens the TV's sound as a game starts, so a game already running hears the
+  change once it is reset. It needs this project's Cemu build.
 
 - **amiibo**, in the quick menu, lists the amiibo dumps (`.bin`, `.nfc`
   or `.dat`) in the amiibo folder, and a level or two of folders inside it,

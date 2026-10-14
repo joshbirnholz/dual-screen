@@ -939,6 +939,10 @@ struct App::Impl {
     void update_cemu_options();
     std::vector<std::pair<std::string, std::string>> cemu_option_rows() const;
     void step_cemu_option(int index);
+    // Settings' Wii U TV audio, told to a Cemu that is up, when it is not
+    // what it was. Cemu reads it as a game starts, so a game already
+    // running hears it once it is reset.
+    void apply_wii_u_tv_audio(int previous);
     // An amiibo scanned -- see pending_amiibo -- from the list of those in
     // the amiibo folder, or from the browser.
     bool amiibo_available() const;
@@ -1906,6 +1910,20 @@ void App::Impl::update_cemu_options() {
     }
     std::vector<ExternalOption> options;
     if (!external_source->take_options(options)) return;
+    // Settings' own, the same for every game: made what Settings says, and
+    // kept out of this game's Options.
+    for (auto it = options.begin(); it != options.end();) {
+        if (it->id != kWiiUTvAudioOption) {
+            ++it;
+            continue;
+        }
+        const int wanted = std::clamp(settings.wii_u_tv_audio, 0, 2);
+        if (it->active != wanted && wanted < static_cast<int>(it->choices.size())) {
+            external_source->change_option(it->id, wanted);
+            log_info(std::string("Cemu: TV audio set to ") + kWiiUTvAudioChoices[wanted]);
+        }
+        it = options.erase(it);
+    }
     cemu_options = std::move(options);
     if (!cemu_options_applied && have_game_config) {
         // This game's choice for each one Cemu keeps for every game alike, or
@@ -1959,6 +1977,15 @@ void App::Impl::step_cemu_option(int index) {
     }
     if (option.restart_needed) show_corner_notice(option.label + " will change when the game is reset.");
     if (picker) picker->set_producer_options(cemu_option_rows());
+}
+
+void App::Impl::apply_wii_u_tv_audio(int previous) {
+    if (settings.wii_u_tv_audio == previous) return;
+    if (!external_source || !external_source->running() || !external_source->options_supported()) return;
+    const int wanted = std::clamp(settings.wii_u_tv_audio, 0, 2);
+    external_source->change_option(kWiiUTvAudioOption, wanted);
+    log_info(std::string("Cemu: TV audio set to ") + kWiiUTvAudioChoices[wanted]);
+    if (system == SystemId::WiiU && local_game()) show_corner_notice("TV audio will change when the game is reset.");
 }
 
 bool App::Impl::amiibo_available() const {
@@ -3596,8 +3623,10 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         return;
     }
     if (result.settings_changed) {
+        const int previous_tv_audio = settings.wii_u_tv_audio;
         settings = settings_screen->settings();
         ui_sounds.set_enabled(settings.ui_sounds);
+        apply_wii_u_tv_audio(previous_tv_audio);
         if (!settings.save(paths)) {
             log_warn("could not save settings.json");
         }
