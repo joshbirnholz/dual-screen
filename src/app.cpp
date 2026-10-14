@@ -60,6 +60,7 @@
 #include "ui/menu_state.hpp"
 #include "ui/notice_popup.hpp"
 #include "ui/corner_notice.hpp"
+#include "ui/game_dialog.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "net/save_exchange.hpp"
@@ -366,7 +367,11 @@ struct App::Impl {
         // A Wii U game's graphics packs, from its quick menu.
         GraphicPacks,
         // An amiibo to scan, from the same menu.
-        Amiibo
+        Amiibo,
+        // A Wii U game's own dialog -- an error, its keyboard -- shown over
+        // it in place of Cemu's, the game going on underneath. See
+        // update_game_dialogs().
+        GameDialog
     };
 
     AppOptions options;
@@ -982,6 +987,13 @@ struct App::Impl {
     void update_amiibo_browser(const std::vector<UiAction>& actions,
                                const std::vector<PointerEvent>& pointers);
     void send_pending_amiibo();
+    // The game's own dialogs, which Cemu hands over to be shown here: one
+    // put up waits until nothing else is over the game, and is gone once the
+    // game puts it away.
+    GameDialogScreen game_dialog_screen;
+    std::optional<ExternalGameDialog> pending_game_dialog;
+    void update_game_dialogs();
+    void leave_game_dialog();
     void show_steam_keyboard(bool typing);
     // Steam's keyboard was asked for by its URL rather than raised by SDL,
     // so it is put away the same way.
@@ -2178,12 +2190,12 @@ void App::Impl::show_steam_keyboard(bool typing) {
         SDL_SetHint("SDL_ENABLE_SCREEN_KEYBOARD", "1");
         input.set_text_entry(true);
         if (window != nullptr && SDL_IsScreenKeyboardShown(window)) {
-            log_info("Steam's keyboard is up to type your name");
+            log_info("Steam's keyboard is up for typing");
             return;
         }
         if (SDL_OpenURL("steam://open/keyboard?Mode=0") == 0) {
             steam_keyboard_opened = true;
-            log_info("Asked Steam for its keyboard to type your name");
+            log_info("Asked Steam for its keyboard for typing");
         } else {
             log_info(std::string("Steam's keyboard could not be opened: ") + SDL_GetError());
         }
@@ -2485,7 +2497,7 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
 }
 
 bool App::Impl::menu_over_wii_u_game() const {
-    const bool page_up = state == State::Menu || state == State::Message ||
+    const bool page_up = state == State::Menu || state == State::Message || state == State::GameDialog ||
                          ((state == State::Settings || state == State::DataManagement) &&
                           settings_came_from == State::Menu) ||
                          (state == State::Controllers && controllers_came_from == State::Menu) ||
@@ -2526,6 +2538,8 @@ void App::Impl::update_wii_u_pause() {
     if (!external_source || !external_source->running()) {
         wii_u_paused = false;
         menu_waiting_for_pause = false;
+        pending_game_dialog.reset();
+        leave_game_dialog();
         update_cemu_options();
         return;
     }
@@ -2617,7 +2631,44 @@ void App::Impl::update_wii_u_pause() {
     external_source->request_pause(pauses_wii_u_for_menu() &&
                                    (menu_waiting_for_pause || page_over_game));
     send_pending_amiibo();
+    update_game_dialogs();
     update_cemu_options();
+}
+
+void App::Impl::update_game_dialogs() {
+    if (!external_source->game_dialogs_supported()) return;
+    external_source->want_game_dialogs(true);
+    ExternalGameDialog dialog;
+    while (external_source->take_game_dialog(dialog)) {
+        if (dialog.kind != ExternalGameDialogKind::None) {
+            if (state == State::GameDialog && game_dialog_screen.serial() == dialog.serial) {
+                game_dialog_screen.refresh(dialog);
+            } else {
+                pending_game_dialog = dialog;
+            }
+            continue;
+        }
+        // Put away by the game.
+        if (pending_game_dialog && pending_game_dialog->serial == dialog.serial) pending_game_dialog.reset();
+        if (state == State::GameDialog && game_dialog_screen.serial() == dialog.serial) leave_game_dialog();
+    }
+    // Shown once nothing else is over the game: a menu up first stays up.
+    if (pending_game_dialog && state == State::Playing) {
+        game_dialog_screen.show(*pending_game_dialog);
+        log_info(pending_game_dialog->kind == ExternalGameDialogKind::Keyboard
+                     ? "the game wants something typed"
+                     : "the game has a message: " + pending_game_dialog->title + " " + pending_game_dialog->text);
+        pending_game_dialog.reset();
+        state = State::GameDialog;
+        input.set_game_input_enabled(false);
+    }
+}
+
+void App::Impl::leave_game_dialog() {
+    game_dialog_screen.close();
+    if (state != State::GameDialog) return;
+    state = State::Playing;
+    input.set_game_input_enabled(true);
 }
 
 bool App::Impl::wii_u_backdrop_ready() {
@@ -4554,6 +4605,7 @@ UiSoundView App::Impl::sound_view() const {
         case State::GraphicPacks: graphic_packs_screen.describe_for_sound(view); break;
         case State::Amiibo: amiibo_browser.describe_for_sound(view); break;
         case State::Message: message.describe_for_sound(view); break;
+        case State::GameDialog: view.focus = static_cast<uint64_t>(game_dialog_screen.focus()); break;
         case State::Browser:
             if (browser) browser->describe_for_sound(view);
             break;
@@ -4892,6 +4944,18 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             break;
         }
 
+        case State::GameDialog: {
+            game_dialog_screen.type(input.typed_text(), input.backspaces());
+            const GameDialogResult result = game_dialog_screen.update(
+                actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+            if (result.answered) {
+                if (external_source) external_source->answer_game_dialog(result.answer);
+                log_info("the game's dialog was answered");
+                leave_game_dialog();
+            }
+            break;
+        }
+
         case State::ResumeNotice: {
             if (notice_popup_answered(actions, pointers, static_cast<float>(output_width),
                                       static_cast<float>(output_height), game_notice)) {
@@ -5059,6 +5123,8 @@ void App::Impl::render_pages(float width, float height, bool over_game,
     } else if (state == State::Message) {
         message.set_over_game(over_game);
         message.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::GameDialog) {
+        game_dialog_screen.render(quads, text, width, height);
     }
 }
 
@@ -6641,8 +6707,9 @@ int App::run(const AppOptions& options) {
             // frame's events on -- and on a Steam Deck, Steam's own keyboard
             // comes up for it, there being no other.
             {
-                const bool typing = impl.state == Impl::State::Settings && impl.settings_screen &&
-                                    impl.settings_screen->wants_text();
+                const bool typing = (impl.state == Impl::State::Settings && impl.settings_screen &&
+                                     impl.settings_screen->wants_text()) ||
+                                    (impl.state == Impl::State::GameDialog && impl.game_dialog_screen.typing());
                 if (typing != impl.input.text_entry()) impl.show_steam_keyboard(typing);
                 impl.input.set_text_entry(typing);
             }
@@ -6680,7 +6747,8 @@ int App::run(const AppOptions& options) {
         const bool page_over_game =
             impl.state == Impl::State::Menu || impl.state == Impl::State::Settings ||
             impl.state == Impl::State::Controllers || impl.state == Impl::State::DataManagement ||
-            impl.state == Impl::State::Message || impl.on_cemu_page();
+            impl.state == Impl::State::Message || impl.state == Impl::State::GameDialog ||
+            impl.on_cemu_page();
         const bool game_running = impl.state == Impl::State::Playing ||
                                   (impl.external_source && page_over_game);
         const bool pads_to_game = impl.state == Impl::State::Playing;

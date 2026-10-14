@@ -28,6 +28,8 @@ public:
     void close() { open_ = false; }
     bool is_open() const { return open_; }
     const std::string& text() const { return text_; }
+    // What the field holds, changed from elsewhere -- typed where the game is.
+    void set_text(std::string text);
 
     TextEntryResult update(const std::vector<UiAction>& actions, const std::vector<PointerEvent>& pointers,
                            const std::string& typed, int backspaces, float output_width,

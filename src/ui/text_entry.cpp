@@ -42,6 +42,11 @@ void TextEntryPopup::open(std::string title, std::string initial, std::size_t ma
     open_ = true;
 }
 
+void TextEntryPopup::set_text(std::string text) {
+    text_ = std::move(text);
+    while (max_characters_ > 0 && utf8_length(text_) > max_characters_) text_ = utf8_without_last(text_);
+}
+
 PopupText TextEntryPopup::words() const {
     PopupText words;
     words.message = title_;

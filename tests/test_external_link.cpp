@@ -1183,6 +1183,89 @@ void test_options_and_amiibo_cross() {
     CHECK(result == ExternalAmiiboResult::NotAnAmiibo);
 }
 
+// A game's own dialogs -- its keyboard, its error messages -- shown by the
+// consumer once it asks for them, and answered from there.
+void test_a_games_dialogs_cross_and_are_answered() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay | kExternalFeatureGameDialogs;
+    if (!bring_up(link, producer, info)) return;
+    CHECK(link.game_dialogs_supported());
+    CHECK(!producer.game_dialogs_wanted());
+
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    link.want_game_dialogs(true);
+    CHECK_MSG(wait_for([&]() { return producer.game_dialogs_wanted(); }),
+              "the producer was never told the dialogs are wanted");
+
+    ExternalGameDialog keyboard;
+    keyboard.kind = ExternalGameDialogKind::Keyboard;
+    keyboard.serial = 7;
+    keyboard.text = "Epona";
+    keyboard.max_length = 10;
+    producer.send_game_dialog(keyboard);
+    ExternalGameDialog got;
+    CHECK_MSG(wait_for([&]() { return link.take_game_dialog(got); }), "the keyboard never arrived");
+    CHECK(got.kind == ExternalGameDialogKind::Keyboard);
+    CHECK_EQ(got.serial, 7u);
+    CHECK(got.text == "Epona" && got.buttons.empty());
+    CHECK_EQ(got.max_length, 10u);
+    CHECK(!link.take_game_dialog(got));
+
+    ExternalGameDialogAnswer typed;
+    typed.serial = 7;
+    typed.text = "Roach \u00e9";
+    link.answer_game_dialog(typed);
+    ExternalGameDialogAnswer answer;
+    CHECK_MSG(wait_for([&]() { return producer.take_game_dialog_answer(answer); }),
+              "what was typed never reached the producer");
+    CHECK_EQ(answer.serial, 7u);
+    CHECK(answer.text == typed.text);
+
+    ExternalGameDialog message;
+    message.kind = ExternalGameDialogKind::Message;
+    message.serial = 8;
+    message.title = "Error";
+    message.text = "Error Code: 102-2802\nCould not connect.";
+    message.buttons = {"Retry", "Cancel"};
+    producer.send_game_dialog(message);
+    CHECK_MSG(wait_for([&]() { return link.take_game_dialog(got); }), "the message never arrived");
+    CHECK(got.kind == ExternalGameDialogKind::Message && got.title == "Error" && got.text == message.text);
+    CHECK(got.buttons == message.buttons);
+    ExternalGameDialogAnswer pressed;
+    pressed.serial = 8;
+    pressed.button = 1;
+    link.answer_game_dialog(pressed);
+    CHECK_MSG(wait_for([&]() { return producer.take_game_dialog_answer(answer); }),
+              "the button pressed never reached the producer");
+    CHECK_EQ(answer.serial, 8u);
+    CHECK_EQ(answer.button, 1);
+
+    ExternalGameDialog gone;
+    gone.serial = 8;
+    producer.send_game_dialog(gone);
+    CHECK_MSG(wait_for([&]() { return link.take_game_dialog(got); }), "the message never went");
+    CHECK(got.kind == ExternalGameDialogKind::None);
+
+    link.want_game_dialogs(false);
+    CHECK_MSG(wait_for([&]() { return !producer.game_dialogs_wanted(); }),
+              "the producer was never told to draw them again");
+}
+
 int main() {
     test_two_screens_of_one_moment_arrive_whole();
     test_a_frame_caught_mid_write_is_dropped_rather_than_torn();
@@ -1203,5 +1286,6 @@ int main() {
     test_the_game_pauses_only_when_it_says_so();
     test_graphics_packs_are_listed_and_changed();
     test_options_and_amiibo_cross();
+    test_a_games_dialogs_cross_and_are_answered();
     return test::finish("external-link");
 }
