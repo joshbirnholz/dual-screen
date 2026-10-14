@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Synthesises the menus' sound styles: assets/ui_sounds/<style>/*.wav.
+"""Synthesises the menus' sounds: assets/ui_sounds/click/*.wav.
 
-Each style is the five sounds the shell plays -- move_cursor, confirm, cancel,
-error, open_quick_menu -- made here from sine waves and noise, so they are this
+The sounds the shell plays -- move_cursor, confirm, cancel, error,
+open_quick_menu -- made here from sine waves and noise, so they are this
 project's own and carry nobody else's licence. They aim at the feel of a
-console's system menus -- short, quiet, tactile, pitched a little up for yes
-and down for no -- without copying any:
-
-  click   dry plastic ticks and pops: the closest to a modern console's menu
-  bubble  rounder, pitched blips that glide: playful, a handheld's
-  chime   soft mallet notes, marimba-like: warmer, slower to die away
+console's system menus -- dry plastic ticks and pops, short, quiet, tactile,
+pitched a little up for yes and down for no -- without copying any.
 
 Deterministic -- the noise is seeded -- so running it again gives the same
 files. Then run assets/make_ui_sounds.py to pack them into ui_sounds.bin.
@@ -160,53 +156,7 @@ def click_style():
     return s
 
 
-# --- bubble: round blips that glide -----------------------------------------
-
-def bubble_style():
-    s = {}
-    s["move_cursor"] = (tone(1500, 1950, 0.035, 0.009, glide=0.012), -14)
-    confirm = tone(520, 1250, 0.12, 0.04, glide=0.05, partials=((1, 1), (2, 0.15)))
-    s["confirm"] = (confirm, -7)
-    s["cancel"] = (tone(1150, 460, 0.1, 0.035, glide=0.05, partials=((1, 1), (2, 0.1))), -9)
-    error = mix_into(tone(420, 310, 0.08, 0.03, glide=0.04), tone(400, 240, 0.1, 0.035, glide=0.05), 0.09)
-    s["error"] = (error, -8)
-    opening = []
-    for at, (f0, f1) in ((0.0, (500, 760)), (0.05, (700, 1080)), (0.1, (980, 1500))):
-        mix_into(opening, tone(f0, f1, 0.12, 0.04, glide=0.03), at, 0.8)
-    s["open_quick_menu"] = (opening, -8)
-    return s
-
-
-# --- chime: soft mallet notes -----------------------------------------------
-
-def note(name):
-    names = {"C": -9, "C#": -8, "D": -7, "E": -5, "F": -4, "G": -2, "A": 0, "B": 2}
-    pitch, octave = name[:-1], int(name[-1])
-    return 440.0 * 2 ** ((names[pitch] + (octave - 4) * 12) / 12)
-
-
-def chime_style():
-    s = {}
-    s["move_cursor"] = (mallet(note("C7"), 0.06, 0.018), -15)
-    confirm = mallet(note("E6"), 0.25, 0.07)
-    mix_into(confirm, mallet(note("B6"), 0.25, 0.08), 0.055)
-    s["confirm"] = (confirm, -7)
-    cancel = mallet(note("B5"), 0.22, 0.06)
-    mix_into(cancel, mallet(note("E5"), 0.22, 0.07), 0.055)
-    s["cancel"] = (cancel, -9)
-    error = mallet(note("C4"), 0.22, 0.06)
-    mix_into(error, mallet(note("C#4"), 0.22, 0.06), 0.0, 0.8)
-    mix_into(error, mallet(note("C4"), 0.22, 0.06), 0.11)
-    mix_into(error, mallet(note("C#4"), 0.22, 0.06), 0.11, 0.8)
-    s["error"] = (error, -8)
-    opening = []
-    for at, n in ((0.0, "C6"), (0.035, "E6"), (0.07, "G6"), (0.105, "C7")):
-        mix_into(opening, mallet(note(n), 0.3, 0.09), at, 0.8)
-    s["open_quick_menu"] = (opening, -8)
-    return s
-
-
-STYLES = {"click": click_style, "bubble": bubble_style, "chime": chime_style}
+STYLES = {"click": click_style}
 
 
 def main():

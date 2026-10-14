@@ -1003,10 +1003,6 @@ void Client::open_menu() {
     // to prevent.
     picker_.set_screens(session_.screens_geometry(), session_.system());
     picker_.set_bezel_art(bezel_art_.texture(session_.system()));
-#if DS_LOCAL_PLAY
-    // A companion with no Settings of its own (no local play) always shows it.
-    picker_.set_show_battery(Settings::load(AppPaths::resolve()).show_battery);
-#endif
     picker_.open(menu_state_from_host());
     save_slots_shown_ = session_.host_save_slots_revision() - 1;
     show_host_save_slots();
@@ -1194,7 +1190,6 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                                      static_cast<float>(output_height_));
         if (result.settings_changed) {
             settings_ = settings_screen_->settings();
-            ui_sounds_.set_style(settings_.ui_sound_style);
             ui_sounds_.set_enabled(settings_.ui_sounds);
             if (!settings_.save(AppPaths::resolve())) log_warn("could not save settings.json");
         }
@@ -1466,7 +1461,6 @@ void Client::run() {
 #if DS_LOCAL_PLAY
         const Settings sound_settings = Settings::load(AppPaths::resolve());
         const bool wanted = sound_settings.ui_sounds;
-        ui_sounds_.set_style(sound_settings.ui_sound_style);
 #else
         const bool wanted = true;
 #endif

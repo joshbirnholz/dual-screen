@@ -157,7 +157,6 @@ private:
         PauseWiiUInMenu,
 #endif
         UiSounds,
-        ShowBattery,
         Count
     };
     static constexpr int kRowCount = static_cast<int>(Row::Count);

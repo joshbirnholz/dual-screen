@@ -3591,7 +3591,6 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     }
     if (result.settings_changed) {
         settings = settings_screen->settings();
-        ui_sounds.set_style(settings.ui_sound_style);
         ui_sounds.set_enabled(settings.ui_sounds);
         if (!settings.save(paths)) {
             log_warn("could not save settings.json");
@@ -4730,7 +4729,6 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
         picker->set_preview_screen(own_separate_screen());
-        picker->set_show_battery(settings.show_battery);
         picker->set_device_screen(wii_u_screen_here());
         refresh_game_icon();
         picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
@@ -4937,7 +4935,6 @@ void App::Impl::render() {
             quads.begin_frame(output_width, output_height);
             quads.clear(ui_theme().background);
             picker->set_preview_screen(own_separate_screen());
-            picker->set_show_battery(settings.show_battery);
             picker->set_device_screen(wii_u_screen_here());
             refresh_game_icon();
             picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
@@ -5374,7 +5371,6 @@ int App::run(const AppOptions& options) {
 
     {
         std::string sound_error;
-        impl.ui_sounds.set_style(impl.settings.ui_sound_style);
         if (impl.ui_sounds.open(&sound_error)) {
             log_info(std::string("menu sounds ready") + (impl.settings.ui_sounds ? "" : ", but turned off in Settings"));
         } else {

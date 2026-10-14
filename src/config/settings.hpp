@@ -259,13 +259,6 @@ struct Settings {
     // The menus' own sounds -- a cursor moving, something chosen, the quick
     // menu opening -- on this device. See UiSoundPlayer.
     bool ui_sounds = true;
-    // Which of them: one of kUiSoundStyles (audio/ui_sounds.hpp) -- "click",
-    // "bubble", "chime" or "original".
-    std::string ui_sound_style = "click";
-
-    // This device's battery, in the quick menu's corner, as a Switch's HOME
-    // menu shows it. Nothing is shown where there is no battery.
-    bool show_battery = true;
 
     static Settings load(const AppPaths& paths);
     bool save(const AppPaths& paths) const;

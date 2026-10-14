@@ -1342,7 +1342,7 @@ void LayoutPicker::render(QuadRenderer& quads,
     // The game the menu was opened over, where the heading used to say what
     // the screen already looks like -- in the heading every page has.
     const PageFrame frame = page_frame(output_width, output_height);
-    const BatteryReading battery = show_battery_ ? read_battery() : BatteryReading();
+    const BatteryReading battery = read_battery();
     const float battery_room =
         battery.present ? battery_width(battery, scale) + frame.line * 1.2f : 0.0f;
     // The game's icon left of its title, as on its Data Management page.

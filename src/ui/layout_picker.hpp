@@ -373,9 +373,6 @@ public:
         state_.amiibo_folder = std::move(folder);
         rebuild_footer();
     }
-    // This device's battery in the heading's corner -- Settings' "Battery in
-    // the quick menu". Shown only where there is a battery to show.
-    void set_show_battery(bool show) { show_battery_ = show; }
     // Which of a Wii U's screens the device this menu is drawn on is showing,
     // drawn at the bottom left of its list -- a GamePad or a television.
     // Each device's own, so set by each, every frame, rather than shared.
@@ -574,7 +571,6 @@ private:
     // both. See layout_fits_system().
     std::vector<std::size_t> tiles_;
     bool open_ = false;
-    bool show_battery_ = true;
     std::optional<ScreenId> device_screen_;
     const Texture* game_icon_ = nullptr;
     Texture ui_icons_;

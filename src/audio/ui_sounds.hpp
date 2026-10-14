@@ -27,13 +27,6 @@ inline std::optional<UiSound> ui_sound_from_wire(uint8_t value) {
     return static_cast<UiSound>(value - 1);
 }
 
-// The styles the carried pack has, in the order Settings offers them -- see
-// assets/synth_ui_sounds.py, which makes all but the last.
-inline constexpr std::array<const char*, 4> kUiSoundStyles = {"click", "bubble", "chime", "original"};
-inline constexpr const char* kDefaultUiSoundStyle = "click";
-// What Settings calls one: "Click".
-std::string ui_sound_style_label(const std::string& style);
-
 // Every sound, 48 kHz int16 stereo, as assets/ui_sounds.bin carries them.
 struct UiSoundPack {
     int rate = 0;
@@ -112,9 +105,6 @@ public:
     void close();
     bool is_open() const;
     void set_enabled(bool enabled) { enabled_ = enabled; }
-    // Which of the pack's styles plays: the device is opened again with it,
-    // when it is open and the style is another.
-    void set_style(const std::string& style);
     bool enabled() const { return enabled_; }
     void play(UiSound sound);
 
@@ -123,7 +113,6 @@ private:
     std::unique_ptr<Backend> backend_;
     UiSoundPack pack_;
     bool enabled_ = true;
-    std::string style_ = kDefaultUiSoundStyle;
 };
 
 }  // namespace ds

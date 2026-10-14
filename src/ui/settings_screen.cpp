@@ -334,26 +334,8 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
             result.settings_changed = true;
             break;
 #endif
-        case Row::UiSounds: {
-            // Off, then each style in turn: one row for whether and which,
-            // stepped the way the cursor was pushed. Changing it plays the
-            // style it lands on, which is how one is chosen by ear.
-            std::vector<std::string> choices{""};
-            for (const char* style : kUiSoundStyles) choices.push_back(style);
-            const std::string here = settings_.ui_sounds ? settings_.ui_sound_style : std::string();
-            int at = 0;
-            for (int i = 0; i < static_cast<int>(choices.size()); ++i) {
-                if (choices[static_cast<std::size_t>(i)] == here) at = i;
-            }
-            const int count = static_cast<int>(choices.size());
-            const std::string next = choices[static_cast<std::size_t>(((at + direction) % count + count) % count)];
-            settings_.ui_sounds = !next.empty();
-            if (!next.empty()) settings_.ui_sound_style = next;
-            result.settings_changed = true;
-            break;
-        }
-        case Row::ShowBattery:
-            settings_.show_battery = !settings_.show_battery;
+        case Row::UiSounds:
+            settings_.ui_sounds = !settings_.ui_sounds;
             result.settings_changed = true;
             break;
         case Row::Count:
@@ -533,8 +515,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         {"Default Wii U screen", to_string(settings_.wii_u_screen_alone)},
         {"Pause Wii U games in the quick menu", settings_.pause_wii_u_in_menu ? "On" : "Off"},
 #endif
-        {"Sound effects", settings_.ui_sounds ? ui_sound_style_label(settings_.ui_sound_style) : "Off"},
-        {"Battery in the quick menu", settings_.show_battery ? "On" : "Off"},
+        {"Sound effects", settings_.ui_sounds ? "On" : "Off"},
     };
     if (page_ == Page::Main) {
         if (offers_data_management_) rows.push_back({"Data Management", ""});
@@ -660,8 +641,6 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.wii_u_screen_alone));
     mix_sound_state(view.rest, settings_.pause_wii_u_in_menu ? 1u : 0u);
     mix_sound_state(view.rest, settings_.ui_sounds ? 1u : 0u);
-    mix_sound_state(view.rest, settings_.ui_sound_style);
-    mix_sound_state(view.rest, settings_.show_battery ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(tuning_.cpu_mhz));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
 }

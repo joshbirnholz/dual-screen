@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Regenerates assets/ui_sounds.bin: the shell's own sounds, in one blob.
 
-The sources are assets/ui_sounds/<style>/*.wav, one folder for each style
-Settings offers: the ones assets/synth_ui_sounds.py makes, and "original",
-the owner's own recordings as they gave them: a mix of 44.1
-and 48 kHz, mono and stereo, most of them a second long with the sound itself
-in the first few hundredths and silence after. Played as they are, that
-silence is a voice held for nothing, and a rate the device is not running at
-is a conversion on every press. So each is made what the player wants, once,
-here:
+The sources are assets/ui_sounds/<style>/*.wav -- one style now, "click",
+which assets/synth_ui_sounds.py makes. A recording from elsewhere may be at
+44.1 kHz, mono, or a second long with the sound itself in the first few
+hundredths and silence after. Played as it is, that silence is a voice held
+for nothing, and a rate the device is not running at is a conversion on every
+press. So each is made what the player wants, once, here:
 
   - 48 kHz, which every device this runs on plays at (a windowed-sinc
     resampler, for the ones at 44.1);
@@ -26,9 +24,8 @@ The blob, little-endian throughout -- see decode_ui_sound_pack():
     the frames, int16 stereo interleaved, one sound after another
 
 The names are "<style>/<sound>"; the player looks them up by name, so the
-order of the sounds is not something it relies on -- but the styles' order is
-Settings' order, and the first is the one played when another is asked for
-that the pack does not have.
+order of the sounds is not something it relies on, and plays the first style
+when it is asked for one the pack does not have.
 
 Run from the repository root:  python3 assets/make_ui_sounds.py
 """
@@ -41,8 +38,7 @@ import wave
 
 RATE = 48000
 SOUNDS = ["move_cursor", "confirm", "cancel", "error", "open_quick_menu"]
-# The same order as kUiSoundStyles in src/audio/ui_sounds.hpp.
-STYLES = ["click", "bubble", "chime", "original"]
+STYLES = ["click"]
 THRESHOLD = 10 ** (-50 / 20)
 THRESHOLD_QUIET = 10 ** (-60 / 20)
 KEEP_AFTER = 0.030

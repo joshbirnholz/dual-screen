@@ -100,24 +100,12 @@ either pad, and sends it to the other to play as well -- and so do its
 Settings pages opened from the menu, which the other device's buttons work
 too.
 
-There are four styles of them, chosen under **Sound effects** in Settings,
-which plays each as it lands on it:
-
-| Style | What it sounds like |
-| --- | --- |
-| Click (the default) | dry plastic ticks and pops, the closest to a modern console's menus |
-| Bubble | round pitched blips that glide up for yes and down for no |
-| Chime | soft mallet notes, marimba-like, warmer and slower to die away |
-| Original | the recordings the app had first |
-
-The first three are this project's own, synthesised from sine waves and noise
-by `python3 assets/synth_ui_sounds.py`, so they carry nobody else's licence.
-Each style is a folder in `assets/ui_sounds/` with the same five files
-(`move_cursor`, `confirm`, `cancel`, `error`, `open_quick_menu`);
-`python3 assets/make_ui_sounds.py` trims them to the sound, converts them to
-48 kHz stereo and packs every style into `assets/ui_sounds.bin`, which is built
-into the app. A pack from elsewhere is one more folder, and its name in
-`STYLES` there and in `kUiSoundStyles` (src/audio/ui_sounds.hpp).
+They are dry plastic ticks and pops, the closest to a modern console's menus,
+and this project's own: synthesised from sine waves and noise by
+`python3 assets/synth_ui_sounds.py` into `assets/ui_sounds/click/`, so they
+carry nobody else's licence. `python3 assets/make_ui_sounds.py` trims them to
+the sound, converts them to 48 kHz stereo and packs them into
+`assets/ui_sounds.bin`, which is built into the app.
 
 They play on an audio device of their own, opened at start-up, not with the
 game's sound, which is queued a tenth of a second deep and paused while a menu
@@ -128,8 +116,7 @@ overlap are summed and then eased under full scale rather than clipped. Where SD
 time -- Android, and a run with `SDL_AUDIODRIVER=dummy` -- there are no menu
 sounds, since the game's sound needs that device; the log says which at
 start-up (`menu sounds ready`, or `no menu sounds:` and why). **Sound effects**
-in Settings turns them off too (`ui_sounds` and `ui_sound_style` in
-`settings.json`). A companion with
+in Settings turns them on and off (`ui_sounds` in `settings.json`). A companion with
 no Settings of its own -- on a desktop, an iPhone, an iPad or an Apple TV --
 always plays them.
 
@@ -1629,8 +1616,7 @@ V1 does not script `shortcuts.vdf` for you.
   "trigger_deadzone": 0.3,
   "vsync": true,
   "wii_u_alone": "auto",
-  "ui_sounds": true,
-  "ui_sound_style": "click"
+  "ui_sounds": true
 }
 ```
 

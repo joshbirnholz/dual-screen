@@ -34,13 +34,6 @@ constexpr double kPressCountsFor = 0.5;
 
 const char* ui_sound_name(UiSound sound) { return kNames[static_cast<int>(sound)]; }
 
-std::string ui_sound_style_label(const std::string& style) {
-    if (style.empty()) return style;
-    std::string label = style;
-    label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
-    return label;
-}
-
 bool decode_ui_sound_pack(const uint8_t* data, std::size_t size, UiSoundPack& out, std::string* error,
                           const std::string& style) {
     out = UiSoundPack();
@@ -448,7 +441,7 @@ UiSoundPlayer::~UiSoundPlayer() { close(); }
 
 bool UiSoundPlayer::open(std::string* error) {
     close();
-    if (!decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, pack_, error, style_)) return false;
+    if (!decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, pack_, error)) return false;
     auto backend = std::make_unique<Backend>();
     if (!backend->open(pack_, error)) return false;
     backend_ = std::move(backend);
@@ -463,14 +456,6 @@ void UiSoundPlayer::close() {
 }
 
 bool UiSoundPlayer::is_open() const { return backend_ != nullptr; }
-
-void UiSoundPlayer::set_style(const std::string& style) {
-    if (style == style_) return;
-    style_ = style;
-    if (!backend_) return;
-    std::string error;
-    if (!open(&error)) log_warn("the menus' sounds would not open again in the " + style + " style: " + error);
-}
 
 void UiSoundPlayer::play(UiSound sound) {
     if (!enabled_) return;

@@ -54,24 +54,14 @@ void test_the_carried_pack_has_every_sound_at_48k() {
     }
 }
 
-// Every style Settings offers is in the carried pack, whole, and each is its
-// own sounds; a style the pack does not have plays the first.
-void test_the_carried_pack_has_every_style() {
+// A style the pack does not have plays the one it has.
+void test_a_style_the_pack_lacks_plays_the_one_it_has() {
     UiSoundPack first;
     std::string error;
-    CHECK(decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, first, &error, kUiSoundStyles[0]));
-    for (const char* style : kUiSoundStyles) {
-        UiSoundPack pack;
-        CHECK_MSG(decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, pack, &error, style),
-                  std::string(style) + ": " + error);
-        if (std::string(style) != kUiSoundStyles[0]) {
-            CHECK_MSG(pack.clips[1] != first.clips[1], std::string(style) + " has the first style's confirm");
-        }
-    }
+    CHECK(decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, first, &error, "click"));
     UiSoundPack unknown;
     CHECK(decode_ui_sound_pack(assets::kUiSounds, assets::kUiSounds_size, unknown, &error, "kazoo"));
     CHECK(unknown.clips[1] == first.clips[1]);
-    CHECK_STR_EQ(ui_sound_style_label("bubble"), std::string("Bubble"));
 }
 
 void test_a_pack_cut_short_or_missing_a_sound_is_refused() {
@@ -299,7 +289,7 @@ void test_a_sound_crosses_the_wire_as_itself() {
 
 int main() {
     test_the_carried_pack_has_every_sound_at_48k();
-    test_the_carried_pack_has_every_style();
+    test_a_style_the_pack_lacks_plays_the_one_it_has();
     test_a_pack_cut_short_or_missing_a_sound_is_refused();
     test_the_mixer_sums_voices_and_clips();
     test_the_limit_leaves_ordinary_levels_alone_and_bends_loud_ones();
