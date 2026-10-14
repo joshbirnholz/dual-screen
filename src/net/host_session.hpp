@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <optional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -237,6 +238,12 @@ public:
     void set_controllers_view(const ControllersViewMessage& view);
     // The same for the Graphics Packs page.
     void set_graphic_packs_view(const GraphicPacksViewMessage& view);
+    // And the amiibo browser, while it is up.
+    void set_amiibo_browser_view(const AmiiboBrowserViewMessage& view);
+    // Where the page both devices show is scrolled here: sent on change.
+    void set_menu_scroll(const MenuScrollMessage& scroll);
+    // Where the companion has scrolled it, newest only, once.
+    bool take_menu_scroll(MenuScrollMessage& out);
     // And the game's own dialog, up over it (kind 0 once it is not).
     void set_game_dialog(const GameDialogMessage& dialog);
     // The companion's answers to it, oldest first.
@@ -681,6 +688,11 @@ private:
     bool graphic_packs_view_dirty_ = false;
     std::vector<uint8_t> game_dialog_;
     bool game_dialog_dirty_ = false;
+    std::vector<uint8_t> amiibo_browser_view_;
+    bool amiibo_browser_view_dirty_ = false;
+    std::vector<uint8_t> menu_scroll_;
+    bool menu_scroll_dirty_ = false;
+    std::optional<MenuScrollMessage> companion_menu_scroll_;
     std::deque<GameDialogAnswerMessage> game_dialog_answers_;
 
     DsInputState companion_input_;

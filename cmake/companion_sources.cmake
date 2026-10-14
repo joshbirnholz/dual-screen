@@ -57,6 +57,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/ui/control_guide.cpp
     src/ui/controllers_screen.cpp
     src/ui/graphic_packs_screen.cpp
+    src/ui/game_browser.cpp
     src/ui/launcher_screen.cpp
     src/ui/layout_picker.cpp
     src/ui/choice_popup.cpp
@@ -99,7 +100,6 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/input/retro_keymap.cpp
     src/net/host_session.cpp
     src/net/save_exchange.cpp
-    src/ui/game_browser.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
     src/ui/data_management_screen.cpp

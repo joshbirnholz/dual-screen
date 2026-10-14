@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -50,6 +51,13 @@ public:
     int focus() const { return focus_; }
     // From the other device, drawing the same popup.
     void set_focus(int focus);
+    // How far its list is scrolled, in rows; and the other device's taken on.
+    float scroll_rows() const { return scroll_rows_; }
+    void set_scroll_rows(float rows) {
+        scroll_rows_ = std::max(0.0f, rows);
+        fresh_ = false;
+        drag_.stop();
+    }
     // The row it was opened over, moved -- the page laid out after it opened,
     // say. Only until it is first drawn: from then on it stays where it is.
     void set_row(const PixelRect& row) {

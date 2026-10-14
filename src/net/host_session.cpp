@@ -584,6 +584,29 @@ void HostSession::set_graphic_packs_view(const GraphicPacksViewMessage& view) {
     graphic_packs_view_dirty_ = true;
 }
 
+void HostSession::set_amiibo_browser_view(const AmiiboBrowserViewMessage& view) {
+    std::vector<uint8_t> encoded;
+    encode_amiibo_browser_view(view, encoded);
+    if (encoded == amiibo_browser_view_) return;
+    amiibo_browser_view_ = std::move(encoded);
+    amiibo_browser_view_dirty_ = true;
+}
+
+void HostSession::set_menu_scroll(const MenuScrollMessage& scroll) {
+    std::vector<uint8_t> encoded;
+    encode_menu_scroll(scroll, encoded);
+    if (encoded == menu_scroll_) return;
+    menu_scroll_ = std::move(encoded);
+    menu_scroll_dirty_ = true;
+}
+
+bool HostSession::take_menu_scroll(MenuScrollMessage& out) {
+    if (!companion_menu_scroll_) return false;
+    out = std::move(*companion_menu_scroll_);
+    companion_menu_scroll_.reset();
+    return true;
+}
+
 void HostSession::set_game_dialog(const GameDialogMessage& dialog) {
     std::vector<uint8_t> encoded;
     encode_game_dialog(dialog, encoded);
@@ -867,12 +890,19 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             controllers_view_dirty_ = !controllers_view_.empty();
             graphic_packs_view_dirty_ = !graphic_packs_view_.empty();
             game_dialog_dirty_ = !game_dialog_.empty();
+            amiibo_browser_view_dirty_ = !amiibo_browser_view_.empty();
+            menu_scroll_dirty_ = !menu_scroll_.empty();
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
             log_info(companion_name_ + " connected as the " +
                      std::string(to_string(companion_screen_)) + " screen");
             refresh_beacon();
+            break;
+        }
+        case MessageType::MenuScroll: {
+            MenuScrollMessage scroll;
+            if (decode_menu_scroll(payload.data(), payload.size(), scroll)) companion_menu_scroll_ = std::move(scroll);
             break;
         }
         case MessageType::GameDialogAnswer: {
@@ -1321,6 +1351,16 @@ void HostSession::poll(uint64_t now_ms) {
     if (game_dialog_dirty_ && handshake_done_) {
         companion_.send(game_dialog_);
         game_dialog_dirty_ = false;
+    }
+    if (amiibo_browser_view_dirty_ && handshake_done_) {
+        companion_.send(amiibo_browser_view_);
+        amiibo_browser_view_dirty_ = false;
+    }
+    // After the views, so a page is there to be scrolled when its scroll
+    // arrives.
+    if (menu_scroll_dirty_ && handshake_done_) {
+        companion_.send(menu_scroll_);
+        menu_scroll_dirty_ = false;
     }
 
     std::string error;

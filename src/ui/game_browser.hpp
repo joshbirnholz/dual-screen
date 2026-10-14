@@ -39,6 +39,14 @@ struct GameBrowserResult {
     bool forwarder_requested = false;
 };
 
+// A row of the browser, as the other device is told it: what it says and
+// what it is, without where it is on this device's disk.
+struct GameBrowserEntry {
+    std::string label;
+    bool is_directory = false;
+    bool is_parent = false;
+};
+
 // A file browser for picking a ROM, used when the app is launched with no
 // --game. Navigable with a controller and by touch, including drag scrolling,
 // because on a Deck in Game Mode both are the only inputs there are.
@@ -51,6 +59,10 @@ public:
     bool is_open() const { return open_; }
 
     const std::string& current_directory() const { return directory_; }
+    // What is listed, for the other device to draw; and the host's browser
+    // drawn here, as it says -- taps on it go over as the row they land on.
+    std::vector<GameBrowserEntry> entries() const;
+    void show_mirrored(const std::string& directory, const std::vector<GameBrowserEntry>& entries, int focus);
     // Whether X makes a forwarder for the ROM under the cursor: only where
     // one can be installed -- a Switch.
     void set_offers_forwarders(bool offers) { offers_forwarders_ = offers; }
@@ -72,6 +84,9 @@ public:
     // A row by its index; a prompt as kGuideEntryBase plus its button.
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float, float, float, float) const override { return false; }
+    // The list, in lines.
+    std::vector<float> scroll_state(float output_width, float output_height) const override;
+    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
@@ -130,6 +145,10 @@ private:
 
     // Where the prompts were drawn, so tapping one does what pressing it does.
     std::vector<GuideHit> guide_hits_;
+
+public:
+    // Where its prompts were drawn, for a finger -- see guide_button_at().
+    const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
 };
 
 }  // namespace ds

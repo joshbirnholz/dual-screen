@@ -370,6 +370,9 @@ public:
     bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
                 float output_height) override;
     bool off_popup(float x, float y, float output_width, float output_height) const override;
+    // The list on the right in rows, then a dropdown's, while one is up.
+    std::vector<float> scroll_state(float output_width, float output_height) const override;
+    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
     // Whether a tap at a point lands off an option's popup altogether --
     // which puts it away. False when none is up.
     bool off_choice_popup(float x, float y, float output_width, float output_height) const {

@@ -93,7 +93,7 @@ CPPFILES    := main.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp frame_delay.cpp gl_loader.cpp gl_window.cpp \
                menu_backdrop.cpp menu_overlay.cpp png_image.cpp quad_renderer.cpp system_video_layer.cpp \
                text_renderer.cpp texture.cpp \
-               connecting_screen.cpp control_guide.cpp controllers_screen.cpp graphic_packs_screen.cpp choice_popup.cpp text_entry.cpp game_dialog.cpp mirrored_game_dialog.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
+               connecting_screen.cpp control_guide.cpp controllers_screen.cpp graphic_packs_screen.cpp game_browser.cpp choice_popup.cpp text_entry.cpp game_dialog.cpp mirrored_game_dialog.cpp launcher_screen.cpp layout_picker.cpp menu_state.cpp \
                notice_popup.cpp \
                battery.cpp build_stamp.cpp log.cpp \
                $(EMBEDDED_SOURCES)
@@ -140,7 +140,7 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                libretro_core.cpp libretro_screen_source.cpp core_input_sink.cpp \
                retro_keymap.cpp \
                host_session.cpp save_exchange.cpp \
-               game_browser.cpp message_screen.cpp settings_screen.cpp \
+               message_screen.cpp settings_screen.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
                child_process.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp

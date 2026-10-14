@@ -159,6 +159,8 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_controllers_view_ = ControllersViewMessage();
     host_graphic_packs_view_ = GraphicPacksViewMessage();
     host_game_dialog_ = GameDialogMessage();
+    host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
+    host_menu_scroll_ = MenuScrollMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -330,6 +332,8 @@ void CompanionSession::disconnect() {
     host_controllers_view_ = ControllersViewMessage();
     host_graphic_packs_view_ = GraphicPacksViewMessage();
     host_game_dialog_ = GameDialogMessage();
+    host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
+    host_menu_scroll_ = MenuScrollMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -443,6 +447,8 @@ void CompanionSession::fail(const std::string& reason) {
     host_controllers_view_ = ControllersViewMessage();
     host_graphic_packs_view_ = GraphicPacksViewMessage();
     host_game_dialog_ = GameDialogMessage();
+    host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
+    host_menu_scroll_ = MenuScrollMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -635,6 +641,18 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             host_save_slots_ = std::move(slots);
             ++host_save_slots_revision_;
+            break;
+        }
+        case MessageType::AmiiboBrowserView: {
+            AmiiboBrowserViewMessage view;
+            if (decode_amiibo_browser_view(payload.data(), payload.size(), view)) {
+                host_amiibo_browser_view_ = std::move(view);
+            }
+            break;
+        }
+        case MessageType::MenuScroll: {
+            MenuScrollMessage scroll;
+            if (decode_menu_scroll(payload.data(), payload.size(), scroll)) host_menu_scroll_ = std::move(scroll);
             break;
         }
         case MessageType::GameDialog: {
@@ -2273,6 +2291,13 @@ void CompanionSession::request_menu_action(MenuAction action) {
     request.wants_menu_action = true;
     request.menu_action = action;
     send_request(request);
+}
+
+void CompanionSession::send_menu_scroll(const MenuScrollMessage& scroll) {
+    if (status_ != Status::Connected || !stream_.connected()) return;
+    std::vector<uint8_t> out;
+    encode_menu_scroll(scroll, out);
+    stream_.send(out);
 }
 
 void CompanionSession::answer_game_dialog(const GameDialogAnswerMessage& answer) {

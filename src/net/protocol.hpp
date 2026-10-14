@@ -108,6 +108,12 @@ enum class MessageType : uint16_t {
     // the companion to show too; see GameDialogMessage. Sent when it changes.
     // A companion from before this ignores it.
     GameDialog = 22,
+    // The host's amiibo browser, as it stands, for a companion to draw while
+    // it is up -- see AmiiboBrowserViewMessage. Sent when it changes.
+    AmiiboBrowserView = 23,
+    // either way: where the menu page both devices show is scrolled -- see
+    // MenuScrollMessage. Ignored by a peer from before it.
+    MenuScroll = 24,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -497,6 +503,40 @@ struct ControllersViewPad {
 // same: the packs Cemu listed, and where the cursor is among them. Presses on
 // the companion already reach the host's page (see settings_open); this is
 // only what it looks like.
+// Which of the host's pages both devices are showing, for MenuScrollMessage:
+// the scroll of one is never taken for another's.
+enum class MirroredPage : uint8_t {
+    None = 0,
+    QuickMenu = 1,
+    GraphicPacks = 2,
+    Controllers = 3,
+    AmiiboBrowser = 4,
+};
+
+// Where the page both devices show is scrolled -- see MenuPage::scroll_state()
+// -- from the host as it stands, and from the companion as a finger or the
+// wheel moves it there. Each takes the other's, but for while it is being
+// scrolled itself.
+struct MenuScrollMessage {
+    MirroredPage page = MirroredPage::None;
+    std::vector<float> positions;
+};
+
+// The host's amiibo browser, for the companion to draw: the folder, what is
+// in it, and where the cursor is. Taps there go over as the row they landed
+// on, like any mirrored page's.
+struct AmiiboBrowserViewEntry {
+    std::string label;
+    bool is_directory = false;
+    bool is_parent = false;
+};
+struct AmiiboBrowserViewMessage {
+    bool open = false;
+    std::string directory;
+    std::vector<AmiiboBrowserViewEntry> entries;
+    int32_t focus = 0;
+};
+
 // A game's own dialog, as the host shows it -- see ExternalGameDialog, which
 // it carries. The companion shows the same popup, and answers it as the host
 // would; the keyboard is typed on the companion when `typed_here`, the
@@ -712,6 +752,8 @@ void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& ou
 void encode_controllers_view(const ControllersViewMessage& message, std::vector<uint8_t>& out);
 void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog(const GameDialogMessage& message, std::vector<uint8_t>& out);
+void encode_menu_scroll(const MenuScrollMessage& message, std::vector<uint8_t>& out);
+void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
@@ -753,6 +795,8 @@ bool decode_save_slots(const uint8_t* data, std::size_t size, SaveSlotsMessage& 
 bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersViewMessage& out);
 bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out);
 bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage& out);
+bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage& out);
+bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);
 bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one

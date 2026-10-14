@@ -103,6 +103,9 @@ public:
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float x, float y, float output_width, float output_height) const override;
+    // The packs, then the pack's side, in lines; then a dropdown's rows.
+    std::vector<float> scroll_state(float output_width, float output_height) const override;
+    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
     static constexpr int kChoiceEntryBase = 0x8000;
 
 private:

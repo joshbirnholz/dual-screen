@@ -1239,6 +1239,24 @@ int DataManagementScreen::entry_at(float x, float y, float output_width, float o
     return -1;
 }
 
+std::vector<float> DataManagementScreen::scroll_state(float output_width, float output_height) const {
+    const float line = frame_for(output_width, output_height).line;
+    return {line > 0.0f ? list_scroll_ / line : 0.0f, line > 0.0f ? earlier_scroll_ / line : 0.0f};
+}
+
+void DataManagementScreen::set_scroll_state(const std::vector<float>& state, float output_width,
+                                            float output_height) {
+    const Frame frame = frame_for(output_width, output_height);
+    const float row_h = menu_two_line_row_height(frame.line);
+    const float view = frame.content_bottom - frame.content_top;
+    const auto max_for = [&](std::size_t count) {
+        return std::max(0.0f, static_cast<float>(count) * row_h - view);
+    };
+    list_scroll_ = std::clamp(scroll_at(state, 0) * frame.line, 0.0f, max_for(saves_.size()));
+    earlier_scroll_ = std::clamp(scroll_at(state, 1) * frame.line, 0.0f, max_for(earlier_.size()));
+    drag_.stop();
+}
+
 bool DataManagementScreen::off_popup(float x, float y, float output_width, float output_height) const {
     return open_ && dialog_up() && !dialog_popup(output_width, output_height).box.contains(x, y);
 }

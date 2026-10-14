@@ -416,6 +416,23 @@ bool GraphicPacksScreen::scroll(const std::vector<PointerEvent>& pointers, float
     return drag_.release_was_drag() || detail_drag_.release_was_drag();
 }
 
+std::vector<float> GraphicPacksScreen::scroll_state(float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    return {scroll_in_lines(scroll_, geometry.scale), scroll_in_lines(detail_scroll_, geometry.scale),
+            choice_.is_open() ? choice_.scroll_rows() : 0.0f};
+}
+
+void GraphicPacksScreen::set_scroll_state(const std::vector<float>& state, float output_width,
+                                          float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f, geometry.max_scroll());
+    detail_scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 1), geometry.scale), 0.0f,
+                                geometry.detail_max_scroll());
+    drag_.stop();
+    detail_drag_.stop();
+    if (choice_.is_open()) choice_.set_scroll_rows(scroll_at(state, 2));
+}
+
 int GraphicPacksScreen::entry_at(float x, float y, float output_width, float output_height) const {
     if (choice_.is_open()) {
         const int choice = choice_.choice_at(x, y, output_width, output_height);

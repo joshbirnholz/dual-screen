@@ -60,6 +60,9 @@ public:
     // row, or a picture in the grid, by its index.
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float x, float y, float output_width, float output_height) const override;
+    // The grid of pictures, in rows.
+    std::vector<float> scroll_state(float output_width, float output_height) const override;
+    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
     void render(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                 float output_width, float output_height);
 

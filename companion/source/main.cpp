@@ -97,6 +97,8 @@ extern "C" {
 #include "ui/system_keyboard.hpp"
 #include "ui/menu_actions.hpp"
 #include "ui/mirrored_game_dialog.hpp"
+#include "ui/menu_scroll_sync.hpp"
+#include "ui/game_browser.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
 #include "render/quad_renderer.hpp"
@@ -527,6 +529,12 @@ private:
     GraphicPacksScreen mirrored_graphic_packs_;
     // The host's game dialog -- an error, its keyboard -- shown here too.
     MirroredGameDialog mirrored_game_dialog_;
+    // The host's amiibo browser, drawn here while it is up.
+    GameBrowser mirrored_amiibo_;
+    // The host's page drawn here, scrolled where the host has it -- see
+    // MenuScrollSync.
+    MenuScrollSync scroll_sync_{/*host=*/false};
+    void sync_scroll();
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
     uint32_t save_slots_shown_ = 0;
@@ -1118,6 +1126,10 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
                 return mirrored_controllers_.guide_hits();
             }
             if (!menu_open_ && session_.host_settings_open() &&
+                session_.host_amiibo_browser_view().open) {
+                return mirrored_amiibo_.guide_hits();
+            }
+            if (!menu_open_ && session_.host_settings_open() &&
                 session_.host_graphic_packs_view().open) {
                 return mirrored_graphic_packs_.guide_hits();
             }
@@ -1127,6 +1139,31 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
         case State::Settings: return none;
     }
     return none;
+}
+
+void Client::sync_scroll() {
+    MenuPage* page = nullptr;
+    net::MirroredPage shown = net::MirroredPage::None;
+    if (state_ == State::Playing && menu_open_) {
+        page = &picker_;
+        shown = net::MirroredPage::QuickMenu;
+    } else if (state_ == State::Playing && session_.host_settings_open()) {
+        if (session_.host_controllers_view().open) {
+            page = &mirrored_controllers_;
+            shown = net::MirroredPage::Controllers;
+        } else if (session_.host_amiibo_browser_view().open) {
+            page = &mirrored_amiibo_;
+            shown = net::MirroredPage::AmiiboBrowser;
+        } else if (session_.host_graphic_packs_view().open) {
+            page = &mirrored_graphic_packs_;
+            shown = net::MirroredPage::GraphicPacks;
+        }
+    }
+    if (const std::optional<net::MenuScrollMessage> said =
+            scroll_sync_.sync(page, shown, &session_.host_menu_scroll(), static_cast<float>(output_width_),
+                              static_cast<float>(output_height_))) {
+        session_.send_menu_scroll(*said);
+    }
 }
 
 void Client::route_guide_taps(std::vector<UiAction>& actions,
@@ -1195,7 +1232,13 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                 if (tap >= 0) session_.request_menu_focus(tap);
             }
         }
-        if (session_.host_graphic_packs_view().open) {
+        // The amiibo browser too: a tap goes over as the row.
+        if (session_.host_amiibo_browser_view().open) {
+            for (const int tap : MenuPage::taps_on(mirrored_amiibo_, pointers, static_cast<float>(output_width_),
+                                                   static_cast<float>(output_height_))) {
+                if (tap >= 0) session_.request_menu_focus(tap);
+            }
+        } else if (session_.host_graphic_packs_view().open) {
             for (const int tap : MenuPage::taps_on(mirrored_graphic_packs_, pointers,
                                                    static_cast<float>(output_width_),
                                                    static_cast<float>(output_height_))) {
@@ -1830,6 +1873,7 @@ void Client::run() {
         const double now_seconds = static_cast<double>(net::monotonic_millis() - started_ms) / 1000.0;
         ui_sound_judge_.note_input(actions, tapped, now_seconds);
         handle_actions(actions, pointers);
+        sync_scroll();
         // In a session the host decides, for both devices: its menu is the
         // one on screen here, and its sounds come over with it.
         const bool host_decides = state_ == State::Playing;
@@ -2003,7 +2047,8 @@ void Client::draw_scene() {
         // Management are about that machine, and are looked at there.
         const net::ControllersViewMessage& view = session_.host_controllers_view();
         const net::GraphicPacksViewMessage& packs = session_.host_graphic_packs_view();
-        if (view.open || packs.open) {
+        const net::AmiiboBrowserViewMessage& amiibo = session_.host_amiibo_browser_view();
+        if (view.open || packs.open || amiibo.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game that goes on, and the blurred still otherwise.
             router_.decide(false);
@@ -2026,6 +2071,15 @@ void Client::draw_scene() {
             if (view.open) {
                 render_mirrored_controllers(mirrored_controllers_, quads_, text_, button_glyphs_,
                                             width, height, view, /*over_game=*/true);
+            } else if (amiibo.open) {
+                std::vector<GameBrowserEntry> entries;
+                for (const net::AmiiboBrowserViewEntry& entry : amiibo.entries) {
+                    entries.push_back(GameBrowserEntry{entry.label, entry.is_directory, entry.is_parent});
+                }
+                mirrored_amiibo_.set_amiibo(true);
+                mirrored_amiibo_.show_mirrored(amiibo.directory, entries, amiibo.focus);
+                mirrored_amiibo_.set_over_game(true);
+                mirrored_amiibo_.render(quads_, text_, button_glyphs_, width, height);
             } else {
                 render_mirrored_graphic_packs(mirrored_graphic_packs_, quads_, text_,
                                               button_glyphs_, width, height, packs,

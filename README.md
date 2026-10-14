@@ -110,15 +110,19 @@ Every menu works the same under a finger, the mouse and the mouse wheel, on
 whichever device it is drawn: a list is dragged, flicked or turned with the
 wheel; a first tap on a row highlights it and a second chooses it; a tap off
 an open popup puts it away. A page of the host's drawn on the connected
-device -- the quick menu, Graphics Packs, Controller Order -- scrolls there by
-itself, and a tap there is sent over as the thing it landed on, so the host
-answers it exactly as it would its own. Over a Wii U game, the quick menu is
+device -- the quick menu, Graphics Packs, Controller Order, the amiibo
+browser -- is one page on both: where it is scrolled, the cursor and any
+popup are the same on both screens, whichever is scrolled or tapped, and a
+tap there is sent over as the thing it landed on, so the host answers it
+exactly as it would its own. (Settings and its pages are each device's own.) Over a Wii U game, the quick menu is
 drawn inside Cemu's window, and this project's Cemu build passes the mouse
 through to it, wheel and dragging included.
 
 Each page is a `MenuPage` (`src/ui/menu_page.hpp`), which hears every tap in
-one place; the `lint_menu_pages` test fails for a page that reads its own
-pointers instead, so a menu added later cannot leave any of this out.
+one place and says where it is scrolled in a measure that is the same at any
+screen size; the `lint_menu_pages` test fails for a page that reads its own
+pointers instead, and every screen of the app has to say whether the other
+device shows it, so a menu added later cannot leave any of this out.
 
 ### Sound Effects
 

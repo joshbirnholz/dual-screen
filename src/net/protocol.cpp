@@ -3,6 +3,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace ds::net {
@@ -696,6 +697,77 @@ bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage
     reader.u8(typed_here);
     if (!reader.ok()) return false;
     message.typed_here = typed_here != 0;
+    out = std::move(message);
+    return true;
+}
+
+void encode_menu_scroll(const MenuScrollMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>(message.page));
+    const std::size_t count = std::min<std::size_t>(message.positions.size(), 16);
+    put_u8(out, static_cast<uint8_t>(count));
+    for (std::size_t index = 0; index < count; ++index) put_f32(out, message.positions[index]);
+    finish_message(out, start, MessageType::MenuScroll);
+}
+
+bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage& out) {
+    Reader reader(data, size);
+    uint8_t page = 0;
+    uint8_t count = 0;
+    reader.u8(page);
+    reader.u8(count);
+    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::AmiiboBrowser) || count > 16) return false;
+    MenuScrollMessage message;
+    message.page = static_cast<MirroredPage>(page);
+    for (uint8_t index = 0; index < count && reader.ok(); ++index) {
+        float position = 0.0f;
+        reader.f32(position);
+        // A position is somewhere on a list; anything else is not.
+        message.positions.push_back(std::isfinite(position) ? position : 0.0f);
+    }
+    if (!reader.ok()) return false;
+    out = std::move(message);
+    return true;
+}
+
+void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, message.open ? 1u : 0u);
+    put_string(out, message.directory);
+    put_u32(out, static_cast<uint32_t>(message.focus));
+    const std::size_t count = std::min<std::size_t>(message.entries.size(), 4096);
+    put_u16(out, static_cast<uint16_t>(count));
+    for (std::size_t index = 0; index < count; ++index) {
+        const AmiiboBrowserViewEntry& entry = message.entries[index];
+        put_string(out, entry.label);
+        put_u8(out, static_cast<uint8_t>((entry.is_directory ? 1u : 0u) | (entry.is_parent ? 2u : 0u)));
+    }
+    finish_message(out, start, MessageType::AmiiboBrowserView);
+}
+
+bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out) {
+    Reader reader(data, size);
+    AmiiboBrowserViewMessage message;
+    uint8_t open = 0;
+    uint32_t focus = 0;
+    uint16_t count = 0;
+    reader.u8(open);
+    reader.string(message.directory);
+    reader.u32(focus);
+    reader.u16(count);
+    if (!reader.ok() || count > 4096) return false;
+    message.open = open != 0;
+    message.focus = static_cast<int32_t>(focus);
+    for (uint16_t index = 0; index < count && reader.ok(); ++index) {
+        AmiiboBrowserViewEntry entry;
+        uint8_t flags = 0;
+        reader.string(entry.label);
+        reader.u8(flags);
+        entry.is_directory = (flags & 1u) != 0;
+        entry.is_parent = (flags & 2u) != 0;
+        message.entries.push_back(std::move(entry));
+    }
+    if (!reader.ok()) return false;
     out = std::move(message);
     return true;
 }

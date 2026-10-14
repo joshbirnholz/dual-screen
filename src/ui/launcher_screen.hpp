@@ -83,6 +83,9 @@ public:
     // A row by its index.
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float, float, float, float) const override { return false; }
+    // Nothing scrolls.
+    std::vector<float> scroll_state(float, float) const override { return {}; }
+    void set_scroll_state(const std::vector<float>&, float, float) override {}
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,
@@ -153,6 +156,9 @@ public:
     // A host by its index in the list last handed to update().
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float, float, float, float) const override { return false; }
+    // Nothing scrolls.
+    std::vector<float> scroll_state(float, float) const override { return {}; }
+    void set_scroll_state(const std::vector<float>&, float, float) override {}
 
     void render(QuadRenderer& quads,
                 TextRenderer& text,

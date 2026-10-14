@@ -621,6 +621,12 @@ public:
     // And the game's own dialog up over it, kind 0 for none. See
     // GameDialogMessage; answered with answer_game_dialog().
     const GameDialogMessage& host_game_dialog() const { return host_game_dialog_; }
+    // Its amiibo browser. See AmiiboBrowserViewMessage.
+    const AmiiboBrowserViewMessage& host_amiibo_browser_view() const { return host_amiibo_browser_view_; }
+    // Where the page both devices show is scrolled on the host, as it last
+    // said; and where it has been scrolled here, told to it.
+    const MenuScrollMessage& host_menu_scroll() const { return host_menu_scroll_; }
+    void send_menu_scroll(const MenuScrollMessage& scroll);
     void answer_game_dialog(const GameDialogAnswerMessage& answer);
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
@@ -1159,6 +1165,8 @@ private:
     ControllersViewMessage host_controllers_view_;
     GraphicPacksViewMessage host_graphic_packs_view_;
     GameDialogMessage host_game_dialog_;
+    AmiiboBrowserViewMessage host_amiibo_browser_view_;
+    MenuScrollMessage host_menu_scroll_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;

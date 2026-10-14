@@ -1,8 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <vector>
 
 #include "input/input_manager.hpp"
+#include "render/text_renderer.hpp"
 
 namespace ds {
 
@@ -15,7 +17,10 @@ namespace ds {
 //   - a tap is heard in one place only, take_taps(), which hands over this
 //     device's own taps and the ones the other device made on its drawing of
 //     the page alike, so the two can never answer a tap differently;
-//   - a tap off an open popup puts it away.
+//   - a tap off an open popup puts it away;
+//   - with two devices showing it, it is one page: where it is scrolled is
+//     the same on both (scroll_state(), and MenuScrollSync, which keeps it
+//     so), as its cursor and popups already are.
 //
 // tests/lint_menu_pages.cmake fails the tests for a class that takes a
 // menu's presses without being one, or a page that never asks for its taps,
@@ -38,6 +43,21 @@ public:
     // Whether a point is off an open popup altogether: a tap there puts it
     // away. False when none is open.
     virtual bool off_popup(float x, float y, float output_width, float output_height) const = 0;
+
+    // Where each of its lists is scrolled -- a popup's too, while one is up
+    // -- in a measure that is the same at any size: lines of text (see
+    // scroll_in_lines()) or rows. The other device shows the page scrolled
+    // exactly so. A page with nothing that scrolls says none.
+    virtual std::vector<float> scroll_state(float output_width, float output_height) const = 0;
+    // The other device's, taken on, as far as this device's lists go; a
+    // glide here stopped.
+    virtual void set_scroll_state(const std::vector<float>& state, float output_width,
+                                  float output_height) = 0;
+    // Whether this device has just scrolled the page itself -- a finger, a
+    // glide, the wheel -- so that its scroll is the one that counts.
+    bool scrolled_here(std::chrono::steady_clock::time_point now) const {
+        return now - scrolled_here_at_ < std::chrono::milliseconds(400);
+    }
 
     // A tap the other device made on its drawing of this page, already
     // resolved there to an entry (or kTapOffPopup). Heard by the next
@@ -68,7 +88,11 @@ public:
     static std::vector<int> taps_on(MenuPage& page, const std::vector<PointerEvent>& pointers,
                                     float output_width, float output_height) {
         std::vector<int> taps;
+        const std::vector<float> before = page.scroll_state(output_width, output_height);
         const bool dragged = page.scroll(pointers, output_width, output_height);
+        if (page.scroll_state(output_width, output_height) != before) {
+            page.scrolled_here_at_ = std::chrono::steady_clock::now();
+        }
         for (const PointerEvent& pointer : pointers) {
             if (!pointer.released || dragged) continue;
             if (page.off_popup(pointer.x, pointer.y, output_width, output_height) &&
@@ -88,6 +112,19 @@ public:
 
 private:
     std::vector<int> forwarded_;
+    std::chrono::steady_clock::time_point scrolled_here_at_{};
 };
+
+// A scroll in pixels as lines of text at a page's `scale`, and back: every
+// page's layout grows with its text, so this means the same at any size.
+inline float scroll_in_lines(float pixels, float scale) {
+    const float line = TextRenderer::line_height(scale);
+    return line > 0.0f ? pixels / line : 0.0f;
+}
+inline float scroll_from_lines(float lines, float scale) { return lines * TextRenderer::line_height(scale); }
+// The `index`th of a state, or 0 when it has fewer.
+inline float scroll_at(const std::vector<float>& state, std::size_t index) {
+    return index < state.size() ? state[index] : 0.0f;
+}
 
 }  // namespace ds

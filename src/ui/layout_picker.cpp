@@ -691,6 +691,17 @@ int LayoutPicker::entry_at(float x, float y, float output_width, float output_he
     return -1;
 }
 
+std::vector<float> LayoutPicker::scroll_state(float, float) const {
+    return {content_scroll_, choice_.is_open() ? choice_.scroll_rows() : 0.0f};
+}
+
+void LayoutPicker::set_scroll_state(const std::vector<float>& state, float output_width, float output_height) {
+    const MenuGeometry geometry = compute_menu_geometry(output_width, output_height);
+    content_scroll_ = std::clamp(scroll_at(state, 0), 0.0f, content_max_scroll(geometry));
+    content_drag_.stop();
+    if (choice_.is_open()) choice_.set_scroll_rows(scroll_at(state, 1));
+}
+
 bool LayoutPicker::scroll(const std::vector<PointerEvent>& pointers, float output_width,
                           float output_height) {
     if (confirm_ == MenuConfirm::Choice) return choice_.scroll(pointers, output_width, output_height);

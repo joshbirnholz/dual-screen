@@ -570,6 +570,20 @@ int ForwarderScreen::entry_at(float x, float y, float output_width, float output
     return -1;
 }
 
+std::vector<float> ForwarderScreen::scroll_state(float output_width, float output_height) const {
+    const GridGeometry grid = grid_geometry(output_width, output_height);
+    const float step = grid.cell + grid.gap;
+    return {step > 0.0f ? grid_scroll_ / step : 0.0f};
+}
+
+void ForwarderScreen::set_scroll_state(const std::vector<float>& state, float output_width,
+                                       float output_height) {
+    const GridGeometry grid = grid_geometry(output_width, output_height);
+    grid_scroll_ = std::clamp(scroll_at(state, 0) * (grid.cell + grid.gap), 0.0f,
+                              std::max(0.0f, grid.content_height - grid.view.h));
+    grid_drag_.stop();
+}
+
 bool ForwarderScreen::off_popup(float x, float y, float output_width, float output_height) const {
     return open_ && asking() && !asking_popup(output_width, output_height).box.contains(x, y);
 }

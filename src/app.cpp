@@ -62,6 +62,7 @@
 #include "ui/corner_notice.hpp"
 #include "ui/game_dialog.hpp"
 #include "ui/mirrored_game_dialog.hpp"
+#include "ui/menu_scroll_sync.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "net/save_exchange.hpp"
@@ -997,6 +998,20 @@ struct App::Impl {
     void leave_game_dialog();
     // What is up for the companion to show too: every frame, sent on change.
     void publish_game_dialog();
+    // The pages the other device draws as this one shows them -- the amiibo
+    // browser's rows, and where every one of them is scrolled.
+    void publish_mirrored_pages();
+    // Which of them is up here, as the other device knows it; None for a
+    // page that is this device's alone.
+    net::MirroredPage mirrored_page() const;
+    // One page on both devices, scrolled the same: see MenuScrollSync. Built
+    // knowing which end this is: see App::Impl's constructor.
+    std::unique_ptr<MenuScrollSync> menu_scroll_sync;
+    // And the companion's end of it, for the host's pages drawn here.
+    MenuScrollSync companion_scroll_sync{/*host=*/false};
+    void sync_companion_scroll();
+    // The host's amiibo browser, drawn here while this device is a companion.
+    GameBrowser mirrored_amiibo;
     // Whether the game's keyboard is typed on the companion: it is the
     // GamePad, the device in the player's hands.
     bool companion_types_game_dialog() const {
@@ -2308,7 +2323,81 @@ MenuPage* App::Impl::page_shown() {
         case State::Menu: return picker.get();
         case State::GraphicPacks: return &graphic_packs_screen;
         case State::Controllers: return &controllers_screen;
+        case State::Amiibo: return &amiibo_browser;
         default: return nullptr;
+    }
+}
+
+net::MirroredPage App::Impl::mirrored_page() const {
+    // Every state named, and no default: one added later is a warning here
+    // until it says whether the other device shows it.
+    switch (state) {
+        case State::Menu: return picker ? net::MirroredPage::QuickMenu : net::MirroredPage::None;
+        case State::GraphicPacks: return net::MirroredPage::GraphicPacks;
+        case State::Controllers: return net::MirroredPage::Controllers;
+        case State::Amiibo: return net::MirroredPage::AmiiboBrowser;
+        // Settings and its pages are this device's own; the rest are not
+        // over a game the two share, or have nothing that scrolls.
+        case State::Settings:
+        case State::DataManagement:
+        case State::Playing:
+        case State::Message:
+        case State::Browser:
+        case State::Launcher:
+        case State::HostPicker:
+        case State::Companion:
+        case State::ResumeNotice:
+        case State::Forwarder:
+        case State::GameDialog: return net::MirroredPage::None;
+    }
+    return net::MirroredPage::None;
+}
+
+void App::Impl::sync_companion_scroll() {
+    if (!companion_session || !is_companion()) return;
+    MenuPage* page = nullptr;
+    net::MirroredPage shown = net::MirroredPage::None;
+    if (state == State::Menu && picker) {
+        page = picker.get();
+        shown = net::MirroredPage::QuickMenu;
+    } else if (state == State::Companion && companion_session->host_settings_open()) {
+        if (companion_session->host_controllers_view().open) {
+            page = &mirrored_controllers;
+            shown = net::MirroredPage::Controllers;
+        } else if (companion_session->host_amiibo_browser_view().open) {
+            page = &mirrored_amiibo;
+            shown = net::MirroredPage::AmiiboBrowser;
+        } else if (companion_session->host_graphic_packs_view().open) {
+            page = &mirrored_graphic_packs;
+            shown = net::MirroredPage::GraphicPacks;
+        }
+    }
+    if (const std::optional<net::MenuScrollMessage> said =
+            companion_scroll_sync.sync(page, shown, &companion_session->host_menu_scroll(),
+                                       static_cast<float>(output_width), static_cast<float>(output_height))) {
+        companion_session->send_menu_scroll(*said);
+    }
+}
+
+void App::Impl::publish_mirrored_pages() {
+    if (!host_session) return;
+    net::AmiiboBrowserViewMessage amiibo;
+    if (state == State::Amiibo && amiibo_browser.is_open()) {
+        amiibo.open = true;
+        amiibo.directory = amiibo_browser.current_directory();
+        for (const GameBrowserEntry& entry : amiibo_browser.entries()) {
+            amiibo.entries.push_back(net::AmiiboBrowserViewEntry{entry.label, entry.is_directory, entry.is_parent});
+        }
+        amiibo.focus = amiibo_browser.focus();
+    }
+    host_session->set_amiibo_browser_view(amiibo);
+    if (!menu_scroll_sync) menu_scroll_sync = std::make_unique<MenuScrollSync>(/*host=*/true);
+    net::MenuScrollMessage theirs;
+    const bool fresh = host_session->take_menu_scroll(theirs);
+    if (const std::optional<net::MenuScrollMessage> said =
+            menu_scroll_sync->sync(page_shown(), mirrored_page(), fresh ? &theirs : nullptr,
+                                   static_cast<float>(output_width), static_cast<float>(output_height))) {
+        host_session->set_menu_scroll(*said);
     }
 }
 
@@ -2323,6 +2412,7 @@ void App::Impl::update_shown_page(const std::vector<UiAction>& actions) {
             break;
         case State::GraphicPacks: update_graphic_packs_screen(actions, {}); break;
         case State::Controllers: update_controllers_screen(actions, {}); break;
+        case State::Amiibo: update_amiibo_browser(actions, {}); break;
         default: break;
     }
 }
@@ -4839,6 +4929,15 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                                                            static_cast<float>(output_height))) {
                         if (tap >= 0) companion_session->request_menu_focus(tap);
                     }
+                } else if (companion_session->host_amiibo_browser_view().open) {
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(mirrored_amiibo.guide_hits(), forwarded, rest);
+                    // Its own view of the list here, scrolled under a finger;
+                    // a tap goes over as the row it landed on.
+                    for (const int tap : MenuPage::taps_on(mirrored_amiibo, rest, static_cast<float>(output_width),
+                                                           static_cast<float>(output_height))) {
+                        if (tap >= 0) companion_session->request_menu_focus(tap);
+                    }
                 } else if (companion_session->host_graphic_packs_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_graphic_packs.guide_hits(), forwarded, rest);
@@ -5263,16 +5362,30 @@ void App::Impl::render() {
         // at there.
         const net::ControllersViewMessage& view = companion_session->host_controllers_view();
         const net::GraphicPacksViewMessage& packs = companion_session->host_graphic_packs_view();
+        const net::AmiiboBrowserViewMessage& amiibo = companion_session->host_amiibo_browser_view();
         const auto draw_page = [&](bool over_game) {
             if (view.open) {
                 render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs, width,
                                             height, view, over_game);
+            } else if (amiibo.open) {
+                if (!over_game) {
+                    quads.begin_frame(output_width, output_height);
+                    quads.clear(ui_theme().background);
+                }
+                std::vector<GameBrowserEntry> entries;
+                for (const net::AmiiboBrowserViewEntry& entry : amiibo.entries) {
+                    entries.push_back(GameBrowserEntry{entry.label, entry.is_directory, entry.is_parent});
+                }
+                mirrored_amiibo.set_amiibo(true);
+                mirrored_amiibo.show_mirrored(amiibo.directory, entries, amiibo.focus);
+                mirrored_amiibo.set_over_game(over_game);
+                mirrored_amiibo.render(quads, text, button_glyphs, width, height);
             } else {
                 render_mirrored_graphic_packs(mirrored_graphic_packs, quads, text, button_glyphs,
                                               width, height, packs, over_game);
             }
         };
-        if (view.open || packs.open) {
+        if (view.open || packs.open || amiibo.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game, which goes on, and the blurred still otherwise.
             if (ScreenSource* drawing = active_source()) {
@@ -6156,6 +6269,7 @@ int App::run(const AppOptions& options) {
             shared.resume_notice = impl.state == Impl::State::ResumeNotice;
             impl.host_session->set_session_state(shared);
             impl.publish_game_dialog();
+            impl.publish_mirrored_pages();
             // And the Controller Order screen, for the other device to show
             // the same -- see ControllersViewMessage. Closed is a message too:
             // it is how the other device learns to put it away.
@@ -6767,6 +6881,9 @@ int App::run(const AppOptions& options) {
             }
             impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
             impl.handle_ui(ui_actions, pointers);
+            // The host's page drawn here, scrolled where the host has it --
+            // or, scrolled here, the host told.
+            impl.sync_companion_scroll();
             // The keyboard types into a name being typed, from the next
             // frame's events on -- and on a Steam Deck, Steam's own keyboard
             // comes up for it, there being no other.

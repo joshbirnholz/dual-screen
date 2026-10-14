@@ -58,6 +58,9 @@ public:
     bool scroll(const std::vector<PointerEvent>&, float, float) override { return false; }
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float, float, float, float) const override { return false; }
+    // Nothing scrolls.
+    std::vector<float> scroll_state(float, float) const override { return {}; }
+    void set_scroll_state(const std::vector<float>&, float, float) override {}
 
     // For the sound judge: what a press could have changed.
     int focus() const { return kind_ == ExternalGameDialogKind::Keyboard ? 0 : cursor_.focus(); }

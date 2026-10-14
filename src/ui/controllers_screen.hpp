@@ -95,6 +95,9 @@ public:
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float, float, float, float) const override { return false; }
+    // The list, in lines.
+    std::vector<float> scroll_state(float output_width, float output_height) const override;
+    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
 
 private:
     struct Geometry {

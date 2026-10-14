@@ -404,6 +404,20 @@ bool ControllersScreen::scroll(const std::vector<PointerEvent>& pointers, float 
     return drag_.release_was_drag();
 }
 
+std::vector<float> ControllersScreen::scroll_state(float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height, row_count_, gap_before_);
+    return {scroll_in_lines(scroll_, geometry.scale)};
+}
+
+void ControllersScreen::set_scroll_state(const std::vector<float>& state, float output_width,
+                                         float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height, row_count_, gap_before_);
+    const float view = geometry.view_bottom - geometry.view_top;
+    scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f,
+                         std::max(0.0f, geometry.content_height - view));
+    drag_.stop();
+}
+
 int ControllersScreen::entry_at(float x, float y, float output_width, float output_height) const {
     const Geometry geometry = compute_geometry(output_width, output_height, row_count_, gap_before_);
     if (y < geometry.view_top || y > geometry.view_bottom) return -1;

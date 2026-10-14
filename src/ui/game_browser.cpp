@@ -219,6 +219,40 @@ int GameBrowser::entry_at(float x, float y, float output_width, float output_hei
     return row >= 0 && row < static_cast<int>(rows_.size()) ? row : -1;
 }
 
+std::vector<GameBrowserEntry> GameBrowser::entries() const {
+    std::vector<GameBrowserEntry> out;
+    out.reserve(rows_.size());
+    for (const Row& row : rows_) out.push_back(GameBrowserEntry{row.label, row.is_directory, row.is_parent});
+    return out;
+}
+
+void GameBrowser::show_mirrored(const std::string& directory, const std::vector<GameBrowserEntry>& entries,
+                                int focus) {
+    if (!open_ || directory != directory_) scroll_ = 0.0f;
+    open_ = true;
+    directory_ = directory;
+    error_.clear();
+    rows_.clear();
+    for (const GameBrowserEntry& entry : entries) {
+        Row row;
+        row.label = entry.label;
+        row.is_directory = entry.is_directory;
+        row.is_parent = entry.is_parent;
+        rows_.push_back(std::move(row));
+    }
+    focus_ = std::clamp(focus, 0, std::max(0, static_cast<int>(rows_.size()) - 1));
+}
+
+std::vector<float> GameBrowser::scroll_state(float output_width, float output_height) const {
+    return {scroll_in_lines(scroll_, compute_geometry(output_width, output_height).scale)};
+}
+
+void GameBrowser::set_scroll_state(const std::vector<float>& state, float output_width, float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f, max_scroll(geometry));
+    drag_.stop();
+}
+
 bool GameBrowser::handle_tap(int entry, GameBrowserResult& result) {
     if (entry >= kGuideEntryBase) {
         const ButtonGlyph under = static_cast<ButtonGlyph>(entry - kGuideEntryBase);

@@ -388,6 +388,16 @@ bool SettingsScreen::scroll(const std::vector<PointerEvent>& pointers, float out
     return drag_.release_was_drag();
 }
 
+std::vector<float> SettingsScreen::scroll_state(float output_width, float output_height) const {
+    return {scroll_in_lines(scroll_, compute_geometry(output_width, output_height).scale)};
+}
+
+void SettingsScreen::set_scroll_state(const std::vector<float>& state, float output_width, float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    scroll_ = std::clamp(scroll_from_lines(scroll_at(state, 0), geometry.scale), 0.0f, geometry.max_scroll());
+    drag_.stop();
+}
+
 int SettingsScreen::entry_at(float x, float y, float output_width, float output_height) const {
     const Geometry geometry = compute_geometry(output_width, output_height);
     if (y < geometry.view_top || y > geometry.panel.y + geometry.panel.h) return -1;

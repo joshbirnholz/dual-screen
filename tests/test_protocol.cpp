@@ -1973,6 +1973,42 @@ void test_game_dialog_round_trip() {
     CHECK(back.final && back.button == 1);
 }
 
+// Where the page both devices show is scrolled, and the amiibo browser.
+void test_menu_scroll_and_amiibo_browser_round_trip() {
+    MenuScrollMessage scroll;
+    scroll.page = MirroredPage::GraphicPacks;
+    scroll.positions = {2.5f, 0.0f, 7.25f};
+    std::vector<uint8_t> buffer;
+    encode_menu_scroll(scroll, buffer);
+    MessageType type{};
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::MenuScroll);
+    MenuScrollMessage got;
+    CHECK(decode_menu_scroll(payload.data(), payload.size(), got));
+    CHECK(got.page == MirroredPage::GraphicPacks && got.positions == scroll.positions);
+    CHECK(!decode_menu_scroll(payload.data(), payload.size() - 1, got));
+
+    AmiiboBrowserViewMessage view;
+    view.open = true;
+    view.directory = "/home/deck/amiibo";
+    view.entries = {{"..", true, true}, {"Zelda", true, false}, {"Link.bin", false, false}};
+    view.focus = 2;
+    buffer.clear();
+    encode_amiibo_browser_view(view, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::AmiiboBrowserView);
+    AmiiboBrowserViewMessage back;
+    CHECK(decode_amiibo_browser_view(payload.data(), payload.size(), back));
+    CHECK(back.open && back.directory == view.directory && back.focus == 2);
+    CHECK_EQ(back.entries.size(), std::size_t{3});
+    if (back.entries.size() == 3) {
+        CHECK(back.entries[0].is_parent && back.entries[0].is_directory);
+        CHECK(back.entries[1].is_directory && !back.entries[1].is_parent);
+        CHECK(back.entries[2].label == "Link.bin" && !back.entries[2].is_directory);
+    }
+}
+
 int main() {
     test_a_repair_request_round_trips();
     test_lost_pieces_come_back_from_parity();
@@ -2010,5 +2046,6 @@ int main() {
     test_controllers_view_round_trip();
     test_graphic_packs_view_round_trip();
     test_game_dialog_round_trip();
+    test_menu_scroll_and_amiibo_browser_round_trip();
     return test::finish("protocol");
 }
