@@ -46,6 +46,18 @@ public:
     void set_clip(const PixelRect& rect);
     void clear_clip();
 
+    // Everything drawn from here on, this much as opaque as it says -- a
+    // whole page faded in at once. 1 until changed, and again each frame.
+    void set_opacity(float opacity) { opacity_ = opacity < 0.0f ? 0.0f : (opacity > 1.0f ? 1.0f : opacity); }
+    float opacity() const { return opacity_; }
+    // Everything drawn from here on, `scale` times its size about the point
+    // (centre_x, centre_y) -- a page growing into place. 1 until changed.
+    void set_zoom(float scale, float centre_x, float centre_y) {
+        zoom_ = scale > 0.0f ? scale : 1.0f;
+        zoom_x_ = centre_x;
+        zoom_y_ = centre_y;
+    }
+
     void draw_solid(const PixelRect& rect, const Color& color);
     // Draws an XRGB8888 screen texture; alpha comes from `tint`, not the texture.
     // A quarter turn is a permutation of the corner texture coordinates, so a
@@ -167,6 +179,10 @@ private:
 
     int output_width_ = 0;
     float target_scale_ = 1.0f;
+    float opacity_ = 1.0f;
+    float zoom_ = 1.0f;
+    float zoom_x_ = 0.0f;
+    float zoom_y_ = 0.0f;
     int output_height_ = 0;
 };
 

@@ -98,6 +98,7 @@ extern "C" {
 #include "ui/menu_actions.hpp"
 #include "ui/mirrored_game_dialog.hpp"
 #include "ui/menu_scroll_sync.hpp"
+#include "ui/menu_entrance.hpp"
 #include "ui/game_browser.hpp"
 #include "render/compositor.hpp"
 #include "render/gl_window.hpp"
@@ -534,6 +535,9 @@ private:
     // The host's page drawn here, scrolled where the host has it -- see
     // MenuScrollSync.
     MenuScrollSync scroll_sync_{/*host=*/false};
+    // The quick menu coming up here as it does on the host -- see
+    // MenuEntrance.
+    MenuEntrance menu_entrance_;
     void sync_scroll();
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
@@ -1011,6 +1015,7 @@ LayoutPickerState Client::menu_state_from_host() const {
 }
 
 void Client::open_menu() {
+    menu_entrance_.start();
     // With the console, not without it. Left off, the picker fell back to its
     // default of a DS -- so a companion joining a Wii U host drew the DS's
     // grid of layouts to choose between, on a console that has no layouts to
@@ -2120,6 +2125,7 @@ void Client::draw_scene() {
         // paused stopped sending pictures, so the last is its paused one, and
         // is blurred below like any other console's.
         menu_backdrop_.forget();
+        quads_.set_opacity(menu_entrance_.backdrop());
         quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height},
                           Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
         picker_.set_preview_screen(session_.granted_screen());
@@ -2127,8 +2133,12 @@ void Client::draw_scene() {
                                       ? std::optional<ScreenId>(session_.granted_screen())
                                       : std::nullopt);
         picker_.set_game_icon(host_game_icon());
+        quads_.set_opacity(menu_entrance_.contents());
+        quads_.set_zoom(menu_entrance_.scale(), width * 0.5f, height * 0.5f);
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
+        quads_.set_opacity(1.0f);
+        quads_.set_zoom(1.0f, 0.0f, 0.0f);
     } else if (menu_open_) {
         // Taken between the game and the menu, the same as on the other device:
         // one menu, drawn over the same blurred frame wherever it is opened,
@@ -2137,6 +2147,8 @@ void Client::draw_scene() {
             menu_backdrop_.capture(static_cast<int>(width), static_cast<int>(height),
                                    compositor_.composition_key());
         }
+        // Faded in, and the menu after it, as it comes up -- see MenuEntrance.
+        quads_.set_opacity(menu_entrance_.backdrop());
         menu_backdrop_.draw(quads_, width, height);
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like -- the same as on
@@ -2146,8 +2158,12 @@ void Client::draw_scene() {
                                       ? std::optional<ScreenId>(session_.granted_screen())
                                       : std::nullopt);
         picker_.set_game_icon(host_game_icon());
+        quads_.set_opacity(menu_entrance_.contents());
+        quads_.set_zoom(menu_entrance_.scale(), width * 0.5f, height * 0.5f);
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
+        quads_.set_opacity(1.0f);
+        quads_.set_zoom(1.0f, 0.0f, 0.0f);
     } else {
         menu_backdrop_.forget();
         if (resume_notice) {

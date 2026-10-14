@@ -294,6 +294,8 @@ void QuadRenderer::begin_frame(int output_width, int output_height, float target
     output_width_ = output_width;
     output_height_ = output_height;
     target_scale_ = target_scale > 0.0f ? target_scale : 1.0f;
+    opacity_ = 1.0f;
+    zoom_ = 1.0f;
     if (gl::Viewport == nullptr) {
         return;
     }
@@ -320,12 +322,15 @@ void QuadRenderer::set_clip(const PixelRect& rect) {
     // top-left, so the box is flipped on its way down.
     // In the target's own pixels, which are fewer than the layout's when it
     // is drawn smaller -- see begin_frame().
+    // And zoomed, as everything drawn inside it is -- see set_zoom().
+    const PixelRect zoomed{zoom_x_ + (rect.x - zoom_x_) * zoom_, zoom_y_ + (rect.y - zoom_y_) * zoom_,
+                           rect.w * zoom_, rect.h * zoom_};
     const float s = target_scale_;
     const int target_height = static_cast<int>(std::lround(output_height_ * s));
-    const int x = static_cast<int>(std::floor(rect.x * s));
-    const int width = static_cast<int>(std::ceil((rect.x + rect.w) * s)) - x;
-    const int top = static_cast<int>(std::floor(rect.y * s));
-    const int height = static_cast<int>(std::ceil((rect.y + rect.h) * s)) - top;
+    const int x = static_cast<int>(std::floor(zoomed.x * s));
+    const int width = static_cast<int>(std::ceil((zoomed.x + zoomed.w) * s)) - x;
+    const int top = static_cast<int>(std::floor(zoomed.y * s));
+    const int height = static_cast<int>(std::ceil((zoomed.y + zoomed.h) * s)) - top;
     gl::Enable(GL_SCISSOR_TEST);
     gl::Scissor(x, target_height - top - height, std::max(0, width), std::max(0, height));
 }
@@ -367,10 +372,11 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
         return;
     }
 
-    const float x0 = rect.x;
-    const float y0 = rect.y;
-    const float x1 = rect.x + rect.w;
-    const float y1 = rect.y + rect.h;
+    // About the zoom's centre -- see set_zoom().
+    const float x0 = zoom_x_ + (rect.x - zoom_x_) * zoom_;
+    const float y0 = zoom_y_ + (rect.y - zoom_y_) * zoom_;
+    const float x1 = zoom_x_ + (rect.x + rect.w - zoom_x_) * zoom_;
+    const float y1 = zoom_y_ + (rect.y + rect.h - zoom_y_) * zoom_;
 
     // Destination corners, clockwise from the top-left, each with the texture
     // coordinate it samples.
@@ -394,10 +400,11 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
 
     gl::UseProgram(program_);
     gl::Uniform1i(uniform_mode_, static_cast<GLint>(mode));
-    gl::Uniform4f(uniform_color_, color.r, color.g, color.b, color.a);
+    gl::Uniform4f(uniform_color_, color.r, color.g, color.b, color.a * opacity_);
     if (mode == Mode::RoundedRing) {
         gl::Uniform4f(uniform_shape_, ring_shape_[0], ring_shape_[1], ring_shape_[2], ring_shape_[3]);
-        gl::Uniform4f(uniform_color2_, ring_color2_.r, ring_color2_.g, ring_color2_.b, ring_color2_.a);
+        gl::Uniform4f(uniform_color2_, ring_color2_.r, ring_color2_.g, ring_color2_.b,
+                      ring_color2_.a * opacity_);
         gl::Uniform4f(uniform_radii_, ring_radii_[0], ring_radii_[1], ring_radii_[2], ring_radii_[3]);
     }
     gl::Uniform2f(uniform_viewport_, static_cast<float>(output_width_),

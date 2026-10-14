@@ -63,6 +63,7 @@
 #include "ui/game_dialog.hpp"
 #include "ui/mirrored_game_dialog.hpp"
 #include "ui/menu_scroll_sync.hpp"
+#include "ui/menu_entrance.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
 #include "net/save_exchange.hpp"
@@ -1127,6 +1128,25 @@ struct App::Impl {
     void set_menu_open(bool open);
     // Opens it, with no waiting.
     void open_quick_menu();
+    // The quick menu coming up: its backdrop, then itself. See MenuEntrance.
+    MenuEntrance menu_entrance;
+    // Draws `draw_backdrop` and then `draw_menu` as the quick menu's entrance
+    // has them -- faded and grown in while it is coming up, and as they are
+    // otherwise, or on any other page.
+    template <typename Backdrop, typename Menu>
+    void draw_entering(float width, float height, Backdrop&& draw_backdrop, Menu&& draw_menu) {
+        const bool entering = state == State::Menu;
+        if (entering) quads.set_opacity(menu_entrance.backdrop());
+        draw_backdrop();
+        quads.set_opacity(1.0f);
+        if (entering) {
+            quads.set_opacity(menu_entrance.contents());
+            quads.set_zoom(menu_entrance.scale(), width * 0.5f, height * 0.5f);
+        }
+        draw_menu();
+        quads.set_opacity(1.0f);
+        quads.set_zoom(1.0f, 0.0f, 0.0f);
+    }
     // The menu as the host has it, for a device that is only showing it.
     LayoutPickerState menu_state_from_host() const;
     // The two settings both devices share. On a companion these ask the host
@@ -2860,21 +2880,22 @@ void App::Impl::render_menu_overlay() {
     const float w = static_cast<float>(output_width);
     const float h = static_cast<float>(output_height);
     if (menu_over_wii_u_game()) {
-        if (wii_u_backdrop_ready()) {
-            // Paused: the game's picture blurred, as a DS or 3DS game's is,
-            // over all of Cemu's window, and a page opened from the menu 60%
-            // darker again.
-            menu_backdrop.draw(quads, w, h);
-            if (state == State::Settings || state == State::DataManagement ||
-                state == State::Controllers || on_cemu_page()) {
-                quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+        draw_entering(w, h, [&] {
+            if (wii_u_backdrop_ready()) {
+                // Paused: the game's picture blurred, as a DS or 3DS game's
+                // is, over all of Cemu's window, and a page opened from the
+                // menu 60% darker again.
+                menu_backdrop.draw(quads, w, h);
+                if (state == State::Settings || state == State::DataManagement ||
+                    state == State::Controllers || on_cemu_page()) {
+                    quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+                }
+            } else {
+                // The game goes on underneath, Cemu's to draw: darkened, as
+                // it is on every page in this window -- see kLiveGameDim.
+                quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
             }
-        } else {
-            // The game goes on underneath, Cemu's to draw: darkened, as it is
-            // on every page in this window -- see kLiveGameDim.
-            quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
-        }
-        render_pages(w, h, /*over_game=*/true, nullptr);
+        }, [&] { render_pages(w, h, /*over_game=*/true, nullptr); });
     }
     const std::string notice = shown_corner_notice();
     if (!notice.empty()) render_corner_notice(quads, text, w, h, notice);
@@ -2941,6 +2962,7 @@ void App::Impl::open_quick_menu() {
     corner_notice.clear();
     open_picker();
     state = State::Menu;
+    menu_entrance.start();
     log_info("the quick menu is up");
     // A menu is often the last thing opened before a game is put down,
     // whichever device opened it.
@@ -5517,43 +5539,44 @@ void App::Impl::render() {
           settings_came_from == State::Menu) ||
          (state == State::Controllers && controllers_came_from == State::Menu) ||
          (on_cemu_page() && cemu_page_came_from == State::Menu));
-    if (show_menu_backdrop && system == SystemId::WiiU && wii_u_backdrop_ready()) {
-        // Paused, and its picture here: as a DS or 3DS game is.
-        menu_backdrop.draw(quads, width, height);
-        if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
-            on_cemu_page()) {
-            quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+    draw_entering(width, height, [&] {
+        if (show_menu_backdrop && system == SystemId::WiiU && wii_u_backdrop_ready()) {
+            // Paused, and its picture here: as a DS or 3DS game is.
+            menu_backdrop.draw(quads, width, height);
+            if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
+                on_cemu_page()) {
+                quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+            }
+        } else if (show_menu_backdrop && system == SystemId::WiiU &&
+                   !(is_companion() && companion_session && companion_session->host_paused())) {
+            // A Wii U game going on under the menu -- one that did not pause, or
+            // whose picture has yet to arrive -- is shown live rather than
+            // blurred, under the same darkness on every page: the menu's first
+            // page as much as the ones opened from it. On the other device, a
+            // paused one has stopped sending pictures, and is blurred below like
+            // any other console's.
+            if (!wii_u_paused) menu_backdrop.forget();
+            quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+        } else if (show_menu_backdrop) {
+            // Taken here, between the game and the menu, so what gets blurred is
+            // exactly the frame underneath it -- and taken again when that frame
+            // stops being the one that was copied, which is what picking a layout
+            // does while the menu is still up.
+            if (!menu_backdrop.matches(compositor.composition_key())) {
+                menu_backdrop.capture(output_width, output_height, compositor.composition_key());
+            }
+            menu_backdrop.draw(quads, width, height);
+            // A page opened from the menu -- Settings, Data Management,
+            // Controllers -- sits a step further back from the game: the same
+            // picture, 60% darker again.
+            if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
+                on_cemu_page()) {
+                quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+            }
+        } else {
+            menu_backdrop.forget();
         }
-    } else if (show_menu_backdrop && system == SystemId::WiiU &&
-               !(is_companion() && companion_session && companion_session->host_paused())) {
-        // A Wii U game going on under the menu -- one that did not pause, or
-        // whose picture has yet to arrive -- is shown live rather than
-        // blurred, under the same darkness on every page: the menu's first
-        // page as much as the ones opened from it. On the other device, a
-        // paused one has stopped sending pictures, and is blurred below like
-        // any other console's.
-        if (!wii_u_paused) menu_backdrop.forget();
-        quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
-    } else if (show_menu_backdrop) {
-        // Taken here, between the game and the menu, so what gets blurred is
-        // exactly the frame underneath it -- and taken again when that frame
-        // stops being the one that was copied, which is what picking a layout
-        // does while the menu is still up.
-        if (!menu_backdrop.matches(compositor.composition_key())) {
-            menu_backdrop.capture(output_width, output_height, compositor.composition_key());
-        }
-        menu_backdrop.draw(quads, width, height);
-        // A page opened from the menu -- Settings, Data Management,
-        // Controllers -- sits a step further back from the game: the same
-        // picture, 60% darker again.
-        if (state == State::Settings || state == State::DataManagement || state == State::Controllers ||
-            on_cemu_page()) {
-            quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
-        }
-    } else {
-        menu_backdrop.forget();
-    }
-    render_pages(width, height, show_menu_backdrop, frames);
+    }, [&] { render_pages(width, height, show_menu_backdrop, frames); });
     if (const std::string notice = shown_corner_notice(); !notice.empty()) {
         render_corner_notice(quads, text, width, height, notice);
     } else if (state == State::Companion && companion_session &&

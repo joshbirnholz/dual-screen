@@ -51,6 +51,10 @@ one running the game.
 On a DS or 3DS game the quick menu is laid out like Nintendo Switch Online's:
 a list down the left, and whatever the highlighted entry holds on the right.
 
+It comes up the way a console's does: the blurred game behind it fades in
+quickly, then the menu fades in and grows the last little way into place,
+just after -- all in under a quarter of a second, on both devices.
+
 Every list in the app — the main menu, Settings, the file picker, Data
 Management, this menu's options — stops at its first and last entries rather
 than going round. The one exception is this menu's list down the left: a
