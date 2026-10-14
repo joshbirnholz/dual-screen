@@ -274,12 +274,11 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
                 }
                 break;
             }
-            case UiAction::MenuReset:
-            // Settings is reached from the main menu and from a game's own
-            // menu; a file browser is neither.
-            case UiAction::MenuSettings: break;
+            case UiAction::MenuReset: break;
             // Plus: straight out to the main menu, from however deep in the
-            // folders this is -- where B only goes up one.
+            // folders this is -- where B only goes up one. (Plus is the
+            // quick menu's Settings; a file browser has no Settings.)
+            case UiAction::MenuSettings:
             case UiAction::MenuDisconnect:
                 // An amiibo's browser is a page of the quick menu, which B
                 // leaves; there is no main menu behind it.

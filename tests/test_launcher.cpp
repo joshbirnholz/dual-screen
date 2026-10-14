@@ -12,7 +12,7 @@ constexpr float kWidth = 1280.0f;
 constexpr float kHeight = 720.0f;
 
 bool plus_leaves(LauncherScreen& launcher) {
-    return launcher.update({UiAction::MenuDisconnect}, {}, kWidth, kHeight).choice ==
+    return launcher.update({UiAction::MenuSettings}, {}, kWidth, kHeight).choice ==
            LauncherChoice::Quit;
 }
 

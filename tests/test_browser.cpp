@@ -290,7 +290,7 @@ void test_plus_goes_to_the_main_menu_and_quit_is_not_here() {
     CHECK_STR_EQ(browser.current_directory(), inner);
 
     const GameBrowserResult plus =
-        browser.update(input, {UiAction::MenuDisconnect}, no_pointers, 1280.0f, 800.0f);
+        browser.update(input, {UiAction::MenuSettings}, no_pointers, 1280.0f, 800.0f);
     CHECK_MSG(plus.back_requested, "plus did not ask for the main menu");
     CHECK_STR_EQ(browser.current_directory(), inner);
 }

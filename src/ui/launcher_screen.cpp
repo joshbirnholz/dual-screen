@@ -94,6 +94,7 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
             // fallthrough into Quit would make pressing X leave the screen.
             case UiAction::MenuQuit:
             case UiAction::MenuReset: break;
+            case UiAction::MenuSettings:
             case UiAction::MenuDisconnect:
                 // Plus. Only where the platform's own convention says so; see
                 // set_plus_quits().
