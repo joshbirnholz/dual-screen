@@ -2,13 +2,12 @@
 // when a moving finger lifts and slows to a stop, stops when caught, and a
 // still finger is a tap rather than a drag.
 //
-// ListDrag keeps its own time, so the passes here are a few milliseconds
-// apart in real time, the way frames are.
+// ListDrag keeps its own time, read here from a clock that moves a frame,
+// 16 ms, each pass -- so a busy machine never makes a pass look longer.
 
 #include "test_support.hpp"
 
 #include <chrono>
-#include <thread>
 #include <vector>
 
 #include "ui/list_touch.hpp"
@@ -39,15 +38,19 @@ PointerEvent release(float y, float from) {
     return event;
 }
 
+std::chrono::steady_clock::time_point g_now{};
+std::chrono::steady_clock::time_point frame_clock() { return g_now; }
+
 // One pass, a frame's time after the last.
 void pass(ListDrag& drag, const std::vector<PointerEvent>& pointers, float& scroll) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    g_now += std::chrono::milliseconds(16);
     drag.update(pointers, kList, scroll, kMaxScroll);
 }
 
 }  // namespace
 
 int main() {
+    ListDrag::set_clock(frame_clock);
     // A tap: down and up in one place is not a drag, and moves nothing.
     {
         ListDrag drag;

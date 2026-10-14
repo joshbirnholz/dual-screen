@@ -65,7 +65,7 @@ public:
     // moves between them.
     void update(const std::vector<PointerEvent>& pointers, const PixelRect& list, float& scroll,
                 float max_scroll) {
-        const auto now = std::chrono::steady_clock::now();
+        const auto now = clock_ != nullptr ? clock_() : std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float>(now - last_update_).count();
         if (!started_ || dt < 0.0f) dt = 0.0f;
         dt = std::min(dt, 0.1f);
@@ -134,6 +134,10 @@ public:
     // How tall the list's rows are, so a notch of the wheel moves it a few.
     // Unset, a list's rows are taken to be an eighth of its height.
     void set_wheel_row(float row_height) { wheel_row_ = std::max(1.0f, row_height); }
+    // What every ListDrag reads the time from, in place of the steady clock:
+    // for a test, whose passes are frames apart however busy the machine is.
+    using Clock = std::chrono::steady_clock::time_point (*)();
+    static void set_clock(Clock clock) { clock_ = clock; }
     // Whether the wheel turned over `list` this pass.
     static bool wheel_turned(const PixelRect& list) {
         const LiveWheel& wheel = live_wheel();
@@ -149,6 +153,7 @@ private:
 
     bool started_ = false;
     std::chrono::steady_clock::time_point last_update_{};
+    static inline Clock clock_ = nullptr;
     bool active_ = false;
     bool moved_ = false;
     bool released_drag_ = false;
