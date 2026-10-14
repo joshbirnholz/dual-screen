@@ -1201,9 +1201,13 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
 
     if (state_ == State::Settings) {
 #if DS_LOCAL_PLAY
+        // A name being typed, from this device's keyboard -- on a phone, the
+        // one SDL raises when text input starts.
+        settings_screen_->type(input_.typed_text(), input_.backspaces());
         const SettingsScreenResult result =
             settings_screen_->update(actions, pointers, static_cast<float>(output_width_),
                                      static_cast<float>(output_height_));
+        input_.set_text_entry(settings_screen_->wants_text());
         if (result.settings_changed) {
             settings_ = settings_screen_->settings();
             apply_favorite_color_accent(settings_.ds_favorite_color);

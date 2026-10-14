@@ -956,6 +956,10 @@ struct App::Impl {
     void update_amiibo_browser(const std::vector<UiAction>& actions,
                                const std::vector<PointerEvent>& pointers);
     void send_pending_amiibo();
+    void show_steam_keyboard(bool typing);
+    // Steam's keyboard was asked for by its URL rather than raised by SDL,
+    // so it is put away the same way.
+    bool steam_keyboard_opened = false;
     // When the game was last seen going again with an amiibo waiting -- see
     // send_pending_amiibo().
     std::optional<std::chrono::steady_clock::time_point> amiibo_game_going_since;
@@ -2128,6 +2132,36 @@ void App::Impl::update_amiibo_browser(const std::vector<UiAction>& actions,
         return;
     }
     if (result.back_requested) close_cemu_page();
+}
+
+// Steam's on-screen keyboard, up while a name is typed on a Steam Deck. SDL
+// raises it itself when text input starts and it knows it is on a Deck --
+// which it reads from the SteamDeck variable Steam sets -- so it is let to
+// for the name; where it did not, Steam is asked for it by its URL, as SDL
+// would have.
+void App::Impl::show_steam_keyboard(bool typing) {
+    static const bool on_deck = std::getenv("SteamDeck") != nullptr || std::getenv("SteamOS") != nullptr ||
+                                net::this_device_kind() == net::kDeviceKindSteamDeck;
+    if (!on_deck) return;
+    if (typing) {
+        SDL_SetHint("SDL_ENABLE_SCREEN_KEYBOARD", "1");
+        input.set_text_entry(true);
+        if (window != nullptr && SDL_IsScreenKeyboardShown(window)) {
+            log_info("Steam's keyboard is up to type your name");
+            return;
+        }
+        if (SDL_OpenURL("steam://open/keyboard?Mode=0") == 0) {
+            steam_keyboard_opened = true;
+            log_info("Asked Steam for its keyboard to type your name");
+        } else {
+            log_info(std::string("Steam's keyboard could not be opened: ") + SDL_GetError());
+        }
+        return;
+    }
+    if (steam_keyboard_opened) SDL_OpenURL("steam://close/keyboard");
+    steam_keyboard_opened = false;
+    input.set_text_entry(false);
+    SDL_SetHint("SDL_ENABLE_SCREEN_KEYBOARD", "0");
 }
 
 void App::Impl::send_pending_amiibo() {
@@ -5326,9 +5360,10 @@ int App::run(const AppOptions& options) {
     // controller subsystem is initialised separately because it can fail on its
     // own -- device permissions differ inside Game Mode's sandbox -- and losing
     // controllers is a reason to warn, never a reason to refuse to start.
-    // And never an on-screen keyboard, whatever asks for one: nothing here is
-    // typed into, and on a Steam Deck SDL raises Steam's the moment text input
-    // starts. See create_gl_window(), which also turns text input off.
+    // And no on-screen keyboard but for a name being typed: on a Steam Deck
+    // SDL raises Steam's the moment text input starts, so it is let to only
+    // then -- see show_steam_keyboard(). See create_gl_window(), which also
+    // turns text input off.
     // By its string, which is what SDL reads: the name for it arrived in SDL
     // 2.28's headers, and Debian 12 -- what the SteamOS build is made in --
     // has 2.26. The SDL it runs against on the Deck is newer and honours it.
@@ -6431,9 +6466,7 @@ int App::run(const AppOptions& options) {
             {
                 const bool typing = impl.state == Impl::State::Settings && impl.settings_screen &&
                                     impl.settings_screen->wants_text();
-                if (typing && !impl.input.text_entry() && std::getenv("SteamDeck") != nullptr) {
-                    SDL_OpenURL("steam://open/keyboard");
-                }
+                if (typing != impl.input.text_entry()) impl.show_steam_keyboard(typing);
                 impl.input.set_text_entry(typing);
             }
             impl.update_wii_u_pause();
