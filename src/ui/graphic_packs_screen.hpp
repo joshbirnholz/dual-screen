@@ -74,6 +74,9 @@ public:
     // game starts again -- which the page then says.
     bool restart_pending() const { return restart_pending_; }
     bool waiting() const { return waiting_; }
+    // How far each side is scrolled, in pixels.
+    float list_scroll() const { return scroll_; }
+    float detail_scroll() const { return detail_scroll_; }
     // A preset's choices, up beside its row, and the one the cursor is on.
     bool choosing() const { return choice_.is_open(); }
     int choice_focus() const { return choice_.focus(); }
@@ -86,6 +89,10 @@ public:
     // cursor here, and nothing changed here. Opens the page if it is not.
     void show_mirrored(const net::GraphicPacksViewMessage& view, float output_width,
                        float output_height);
+    // A finger dragging either side of the page, which scrolls it -- on
+    // the device drawing the other's page too, where a finger has nothing
+    // else here to do. See update().
+    void drag(const std::vector<PointerEvent>& pointers, float output_width, float output_height);
 
 private:
     struct Geometry {
@@ -106,7 +113,10 @@ private:
         float title_y = 0.0f;
         std::vector<PixelRect> items;
         float description_y = 0.0f;
+        // How tall the pack's side is, title to the end of what it says.
+        float detail_height = 0.0f;
         float max_scroll() const { return std::max(0.0f, content_height - view_height); }
+        float detail_max_scroll() const { return std::max(0.0f, detail_height - view_height); }
     };
     Geometry compute_geometry(float output_width, float output_height) const;
     void rebuild_lines() { lines_ = graphic_pack_lines(packs_); }
@@ -118,6 +128,8 @@ private:
     // Rows on the right for the focused pack: on/off, then one per choice.
     int item_count() const;
     void scroll_focus_into_view(const Geometry& geometry);
+    // The pack's side brought round the row the cursor is on.
+    void scroll_item_into_view(const Geometry& geometry);
     // Turns the focused pack on or off, or steps its focused preset on.
     void adjust(GraphicPacksScreenResult& result);
     // The focused preset's choices up beside its row.
@@ -142,6 +154,15 @@ private:
     int item_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;
+    // The pack's side, scrolled, when it says more than fits.
+    float detail_scroll_ = 0.0f;
+    ListDrag detail_drag_;
+    // What the other device's page last said about where its cursor is: a
+    // page drawn from it follows that cursor only when it moves, and is
+    // otherwise where a finger here left it.
+    int mirrored_focus_ = -1;
+    bool mirrored_in_pack_ = false;
+    int mirrored_item_ = -1;
     ChoicePopup choice_;
     float last_width_ = 1280.0f;
     float last_height_ = 800.0f;

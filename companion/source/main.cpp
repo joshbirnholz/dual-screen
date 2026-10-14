@@ -1149,6 +1149,12 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     // their session -- so the presses go over and get the same answers a
     // press on the host would.
     if (state_ == State::Playing && session_.host_settings_open()) {
+        // The host's Graphics Packs page, drawn here, scrolls under a finger
+        // here -- its own view of the page; the cursor stays the host's.
+        if (session_.host_graphic_packs_view().open) {
+            mirrored_graphic_packs_.drag(pointers, static_cast<float>(output_width_),
+                                         static_cast<float>(output_height_));
+        }
         for (const UiAction action : actions) {
             net::MenuAction wire = net::MenuAction::Confirm;
             if (menu_action_for(action, wire)) {

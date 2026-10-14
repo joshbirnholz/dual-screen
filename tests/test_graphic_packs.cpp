@@ -12,6 +12,10 @@
 #include <vector>
 
 #include "ui/graphic_packs_screen.hpp"
+#include "ui/list_touch.hpp"
+
+#include <chrono>
+#include <thread>
 
 using namespace ds;
 
@@ -299,6 +303,76 @@ void test_the_page_is_drawn_on_the_other_device_as_it_is() {
     CHECK(!graphic_packs_view_of(host).open);
 }
 
+// A finger dragging up from (x, from_y) by `distance`, slowly, on a page drawn
+// from the other device's.
+void drag_up(GraphicPacksScreen& page, float x, float from_y, float distance) {
+    const auto pass = [&](const std::vector<PointerEvent>& pointers) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        page.drag(pointers, kWidth, kHeight);
+    };
+    PointerEvent down;
+    down.x = down.press_x = x;
+    down.y = down.press_y = from_y;
+    down.pressed = true;
+    down.normalized = false;
+    set_live_pointer(true, x, from_y);
+    pass({down});
+    float y = from_y;
+    for (int step = 0; step < 10; ++step) {
+        y -= distance / 10.0f;
+        set_live_pointer(true, x, y);
+        pass({});
+    }
+    // Held still before lifting, so it does not glide on.
+    for (int step = 0; step < 8; ++step) pass({});
+    PointerEvent up = down;
+    up.pressed = false;
+    up.released = true;
+    up.y = y;
+    set_live_pointer(false, x, y);
+    pass({up});
+}
+
+// On the device drawing the other's page, a finger scrolls either side of
+// it; the page follows the other device's cursor only when that moves.
+void test_the_other_devices_page_scrolls_under_a_finger() {
+    std::vector<ExternalGraphicPack> packs;
+    for (int index = 0; index < 30; ++index) {
+        ExternalGraphicPack pack;
+        pack.id = "pack" + std::to_string(index);
+        pack.path = "Some Game/Mods/Pack " + std::to_string(100 + index);
+        pack.name = "Pack " + std::to_string(100 + index);
+        pack.description = "What this pack does.";
+        for (int word = 0; word < 40; ++word) pack.description += "\nA line of what this pack does.";
+        packs.push_back(pack);
+    }
+    GraphicPacksScreen host;
+    host.open();
+    host.set_packs(packs);
+
+    GraphicPacksScreen mirror;
+    mirror.show_mirrored(graphic_packs_view_of(host), kWidth, kHeight);
+    CHECK_EQ(mirror.list_scroll(), 0.0f);
+    // Up the list, on the left.
+    drag_up(mirror, kWidth * 0.2f, kHeight * 0.7f, 200.0f);
+    const float dragged = mirror.list_scroll();
+    CHECK_MSG(dragged > 50.0f, "the list did not scroll under a finger");
+    // Up the pack's side, on the right.
+    drag_up(mirror, kWidth * 0.75f, kHeight * 0.7f, 200.0f);
+    CHECK_MSG(mirror.detail_scroll() > 50.0f, "the pack's side did not scroll under a finger");
+
+    // The same view again leaves it where the finger did...
+    mirror.show_mirrored(graphic_packs_view_of(host), kWidth, kHeight);
+    CHECK_EQ(mirror.list_scroll(), dragged);
+    // ...and the other device's cursor moving brings it back to the cursor.
+    press(host, UiAction::Down);
+    press(host, UiAction::Up);
+    press(host, UiAction::Down);
+    mirror.show_mirrored(graphic_packs_view_of(host), kWidth, kHeight);
+    CHECK(mirror.list_scroll() < dragged);
+    CHECK_EQ(mirror.detail_scroll(), 0.0f);
+}
+
 int main() {
     test_packs_are_grouped_as_cemu_files_them();
     test_into_a_pack_and_back_out_as_in_the_quick_menu();
@@ -307,5 +381,6 @@ int main() {
     test_the_cursor_stays_put_when_cemu_answers();
     test_a_menus_face_buttons_are_not_this_pages();
     test_the_page_is_drawn_on_the_other_device_as_it_is();
+    test_the_other_devices_page_scrolls_under_a_finger();
     return test::finish("graphic-packs");
 }

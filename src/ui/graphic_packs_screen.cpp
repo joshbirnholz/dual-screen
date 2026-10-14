@@ -112,6 +112,9 @@ void GraphicPacksScreen::open() {
     in_pack_ = false;
     item_ = 0;
     scroll_ = 0.0f;
+    detail_scroll_ = 0.0f;
+    mirrored_focus_ = -1;
+    mirrored_item_ = -1;
 }
 
 void GraphicPacksScreen::set_packs(std::vector<ExternalGraphicPack> packs) {
@@ -294,14 +297,29 @@ GraphicPacksScreen::Geometry GraphicPacksScreen::compute_geometry(float output_w
     }
     geometry.content_height = y + scroll_ - geometry.view_top;
 
-    // The pack: its name, then its rows as the quick menu's Options are.
-    geometry.title_y = geometry.view_top;
-    float item_y = geometry.view_top + TextRenderer::line_height(geometry.scale * 1.25f) + line * 0.8f;
+    // The pack: its name, then its rows as the quick menu's Options are,
+    // then what it says -- scrolled together, short of a scroll bar.
+    const float detail_top = geometry.view_top - detail_scroll_;
+    geometry.title_y = detail_top;
+    float item_y = detail_top + TextRenderer::line_height(geometry.scale * 1.25f) + line * 0.8f;
+    const float detail_width = geometry.detail.w - scroll_bar_width(geometry.scale) - line * 0.5f;
     for (int item = 0; item < item_count(); ++item) {
-        geometry.items.push_back(PixelRect{geometry.detail.x, item_y, geometry.detail.w, row_height});
+        geometry.items.push_back(PixelRect{geometry.detail.x, item_y, detail_width, row_height});
         item_y += row_step;
     }
     geometry.description_y = item_y + line * 0.9f;
+    float end = geometry.description_y;
+    if (const ExternalGraphicPack* pack = focused_pack()) {
+        const float description_scale = geometry.scale * 0.85f;
+        for (const std::string& paragraph : split(pack->description, '\n')) {
+            end += paragraph.empty()
+                       ? TextRenderer::wrapped_line_step(description_scale) * 0.6f
+                       : TextRenderer::wrapped_line_step(description_scale) *
+                             static_cast<float>(
+                                 TextRenderer::wrap(paragraph, detail_width, description_scale).size());
+        }
+    }
+    geometry.detail_height = end + line * 0.5f - detail_top;
     return geometry;
 }
 
@@ -335,6 +353,34 @@ void GraphicPacksScreen::scroll_focus_into_view(const Geometry& geometry) {
     scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
 }
 
+void GraphicPacksScreen::scroll_item_into_view(const Geometry& geometry) {
+    if (!in_pack_ || item_ < 0 || item_ >= static_cast<int>(geometry.items.size())) {
+        detail_scroll_ = std::min(detail_scroll_, geometry.detail_max_scroll());
+        return;
+    }
+    const PixelRect& row = geometry.items[static_cast<std::size_t>(item_)];
+    const float top = geometry.view_top;
+    const float bottom = geometry.view_top + geometry.view_height;
+    // The first row brings the pack's name with it.
+    if (item_ == 0) {
+        detail_scroll_ = 0.0f;
+    } else if (row.y < top) {
+        detail_scroll_ -= top - row.y;
+    } else if (row.y + row.h > bottom) {
+        detail_scroll_ += row.y + row.h - bottom;
+    }
+    detail_scroll_ = std::max(0.0f, std::min(detail_scroll_, geometry.detail_max_scroll()));
+}
+
+void GraphicPacksScreen::drag(const std::vector<PointerEvent>& pointers, float output_width,
+                              float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    drag_.update(pointers, geometry.list, scroll_, geometry.max_scroll());
+    const PixelRect detail_view{geometry.detail.x, geometry.view_top, geometry.detail.w,
+                                geometry.view_height};
+    detail_drag_.update(pointers, detail_view, detail_scroll_, geometry.detail_max_scroll());
+}
+
 GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>& pressed,
                                                     const std::vector<PointerEvent>& touched,
                                                     float output_width, float output_height) {
@@ -359,6 +405,7 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
         return result;
     }
     const int packs = pack_count();
+    const int focus_before = focus_;
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
@@ -418,16 +465,21 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
 
     const Geometry moved = compute_geometry(output_width, output_height);
     scroll_ = std::max(0.0f, std::min(scroll_, moved.max_scroll()));
+    detail_scroll_ = std::max(0.0f, std::min(detail_scroll_, moved.detail_max_scroll()));
     // The cursor brings the list with it when it is moved -- and only then,
-    // so a list dragged by a finger stays where the finger left it.
+    // so a list dragged by a finger stays where the finger left it. A new
+    // pack shows from its top.
     if (!actions.empty()) {
         drag_.stop();
+        detail_drag_.stop();
+        if (focus_ != focus_before) detail_scroll_ = 0.0f;
         scroll_focus_into_view(moved);
+        scroll_item_into_view(compute_geometry(output_width, output_height));
     }
-    drag_.update(pointers, moved.list, scroll_, moved.max_scroll());
+    drag(pointers, output_width, output_height);
     const Geometry settled = compute_geometry(output_width, output_height);
     for (const PointerEvent& pointer : pointers) {
-        if (!pointer.released || drag_.release_was_drag()) continue;
+        if (!pointer.released || drag_.release_was_drag() || detail_drag_.release_was_drag()) continue;
         // A first tap highlights; a second on the same thing chooses it --
         // a pack, by going into it, and a row in it, by changing it.
         int focus = 0;
@@ -454,6 +506,7 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
         }
     }
     drag_.settle();
+    detail_drag_.settle();
 
     if (result.close_requested) open_ = false;
     return result;
@@ -569,10 +622,16 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                     y += TextRenderer::wrapped_line_step(description_scale) * 0.6f;
                     continue;
                 }
-                y += text.draw_wrapped(quads, paragraph, area.x, y, area.w, description_scale,
-                                       theme.text_dim);
+                y += text.draw_wrapped(quads, paragraph, area.x, y, area.w - scroll_bar_width(scale) - line * 0.5f,
+                                       description_scale, theme.text_dim);
             }
             quads.clear_clip();
+            if (geometry.detail_max_scroll() > 0.5f) {
+                const float span = std::max(geometry.view_height, geometry.detail_height);
+                draw_scroll_bar(quads,
+                                PixelRect{area.x, geometry.view_top, area.w, geometry.view_height},
+                                detail_scroll_ / span, geometry.view_height / span, line, scale);
+            }
         }
     }
 
@@ -620,8 +679,19 @@ void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
     focus_ = std::max(0, std::min(view.focus, pack_count() - 1));
     in_pack_ = view.in_pack && pack_count() > 0;
     item_ = std::max(0, std::min(view.item, item_count() - 1));
+    // The other device's cursor brings the page with it when it moves;
+    // otherwise the page is where a finger here left it -- see drag().
+    if (focus_ != mirrored_focus_ || in_pack_ != mirrored_in_pack_ || item_ != mirrored_item_) {
+        if (focus_ != mirrored_focus_) detail_scroll_ = 0.0f;
+        scroll_focus_into_view(compute_geometry(output_width, output_height));
+        scroll_item_into_view(compute_geometry(output_width, output_height));
+        mirrored_focus_ = focus_;
+        mirrored_in_pack_ = in_pack_;
+        mirrored_item_ = item_;
+    }
     const Geometry geometry = compute_geometry(output_width, output_height);
-    scroll_focus_into_view(geometry);
+    scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
+    detail_scroll_ = std::max(0.0f, std::min(detail_scroll_, geometry.detail_max_scroll()));
     // The host's popup, with its cursor.
     if (view.choice_focus == 0) {
         choice_.close();

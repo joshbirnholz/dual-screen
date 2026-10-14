@@ -4623,6 +4623,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 } else if (companion_session->host_graphic_packs_view().open) {
                     std::vector<PointerEvent> rest = pointers;
                     take_guide_taps(mirrored_graphic_packs.guide_hits(), forwarded, rest);
+                    // Scrolled under a finger here, as this device's own view
+                    // of the page; the cursor stays the host's.
+                    mirrored_graphic_packs.drag(rest, static_cast<float>(output_width),
+                                                static_cast<float>(output_height));
                 }
                 for (const UiAction action : forwarded) {
                     net::MenuAction wire = net::MenuAction::Confirm;
