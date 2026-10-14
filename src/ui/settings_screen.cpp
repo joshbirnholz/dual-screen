@@ -693,8 +693,9 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             case UiAction::SwapLayout:    // nothing here is a layout
             // There is more here than fits, so these move the view rather
             // than doing nothing.
-            case UiAction::PageUp: scroll_ -= geometry.view_height * 0.8f; break;
-            case UiAction::PageDown: scroll_ += geometry.view_height * 0.8f; break;
+            // L and R jump nowhere: a shoulder is not a way through a list.
+            case UiAction::PageUp:
+            case UiAction::PageDown: break;
         }
     }
 

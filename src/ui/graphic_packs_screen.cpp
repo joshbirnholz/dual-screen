@@ -481,8 +481,9 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
                 }
                 break;
             case UiAction::ToggleMenu: result.close_requested = true; break;
-            case UiAction::PageUp: scroll_ -= geometry.view_height * 0.8f; break;
-            case UiAction::PageDown: scroll_ += geometry.view_height * 0.8f; break;
+            // L and R jump nowhere: a shoulder is not a way through a list.
+            case UiAction::PageUp:
+            case UiAction::PageDown: break;
             // A menu's face buttons and the app's own keys: nothing here
             // answers them.
             case UiAction::MenuQuit:

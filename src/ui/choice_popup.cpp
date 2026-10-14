@@ -195,12 +195,9 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
             case UiAction::Right:
                 if (grid() && focus_ % columns_ < columns_ - 1 && focus_ + 1 < count) ++focus_;
                 break;
+            // L and R jump nowhere: a shoulder is not a way through a list.
             case UiAction::PageUp:
-                if (!grid()) focus_ = std::max(0, focus_ - visible);
-                break;
-            case UiAction::PageDown:
-                if (!grid()) focus_ = std::min(count - 1, focus_ + visible);
-                break;
+            case UiAction::PageDown: break;
             case UiAction::Confirm: result.chosen = focus_; break;
             case UiAction::Cancel: result.closed = true; break;
             case UiAction::ToggleMenu:

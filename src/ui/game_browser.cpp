@@ -231,11 +231,12 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             case UiAction::Down:
                 if (count > 0) focus_ = std::min(count - 1, focus_ + 1);
                 break;
+            // L and R jump nowhere: a shoulder is not a way through a list.
             case UiAction::PageUp:
+            case UiAction::PageDown: break;
             case UiAction::Left:
                 focus_ = std::max(0, focus_ - visible);
                 break;
-            case UiAction::PageDown:
             case UiAction::Right:
                 focus_ = std::min(count - 1, focus_ + visible);
                 break;

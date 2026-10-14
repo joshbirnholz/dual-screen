@@ -1853,7 +1853,10 @@ void test_a_dropdown_stays_where_it_opened() {
         CHECK_EQ(top_edge(), opened_at);
     }
     CHECK_EQ(popup.focus(), 18);
-    popup.update({UiAction::PageUp, UiAction::PageUp, UiAction::PageUp}, {}, kWidth, kHeight);
+    // L and R jump nowhere.
+    popup.update({UiAction::PageUp, UiAction::PageDown}, {}, kWidth, kHeight);
+    CHECK_EQ(popup.focus(), 18);
+    for (int step = 0; step < 18; ++step) popup.update({UiAction::Up}, {}, kWidth, kHeight);
     CHECK_EQ(top_edge(), opened_at);
     CHECK_EQ(popup.focus(), 0);
 
