@@ -1502,7 +1502,7 @@ later; an older one is only ever asked about DS saves.
 The quick menu of a DS game has **Create Save State** and **Load Save
 State**. Either shows four slots on the right, two by two, like Nintendo
 Switch Online's suspend points: each an outlined box with a picture of both
-screens, one above the other, and its name ("Save Slot 1") with the date and
+screens, one above the other, and its name ("Save slot 1") with the date and
 time it was made, or "Empty". Going across puts the cursor on the first slot.
 
 Dates and times are written the way the device showing them writes them:

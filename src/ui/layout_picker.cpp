@@ -1375,7 +1375,7 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
         const float date_step = date_line + line * 0.2f;
         const float block = name_step + date_step * static_cast<float>(when.size());
         const float name_y = cell.y + (cell.h - block) * 0.5f;
-        text.draw(quads, "Save Slot " + std::to_string(slot + 1), text_x, name_y, scale * 1.1f,
+        text.draw(quads, "Save slot " + std::to_string(slot + 1), text_x, name_y, scale * 1.1f,
                   ink);
         for (std::size_t row = 0; row < when.size(); ++row) {
             text.draw(quads, when[row], text_x,
