@@ -91,6 +91,14 @@ public:
     // since smoothing it could only make it worse.
     void set_smoothing(bool smooth) { smoothing_ = smooth; }
 
+    // An LCD's pixel grid over each screen drawn here, of the console's own
+    // pixels -- a DS's 256 by 192 -- or none for 0. Drawn only where the
+    // screen is drawn by this compositor.
+    void set_lcd_grid(int cells_across, int cells_down) {
+        lcd_cells_across_ = cells_across;
+        lcd_cells_down_ = cells_down;
+    }
+
     // The display the picture actually lands on, when that is not the size
     // being drawn at. A console hands its window the size of its docked
     // output whichever way it is being held, and scales a 1080p picture down
@@ -123,6 +131,8 @@ private:
     CompositorStyle style_;
     const Texture* bezel_art_ = nullptr;
     bool smoothing_ = false;
+    int lcd_cells_across_ = 0;
+    int lcd_cells_down_ = 0;
     float display_width_ = 0.0f;
     float display_height_ = 0.0f;
     std::size_t composition_key_ = 0;

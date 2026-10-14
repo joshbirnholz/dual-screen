@@ -63,6 +63,8 @@ struct LayoutPickerResult {
     bool left_stick_press_changed = false;
     // The Rumble Pak was put in or taken out. The game's, like the scale.
     bool rumble_pak_toggled = false;
+    // The LCD filter was turned on or off. The game's too.
+    bool lcd_filter_toggled = false;
     // Resume from Save State was turned on or off. The game's too.
     bool resume_toggled = false;
     // The settings screen was asked for. Not a value to adopt: the caller puts
@@ -167,6 +169,10 @@ struct LayoutPickerState {
     // which DS games use one, so it is offered for every game there.
     bool rumble_pak = false;
     bool rumble_choosable = false;
+    // A DS game's screens drawn with an LCD's pixel grid over them, and
+    // whether that is on offer: a DS game's, kept for it.
+    bool lcd_filter = false;
+    bool lcd_filter_choosable = false;
     // Whether Reset makes sense to offer. False for a Wii U session: Cemu owns
     // restarting the game, and nothing here can do it for it. See
     // SystemProfile::offers_reset.
@@ -393,6 +399,7 @@ public:
     // one.
     void set_repeat_source(std::function<bool(UiAction)> repeating) { repeating_ = std::move(repeating); }
     void set_rumble_pak(bool inserted) { state_.rumble_pak = inserted; }
+    void set_lcd_filter(bool on) { state_.lcd_filter = on; }
     void set_resume_from_save_state(bool on) { state_.resume_from_save_state = on; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
@@ -473,6 +480,7 @@ private:
         Rumble,
         ScreenGap,
         Smoothing,
+        LcdFilter,
         Resume,
         // A Wii U's: this game's screen, alone, or the two devices trading.
         SwapScreens,

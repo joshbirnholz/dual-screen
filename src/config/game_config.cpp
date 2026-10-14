@@ -99,6 +99,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
     config.right_stick_mode = right_stick_mode_from_key(
         get_string(document, "right_stick_mode", right_stick_mode_key(config.right_stick_mode)));
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
+    config.lcd_filter = get_bool(document, "lcd_filter", config.lcd_filter);
     config.resume_from_save_state =
         get_bool(document, "resume_from_save_state", config.resume_from_save_state);
     config.screens_swapped = get_bool(document, "screens_swapped", config.screens_swapped);
@@ -152,6 +153,7 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["separate_screen"] = separate_screen == ScreenId::Bottom ? "bottom" : "top";
     document["right_stick_mode"] = right_stick_mode_key(right_stick_mode);
     document["rumble_pak"] = rumble_pak;
+    document["lcd_filter"] = lcd_filter;
     document["resume_from_save_state"] = resume_from_save_state;
     document["screens_swapped"] = screens_swapped;
     document["wii_u_options"] = json::object();

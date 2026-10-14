@@ -297,6 +297,10 @@ struct RequestMessage {
     // A DS game's Rumble Pak, in or out -- the host's to decide, per game.
     bool wants_rumble_pak = false;
     bool rumble_pak = false;
+    // A DS game's LCD filter on or off -- see SessionStateMessage::lcd_filter.
+    // Last, and optional.
+    bool wants_lcd_filter = false;
+    bool lcd_filter = false;
     // Whether the game starts where it was left the next time it is played --
     // see SessionStateMessage::resume_from_save_state.
     bool wants_resume_from_save_state = false;
@@ -407,6 +411,11 @@ struct SessionStateMessage {
     // Scan amiibo's list, by name -- see LayoutPickerState::amiibo.
     std::vector<std::string> amiibo;
     std::string amiibo_folder;
+    // Whether the menu offers an LCD filter -- a DS game's -- and whether it
+    // is on: the screens drawn with their pixel grid, on both devices. A
+    // byte, a bit each; last, and optional.
+    bool lcd_filter_choosable = false;
+    bool lcd_filter = false;
 };
 
 struct FrameMessage {

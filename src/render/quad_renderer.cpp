@@ -85,6 +85,14 @@ void main() {
         float u = texture2D(u_chroma, v_texcoord).r;
         float v = texture2D(u_chroma_v, v_texcoord).r;
         gl_FragColor = vec4(ds_yuv_to_rgb(y, u, v) * u_color.rgb, u_color.a);
+    } else if (u_mode == 7) {
+        // An LCD's pixel grid, laid over a screen: v_texcoord counts the
+        // console's own pixels, and their edges darken. A smooth rise to each
+        // edge rather than a hard line, so a grid not a whole number of
+        // window pixels to a cell still looks even rather than striped.
+        vec2 edge = 0.5 + 0.5 * cos(6.2831853 * v_texcoord);
+        edge = edge * edge * edge * edge;
+        gl_FragColor = vec4(u_color.rgb, u_color.a * max(edge.x, edge.y));
     } else if (u_mode == 6) {
         // A picture with see-through parts of its own: a game's icon.
         vec4 texel = texture2D(u_texture, v_texcoord);
@@ -465,6 +473,13 @@ void QuadRenderer::draw_alpha_mask(const PixelRect& rect,
                                    float u1,
                                    float v1) {
     draw(rect, &texture, color, Mode::AlphaMask, u0, v0, u1, v1);
+}
+
+void QuadRenderer::draw_lcd_grid(const PixelRect& rect, int cells_across, int cells_down,
+                                 const Color& color) {
+    if (cells_across <= 0 || cells_down <= 0) return;
+    draw(rect, nullptr, color, Mode::LcdGrid, 0.0f, 0.0f, static_cast<float>(cells_across),
+         static_cast<float>(cells_down));
 }
 
 void QuadRenderer::draw_image(const PixelRect& rect, const Texture& texture, const Color& tint) {

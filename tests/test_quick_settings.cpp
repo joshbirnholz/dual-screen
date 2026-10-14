@@ -594,6 +594,23 @@ void test_moving_between_the_list_and_what_it_shows() {
         CHECK_EQ(offered, pak);
     }
 
+    // The LCD filter, for a DS game, and nowhere else.
+    for (const bool lcd : {false, true}) {
+        LayoutPickerState with_lcd = state;
+        with_lcd.lcd_filter_choosable = lcd;
+        LayoutPicker listed(registry);
+        open_on(listed, with_lcd, MenuSection::Options);
+        listed.update({UiAction::Right}, {}, kWidth, kHeight);
+        bool offered = false;
+        for (int row = 0; row < 8; ++row) {
+            if (listed.update({UiAction::Confirm}, {}, kWidth, kHeight).lcd_filter_toggled) {
+                offered = true;
+            }
+            listed.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+        CHECK_EQ(offered, lcd);
+    }
+
     // Resume from Save State, where save states are, and nowhere else -- and
     // saying which way it is set.
     for (const bool offered_here : {false, true}) {

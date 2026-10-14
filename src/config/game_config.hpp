@@ -28,6 +28,9 @@ struct GameConfig {
     // whichever layouts offer the choice. Per game like the two above, though
     // it only ever matters while one of those is the one chosen.
     bool screen_gap = true;
+    // A DS game's screens with an LCD's pixel grid over them -- see
+    // Compositor::set_lcd_grid(). Per game like the ones above.
+    bool lcd_filter = false;
     // Which screen Separate Screens shows on this device when it is on its
     // own -- and, with a second device connected, which of the two this one
     // holds. Swapped from the quick menu or with L3, and kept per game, since

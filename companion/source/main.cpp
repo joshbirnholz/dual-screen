@@ -1966,6 +1966,12 @@ void Client::draw_scene() {
     }
 
     compositor_.set_smoothing(session_.host_filtering());
+    // A DS's own pixels, where the host says this game wants its LCD filter.
+    if (session_.system() == SystemId::Ds && session_.host_lcd_filter()) {
+        compositor_.set_lcd_grid(256, 192);
+    } else {
+        compositor_.set_lcd_grid(0, 0);
+    }
     // All three are drawn over the game with GL, so the game has to be drawn
     // that way too while any is up.
     const bool resume_notice = session_.host_resume_notice();

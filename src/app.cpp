@@ -1118,6 +1118,14 @@ struct App::Impl {
     bool rumble_pak_in_effect() const;
     void request_rumble_pak(bool inserted);
     void adopt_rumble_pak(bool inserted);
+    // A DS game's LCD filter -- see GameConfig::lcd_filter. The host's, and
+    // on a companion what the host says.
+    bool lcd_filter = false;
+    bool lcd_filter_in_effect() const;
+    void request_lcd_filter(bool on);
+    void adopt_lcd_filter(bool on);
+    // The compositor told whether to draw it, before each frame it draws.
+    void apply_lcd_grid();
     // Whether this device should be making sound right now.
     bool sound_plays_here() const;
     // Loads a ROM and starts emulating it. On failure it puts a readable
@@ -2631,6 +2639,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.left_stick_press_changed) {
                 request_left_stick_press(next_left_stick_press(left_stick_press_in_effect()));
             }
+            if (result.lcd_filter_toggled) {
+                request_lcd_filter(!lcd_filter_in_effect());
+            }
             if (result.rumble_pak_toggled) {
                 request_rumble_pak(!rumble_pak_in_effect());
             }
@@ -2780,6 +2791,9 @@ void App::Impl::open_picker(bool embedded) {
                        : (local_game() && system_profile(system).has_microphone);
     // A Rumble Pak, where the core running this game can put one in.
     picker_state.rumble_pak = rumble_pak_in_effect();
+    picker_state.lcd_filter = lcd_filter_in_effect();
+    picker_state.lcd_filter_choosable =
+        is_companion() ? companion_session->host_lcd_filter_choosable() : system == SystemId::Ds;
     picker_state.rumble_choosable = is_companion() ? companion_session->host_rumble_choosable()
                                                    : (source && source->offers_rumble_pak());
     // Resume from Save State, wherever save states are.
@@ -3126,6 +3140,38 @@ void App::Impl::adopt_rumble_pak(bool inserted) {
     if (have_game_config) {
         game_config.rumble_pak = inserted;
         persist_game_config();
+    }
+}
+
+bool App::Impl::lcd_filter_in_effect() const {
+    if (system != SystemId::Ds) return false;
+    return is_companion() ? companion_session->host_lcd_filter() : lcd_filter;
+}
+
+void App::Impl::request_lcd_filter(bool on) {
+    if (is_companion()) {
+        companion_session->request_lcd_filter(on);
+        return;  // the host decides; it will tell us
+    }
+    adopt_lcd_filter(on);
+}
+
+void App::Impl::adopt_lcd_filter(bool on) {
+    if (system != SystemId::Ds || on == lcd_filter) return;
+    lcd_filter = on;
+    if (picker) picker->set_lcd_filter(on);
+    if (have_game_config) {
+        game_config.lcd_filter = on;
+        persist_game_config();
+    }
+    log_info(std::string("LCD filter ") + (on ? "on" : "off"));
+}
+
+void App::Impl::apply_lcd_grid() {
+    if (lcd_filter_in_effect()) {
+        compositor.set_lcd_grid(256, 192);
+    } else {
+        compositor.set_lcd_grid(0, 0);
     }
 }
 
@@ -3735,6 +3781,7 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     audio_target = settings.audio_target;
     left_handed_layouts = settings.left_handed_layouts;
     screen_gap = settings.default_screen_gap;
+    lcd_filter = false;
     right_stick_mode = settings.default_right_stick_mode;
     input.set_right_stick_mode(right_stick_mode);
     apply_filtering();
@@ -3953,6 +4000,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
     audio_target = settings.audio_target;
     left_handed_layouts = settings.left_handed_layouts;
     screen_gap = settings.default_screen_gap;
+    lcd_filter = false;
     right_stick_mode = settings.default_right_stick_mode;
 
     // A Wii U game is a folder, or one file of gigabytes: kept by where it is
@@ -3977,6 +4025,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         bilinear_filtering = game_config.bilinear_filtering;
         render_scale = game_config.render_scale;
         screen_gap = game_config.screen_gap;
+        lcd_filter = game_config.lcd_filter;
         right_stick_mode = game_config.right_stick_mode;
     }
     solo_screen_swapped = have_game_config && game_config.screens_swapped;
@@ -4293,6 +4342,7 @@ void App::Impl::persist_game_config() {
     game_config.bilinear_filtering = bilinear_filtering;
     game_config.render_scale = render_scale;
     game_config.screen_gap = screen_gap;
+    game_config.lcd_filter = lcd_filter;
     game_config.separate_screen = separate_screen;
     game_config.right_stick_mode = right_stick_mode;
     game_config.touch_last_played();
@@ -4887,6 +4937,7 @@ void App::Impl::render() {
                 float panel_height = 0.0f;
                 panel_size(panel_width, panel_height);
                 compositor.set_display_size(panel_width, panel_height);
+                apply_lcd_grid();
                 compositor.render(quads, device_layout(), drawing->screens(), screens_geometry(),
                                   width, height, router);
                 if (system == SystemId::WiiU && !companion_session->host_paused()) {
@@ -4986,6 +5037,7 @@ void App::Impl::render() {
         float panel_height = 0.0f;
         panel_size(panel_width, panel_height);
         compositor.set_display_size(panel_width, panel_height);
+        apply_lcd_grid();
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
                           router);
         frames = &textures;
@@ -5741,6 +5793,8 @@ int App::run(const AppOptions& options) {
             shared.left_stick_press = impl.settings.left_stick_press;
             shared.rumble_choosable = impl.source && impl.source->offers_rumble_pak();
             shared.rumble_pak = impl.source && impl.source->rumble_pak();
+            shared.lcd_filter_choosable = impl.system == SystemId::Ds;
+            shared.lcd_filter = impl.lcd_filter_in_effect();
             shared.save_points_available = impl.save_points_available();
             shared.save_sync_available = impl.save_sync_available();
             shared.resume_choosable = impl.save_points_available();
@@ -5902,6 +5956,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_left_stick_press) {
                     impl.adopt_left_stick_press(request.left_stick_press);
+                }
+                if (request.wants_lcd_filter) {
+                    impl.adopt_lcd_filter(request.lcd_filter);
                 }
                 if (request.wants_rumble_pak) {
                     impl.adopt_rumble_pak(request.rumble_pak);

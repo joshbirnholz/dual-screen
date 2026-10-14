@@ -613,6 +613,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.left_stick_press != shared_.left_stick_press ||
         state.rumble_choosable != shared_.rumble_choosable ||
         state.rumble_pak != shared_.rumble_pak ||
+        state.lcd_filter_choosable != shared_.lcd_filter_choosable ||
+        state.lcd_filter != shared_.lcd_filter ||
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
         state.save_points_available != shared_.save_points_available ||
@@ -897,6 +899,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             if (have_request_ && !request.wants_rumble_pak && request_.wants_rumble_pak) {
                 request.wants_rumble_pak = true;
                 request.rumble_pak = request_.rumble_pak;
+            }
+            if (have_request_ && !request.wants_lcd_filter && request_.wants_lcd_filter) {
+                request.wants_lcd_filter = true;
+                request.lcd_filter = request_.lcd_filter;
             }
             if (have_request_ && !request.wants_resume_from_save_state &&
                 request_.wants_resume_from_save_state) {
@@ -1247,6 +1253,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.left_stick_press = shared_.left_stick_press;
         state.rumble_choosable = shared_.rumble_choosable;
         state.rumble_pak = shared_.rumble_pak;
+        state.lcd_filter_choosable = shared_.lcd_filter_choosable;
+        state.lcd_filter = shared_.lcd_filter;
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;

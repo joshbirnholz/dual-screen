@@ -313,6 +313,8 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u16(out, static_cast<uint16_t>(amiibo));
     for (std::size_t index = 0; index < amiibo; ++index) put_string(out, message.amiibo[index]);
     put_string(out, message.amiibo_folder);
+    put_u8(out, static_cast<uint8_t>((message.lcd_filter_choosable ? 1u : 0u) |
+                                     (message.lcd_filter ? 2u : 0u)));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -828,6 +830,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
                                                    : 1u);
     put_u8(out, message.wants_screen_swap ? 1u : 0u);
     put_u16(out, message.menu_focus);
+    // 0 for no change, 1 off, 2 on.
+    put_u8(out, !message.wants_lcd_filter ? 0u : message.lcd_filter ? 2u : 1u);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -912,6 +916,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         out.wants_screen_swap = swap != 0;
     }
     if (reader.remaining() >= 2) reader.u16(out.menu_focus);
+    out.wants_lcd_filter = false;
+    out.lcd_filter = false;
+    if (reader.remaining() > 0) {
+        uint8_t lcd = 0;
+        reader.u8(lcd);
+        if (lcd > 2) return false;
+        out.wants_lcd_filter = lcd != 0;
+        out.lcd_filter = lcd == 2;
+    }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);
     if (out.wants_menu_action && !menu_action_from_wire(menu_action, out.menu_action)) return false;
@@ -1171,6 +1184,14 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
             out.amiibo.push_back(std::move(name));
         }
         reader.string(out.amiibo_folder);
+    }
+    out.lcd_filter_choosable = false;
+    out.lcd_filter = false;
+    if (reader.remaining() > 0) {
+        uint8_t lcd = 0;
+        reader.u8(lcd);
+        out.lcd_filter_choosable = (lcd & 1u) != 0;
+        out.lcd_filter = (lcd & 2u) != 0;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

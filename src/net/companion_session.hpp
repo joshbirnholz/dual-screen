@@ -590,6 +590,8 @@ public:
     LeftStickPress host_left_stick_press() const { return host_left_stick_press_; }
     bool host_rumble_choosable() const { return host_rumble_choosable_; }
     bool host_rumble_pak() const { return host_rumble_pak_; }
+    bool host_lcd_filter_choosable() const { return host_lcd_filter_choosable_; }
+    bool host_lcd_filter() const { return host_lcd_filter_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
     bool host_save_points_available() const { return host_save_points_available_; }
     bool host_save_sync_available() const { return host_save_sync_available_; }
@@ -629,6 +631,7 @@ public:
     void request_right_stick_mode(RightStickMode mode);
     void request_left_stick_press(LeftStickPress press);
     void request_rumble_pak(bool inserted);
+    void request_lcd_filter(bool on);
     void request_resume_from_save_state(bool on);
     void request_render_scale(int scale);
     // Whether the host reads how this device is being held -- true only on a
@@ -1128,6 +1131,8 @@ private:
     LeftStickPress host_left_stick_press_ = LeftStickPress::Microphone;
     bool host_rumble_choosable_ = false;
     bool host_rumble_pak_ = false;
+    bool host_lcd_filter_choosable_ = false;
+    bool host_lcd_filter_ = false;
     bool host_cursor_shown_ = true;
     bool host_save_points_available_ = false;
     bool host_save_sync_available_ = false;

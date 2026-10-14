@@ -7,6 +7,12 @@
 
 namespace ds {
 
+namespace {
+// How dark the grid's lines get at their darkest: enough to see the pixels,
+// as a handheld's own screen shows them, without dimming the picture much.
+constexpr Color kLcdGridColor{0.0f, 0.0f, 0.0f, 0.32f};
+}  // namespace
+
 void OutputRouter::hand_off(ScreenId, const Texture&, const PixelRect&) {
     // Nothing to do until a transport exists.
 }
@@ -155,6 +161,11 @@ void Compositor::render(QuadRenderer& quads,
             }
             quads.draw_screen(rect, *texture, style_.screen_tint, placed.rotation,
                               screen_needs_smoothing(placed, *texture, smoothing_));
+            if (lcd_cells_across_ > 0 && lcd_cells_down_ > 0) {
+                const bool sideways = rotation_is_quarter_turn(placed.rotation);
+                quads.draw_lcd_grid(rect, sideways ? lcd_cells_down_ : lcd_cells_across_,
+                                    sideways ? lcd_cells_across_ : lcd_cells_down_, kLcdGridColor);
+            }
         } else {
             // No frame yet (core still booting): keep the layout's shape visible
             // rather than flashing the background colour.

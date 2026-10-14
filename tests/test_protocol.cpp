@@ -15,8 +15,8 @@ using namespace ds;
 
 namespace {
 // What every session state ends with now, empty: the whole focus, then no
-// Cemu options, no amiibo and no amiibo folder.
-constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2;
+// Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte.
+constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1;
 }  // namespace
 using namespace ds::net;
 
@@ -314,6 +314,18 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.producer_options == state.producer_options);
     CHECK(received_state.amiibo == state.amiibo);
     CHECK(received_state.amiibo_folder == "/home/deck/amiibo");
+    // A DS game's LCD filter, offered and on; from a host before it, neither.
+    state.lcd_filter_choosable = true;
+    state.lcd_filter = true;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
+    state.lcd_filter_choosable = false;
+    state.lcd_filter = false;
     state.menu_focus = 40;
     buffer.clear();
     encode_session_state(state, buffer);
@@ -396,6 +408,8 @@ void test_request_round_trip() {
     sent.wants_resume_from_save_state = true;
     sent.resume_from_save_state = true;
     sent.wants_screen_swap = true;
+    sent.wants_lcd_filter = true;
+    sent.lcd_filter = true;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -432,24 +446,30 @@ void test_request_round_trip() {
     CHECK_EQ(received.wants_resume_from_save_state, true);
     CHECK_EQ(received.resume_from_save_state, true);
     CHECK_EQ(received.wants_screen_swap, true);
+    CHECK(received.wants_lcd_filter && received.lcd_filter);
+    // From a companion from before the LCD filter: asks nothing about it.
+    RequestMessage unfiltered;
+    CHECK(decode_request(payload.data(), payload.size() - 1, unfiltered));
+    CHECK(!unfiltered.wants_lcd_filter && unfiltered.wants_screen_swap);
     // From a companion from before Separate Screens' swap: asks for none.
     RequestMessage unswapped;
-    // (Each counts past the whole menu focus at the very end, two bytes.)
-    CHECK(decode_request(payload.data(), payload.size() - 3, unswapped));
+    // (Each counts past the whole menu focus near the end, two bytes, and
+    // the LCD filter's byte after it.)
+    CHECK(decode_request(payload.data(), payload.size() - 4, unswapped));
     CHECK_EQ(unswapped.wants_screen_swap, false);
     CHECK_EQ(unswapped.wants_resume_from_save_state, true);
     // Without that and the byte before it: nothing asked about resuming.
     RequestMessage shorter;
-    CHECK(decode_request(payload.data(), payload.size() - 4, shorter));
+    CHECK(decode_request(payload.data(), payload.size() - 5, shorter));
     CHECK_EQ(shorter.wants_resume_from_save_state, false);
     CHECK_EQ(shorter.wants_rumble_pak, true);
     // From a companion from before the Rumble Pak: asks nothing about it.
     RequestMessage older;
-    CHECK(decode_request(payload.data(), payload.size() - 5, older));
+    CHECK(decode_request(payload.data(), payload.size() - 6, older));
     CHECK_EQ(older.wants_rumble_pak, false);
     CHECK_EQ(older.wants_left_stick_press, true);
     // And from before the left stick: nothing about that either.
-    CHECK(decode_request(payload.data(), payload.size() - 6, older));
+    CHECK(decode_request(payload.data(), payload.size() - 7, older));
     CHECK_EQ(older.wants_left_stick_press, false);
     CHECK_EQ(older.wants_right_stick_mode, true);
 
@@ -494,30 +514,32 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 27, 1u,
+        {"audio target", 28, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 25, 1u,
+        {"handedness", 26, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 11, 2u,
+        {"right stick mode", 12, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 6, 2u,
+        {"left stick click", 7, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
          }},
-        {"rumble pak", 5, 2u,
+        {"rumble pak", 6, 2u,
          [](const RequestMessage& message) {
              return message.wants_rumble_pak && message.rumble_pak;
          }},
-        {"resume from save state", 4, 2u,
+        {"resume from save state", 5, 2u,
          [](const RequestMessage& message) {
              return message.wants_resume_from_save_state && message.resume_from_save_state;
          }},
-        {"screen swap", 3, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
+        {"screen swap", 4, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
+        {"LCD filter", 1, 1u,
+         [](const RequestMessage& message) { return message.wants_lcd_filter && !message.lcd_filter; }},
     };
 
     for (const EnumByte& field : kEnumBytes) {
@@ -574,7 +596,7 @@ void test_request_round_trip() {
     CHECK(received_close.menu_action == MenuAction::Close);
 
     std::vector<uint8_t> impossible(payload);
-    impossible[impossible.size() - 9] = 200;
+    impossible[impossible.size() - 10] = 200;
     RequestMessage refused;
     CHECK_MSG(!decode_request(impossible.data(), impossible.size(), refused),
               "a press no button could have made was accepted");

@@ -67,6 +67,10 @@ public:
                          float v0 = 0.0f,
                          float u1 = 1.0f,
                          float v1 = 1.0f);
+    // An LCD's pixel grid over `rect`: the edges of `cells_across` by
+    // `cells_down` pixels darkened in `color`, its alpha the darkest an edge
+    // gets. Nothing is sampled: it is laid over a screen already drawn.
+    void draw_lcd_grid(const PixelRect& rect, int cells_across, int cells_down, const Color& color);
     // Draws an RGBA picture -- uploaded with upload_rgba8888() -- keeping its
     // own transparency, which a screen has none of: a game's icon.
     void draw_image(const PixelRect& rect, const Texture& texture, const Color& tint = Color{});
@@ -98,6 +102,7 @@ private:
         ScreenNv12 = 4,
         ScreenYuv420p = 5,
         Image = 6,
+        LcdGrid = 7,
     };
 
     void draw(const PixelRect& rect,

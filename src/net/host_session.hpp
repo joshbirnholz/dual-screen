@@ -203,6 +203,9 @@ public:
         // See SessionStateMessage::rumble_choosable.
         bool rumble_choosable = false;
         bool rumble_pak = false;
+        // See SessionStateMessage::lcd_filter.
+        bool lcd_filter_choosable = false;
+        bool lcd_filter = false;
         bool cursor_shown = true;
         bool save_points_available = false;
         bool save_sync_available = false;
