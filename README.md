@@ -367,10 +367,13 @@ Three things are different about a Wii U session:
   by name on the right. The folder is `~/amiibo` (or `~/Documents/amiibo`)
   until another is chosen with **Choose a Folder...** at the end of the list,
   which browses to one and scans the amiibo picked there. Choosing one
-  closes the menu, and once the game is going again it is held to the
-  GamePad, as Cemu's own "Scan NFC tag/amiibo from file" does -- a game only
-  sees a figure for the couple of seconds it is there, which a paused one
-  would miss. A notice at the top right says it was scanned, or why not.
+  closes the menu, and three seconds after the game is going again it is
+  held to the GamePad, as Cemu's own "Scan NFC tag/amiibo from file" does --
+  a game only sees a figure for the couple of seconds it is there, which a
+  paused one would miss, and one coming back from its HOME Menu (Breath of
+  the Wild) shows a loading icon of its own for a moment first. The game says
+  when it has been read. A file that is not an amiibo dump is said to be so
+  in a popup, and the menu stays up.
 
 - **Show Pointer** shows or hides the mouse pointer over Cemu's window, as it does
   over a DS game. Shown, it appears when a mouse or trackpad moves it -- even

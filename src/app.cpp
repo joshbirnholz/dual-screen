@@ -27,6 +27,7 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "config/sha1.hpp"
+#include "core/amiibo_dump.hpp"
 #include "core/external_screen_source.hpp"
 #include "core/gl_call_trace.hpp"
 #include "core/libretro_core.hpp"
@@ -953,6 +954,11 @@ struct App::Impl {
     void update_amiibo_browser(const std::vector<UiAction>& actions,
                                const std::vector<PointerEvent>& pointers);
     void send_pending_amiibo();
+    // When the game was last seen going again with an amiibo waiting -- see
+    // send_pending_amiibo().
+    std::optional<std::chrono::steady_clock::time_point> amiibo_game_going_since;
+    // A popup in the quick menu, on both devices, put away with OK.
+    void show_menu_notice(const std::string& message);
     // Any of those three pages, which open over the game from its menu and
     // go back to where they came from.
     bool on_cemu_page() const {
@@ -2054,7 +2060,36 @@ void App::Impl::scan_amiibo_folder() {
     });
 }
 
+void App::Impl::show_menu_notice(const std::string& message) {
+    // The quick menu's own popup, put away with OK, on both devices: the
+    // words travel as the save status does -- see SaveSlotsMessage.
+    if (picker) {
+        picker->set_save_status(message, true);
+        picker->show_notice();
+    }
+    if (host_session) {
+        net::SaveSlotsMessage slots;
+        slots.slots.resize(kSavePointSlots);
+        slots.status = message;
+        slots.status_failed = true;
+        host_session->set_save_slots(slots);
+    }
+}
+
 void App::Impl::choose_amiibo(const std::string& path) {
+    // A file that is not one is said to be so in the menu, which stays up --
+    // not found out after the game has gone on without it.
+    std::vector<uint8_t> bytes;
+    std::string error;
+    const bool readable = read_file(path, bytes, &error);
+    if (!readable || !is_amiibo_dump(bytes)) {
+        log_warn("amiibo: " + path_basename(path) +
+                 (readable ? " is not an amiibo" : " could not be read: " + error));
+        if (state == State::Amiibo) close_cemu_page();
+        show_menu_notice(readable ? path_stem(path) + " isn't an amiibo."
+                                  : path_stem(path) + "'s file couldn't be opened.");
+        return;
+    }
     // Held to the GamePad once the game is going again, so the menu goes
     // first -- all of it, as loading a save state does.
     pending_amiibo = path;
@@ -2098,11 +2133,21 @@ void App::Impl::send_pending_amiibo() {
         pending_amiibo.clear();
         return;
     }
-    // Once the menu is down and the game going -- or after a few seconds
-    // regardless, rather than never, should the game not say it is.
+    // Three seconds after the menu is down and the game going again: a game
+    // coming back from its HOME Menu shows a loading icon of its own for a
+    // while -- Breath of the Wild does, for about that long -- and does not
+    // see a figure held to the GamePad before it is back. Or after twelve
+    // seconds regardless, rather than never, should the game not say it is.
+    const auto now = std::chrono::steady_clock::now();
     const bool going = state == State::Playing && !wii_u_paused && !menu_waiting_for_pause;
-    if (!pending_amiibo.empty() &&
-        (going || std::chrono::steady_clock::now() - pending_amiibo_at > std::chrono::seconds(3))) {
+    if (pending_amiibo.empty() || !going) {
+        amiibo_game_going_since.reset();
+    } else if (!amiibo_game_going_since) {
+        amiibo_game_going_since = now;
+    }
+    const bool settled = amiibo_game_going_since && now - *amiibo_game_going_since >= std::chrono::seconds(3);
+    if (!pending_amiibo.empty() && (settled || now - pending_amiibo_at > std::chrono::seconds(12))) {
+        amiibo_game_going_since.reset();
         external_source->scan_amiibo(pending_amiibo);
         log_info("amiibo: holding " + path_basename(pending_amiibo) + " to the GamePad");
         pending_amiibo_name = path_stem(pending_amiibo);
@@ -2111,10 +2156,8 @@ void App::Impl::send_pending_amiibo() {
     ExternalAmiiboResult result = ExternalAmiiboResult::Scanned;
     while (external_source->take_amiibo_result(result)) {
         switch (result) {
-            case ExternalAmiiboResult::Scanned:
-                log_info("amiibo: scanned");
-                show_corner_notice(pending_amiibo_name + " was scanned.");
-                break;
+            // The game says so itself.
+            case ExternalAmiiboResult::Scanned: log_info("amiibo: scanned"); break;
             case ExternalAmiiboResult::CannotOpen:
                 log_warn("amiibo: Cemu could not open the file");
                 show_corner_notice("That amiibo's file couldn't be opened.");

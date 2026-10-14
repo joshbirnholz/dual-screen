@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "config/paths.hpp"
+#include "core/amiibo_dump.hpp"
 #include "ui/launcher_screen.hpp"
 #include "input/ds_input.hpp"
 #include "input/cursor_visibility.hpp"
@@ -532,7 +533,43 @@ void test_a_tap_highlights_before_it_chooses() {
 
 }  // namespace
 
+// An amiibo dump is checked before the menu closes for it: the fixed bytes an
+// NTAG215 holds where Cemu looks, and the serial number's check bytes.
+void test_an_amiibo_dump_is_told_from_any_other_file() {
+    std::vector<uint8_t> dump(540, 0);
+    const uint8_t serial[7] = {0x04, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
+    dump[0] = serial[0];
+    dump[1] = serial[1];
+    dump[2] = serial[2];
+    dump[3] = static_cast<uint8_t>(serial[0] ^ serial[1] ^ serial[2] ^ 0x88);
+    dump[4] = serial[3];
+    dump[5] = serial[4];
+    dump[6] = serial[5];
+    dump[7] = serial[6];
+    dump[8] = static_cast<uint8_t>(dump[4] ^ dump[5] ^ dump[6] ^ dump[7]);
+    dump[0x00A] = 0x0F;
+    dump[0x00B] = 0xE0;
+    dump[0x00C] = 0xF1;
+    dump[0x00D] = 0x10;
+    dump[0x00E] = 0xFF;
+    dump[0x00F] = 0xEE;
+    dump[0x20F] = 0x04;
+    dump[0x210] = 0x5F;
+    CHECK_MSG(is_amiibo_dump(dump), "a well-formed dump was refused");
+
+    std::vector<uint8_t> short_one(dump.begin(), dump.begin() + 500);
+    CHECK(!is_amiibo_dump(short_one));
+    std::vector<uint8_t> bad_serial = dump;
+    bad_serial[8] ^= 0xFF;
+    CHECK(!is_amiibo_dump(bad_serial));
+    std::vector<uint8_t> not_ntag = dump;
+    not_ntag[0x00C] = 0x00;
+    CHECK(!is_amiibo_dump(not_ntag));
+    CHECK(!is_amiibo_dump(std::vector<uint8_t>(540, 0)));
+}
+
 int main() {
+    test_an_amiibo_dump_is_told_from_any_other_file();
     test_rom_extensions();
     test_listing_sorts_and_filters();
     test_browser_navigation();
