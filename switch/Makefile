@@ -72,6 +72,7 @@ SOURCE_DIRS := $(CLIENT) \
                $(SHARED)/core \
                $(SHARED)/forwarder \
                $(SHARED)/input \
+               $(SHARED)/launch \
                $(SHARED)/layout \
                $(SHARED)/net \
                $(SHARED)/render \
@@ -87,7 +88,7 @@ CPPFILES    := main.cpp \
                save_points.cpp system.cpp \
                controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp pad_routing.cpp switch_motion.cpp \
                layout.cpp layout_registry.cpp \
-               companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
+               companion_session.cpp discovery.cpp launch_service.cpp protocol.cpp transport.cpp \
                color_convert.cpp h264_bitstream.cpp videotoolbox_decoder.cpp \
                mediacodec_decoder.cpp video_decoder.cpp video_encoder.cpp \
                bezel_art.cpp button_glyphs.cpp compositor.cpp font.cpp frame_delay.cpp gl_loader.cpp gl_window.cpp \
@@ -143,7 +144,8 @@ LOCAL_PLAY_CPPFILES := app.cpp local_play.cpp \
                message_screen.cpp settings_screen.cpp \
                data_management_screen.cpp \
                forwarder_icon.cpp steamgriddb.cpp forwarder_screen.cpp \
-               child_process.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp
+               child_process.cpp updater.cpp desktop_updater.cpp zip_extract.cpp update_prompt.cpp \
+               game_catalog.cpp steam_shortcuts.cpp launch_host.cpp
 
 # Making forwarders -- X on a ROM in the file picker: the Switch's half, which
 # the desktop app has no use for. forwarder/ is Sphaira's forwarder code,

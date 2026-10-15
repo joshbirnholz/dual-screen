@@ -37,6 +37,7 @@ set(DUALSCREEN_COMPANION_SOURCES
     src/layout/layout_registry.cpp
     src/net/companion_session.cpp
     src/net/discovery.cpp
+    src/net/launch_service.cpp
     src/net/protocol.cpp
     src/net/transport.cpp
     src/render/bezel_art.cpp
@@ -100,6 +101,9 @@ set(DUALSCREEN_LOCAL_PLAY_SOURCES
     src/input/retro_keymap.cpp
     src/net/host_session.cpp
     src/net/save_exchange.cpp
+    src/launch/game_catalog.cpp
+    src/launch/steam_shortcuts.cpp
+    src/launch/launch_host.cpp
     src/ui/message_screen.cpp
     src/ui/settings_screen.cpp
     src/ui/data_management_screen.cpp

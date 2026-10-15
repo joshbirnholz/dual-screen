@@ -243,6 +243,8 @@ std::string usage_text() {
         "  --layout <id>        Override the layout for this run\n"
         "  --system-dir <path>  Folder holding your BIOS/firmware files\n"
         "  --windowed           Run in a window instead of fullscreen\n"
+        "  --service            Run with no window, so paired devices can start\n"
+        "                       games here (see Settings, Remote Start)\n"
         "  --connect <screen>   Join the first game found on the network as its\n"
         "                       top or bottom screen, skipping the menu\n"
         "  --external-socket <path>\n"
@@ -279,6 +281,8 @@ AppOptions parse_command_line(int argc, char** argv) {
             options.layout_id = next_argument(argc, argv, index, "--layout", options.parse_error);
         } else if (argument == "--system-dir") {
             options.system_dir = next_argument(argc, argv, index, "--system-dir", options.parse_error);
+        } else if (argument == "--service") {
+            options.service = true;
         } else if (argument == "--windowed") {
             options.windowed = true;
         } else if (argument == "--trace-core-gl") {
