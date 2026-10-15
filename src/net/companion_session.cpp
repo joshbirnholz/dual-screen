@@ -161,6 +161,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_game_dialog_ = GameDialogMessage();
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
+    host_stylus_cursor_ = StylusCursorMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -334,6 +335,7 @@ void CompanionSession::disconnect() {
     host_game_dialog_ = GameDialogMessage();
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
+    host_stylus_cursor_ = StylusCursorMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -449,6 +451,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_game_dialog_ = GameDialogMessage();
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
+    host_stylus_cursor_ = StylusCursorMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -653,6 +656,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         case MessageType::MenuScroll: {
             MenuScrollMessage scroll;
             if (decode_menu_scroll(payload.data(), payload.size(), scroll)) host_menu_scroll_ = std::move(scroll);
+            break;
+        }
+        case MessageType::StylusCursor: {
+            StylusCursorMessage cursor;
+            if (decode_stylus_cursor(payload.data(), payload.size(), cursor)) host_stylus_cursor_ = cursor;
             break;
         }
         case MessageType::GameDialog: {

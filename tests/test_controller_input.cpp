@@ -457,6 +457,64 @@ void test_the_right_stick_maps_where_it_is_told() {
     CHECK_EQ(off.c_stick_x, 0);
     CHECK_EQ(off.circle_x, 0);
     CHECK_EQ(off.buttons, 0u);
+
+    // The stylus is carried as the C-Stick as far as the app, which moves the
+    // cursor with it; not the circle pad, and not the d-pad.
+    const DsInputState cursor = push_right_stick_and_read(RightStickMode::TouchCursor);
+    CHECK_MSG(cursor.c_stick_x > 16000, "the touch cursor did not follow the right stick");
+    CHECK_EQ(cursor.circle_x, 0);
+    CHECK(!cursor.pressed(DsButton::Right));
+}
+
+// With the right stick a stylus, R3 is its tip: held, it is carried to the app
+// as R3 to touch with, and let go it is not also the smoothing shortcut. The
+// two sticks pressed together still open the menu, and are not a touch.
+void test_r3_is_the_stylus_tip() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    input.set_right_stick_mode(RightStickMode::TouchCursor);
+
+    const auto frame = [&input]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+    };
+    const auto count_of = [&input](UiAction wanted) {
+        int count = 0;
+        for (const UiAction action : input.ui_actions()) {
+            if (action == wanted) ++count;
+        }
+        return count;
+    };
+
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
+    frame();
+    CHECK_MSG(input.ds_state().pressed(DsButton::RightStick), "R3 did not touch with the cursor");
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, false);
+    frame();
+    CHECK(!input.ds_state().pressed(DsButton::RightStick));
+    CHECK_EQ(count_of(UiAction::ToggleFilter), 0);
+
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
+    frame();
+    CHECK_EQ(count_of(UiAction::ToggleMenu), 1);
+    CHECK(!input.ds_state().pressed(DsButton::RightStick));
+
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
+    pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, false);
+    frame();
+    input.shutdown();
+    pad.detach();
 }
 
 // L3 and R3 together open the menu. That chord is the only way in on a device
@@ -1210,6 +1268,7 @@ int main() {
     test_left_stick_click_swaps_the_layout();
     test_the_stick_buttons_open_the_menu_together();
     test_the_right_stick_maps_where_it_is_told();
+    test_r3_is_the_stylus_tip();
     test_face_buttons_reach_the_core();
     test_a_tap_reported_twice_still_knows_where_it_started();
     test_two_fingers_open_the_menu_more_than_once();

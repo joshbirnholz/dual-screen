@@ -114,6 +114,10 @@ enum class MessageType : uint16_t {
     // either way: where the menu page both devices show is scrolled -- see
     // MenuScrollMessage. Ignored by a peer from before it.
     MenuScroll = 24,
+    // host -> companion: where the stylus on the right stick is, for the
+    // companion to draw over the touch screen too -- see StylusCursorMessage.
+    // Sent when it changes. A companion from before this ignores it.
+    StylusCursor = 25,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -620,6 +624,15 @@ enum class MenuSound : uint8_t {
     SaveState = 6,
 };
 
+// The stylus cursor, as the host has it -- see StylusCursor. `u` and `v` are
+// fractions of the touch screen, 0 to 1; `opacity` 0 means it is not drawn.
+struct StylusCursorMessage {
+    float u = 0.5f;
+    float v = 0.5f;
+    float opacity = 0.0f;
+    bool pressed = false;
+};
+
 struct MenuSoundMessage {
     MenuSound sound = MenuSound::MoveCursor;
 };
@@ -753,6 +766,7 @@ void encode_controllers_view(const ControllersViewMessage& message, std::vector<
 void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog(const GameDialogMessage& message, std::vector<uint8_t>& out);
 void encode_menu_scroll(const MenuScrollMessage& message, std::vector<uint8_t>& out);
+void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_t>& out);
 void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
@@ -796,6 +810,7 @@ bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersV
 bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out);
 bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage& out);
 bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage& out);
+bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMessage& out);
 bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);
 bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
 

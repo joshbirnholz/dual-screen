@@ -1110,6 +1110,21 @@ void test_shared_settings_stay_in_sync() {
                    [&] { return companion.host_right_stick_mode() == RightStickMode::DPad; }),
               "the host's right stick choice never reached the companion");
 
+    // The stylus on the right stick, where the host has it, so the companion
+    // can draw it over the touch screen too.
+    net::StylusCursorMessage cursor;
+    cursor.u = 0.25f;
+    cursor.v = 0.5f;
+    cursor.opacity = 1.0f;
+    cursor.pressed = true;
+    host.set_stylus_cursor(cursor);
+    CHECK_MSG(spin(host, companion,
+                   [&] {
+                       return companion.host_stylus_cursor().pressed &&
+                              std::abs(companion.host_stylus_cursor().u - 0.25f) < 0.001f;
+                   }),
+              "the host's stylus cursor never reached the companion");
+
     // Reset is one-shot: there is no value to broadcast back, just the request
     // itself reaching the host.
     companion.request_reset();

@@ -77,7 +77,7 @@ without choosing anything.
 | **Create Save State** | the four save state slots (DS only); see [Save states](#save-states) |
 | **Load Save State** | the same slots, to go back to one |
 | **Save Sync** | this game's page in [Data Management](#data-management), to sync its save with another device or go back to an earlier one (DS and 3DS). Leaving the page comes back to this menu |
-| **Game Options** | the settings you might change mid-game, kept for each game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (3DS), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, LCD filter (DS: the screens drawn with a handheld LCD's pixel grid over them, as Nintendo's own classics apps offer, kept for each game and shown on both devices), and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
+| **Game Options** | the settings you might change mid-game, kept for each game, as a list: render scale (3DS), sound (with two devices), pointer, right stick (see [The right stick](#the-right-stick)), left stick click (DS: the microphone, or swapping the focus layouts), rumble (DS; see [Rumble](#rumble)), screen gap (one choice for every layout that has a gap: Vertical Screens and the two focus layouts), screen smoothing, LCD filter (DS: the screens drawn with a handheld LCD's pixel grid over them, as Nintendo's own classics apps offer, kept for each game and shown on both devices), and resume from save state (DS; see [Resume from save state](#resume-from-save-state)) |
 | **Disconnect** | ends a two-device session; only there while one is running |
 | **Reset Game** | restarts the game, after asking |
 | **Quit** | closes the game, after asking. Chosen on the companion, it closes the app there too rather than going back to its main menu (except on an iPhone, iPad or Apple TV, where apps do not close themselves) |
@@ -955,16 +955,17 @@ GamePad: new data rather than new arithmetic. Touch mapping reads the same
 solved rectangles — including any quarter turn, inverted — so a new layout gets
 working touch for free, sideways or not.
 
-## The right stick, on 3DS games
+## The right stick
 
 A 3DS has a circle pad of its own, and the handful of games built for a Circle
 Pad Pro or a New 3DS read a second stick as well. Nothing in a ROM says which,
-so **Right Stick** in the layout menu cycles between:
+so **Right Stick** under **Game Options** chooses between:
 
-- **C-Stick** — a Circle Pad Pro / New 3DS second stick. The default.
+- **C-Stick** — a Circle Pad Pro / New 3DS second stick. The default on a 3DS.
 - **Circle Pad** — a second way to drive the circle pad, alongside the left
   stick. The stronger of the two wins, so pushing either one walks.
 - **D-Pad** — pressed directions, the way the left stick works on a DS.
+- **Touch Cursor** — a stylus: see below.
 - **Off** — ignored entirely, for a game that does something unwanted with a
   stick it is handed.
 
@@ -973,12 +974,29 @@ what made the circle pad unusable back when the left stick was also the d-pad:
 a core that reads the d-pad sees a direction held down for as long as the stick
 is off centre.
 
-The button appears only on a console with a stick of its own — a DS's left
-stick is already standing in for its d-pad and the right one has nothing to be.
+A DS has no stick at all — its left stick already stands in for the d-pad — so
+its right stick is **Touch Cursor** (the default there) or **Off**. A Wii U's
+GamePad has two sticks of its own and is not asked.
+
 A game remembers what it was last set to; the value a new game starts from is
-`"default_right_stick_mode"` in `settings.json`. Like everything else on that
-menu it is one choice for both devices, since both devices' pads drive the same
-game.
+`"default_right_stick_mode"` in `settings.json` (a DS game given one it does
+not have starts on Touch Cursor). Like everything else on that menu it is one
+choice for both devices, since both devices' pads drive the same game.
+
+### Touch Cursor
+
+A pointer over the touch screen, for touching without a finger or a mouse — a
+pad on a television, or a device that is not the one showing the touch screen.
+The right stick moves it: a little push creeps, for picking out one small
+button, and a full one crosses the screen in under a second. **R3** is its tip:
+held, it touches where the pointer is, so holding it and moving the stick
+drags. A finger on the screen still wins while it is there.
+
+The pointer shows while it is moved or pressed and fades a couple of seconds
+after, and is drawn wherever the touch screen is — on both devices when one is
+connected, whichever pad moved it. **L3 + R3** still opens the menu without
+touching on the way; R3 is the stylus rather than the smoothing shortcut here,
+and smoothing stays in **Game Options**.
 
 ## Render scale
 
@@ -1380,12 +1398,13 @@ Full options:
 | | |
 | --- | --- |
 | Open/close the layout menu | **L3 + R3**, **F1**, or a **two-finger tap** |
-| Smooth or sharpen the screens | **R3** alone (or **F2**), in a game or in any menu |
+| Smooth or sharpen the screens | **R3** alone (or **F2**), in a game or in any menu — but where the right stick is the [Touch Cursor](#touch-cursor), whose tip R3 is |
 | Swap the two focus layouts | **L3** alone (or **F3**), while a game is on screen |
 | | *DS and 3DS only. A Wii U game reads both sticks pressed and plays through its touch screen, so none of the three shortcuts above are taken from it — not L3, not R3, not the pair, and not the two-finger tap. There the menu is **F1**, **Tab** or **Escape** alone, which Steam Input can be pointed at, and **F3** swaps which screen a lone device is showing.* |
 | Open Settings, from inside that menu | **+** (or **F4**), on every console — it is a menu shortcut rather than one taken from the game. The settings are whichever device is running the game, whoever asked; with two connected, the other one says to look over here and its buttons still work the screen |
 | Move with the circle pad | the left stick, on 3DS games — where it is the circle pad and only that |
 | Move with the C-Stick | the right stick, in the handful of 3DS games built for a Circle Pad Pro or New 3DS |
+| Touch with a pad | the right stick moves a pointer over the touch screen and **R3** touches with it — on DS games by default, and on 3DS games with **Right Stick** set to **Touch Cursor** |
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |

@@ -58,12 +58,13 @@ struct SystemProfile {
     // left stick as that stick and nothing else; one that does not lets the
     // stick stand in for the d-pad, since players reach for it either way.
     bool has_analog_stick = false;
-    // Whether the quick menu offers a right-stick mapping cycle. True only for
-    // a 3DS: its single physical stick can mean the Circle Pad, the C-Stick,
-    // or a d-pad depending which the game wants, so which one is a real
-    // question. A Wii U's GamePad has two real sticks and neither is ever
-    // anything else, so there is nothing here to cycle -- has_analog_stick
-    // above still applies to it, this does not.
+    // Whether Game Options offers what the right stick is. True for a 3DS:
+    // its single physical stick can mean the Circle Pad, the C-Stick, or a
+    // d-pad depending which the game wants, so which one is a real question.
+    // And for a DS, whose right stick can be a stylus or nothing -- see
+    // right_stick_modes(). A Wii U's GamePad has two real sticks and neither
+    // is ever anything else, so there is nothing here to choose --
+    // has_analog_stick above still applies to it, this does not.
     bool offers_right_stick_mode = false;
     // Whether the quick menu offers save states. A DS only: making one of a 3DS
     // game froze the app on a Steam Deck, so a 3DS game saves the way the game

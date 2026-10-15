@@ -194,6 +194,7 @@ uint8_t right_stick_mode_to_wire(RightStickMode mode) {
         case RightStickMode::CStick: return 0u;
         case RightStickMode::CirclePad: return 1u;
         case RightStickMode::DPad: return 2u;
+        case RightStickMode::TouchCursor: return 4u;
         case RightStickMode::Off: break;
     }
     return 3u;
@@ -205,6 +206,7 @@ bool right_stick_mode_from_wire(uint8_t value, RightStickMode& out) {
         case 1u: out = RightStickMode::CirclePad; return true;
         case 2u: out = RightStickMode::DPad; return true;
         case 3u: out = RightStickMode::Off; return true;
+        case 4u: out = RightStickMode::TouchCursor; return true;
         default: break;
     }
     return false;
@@ -727,6 +729,39 @@ bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage
     }
     if (!reader.ok()) return false;
     out = std::move(message);
+    return true;
+}
+
+void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    // To a sixty-five-thousandth of the screen and a 255th of showing: far
+    // finer than any screen it is drawn on, and the same message for the same
+    // cursor, so an unmoved one is not sent again.
+    const auto fraction = [](float value) {
+        return static_cast<uint16_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 65535.0f));
+    };
+    put_u16(out, fraction(message.u));
+    put_u16(out, fraction(message.v));
+    put_u8(out, static_cast<uint8_t>(std::lround(std::clamp(message.opacity, 0.0f, 1.0f) * 255.0f)));
+    put_u8(out, message.pressed ? 1u : 0u);
+    finish_message(out, start, MessageType::StylusCursor);
+}
+
+bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMessage& out) {
+    Reader reader(data, size);
+    uint16_t u = 0;
+    uint16_t v = 0;
+    uint8_t opacity = 0;
+    uint8_t pressed = 0;
+    reader.u16(u);
+    reader.u16(v);
+    reader.u8(opacity);
+    reader.u8(pressed);
+    if (!reader.ok()) return false;
+    out.u = u / 65535.0f;
+    out.v = v / 65535.0f;
+    out.opacity = opacity / 255.0f;
+    out.pressed = pressed != 0;
     return true;
 }
 

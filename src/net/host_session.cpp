@@ -600,6 +600,14 @@ void HostSession::set_menu_scroll(const MenuScrollMessage& scroll) {
     menu_scroll_dirty_ = true;
 }
 
+void HostSession::set_stylus_cursor(const StylusCursorMessage& cursor) {
+    std::vector<uint8_t> encoded;
+    encode_stylus_cursor(cursor, encoded);
+    if (encoded == stylus_cursor_) return;
+    stylus_cursor_ = std::move(encoded);
+    stylus_cursor_dirty_ = true;
+}
+
 bool HostSession::take_menu_scroll(MenuScrollMessage& out) {
     if (!companion_menu_scroll_) return false;
     out = std::move(*companion_menu_scroll_);
@@ -892,6 +900,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             game_dialog_dirty_ = !game_dialog_.empty();
             amiibo_browser_view_dirty_ = !amiibo_browser_view_.empty();
             menu_scroll_dirty_ = !menu_scroll_.empty();
+            stylus_cursor_dirty_ = !stylus_cursor_.empty();
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
@@ -1361,6 +1370,10 @@ void HostSession::poll(uint64_t now_ms) {
     if (menu_scroll_dirty_ && handshake_done_) {
         companion_.send(menu_scroll_);
         menu_scroll_dirty_ = false;
+    }
+    if (stylus_cursor_dirty_ && handshake_done_) {
+        companion_.send(stylus_cursor_);
+        stylus_cursor_dirty_ = false;
     }
 
     std::string error;

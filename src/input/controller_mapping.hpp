@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <SDL.h>
 
@@ -92,14 +93,18 @@ MenuButtonLabels menu_button_labels(PadLetterLayout layout);
 // is the game's business rather than something that can be worked out from the
 // ROM, so it is a per-game choice.
 //
-// A DS has no stick at all -- its left stick already stands in for the d-pad,
-// and the right one has nothing to be -- so the choice is not offered there.
-// See SystemProfile::has_analog_stick.
+// A DS has no stick at all -- its left stick already stands in for the d-pad --
+// so the one thing its right stick can be is a stylus, or nothing. See
+// right_stick_modes() and SystemProfile::has_analog_stick.
 enum class RightStickMode {
-    CStick,     // a Circle Pad Pro / New 3DS C-Stick: the default
+    CStick,     // a Circle Pad Pro / New 3DS C-Stick: a 3DS's default
     CirclePad,  // a second way to drive the circle pad, alongside the left stick
     DPad,       // pressed directions, the way the left stick works on a DS
     Off,        // ignored entirely, for a game that reads it as something unwanted
+    // A pointer on the touch screen that the stick moves and R3 presses down,
+    // for touching without a finger: a DS's default. R3 is the stylus here
+    // rather than this app's smoothing shortcut. See StylusCursor.
+    TouchCursor,
 };
 
 // What clicking the left stick does, on a console that has a microphone.
@@ -130,7 +135,14 @@ LeftStickPress left_stick_press_from_key(const std::string& key);
 bool left_stick_is_microphone(bool console_has_microphone, LeftStickPress press);
 
 const char* to_string(RightStickMode mode);
-RightStickMode next_right_stick_mode(RightStickMode mode);
+// What the right stick can be on a console, in the order they are offered: a
+// console with a stick of its own has everything, a DS a stylus or nothing.
+std::vector<RightStickMode> right_stick_modes(bool console_has_stick);
+// The one after `mode` among those, round to the first.
+RightStickMode next_right_stick_mode(RightStickMode mode, bool console_has_stick);
+// `mode` if the console offers it, otherwise the console's default: a 3DS's
+// C-Stick, a DS's stylus.
+RightStickMode right_stick_mode_for(RightStickMode mode, bool console_has_stick);
 // Round-trips through settings files; unknown text falls back to the default.
 const char* right_stick_mode_key(RightStickMode mode);
 RightStickMode right_stick_mode_from_key(const std::string& key);

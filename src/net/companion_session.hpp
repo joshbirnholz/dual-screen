@@ -627,6 +627,9 @@ public:
     // said; and where it has been scrolled here, told to it.
     const MenuScrollMessage& host_menu_scroll() const { return host_menu_scroll_; }
     void send_menu_scroll(const MenuScrollMessage& scroll);
+    // Where the stylus on the right stick is on the host, to draw it here
+    // over the touch screen too. See StylusCursorMessage.
+    const StylusCursorMessage& host_stylus_cursor() const { return host_stylus_cursor_; }
     void answer_game_dialog(const GameDialogAnswerMessage& answer);
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
@@ -1167,6 +1170,7 @@ private:
     GameDialogMessage host_game_dialog_;
     AmiiboBrowserViewMessage host_amiibo_browser_view_;
     MenuScrollMessage host_menu_scroll_;
+    StylusCursorMessage host_stylus_cursor_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;

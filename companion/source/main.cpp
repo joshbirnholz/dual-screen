@@ -98,6 +98,7 @@ extern "C" {
 #include "ui/menu_actions.hpp"
 #include "ui/mirrored_game_dialog.hpp"
 #include "ui/menu_scroll_sync.hpp"
+#include "ui/stylus_cursor_view.hpp"
 #include "ui/menu_entrance.hpp"
 #include "ui/game_browser.hpp"
 #include "render/compositor.hpp"
@@ -2145,6 +2146,12 @@ void Client::draw_scene() {
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
+    // The stylus on the right stick, where the host has it.
+    if (!menu_open_) {
+        draw_stylus_cursor(quads_, session_layout(), width, height, session_.screens_geometry(),
+                           static_cast<float>(panel_width_), static_cast<float>(panel_height_),
+                           session_.host_stylus_cursor());
+    }
 
     if (menu_open_ && session_.system() == SystemId::WiiU && !session_.host_paused()) {
         // A Wii U game that goes on under the menu -- one that did not pause --

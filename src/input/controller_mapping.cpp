@@ -165,19 +165,32 @@ const char* to_string(RightStickMode mode) {
         case RightStickMode::CStick: return "C-Stick";
         case RightStickMode::CirclePad: return "Circle Pad";
         case RightStickMode::DPad: return "D-Pad";
+        case RightStickMode::TouchCursor: return "Touch Cursor";
         case RightStickMode::Off: break;
     }
     return "Off";
 }
 
-RightStickMode next_right_stick_mode(RightStickMode mode) {
-    switch (mode) {
-        case RightStickMode::CStick: return RightStickMode::CirclePad;
-        case RightStickMode::CirclePad: return RightStickMode::DPad;
-        case RightStickMode::DPad: return RightStickMode::Off;
-        case RightStickMode::Off: break;
+std::vector<RightStickMode> right_stick_modes(bool console_has_stick) {
+    if (!console_has_stick) return {RightStickMode::TouchCursor, RightStickMode::Off};
+    return {RightStickMode::CStick, RightStickMode::CirclePad, RightStickMode::DPad,
+            RightStickMode::TouchCursor, RightStickMode::Off};
+}
+
+RightStickMode next_right_stick_mode(RightStickMode mode, bool console_has_stick) {
+    const std::vector<RightStickMode> modes = right_stick_modes(console_has_stick);
+    for (std::size_t index = 0; index < modes.size(); ++index) {
+        if (modes[index] == mode) return modes[(index + 1) % modes.size()];
     }
-    return RightStickMode::CStick;
+    return modes.front();
+}
+
+RightStickMode right_stick_mode_for(RightStickMode mode, bool console_has_stick) {
+    const std::vector<RightStickMode> modes = right_stick_modes(console_has_stick);
+    for (const RightStickMode offered : modes) {
+        if (offered == mode) return mode;
+    }
+    return modes.front();
 }
 
 const char* right_stick_mode_key(RightStickMode mode) {
@@ -185,6 +198,7 @@ const char* right_stick_mode_key(RightStickMode mode) {
         case RightStickMode::CStick: return "c_stick";
         case RightStickMode::CirclePad: return "circle_pad";
         case RightStickMode::DPad: return "dpad";
+        case RightStickMode::TouchCursor: return "touch_cursor";
         case RightStickMode::Off: break;
     }
     return "off";
@@ -193,6 +207,7 @@ const char* right_stick_mode_key(RightStickMode mode) {
 RightStickMode right_stick_mode_from_key(const std::string& key) {
     if (key == "circle_pad") return RightStickMode::CirclePad;
     if (key == "dpad") return RightStickMode::DPad;
+    if (key == "touch_cursor") return RightStickMode::TouchCursor;
     if (key == "off") return RightStickMode::Off;
     return RightStickMode::CStick;
 }

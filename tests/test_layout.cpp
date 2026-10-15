@@ -588,6 +588,27 @@ void test_touch_follows_a_quarter_turn() {
     CHECK(point.x >= kDsScreenWidth - 3 && point.y >= kDsScreenHeight - 3);
 }
 
+// Drawing a point of the touch screen -- the stylus cursor -- has to put it
+// where touching would read it back, on every layout and every way a screen
+// is turned.
+void test_a_touch_point_is_drawn_where_it_is_felt() {
+    const LayoutRegistry registry;
+    const float width = 1280.0f;
+    const float height = 800.0f;
+    for (const Layout& layout : registry.layouts()) {
+        float x = 0.0f;
+        float y = 0.0f;
+        const bool drawn = map_ds_point_to_output(layout, width, height, 0.25f, 0.75f, x, y, ds_screens());
+        if (layout_has_touchable_bottom(layout)) CHECK_MSG(drawn, "no touch screen to draw on in " + layout.id);
+        if (!drawn) continue;
+        DsTouchPoint point;
+        CHECK(map_output_point_to_ds(layout, width, height, x, y, point, ds_screens()));
+        CHECK_MSG(std::abs(point.x - 64) <= 1 && std::abs(point.y - 144) <= 1,
+                  layout.id + " drew 64,144 where it reads " + std::to_string(point.x) + "," +
+                      std::to_string(point.y));
+    }
+}
+
 void test_contain_preserves_aspect() {
     ScreenPlacement placement;
     placement.x = 0.0f;
@@ -1053,6 +1074,7 @@ void test_audio_off_reaches_neither_screen() {
 
 int main() {
     test_which_layouts_have_a_hand();
+    test_a_touch_point_is_drawn_where_it_is_felt();
     test_registry_contents();
     test_layouts_match_the_wii_u();
     test_small_displays_drop_the_margin();

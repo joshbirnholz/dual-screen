@@ -163,11 +163,12 @@ struct LayoutPickerState {
     // meaningful -- and only offered -- while a layout that has one is
     // selected, which the picker reads off the registry for itself.
     bool screen_gap = true;
-    // What the right stick is read as, and whether that is a question at all:
-    // only a console with a stick of its own has more than one answer, so a DS
-    // does not get the button. See RightStickMode.
+    // What the right stick is read as, whether that is a question at all, and
+    // the answers the console has: a 3DS every one, a DS a stylus or nothing.
+    // See RightStickMode and right_stick_modes().
     RightStickMode right_stick_mode = RightStickMode::CStick;
     bool right_stick_choosable = false;
+    std::vector<RightStickMode> right_stick_modes;
     // What clicking the left stick does, and whether that is a question at
     // all: only a console with a microphone has one to hold. This device's
     // own, like the pointer. See LeftStickPress.

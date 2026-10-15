@@ -597,4 +597,45 @@ bool map_output_point_to_ds(const Layout& layout,
     return false;
 }
 
+bool map_ds_point_to_output(const Layout& layout,
+                            float output_width,
+                            float output_height,
+                            float u,
+                            float v,
+                            float& out_x,
+                            float& out_y,
+                            const SystemScreens& screens,
+                            float display_width,
+                            float display_height) {
+    if (!layout.accepts_touch_on_bottom || output_width <= 0.0f || output_height <= 0.0f) {
+        return false;
+    }
+    const std::vector<PlacedScreen> placed_screens =
+        place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
+                      display_width, display_height);
+    for (const PlacedScreen& placed : placed_screens) {
+        if (placed.screen != ScreenId::Bottom || placed.rect.w <= 0.0f || placed.rect.h <= 0.0f) {
+            continue;
+        }
+        // The turn map_output_point_to_ds() undoes, done.
+        float drawn_u = u;
+        float drawn_v = v;
+        switch (placed.rotation) {
+            case ScreenRotation::Clockwise:
+                drawn_u = 1.0f - v;
+                drawn_v = u;
+                break;
+            case ScreenRotation::CounterClockwise:
+                drawn_u = v;
+                drawn_v = 1.0f - u;
+                break;
+            case ScreenRotation::None: break;
+        }
+        out_x = placed.rect.x + drawn_u * placed.rect.w;
+        out_y = placed.rect.y + drawn_v * placed.rect.h;
+        return true;
+    }
+    return false;
+}
+
 }  // namespace ds

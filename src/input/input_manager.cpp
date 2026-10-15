@@ -1336,6 +1336,18 @@ DsInputState InputManager::held_state_from(const RawPadState& raw) const {
             if (raw_c_x < -deadzone_threshold) held.set(DsButton::Left, true);
             if (raw_c_x > deadzone_threshold) held.set(DsButton::Right, true);
             break;
+        case RightStickMode::TouchCursor:
+            // Carried as the C-Stick and R3 as far as the app, which moves
+            // the cursor with them and hands the game a touch instead -- see
+            // StylusCursor. The game itself never sees either. Not with L3
+            // as well, which is the two together opening the menu rather than
+            // a touch on the way there.
+            if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
+            if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
+            if (raw.buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK] && !raw.buttons[SDL_CONTROLLER_BUTTON_LEFTSTICK]) {
+                held.set(DsButton::RightStick, true);
+            }
+            break;
         case RightStickMode::Off:
             break;
     }
@@ -1498,7 +1510,9 @@ void InputManager::end_frame(const Layout& layout,
         if (left_stick_held_ && !left && !stick_chord_used_ && !left_stick_is_mic_) {
             push_action(UiAction::SwapLayout);
         }
-        if (right_stick_held_ && !right && !stick_chord_used_) {
+        // Not where R3 is the stylus's tip. See RightStickMode::TouchCursor.
+        if (right_stick_held_ && !right && !stick_chord_used_ &&
+            right_stick_mode_ != RightStickMode::TouchCursor) {
             push_action(UiAction::ToggleFilter);
         }
     }

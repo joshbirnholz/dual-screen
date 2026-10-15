@@ -322,8 +322,8 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
             break;
         }
         case Option::RightStick: {
-            const RightStickMode modes[] = {RightStickMode::CStick, RightStickMode::CirclePad,
-                                            RightStickMode::DPad, RightStickMode::Off};
+            const std::vector<RightStickMode> modes =
+                state_.right_stick_modes.empty() ? right_stick_modes(true) : state_.right_stick_modes;
             for (const RightStickMode mode : modes) {
                 if (mode == state_.right_stick_mode) current = static_cast<int>(choices.size());
                 choices.push_back(to_string(mode));

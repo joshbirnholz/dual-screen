@@ -42,6 +42,7 @@
 #include "input/input_manager.hpp"
 #include "input/pad_routing.hpp"
 #include "input/retro_keymap.hpp"
+#include "input/stylus_cursor.hpp"
 #include "layout/layout_registry.hpp"
 #include "render/bezel_art.hpp"
 #include "render/button_glyphs.hpp"
@@ -63,6 +64,7 @@
 #include "ui/game_dialog.hpp"
 #include "ui/mirrored_game_dialog.hpp"
 #include "ui/menu_scroll_sync.hpp"
+#include "ui/stylus_cursor_view.hpp"
 #include "ui/menu_entrance.hpp"
 #include "net/companion_session.hpp"
 #include "net/host_session.hpp"
@@ -719,6 +721,11 @@ struct App::Impl {
     bool screen_gap = true;
     // What the right stick is read as, on a console that has one of its own.
     RightStickMode right_stick_mode = RightStickMode::CStick;
+    // The stylus on the right stick, while it is one: moved by both devices'
+    // sticks, as the game's touch, and drawn by whichever shows the touch
+    // screen. Kept here, the host, and told to a companion.
+    StylusCursor stylus_cursor;
+    uint32_t stylus_ticks = 0;
     std::string game_title;
     std::string resolved_core_path;
     // Which console the loaded game belongs to, and its screens. On a companion
@@ -1206,6 +1213,12 @@ struct App::Impl {
     void adopt_legacy_handedness();
     void adopt_screen_gap(bool include_gap);
     void adopt_right_stick_mode(RightStickMode mode);
+    // The stylus on the right stick: moved by the stick in `held`, which it
+    // takes out, and touching for R3 -- see RightStickMode::TouchCursor.
+    void apply_stylus_cursor(DsInputState& held);
+    void publish_stylus_cursor();
+    // Drawn over the touch screen where this device shows it.
+    void draw_stylus_cursor(float width, float height);
     // What clicking the left stick does. The host's setting, and while a
     // companion is connected the one both devices follow: the quick menu
     // that offers it is one menu, so what it says has to come from one place.
@@ -3059,7 +3072,8 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
             if (result.right_stick_mode_changed) {
                 RightStickMode mode = right_stick_mode;
-                for (int step = 0; step < steps; ++step) mode = next_right_stick_mode(mode);
+                const bool has_stick = system_profile(system).has_analog_stick;
+                for (int step = 0; step < steps; ++step) mode = next_right_stick_mode(mode, has_stick);
                 request_right_stick_mode(mode);
             }
             if (result.left_stick_press_changed) {
@@ -3218,6 +3232,7 @@ void App::Impl::open_picker(bool embedded) {
     picker_state.right_stick_choosable =
         is_companion() ? companion_session->host_right_stick_choosable()
                        : (local_game() && system_profile(system).offers_right_stick_mode);
+    picker_state.right_stick_modes = right_stick_modes(system_profile(system).has_analog_stick);
     // What L3 does, where there is a microphone for it to be -- see
     // LeftStickPress. The host's, and told to the companion like the rest.
     picker_state.left_stick_press = left_stick_press_in_effect();
@@ -3641,6 +3656,57 @@ void App::Impl::adopt_right_stick_mode(RightStickMode mode) {
         settings.save(paths);
     }
     log_info(std::string("right stick: ") + to_string(right_stick_mode));
+}
+
+void App::Impl::apply_stylus_cursor(DsInputState& held) {
+    const uint32_t now = SDL_GetTicks();
+    const float seconds = stylus_ticks == 0 ? 0.0f : static_cast<float>(now - stylus_ticks) / 1000.0f;
+    stylus_ticks = now;
+    if (right_stick_mode != RightStickMode::TouchCursor) {
+        stylus_cursor.hide();
+        return;
+    }
+    const ScreenSize touch = system_profile(system).screens.bottom;
+    stylus_cursor.update(held.c_stick_x, held.c_stick_y, held.pressed(DsButton::RightStick),
+                         settings.stick_deadzone, seconds, touch.width, touch.height);
+    held.c_stick_x = 0;
+    held.c_stick_y = 0;
+    held.set(DsButton::RightStick, false);
+    // A finger on the glass is the touch while it is there.
+    if (stylus_cursor.pressed() && !held.touching) {
+        held.touching = true;
+        held.touch_x = stylus_cursor.x();
+        held.touch_y = stylus_cursor.y();
+    }
+}
+
+void App::Impl::publish_stylus_cursor() {
+    if (!host_session) return;
+    net::StylusCursorMessage message;
+    message.u = stylus_cursor.u();
+    message.v = stylus_cursor.v();
+    message.opacity = stylus_cursor.opacity();
+    message.pressed = stylus_cursor.pressed();
+    host_session->set_stylus_cursor(message);
+}
+
+void App::Impl::draw_stylus_cursor(float width, float height) {
+    net::StylusCursorMessage cursor;
+    if (state == State::Companion && companion_session) {
+        cursor = companion_session->host_stylus_cursor();
+    } else if (state == State::Playing) {
+        cursor.u = stylus_cursor.u();
+        cursor.v = stylus_cursor.v();
+        cursor.opacity = stylus_cursor.opacity();
+        cursor.pressed = stylus_cursor.pressed();
+    } else {
+        return;
+    }
+    float panel_width = 0.0f;
+    float panel_height = 0.0f;
+    panel_size(panel_width, panel_height);
+    ds::draw_stylus_cursor(quads, device_layout(), width, height, screens_geometry(), panel_width,
+                           panel_height, cursor);
 }
 
 void App::Impl::request_screen_gap(bool include_gap) {
@@ -4468,6 +4534,10 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         lcd_filter = game_config.lcd_filter;
         right_stick_mode = game_config.right_stick_mode;
     }
+    // One this console has: a DS's right stick is a stylus or nothing, so a
+    // 3DS's C-Stick, the default everywhere else, is the stylus there.
+    right_stick_mode = right_stick_mode_for(right_stick_mode, system_profile(rom_system).has_analog_stick);
+    stylus_cursor = StylusCursor();
     solo_screen_swapped = have_game_config && game_config.screens_swapped;
     input.set_right_stick_mode(right_stick_mode);
     if (!options.layout_id.empty()) {
@@ -5568,6 +5638,7 @@ void App::Impl::render() {
         apply_lcd_grid();
         compositor.render(quads, device_layout(), textures, screens_geometry(), width, height,
                           router);
+        draw_stylus_cursor(width, height);
         frames = &textures;
     } else {
         quads.begin_frame(output_width, output_height);
@@ -7091,6 +7162,7 @@ int App::run(const AppOptions& options) {
                                       : ""));
                     }
                     combined = input_for_the_console_pad(impl.input.ds_state(), remote, owner);
+                    impl.apply_stylus_cursor(combined);
                 }
                 // While both devices report motion, hold the two up against each
                 // other. This is the host, so both readings are in hand at the
@@ -7141,6 +7213,11 @@ int App::run(const AppOptions& options) {
                                                               DsInputState());
                 }
             }
+
+            // Put away while the game is not being played, and told to the
+            // other device either way.
+            if (!pads_to_game) impl.stylus_cursor.hide();
+            impl.publish_stylus_cursor();
 
             impl.frame_accumulator += elapsed;
             // Cap catch-up so a hitch cannot spiral into a long fast-forward.

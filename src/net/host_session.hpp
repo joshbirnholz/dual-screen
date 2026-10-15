@@ -244,6 +244,8 @@ public:
     void set_menu_scroll(const MenuScrollMessage& scroll);
     // Where the companion has scrolled it, newest only, once.
     bool take_menu_scroll(MenuScrollMessage& out);
+    // Where the stylus on the right stick is: sent on change.
+    void set_stylus_cursor(const StylusCursorMessage& cursor);
     // And the game's own dialog, up over it (kind 0 once it is not).
     void set_game_dialog(const GameDialogMessage& dialog);
     // The companion's answers to it, oldest first.
@@ -693,6 +695,8 @@ private:
     std::vector<uint8_t> menu_scroll_;
     bool menu_scroll_dirty_ = false;
     std::optional<MenuScrollMessage> companion_menu_scroll_;
+    std::vector<uint8_t> stylus_cursor_;
+    bool stylus_cursor_dirty_ = false;
     std::deque<GameDialogAnswerMessage> game_dialog_answers_;
 
     DsInputState companion_input_;

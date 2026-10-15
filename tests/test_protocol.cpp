@@ -4,6 +4,7 @@
 
 #include "test_support.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -1973,6 +1974,37 @@ void test_game_dialog_round_trip() {
     CHECK(back.final && back.button == 1);
 }
 
+// Where the stylus on the right stick is, and that it is touching; and the
+// touch cursor itself as a right-stick mode over the wire.
+void test_stylus_cursor_round_trip() {
+    StylusCursorMessage cursor;
+    cursor.u = 0.25f;
+    cursor.v = 0.75f;
+    cursor.opacity = 0.5f;
+    cursor.pressed = true;
+    std::vector<uint8_t> buffer;
+    encode_stylus_cursor(cursor, buffer);
+    MessageType type{};
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::StylusCursor);
+    StylusCursorMessage got;
+    CHECK(decode_stylus_cursor(payload.data(), payload.size(), got));
+    CHECK(std::abs(got.u - 0.25f) < 0.001f && std::abs(got.v - 0.75f) < 0.001f);
+    CHECK(std::abs(got.opacity - 0.5f) < 0.01f);
+    CHECK(got.pressed);
+    CHECK(!decode_stylus_cursor(payload.data(), payload.size() - 1, got));
+
+    SessionStateMessage state;
+    state.right_stick_mode = RightStickMode::TouchCursor;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    SessionStateMessage received;
+    CHECK(decode_session_state(payload.data(), payload.size(), received));
+    CHECK(received.right_stick_mode == RightStickMode::TouchCursor);
+}
+
 // Where the page both devices show is scrolled, and the amiibo browser.
 void test_menu_scroll_and_amiibo_browser_round_trip() {
     MenuScrollMessage scroll;
@@ -2047,5 +2079,6 @@ int main() {
     test_graphic_packs_view_round_trip();
     test_game_dialog_round_trip();
     test_menu_scroll_and_amiibo_browser_round_trip();
+    test_stylus_cursor_round_trip();
     return test::finish("protocol");
 }

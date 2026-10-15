@@ -45,6 +45,8 @@ SystemProfile make_ds() {
     profile.core_filenames = {"melondsds_libretro.so", "melonds_libretro.so"};
     profile.core_description = "melonDS DS";
     profile.offers_save_states = true;
+    // Its right stick has no stick to be, but can be a stylus -- or nothing.
+    profile.offers_right_stick_mode = true;
     return profile;
 }
 
@@ -86,8 +88,9 @@ SystemProfile make_three_ds() {
     // the d-pad is the d-pad. Sending both from one stick is what made the
     // circle pad unreachable: every core that reads the d-pad saw it pressed.
     profile.has_analog_stick = true;
-    // Its one physical stick can mean the Circle Pad, the C-Stick, or a d-pad
-    // -- which is a real question this console has and a Wii U does not.
+    // Its one physical stick can mean the Circle Pad, the C-Stick, a d-pad or
+    // a stylus -- which is a real question this console has and a Wii U does
+    // not.
     profile.offers_right_stick_mode = true;
     // Citra has no software renderer. It asks for a 3.3 core profile through
     // the hardware-render callback and refuses to load the game if it does not

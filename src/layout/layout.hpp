@@ -345,6 +345,22 @@ bool map_output_point_to_ds(const Layout& layout,
                             float display_width = 0.0f,
                             float display_height = 0.0f);
 
+// The other way: where a point on the touch screen -- `u` and `v`, fractions
+// of its width and height -- is drawn in the output window, through the same
+// placement and turn. For drawing something over the touch screen where the
+// game will feel it, the stylus cursor. False when this layout draws no
+// touchable bottom screen.
+bool map_ds_point_to_output(const Layout& layout,
+                            float output_width,
+                            float output_height,
+                            float u,
+                            float v,
+                            float& out_x,
+                            float& out_y,
+                            const SystemScreens& screens,
+                            float display_width = 0.0f,
+                            float display_height = 0.0f);
+
 // True if this layout shows the bottom screen at all (and so can accept touch).
 bool layout_has_touchable_bottom(const Layout& layout);
 
