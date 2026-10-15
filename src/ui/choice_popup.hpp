@@ -107,6 +107,9 @@ private:
     void keep_focus_in_view(int visible);
     bool grid() const { return columns_ > 0; }
     float max_scroll_rows(int visible) const;
+    // How many rows fit, now it is laid out; on its first pass, the list
+    // brought round to the current choice.
+    void settle_rows(int visible);
     // The next choice that is not a heading from `from`, `step` at a time,
     // or -1.
     int next_choice(int from, int step) const;
@@ -124,6 +127,8 @@ private:
     // long for the box slides along -- see draw_fitted_text().
     int drawn_focus_ = -1;
     std::chrono::steady_clock::time_point focus_since_{};
+    // How many rows of it are in view, as last laid out.
+    int shown_rows_ = 1;
     // How far the list is scrolled, in rows, so it means the same at any size.
     float scroll_rows_ = 0.0f;
     // How many rows above the current choice were in view as it opened: the

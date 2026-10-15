@@ -9,13 +9,6 @@
 
 namespace ds {
 
-namespace {
-
-// As many as are shown before the list scrolls.
-constexpr int kMostShown = 6;
-
-}  // namespace
-
 void ChoicePopup::open(std::vector<std::string> choices, int current, const PixelRect& row) {
     choices_ = std::move(choices);
     glyph_pairs_.clear();
@@ -30,8 +23,20 @@ void ChoicePopup::open(std::vector<std::string> choices, int current, const Pixe
     placed_ = false;
     fresh_ = true;
     drag_.stop();
-    keep_focus_in_view(kMostShown);
-    anchor_rows_ = static_cast<float>(std::max(0, current_)) - scroll_rows_;
+    // Every row it has, as far as is known yet: how many fit is known when
+    // it is first laid out -- see settle_rows().
+    shown_rows_ = static_cast<int>(choices_.size());
+    anchor_rows_ = static_cast<float>(std::max(0, current_));
+}
+
+void ChoicePopup::settle_rows(int visible) {
+    shown_rows_ = visible;
+    if (!fresh_) return;
+    // Its first pass: the list brought round to the current choice at
+    // however many rows fit, and the box placed by the rows above it then.
+    keep_focus_in_view(visible);
+    if (!grid()) anchor_rows_ = static_cast<float>(std::max(0, current_)) - scroll_rows_;
+    fresh_ = false;
 }
 
 void ChoicePopup::open_colors(std::vector<Color> colors, std::vector<std::string> names, int columns,
@@ -61,7 +66,7 @@ void ChoicePopup::set_headings(std::vector<bool> headings) {
         return;
     }
     focus_ = focus;
-    keep_focus_in_view(kMostShown);
+    keep_focus_in_view(shown_rows_);
 }
 
 int ChoicePopup::next_choice(int from, int step) const {
@@ -75,7 +80,7 @@ int ChoicePopup::next_choice(int from, int step) const {
 void ChoicePopup::set_focus(int focus) {
     if (focus < 0 || focus >= static_cast<int>(choices_.size()) || heading(focus)) return;
     focus_ = focus;
-    keep_focus_in_view(kMostShown);
+    keep_focus_in_view(shown_rows_);
 }
 
 float ChoicePopup::max_scroll_rows(int visible) const {
@@ -140,7 +145,9 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
     geometry.row_height = std::round(line * 2.4f);
     const int fitting =
         std::max(1, static_cast<int>((output_height - margin * 2.0f - pad_y * 2.0f) / geometry.row_height));
-    geometry.visible = std::max(1, std::min({count, kMostShown, fitting}));
+    // As many as the screen has room for: a long list is not kept short
+    // with space to spare above and below it.
+    geometry.visible = std::max(1, std::min(count, fitting));
     const bool scrolls = count > geometry.visible;
 
     float widest = 0.0f;
@@ -212,10 +219,7 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
     if (!open_) return result;
     const int count = static_cast<int>(choices_.size());
     const int visible = geometry(output_width, output_height).visible;
-    if (fresh_) {
-        keep_focus_in_view(visible);
-        fresh_ = false;
-    }
+    settle_rows(visible);
     // A grid moves a line at a time up and down, and along one with left
     // and right, stopping at the edges.
     const int step = grid() ? columns_ : 1;
@@ -292,10 +296,7 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
 void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_width,
                          float output_height, const ButtonGlyphSheet* glyphs) {
     if (!open_) return;
-    if (fresh_) {
-        keep_focus_in_view(geometry(output_width, output_height).visible);
-        fresh_ = false;
-    }
+    settle_rows(geometry(output_width, output_height).visible);
     placed_ = true;
     const UiTheme& theme = ui_theme();
     const Geometry shape = geometry(output_width, output_height);

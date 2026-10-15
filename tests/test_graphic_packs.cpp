@@ -648,6 +648,22 @@ void test_a_packs_dividers_cannot_be_chosen() {
     CHECK_EQ(on_divider.focus(), 2);
 }
 
+// A long dropdown takes the room the screen has, not a fixed few rows.
+void test_a_long_dropdown_uses_the_room_there_is() {
+    std::vector<std::string> choices;
+    for (int index = 0; index < 12; ++index) choices.push_back("Choice " + std::to_string(index + 1));
+    ChoicePopup popup;
+    popup.open(choices, 0, PixelRect{100.0f, 300.0f, 900.0f, 50.0f});
+    popup.update({}, {}, kWidth, kHeight);
+    std::vector<bool> seen(choices.size(), false);
+    for (float y = 0.0f; y < kHeight; y += 4.0f) {
+        const int at = popup.choice_at(950.0f, y, kWidth, kHeight);
+        if (at >= 0) seen[static_cast<std::size_t>(at)] = true;
+    }
+    CHECK_MSG(std::all_of(seen.begin(), seen.end(), [](bool shown) { return shown; }),
+              "twelve choices did not all fit on a screen with room for them");
+}
+
 int main() {
     test_packs_are_grouped_as_cemu_files_them();
     test_into_a_pack_and_back_out_as_in_the_quick_menu();
@@ -661,5 +677,6 @@ int main() {
     test_a_finger_on_the_other_device_scrolls_a_dropdown();
     test_taps_on_the_other_devices_page_work_it();
     test_a_packs_dividers_cannot_be_chosen();
+    test_a_long_dropdown_uses_the_room_there_is();
     return test::finish("graphic-packs");
 }
