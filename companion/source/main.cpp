@@ -538,6 +538,14 @@ private:
     // The quick menu coming up here as it does on the host -- see
     // MenuEntrance.
     MenuEntrance menu_entrance_;
+    // Closed back to the game and still going away: the picker kept open to
+    // be drawn until it has. And whether the host had a page of its menu up
+    // last frame -- the menu coming back from one is not coming up.
+    bool menu_closing_ = false;
+    bool saw_host_page_ = false;
+    bool menu_leaving() const {
+        return menu_closing_ && !menu_open_ && picker_.is_open() && menu_entrance_.leaving();
+    }
     void sync_scroll();
     // Which of the host's save slot lists the menu is showing -- see
     // show_host_save_slots().
@@ -1015,7 +1023,13 @@ LayoutPickerState Client::menu_state_from_host() const {
 }
 
 void Client::open_menu() {
-    menu_entrance_.start();
+    // Coming up from the game, or simply there again, back from a page of it.
+    if (saw_host_page_) {
+        menu_entrance_.finish();
+    } else {
+        menu_entrance_.start();
+    }
+    menu_closing_ = false;
     // With the console, not without it. Left off, the picker fell back to its
     // default of a DS -- so a companion joining a Wii U host drew the DS's
     // grid of layouts to choose between, on a console that has no layouts to
@@ -1045,8 +1059,15 @@ void Client::open_menu() {
 }
 
 void Client::close_menu() {
-    if (picker_.is_open()) {
-        picker_.close();
+    // Back to the game, it goes away over it, put away once it has; into a
+    // page of the host's -- or out of a session -- it is simply gone.
+    if (menu_open_ && state_ == State::Playing && picker_.is_open() && !session_.host_settings_open()) {
+        menu_entrance_.leave();
+        menu_closing_ = true;
+    } else {
+        if (picker_.is_open()) picker_.close();
+        menu_entrance_.finish();
+        menu_closing_ = false;
     }
     if (!menu_open_) {
         return;
@@ -1754,6 +1775,12 @@ void Client::run() {
                 } else if (!session_.host_menu_open() && menu_open_) {
                     close_menu();
                 }
+                saw_host_page_ = session_.host_settings_open();
+                // Put away once it has finished going.
+                if (menu_closing_ && !menu_entrance_.leaving()) {
+                    menu_closing_ = false;
+                    if (!menu_open_) picker_.close();
+                }
                 if (menu_open_) {
                     // Every frame, all of it: this device shows the host's
                     // menu and holds no copy of its own to drift.
@@ -2114,7 +2141,7 @@ void Client::draw_scene() {
                                           : session_.host_menu_unavailable_notice()
                                                 ? std::string(kMenuUnavailableNotice)
                                                 : std::string();
-    router_.decide(!menu_open_ && !resume_notice && !game_dialog && corner_notice.empty());
+    router_.decide(!menu_open_ && !menu_leaving() && !resume_notice && !game_dialog && corner_notice.empty());
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);
@@ -2162,6 +2189,21 @@ void Client::draw_scene() {
         quads_.set_zoom(menu_entrance_.scale(), width * 0.5f, height * 0.5f);
         picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(),
                        &textures);
+        quads_.set_opacity(1.0f);
+        quads_.set_zoom(1.0f, 0.0f, 0.0f);
+    } else if (menu_leaving()) {
+        // Going away over the game, going again under it: a Wii U's darkened,
+        // the blurred picture otherwise, as it was taken; the menu first,
+        // then that.
+        quads_.set_opacity(menu_entrance_.backdrop());
+        if (session_.system() == SystemId::WiiU) {
+            quads_.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+        } else {
+            menu_backdrop_.draw(quads_, width, height);
+        }
+        quads_.set_opacity(menu_entrance_.contents());
+        quads_.set_zoom(menu_entrance_.scale(), width * 0.5f, height * 0.5f);
+        picker_.render(quads_, text_, button_glyphs_, width, height, session_.game_title(), &textures);
         quads_.set_opacity(1.0f);
         quads_.set_zoom(1.0f, 0.0f, 0.0f);
     } else {

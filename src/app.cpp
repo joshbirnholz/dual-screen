@@ -1128,14 +1128,37 @@ struct App::Impl {
     void set_menu_open(bool open);
     // Opens it, with no waiting.
     void open_quick_menu();
-    // The quick menu coming up: its backdrop, then itself. See MenuEntrance.
+    // The quick menu coming up from the game, and going back to it: its
+    // backdrop, then itself, and the other way round. See MenuEntrance.
     MenuEntrance menu_entrance;
+    // Closed back to the game and still going away: the picker is kept open
+    // to be drawn until it has -- see quick_menu_leaving().
+    bool menu_closing = false;
+    bool quick_menu_leaving() const {
+        return menu_closing && menu_entrance.leaving() && picker && picker->is_open() && state != State::Menu;
+    }
+    // Gone at once: closed from a page of it, where it was never on screen
+    // to go away.
+    void skip_menu_leave() {
+        menu_entrance.finish();
+        menu_closing = false;
+        if (state != State::Menu && picker && !picker->embedded()) picker->close();
+    }
+    // Once it has gone, put away.
+    void settle_menu_leave() {
+        if (!menu_closing || menu_entrance.leaving()) return;
+        menu_closing = false;
+        if (state != State::Menu && picker && !picker->embedded()) picker->close();
+    }
+    // On a companion, whether the host had a page of its menu up last frame:
+    // the menu coming back from one is not coming up from the game.
+    bool companion_saw_host_page = false;
     // Draws `draw_backdrop` and then `draw_menu` as the quick menu's entrance
     // has them -- faded and grown in while it is coming up, and as they are
     // otherwise, or on any other page.
     template <typename Backdrop, typename Menu>
     void draw_entering(float width, float height, Backdrop&& draw_backdrop, Menu&& draw_menu) {
-        const bool entering = state == State::Menu;
+        const bool entering = state == State::Menu || quick_menu_leaving();
         if (entering) quads.set_opacity(menu_entrance.backdrop());
         draw_backdrop();
         quads.set_opacity(1.0f);
@@ -2193,6 +2216,7 @@ void App::Impl::choose_amiibo(const std::string& path) {
     if (state == State::Amiibo) amiibo_browser.close();
     state = State::Menu;
     set_menu_open(false);
+    skip_menu_leave();
 }
 
 void App::Impl::open_amiibo_browser() {
@@ -2614,6 +2638,7 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     // -- the game running again, the other device told -- happens here too.
     state = State::Menu;
     set_menu_open(false);
+    skip_menu_leave();
     return true;
 }
 
@@ -2630,6 +2655,11 @@ bool App::Impl::menu_over_wii_u_game() const {
 
 bool App::Impl::wants_menu_overlay() const {
     if (menu_over_wii_u_game()) return true;
+    // Going away over the game, it is drawn there until it has.
+    if (quick_menu_leaving() && system == SystemId::WiiU && !is_companion() && external_source &&
+        external_source->running() && external_source->overlay_supported() && MenuOverlay::supported()) {
+        return true;
+    }
     return !shown_corner_notice().empty() && system == SystemId::WiiU && !is_companion() && external_source &&
            external_source->running() && external_source->overlay_supported() &&
            MenuOverlay::supported();
@@ -2879,7 +2909,7 @@ void App::Impl::render_menu_overlay() {
     gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     const float w = static_cast<float>(output_width);
     const float h = static_cast<float>(output_height);
-    if (menu_over_wii_u_game()) {
+    if (menu_over_wii_u_game() || quick_menu_leaving()) {
         draw_entering(w, h, [&] {
             if (wii_u_backdrop_ready()) {
                 // Paused: the game's picture blurred, as a DS or 3DS game's
@@ -2946,7 +2976,16 @@ void App::Impl::set_menu_open(bool open) {
     }
     if (state != State::Menu) return;
     log_info("the quick menu is down");
-    picker->close();
+    // Back to the game, it goes away over it, and is put away once it has --
+    // see settle_menu_leave(). On a companion following the host into a page
+    // of the menu, it is simply gone: the page is on the host.
+    if (is_companion() && companion_session && companion_session->host_settings_open()) {
+        picker->close();
+        menu_entrance.finish();
+    } else {
+        menu_entrance.leave();
+        menu_closing = true;
+    }
     if (is_companion()) {
         companion_session->set_menu_open(false);
         state = State::Companion;
@@ -2958,11 +2997,20 @@ void App::Impl::set_menu_open(bool open) {
 
 void App::Impl::open_quick_menu() {
     if (state == State::Menu || state == State::ResumeNotice) return;
+    // Coming up from the game -- or back from one of its pages, when it is
+    // simply there again.
+    const bool from_game =
+        state == State::Playing || (state == State::Companion && !companion_saw_host_page);
     // A notice that the menu could not open is over once it has.
     corner_notice.clear();
     open_picker();
     state = State::Menu;
-    menu_entrance.start();
+    menu_closing = false;
+    if (from_game) {
+        menu_entrance.start();
+    } else {
+        menu_entrance.finish();
+    }
     log_info("the quick menu is up");
     // A menu is often the last thing opened before a game is put down,
     // whichever device opened it.
@@ -5184,7 +5232,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 // only while this window has the focus: the pads keep
                 // reporting while Cemu's window is in front, and a press
                 // meant for the game must not also pick Quit here.
-                if (!picker->embedded()) {
+                if (!picker->embedded() && !quick_menu_leaving()) {
                     open_picker(/*embedded=*/true);
                 }
                 // Where Cemu can draw the menu over the game, the menu keys
@@ -5215,7 +5263,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
-            if (picker && picker->embedded()) {
+            if (picker && picker->embedded() && !quick_menu_leaving()) {
                 // The game beside it ended or has not arrived.
                 picker->close();
             }
@@ -5263,7 +5311,7 @@ void App::Impl::swap() {
 
 void App::Impl::render_pages(float width, float height, bool over_game,
                              const ScreenTextures* frames) {
-    if (state == State::Menu) {
+    if (state == State::Menu || quick_menu_leaving()) {
         // The previews are drawn from the frame the game is paused on, so each
         // tile shows what picking it will actually look like.
         picker->set_preview_screen(own_separate_screen());
@@ -5312,6 +5360,8 @@ void App::Impl::render_pages(float width, float height, bool over_game,
 void App::Impl::render() {
     const float width = static_cast<float>(output_width);
     const float height = static_cast<float>(output_height);
+    // The quick menu put away once it has finished going.
+    settle_menu_leave();
     // A GL error is sticky and otherwise invisible: the picture is simply wrong
     // and nothing says why. Reported once, since a failing draw fails every
     // frame and one line is the useful amount.
@@ -5573,10 +5623,19 @@ void App::Impl::render() {
                 on_cemu_page()) {
                 quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, 0.6f});
             }
+        } else if (quick_menu_leaving()) {
+            // Going away over the game, which is going again under it: a Wii
+            // U's darkened, as it is under a menu over it as it plays; the
+            // blurred picture otherwise, as it was taken.
+            if (system == SystemId::WiiU) {
+                quads.draw_solid(PixelRect{0.0f, 0.0f, width, height}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+            } else {
+                menu_backdrop.draw(quads, width, height);
+            }
         } else {
             menu_backdrop.forget();
         }
-    }, [&] { render_pages(width, height, show_menu_backdrop, frames); });
+    }, [&] { render_pages(width, height, show_menu_backdrop || quick_menu_leaving(), frames); });
     if (const std::string notice = shown_corner_notice(); !notice.empty()) {
         render_corner_notice(quads, text, width, height, notice);
     } else if (state == State::Companion && companion_session &&
@@ -6687,6 +6746,7 @@ int App::run(const AppOptions& options) {
                     (impl.state == Impl::State::Menu || impl.state == Impl::State::Companion)) {
                     impl.set_menu_open(host_menu);
                 }
+                impl.companion_saw_host_page = impl.companion_session->host_settings_open();
                 if (impl.state == Impl::State::Menu && impl.picker) {
                     impl.picker->show(
                         impl.menu_state_from_host(), impl.companion_session->host_menu_focus(),
