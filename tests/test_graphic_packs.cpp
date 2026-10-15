@@ -202,6 +202,19 @@ void test_presets_are_chosen_from_a_popup_and_say_when_they_wait_for_a_reset() {
     press(screen, UiAction::Confirm);
     CHECK(press(screen, UiAction::ToggleMenu).close_requested);
     CHECK(!screen.is_open());
+    CHECK(!screen.choosing());
+
+    // However it was put away, it comes back without a dropdown open.
+    screen.open();
+    screen.set_packs(game_packs());
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.choosing());
+    screen.close();
+    screen.open();
+    screen.set_packs(game_packs());
+    CHECK_MSG(!screen.choosing(), "the page came back with its dropdown still open");
 }
 
 void test_the_cursor_stays_put_when_cemu_answers() {

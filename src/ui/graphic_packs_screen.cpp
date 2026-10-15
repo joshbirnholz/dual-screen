@@ -117,6 +117,8 @@ void GraphicPacksScreen::open() {
     detail_scroll_ = 0.0f;
     mirrored_focus_ = -1;
     mirrored_item_ = -1;
+    choice_.close();
+    mirrored_choice_focus_ = -1;
 }
 
 void GraphicPacksScreen::set_packs(std::vector<ExternalGraphicPack> packs) {

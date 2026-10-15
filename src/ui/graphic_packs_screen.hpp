@@ -51,7 +51,11 @@ class GraphicPacksScreen : public MenuPage {
 public:
     // Up, and waiting for Cemu's list.
     void open();
-    void close() { open_ = false; }
+    // Put away, dropdown and all: the page comes back without it.
+    void close() {
+        open_ = false;
+        choice_.close();
+    }
     bool is_open() const { return open_; }
     // Cemu's list, as it is now: the cursor stays on the pack, and the row in
     // it, that it was on.
