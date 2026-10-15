@@ -92,16 +92,16 @@ guide no longer shows them. A Wii U game's menu stays a plain list.
 
 ### Your DS's name, favorite color and birthday
 
-**Nickname**, **Favorite Color** and **Birthday**, in Settings, are what a
-DS's own settings keep about its owner: a DS game that greets you by name
+**Nickname**, **Favorite Color**, **Birth Month** and **Birth Day**, in
+Settings, are what a DS's own settings keep about its owner: a DS game that greets you by name
 uses the nickname, one that themes itself uses the color, and one that marks
 your birthday uses that. melonDS DS is told all three as a DS game starts.
 The name is typed into a field -- on a Steam Deck, Steam's on-screen keyboard
 comes up for it; on a Switch, the system keyboard -- and is ten characters at
 most, as on a DS. The color is picked from a grid of the DS's sixteen, in the
 DS's own order, and is Gray until another is chosen; it is the menus' accent
-too, exactly as the DS shows it -- the cursor's ring is drawn in it. The birthday is a month, then a day of it; until
-one is chosen melonDS DS keeps its own. A 3DS has none of these to set:
+too, exactly as the DS shows it -- the cursor's ring is drawn in it. The birthday is its month and its day, each chosen on
+its own; until one is chosen melonDS DS keeps its own. A 3DS has none of these to set:
 Azahar's libretro core takes no name, color or birthday.
 
 ### Dropdowns

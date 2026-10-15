@@ -231,10 +231,16 @@ std::vector<std::string> SettingsScreen::focused_choices(int& current) const {
             for (const DsFavoriteColor& color : kDsFavoriteColors) choices.push_back(color.name);
             current = settings_.ds_favorite_color;
             break;
-        case Row::DsBirthday:
-            // The month first; the day's choices follow -- see choose().
+        case Row::DsBirthMonth:
             choices.assign(kDsMonths.begin(), kDsMonths.end());
             current = settings_.ds_birth_month - 1;
+            break;
+        case Row::DsBirthDay:
+            // The month's own days; every day there is, before a month is.
+            for (int day = 1; day <= ds_days_in_month(std::max(1, settings_.ds_birth_month)); ++day) {
+                choices.push_back(std::to_string(day));
+            }
+            current = settings_.ds_birth_day - 1;
             break;
 #if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone:
@@ -294,26 +300,18 @@ void SettingsScreen::choose(int index, SettingsScreenResult& result) {
             if (index < 0 || index >= static_cast<int>(kDsFavoriteColors.size())) return;
             settings_.ds_favorite_color = index;
             break;
-        case Row::DsBirthday:
-            if (birth_month_choosing_ == 0) {
-                // The month: then which day of it, the one kept still chosen
-                // where the month has it.
-                if (index < 0 || index >= 12) return;
-                const int month = index + 1;
-                std::vector<std::string> days;
-                for (int day = 1; day <= ds_days_in_month(month); ++day) days.push_back(std::to_string(day));
-                const int current_day =
-                    settings_.ds_birth_day >= 1 && settings_.ds_birth_day <= ds_days_in_month(month)
-                        ? settings_.ds_birth_day - 1
-                        : 0;
-                birth_month_choosing_ = month;
-                choice_.open(std::move(days), current_day, choice_row_);
-                return;
-            }
-            if (index < 0 || index >= ds_days_in_month(birth_month_choosing_)) return;
-            settings_.ds_birth_month = birth_month_choosing_;
+        case Row::DsBirthMonth:
+            // The day kept, as far as the month has it: the 31st becomes
+            // the 30th in April. None yet is the 1st.
+            if (index < 0 || index >= 12) return;
+            settings_.ds_birth_month = index + 1;
+            settings_.ds_birth_day = std::clamp(settings_.ds_birth_day, 1, ds_days_in_month(index + 1));
+            break;
+        case Row::DsBirthDay:
+            // A day before a month: January's, until the month is chosen.
+            if (index < 0 || index >= ds_days_in_month(std::max(1, settings_.ds_birth_month))) return;
+            settings_.ds_birth_month = std::max(1, settings_.ds_birth_month);
             settings_.ds_birth_day = index + 1;
-            birth_month_choosing_ = 0;
             break;
 #if DS_PLAYS_WII_U
         case Row::WiiUScreenAlone: {
@@ -356,7 +354,6 @@ void SettingsScreen::press_row(SettingsScreenResult& result, const Geometry& geo
     }
     if (focus_ < 0 || focus_ >= static_cast<int>(geometry.rows.size())) return;
     choice_row_ = geometry.rows[static_cast<std::size_t>(focus_)];
-    birth_month_choosing_ = 0;
     const int row = focus_ - first_setting_row();
     if (page_ == Page::Main && row == static_cast<int>(Row::DsFavoriteColor)) {
         // The DS's own sixteen, in its own order, four to a line as its
@@ -573,7 +570,8 @@ void SettingsScreen::adjust(int direction, SettingsScreenResult& result) {
         // A name is typed -- see press_row() -- and a color chosen.
         case Row::DsNickname:
         case Row::DsFavoriteColor:
-        case Row::DsBirthday: break;
+        case Row::DsBirthMonth:
+        case Row::DsBirthDay: break;
         case Row::Vsync:
             settings_.vsync = !settings_.vsync;
             result.settings_changed = true;
@@ -669,7 +667,6 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
     // A row's choices, up beside it, take every press until put away.
     if (choice_.is_open()) {
         const ChoicePopupResult chosen = choice_.update(actions, pointers, output_width, output_height);
-        if (chosen.closed) birth_month_choosing_ = 0;
         if (chosen.chosen >= 0) choose(chosen.chosen, result);
         if (chosen.close_everything) {
             result.close_requested = true;
@@ -798,10 +795,10 @@ void SettingsScreen::render(QuadRenderer& quads,
                                std::clamp(settings_.ds_favorite_color, 0,
                                           static_cast<int>(kDsFavoriteColors.size()) - 1))]
              .name},
-        {"Birthday", settings_.ds_birth_month >= 1 && settings_.ds_birth_month <= 12
-                         ? std::string(kDsMonths[static_cast<std::size_t>(settings_.ds_birth_month - 1)]) +
-                               " " + std::to_string(settings_.ds_birth_day)
-                         : std::string("Not set")},
+        {"Birth Month", settings_.ds_birth_month >= 1 && settings_.ds_birth_month <= 12
+                            ? std::string(kDsMonths[static_cast<std::size_t>(settings_.ds_birth_month - 1)])
+                            : std::string("Not set")},
+        {"Birth Day", settings_.ds_birth_day >= 1 ? std::to_string(settings_.ds_birth_day) : std::string("Not set")},
         {"Vsync", settings_.vsync ? "On" : "Off"},
 #if DS_PLAYS_WII_U
         {"Default Wii U Screen", to_string(settings_.wii_u_screen_alone)},

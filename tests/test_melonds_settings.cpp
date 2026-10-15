@@ -263,20 +263,36 @@ void test_the_ds_owner(const std::string& sandbox) {
     CHECK(press(screen, UiAction::Confirm).settings_changed);
     CHECK_EQ(screen.settings().ds_favorite_color, 3);
 
-    // The birthday: a month, then a day of it; B on the day changes nothing.
+    // The birthday: Birth Month, then Birth Day, each its own row and
+    // dropdown; B changes nothing.
     press(screen, UiAction::Down);
     press(screen, UiAction::Confirm);
     press(screen, UiAction::Down, 2);  // March
-    CHECK(!press(screen, UiAction::Confirm).settings_changed);
     CHECK(!press(screen, UiAction::Cancel).settings_changed);
     CHECK_EQ(screen.settings().ds_birth_month, 0);
     press(screen, UiAction::Confirm);
     press(screen, UiAction::Down, 2);
-    press(screen, UiAction::Confirm);
-    press(screen, UiAction::Down, 13);  // the 14th
     CHECK(press(screen, UiAction::Confirm).settings_changed);
     CHECK_EQ(screen.settings().ds_birth_month, 3);
-    CHECK_EQ(screen.settings().ds_birth_day, 14);
+    CHECK_EQ(screen.settings().ds_birth_day, 1);
+    press(screen, UiAction::Down);  // Birth Day
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down, 30);  // the 31st, as far as March goes
+    CHECK(press(screen, UiAction::Confirm).settings_changed);
+    CHECK_EQ(screen.settings().ds_birth_day, 31);
+    // A month with fewer days brings the day in with it.
+    press(screen, UiAction::Up);  // Birth Month
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down);  // April
+    CHECK(press(screen, UiAction::Confirm).settings_changed);
+    CHECK_EQ(screen.settings().ds_birth_month, 4);
+    CHECK_EQ(screen.settings().ds_birth_day, 30);
+    // And its days are April's.
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Down, 40);
+    press(screen, UiAction::Confirm);
+    CHECK_EQ(screen.settings().ds_birth_day, 30);
 
     // As the accent: the color exactly, the ring solid in it.
     apply_favorite_color_accent(12);  // Dark Blue
