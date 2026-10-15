@@ -1273,6 +1273,14 @@ void test_options_and_amiibo_cross() {
     CHECK_MSG(wait_for([&]() { return link.take_amiibo_result(result); }),
               "how the scan went never came back");
     CHECK(result == ExternalAmiiboResult::NotAnAmiibo);
+    // Why a good file did not scan: the game not reading any, or reading
+    // only its own figures.
+    for (const ExternalAmiiboResult why : {ExternalAmiiboResult::NotReading, ExternalAmiiboResult::NotItsKind}) {
+        producer.send_amiibo_result(why);
+        CHECK_MSG(wait_for([&]() { return link.take_amiibo_result(result); }),
+                  "why the scan failed never came back");
+        CHECK(result == why);
+    }
 }
 
 // A game's own dialogs -- its keyboard, its error messages -- shown by the

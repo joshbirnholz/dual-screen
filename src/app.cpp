@@ -2345,6 +2345,14 @@ void App::Impl::send_pending_amiibo() {
                 log_warn("amiibo: Cemu says the file is not an amiibo");
                 show_corner_notice("That file isn't an amiibo.");
                 break;
+            case ExternalAmiiboResult::NotReading:
+                log_warn("amiibo: the game isn't reading amiibo right now");
+                show_corner_notice("The game isn't reading amiibo right now.");
+                break;
+            case ExternalAmiiboResult::NotItsKind:
+                log_warn("amiibo: the game reads NFC figures, but not amiibo");
+                show_corner_notice("This game doesn't read amiibo, only its own figures.");
+                break;
             case ExternalAmiiboResult::NoGame:
                 log_warn("amiibo: no game was running to scan it in");
                 break;
