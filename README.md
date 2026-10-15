@@ -415,6 +415,12 @@ Three things are different about a Wii U session:
   saved controller profiles are left as they were: a game with nothing chosen
   gets what Cemu started with.
 
+  A player's controller is only plugged in while a pad is feeding it: unplug
+  the pad, or move it off the player in Controller Order, and the game sees
+  that controller disconnect, as a real one's would; it comes back, as the
+  type this game wants, when a pad does. So a game never counts controllers
+  nobody is holding.
+
 - **A game's own dialogs** -- its keyboard, when it asks for a name (a horse's
   in Breath of the Wild), and its error messages -- are this app's popups
   rather than Cemu's small windows. The keyboard is the popup a DS nickname is
