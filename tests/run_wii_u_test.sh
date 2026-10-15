@@ -174,6 +174,14 @@ run_session solo
         echo "menu: Cemu was never handed the menu going away to animate" >&2
         FAILED=1
     fi
+    # The game stays paused until the menu has gone: going on under it, it
+    # swapped the blur behind the menu for plain darkening as it left.
+    away_line=$(grep -n "the menu is going away" "$game_log" 2>/dev/null | tail -1 | cut -d: -f1)
+    on_line=$(grep -n "going on" "$game_log" 2>/dev/null | tail -1 | cut -d: -f1)
+    if [ -z "$on_line" ] || [ -z "$away_line" ] || [ "$on_line" -le "$away_line" ]; then
+        echo "menu: the game went on before the menu had gone away" >&2
+        FAILED=1
+    fi
 }
 
 # And with nothing on the other end at all. The emulator is a separate program

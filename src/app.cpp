@@ -2810,8 +2810,11 @@ void App::Impl::update_wii_u_pause() {
     const bool page_over_game =
         state == State::Menu || state == State::Settings || state == State::Controllers ||
         state == State::DataManagement || state == State::Message || on_cemu_page();
+    // Still paused while the menu goes away, as a Switch's HOME Menu does:
+    // a game going on under it came back mid-way and swapped the blur
+    // behind it for the plain darkening -- a flash as the menu closed.
     external_source->request_pause(pauses_wii_u_for_menu() &&
-                                   (menu_waiting_for_pause || page_over_game));
+                                   (menu_waiting_for_pause || page_over_game || quick_menu_leaving()));
     send_pending_amiibo();
     update_game_dialogs();
     update_cemu_options();
