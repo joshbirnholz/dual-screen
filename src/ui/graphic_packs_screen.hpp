@@ -193,6 +193,8 @@ private:
     bool mirrored_in_pack_ = false;
     int mirrored_item_ = -1;
     ChoicePopup choice_;
+    // The other device's popup cursor as last put here; see show_mirrored().
+    int mirrored_choice_focus_ = -1;
     float last_width_ = 1280.0f;
     float last_height_ = 800.0f;
     std::vector<GuideHit> guide_hits_;

@@ -8,11 +8,13 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
 #include "ui/graphic_packs_screen.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_scroll_sync.hpp"
 
 #include <chrono>
 #include <thread>
@@ -373,6 +375,109 @@ void test_the_other_devices_page_scrolls_under_a_finger() {
     CHECK_EQ(mirror.detail_scroll(), 0.0f);
 }
 
+bool point_on(const GraphicPacksScreen& page, int entry, float width, float height, float& x, float& y);
+
+// The page on both devices at once, as the two apps run it: each pass the
+// connected device takes its finger and says where it has scrolled, and the
+// host takes that and says where it is.
+struct TwoDevices {
+    static constexpr float kOtherWidth = 800.0f;
+    static constexpr float kOtherHeight = 480.0f;
+    GraphicPacksScreen host;
+    GraphicPacksScreen other;
+    MenuScrollSync host_sync{true};
+    MenuScrollSync other_sync{false};
+    net::MenuScrollMessage host_said;
+
+    void pass(const std::vector<PointerEvent>& pointers) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        other.show_mirrored(graphic_packs_view_of(host), kOtherWidth, kOtherHeight);
+        MenuPage::taps_on(other, pointers, kOtherWidth, kOtherHeight);
+        const auto told = other_sync.sync(&other, net::MirroredPage::GraphicPacks, &host_said, kOtherWidth,
+                                          kOtherHeight);
+        host.update({}, {}, kWidth, kHeight);
+        if (const auto said = host_sync.sync(&host, net::MirroredPage::GraphicPacks, told ? &*told : nullptr,
+                                             kWidth, kHeight)) {
+            host_said = *said;
+        }
+        other.show_mirrored(graphic_packs_view_of(host), kOtherWidth, kOtherHeight);
+    }
+
+    // A finger dragged up the other device's page from (x, y) by `distance`.
+    void drag_up(float x, float y, float distance) {
+        PointerEvent down;
+        down.x = down.press_x = x;
+        down.y = down.press_y = y;
+        down.pressed = true;
+        down.normalized = false;
+        set_live_pointer(true, x, y);
+        pass({down});
+        for (int step = 1; step <= 10; ++step) {
+            set_live_pointer(true, x, y - distance * static_cast<float>(step) / 10.0f);
+            pass({});
+        }
+        for (int step = 0; step < 8; ++step) pass({});
+        PointerEvent up = down;
+        up.pressed = false;
+        up.released = true;
+        up.y = y - distance;
+        set_live_pointer(false, x, up.y);
+        pass({up});
+        // And a good while after, for anything that would pull it back.
+        for (int step = 0; step < 40; ++step) pass({});
+    }
+};
+
+std::vector<ExternalGraphicPack> many_packs() {
+    std::vector<ExternalGraphicPack> packs;
+    for (int index = 0; index < 30; ++index) {
+        ExternalGraphicPack pack;
+        pack.id = "pack" + std::to_string(index);
+        pack.path = "Some Game/Mods/Pack " + std::to_string(100 + index);
+        pack.name = "Pack " + std::to_string(100 + index);
+        std::vector<std::string> presets;
+        for (int preset = 0; preset < 30; ++preset) presets.push_back("Preset " + std::to_string(preset));
+        pack.choices.push_back({"Speed", presets, 0});
+        packs.push_back(pack);
+    }
+    return packs;
+}
+
+// A finger on the connected device moves the list there as far as it moved,
+// the host follows, and nothing puts either back once the finger lifts.
+void test_a_finger_on_the_other_device_scrolls_both() {
+    TwoDevices devices;
+    devices.host.open();
+    devices.host.set_packs(many_packs());
+    devices.pass({});
+    devices.drag_up(TwoDevices::kOtherWidth * 0.2f, TwoDevices::kOtherHeight * 0.8f, 200.0f);
+    const float moved = devices.other.list_scroll();
+    CHECK_MSG(moved > 180.0f, "the list moved " + std::to_string(moved) + " under a 200-pixel drag");
+    CHECK_MSG(devices.host.list_scroll() > 100.0f, "the host's list did not follow");
+}
+
+// The same for an option's dropdown, open on both.
+void test_a_finger_on_the_other_device_scrolls_a_dropdown() {
+    TwoDevices devices;
+    devices.host.open();
+    devices.host.set_packs(many_packs());
+    devices.host.update({UiAction::Right}, {}, kWidth, kHeight);
+    devices.host.update({UiAction::Down}, {}, kWidth, kHeight);
+    devices.host.update({UiAction::Confirm}, {}, kWidth, kHeight);
+    devices.pass({});
+    CHECK(devices.host.choosing() && devices.other.choosing());
+    float x = 0.0f;
+    float y = 0.0f;
+    CHECK(point_on(devices.other, GraphicPacksScreen::kChoiceEntryBase + 4, TwoDevices::kOtherWidth,
+                   TwoDevices::kOtherHeight, x, y));
+    devices.drag_up(x, y, 120.0f);
+    const float rows = devices.other.scroll_state(TwoDevices::kOtherWidth, TwoDevices::kOtherHeight)[2];
+    CHECK_MSG(rows > 1.5f, "the dropdown here scrolled " + std::to_string(rows) + " rows");
+    const float host_rows = devices.host.scroll_state(kWidth, kHeight)[2];
+    CHECK_MSG(std::abs(host_rows - rows) < 0.01f,
+              "the host's dropdown is at " + std::to_string(host_rows) + " rows, not " + std::to_string(rows));
+}
+
 // Where on a page drawn at a size an entry is, found by looking.
 bool point_on(const GraphicPacksScreen& page, int entry, float width, float height, float& x, float& y) {
     for (y = 2.0f; y < height; y += 3.0f) {
@@ -455,6 +560,8 @@ int main() {
     test_a_menus_face_buttons_are_not_this_pages();
     test_the_page_is_drawn_on_the_other_device_as_it_is();
     test_the_other_devices_page_scrolls_under_a_finger();
+    test_a_finger_on_the_other_device_scrolls_both();
+    test_a_finger_on_the_other_device_scrolls_a_dropdown();
     test_taps_on_the_other_devices_page_work_it();
     return test::finish("graphic-packs");
 }

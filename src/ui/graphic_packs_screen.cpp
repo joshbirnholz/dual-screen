@@ -792,14 +792,23 @@ void GraphicPacksScreen::show_mirrored(const net::GraphicPacksViewMessage& view,
     const Geometry geometry = compute_geometry(output_width, output_height);
     scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
     detail_scroll_ = std::max(0.0f, std::min(detail_scroll_, geometry.detail_max_scroll()));
-    // The host's popup, with its cursor.
+    // The host's popup, with its cursor -- which brings the list with it
+    // only when it moves, as the page's does: put there every pass, it put
+    // the list back under the cursor as fast as a finger here could move it.
     if (view.choice_focus == 0) {
         choice_.close();
+        mirrored_choice_focus_ = -1;
     } else {
         last_width_ = output_width;
         last_height_ = output_height;
-        if (!choice_.is_open()) open_choice(compute_geometry(output_width, output_height));
-        choice_.set_focus(view.choice_focus - 1);
+        if (!choice_.is_open()) {
+            open_choice(compute_geometry(output_width, output_height));
+            mirrored_choice_focus_ = -1;
+        }
+        if (view.choice_focus - 1 != mirrored_choice_focus_) {
+            choice_.set_focus(view.choice_focus - 1);
+            mirrored_choice_focus_ = view.choice_focus - 1;
+        }
     }
 }
 
