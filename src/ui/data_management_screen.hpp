@@ -45,6 +45,13 @@ struct DataManagementResult {
 // asked; the store's own operations are quick file moves and run here.
 class DataManagementScreen : public MenuPage {
 public:
+    // Lets go of its pictures before the GL context they live in does; they
+    // are made again the next time they are drawn.
+    void release_textures() {
+        ui_icons_.destroy();
+        ui_icons_tried_ = false;
+        game_icons_.clear();
+    }
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
     // `own_instance` is this app's answer to a search, left out of its own.

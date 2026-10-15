@@ -37,6 +37,12 @@ struct ControllersScreenResult {
 // controller on the focused row gives a short buzz.
 class ControllersScreen : public MenuPage {
 public:
+    // Lets go of its icons before the GL context they live in does; they are
+    // loaded again the next time they are drawn.
+    void release_textures() {
+        icons_.destroy();
+        icons_tried_ = false;
+    }
     // What a press here could have changed -- see UiSoundJudge.
     void describe_for_sound(UiSoundView& view) const;
     void open();

@@ -160,9 +160,14 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph);
 class ButtonGlyphSheet {
 public:
     bool initialize(std::string* error);
+    // Every texture it has, so initialize() makes them all again: one left
+    // behind keeps a name from the old context, and the next context hands
+    // that name to something else -- the Swap Screens button drew the whole
+    // button sheet, and the stylus hand the swap arrows.
     void shutdown() {
         texture_.destroy();
         stylus_hand_.destroy();
+        swap_screens_.destroy();
     }
     bool valid() const { return texture_.valid(); }
 

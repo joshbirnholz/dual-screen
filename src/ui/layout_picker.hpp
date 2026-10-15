@@ -337,6 +337,8 @@ public:
             slot_pictures_[slot].destroy();
             slot_pictures_dirty_[slot] = true;
         }
+        ui_icons_.destroy();
+        ui_icons_tried_ = false;
     }
     void set_save_status(std::string status, bool failed);
     // Puts the save status up as a popup with an OK to dismiss it -- see

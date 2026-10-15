@@ -1361,6 +1361,13 @@ void App::Impl::destroy_window() {
     if (picker) {
         picker->release_textures();
     }
+    controllers_screen.release_textures();
+    mirrored_controllers.release_textures();
+    if (data_screen) data_screen->release_textures();
+    // The game's icon, which is kept while it is the same game: kept across
+    // a new context, its name came to mean another texture, drawn garbled.
+    game_icon = Texture();
+    game_icon_for.clear();
     bezel_art.destroy();
     // And the button prompts, which rebuild_renderer() loads again: loaded
     // into textures left over from the old context instead, they came back
