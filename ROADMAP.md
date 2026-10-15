@@ -69,12 +69,26 @@ numbers can change freely.
   connections (needs WoL enabled on the PC; a Steam Deck cannot be woken
   this way).
 
+- The background service should also be able to make the device visible
+  for save data syncing even when Dualscreen isn't open, making automatic
+  save file syncing more useful.
+
 - **Microphone, on every platform.** Captured through SDL (Linux, Android,
   iOS) and the Switch's audio input; fed to melonDS DS and Azahar through
   libretro's microphone interface, and to Cemu as the GamePad's (needs the
   fork). A connected device can send its own. Game Options: **Microphone:
   This Device / *device name* / Blow Only / Off** -- Blow Only plays breath
   noise while a button is held.
+
+- The app should be able to make it as easy as possible to connect with
+  other devices running Dualscreen, even if those devices aren't on the same
+  network, or there is no Internet or Wifi connection at all. This could mean
+  enabling a device to be used as a hotspot so that other devices can connect
+  to it. Dualscreen should be able to facilitate both sides of this to make
+  things as easy as possible. On Switch, one switch playing a DS game could
+  connect to another Switch acting as a companion, and be able to connect
+  using the Switch's native local wireless. Should look into what, if any,
+  similar options are available on other platforms.
 
 ## Low priority
 
