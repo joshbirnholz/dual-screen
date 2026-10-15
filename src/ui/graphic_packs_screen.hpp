@@ -39,6 +39,12 @@ struct GraphicPackLine {
 };
 std::vector<GraphicPackLine> graphic_pack_lines(const std::vector<ExternalGraphicPack>& packs);
 
+// Whether a pack's preset is only a divider over the ones after it, as the
+// community's packs write them -- "---- Ultra wide 21:9 ----" -- and the
+// words to show for one: the dashes gone.
+bool graphic_pack_divider(const std::string& preset);
+std::string graphic_pack_divider_label(const std::string& preset);
+
 // The running Wii U game's graphics packs, from the quick menu, laid out as
 // both that menu and Cemu's own Graphic Packs window are: the packs listed on
 // the left, and on the right the one highlighted there -- on or off, its

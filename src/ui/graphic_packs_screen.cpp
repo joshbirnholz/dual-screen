@@ -41,6 +41,31 @@ std::string lower(std::string text) {
 
 }  // namespace
 
+bool graphic_pack_divider(const std::string& preset) {
+    const std::size_t start = preset.find_first_not_of(' ');
+    return start != std::string::npos && preset.compare(start, 2, "--") == 0;
+}
+
+std::string graphic_pack_divider_label(const std::string& preset) {
+    // Every run of dashes goes ("-- 21:9 -- resolutions" is "21:9
+    // resolutions"), but a lone one between words stays.
+    std::string out;
+    for (std::size_t index = 0; index < preset.size();) {
+        if (preset[index] == '-' && index + 1 < preset.size() && preset[index + 1] == '-') {
+            while (index < preset.size() && preset[index] == '-') ++index;
+            if (!out.empty() && out.back() != ' ') out += ' ';
+            continue;
+        }
+        if (preset[index] == ' ' && (out.empty() || out.back() == ' ')) {
+            ++index;
+            continue;
+        }
+        out += preset[index++];
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    return out;
+}
+
 std::vector<GraphicPackLine> graphic_pack_lines(const std::vector<ExternalGraphicPack>& packs) {
     // Each pack's folders and name, from its path, as Cemu's window files it.
     struct Placed {
@@ -245,8 +270,17 @@ void GraphicPacksScreen::open_choice(const Geometry& geometry) {
     const PixelRect row = item_ < static_cast<int>(geometry.items.size())
                               ? geometry.items[static_cast<std::size_t>(item_)]
                               : geometry.detail;
+    // Dividers among them are headings, without their dashes.
+    std::vector<std::string> labels = choice.presets;
+    std::vector<bool> headings(labels.size(), false);
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        if (!graphic_pack_divider(labels[index])) continue;
+        headings[index] = true;
+        labels[index] = graphic_pack_divider_label(labels[index]);
+    }
     // None chosen yet is the first, as it is shown.
-    choice_.open(choice.presets, choice.active >= 0 ? choice.active : 0, row);
+    choice_.open(std::move(labels), choice.active >= 0 ? choice.active : 0, row);
+    choice_.set_headings(std::move(headings));
 }
 
 void GraphicPacksScreen::choose(int index, GraphicPacksScreenResult& result) {
@@ -254,6 +288,7 @@ void GraphicPacksScreen::choose(int index, GraphicPacksScreenResult& result) {
     if (pack == nullptr || item_ < 1 || item_ >= item_count()) return;
     ExternalGraphicPack::Choice& choice = pack->choices[static_cast<std::size_t>(item_ - 1)];
     if (index < 0 || index >= static_cast<int>(choice.presets.size())) return;
+    if (graphic_pack_divider(choice.presets[static_cast<std::size_t>(index)])) return;
     if (index == (choice.active >= 0 ? choice.active : 0) && choice.active >= 0) return;
     choice.active = index;
     ++packs_revision_;

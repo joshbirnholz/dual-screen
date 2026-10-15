@@ -34,7 +34,8 @@ struct ChoicePopupResult {
 // Where it opens it stays: only what is inside it scrolls.
 //
 // Its choices are words, or -- see set_glyph_pairs() and open_colors() -- a
-// pair of buttons, or a grid of colors.
+// pair of buttons, or a grid of colors. Some can be headings over the ones
+// after them -- see set_headings().
 class ChoicePopup {
 public:
     // Up over `row`, the row whose value it is, with `current` filled.
@@ -46,6 +47,13 @@ public:
     // After open(): each choice drawn as two buttons, "first / second", in
     // place of its words -- `aspect` is a glyph's width for its height.
     void set_glyph_pairs(std::vector<std::pair<ButtonGlyph, ButtonGlyph>> pairs, float aspect);
+    // After open(): which choices are only headings over the ones after them.
+    // They are drawn dim, without a circle, and cannot be chosen: the cursor
+    // passes over them, and a tap on one does nothing.
+    void set_headings(std::vector<bool> headings);
+    bool heading(int index) const {
+        return index >= 0 && index < static_cast<int>(headings_.size()) && headings_[static_cast<std::size_t>(index)];
+    }
     void close() { open_ = false; }
     bool is_open() const { return open_; }
     const std::vector<std::string>& choices() const { return choices_; }
@@ -99,12 +107,16 @@ private:
     void keep_focus_in_view(int visible);
     bool grid() const { return columns_ > 0; }
     float max_scroll_rows(int visible) const;
+    // The next choice that is not a heading from `from`, `step` at a time,
+    // or -1.
+    int next_choice(int from, int step) const;
 
     bool open_ = false;
     std::vector<std::string> choices_;
     std::vector<std::pair<ButtonGlyph, ButtonGlyph>> glyph_pairs_;
     float glyph_aspect_ = 1.0f;
     std::vector<Color> colors_;
+    std::vector<bool> headings_;
     int columns_ = 0;
     int current_ = -1;
     int focus_ = 0;

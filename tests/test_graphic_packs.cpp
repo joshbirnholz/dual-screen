@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "ui/choice_popup.hpp"
 #include "ui/graphic_packs_screen.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/menu_scroll_sync.hpp"
@@ -564,6 +565,89 @@ void test_taps_on_the_other_devices_page_work_it() {
     CHECK(!host.choosing());
 }
 
+// Wind Waker's resolution pack, as the community writes it: some of its
+// presets are only dividers between groups of the others.
+void test_a_packs_dividers_cannot_be_chosen() {
+    CHECK(graphic_pack_divider("---- Ultra wide 21:9 ----"));
+    CHECK(graphic_pack_divider("-- 21:9 -- resolutions"));
+    CHECK(!graphic_pack_divider("1280x720"));
+    CHECK(!graphic_pack_divider("+2 LOD 34 smooth ocean mipmap transition."));
+    CHECK(graphic_pack_divider_label("---- Ultra wide 21:9 ----") == std::string("Ultra wide 21:9"));
+    CHECK(graphic_pack_divider_label("-- 21:9 -- resolutions") == std::string("21:9 resolutions"));
+    CHECK(graphic_pack_divider_label("--- SSAA vert res x2 - Set scaling to Stretch") ==
+          "SSAA vert res x2 - Set scaling to Stretch");
+
+    std::vector<ExternalGraphicPack> packs(1);
+    packs[0].id = "res";
+    packs[0].path = "The Wind Waker HD/Graphics/Resolution";
+    packs[0].name = "Resolution";
+    packs[0].enabled = true;
+    packs[0].choices.push_back({"", {"1920x1080 (Default)", "1280x720", "---- Ultra wide 21:9 ----",
+                                     "2560x1080 (21:9 HD)", "---- Superwide 32:9 ----", "5120x1440 (32:9)"},
+                                1});
+    GraphicPacksScreen screen;
+    screen.open();
+    screen.set_packs(packs);
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Down);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.choosing());
+    CHECK_EQ(screen.choice_focus(), 1);
+    // The cursor passes over the dividers, and stops at the last choice.
+    press(screen, UiAction::Down);
+    CHECK_EQ(screen.choice_focus(), 3);
+    press(screen, UiAction::Down);
+    CHECK_EQ(screen.choice_focus(), 5);
+    press(screen, UiAction::Down);
+    CHECK_EQ(screen.choice_focus(), 5);
+    press(screen, UiAction::Up);
+    CHECK_EQ(screen.choice_focus(), 3);
+    press(screen, UiAction::Up);
+    CHECK_EQ(screen.choice_focus(), 1);
+    // And the one chosen is the one under it.
+    press(screen, UiAction::Down);
+    GraphicPacksScreenResult result = press(screen, UiAction::Confirm);
+    CHECK(result.change && result.change->preset == "2560x1080 (21:9 HD)");
+
+    // A tap on a divider does nothing: no choice, the dropdown still up.
+    ChoicePopup popup;
+    popup.open({"1280x720", "Ultra wide 21:9", "2560x1080", "3440x1440"}, 0,
+               PixelRect{100.0f, 300.0f, 900.0f, 50.0f});
+    popup.set_headings({false, true, false, false});
+    float divider_y = -1.0f;
+    for (float y = 0.0f; y < kHeight && divider_y < 0.0f; y += 1.0f) {
+        const float x = 950.0f;
+        if (popup.contains(x, y, kWidth, kHeight) && popup.choice_at(x, y, kWidth, kHeight) < 0) {
+            // Inside, on no choice: the box's padding, or the divider. The
+            // divider is the one with a choice both over and under it.
+            int above = -1;
+            int below = -1;
+            for (float up = y; up > 0.0f && above < 0; up -= 1.0f) above = popup.choice_at(x, up, kWidth, kHeight);
+            for (float down = y; down < kHeight && below < 0; down += 1.0f) {
+                below = popup.choice_at(x, down, kWidth, kHeight);
+            }
+            if (above == 0 && below == 2) divider_y = y + 2.0f;
+        }
+    }
+    CHECK_MSG(divider_y >= 0.0f, "no row between the first choice and the third");
+    PointerEvent tap;
+    tap.x = tap.press_x = 950.0f;
+    tap.y = tap.press_y = divider_y;
+    tap.released = true;
+    tap.normalized = false;
+    const ChoicePopupResult answer = popup.update({}, {tap}, kWidth, kHeight);
+    CHECK_EQ(answer.chosen, -1);
+    CHECK(!answer.closed);
+    CHECK(popup.is_open());
+
+    // Opened on a divider -- chosen in Cemu's own window, say -- the cursor
+    // starts on the choice under it.
+    ChoicePopup on_divider;
+    on_divider.open({"1280x720", "Ultra wide 21:9", "2560x1080"}, 1, PixelRect{100.0f, 300.0f, 900.0f, 50.0f});
+    on_divider.set_headings({false, true, false});
+    CHECK_EQ(on_divider.focus(), 2);
+}
+
 int main() {
     test_packs_are_grouped_as_cemu_files_them();
     test_into_a_pack_and_back_out_as_in_the_quick_menu();
@@ -576,5 +660,6 @@ int main() {
     test_a_finger_on_the_other_device_scrolls_both();
     test_a_finger_on_the_other_device_scrolls_a_dropdown();
     test_taps_on_the_other_devices_page_work_it();
+    test_a_packs_dividers_cannot_be_chosen();
     return test::finish("graphic-packs");
 }

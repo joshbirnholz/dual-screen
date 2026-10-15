@@ -19,6 +19,7 @@ constexpr int kMostShown = 6;
 void ChoicePopup::open(std::vector<std::string> choices, int current, const PixelRect& row) {
     choices_ = std::move(choices);
     glyph_pairs_.clear();
+    headings_.clear();
     colors_.clear();
     columns_ = 0;
     current_ = current >= 0 && current < static_cast<int>(choices_.size()) ? current : -1;
@@ -49,8 +50,30 @@ void ChoicePopup::set_glyph_pairs(std::vector<std::pair<ButtonGlyph, ButtonGlyph
     glyph_aspect_ = aspect > 0.0f ? aspect : 1.0f;
 }
 
+void ChoicePopup::set_headings(std::vector<bool> headings) {
+    headings_ = std::move(headings);
+    if (!heading(focus_)) return;
+    // The cursor on the first choice under it, or failing that over it.
+    int focus = next_choice(focus_, 1);
+    if (focus < 0) focus = next_choice(focus_, -1);
+    if (focus < 0) {
+        open_ = false;
+        return;
+    }
+    focus_ = focus;
+    keep_focus_in_view(kMostShown);
+}
+
+int ChoicePopup::next_choice(int from, int step) const {
+    const int count = static_cast<int>(choices_.size());
+    for (int index = from + step; index >= 0 && index < count; index += step) {
+        if (!heading(index)) return index;
+    }
+    return -1;
+}
+
 void ChoicePopup::set_focus(int focus) {
-    if (focus < 0 || focus >= static_cast<int>(choices_.size())) return;
+    if (focus < 0 || focus >= static_cast<int>(choices_.size()) || heading(focus)) return;
     focus_ = focus;
     keep_focus_in_view(kMostShown);
 }
@@ -64,7 +87,10 @@ void ChoicePopup::keep_focus_in_view(int visible) {
     const int count = static_cast<int>(choices_.size());
     visible = std::max(1, std::min(visible, count));
     const float at = static_cast<float>(focus_);
-    if (at < scroll_rows_) scroll_rows_ = at;
+    // A heading just over the cursor comes into view with it, so what the
+    // choice is under is not left out of sight.
+    const float top = visible > 1 && heading(focus_ - 1) ? at - 1.0f : at;
+    if (top < scroll_rows_) scroll_rows_ = top;
     if (at + 1.0f > scroll_rows_ + static_cast<float>(visible)) scroll_rows_ = at + 1.0f - static_cast<float>(visible);
     scroll_rows_ = std::clamp(scroll_rows_, 0.0f, max_scroll_rows(visible));
 }
@@ -159,7 +185,7 @@ int ChoicePopup::choice_at(float x, float y, float output_width, float output_he
     const Geometry shape = geometry(output_width, output_height);
     if (!shape.list.contains(x, y)) return -1;
     for (std::size_t index = 0; index < shape.rows.size(); ++index) {
-        if (shape.rows[index].contains(x, y)) return static_cast<int>(index);
+        if (shape.rows[index].contains(x, y)) return heading(static_cast<int>(index)) ? -1 : static_cast<int>(index);
     }
     return -1;
 }
@@ -196,10 +222,18 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
     for (const UiAction action : actions) {
         switch (action) {
             case UiAction::Up:
-                if (focus_ - step >= 0) focus_ -= step;
+                if (grid()) {
+                    if (focus_ - step >= 0) focus_ -= step;
+                } else if (const int next = next_choice(focus_, -1); next >= 0) {
+                    focus_ = next;
+                }
                 break;
             case UiAction::Down:
-                if (focus_ + step < count) focus_ += step;
+                if (grid()) {
+                    if (focus_ + step < count) focus_ += step;
+                } else if (const int next = next_choice(focus_, 1); next >= 0) {
+                    focus_ = next;
+                }
                 break;
             case UiAction::Left:
                 if (grid() && focus_ % columns_ > 0) --focus_;
@@ -238,7 +272,7 @@ ChoicePopupResult ChoicePopup::update(const std::vector<UiAction>& actions,
             if (drag_.release_was_drag()) continue;
             for (std::size_t index = 0; index < shape.rows.size(); ++index) {
                 if (!tapped(pointer, shape.rows[index]) ||
-                    !shape.list.contains(pointer.x, pointer.y)) {
+                    !shape.list.contains(pointer.x, pointer.y) || heading(static_cast<int>(index))) {
                     continue;
                 }
                 // Chosen at once: the list is already the question, and a
@@ -316,6 +350,13 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
     for (std::size_t index = 0; index < shape.rows.size(); ++index) {
         const PixelRect& row = shape.rows[index];
         if (row.y + row.h < shape.list.y || row.y > shape.list.y + shape.list.h) continue;
+        if (heading(static_cast<int>(index))) {
+            // A heading: dim, from where the circles start, and nothing else.
+            draw_fitted_text(quads, text, choices_[index], row.x + pad_x,
+                             std::round(row.y + (row.h - line) * 0.5f), row.w - pad_x - line * 0.4f, scale,
+                             theme.text_dim, TextAlign::Left, false, 0.0f);
+            continue;
+        }
         const bool focused = static_cast<int>(index) == focus_;
         const bool chosen = static_cast<int>(index) == current_;
         if (focused) draw_menu_cursor(quads, row, std::round(std::min(row.h * 0.3f, radius)), scale);
