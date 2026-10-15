@@ -8,6 +8,31 @@ numbers can change freely.
 
 ## Next up
 
+1. There are issues animating the quick menu out. In Cemu, the quick menu can
+   briefly be seen with the text in the top right about "switch to its window"
+   while the menu is animating out. While animating out, it seems to use the
+   menu content from the main Dualscreen window, not Cemu. Meanwhile for DS
+   and 3DS games, the menu doesn't animate out at all, it just disappears
+   without animation.
+
+2. There is an issue in which dropdown pickers with more content than can fit
+   on-screen at once, such as the 3DS's render scale options list, when
+   scrolled from a connected device, jump back to fit the highlighted row on-
+   screen. This means they can't be scrolled to the bottom.
+
+3. Dropdown menus with a lot of options now take up most of the screen's
+   height to show their content, which is better than before. They look too
+   tall though. They should have a max height that's a middleground between
+   the current approach and the previous max height that used to exist.
+
+4. When scanning an amiibo, it should check if there would be an error
+   with that amiibo before the delay in scanning. If it's not valid for some
+   reason, it should show that error before trying the four second delay.
+   It should also check if the game is looking for an amiibo and show that
+   error before scanning if it's not as well. It also needs to check this
+   again after the delay, in case the game has stopped looking for amiibo
+   in those four seconds.
+
 ### Controls
 
 1. **Controls for DS and 3DS games.** A Wii U's quick menu has Controls
@@ -50,7 +75,7 @@ numbers can change freely.
 
 ## Low priority
 
-5. **Screenshot on the Capture button.** Both screens as laid out, saved
+5. **Screenshot, mappable to a button.** Both screens as laid out, saved
     where Steam keeps screenshots on a Deck.
 
 6. **Rewind and fast-forward for DS.** Hold to rewind, from the save state
