@@ -18,7 +18,7 @@ namespace ds {
 class StylusCursor {
 public:
     // A full push crosses the screen's width in this long.
-    static constexpr float kCrossingSeconds = 0.8f;
+    static constexpr float kCrossingSeconds = 0.65f;
     // How long it stays after it was last moved or pressed, and how long it
     // takes to fade at the end of that.
     static constexpr float kShownSeconds = 2.5f;

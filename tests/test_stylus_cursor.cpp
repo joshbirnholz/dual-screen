@@ -29,9 +29,9 @@ void test_a_push_moves_it_and_a_small_one_barely() {
     cursor.update(5000, 0, false, kDeadzone, kFrame, 256, 192);
     CHECK_EQ(cursor.x(), 128);
 
-    // Full right for a tenth of a second: an eighth of the way across.
+    // Full right for a tenth of a second: about a sixth of the way across.
     for (int frame = 0; frame < 6; ++frame) cursor.update(32767, 0, false, kDeadzone, kFrame, 256, 192);
-    CHECK_MSG(cursor.x() >= 155 && cursor.x() <= 166, "a full push moved to " + std::to_string(cursor.x()));
+    CHECK_MSG(cursor.x() >= 162 && cursor.x() <= 172, "a full push moved to " + std::to_string(cursor.x()));
     CHECK_EQ(cursor.y(), 96);
     CHECK_NEAR(cursor.opacity(), 1.0f);
 
