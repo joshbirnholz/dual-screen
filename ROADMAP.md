@@ -11,25 +11,21 @@ numbers can change freely.
 ### Fixes, easiest first
 
 1. **Quick menu animation over a Cemu game** is not as smooth as over a DS
-   or 3DS game.
-
-2. **Long names in Graphics Packs.** A pack's setting names, and the choices
-   in its dropdowns, are cut off -- worst where both are long. Needs a
-   solution (e.g. the highlighted row's text scrolling to show the rest, as
-   the Switch does, and dropdowns wide enough for their longest choice).
-
-3. **The highlighted row in view on a smaller following screen.** A device
-   following the other's scroll keeps the highlighted row on screen when it
-   fits fewer rows than the other does.
+   or 3DS game. Cause: the fork makes a new texture for the overlay at most
+   every 50 ms and shows it two frames later (replacing one waits for the
+   GPU), so the animation runs at about 20 fps there. Fix: Cemu animates it
+   -- the app sends the backdrop and the menu as two still pictures and an
+   entering/leaving signal, and Cemu fades and scales them every frame with
+   MenuEntrance's curves; both repos.
 
 ### Controls
 
-4. **"Controller Order" becomes "Controls"** in the Wii U quick menu. The
+2. **"Controller Order" becomes "Controls"** in the Wii U quick menu. The
    Player 1-4 controller types move into it, with a button on it that opens
    the Controller Order screen. It is where remapping goes, so DS and 3DS
    games get the tab too.
 
-5. **Per-game button remapping** -- the next major feature. **Show mockups
+3. **Per-game button remapping** -- the next major feature. **Show mockups
    first**: the Controls page in the quick menu, and any subscreen opened
    from it. A controller diagram, as Nintendo Classics has, each button
    opening a list of actions: the console's buttons, Quick Menu, Swap
@@ -43,7 +39,7 @@ numbers can change freely.
 
 ### After remapping
 
-6. **Starting a session from a connected device.** Not to be worked on
+4. **Starting a session from a connected device.** Not to be worked on
     until remapping is done. Half built on the branch
     `claude/remote-start-wip`: the Steam `shortcuts.vdf` reader and game
     list, the background service (`dualscreen --service`, a systemd user
@@ -55,7 +51,7 @@ numbers can change freely.
     connections (needs WoL enabled on the PC; a Steam Deck cannot be woken
     this way).
 
-7. **Microphone, on every platform.** Captured through SDL (Linux, Android,
+5. **Microphone, on every platform.** Captured through SDL (Linux, Android,
     iOS) and the Switch's audio input; fed to melonDS DS and Azahar through
     libretro's microphone interface, and to Cemu as the GamePad's (needs the
     fork). A connected device can send its own. Game Options: **Microphone:
@@ -64,17 +60,17 @@ numbers can change freely.
 
 ## Low priority
 
-8. **Screenshot on the Capture button.** Both screens as laid out, saved
+6. **Screenshot on the Capture button.** Both screens as laid out, saved
     where Steam keeps screenshots on a Deck.
 
-9. **Rewind and fast-forward for DS.** Hold to rewind, from the save state
+7. **Rewind and fast-forward for DS.** Hold to rewind, from the save state
     support already there.
 
-10. **Game library.** A grid of games with art. Mostly covered by Steam
+8. **Game library.** A grid of games with art. Mostly covered by Steam
     shortcuts, and starting a session from a connected
     device gives it a list anyway.
 
-11. **Hand a game off to another device.** "Continue on *device*": its resume
+9. **Hand a game off to another device.** "Continue on *device*": its resume
     point moved over and started there. Save states only load in the same
     core (a Deck and an Android tablet running the same melonDS DS can trade
     them; the Switch's own melonDS port cannot), so elsewhere it falls back to

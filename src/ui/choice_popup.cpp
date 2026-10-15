@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/fitted_text.hpp"
 #include "ui/popup.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -302,6 +303,12 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
     }
 
     quads.set_clip(shape.list);
+    const auto now = std::chrono::steady_clock::now();
+    if (focus_ != drawn_focus_) {
+        drawn_focus_ = focus_;
+        focus_since_ = now;
+    }
+    const float focus_seconds = std::chrono::duration<float>(now - focus_since_).count();
     const float circle = std::round(line * 1.0f);
     const float pad_x = std::round(line * 0.9f) - std::round(line * 0.35f);
     const float gap = std::round(line * 0.7f);
@@ -338,9 +345,9 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
             glyphs->draw(quads, glyph_pairs_[index].second, pen_x, glyph_y, height, theme.text);
             continue;
         }
-        text.draw(quads,
-                  TextRenderer::elide_right(choices_[index], row.x + row.w - text_x - line * 0.4f, scale),
-                  text_x, std::round(row.y + (row.h - line) * 0.5f), scale, theme.text);
+        draw_fitted_text(quads, text, choices_[index], text_x, std::round(row.y + (row.h - line) * 0.5f),
+                         row.x + row.w - text_x - line * 0.4f, scale, theme.text, TextAlign::Left, focused,
+                         focus_seconds);
     }
     quads.clear_clip();
 

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 
+#include "ui/fitted_text.hpp"
 #include "ui/page_frame.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -619,6 +620,13 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
     const PageFrame frame = page_frame(output_width, output_height);
     draw_page_background(quads, output_width, output_height, over_game_);
     draw_page_header(quads, text, frame, "Graphics Packs");
+    const auto now = std::chrono::steady_clock::now();
+    const int highlight = focus_ * 4096 + (in_pack_ ? item_ + 1 : 0);
+    if (highlight != highlight_) {
+        highlight_ = highlight;
+        highlight_since_ = now;
+    }
+    const float highlight_seconds = std::chrono::duration<float>(now - highlight_since_).count();
 
     if (waiting_ || packs_.empty()) {
         // Said in the middle of the page, where the list would be.
@@ -660,8 +668,8 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                           TextAlign::Right);
                 label_room -= TextRenderer::measure_width("On", value_scale) + pad;
             }
-            text.draw(quads, TextRenderer::elide_right(entry.text, label_room, row_scale),
-                      row.x + pad, baseline, row_scale, ink);
+            draw_fitted_text(quads, text, entry.text, row.x + pad, baseline, label_room, row_scale, ink,
+                             TextAlign::Left, focused, highlight_seconds);
         }
         quads.clear_clip();
         if (geometry.max_scroll() > 0.5f) {
@@ -679,10 +687,9 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
             quads.set_clip(area);
             const float title_scale = scale * 1.25f;
             const int line_index = line_of_focus(focus_);
-            text.draw(quads,
-                      TextRenderer::elide_right(lines_[static_cast<std::size_t>(line_index)].text,
-                                                area.w, title_scale),
-                      area.x, geometry.title_y, title_scale, theme.text);
+            draw_fitted_text(quads, text, lines_[static_cast<std::size_t>(line_index)].text, area.x,
+                             geometry.title_y, area.w - scroll_bar_width(scale), title_scale, theme.text,
+                             TextAlign::Left, true, highlight_seconds);
             for (int item = 0; item < static_cast<int>(geometry.items.size()); ++item) {
                 const PixelRect& row = geometry.items[static_cast<std::size_t>(item)];
                 const bool focused = in_pack_ && item == item_;
@@ -693,19 +700,37 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
                 // Turning the pack on and off is a switch; a preset, whatever
                 // it is called, is a choice.
                 const bool toggle = item == 0;
-                const float value_width =
-                    toggle ? line * 2.2f
-                           : std::min(TextRenderer::measure_width(value, row_scale), row.w * 0.55f);
-                text.draw(quads,
-                          TextRenderer::elide_right(item_label(item), row.w - pad * 3.0f - value_width,
-                                                    row_scale),
-                          row.x + pad, baseline, row_scale, menu_row_text(focused));
+                // The row's room shared between the setting and its value as
+                // each needs; what still does not fit slides along while the
+                // cursor is on it.
+                const std::string label = item_label(item);
+                const float room = row.w - pad * 3.0f;
+                float label_room = 0.0f;
+                float value_room = 0.0f;
+                split_row_room(room, TextRenderer::measure_width(label, row_scale),
+                               toggle ? line * 2.2f : TextRenderer::measure_width(value, row_scale), label_room,
+                               value_room);
+                if (toggle) label_room = room - line * 2.2f;
+                // Both too long: the setting slides, then its value.
+                const float speed = TextRenderer::line_height(row_scale) * kFittedTextLinesPerSecond;
+                const float label_cycle =
+                    fitted_text_cycle(TextRenderer::measure_width(label, row_scale) - label_room, speed);
+                const float value_cycle =
+                    toggle ? 0.0f
+                           : fitted_text_cycle(TextRenderer::measure_width(value, row_scale) - value_room, speed);
+                float label_seconds = 0.0f;
+                float value_seconds = 0.0f;
+                const bool label_turn =
+                    fitted_text_turn(label_cycle, value_cycle, highlight_seconds, true, label_seconds);
+                const bool value_turn =
+                    fitted_text_turn(label_cycle, value_cycle, highlight_seconds, false, value_seconds);
+                draw_fitted_text(quads, text, label, row.x + pad, baseline, label_room, row_scale,
+                                 menu_row_text(focused), TextAlign::Left, focused && label_turn, label_seconds);
                 if (toggle) {
                     draw_toggle(quads, row.x + row.w - pad, row.y + row.h * 0.5f, value == "On", line);
                 } else {
-                    text.draw(quads, TextRenderer::elide_right(value, row.w * 0.55f, row_scale),
-                              row.x + row.w - pad, baseline, row_scale, theme.text_dim,
-                              TextAlign::Right);
+                    draw_fitted_text(quads, text, value, row.x + row.w - pad, baseline, value_room, row_scale,
+                                     theme.text_dim, TextAlign::Right, focused && value_turn, value_seconds);
                 }
             }
             // Cemu's descriptions keep their own line breaks.

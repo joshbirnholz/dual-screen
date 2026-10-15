@@ -296,6 +296,8 @@ void QuadRenderer::begin_frame(int output_width, int output_height, float target
     target_scale_ = target_scale > 0.0f ? target_scale : 1.0f;
     opacity_ = 1.0f;
     zoom_ = 1.0f;
+    // reset_render_state() below turns the scissor off.
+    clipped_ = false;
     if (gl::Viewport == nullptr) {
         return;
     }
@@ -318,6 +320,8 @@ void QuadRenderer::set_clip(const PixelRect& rect) {
     if (output_height_ <= 0 || program_ == 0) {
         return;
     }
+    clipped_ = true;
+    clip_ = rect;
     // GL measures from the bottom-left; everything above measures from the
     // top-left, so the box is flipped on its way down.
     // In the target's own pixels, which are fewer than the layout's when it
@@ -336,6 +340,7 @@ void QuadRenderer::set_clip(const PixelRect& rect) {
 }
 
 void QuadRenderer::clear_clip() {
+    clipped_ = false;
     if (program_ == 0) {
         return;
     }

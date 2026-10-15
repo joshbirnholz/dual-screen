@@ -45,6 +45,10 @@ public:
     // one must not spill over its neighbours.
     void set_clip(const PixelRect& rect);
     void clear_clip();
+    // The confinement in effect, if any: for something drawn inside it that
+    // needs a narrower one for a moment and then this one back.
+    bool clipped() const { return clipped_; }
+    const PixelRect& clip() const { return clip_; }
 
     // Everything drawn from here on, this much as opaque as it says -- a
     // whole page faded in at once. 1 until changed, and again each frame.
@@ -174,6 +178,8 @@ private:
     // The alpha disc the capsule caps are cut from. Built on first use rather
     // than at start-up: most of what this renderer draws is rectangles, and a
     // build that never draws a capsule never pays for it.
+    bool clipped_ = false;
+    PixelRect clip_{};
     Texture disc_;
     bool build_disc();
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -106,6 +108,10 @@ private:
     int columns_ = 0;
     int current_ = -1;
     int focus_ = 0;
+    // The choice under the cursor as last drawn, and since when: one too
+    // long for the box slides along -- see draw_fitted_text().
+    int drawn_focus_ = -1;
+    std::chrono::steady_clock::time_point focus_since_{};
     // How far the list is scrolled, in rows, so it means the same at any size.
     float scroll_rows_ = 0.0f;
     // How many rows above the current choice were in view as it opened: the

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <set>
@@ -193,6 +194,10 @@ private:
     bool mirrored_in_pack_ = false;
     int mirrored_item_ = -1;
     ChoicePopup choice_;
+    // Where the cursor is, and since when: the row under it slides a name too
+    // long for it along -- see draw_fitted_text().
+    int highlight_ = -1;
+    std::chrono::steady_clock::time_point highlight_since_{};
     // The other device's popup cursor as last put here; see show_mirrored().
     int mirrored_choice_focus_ = -1;
     float last_width_ = 1280.0f;
