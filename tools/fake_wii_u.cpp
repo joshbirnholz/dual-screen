@@ -14,7 +14,7 @@
 // exercised here is the code a fork of Cemu would link, not a description of it.
 //
 //   fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] [--refuse-pause]
-//              [--ignore-pause]
+//              [--ignore-pause] [--menu-key-at SECONDS]...
 
 #include <chrono>
 #include <cmath>
@@ -133,7 +133,7 @@ std::string describe(const ds::ExternalInput& input) {
 void usage() {
     std::fprintf(stderr,
                  "fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] "
-                 "[--refuse-pause] [--ignore-pause]\n");
+                 "[--refuse-pause] [--ignore-pause] [--menu-key-at SECONDS]...\n");
 }
 
 }  // namespace
@@ -196,6 +196,9 @@ int main(int argc, char** argv) {
     // Never answers one, as a game that does not listen for the HOME Menu
     // never does.
     bool ignore_pause = false;
+    // When to press the menu key in this window -- Tab or F1 in Cemu's --
+    // seconds after starting, as many times as given.
+    std::vector<double> menu_key_at;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -212,6 +215,7 @@ int main(int argc, char** argv) {
         else if (arg == "--pad-only") pad_only = true;
         else if (arg == "--refuse-pause") refuse_pause = true;
         else if (arg == "--ignore-pause") ignore_pause = true;
+        else if (arg == "--menu-key-at") menu_key_at.push_back(std::atof(value().c_str()));
         else {
             usage();
             return 2;
@@ -235,7 +239,7 @@ int main(int argc, char** argv) {
     // only in memory, for the quick menu's Graphics Packs page to change.
     info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause |
                     ds::kExternalFeatureGraphicPacks | ds::kExternalFeatureOptions |
-                    ds::kExternalFeatureAmiibo;
+                    ds::kExternalFeatureAmiibo | ds::kExternalFeatureOverlayAnimation;
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
     // Cemu's options, as its fork offers them, kept only in memory.
     std::vector<ds::ExternalOption> options(5);
@@ -274,10 +278,25 @@ int main(int argc, char** argv) {
             break;
         }
 
+        const double alive = std::chrono::duration<double>(now - started).count();
+        while (!menu_key_at.empty() && alive >= menu_key_at.front()) {
+            menu_key_at.erase(menu_key_at.begin());
+            ds::log_info("pressing the menu key");
+            producer.send_menu_key();
+        }
+
         bool reset = false;
         if (!producer.poll(reset, &error)) {
             ds::log_info("the far end went away: " + error);
             break;
+        }
+        // The menu coming up or going away, as Cemu animates it: taken, and
+        // said, for a test to see.
+        ds::ExternalOverlayAnimationFrames animation;
+        if (producer.take_overlay_animation(animation)) {
+            ds::log_info(std::string("the menu is ") +
+                         (animation.mode == ds::ExternalOverlayAnimation::Mode::Entering ? "coming up" : "going away") +
+                         " (" + std::to_string(animation.width) + "x" + std::to_string(animation.height) + ")");
         }
         if (reset) {
             ds::log_info("restarting, because the player asked");

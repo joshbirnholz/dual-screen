@@ -442,6 +442,9 @@ struct App::Impl {
     // or only a notice, which leaves it to the game.
     bool menu_overlay_takes_input = true;
     bool menu_overlay_logged = false;
+    // The menu's coming or going last handed to Cemu to animate, by when it
+    // began -- see render_menu_overlay().
+    MenuEntrance::Clock::time_point overlay_animation_sent{};
     // A companion's pass started as late before the display's refresh as it
     // can be -- see FrameDelay. Never the host's: the host's pass runs the
     // game, whose timing is the game's.
@@ -2910,43 +2913,82 @@ void App::Impl::render_menu_overlay() {
     int height = 0;
     MenuOverlay::fit(output_width, output_height, ExternalOverlayArea::kMaxWidth,
                      ExternalOverlayArea::kMaxHeight, width, height);
-    if (!menu_overlay.begin(width, height)) {
-        if (!menu_overlay_logged) {
-            log_warn("could not draw the menu for Cemu's window; it is only in this one");
-            menu_overlay_logged = true;
+    const float w = static_cast<float>(output_width);
+    const float h = static_cast<float>(output_height);
+    const bool menu_over = menu_over_wii_u_game() || quick_menu_leaving();
+    const auto draw_backdrop = [&] {
+        if (wii_u_backdrop_ready()) {
+            // Paused: the game's picture blurred, as a DS or 3DS game's
+            // is, over all of Cemu's window, and a page opened from the
+            // menu 60% darker again.
+            menu_backdrop.draw(quads, w, h);
+            if (state == State::Settings || state == State::DataManagement ||
+                state == State::Controllers || on_cemu_page()) {
+                quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
+            }
+        } else {
+            // The game goes on underneath, Cemu's to draw: darkened, as
+            // it is on every page in this window -- see kLiveGameDim.
+            quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
         }
-        return;
-    }
+    };
+    const auto draw_menu = [&] { render_pages(w, h, /*over_game=*/true, nullptr); };
     // Laid out at this window's own size and drawn into the smaller target:
     // pages keep their scroll in this window's pixels, and a copy laid out
     // at another size scrolled too far for it -- the cursor off its list, and
     // empty space under Settings.
-    quads.begin_frame(output_width, output_height,
-                      static_cast<float>(width) / static_cast<float>(std::max(1, output_width)));
-    quads.clear(Color{0.0f, 0.0f, 0.0f, 0.0f});
-    // Alpha accumulates as coverage rather than being blended like a colour,
-    // so what is left is how much of the game each pixel hides.
-    gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    const float w = static_cast<float>(output_width);
-    const float h = static_cast<float>(output_height);
-    if (menu_over_wii_u_game() || quick_menu_leaving()) {
-        draw_entering(w, h, [&] {
-            if (wii_u_backdrop_ready()) {
-                // Paused: the game's picture blurred, as a DS or 3DS game's
-                // is, over all of Cemu's window, and a page opened from the
-                // menu 60% darker again.
-                menu_backdrop.draw(quads, w, h);
-                if (state == State::Settings || state == State::DataManagement ||
-                    state == State::Controllers || on_cemu_page()) {
-                    quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, 0.6f});
-                }
-            } else {
-                // The game goes on underneath, Cemu's to draw: darkened, as
-                // it is on every page in this window -- see kLiveGameDim.
-                quads.draw_solid(PixelRect{0.0f, 0.0f, w, h}, Color{0.0f, 0.0f, 0.0f, kLiveGameDim});
+    const auto begin_picture = [&] {
+        if (!menu_overlay.begin(width, height)) return false;
+        quads.begin_frame(output_width, output_height,
+                          static_cast<float>(width) / static_cast<float>(std::max(1, output_width)));
+        quads.clear(Color{0.0f, 0.0f, 0.0f, 0.0f});
+        // Alpha accumulates as coverage rather than being blended like a
+        // colour, so what is left is how much of the game each pixel hides.
+        gl::BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        return true;
+    };
+    const auto cannot_draw = [&] {
+        if (!menu_overlay_logged) {
+            log_warn("could not draw the menu for Cemu's window; it is only in this one");
+            menu_overlay_logged = true;
+        }
+    };
+
+    // The menu coming or going, where Cemu animates it itself: what is
+    // behind the menu and the menu, each once, and then nothing until it
+    // has come or gone. A picture a frame could not be shown there any
+    // faster than Cemu makes textures of them, which is seldom.
+    const bool coming_or_going = menu_entrance.animating() || menu_entrance.leaving();
+    if (menu_over && coming_or_going && external_source->overlay_animation_supported()) {
+        if (menu_entrance.started() != overlay_animation_sent) {
+            overlay_animation_sent = menu_entrance.started();
+            if (!begin_picture()) return cannot_draw();
+            draw_backdrop();
+            menu_overlay.finish();
+            const std::vector<uint8_t> behind = menu_overlay.pixels();
+            if (!begin_picture()) return cannot_draw();
+            draw_menu();
+            menu_overlay.finish();
+            gl::reset_render_state();
+            const bool takes_input = menu_over_wii_u_game();
+            if (external_source->publish_overlay_animation(
+                    quick_menu_leaving() ? ExternalOverlayAnimation::Mode::Leaving
+                                         : ExternalOverlayAnimation::Mode::Entering,
+                    behind.data(), menu_overlay.pixels().data(), menu_overlay.width(), menu_overlay.height(),
+                    takes_input)) {
+                if (!menu_overlay_shown) log_info("the menu is coming up over the game in Cemu's window");
+                menu_overlay_shown = true;
+                menu_overlay_takes_input = takes_input;
             }
-        }, [&] { render_pages(w, h, /*over_game=*/true, nullptr); });
+            // The still picture after it is sent whatever it looks like:
+            // Cemu shows the two until it comes.
+            menu_overlay.forget();
+        }
+        return;
     }
+
+    if (!begin_picture()) return cannot_draw();
+    if (menu_over) draw_entering(w, h, draw_backdrop, draw_menu);
     const std::string notice = shown_corner_notice();
     if (!notice.empty()) render_corner_notice(quads, text, w, h, notice);
     const bool changed = menu_overlay.finish();

@@ -5,6 +5,7 @@
 #include <chrono>
 
 #include "test_support.hpp"
+#include "core/external_frame_link.hpp"
 #include "ui/menu_entrance.hpp"
 
 using namespace ds;
@@ -66,11 +67,32 @@ void test_it_goes_away_menu_first() {
     CHECK(!entrance.animating(at(start, 50)));
 }
 
+// Cemu animates the menu over a Wii U game itself, with the link's copy of
+// these curves: the two have to agree, or the menu would come up one way in
+// one window and another in the other.
+void test_cemu_animates_it_the_same() {
+    using Anim = ExternalOverlayAnimation;
+    const auto start = MenuEntrance::Clock::now();
+    MenuEntrance entering;
+    entering.start(start);
+    MenuEntrance leaving;
+    leaving.leave(start);
+    for (int ms = 0; ms <= 300; ms += 10) {
+        const float seconds = static_cast<float>(ms) / 1000.0f;
+        CHECK_NEAR(entering.backdrop(at(start, ms)), Anim::backdrop(Anim::Mode::Entering, seconds));
+        CHECK_NEAR(entering.contents(at(start, ms)), Anim::contents(Anim::Mode::Entering, seconds));
+        CHECK_NEAR(entering.scale(at(start, ms)), Anim::scale(Anim::Mode::Entering, seconds));
+        CHECK_NEAR(leaving.backdrop(at(start, ms)), Anim::backdrop(Anim::Mode::Leaving, seconds));
+        CHECK_NEAR(leaving.contents(at(start, ms)), Anim::contents(Anim::Mode::Leaving, seconds));
+    }
+}
+
 }  // namespace
 
 int main() {
     test_the_backdrop_comes_first_then_the_menu();
     test_nothing_moves_until_it_is_started();
     test_it_goes_away_menu_first();
+    test_cemu_animates_it_the_same();
     return test::finish("menu-entrance");
 }

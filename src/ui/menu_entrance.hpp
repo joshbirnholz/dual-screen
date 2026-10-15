@@ -60,6 +60,9 @@ public:
     bool leaving(Clock::time_point now = Clock::now()) const {
         return mode_ == Mode::Leaving && backdrop(now) > 0.0f;
     }
+    // When the last coming or going began, so that something animating it
+    // elsewhere is told each one once -- see the Cemu overlay.
+    Clock::time_point started() const { return started_; }
 
 private:
     enum class Mode { Still, Entering, Leaving };

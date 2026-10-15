@@ -128,6 +128,54 @@ run_session() {
 # television now, and there is no second device for the GamePad to go to.
 run_session solo
 
+# The quick menu over the game in Cemu's window, opened and closed with Cemu's
+# own menu key: a Cemu that animates the menu itself is handed it to animate,
+# coming up and going away, rather than a picture a frame.
+{
+    socket="$WORK_DIR/menu.sock"
+    shell_log="$WORK_DIR/menu-shell.log"
+    game_log="$WORK_DIR/menu-game.log"
+    XDG_CONFIG_HOME="$WORK_DIR/menu/config" \
+    XDG_DATA_HOME="$WORK_DIR/menu/data" \
+    SDL_AUDIODRIVER=dummy SDL_VIDEODRIVER=x11 \
+    "$XVFB_RUN" -a -s "-screen 0 1600x1000x24" \
+        "$DUALSCREEN" \
+            --game "$WORK_DIR/game.wud" \
+            --external-socket "$socket" \
+            --windowed \
+            --exit-after-seconds 12 \
+        > "$shell_log" 2>&1 &
+    SHELL_PID=$!
+    sleep 3
+    "$FAKE_WII_U" --socket "$socket" --seconds 7 --menu-key-at 2 --menu-key-at 4.5 > "$game_log" 2>&1
+    game_result=$?
+    wait "$SHELL_PID"
+    shell_result=$?
+    SHELL_PID=""
+
+    echo "--- menu: the shell ---"
+    cat "$shell_log" 2>/dev/null
+    echo "--- menu: the game ---"
+    cat "$game_log" 2>/dev/null
+
+    if [ "$shell_result" -ne 0 ] || [ "$game_result" -ne 0 ]; then
+        echo "menu: the shell exited with $shell_result and the game with $game_result" >&2
+        FAILED=1
+    fi
+    if ! grep -q "pressing the menu key" "$game_log" 2>/dev/null; then
+        echo "menu: the menu key was never pressed, so this run says nothing" >&2
+        FAILED=1
+    fi
+    if ! grep -q "the menu is coming up" "$game_log" 2>/dev/null; then
+        echo "menu: Cemu was never handed the menu coming up to animate" >&2
+        FAILED=1
+    fi
+    if ! grep -q "the menu is going away" "$game_log" 2>/dev/null; then
+        echo "menu: Cemu was never handed the menu going away to animate" >&2
+        FAILED=1
+    fi
+}
+
 # And with nothing on the other end at all. The emulator is a separate program
 # and may simply not have been started, and a blank window is indistinguishable
 # from a broken one -- so the shell has to say what it is waiting for.

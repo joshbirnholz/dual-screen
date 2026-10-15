@@ -91,6 +91,13 @@ public:
     bool publish_overlay(const uint8_t* rgba, int width, int height, bool takes_input = true) {
         return link_.publish_overlay(rgba, width, height, takes_input);
     }
+    // Whether the program animates the menu itself, and handing it the two
+    // pictures it does that with -- see ExternalFrameLink.
+    bool overlay_animation_supported() const { return link_.overlay_animation_supported(); }
+    bool publish_overlay_animation(ExternalOverlayAnimation::Mode mode, const uint8_t* backdrop,
+                                   const uint8_t* contents, int width, int height, bool takes_input) {
+        return link_.publish_overlay_animation(mode, backdrop, contents, width, height, takes_input);
+    }
     void hide_overlay() { link_.hide_overlay(); }
     bool take_menu_key() { return link_.take_menu_key(); }
     // The game's graphics packs, which Cemu keeps -- see

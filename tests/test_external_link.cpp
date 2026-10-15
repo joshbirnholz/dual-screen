@@ -786,6 +786,98 @@ void test_how_the_pad_is_being_held_crosses_too() {
               "the game was never told the device had stopped reporting how it is held");
 }
 
+// The menu coming up and going away over a Wii U game, animated by a
+// producer that says it can: what is behind the menu and the menu, each once,
+// and which way; the overlay up from then on; and an ordinary picture after
+// it as before. One that cannot is never asked.
+void test_the_menu_comes_and_goes_as_two_pictures() {
+    {
+        ExternalFrameLink link;
+        ExternalFrameProducer producer;
+        ExternalStreamInfo info = wii_u_info();
+        info.features = kExternalFeatureOverlay;
+        if (!bring_up(link, producer, info)) return;
+        CHECK(!link.overlay_animation_supported());
+        const std::vector<uint8_t> pixel = {1, 2, 3, 4};
+        CHECK(!link.publish_overlay_animation(ExternalOverlayAnimation::Mode::Entering, pixel.data(),
+                                              pixel.data(), 1, 1, true));
+    }
+
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay | kExternalFeatureOverlayAnimation;
+    if (!bring_up(link, producer, info)) return;
+    CHECK(link.overlay_animation_supported());
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+
+    constexpr int kWidth = 64;
+    constexpr int kHeight = 36;
+    const std::vector<uint8_t> behind(static_cast<std::size_t>(kWidth) * kHeight * 4, 40);
+    const std::vector<uint8_t> menu(static_cast<std::size_t>(kWidth) * kHeight * 4, 200);
+    CHECK(link.publish_overlay_animation(ExternalOverlayAnimation::Mode::Entering, behind.data(), menu.data(),
+                                         kWidth, kHeight, true));
+    ExternalOverlayAnimationFrames frames;
+    CHECK_MSG(wait_for([&]() { return producer.take_overlay_animation(frames); }),
+              "the menu coming up never reached the producer");
+    CHECK(frames.mode == ExternalOverlayAnimation::Mode::Entering);
+    CHECK(frames.takes_input);
+    CHECK_EQ(frames.width, kWidth);
+    CHECK_EQ(frames.height, kHeight);
+    CHECK(frames.backdrop == behind && frames.contents == menu);
+    CHECK(producer.overlay_visible() && producer.overlay_takes_input());
+    // Taken once, and not taken for an ordinary picture.
+    CHECK(!producer.take_overlay_animation(frames));
+    std::vector<uint8_t> got;
+    int width = 0;
+    int height = 0;
+    CHECK(!producer.take_overlay(got, width, height));
+
+    // Come up: the menu as an ordinary picture again.
+    std::vector<uint8_t> still = menu;
+    still[0] = 9;
+    CHECK(link.publish_overlay(still.data(), kWidth, kHeight));
+    CHECK_MSG(wait_for([&]() { return producer.take_overlay(got, width, height); }),
+              "the picture after the animation never arrived");
+    CHECK(got == still);
+
+    // Going away: the two pictures again, then taken down.
+    CHECK(link.publish_overlay_animation(ExternalOverlayAnimation::Mode::Leaving, behind.data(), menu.data(), kWidth,
+                                         kHeight, false));
+    CHECK(wait_for([&]() { return producer.take_overlay_animation(frames); }));
+    CHECK(frames.mode == ExternalOverlayAnimation::Mode::Leaving);
+    CHECK(!frames.takes_input);
+    CHECK(!producer.overlay_takes_input());
+    link.hide_overlay();
+    CHECK(wait_for([&]() { return !producer.overlay_visible(); }));
+}
+
+// The curves the producer animates with are the menu's own.
+void test_the_animation_curves() {
+    using Anim = ExternalOverlayAnimation;
+    CHECK(std::abs(Anim::backdrop(Anim::Mode::Entering, 0.0f)) < 0.001f);
+    CHECK(std::abs(Anim::backdrop(Anim::Mode::Entering, 0.2f) - 1.0f) < 0.001f);
+    // The menu waits for the backdrop to be on its way.
+    CHECK(std::abs(Anim::contents(Anim::Mode::Entering, 0.05f)) < 0.001f);
+    CHECK(Anim::scale(Anim::Mode::Entering, 0.0f) < 0.97f);
+    CHECK(Anim::done(Anim::Mode::Entering, 0.25f) && !Anim::done(Anim::Mode::Entering, 0.1f));
+    // Going: the menu first, then the backdrop.
+    CHECK(Anim::contents(Anim::Mode::Leaving, 0.06f) < Anim::backdrop(Anim::Mode::Leaving, 0.06f));
+    CHECK(std::abs(Anim::backdrop(Anim::Mode::Leaving, 0.2f)) < 0.001f);
+}
+
 // This app's quick menu drawn over a Wii U game in Cemu's window: a producer
 // that says it can draw one is handed the pixels, told when they are taken
 // down, and its menu key comes back the other way. One that does not say so is
@@ -1283,6 +1375,8 @@ int main() {
     test_asking_for_the_same_screen_twice_says_nothing_the_second_time();
     test_how_the_pad_is_being_held_crosses_too();
     test_the_menu_crosses_to_be_drawn_over_the_game();
+    test_the_menu_comes_and_goes_as_two_pictures();
+    test_the_animation_curves();
     test_the_game_pauses_only_when_it_says_so();
     test_graphics_packs_are_listed_and_changed();
     test_options_and_amiibo_cross();
