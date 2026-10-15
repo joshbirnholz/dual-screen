@@ -26,6 +26,9 @@ struct AppOptions {
     bool trace_core_gl = false;
     std::string system_dir;   // overrides settings.json
     bool windowed = false;    // for development on a desktop
+    // Runs as the service other devices start games through, with no window
+    // -- see run_launch_service().
+    bool service = false;
     bool verbose = false;
     bool show_help = false;
     bool list_layouts = false;

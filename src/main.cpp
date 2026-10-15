@@ -1,8 +1,10 @@
 #include "app.hpp"
+#include "launch/launch_host.hpp"
 #include "update/desktop_updater.hpp"
 
 int main(int argc, char** argv) {
     const ds::AppOptions options = ds::parse_command_line(argc, argv);
+    if (options.service) return ds::run_launch_service();
     int status = 0;
     {
         ds::App app;

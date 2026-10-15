@@ -152,11 +152,15 @@ add_library(dualscreen_core STATIC
     src/input/switch_motion.cpp
     src/input/motion_compare.cpp
     src/input/retro_keymap.cpp
+    src/launch/game_catalog.cpp
+    src/launch/launch_host.cpp
+    src/launch/steam_shortcuts.cpp
     src/layout/layout.cpp
     src/net/companion_session.cpp
     src/net/discovery.cpp
     src/net/host_session.cpp
     src/net/protocol.cpp
+    src/net/launch_service.cpp
     src/net/save_exchange.cpp
     src/net/transport.cpp
     src/layout/layout_registry.cpp
