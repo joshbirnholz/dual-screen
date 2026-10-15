@@ -587,6 +587,7 @@ public:
     const std::vector<std::vector<std::string>>& host_producer_choices() const {
         return host_producer_choices_;
     }
+    int host_producer_controls_from() const { return host_producer_controls_from_; }
     const std::vector<std::pair<std::string, std::string>>& host_producer_options() const {
         return host_producer_options_;
     }
@@ -1145,6 +1146,7 @@ private:
     bool host_amiibo_available_ = false;
     std::vector<std::pair<std::string, std::string>> host_producer_options_;
     std::vector<std::vector<std::string>> host_producer_choices_;
+    int host_producer_controls_from_ = -1;
     int host_favorite_color_ = -1;
     std::string host_corner_notice_;
     std::vector<std::string> host_amiibo_;

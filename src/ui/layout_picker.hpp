@@ -145,6 +145,10 @@ struct LayoutPickerState {
     // Each of those's choices, in Cemu's order, for its popup. Told to the
     // other device with them.
     std::vector<std::vector<std::string>> producer_choices;
+    // Where in producer_options the rows that belong in Controls -- each
+    // player's controller type -- begin, or -1 for none: those are listed
+    // there, under Controller Order, rather than in Game Options.
+    int producer_controls_from = -1;
     // Scan amiibo, where Cemu can: the amiibo found in `amiibo_folder`, by
     // name, listed on the right to be chosen from directly. The host's too.
     bool amiibo_available = false;
@@ -324,6 +328,8 @@ public:
     }
     MenuSection section() const { return section_; }
     bool on_content() const { return on_content_; }
+    // How many things a section lists on the right: its rows, slots or tiles.
+    int items_in(MenuSection section) const { return content_count(section); }
     // What is in each save point slot, and one line about the last save.
     // Read off the disk by the device running the game, and handed on to the
     // other one, which has only what it is told.
@@ -401,9 +407,10 @@ public:
     // LayoutPickerState. Either can change while the menu is up: an option
     // just stepped, Cemu's list arriving, a folder chosen.
     void set_producer_options(std::vector<std::pair<std::string, std::string>> options,
-                              std::vector<std::vector<std::string>> choices = {}) {
+                              std::vector<std::vector<std::string>> choices = {}, int controls_from = -1) {
         state_.producer_options = std::move(options);
         state_.producer_choices = std::move(choices);
+        state_.producer_controls_from = controls_from;
         rebuild_footer();
     }
     void set_amiibo(std::vector<std::string> amiibo, std::string folder) {
@@ -521,6 +528,9 @@ private:
         GraphicPacks,
         // One of Cemu's own -- see LayoutPickerState::producer_options.
         Producer,
+        // A Wii U's Controller Order screen, a page of its own, at the top of
+        // Controls.
+        ControllerOrder,
     };
     struct OptionRow {
         Option option = Option::Cursor;
@@ -633,6 +643,14 @@ private:
     // things, and on which.
     std::vector<MenuSection> sections_;
     std::vector<OptionRow> options_;
+    // A Wii U's Controls: Controller Order, then each player's controller.
+    std::vector<OptionRow> controls_;
+    // The rows of a list section: Controls', or Options'; and of whichever
+    // is up.
+    const std::vector<OptionRow>& rows_of(MenuSection section) const {
+        return section == MenuSection::ControllerOrder ? controls_ : options_;
+    }
+    const std::vector<OptionRow>& rows() const { return rows_of(section_); }
     // How far a list on the right is scrolled, in rows, and the finger or
     // wheel moving it -- the cursor brings it with it only when it moves.
     float content_scroll_ = 0.0f;

@@ -188,6 +188,7 @@ public:
         bool amiibo_available = false;
         std::vector<std::pair<std::string, std::string>> producer_options;
         std::vector<std::vector<std::string>> producer_choices;
+        int producer_controls_from = -1;
         // See SessionStateMessage::favorite_color.
         int favorite_color = -1;
         // See SessionStateMessage::corner_notice.

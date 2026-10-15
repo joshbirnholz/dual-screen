@@ -1077,9 +1077,44 @@ std::vector<MenuSection> wii_u_sections(const LayoutRegistry& registry, const La
     return found;
 }
 
+// Each player's controller is Controls', under Controller Order, not Game
+// Options': Cemu's options from where the host says they begin.
+void test_wii_u_controls_list_the_players_controllers() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.cursor_choosable = false;
+    state.producer_options = {{"Upscaling", "Bicubic"}, {"Player 1 Controller", "Pro Controller"},
+                              {"Player 2 Controller", "None"}};
+    state.producer_choices = {{"Bilinear", "Bicubic"}, {"None", "Pro Controller", "Wii Remote"},
+                              {"None", "Pro Controller", "Wii Remote"}};
+    state.producer_controls_from = 1;
+    LayoutPicker picker(registry);
+    open_on(open_wii_u(picker, state), state, MenuSection::Options);
+    CHECK_EQ(picker.items_in(MenuSection::Options), 1);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 3);
+    // Player 2's, chosen from its dropdown, is Cemu's third option.
+    open_on(picker, state, MenuSection::ControllerOrder);
+    press(picker, UiAction::Confirm);
+    press(picker, UiAction::Down);
+    press(picker, UiAction::Down);
+    press(picker, UiAction::Confirm);
+    CHECK(picker.awaiting_confirmation());
+    press(picker, UiAction::Down);
+    const LayoutPickerResult result = press(picker, UiAction::Confirm);
+    CHECK_EQ(result.producer_option, 2);
+    CHECK_EQ(result.option_steps, 1);
+    // A host that says nothing of them keeps them all in Game Options, as
+    // before.
+    state.producer_controls_from = -1;
+    open_wii_u(picker, state);
+    CHECK_EQ(picker.items_in(MenuSection::Options), 3);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 1);
+}
+
 // A Wii U's quick menu is laid out as a DS or 3DS game's is: sections down
 // the left -- Continue, Options, amiibo and Graphics Packs where Cemu
-// offers them, Controller Order, Disconnect with a second device, Reset Game
+// offers them, Controls, Disconnect with a second device, Reset Game
 // and Quit -- and whichever is highlighted showing its things on the right.
 // No layouts and no save states: Cemu owns which screen is shown, and has
 // none. Settings is plus, as on every console's menu.
@@ -1104,7 +1139,9 @@ void test_wii_u_menu_has_its_own_sections() {
     LayoutPicker picker(registry);
     open_wii_u(picker, state);
     CHECK(press(picker, UiAction::Confirm).close_requested);
+    // Controls is a list, Controller Order at the top of it.
     open_on(open_wii_u(picker, state), state, MenuSection::ControllerOrder);
+    CHECK(!press(picker, UiAction::Confirm).controllers_requested);
     CHECK(press(picker, UiAction::Confirm).controllers_requested);
     open_on(picker, state, MenuSection::Disconnect);
     CHECK(press(picker, UiAction::Confirm).disconnect_requested);
@@ -1904,6 +1941,7 @@ int main() {
     test_toggling_the_gap_updates_what_the_previews_would_draw();
     test_the_other_buttons_still_work();
     test_wii_u_menu_has_its_own_sections();
+    test_wii_u_controls_list_the_players_controllers();
     test_wii_u_menu_guide_is_ok_back_and_settings();
     test_reset_and_quit_are_asked_about_first();
     test_a_confirmation_can_be_backed_out_of();

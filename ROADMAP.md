@@ -10,10 +10,9 @@ numbers can change freely.
 
 ### Controls
 
-1. **"Controller Order" becomes "Controls"** in the Wii U quick menu. The
-   Player 1-4 controller types move into it, with a button on it that opens
-   the Controller Order screen. It is where remapping goes, so DS and 3DS
-   games get the tab too.
+1. **Controls for DS and 3DS games.** A Wii U's quick menu has Controls
+   now -- Controller Order and each player's controller. DS and 3DS games get
+   the tab with remapping, which is where it goes.
 
 2. **Per-game button remapping** -- the next major feature, once the
    mockups (https://claude.ai/artifact/88zxUiXcYF7RfwpURSq5Lt) are agreed:

@@ -135,6 +135,7 @@ void LayoutPicker::set_selected_layout(const std::string& layout_id) {
 void LayoutPicker::rebuild_footer() {
     sections_.clear();
     options_.clear();
+    controls_.clear();
     if (system_ == SystemId::WiiU) {
         // The same two columns as a DS or 3DS game's, with a Wii U's own
         // things in them: there is no layout to pick (see rebuild_tiles()),
@@ -159,8 +160,18 @@ void LayoutPicker::rebuild_footer() {
         if (state_.graphic_packs_available) options_.push_back(OptionRow{Option::GraphicPacks});
         if (state_.screens_swappable) options_.push_back(OptionRow{Option::SwapScreens});
         if (state_.cursor_choosable) options_.push_back(OptionRow{Option::Cursor});
-        for (std::size_t index = 0; index < state_.producer_options.size(); ++index) {
-            options_.push_back(OptionRow{Option::Producer, static_cast<int>(index)});
+        // Cemu's own after them, but for the players' controllers, which are
+        // Controls', under Controller Order.
+        const int producers = static_cast<int>(state_.producer_options.size());
+        const int controls_from = state_.producer_controls_from >= 0
+                                      ? std::min(state_.producer_controls_from, producers)
+                                      : producers;
+        for (int index = 0; index < controls_from; ++index) {
+            options_.push_back(OptionRow{Option::Producer, index});
+        }
+        controls_.push_back(OptionRow{Option::ControllerOrder});
+        for (int index = controls_from; index < producers; ++index) {
+            controls_.push_back(OptionRow{Option::Producer, index});
         }
     } else {
 
@@ -233,12 +244,12 @@ int LayoutPicker::content_count(MenuSection section) const {
         case MenuSection::Layout: return tile_count() + (corner_button_usable() ? 1 : 0);
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint: return kSavePointSlots;
-        case MenuSection::Options: return static_cast<int>(options_.size());
+        case MenuSection::Options:
+        case MenuSection::ControllerOrder: return static_cast<int>(rows_of(section).size());
         // Each amiibo, then a row to look in another folder.
         case MenuSection::Amiibo: return static_cast<int>(state_.amiibo.size()) + 1;
         case MenuSection::Continue:
         case MenuSection::SaveSync:
-        case MenuSection::ControllerOrder:
         case MenuSection::GraphicPacks:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
@@ -289,6 +300,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::Resume: return "Resume from Save State";
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
+        case Option::ControllerOrder: return "Controller Order";
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].first;
@@ -351,7 +363,8 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
         case Option::LcdFilter:
         case Option::Resume:
         case Option::SwapScreens:
-        case Option::GraphicPacks: break;
+        case Option::GraphicPacks:
+        case Option::ControllerOrder: break;
     }
     // One value is nothing to choose between.
     if (choices.size() < 2) choices.clear();
@@ -359,11 +372,12 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
 }
 
 void LayoutPicker::open_choice() {
-    if (section_ != MenuSection::Options || item_ < 0 || item_ >= static_cast<int>(options_.size())) {
+    if ((section_ != MenuSection::Options && section_ != MenuSection::ControllerOrder) || item_ < 0 ||
+        item_ >= static_cast<int>(rows().size())) {
         return;
     }
     int current = -1;
-    std::vector<std::string> choices = option_choices(options_[static_cast<std::size_t>(item_)], current);
+    std::vector<std::string> choices = option_choices(rows()[static_cast<std::size_t>(item_)], current);
     if (choices.empty()) return;
     const float width = last_width_ > 0.0f ? last_width_ : 1280.0f;
     const float height = last_height_ > 0.0f ? last_height_ : 800.0f;
@@ -399,7 +413,8 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
         case Option::SwapScreens:
             return state_.screens_swap_value_shown ? (state_.screens_swapped ? "On" : "Off") : "";
         // A page, not a value.
-        case Option::GraphicPacks: return std::string();
+        case Option::GraphicPacks:
+        case Option::ControllerOrder: return std::string();
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].second;
@@ -422,7 +437,7 @@ const char* section_label(MenuSection section) {
         case MenuSection::Disconnect: return "Disconnect";
         case MenuSection::Reset: return "Reset Game";
         case MenuSection::Quit: return "Quit";
-        case MenuSection::ControllerOrder: return "Controller Order";
+        case MenuSection::ControllerOrder: return "Controls";
         case MenuSection::GraphicPacks: return "Graphics Packs";
         case MenuSection::Amiibo: return "amiibo";
     }
@@ -514,6 +529,7 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             break;
         }
         case MenuSection::Options:
+        case MenuSection::ControllerOrder:
         case MenuSection::Amiibo: {
             // A list, as tall as the sections' rows. Scan amiibo's can run
             // past the bottom, so it starts from the first of it in view.
@@ -532,7 +548,6 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
         }
         case MenuSection::Continue:
         case MenuSection::SaveSync:
-        case MenuSection::ControllerOrder:
         case MenuSection::GraphicPacks:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
@@ -615,7 +630,8 @@ float LayoutPicker::content_max_scroll(const MenuGeometry& geometry) const {
 }
 
 bool LayoutPicker::content_is_list() const {
-    return section_ == MenuSection::Options || section_ == MenuSection::Amiibo;
+    return section_ == MenuSection::Options || section_ == MenuSection::ControllerOrder ||
+           section_ == MenuSection::Amiibo;
 }
 
 void LayoutPicker::keep_item_in_view(float output_width, float output_height) {
@@ -818,6 +834,7 @@ void LayoutPicker::activate_section(LayoutPickerResult& result) {
         case MenuSection::CreateSavePoint:
         case MenuSection::LoadSavePoint:
         case MenuSection::Options:
+        case MenuSection::ControllerOrder:
         case MenuSection::Amiibo:
             if (content_count(section_) > 0) {
                 on_content_ = true;
@@ -825,7 +842,6 @@ void LayoutPicker::activate_section(LayoutPickerResult& result) {
             }
             break;
         // Pages of the device running Cemu, which the caller puts up.
-        case MenuSection::ControllerOrder: result.controllers_requested = true; break;
         case MenuSection::GraphicPacks:
             if (state_.graphic_packs_available) result.graphic_packs_requested = true;
             break;
@@ -883,12 +899,13 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             // An empty slot has nothing to load, and says Empty.
             if (slot_filled(item_)) ask(MenuConfirm::LoadSavePoint);
             return;
-        case MenuSection::Options: {
-            if (item_ >= static_cast<int>(options_.size())) return;
+        case MenuSection::Options:
+        case MenuSection::ControllerOrder: {
+            if (item_ >= static_cast<int>(rows().size())) return;
             // One with several values to choose between opens them beside
             // its row; a switch flips; a page opens.
             int current = -1;
-            if (!option_choices(options_[static_cast<std::size_t>(item_)], current).empty()) {
+            if (!option_choices(rows()[static_cast<std::size_t>(item_)], current).empty()) {
                 open_choice();
                 return;
             }
@@ -896,7 +913,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             // Each is cycled by the caller, which tells the menu what it
             // landed on -- so the menu never shows a value that was not
             // actually applied, and on a companion the host decides.
-            switch (options_[static_cast<std::size_t>(item_)].option) {
+            switch (rows()[static_cast<std::size_t>(item_)].option) {
                 case Option::RenderScale: result.render_scale_changed = true; break;
                 case Option::Sound: result.audio_target_changed = true; break;
                 case Option::Cursor: result.cursor_mode_changed = true; break;
@@ -912,8 +929,9 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::GraphicPacks:
                     if (state_.graphic_packs_available) result.graphic_packs_requested = true;
                     break;
+                case Option::ControllerOrder: result.controllers_requested = true; break;
                 case Option::Producer:
-                    result.producer_option = options_[static_cast<std::size_t>(item_)].index;
+                    result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                     break;
             }
             return;
@@ -926,7 +944,6 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
             return;
         case MenuSection::Continue:
         case MenuSection::SaveSync:
-        case MenuSection::ControllerOrder:
         case MenuSection::GraphicPacks:
         case MenuSection::Disconnect:
         case MenuSection::Reset:
@@ -1088,17 +1105,17 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                 answer.chosen = tap - kPopupFocusBase;
             }
         }
-        if (answer.chosen >= 0 && item_ < static_cast<int>(options_.size()) && count > 0) {
+        if (answer.chosen >= 0 && item_ < static_cast<int>(rows().size()) && count > 0) {
             const int steps = was < 0 ? answer.chosen : ((answer.chosen - was) % count + count) % count;
             if (steps > 0 || was < 0) {
                 result.option_steps = was < 0 ? answer.chosen + 1 : steps;
-                switch (options_[static_cast<std::size_t>(item_)].option) {
+                switch (rows()[static_cast<std::size_t>(item_)].option) {
                     case Option::RenderScale: result.render_scale_changed = true; break;
                     case Option::Sound: result.audio_target_changed = true; break;
                     case Option::RightStick: result.right_stick_mode_changed = true; break;
                     case Option::LeftStick: result.left_stick_press_changed = true; break;
                     case Option::Producer:
-                        result.producer_option = options_[static_cast<std::size_t>(item_)].index;
+                        result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                         break;
                     default: break;
                 }
@@ -1490,16 +1507,16 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     const float row_scale = scale * 1.1f;
     // Rows past the bottom are scrolled to, not drawn over the prompts.
     quads.set_clip(geometry.content);
-    for (std::size_t index = 0; index < geometry.items.size() && index < options_.size(); ++index) {
+    for (std::size_t index = 0; index < geometry.items.size() && index < rows().size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
         draw_menu_row(quads, row, focused, scale);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
-        text.draw(quads, option_name(options_[index]), row.x + line * 0.8f, baseline, row_scale,
+        text.draw(quads, option_name(rows()[index]), row.x + line * 0.8f, baseline, row_scale,
                   menu_row_text(focused));
-        const std::string value = option_value(options_[index]);
+        const std::string value = option_value(rows()[index]);
         int current = -1;
-        if (is_toggle_value(value) && option_choices(options_[index], current).empty()) {
+        if (is_toggle_value(value) && option_choices(rows()[index], current).empty()) {
             draw_toggle(quads, row.x + row.w - line * 0.8f, row.y + row.h * 0.5f, value == "On", line);
         } else {
             text.draw(quads, value, row.x + row.w - line * 0.8f, baseline, row_scale,
@@ -1507,12 +1524,12 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         }
     }
     quads.clear_clip();
-    const int rows = content_rows_fitting(geometry);
-    const int count = static_cast<int>(options_.size());
-    if (count > rows) {
+    const int fitting = content_rows_fitting(geometry);
+    const int count = static_cast<int>(rows().size());
+    if (count > fitting) {
         const float span = static_cast<float>(count);
         draw_scroll_bar(quads, geometry.content, std::clamp(content_scroll_, 0.0f, content_max_scroll(geometry)) / span,
-                        static_cast<float>(rows) / span, line, scale);
+                        static_cast<float>(fitting) / span, line, scale);
     }
 }
 
@@ -1662,13 +1679,13 @@ void LayoutPicker::render(QuadRenderer& quads,
                 break;
             case MenuSection::CreateSavePoint:
             case MenuSection::LoadSavePoint: render_slots(quads, text, geometry); break;
-            case MenuSection::Options: render_options(quads, text, geometry); break;
+            case MenuSection::Options:
+            case MenuSection::ControllerOrder: render_options(quads, text, geometry); break;
             case MenuSection::Amiibo: render_amiibo(quads, text, geometry); break;
             // Nothing to choose between, so nothing on the right: these are
             // only things to pick.
             case MenuSection::Continue:
             case MenuSection::SaveSync:
-            case MenuSection::ControllerOrder:
             case MenuSection::GraphicPacks:
             case MenuSection::Disconnect:
             case MenuSection::Reset:

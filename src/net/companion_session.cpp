@@ -152,6 +152,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_amiibo_available_ = false;
     host_producer_options_.clear();
     host_producer_choices_.clear();
+    host_producer_controls_from_ = -1;
     host_favorite_color_ = -1;
     host_corner_notice_.clear();
     host_amiibo_.clear();
@@ -326,6 +327,7 @@ void CompanionSession::disconnect() {
     host_amiibo_available_ = false;
     host_producer_options_.clear();
     host_producer_choices_.clear();
+    host_producer_controls_from_ = -1;
     host_favorite_color_ = -1;
     host_corner_notice_.clear();
     host_amiibo_.clear();
@@ -442,6 +444,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_amiibo_available_ = false;
     host_producer_options_.clear();
     host_producer_choices_.clear();
+    host_producer_controls_from_ = -1;
     host_favorite_color_ = -1;
     host_corner_notice_.clear();
     host_amiibo_.clear();
@@ -615,6 +618,7 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_amiibo_available_ = state.amiibo_available;
             host_producer_options_ = state.producer_options;
             host_producer_choices_ = state.producer_choices;
+            host_producer_controls_from_ = state.producer_controls_from;
             host_favorite_color_ = state.favorite_color;
             host_corner_notice_ = state.corner_notice;
             host_amiibo_ = state.amiibo;

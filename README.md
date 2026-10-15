@@ -358,7 +358,7 @@ Three things are different about a Wii U session:
   the game, this app's own window shows the Wii U menu in place of a
   "Playing on Cemu" notice, laid out as a DS or 3DS game's is -- sections
   down the left, and the highlighted one's things on the right: **Game Options**,
-  **Controller Order**, **amiibo**,
+  **Controls**, **amiibo**,
   **Disconnect**, **Reset Game** and **Quit**, with **Settings** on plus as
   on every console's menu. Cemu cannot restart a game itself, so **Reset Game** closes the
   Cemu this app started and starts it again on the same game. It
@@ -405,7 +405,7 @@ Three things are different about a Wii U session:
   CPU mode is kept in Cemu's own profile for the game, and changes when the
   game is reset.
 
-- **Player 1 Controller** to **Player 4 Controller**, in Game Options, are
+- **Player 1 Controller** to **Player 4 Controller**, in Controls, are
   what each player's controller is to the game -- **Pro Controller**,
   **Classic Controller**, **Wii Remote**, **Wii Remote + Nunchuk**, **Wii
   Remote + Classic Controller** or **None** -- kept for each game and set as
@@ -540,7 +540,7 @@ change what this device is called there. The name is only shown: a virtual pad's
 when it appears, and after controllers come, go and are reordered it can
 describe a different controller from the one behind it.
 
-**Controller Order**, in the quick menu, rearranges the line the way SteamOS's own
+**Controller Order**, at the top of the quick menu's Controls, rearranges the line the way SteamOS's own
 Controller Order screen does. Each row starts with what that controller is:
 the GamePad, drawn as one, or a player, drawn as four small squares the way a
 Wii Remote's lights show it -- the second square alone filled for Player 2,

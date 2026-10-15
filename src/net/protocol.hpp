@@ -444,6 +444,10 @@ struct SessionStateMessage {
     // that changes on a reset -- for the other device to show in its own, or
     // empty. Last, and optional.
     std::string corner_notice;
+    // Where among producer_options the rows of the menu's Controls begin --
+    // each player's controller -- or -1 for none. Two bytes, it plus one;
+    // last, and optional.
+    int producer_controls_from = -1;
 };
 
 struct FrameMessage {

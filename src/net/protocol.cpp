@@ -331,6 +331,7 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
                                          : 0));
     put_string(out, message.corner_notice.size() > 255 ? message.corner_notice.substr(0, 255)
                                                        : message.corner_notice);
+    put_u16(out, static_cast<uint16_t>(std::clamp(message.producer_controls_from + 1, 0, 65535)));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -1403,6 +1404,12 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
     }
     out.corner_notice.clear();
     if (reader.remaining() > 0) reader.string(out.corner_notice);
+    out.producer_controls_from = -1;
+    if (reader.remaining() >= 2) {
+        uint16_t controls_from = 0;
+        reader.u16(controls_from);
+        out.producer_controls_from = static_cast<int>(controls_from) - 1;
+    }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);
     out.settings_open = (settings_open != 0);

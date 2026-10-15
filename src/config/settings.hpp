@@ -57,6 +57,11 @@ inline bool display_is_a_steam_decks_own(int width, int height) {
 // and that option's id over the link.
 inline constexpr const char* kWiiUTvAudioChoices[3] = {"Mono", "Stereo", "Surround"};
 inline constexpr const char* kWiiUTvAudioOption = "tv_channels";
+// Cemu's option for a player's controller type -- "player1_type" and on --
+// which the quick menu lists under Controls rather than Game Options.
+inline bool is_cemu_controls_option(const std::string& id) {
+    return id.size() > 11 && id.compare(0, 6, "player") == 0 && id.compare(id.size() - 5, 5, "_type") == 0;
+}
 
 inline ScreenId resolve_wii_u_screen_alone(WiiUScreenAlone screen, int display_width,
                                            int display_height) {
