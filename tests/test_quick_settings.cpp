@@ -582,7 +582,7 @@ void test_moving_between_the_list_and_what_it_shows() {
     CHECK(options.on_content());
 
     // A render scale is chosen from its popup, beside the row, with no
-    // question after: 1x, 2x and 3x, the one in effect first under the
+    // question after: Auto, 1x, 2x and 3x, the one in effect first under the
     // cursor, and the one chosen two along from it.
     {
         LayoutPickerState scaled = state;
@@ -594,7 +594,7 @@ void test_moving_between_the_list_and_what_it_shows() {
         const LayoutPickerResult opened = asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
         CHECK(!opened.render_scale_changed);
         CHECK(asked.confirmation() == MenuConfirm::Choice);
-        CHECK_EQ(asked.confirm_focus_wire(), 1);
+        CHECK_EQ(asked.confirm_focus_wire(), 2);
         asked.update({UiAction::Down}, {}, kWidth, kHeight);
         asked.update({UiAction::Down}, {}, kWidth, kHeight);
         asked.update({UiAction::Down}, {}, kWidth, kHeight);  // the last, and no further
@@ -622,7 +622,7 @@ void test_moving_between_the_list_and_what_it_shows() {
             for (float y = 4.0f; y < kHeight && first < 0; y += 4.0f) {
                 for (float x = 4.0f; x < kWidth && first < 0; x += 4.0f) {
                     const int entry = asked.entry_at(x, y, kWidth, kHeight);
-                    if (entry == LayoutPicker::kPopupFocusBase + 1) {
+                    if (entry == LayoutPicker::kPopupFocusBase + 2) {
                         first = entry;
                         first_x = x;
                         first_y = y;
@@ -643,6 +643,14 @@ void test_moving_between_the_list_and_what_it_shows() {
             CHECK(asked.confirmation() == MenuConfirm::None);
             CHECK(asked.is_open());
         }
+
+        // Auto is first, before 1x: from 1x, one step back round, which is
+        // as many as there are choices less one.
+        asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        asked.update({UiAction::Up}, {}, kWidth, kHeight);
+        const LayoutPickerResult automatic = asked.update({UiAction::Confirm}, {}, kWidth, kHeight);
+        CHECK(automatic.render_scale_changed);
+        CHECK_EQ(automatic.option_steps, 3);
 
         // The menu's own button puts the popup and the menu away together.
         asked.update({UiAction::Confirm}, {}, kWidth, kHeight);

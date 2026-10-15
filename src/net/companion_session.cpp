@@ -2281,7 +2281,8 @@ void CompanionSession::request_handedness(Handedness handedness) {
 void CompanionSession::request_render_scale(int scale) {
     RequestMessage request;
     request.wants_render_scale = true;
-    request.render_scale = static_cast<uint8_t>(scale < 1 ? 1 : scale);
+    // 0 is Auto -- see kAutoRenderScale.
+    request.render_scale = static_cast<uint8_t>(std::clamp(scale, 0, 255));
     send_request(request);
 }
 

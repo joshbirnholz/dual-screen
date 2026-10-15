@@ -1000,18 +1000,23 @@ and smoothing stays in **Game Options**.
 
 ## Render scale
 
-A 3DS renders at 400x240 and 320x240. Citra can draw the same frame at a
-multiple of that, and **Render** in the layout menu cycles between **1x**, **2x**
-and **3x** while the game runs. It changes how much the emulator draws and
-nothing else: the screens stay exactly where the layout puts them, at the same
-size, and only get sharper. A game remembers what it was last set to; the value
-a new game starts from is `"default_render_scale"` in `settings.json`.
+A 3DS renders at 400x240 and 320x240. Azahar can draw the same frame at a
+multiple of that, and **Render Scale** in the quick menu's Game Options chooses
+one while the game runs: **Auto**, or any scale the core offers -- **1x** up to
+Azahar's **18x** (an older Citra stops at 10x). It changes how much the
+emulator draws and nothing else: the screens stay exactly where the layout puts
+them, at the same size, and only get sharper. A game remembers what it was last
+set to, and starts at 1x until it is set; the value a new game starts from is
+`"default_render_scale"` in `settings.json` (0 for Auto).
 
-2x on a Deck's 1280x800 screen is the interesting one — the upper screen becomes
-800x480, which is most of the width it is drawn at, so the softness of an
-upscaled 400-pixel picture goes away. 3x fills a 1080p TV from the upper screen
-alone. Citra offers up to 10x; the menu stops at 3x because past that a handheld
-GPU pays for pixels nothing can show.
+**Auto** chooses the least scale at which no screen is drawn bigger than the
+emulator draws it -- on this device's screen, and on a connected device's,
+whichever screen each shows -- and chooses again as the window, the layout or
+the devices change. A screen a tenth or less over a whole scale stays at it.
+On a Deck's 1280x800 in Vertical Screens that is 2x, the upper screen 800x480
+for about 533x320 drawn; on a 4K television with the upper screen filling its
+height, 9x. A higher scale than that draws pixels nothing can show, and a
+handheld GPU pays for every one.
 
 It is shared like everything else on that menu. Only the host is running a core,
 but the menu is one menu reachable from either device: a companion shows the same

@@ -35,6 +35,7 @@
 #include "core/libretro_screen_source.hpp"
 #include "core/console_title_info.hpp"
 #include "core/game_title.hpp"
+#include "core/render_scale.hpp"
 #include "core/save_store.hpp"
 #include "core/system.hpp"
 #include "input/controller_mapping.hpp"
@@ -714,10 +715,13 @@ struct App::Impl {
     }
     // The hand the layout in use is drawn for.
     Handedness current_handedness() const { return handedness_of(active_layout().id); }
-    // How many pixels the core renders per console pixel. Only the host runs a
-    // core, but the menu is one menu wherever it is opened from, so this is
-    // shared like everything else on it.
+    // How many pixels the core renders per console pixel, as chosen -- or
+    // kAutoRenderScale. Only the host runs a core, but the menu is one menu
+    // wherever it is opened from, so this is shared like everything else on it.
     int render_scale = 1;
+    // What the core is drawing at: the choice, or Auto's -- see
+    // update_auto_render_scale().
+    int effective_render_scale = 1;
     // Whether the current layout shows the gap between its screens. Shared
     // like the settings above, though it is only ever asked about while the
     // active layout offers the choice -- see LayoutComposition::gap_toggleable.
@@ -1207,8 +1211,14 @@ struct App::Impl {
     // Applies and persists a host-side change to any of them.
     void adopt_filtering(bool bilinear);
     void adopt_render_scale(int scale);
-    // The next scale in the cycle, wrapping at the system's maximum.
-    int next_render_scale() const;
+    // The largest scale the game's core offers; 1 for nothing to choose.
+    int max_render_scale() const;
+    // What Auto comes to now, for the screens as this device and the one
+    // connected to it draw them, up to `maximum`.
+    int auto_render_scale_now(int maximum) const;
+    // On Auto, the core kept at what it comes to as the window, the layout and
+    // the devices change.
+    void update_auto_render_scale();
     void adopt_audio_target(AudioTarget target);
     // Sets the hand of the layout in use, and only that layout.
     void adopt_handedness(Handedness hand);
@@ -3125,10 +3135,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             // LayoutPickerResult::option_steps -- in the order it steps.
             const int steps = std::max(1, result.option_steps);
             if (result.render_scale_changed) {
-                const int maximum = std::max(1, system_profile(system).max_render_scale);
-                int scale = render_scale;
-                for (int step = 0; step < steps; ++step) scale = scale >= maximum ? 1 : scale + 1;
-                request_render_scale(scale);
+                // Auto, then each scale: as the menu lists them.
+                const int choices = max_render_scale() + 1;
+                request_render_scale((std::clamp(render_scale, 0, choices - 1) + steps) % choices);
             }
             if (result.audio_target_changed) {
                 AudioTarget target = audio_target;
@@ -3298,8 +3307,7 @@ void App::Impl::open_picker(bool embedded) {
     // same menu as the host, and `system` follows the host while it is
     // connected. Outside a game there is nothing to scale.
     picker_state.max_render_scale =
-        is_companion() ? companion_session->host_max_render_scale()
-                       : (local_game() ? system_profile(system).max_render_scale : 1);
+        is_companion() ? companion_session->host_max_render_scale() : max_render_scale();
     picker_state.screen_gap = screen_gap;
     picker_state.right_stick_mode = right_stick_mode;
     // Only a console whose right stick can mean more than one thing has a
@@ -3356,9 +3364,42 @@ void App::Impl::open_picker(bool embedded) {
     }
 }
 
-int App::Impl::next_render_scale() const {
-    const int maximum = std::max(1, system_profile(system).max_render_scale);
-    return render_scale >= maximum ? 1 : render_scale + 1;
+int App::Impl::max_render_scale() const {
+    if (is_companion() && companion_session) return std::max(1, companion_session->host_max_render_scale());
+    if (source) return source->max_render_scale();
+    return local_game() ? std::max(1, system_profile(system).max_render_scale) : 1;
+}
+
+int App::Impl::auto_render_scale_now(int maximum) const {
+    std::vector<DrawnScreen> drawn;
+    const auto add = [&](ScreenId screen, int width, int height) {
+        if (width > 0 && height > 0) drawn.push_back(DrawnScreen{screen, width, height});
+    };
+    // This device's window, as the layout draws each screen in it.
+    for (const PlacedScreen& placed : place_screens(device_layout(), static_cast<float>(output_width),
+                                                     static_cast<float>(output_height), screens_geometry())) {
+        int width = static_cast<int>(std::ceil(placed.rect.w));
+        int height = static_cast<int>(std::ceil(placed.rect.h));
+        if (rotation_is_quarter_turn(placed.rotation)) std::swap(width, height);
+        add(placed.screen, width, height);
+    }
+    // And the connected device's, for whichever screen it shows.
+    for (const ScreenId screen : {ScreenId::Top, ScreenId::Bottom}) {
+        int width = 0;
+        int height = 0;
+        if (host_session && host_session->companion_wants(screen)) companion_target_size(screen, width, height);
+        add(screen, width, height);
+    }
+    return auto_render_scale(system_profile(system).screens, drawn, maximum);
+}
+
+void App::Impl::update_auto_render_scale() {
+    if (!source || is_companion() || render_scale != kAutoRenderScale) return;
+    const int wanted = auto_render_scale_now(max_render_scale());
+    if (wanted == effective_render_scale) return;
+    source->set_render_scale(wanted);
+    effective_render_scale = source->render_scale();
+    log_info("render scale: Auto chose " + std::to_string(effective_render_scale) + "x for the screens as they are drawn");
 }
 
 void App::Impl::request_render_scale(int scale) {
@@ -3370,15 +3411,21 @@ void App::Impl::request_render_scale(int scale) {
 }
 
 void App::Impl::adopt_render_scale(int scale) {
-    const int wanted = std::clamp(scale, 1, std::max(1, system_profile(system).max_render_scale));
+    const int wanted = scale == kAutoRenderScale ? kAutoRenderScale : std::clamp(scale, 1, max_render_scale());
     if (wanted == render_scale) {
         return;
     }
     render_scale = wanted;
     if (source) {
-        source->set_render_scale(render_scale);
-        // Whatever the core actually accepted, which is what the menu shows.
-        render_scale = source->render_scale();
+        if (render_scale == kAutoRenderScale) {
+            effective_render_scale = 0;  // chosen afresh just below
+            update_auto_render_scale();
+        } else {
+            source->set_render_scale(render_scale);
+            // Whatever the core actually accepted, which is what the menu shows.
+            render_scale = source->render_scale();
+            effective_render_scale = render_scale;
+        }
     }
     if (picker) {
         picker->set_render_scale(render_scale);
@@ -3386,7 +3433,8 @@ void App::Impl::adopt_render_scale(int scale) {
     // A companion is following the host and has no game of its own to remember
     // this against, so it changes what it displays and nothing on disk.
     if (is_companion()) {
-        log_info("following the host: render scale " + std::to_string(render_scale) + "x");
+        log_info("following the host: render scale " +
+                 (render_scale == kAutoRenderScale ? std::string("Auto") : std::to_string(render_scale) + "x"));
         return;
     }
     if (have_game_config) {
@@ -4426,7 +4474,12 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
     // Named after the ROM rather than its hash, so saves are interchangeable
     // with RetroArch's and recognisable in a file listing.
     source_config.save_path = path_join(paths.saves_dir, path_stem(rom_path) + ".srm");
-    source_config.render_scale = render_scale;
+    // Auto as far as the console goes: the core says how far it goes once it
+    // is loaded, and the source holds it to that.
+    effective_render_scale = render_scale == kAutoRenderScale
+                                 ? auto_render_scale_now(system_profile(system).max_render_scale)
+                                 : render_scale;
+    source_config.render_scale = effective_render_scale;
     source_config.rumble_pak = have_game_config && game_config.rumble_pak;
     source_config.nickname = settings.ds_nickname;
     source_config.favorite_color = settings.ds_favorite_color;
@@ -4476,9 +4529,10 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
         return false;
     }
 
-    // A scale from an older config, or one this system does not offer, is
+    // A scale from an older config, or one this core does not offer, is
     // clamped by the source; the menu should show what the core was given.
-    render_scale = source->render_scale();
+    effective_render_scale = source->render_scale();
+    if (render_scale != kAutoRenderScale) render_scale = effective_render_scale;
     if (system == SystemId::Ds) {
         source->set_run_ahead(settings.run_ahead_ds);
     }
@@ -4767,6 +4821,7 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
                 return false;
             }
             render_scale = 1;  // whatever is playing the game owns its resolution
+            effective_render_scale = 1;
             external_game_arrived = false;
             solo_screen_unchecked = true;
             log_info(profile.core_description + " can hand its screens over at " + socket_path);
@@ -6261,6 +6316,7 @@ int App::run(const AppOptions& options) {
         }
 
         impl.last_delta_seconds = elapsed;
+        impl.update_auto_render_scale();
         if (impl.solo_screen_unchecked) {
             impl.update_solo_screen();
         }
@@ -6477,8 +6533,7 @@ int App::run(const AppOptions& options) {
             // and none for an amiibo's.
             shared.menu_unavailable_notice =
                 impl.corner_notice_up() && impl.corner_notice == kMenuUnavailableNotice;
-            shared.max_render_scale =
-                impl.local_game() ? system_profile(impl.system).max_render_scale : 1;
+            shared.max_render_scale = impl.max_render_scale();
             shared.cursor_choosable = impl.pointer_choosable();
             shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
@@ -7460,13 +7515,13 @@ int App::run(const AppOptions& options) {
             const SystemScreens& native = system_profile(impl.system).screens;
             const auto full_resolution = [&](ScreenId screen) {
                 const ScreenSize size = screen == ScreenId::Top ? native.top : native.bottom;
-                return impl.host_session->sends_video(screen, size.width * impl.render_scale,
-                                                      size.height * impl.render_scale);
+                return impl.host_session->sends_video(screen, size.width * impl.effective_render_scale,
+                                                      size.height * impl.effective_render_scale);
             };
             if (impl.host_session->companion_wants(ScreenId::Top)) {
                 if (full_resolution(ScreenId::Top)) {
-                    playing->read_screen(ScreenId::Top, top, native.top.width * impl.render_scale,
-                                         native.top.height * impl.render_scale);
+                    playing->read_screen(ScreenId::Top, top, native.top.width * impl.effective_render_scale,
+                                         native.top.height * impl.effective_render_scale);
                 } else {
                     playing->read_screen(ScreenId::Top, top);
                 }
@@ -7474,8 +7529,8 @@ int App::run(const AppOptions& options) {
             if (impl.host_session->companion_wants(ScreenId::Bottom)) {
                 if (full_resolution(ScreenId::Bottom)) {
                     playing->read_screen(ScreenId::Bottom, bottom,
-                                         native.bottom.width * impl.render_scale,
-                                         native.bottom.height * impl.render_scale);
+                                         native.bottom.width * impl.effective_render_scale,
+                                         native.bottom.height * impl.effective_render_scale);
                 } else {
                     playing->read_screen(ScreenId::Bottom, bottom);
                 }

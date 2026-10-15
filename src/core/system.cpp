@@ -96,11 +96,9 @@ SystemProfile make_three_ds() {
     // the hardware-render callback and refuses to load the game if it does not
     // get one, so the window has to be built for it before the core is loaded.
     profile.gl_context = GlContextNeed::OpenGl33Core;
-    // Citra will go to 10x, but this is a menu to be cycled through with a
-    // thumbstick on a handheld GPU: 3x already fills a 1080p screen from the
-    // upper screen alone, and everything past it costs frames to no visible
-    // end on the hardware this runs on.
-    profile.max_render_scale = 3;
+    // As far as the core goes -- Azahar's 18x; the core says, and the menu
+    // offers as many as it does. Auto chooses for the screens it is drawn on.
+    profile.max_render_scale = 18;
     // A 3DS has a gyroscope and an accelerometer, and games use them: Zelda's
     // first-person aiming, Steel Diver, Face Raiders, Kid Icarus. libretro has
     // a sensor interface for exactly this and the frontend side of it is

@@ -89,6 +89,9 @@ public:
     // told. A system with no scale to choose ignores this.
     void set_render_scale(int scale);
     int render_scale() const { return render_scale_; }
+    // The largest scale there is to choose: the core's own largest, as far as
+    // this console's profile goes. 1 for none to choose.
+    int max_render_scale() const { return max_render_scale_; }
     // Frames to run ahead of the game's own input lag -- see
     // LibretroCore::set_run_ahead(). Safe to change while the game runs.
     void set_run_ahead(unsigned frames) {
@@ -213,6 +216,7 @@ private:
     CoreInputSink input_sink_;
     SystemId system_ = SystemId::Ds;
     int render_scale_ = 1;
+    int max_render_scale_ = 1;
     // What the loaded core calls the settings found by looking -- see
     // find_core_options(). Empty where the core has no such thing.
     std::string rumble_key_;

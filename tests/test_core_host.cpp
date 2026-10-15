@@ -893,7 +893,7 @@ void test_render_scale_only_changes_the_resolution() {
     // More than this system offers is clamped rather than sent to the core,
     // which would reject a value it never declared.
     source.set_render_scale(99);
-    CHECK_EQ(source.render_scale(), system_profile(SystemId::ThreeDs).max_render_scale);
+    CHECK_EQ(source.render_scale(), source.max_render_scale());
     CHECK_MSG(source.advance_frame(&error), error);
     CHECK_MSG(source.warnings().empty(), "a clamped render scale still reached the core");
     source.close();

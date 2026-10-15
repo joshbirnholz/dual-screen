@@ -1,5 +1,6 @@
 #include "ui/layout_picker.hpp"
 
+#include "core/render_scale.hpp"
 #include "ui/control_guide.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/page_frame.hpp"
@@ -315,11 +316,13 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
     std::vector<std::string> choices;
     switch (row.option) {
         case Option::RenderScale:
-            // 1x up to the most, which is the order the caller steps them.
+            // Auto, then 1x up to the most: the order the caller steps
+            // them, and each one's place its number.
+            choices.push_back("Auto");
             for (int scale = 1; scale <= std::max(1, state_.max_render_scale); ++scale) {
                 choices.push_back(std::to_string(scale) + "x");
             }
-            current = state_.render_scale - 1;
+            current = std::clamp(state_.render_scale, 0, std::max(1, state_.max_render_scale));
             break;
         case Option::Sound: {
             // From each to the next, as next_audio_target() goes.
@@ -391,7 +394,9 @@ void LayoutPicker::open_choice() {
 
 std::string LayoutPicker::option_value(const OptionRow& row) const {
     switch (row.option) {
-        case Option::RenderScale: return std::to_string(state_.render_scale) + "x";
+        case Option::RenderScale:
+            return state_.render_scale == kAutoRenderScale ? std::string("Auto")
+                                                           : std::to_string(state_.render_scale) + "x";
         case Option::Sound:
             switch (state_.audio_target) {
                 case AudioTarget::TopScreen: return "Top";

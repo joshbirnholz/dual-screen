@@ -1,5 +1,7 @@
 #include "core/libretro_screen_source.hpp"
 
+#include "core/render_scale.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -10,6 +12,7 @@
 #include "config/melonds_tuning.hpp"
 #include "config/paths.hpp"
 #include "core/gl_call_trace.hpp"
+#include "core/render_scale.hpp"
 #include "render/gl_loader.hpp"
 #include "util/log.hpp"
 
@@ -205,7 +208,8 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
 
     system_ = config.system;
     const SystemProfile& profile = system_profile(system_);
-    render_scale_ = std::clamp(config.render_scale, 1, profile.max_render_scale);
+    max_render_scale_ = std::max(1, profile.max_render_scale);
+    render_scale_ = std::clamp(config.render_scale, 1, max_render_scale_);
     rumble_pak_ = config.rumble_pak;
 
     if (config.core_path.empty()) {
@@ -322,6 +326,15 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     // What the core declares is known now, and nothing has been read from it
     // yet: the game loads below.
     find_core_options();
+    // As far as this core goes: Azahar's goes to 18x, an older Citra's to 10x.
+    if (system_ == SystemId::ThreeDs) {
+        const auto option = core_->declared_options().find(kOpt3dsResolution);
+        if (option != core_->declared_options().end()) {
+            const int offered = largest_offered_scale(option->second.allowed_values);
+            if (offered > 0) max_render_scale_ = std::clamp(offered, 1, std::max(1, profile.max_render_scale));
+        }
+        render_scale_ = std::min(render_scale_, max_render_scale_);
+    }
     apply_render_scale();
     if (offers_rumble_pak()) {
         set_rumble_pak(rumble_pak_);
@@ -533,7 +546,7 @@ void LibretroCoreScreenSource::log_split() {
 }
 
 void LibretroCoreScreenSource::set_render_scale(int scale) {
-    const int wanted = std::clamp(scale, 1, system_profile(system_).max_render_scale);
+    const int wanted = std::clamp(scale, 1, max_render_scale_);
     if (wanted == render_scale_) {
         return;
     }
