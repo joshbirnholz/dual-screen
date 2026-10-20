@@ -728,6 +728,9 @@ struct App::Impl {
     bool screen_gap = true;
     // What the right stick is read as, on a console that has one of its own.
     RightStickMode right_stick_mode = RightStickMode::CStick;
+    // What each of the pad's buttons does in this game -- see ButtonMapping.
+    // The host's, kept with the game, and followed by a companion's pad.
+    ButtonMapping button_mapping;
     // The stylus on the right stick, while it is one: moved by both devices'
     // sticks, as the game's touch, and drawn by whichever shows the touch
     // screen. Kept here, the host, and told to a companion.
@@ -1248,14 +1251,9 @@ struct App::Impl {
     void publish_stylus_cursor();
     // Drawn over the touch screen where this device shows it.
     void draw_stylus_cursor(float width, float height);
-    // What clicking the left stick does. The host's setting, and while a
-    // companion is connected the one both devices follow: the quick menu
-    // that offers it is one menu, so what it says has to come from one place.
-    LeftStickPress left_stick_press_in_effect() const;
-    void request_left_stick_press(LeftStickPress press);
-    void adopt_left_stick_press(LeftStickPress press);
-    // Puts whatever is in effect into this device's L3 and the menu.
-    void apply_left_stick_press();
+    // This game's Button Mapping, taken on: by this device's pad, and kept
+    // with the game where it runs here. A companion's comes from the host.
+    void adopt_button_mapping(const ButtonMapping& mapping);
     // Resume from Save State: whether it is on for this game, as the host has
     // it, and the same ask-or-apply pair as everything else the menu shares.
     // Off means the resume point is deleted as well as no longer written, so
@@ -1478,7 +1476,7 @@ void App::Impl::apply_system() {
     // lets it stand in for the d-pad, because a player will reach for it.
     input.set_stick_is_dpad(!profile.has_analog_stick);
     input.set_game_owns_controls(profile.game_uses_every_control);
-    apply_left_stick_press();
+    input.set_microphone_button(profile.has_microphone);
     // Whether this device's own sensors are read at all.
     //
     // Only when it is the one running the game: a companion is told by the
@@ -3235,11 +3233,6 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 for (int step = 0; step < steps; ++step) mode = next_right_stick_mode(mode, has_stick);
                 request_right_stick_mode(mode);
             }
-            if (result.left_stick_press_changed) {
-                LeftStickPress press = left_stick_press_in_effect();
-                for (int step = 0; step < steps; ++step) press = next_left_stick_press(press);
-                request_left_stick_press(press);
-            }
             // One of Cemu's, which only the device running it can change; a
             // companion's press reaches the host's menu and lands here there.
             if (result.producer_option >= 0 && !is_companion()) {
@@ -3393,12 +3386,6 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_right_stick_choosable()
                        : (local_game() && system_profile(system).offers_right_stick_mode);
     picker_state.right_stick_modes = right_stick_modes(system_profile(system).has_analog_stick);
-    // What L3 does, where there is a microphone for it to be -- see
-    // LeftStickPress. The host's, and told to the companion like the rest.
-    picker_state.left_stick_press = left_stick_press_in_effect();
-    picker_state.left_stick_choosable =
-        is_companion() ? companion_session->host_left_stick_choosable()
-                       : (local_game() && system_profile(system).has_microphone);
     // A Rumble Pak, where the core running this game can put one in.
     picker_state.rumble_pak = rumble_pak_in_effect();
     picker_state.lcd_filter = lcd_filter_in_effect();
@@ -3583,34 +3570,19 @@ void App::Impl::swap_layout() {
     }
 }
 
-LeftStickPress App::Impl::left_stick_press_in_effect() const {
-    return is_companion() ? companion_session->host_left_stick_press() : settings.left_stick_press;
-}
-
-void App::Impl::request_left_stick_press(LeftStickPress press) {
-    if (is_companion()) {
-        companion_session->request_left_stick_press(press);
-        return;  // the host decides; it will tell us
-    }
-    adopt_left_stick_press(press);
-}
-
-void App::Impl::adopt_left_stick_press(LeftStickPress press) {
-    if (press == settings.left_stick_press) {
+void App::Impl::adopt_button_mapping(const ButtonMapping& mapping) {
+    if (mapping == button_mapping) {
         return;
     }
-    settings.left_stick_press = press;
-    settings.save(paths);
-    apply_left_stick_press();
-    log_info(std::string("left stick click: ") + to_string(press));
-}
-
-void App::Impl::apply_left_stick_press() {
-    const LeftStickPress press = left_stick_press_in_effect();
-    input.set_microphone_button(
-        left_stick_is_microphone(system_profile(system).has_microphone, press));
-    if (picker) {
-        picker->set_left_stick_press(press);
+    button_mapping = mapping;
+    input.set_button_mapping(button_mapping);
+    if (is_companion()) {
+        log_info("following the host's button mapping");
+        return;
+    }
+    if (have_game_config) {
+        game_config.button_mapping = button_mapping;
+        if (!game_config.save(paths)) log_warn("could not save this game's button mapping");
     }
 }
 
@@ -4387,10 +4359,6 @@ void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
         // The prompts change under the cursor that changed them, which is the
         // only way to see what the setting does.
         apply_button_style();
-        // L3's job is one of the things that can have just changed, and the
-        // player who changed it is about to press it.
-        input.set_microphone_button(left_stick_is_microphone(
-            system_profile(system).has_microphone, settings.left_stick_press));
         // Takes effect at once rather than at the next launch: this is the
         // kind of thing somebody changes to see what it does, and the poll
         // loop below picks the new value up on its next pass.
@@ -4490,6 +4458,8 @@ void App::Impl::start_companion(ScreenId wanted_screen) {
     lcd_filter = false;
     right_stick_mode = settings.default_right_stick_mode;
     input.set_right_stick_mode(right_stick_mode);
+    button_mapping = ButtonMapping();
+    input.set_button_mapping(button_mapping);
     apply_filtering();
     if (!host_picker) {
         host_picker.reset(new HostPickerScreen());
@@ -4744,6 +4714,9 @@ bool App::Impl::start_game(const std::string& rom_path, bool fatal_on_failure) {
         lcd_filter = game_config.lcd_filter;
         right_stick_mode = game_config.right_stick_mode;
     }
+    // A Wii U's buttons are Cemu's to map, player by player.
+    button_mapping = have_game_config && !wii_u_game ? game_config.button_mapping : ButtonMapping();
+    input.set_button_mapping(button_mapping);
     // One this console has: a DS's right stick is a stylus or nothing, so a
     // 3DS's C-Stick, the default everywhere else, is the stylus there.
     right_stick_mode = right_stick_mode_for(right_stick_mode, system_profile(rom_system).has_analog_stick);
@@ -5066,6 +5039,7 @@ void App::Impl::persist_game_config() {
     game_config.lcd_filter = lcd_filter;
     game_config.separate_screen = separate_screen;
     game_config.right_stick_mode = right_stick_mode;
+    game_config.button_mapping = button_mapping;
     game_config.touch_last_played();
     if (!game_config.save(paths)) {
         log_warn("could not save this game's layout");
@@ -6624,11 +6598,7 @@ int App::run(const AppOptions& options) {
             shared.cursor_shown = impl.settings.cursor_mode == CursorMode::Shown;
             shared.right_stick_choosable =
                 impl.local_game() && system_profile(impl.system).offers_right_stick_mode;
-            // The same test open_picker() makes, so the host's menu and the
-            // one it tells the companion to build have the same rows.
-            shared.left_stick_choosable =
-                impl.local_game() && system_profile(impl.system).has_microphone;
-            shared.left_stick_press = impl.settings.left_stick_press;
+            shared.button_mapping = impl.button_mapping;
             shared.rumble_choosable = impl.source && impl.source->offers_rumble_pak();
             shared.rumble_pak = impl.source && impl.source->rumble_pak();
             shared.lcd_filter_choosable = impl.system == SystemId::Ds;
@@ -6806,9 +6776,6 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_right_stick_mode) {
                     impl.adopt_right_stick_mode(request.right_stick_mode);
-                }
-                if (request.wants_left_stick_press) {
-                    impl.adopt_left_stick_press(request.left_stick_press);
                 }
                 if (request.wants_lcd_filter) {
                     impl.adopt_lcd_filter(request.lcd_filter);
@@ -7053,8 +7020,8 @@ int App::run(const AppOptions& options) {
                 impl.adopt_left_handed_layouts(impl.companion_session->host_left_handed_layouts());
                 impl.adopt_screen_gap(impl.companion_session->host_screen_gap());
                 impl.adopt_right_stick_mode(impl.companion_session->host_right_stick_mode());
-                // L3 does what the host has it doing, on both devices.
-                impl.apply_left_stick_press();
+                // Every button does what the host's game has it doing.
+                impl.adopt_button_mapping(impl.companion_session->host_button_mapping());
                 // Whether this machine's own gyro is being read at all. Told
                 // rather than worked out from the console, because it is the
                 // host that knows whether there is anything at the far end

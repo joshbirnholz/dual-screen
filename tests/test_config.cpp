@@ -293,6 +293,9 @@ void test_game_config_round_trip() {
     fresh.right_stick_mode = RightStickMode::Off;
     fresh.wii_u_options["upscale_filter"] = 3;
     fresh.lcd_filter = true;
+    CHECK(fresh.button_mapping == ButtonMapping());
+    fresh.button_mapping[PadControl::Zr] = PadAction::TouchCursor;
+    fresh.button_mapping[PadControl::A] = PadAction::Nothing;
     fresh.touch_last_played();
     CHECK(fresh.save(paths));
 
@@ -305,6 +308,7 @@ void test_game_config_round_trip() {
     CHECK_EQ(reloaded.screen_gap, true);
     CHECK(reloaded.right_stick_mode == RightStickMode::Off);
     CHECK_MSG(reloaded.lcd_filter, "the LCD filter did not survive being written down");
+    CHECK(reloaded.button_mapping == fresh.button_mapping);
     const std::map<std::string, int> kept{{"upscale_filter", 3}};
     CHECK(reloaded.wii_u_options == kept);
     CHECK(!reloaded.last_played.empty());
@@ -318,6 +322,9 @@ void test_game_config_round_trip() {
     CHECK(contents.find("\"layout_id\"") != std::string::npos);
     CHECK(contents.find("\"screen_gap\"") != std::string::npos);
     CHECK(contents.find("\"right_stick_mode\"") != std::string::npos);
+    // Only what was changed is written: a button still standard is not.
+    CHECK(contents.find("\"zr\": \"touch_cursor\"") != std::string::npos);
+    CHECK(contents.find("\"plus\"") == std::string::npos);
     CHECK(contents.find("\"last_played\"") != std::string::npos);
     CHECK(contents.find("\"role_default\"") != std::string::npos);
     CHECK(contents.find("\"companion_device_id\"") != std::string::npos);
@@ -401,7 +408,6 @@ void test_settings_round_trip() {
     defaults.default_render_scale = 2;
     defaults.default_screen_gap = false;
     defaults.default_right_stick_mode = RightStickMode::DPad;
-    defaults.left_stick_press = LeftStickPress::SwapLayout;
     defaults.video_hold = video::VideoHold::Responsive;
     defaults.run_ahead_ds = 2;
     defaults.audio_target = AudioTarget::BottomScreen;
@@ -431,8 +437,6 @@ void test_settings_round_trip() {
     CHECK_EQ(reloaded.default_bilinear_filtering, true);
     CHECK_EQ(reloaded.default_render_scale, 2);
     CHECK(reloaded.default_right_stick_mode == RightStickMode::DPad);
-    CHECK_MSG(reloaded.left_stick_press == LeftStickPress::SwapLayout,
-              "what L3 does did not survive being written down");
     CHECK_MSG(reloaded.video_hold == video::VideoHold::Responsive,
               "how long a frame may be held back did not survive a save and load");
     CHECK_EQ(reloaded.run_ahead_ds, 2u);

@@ -1253,16 +1253,6 @@ MenuButtonLabels InputManager::menu_labels() const {
     return MenuButtonLabels();  // Xbox letters: the common case, and Steam Input's
 }
 
-bool InputManager::stick_buttons_held(SDL_GameControllerButton button) const {
-    for (const auto& entry : controllers_) {
-        if (entry.second != nullptr && reads_pad(entry.first) &&
-            SDL_GameControllerGetButton(entry.second, button) != 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 RawPadState InputManager::raw_state_of(SDL_GameController* controller) {
     RawPadState raw;
     for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
@@ -1279,16 +1269,95 @@ DsInputState InputManager::held_state_of(SDL_GameController* controller) const {
     return held_state_from(raw_state_of(controller));
 }
 
+namespace {
+
+uint32_t control_bit(PadControl control) { return 1u << static_cast<unsigned>(control); }
+
+UiAction ui_action_for_shortcut(PadAction action) {
+    switch (action) {
+        case PadAction::QuickMenu: return UiAction::ToggleMenu;
+        case PadAction::ScreenSmoothing: return UiAction::ToggleFilter;
+        default: break;
+    }
+    return UiAction::SwapLayout;
+}
+
+}  // namespace
+
+uint32_t InputManager::controls_held_in(const RawPadState& raw) const {
+    // By position, as SDL is asked to report them: its A is the south button,
+    // which a Nintendo pad prints B on.
+    static constexpr std::pair<SDL_GameControllerButton, PadControl> kButtons[] = {
+        {SDL_CONTROLLER_BUTTON_B, PadControl::A},
+        {SDL_CONTROLLER_BUTTON_A, PadControl::B},
+        {SDL_CONTROLLER_BUTTON_Y, PadControl::X},
+        {SDL_CONTROLLER_BUTTON_X, PadControl::Y},
+        {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, PadControl::L},
+        {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, PadControl::R},
+        {SDL_CONTROLLER_BUTTON_START, PadControl::Plus},
+        {SDL_CONTROLLER_BUTTON_BACK, PadControl::Minus},
+        {SDL_CONTROLLER_BUTTON_LEFTSTICK, PadControl::LeftStick},
+        {SDL_CONTROLLER_BUTTON_RIGHTSTICK, PadControl::RightStick},
+    };
+    uint32_t held = 0;
+    for (const auto& [button, control] : kButtons) {
+        if (raw.buttons[button]) held |= control_bit(control);
+    }
+    const float trigger_deadzone = settings_.trigger_deadzone;
+    if (raw.axes[SDL_CONTROLLER_AXIS_TRIGGERLEFT] / 32767.0f > trigger_deadzone) {
+        held |= control_bit(PadControl::Zl);
+    }
+    if (raw.axes[SDL_CONTROLLER_AXIS_TRIGGERRIGHT] / 32767.0f > trigger_deadzone) {
+        held |= control_bit(PadControl::Zr);
+    }
+    return held;
+}
+
+PadConsole InputManager::pad_console() const {
+    PadConsole console;
+    console.has_microphone = left_stick_is_mic_;
+    console.game_uses_every_control = game_owns_controls_;
+    console.right_stick = right_stick_mode_;
+    return console;
+}
+
 DsInputState InputManager::held_state_from(const RawPadState& raw) const {
     DsInputState held;
 
-    for (int index = 0; index < SDL_CONTROLLER_BUTTON_MAX; ++index) {
-        const SDL_GameControllerButton button = static_cast<SDL_GameControllerButton>(index);
+    // The d-pad is the d-pad, whatever else is mapped.
+    for (const SDL_GameControllerButton button :
+         {SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+          SDL_CONTROLLER_BUTTON_DPAD_RIGHT}) {
         DsButton ds_button = DsButton::A;
-        if (ds_button_for_controller_button(button, ds_button) && raw.buttons[index]) {
+        if (raw.buttons[button] && ds_button_for_controller_button(button, ds_button)) {
             held.set(ds_button, true);
         }
     }
+    // Every other button is whatever this game's Button Mapping makes it --
+    // see ButtonMapping. This app's own shortcuts are pressed rather than
+    // held, and are raised in end_frame().
+    const uint32_t controls = controls_held_in(raw);
+    const PadConsole console = pad_console();
+    const bool both_sticks = (controls & control_bit(PadControl::LeftStick)) != 0 &&
+                             (controls & control_bit(PadControl::RightStick)) != 0;
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const PadControl control = static_cast<PadControl>(index);
+        if ((controls & control_bit(control)) == 0) continue;
+        const PadAction action = button_mapping_.resolved(control, console);
+        // The Touch Cursor's tip touches nothing while there is no cursor,
+        // and not with both stick presses held, which is the two together
+        // opening the menu rather than a touch on the way there.
+        if (action == PadAction::TouchCursor &&
+            (right_stick_mode_ != RightStickMode::TouchCursor ||
+             ((control == PadControl::LeftStick || control == PadControl::RightStick) && both_sticks))) {
+            continue;
+        }
+        // Blowing needs a microphone to blow into.
+        if (action == PadAction::BlowIntoMic && !left_stick_is_mic_) continue;
+        DsButton ds_button = DsButton::A;
+        if (ds_button_for_pad_action(action, ds_button)) held.set(ds_button, true);
+    }
+
     // The left stick is always the circle pad. Whether it is *also* the
     // d-pad depends on the console: a DS has no stick, so reaching for one
     // has to work, but a 3DS has both and pressing both at once is what
@@ -1339,50 +1408,15 @@ DsInputState InputManager::held_state_from(const RawPadState& raw) const {
         case RightStickMode::TouchCursor:
             // Carried as the C-Stick and R3 as far as the app, which moves
             // the cursor with them and hands the game a touch instead -- see
-            // StylusCursor. The game itself never sees either. Not with L3
-            // as well, which is the two together opening the menu rather than
-            // a touch on the way there.
+            // StylusCursor. The game itself never sees either. The tip is
+            // whichever button Button Mapping says -- R3 as standard.
             if (std::abs(raw_c_x) > std::abs(held.c_stick_x)) held.c_stick_x = raw_c_x;
             if (std::abs(raw_c_y) > std::abs(held.c_stick_y)) held.c_stick_y = raw_c_y;
-            if (raw.buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK] && !raw.buttons[SDL_CONTROLLER_BUTTON_LEFTSTICK]) {
-                held.set(DsButton::RightStick, true);
-            }
             break;
         case RightStickMode::Off:
             break;
     }
 
-    const float trigger_deadzone = settings_.trigger_deadzone;
-    const float left_trigger =
-        raw.axes[SDL_CONTROLLER_AXIS_TRIGGERLEFT] / 32767.0f;
-    const float right_trigger =
-        raw.axes[SDL_CONTROLLER_AXIS_TRIGGERRIGHT] / 32767.0f;
-    if (game_owns_controls_) {
-        // A console with four shoulder buttons and two sticks that press
-        // has somewhere for all of them to go, and the game reads them all.
-        // See set_game_owns_controls().
-        if (left_trigger > trigger_deadzone) held.set(DsButton::Zl, true);
-        if (right_trigger > trigger_deadzone) held.set(DsButton::Zr, true);
-        if (raw.buttons[SDL_CONTROLLER_BUTTON_LEFTSTICK]) {
-            held.set(DsButton::LeftStick, true);
-        }
-        if (raw.buttons[SDL_CONTROLLER_BUTTON_RIGHTSTICK]) {
-            held.set(DsButton::RightStick, true);
-        }
-    } else {
-        // The triggers double as L and R. The DS's shoulder buttons are
-        // digital, but plenty of people reach for the triggers first, and a
-        // pad that has both should honour either. The stick presses are
-        // this app's own shortcuts here, so they are not the game's.
-        if (left_trigger > trigger_deadzone) held.set(DsButton::L, true);
-        if (right_trigger > trigger_deadzone) held.set(DsButton::R, true);
-        // Except this one, on a console that has a microphone: it goes to
-        // the game as L3, which is where melonDS listens for it.
-        if (left_stick_is_mic_ &&
-            raw.buttons[SDL_CONTROLLER_BUTTON_LEFTSTICK]) {
-            held.set(DsButton::LeftStick, true);
-        }
-    }
     return held;
 }
 
@@ -1487,16 +1521,23 @@ void InputManager::end_frame(const Layout& layout,
 
     const DsInputState held = poll_held_state();
 
-    // L3 and R3 together open the menu. Neither reaches a DS or 3DS button, so
-    // the pair costs a game nothing -- unlike Start and Select, which plenty
+    // L3 and R3 together open the menu, whatever Button Mapping makes them
+    // apart. As standard neither reaches a DS or 3DS button, so the pair
+    // costs a game nothing -- unlike Start and Select, which plenty
     // of DS games read together as a soft reset, a poor thing to do to someone
     // on their way into the menu.
     //
     // Apart they keep their own meanings, but a press only becomes one of
     // those once it is released without the other having joined it. Otherwise
     // reaching for the chord would swap the layout on the way in.
-    const bool left = stick_buttons_held(SDL_CONTROLLER_BUTTON_LEFTSTICK);
-    const bool right = stick_buttons_held(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+    uint32_t controls = 0;
+    for (const auto& entry : controllers_) {
+        if (entry.second != nullptr && reads_pad(entry.first)) {
+            controls |= controls_held_in(raw_state_of(entry.second));
+        }
+    }
+    const bool left = (controls & control_bit(PadControl::LeftStick)) != 0;
+    const bool right = (controls & control_bit(PadControl::RightStick)) != 0;
     if (left && right && !stick_chord_used_) {
         // Still marked used either way, so that letting go of the pair does not
         // then fire the two singles below on a console that allows them.
@@ -1505,22 +1546,28 @@ void InputManager::end_frame(const Layout& layout,
             push_action(UiAction::ToggleMenu);
         }
     }
-    // Only where the game does not want them. See set_game_owns_controls().
+    // Every button Button Mapping gives one of this app's own shortcuts --
+    // only where the game does not want them; see set_game_owns_controls().
+    // Once a press, when it is pressed; but for the stick presses, which are
+    // only themselves once released without the other having joined them.
     if (!game_owns_controls_) {
-        if (left_stick_held_ && !left && !stick_chord_used_ && !left_stick_is_mic_) {
-            push_action(UiAction::SwapLayout);
-        }
-        // Not where R3 is the stylus's tip. See RightStickMode::TouchCursor.
-        if (right_stick_held_ && !right && !stick_chord_used_ &&
-            right_stick_mode_ != RightStickMode::TouchCursor) {
-            push_action(UiAction::ToggleFilter);
+        const PadConsole console = pad_console();
+        for (std::size_t index = 0; index < kPadControls; ++index) {
+            const PadControl control = static_cast<PadControl>(index);
+            const PadAction action = button_mapping_.resolved(control, console);
+            if (!pad_action_is_shortcut(action)) continue;
+            const bool now = (controls & control_bit(control)) != 0;
+            const bool before = (controls_held_ & control_bit(control)) != 0;
+            const bool stick = control == PadControl::LeftStick || control == PadControl::RightStick;
+            if (stick ? (before && !now && !stick_chord_used_) : (now && !before)) {
+                push_action(ui_action_for_shortcut(action));
+            }
         }
     }
     if (!left && !right) {
         stick_chord_used_ = false;
     }
-    left_stick_held_ = left;
-    right_stick_held_ = right;
+    controls_held_ = controls;
 
     const bool pointer_down = update_pointer(output_width, output_height);
     // Off centre by enough that the menu would have moved on it, which is the

@@ -908,8 +908,7 @@ void test_the_menu_is_one_menu_across_both_devices() {
     shared.max_render_scale = 3;
     shared.cursor_choosable = true;
     shared.right_stick_choosable = true;
-    shared.left_stick_choosable = true;
-    shared.left_stick_press = LeftStickPress::SwapLayout;
+    shared.button_mapping[PadControl::Zl] = PadAction::QuickMenu;
     shared.rumble_choosable = true;
     shared.rumble_pak = true;
     host.set_session_state(shared);
@@ -921,16 +920,13 @@ void test_the_menu_is_one_menu_across_both_devices() {
     CHECK_MSG(companion.host_max_render_scale() == 3 && companion.host_cursor_choosable() &&
                   companion.host_right_stick_choosable(),
               "the companion was not told which entries that menu has, so its row could differ");
-    CHECK_MSG(companion.host_left_stick_choosable() &&
-                  companion.host_left_stick_press() == LeftStickPress::SwapLayout,
-              "the companion was not told the menu offers the left stick's click, so its Options "
-              "list would be a row short");
+    CHECK_MSG(companion.host_button_mapping() == shared.button_mapping,
+              "the companion was not told the game's button mapping, so its pad would press "
+              "something else");
     // And what every companion builds its menu from -- the desktop app and
     // the Switch, Apple and Android client alike -- has it too.
     const LayoutPickerState drawn_from = menu_state_from_host(companion);
-    CHECK_MSG(drawn_from.left_stick_choosable &&
-                  drawn_from.left_stick_press == LeftStickPress::SwapLayout &&
-                  drawn_from.right_stick_choosable && drawn_from.cursor_choosable &&
+    CHECK_MSG(drawn_from.right_stick_choosable && drawn_from.cursor_choosable &&
                   drawn_from.max_render_scale == 3 && drawn_from.rumble_choosable &&
                   drawn_from.rumble_pak,
               "the menu a companion draws left out an entry the host's menu has");

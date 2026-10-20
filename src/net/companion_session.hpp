@@ -588,6 +588,9 @@ public:
         return host_producer_choices_;
     }
     int host_producer_controls_from() const { return host_producer_controls_from_; }
+    // The game's Button Mapping, which this device's pad follows. See
+    // SessionStateMessage::button_mapping.
+    const ButtonMapping& host_button_mapping() const { return host_button_mapping_; }
     const std::vector<std::pair<std::string, std::string>>& host_producer_options() const {
         return host_producer_options_;
     }
@@ -1147,6 +1150,7 @@ private:
     std::vector<std::pair<std::string, std::string>> host_producer_options_;
     std::vector<std::vector<std::string>> host_producer_choices_;
     int host_producer_controls_from_ = -1;
+    ButtonMapping host_button_mapping_;
     int host_favorite_color_ = -1;
     std::string host_corner_notice_;
     std::vector<std::string> host_amiibo_;

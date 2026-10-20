@@ -5,6 +5,7 @@
 
 #include "config/paths.hpp"
 #include "config/settings.hpp"
+#include "input/button_mapping.hpp"
 #include "layout/screen_id.hpp"
 
 namespace ds {
@@ -40,6 +41,9 @@ struct GameConfig {
     // 3DS game wants is a fact about that game -- see RightStickMode -- and
     // there is nothing in a ROM that says which.
     RightStickMode right_stick_mode = RightStickMode::CStick;
+    // What each of the pad's buttons does in this game -- see ButtonMapping.
+    // Only the buttons changed from the standard mapping are written.
+    ButtonMapping button_mapping;
     // A Rumble Pak in the DS's GBA slot -- out unless asked for, since a game
     // that finds one may say so, and one that has no use for it gains nothing.
     bool rumble_pak = false;

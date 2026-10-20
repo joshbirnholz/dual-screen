@@ -731,24 +731,6 @@ void test_moving_between_the_list_and_what_it_shows() {
         }
         CHECK_EQ(offered, offered_here);
     }
-
-    // What the left stick's click does is there too, where the console has a
-    // microphone for it to be, and nowhere else.
-    for (const bool microphone : {false, true}) {
-        LayoutPickerState with_stick = state;
-        with_stick.left_stick_choosable = microphone;
-        LayoutPicker listed(registry);
-        open_on(listed, with_stick, MenuSection::Options);
-        listed.update({UiAction::Right}, {}, kWidth, kHeight);
-        bool offered = false;
-        for (int row = 0; row < 8; ++row) {
-            if (listed.update({UiAction::Confirm}, {}, kWidth, kHeight).left_stick_press_changed) {
-                offered = true;
-            }
-            listed.update({UiAction::Down}, {}, kWidth, kHeight);
-        }
-        CHECK_EQ(offered, microphone);
-    }
 }
 
 // Each layout is its own way round: flipping one leaves every other preview

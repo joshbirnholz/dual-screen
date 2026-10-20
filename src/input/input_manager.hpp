@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "input/button_mapping.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "input/motion.hpp"
@@ -212,10 +213,18 @@ public:
     ConfirmButton confirm_button() const { return confirm_button_; }
 
     void set_stick_is_dpad(bool is_dpad) { stick_is_dpad_ = is_dpad; }
-    // Whether L3 is the console's microphone rather than one of this app's own
-    // shortcuts. See SystemProfile::has_microphone, and left_stick_is_mic_ for
-    // why this button and not another.
+    // Whether the console has a microphone to blow into: L3's as standard.
+    // See SystemProfile::has_microphone, and left_stick_is_mic_ for why this
+    // button and not another.
     void set_microphone_button(bool has_microphone) { left_stick_is_mic_ = has_microphone; }
+
+    // What each of the pad's buttons does in this game -- see ButtonMapping.
+    // Standard throughout until a game says otherwise.
+    void set_button_mapping(const ButtonMapping& mapping) { button_mapping_ = mapping; }
+    const ButtonMapping& button_mapping() const { return button_mapping_; }
+    // The console as the mapping sees it: what Standard means, and what is on
+    // offer.
+    PadConsole pad_console() const;
 
     // What the right stick is read as. Only a console with a stick of its own
     // has more than one answer worth offering -- see RightStickMode.
@@ -360,7 +369,8 @@ private:
     bool stick_is_dpad_ = true;
     bool game_owns_controls_ = false;
     ConfirmButton confirm_button_ = ConfirmButton::East;
-    // L3 reaches the game as the microphone instead of swapping layouts here.
+    // The console has a microphone, which L3 reaches the game as instead of
+    // swapping screens here -- as standard; see standard_pad_action().
     //
     // A DS has almost no spare buttons, and by the time this app has taken the
     // stick presses for itself there are none at all -- so a microphone that
@@ -403,10 +413,12 @@ private:
     // menu chord and apart they are two separate shortcuts. Whether either
     // sends its own action is only known once it is released, since until then
     // the other one may still join it.
-    bool left_stick_held_ = false;
-    bool right_stick_held_ = false;
     bool stick_chord_used_ = false;
-    bool stick_buttons_held(SDL_GameControllerButton button) const;
+    // Which of the mappable controls any pad held last frame, one bit per
+    // PadControl, for the presses of those that are shortcuts.
+    uint32_t controls_held_ = 0;
+    uint32_t controls_held_in(const RawPadState& raw) const;
+    ButtonMapping button_mapping_;
 
     // Touch tracking. The first finger down drives the DS touchscreen; a second
     // simultaneous finger opens the menu, which is the only way in on a device

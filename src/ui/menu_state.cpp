@@ -18,8 +18,6 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.cursor_choosable = session.host_cursor_choosable();
     state.right_stick_choosable = session.host_right_stick_choosable();
     state.right_stick_modes = right_stick_modes(system_profile(session.system()).has_analog_stick);
-    state.left_stick_press = session.host_left_stick_press();
-    state.left_stick_choosable = session.host_left_stick_choosable();
     state.rumble_pak = session.host_rumble_pak();
     state.rumble_choosable = session.host_rumble_choosable();
     state.lcd_filter = session.host_lcd_filter();

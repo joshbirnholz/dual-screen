@@ -1799,11 +1799,13 @@ void Client::run() {
                     log_info(std::string("following the host: right stick ") +
                              to_string(session_.host_right_stick_mode()));
                 }
-                // And what L3 is: the microphone or the layout swap, as the
-                // host has it -- see LeftStickPress.
-                input_.set_microphone_button(
-                    left_stick_is_microphone(system_profile(session_.system()).has_microphone,
-                                             session_.host_left_stick_press()));
+                // And what every button is, as the host's game has it -- see
+                // ButtonMapping.
+                input_.set_microphone_button(system_profile(session_.system()).has_microphone);
+                if (input_.button_mapping() != session_.host_button_mapping()) {
+                    input_.set_button_mapping(session_.host_button_mapping());
+                    log_info("following the host's button mapping");
+                }
                 if (session_.status() != net::CompanionSession::Status::Connected) {
                     const std::string detail = session_.status_detail();
                     audio_.close();

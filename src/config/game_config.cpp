@@ -98,6 +98,15 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
         get_string(document, "separate_screen", "top") == "bottom" ? ScreenId::Bottom : ScreenId::Top;
     config.right_stick_mode = right_stick_mode_from_key(
         get_string(document, "right_stick_mode", right_stick_mode_key(config.right_stick_mode)));
+    if (const auto found = document.find("button_mapping");
+        found != document.end() && found->is_object()) {
+        for (const auto& [key, action] : found->items()) {
+            PadControl control = PadControl::A;
+            if (action.is_string() && pad_control_from_key(key, control)) {
+                config.button_mapping[control] = pad_action_from_key(action.get<std::string>());
+            }
+        }
+    }
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
     config.lcd_filter = get_bool(document, "lcd_filter", config.lcd_filter);
     config.resume_from_save_state =
@@ -152,6 +161,13 @@ bool GameConfig::save(const AppPaths& paths) const {
     document["screen_gap"] = screen_gap;
     document["separate_screen"] = separate_screen == ScreenId::Bottom ? "bottom" : "top";
     document["right_stick_mode"] = right_stick_mode_key(right_stick_mode);
+    document["button_mapping"] = json::object();
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const PadControl control = static_cast<PadControl>(index);
+        if (button_mapping[control] != PadAction::Standard) {
+            document["button_mapping"][pad_control_key(control)] = pad_action_key(button_mapping[control]);
+        }
+    }
     document["rumble_pak"] = rumble_pak;
     document["lcd_filter"] = lcd_filter;
     document["resume_from_save_state"] = resume_from_save_state;

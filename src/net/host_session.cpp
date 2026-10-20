@@ -653,6 +653,7 @@ void HostSession::set_session_state(const SharedState& state) {
         state.producer_options != shared_.producer_options || state.amiibo != shared_.amiibo ||
         state.producer_choices != shared_.producer_choices ||
         state.producer_controls_from != shared_.producer_controls_from ||
+        state.button_mapping != shared_.button_mapping ||
         state.favorite_color != shared_.favorite_color ||
         state.corner_notice != shared_.corner_notice ||
         state.amiibo_folder != shared_.amiibo_folder ||
@@ -1313,6 +1314,7 @@ void HostSession::poll(uint64_t now_ms) {
         state.producer_options = shared_.producer_options;
         state.producer_choices = shared_.producer_choices;
         state.producer_controls_from = shared_.producer_controls_from;
+        state.button_mapping = shared_.button_mapping;
         state.favorite_color = shared_.favorite_color;
         state.corner_notice = shared_.corner_notice;
         state.amiibo = shared_.amiibo;

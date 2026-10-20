@@ -18,6 +18,7 @@
 #include "config/paths.hpp"
 #include "config/settings.hpp"
 #include "core/libretro_screen_source.hpp"
+#include "input/button_mapping.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "input/input_manager.hpp"
@@ -1244,6 +1245,163 @@ void test_holding_a_direction_keeps_moving() {
     pad.detach();
 }
 
+// A game's Button Mapping decides what each button presses: one moved
+// elsewhere presses only where it was moved to, one made Nothing presses
+// nothing, and a trigger is a button like any other.
+void test_a_game_can_move_its_buttons() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    ButtonMapping mapping;
+    mapping[PadControl::A] = PadAction::Nothing;
+    mapping[PadControl::B] = PadAction::A;
+    mapping[PadControl::Zr] = PadAction::X;
+    mapping[PadControl::LeftStick] = PadAction::Select;
+    input.set_button_mapping(mapping);
+
+    int swaps = 0;
+    const auto frame = [&]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        for (const UiAction action : input.ui_actions()) {
+            if (action == UiAction::SwapLayout) ++swaps;
+        }
+    };
+    const auto only = [](DsButton button) {
+        DsInputState state;
+        state.set(button, true);
+        return state.buttons;
+    };
+
+    // East, which a Nintendo pad prints A on, now presses nothing at all.
+    pad.press(SDL_CONTROLLER_BUTTON_B, true);
+    frame();
+    CHECK_EQ(input.ds_state().buttons, 0u);
+    pad.press(SDL_CONTROLLER_BUTTON_B, false);
+    // South is A, and only A.
+    pad.press(SDL_CONTROLLER_BUTTON_A, true);
+    frame();
+    CHECK_EQ(input.ds_state().buttons, only(DsButton::A));
+    pad.press(SDL_CONTROLLER_BUTTON_A, false);
+    frame();
+    // The right trigger is X rather than a second R.
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 32000);
+    SDL_GameControllerUpdate();
+    frame();
+    CHECK_EQ(input.ds_state().buttons, only(DsButton::X));
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    frame();
+    // And L3 is Select, held, rather than the screen swap it was.
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
+    frame();
+    CHECK_EQ(input.ds_state().buttons, only(DsButton::Select));
+    pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, false);
+    frame();
+    CHECK_EQ(swaps, 0);
+
+    input.shutdown();
+    pad.detach();
+}
+
+// One of this app's own, on a button that is not a stick press: raised once
+// when it is pressed, not held, and pressing nothing in the game.
+void test_a_shortcut_can_go_on_any_button() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    ButtonMapping mapping;
+    mapping[PadControl::Zl] = PadAction::QuickMenu;
+    mapping[PadControl::Minus] = PadAction::SwapScreens;
+    input.set_button_mapping(mapping);
+
+    int menus = 0;
+    int swaps = 0;
+    const auto frame = [&]() {
+        input.begin_frame();
+        SDL_Event event;
+        while (SDL_PollEvent(&event) != 0) {
+            input.handle_event(event);
+        }
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+        for (const UiAction action : input.ui_actions()) {
+            if (action == UiAction::ToggleMenu) ++menus;
+            if (action == UiAction::SwapLayout) ++swaps;
+        }
+    };
+
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 32000);
+    SDL_GameControllerUpdate();
+    frame();
+    CHECK_EQ(menus, 1);
+    CHECK_EQ(input.ds_state().buttons, 0u);
+    frame();
+    frame();
+    CHECK_MSG(menus == 1, "holding the trigger opened the menu more than once");
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT, -32768);
+    SDL_GameControllerUpdate();
+    frame();
+    CHECK_EQ(menus, 1);
+
+    pad.press(SDL_CONTROLLER_BUTTON_BACK, true);
+    frame();
+    CHECK_EQ(swaps, 1);
+    CHECK_EQ(input.ds_state().buttons, 0u);
+    pad.press(SDL_CONTROLLER_BUTTON_BACK, false);
+    frame();
+    CHECK_EQ(swaps, 1);
+
+    input.shutdown();
+    pad.detach();
+}
+
+// The Touch Cursor's tip on another button, where the cursor is: carried as
+// R3 to the app, which touches with it. Where it is not, it touches nothing,
+// and R3 never reaches a game that would read it as something else.
+void test_the_touch_cursor_can_be_touched_with_any_button() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    ButtonMapping mapping;
+    mapping[PadControl::Zr] = PadAction::TouchCursor;
+    input.set_button_mapping(mapping);
+
+    const auto frame = [&]() {
+        input.begin_frame();
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f,
+                        system_profile(SystemId::Ds).screens);
+    };
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 32000);
+    SDL_GameControllerUpdate();
+    input.set_right_stick_mode(RightStickMode::TouchCursor);
+    frame();
+    CHECK(input.ds_state().pressed(DsButton::RightStick));
+    input.set_right_stick_mode(RightStickMode::CStick);
+    frame();
+    CHECK_EQ(input.ds_state().buttons, 0u);
+
+    input.shutdown();
+    pad.detach();
+}
+
 int main() {
     test_only_the_device_showing_the_gamepad_controls_it();
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
@@ -1274,6 +1432,9 @@ int main() {
     test_two_fingers_open_the_menu_more_than_once();
     test_the_shell_lets_go_of_the_controls_where_the_game_wants_them();
     test_the_extra_shoulders_and_stick_presses_go_where_the_console_has_room();
+    test_a_game_can_move_its_buttons();
+    test_a_shortcut_can_go_on_any_button();
+    test_the_touch_cursor_can_be_touched_with_any_button();
 
     SDL_Quit();
     return test::finish("controller-input");

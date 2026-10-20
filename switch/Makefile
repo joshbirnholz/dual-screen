@@ -85,7 +85,7 @@ CPPFILES    := main.cpp \
                ui_sounds.cpp \
                paths.cpp \
                save_points.cpp system.cpp \
-               controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp pad_routing.cpp switch_motion.cpp \
+               button_mapping.cpp controller_mapping.cpp cursor_visibility.cpp ds_input.cpp dsu_client.cpp input_manager.cpp motion.cpp motion_compare.cpp pad_routing.cpp switch_motion.cpp \
                layout.cpp layout_registry.cpp \
                companion_session.cpp discovery.cpp protocol.cpp transport.cpp \
                color_convert.cpp h264_bitstream.cpp videotoolbox_decoder.cpp \

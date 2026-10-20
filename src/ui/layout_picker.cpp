@@ -207,8 +207,6 @@ void LayoutPicker::rebuild_footer() {
     // What the right stick does, where the console has one of its own to have
     // an opinion about -- a 3DS.
     if (state_.right_stick_choosable) options_.push_back(OptionRow{Option::RightStick});
-    // What L3 does, where the console has a microphone for it to be.
-    if (state_.left_stick_choosable) options_.push_back(OptionRow{Option::LeftStick});
     // A DS's Rumble Pak, where the core can give it one.
     if (state_.rumble_choosable) options_.push_back(OptionRow{Option::Rumble});
     // The gap is one choice for every layout that has one -- Vertical Screens
@@ -294,7 +292,6 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::Sound: return "Sound";
         case Option::Cursor: return "Show Pointer";
         case Option::RightStick: return "Right Stick";
-        case Option::LeftStick: return "Left Stick Click";
         case Option::Rumble: return "Rumble";
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
@@ -346,10 +343,6 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
             }
             break;
         }
-        case Option::LeftStick:
-            choices = {to_string(LeftStickPress::Microphone), to_string(LeftStickPress::SwapLayout)};
-            current = state_.left_stick_press == LeftStickPress::SwapLayout ? 1 : 0;
-            break;
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_choices.size())) {
                 choices = state_.producer_choices[static_cast<std::size_t>(row.index)];
@@ -408,7 +401,6 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
             return "Both";
         case Option::Cursor: return to_string(state_.cursor_mode);
         case Option::RightStick: return to_string(state_.right_stick_mode);
-        case Option::LeftStick: return to_string(state_.left_stick_press);
         case Option::Rumble: return state_.rumble_pak ? "On" : "Off";
         case Option::ScreenGap: return state_.screen_gap ? "On" : "Off";
         case Option::Smoothing: return state_.bilinear_filtering ? "On" : "Off";
@@ -585,7 +577,6 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.screens_swappable != state_.screens_swappable ||
                                  state.cursor_choosable != state_.cursor_choosable ||
                                  state.right_stick_choosable != state_.right_stick_choosable ||
-                                 state.left_stick_choosable != state_.left_stick_choosable ||
                                  state.rumble_choosable != state_.rumble_choosable ||
                                  state.save_points_available != state_.save_points_available ||
                                  state.save_sync_available != state_.save_sync_available ||
@@ -935,7 +926,6 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::Sound: result.audio_target_changed = true; break;
                 case Option::Cursor: result.cursor_mode_changed = true; break;
                 case Option::RightStick: result.right_stick_mode_changed = true; break;
-                case Option::LeftStick: result.left_stick_press_changed = true; break;
                 case Option::Rumble: result.rumble_pak_toggled = true; break;
                 case Option::ScreenGap: result.screen_gap_toggled = true; break;
                 case Option::Smoothing: result.filtering_toggled = true; break;
@@ -1130,8 +1120,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
                     case Option::RenderScale: result.render_scale_changed = true; break;
                     case Option::Sound: result.audio_target_changed = true; break;
                     case Option::RightStick: result.right_stick_mode_changed = true; break;
-                    case Option::LeftStick: result.left_stick_press_changed = true; break;
-                    case Option::Producer:
+                        case Option::Producer:
                         result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                         break;
                     default: break;
@@ -1770,7 +1759,6 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(state_.render_scale));
     mix_sound_state(view.rest, state_.screen_gap ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(state_.right_stick_mode));
-    mix_sound_state(view.rest, static_cast<uint64_t>(state_.left_stick_press));
     mix_sound_state(view.rest, state_.rumble_pak ? 1u : 0u);
     mix_sound_state(view.rest, state_.resume_from_save_state ? 1u : 0u);
     mix_sound_state(view.rest, save_status_);

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "input/button_mapping.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "core/save_points.hpp"
@@ -448,6 +449,10 @@ struct SessionStateMessage {
     // each player's controller -- or -1 for none. Two bytes, it plus one;
     // last, and optional.
     int producer_controls_from = -1;
+    // The game's Button Mapping, which the companion's pad follows as the
+    // host's does -- one game, one mapping. A count, then each PadControl's
+    // PadAction as a byte. Last, and optional: from an older host, standard.
+    ButtonMapping button_mapping;
 };
 
 struct FrameMessage {

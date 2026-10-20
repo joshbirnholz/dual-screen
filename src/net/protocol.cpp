@@ -332,6 +332,8 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_string(out, message.corner_notice.size() > 255 ? message.corner_notice.substr(0, 255)
                                                        : message.corner_notice);
     put_u16(out, static_cast<uint16_t>(std::clamp(message.producer_controls_from + 1, 0, 65535)));
+    put_u8(out, static_cast<uint8_t>(kPadControls));
+    for (const PadAction action : message.button_mapping.actions) put_u8(out, static_cast<uint8_t>(action));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -1409,6 +1411,21 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         uint16_t controls_from = 0;
         reader.u16(controls_from);
         out.producer_controls_from = static_cast<int>(controls_from) - 1;
+    }
+    out.button_mapping = ButtonMapping();
+    if (reader.remaining() > 0) {
+        uint8_t controls = 0;
+        reader.u8(controls);
+        // Each control this build knows, in order; any a later build added
+        // after them are read past. An action it does not know is Standard.
+        for (uint8_t index = 0; index < controls && reader.ok(); ++index) {
+            uint8_t action = 0;
+            reader.u8(action);
+            if (index < kPadControls && action < static_cast<uint8_t>(PadAction::Count)) {
+                out.button_mapping.actions[index] = static_cast<PadAction>(action);
+            }
+        }
+        if (!reader.ok()) return false;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

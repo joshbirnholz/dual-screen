@@ -60,9 +60,6 @@ struct LayoutPickerResult {
     bool screen_gap_toggled = false;
     // The right stick's mapping was cycled; same deal again.
     bool right_stick_mode_changed = false;
-    // What the left stick's click does was cycled. This device's own, like
-    // the pointer.
-    bool left_stick_press_changed = false;
     // The Rumble Pak was put in or taken out. The game's, like the scale.
     bool rumble_pak_toggled = false;
     // The LCD filter was turned on or off. The game's too.
@@ -173,11 +170,6 @@ struct LayoutPickerState {
     RightStickMode right_stick_mode = RightStickMode::CStick;
     bool right_stick_choosable = false;
     std::vector<RightStickMode> right_stick_modes;
-    // What clicking the left stick does, and whether that is a question at
-    // all: only a console with a microphone has one to hold. This device's
-    // own, like the pointer. See LeftStickPress.
-    LeftStickPress left_stick_press = LeftStickPress::Microphone;
-    bool left_stick_choosable = false;
     // A Rumble Pak in a DS's GBA slot, and whether that is on offer at all:
     // only where the core running the game can put one there. Nothing says
     // which DS games use one, so it is offered for every game there.
@@ -431,7 +423,6 @@ public:
     void set_render_scale(int scale) { state_.render_scale = scale; }
     void set_screen_gap(bool include_gap) { state_.screen_gap = include_gap; }
     void set_right_stick_mode(RightStickMode mode) { state_.right_stick_mode = mode; }
-    void set_left_stick_press(LeftStickPress press) { state_.left_stick_press = press; }
     // Whether an Up or Down is a held direction repeating rather than a
     // press: the list of sections goes round from one end to the other on a
     // press, and stops at the end while held. Everything is a press without
@@ -522,7 +513,6 @@ private:
         Sound,
         Cursor,
         RightStick,
-        LeftStick,
         Rumble,
         ScreenGap,
         Smoothing,

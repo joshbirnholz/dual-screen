@@ -129,37 +129,6 @@ const char* to_string(SDL_GameControllerType type) {
     }
 }
 
-const char* to_string(LeftStickPress press) {
-    switch (press) {
-        case LeftStickPress::Microphone: return "Microphone";
-        case LeftStickPress::SwapLayout: break;
-    }
-    return "Swap layouts";
-}
-
-LeftStickPress next_left_stick_press(LeftStickPress press) {
-    // Two values, so "next" is "the other one" in either direction.
-    return press == LeftStickPress::Microphone ? LeftStickPress::SwapLayout
-                                               : LeftStickPress::Microphone;
-}
-
-const char* left_stick_press_key(LeftStickPress press) {
-    switch (press) {
-        case LeftStickPress::Microphone: return "microphone";
-        case LeftStickPress::SwapLayout: break;
-    }
-    return "swap_layout";
-}
-
-LeftStickPress left_stick_press_from_key(const std::string& key) {
-    if (key == "swap_layout") return LeftStickPress::SwapLayout;
-    return LeftStickPress::Microphone;
-}
-
-bool left_stick_is_microphone(bool console_has_microphone, LeftStickPress press) {
-    return console_has_microphone && press == LeftStickPress::Microphone;
-}
-
 const char* to_string(RightStickMode mode) {
     switch (mode) {
         case RightStickMode::CStick: return "C-Stick";

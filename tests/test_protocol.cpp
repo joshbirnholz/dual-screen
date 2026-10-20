@@ -18,8 +18,8 @@ namespace {
 // What every session state ends with now, empty: the whole focus, then no
 // Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
 // then no lists of Cemu's choices, then the favorite color's byte, then no
-// corner notice, then where Controls' rows begin.
-constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2;
+// corner notice, then where Controls' rows begin, then the Button Mapping.
+constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls;
 }  // namespace
 using namespace ds::net;
 
@@ -325,7 +325,8 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls),
+                               received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
     state.lcd_filter = false;
@@ -338,6 +339,8 @@ void test_welcome_and_session_round_trip() {
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.producer_choices == state.producer_choices);
     state.producer_choices.clear();
+    // The Button Mapping's count and one byte for each control, last of all.
+    const std::size_t kMappingBytes = 1 + kPadControls;
     // The host's favorite color, for the other device's menus; and none said
     // by a host from before it was sent.
     state.favorite_color = 7;
@@ -346,8 +349,9 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.favorite_color, 7);
-    // Before it the empty corner notice's length, two bytes, and Controls'.
-    CHECK(decode_session_state(payload.data(), payload.size() - 3 - 2, received_state));
+    // Before it the empty corner notice's length, two bytes, and Controls',
+    // and the Button Mapping.
+    CHECK(decode_session_state(payload.data(), payload.size() - 3 - 2 - kMappingBytes, received_state));
     CHECK_EQ(received_state.favorite_color, -1);
     state.favorite_color = -1;
     // The host's corner notice, shown on the other device too; and none from
@@ -358,7 +362,8 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.corner_notice == state.corner_notice);
-    CHECK(decode_session_state(payload.data(), payload.size() - 2 - state.corner_notice.size() - 2, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 2 - state.corner_notice.size() - 2 - kMappingBytes,
+                               received_state));
     CHECK(received_state.corner_notice.empty());
     state.corner_notice.clear();
     // Where the players' controllers begin among Cemu's options, for the
@@ -369,15 +374,26 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK_EQ(received_state.producer_controls_from, 3);
-    CHECK(decode_session_state(payload.data(), payload.size() - 2, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 2 - kMappingBytes, received_state));
     CHECK_EQ(received_state.producer_controls_from, -1);
     state.producer_controls_from = -1;
+    // The game's Button Mapping, which the other device's pad follows; and
+    // the standard one from a host from before it.
+    state.button_mapping[PadControl::Zr] = PadAction::QuickMenu;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(received_state.button_mapping == state.button_mapping);
+    CHECK(decode_session_state(payload.data(), payload.size() - kMappingBytes, received_state));
+    CHECK(received_state.button_mapping == ButtonMapping());
+    state.button_mapping = ButtonMapping();
     state.menu_focus = 40;
     buffer.clear();
     encode_session_state(state, buffer);
     CHECK(one_message(buffer, type, payload));
     const std::size_t tail =
-        2 + 2 + (2 + 9 + 2 + 7) + (2 + 8 + 2 + 4) + 2 + (2 + 4) + (2 + 5) + (2 + 17) + 1 + 2 + 2;
+        2 + 2 + (2 + 9 + 2 + 7) + (2 + 8 + 2 + 4) + 2 + (2 + 4) + (2 + 5) + (2 + 17) + 1 + 2 + 2 + kMappingBytes;
     CHECK(decode_session_state(payload.data(), payload.size() - tail, received_state));
     CHECK_EQ(received_state.menu_focus, static_cast<uint16_t>(40));
     CHECK(received_state.producer_options.empty() && received_state.amiibo.empty());

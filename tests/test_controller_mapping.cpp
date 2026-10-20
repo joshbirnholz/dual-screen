@@ -5,10 +5,12 @@
 
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "input/button_mapping.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 #include "input/input_manager.hpp"
@@ -194,32 +196,83 @@ void test_keyboard_can_drive_menus() {
     CHECK_EQ(count_action(input.ui_actions(), UiAction::Cancel), static_cast<std::size_t>(1));
 }
 
-// What L3 is, is the answer to two questions rather than one: whether the
-// console has a microphone for it to be, and whether the player would rather
-// keep the shortcut. Either "no" leaves L3 swapping layouts, which is what it
-// has always done everywhere else.
-void test_l3_is_the_microphone_only_when_both_agree() {
-    CHECK(left_stick_is_microphone(true, LeftStickPress::Microphone));
-    CHECK(!left_stick_is_microphone(true, LeftStickPress::SwapLayout));
-    // A 3DS or a Wii U has nothing to blow into, so the setting has nothing to
-    // say there and the shortcut stays whatever the player chose.
-    CHECK(!left_stick_is_microphone(false, LeftStickPress::Microphone));
-    CHECK(!left_stick_is_microphone(false, LeftStickPress::SwapLayout));
+// The standard mapping is what the app has always done: Nintendo's buttons
+// where they are, the triggers a second L and R, and the stick presses this
+// app's -- but for a console whose game reads every control.
+void test_the_standard_mapping_is_the_one_there_has_always_been() {
+    PadConsole ds;
+    ds.has_microphone = true;
+    ds.right_stick = RightStickMode::TouchCursor;
+    CHECK(standard_pad_action(PadControl::A, ds) == PadAction::A);
+    CHECK(standard_pad_action(PadControl::Zl, ds) == PadAction::L);
+    CHECK(standard_pad_action(PadControl::Zr, ds) == PadAction::R);
+    CHECK(standard_pad_action(PadControl::Plus, ds) == PadAction::Start);
+    CHECK(standard_pad_action(PadControl::Minus, ds) == PadAction::Select);
+    CHECK(standard_pad_action(PadControl::LeftStick, ds) == PadAction::BlowIntoMic);
+    CHECK(standard_pad_action(PadControl::RightStick, ds) == PadAction::TouchCursor);
+
+    PadConsole three_ds;
+    three_ds.has_zl_zr = true;
+    CHECK(standard_pad_action(PadControl::LeftStick, three_ds) == PadAction::SwapScreens);
+    CHECK(standard_pad_action(PadControl::RightStick, three_ds) == PadAction::ScreenSmoothing);
+    CHECK(standard_pad_action(PadControl::Zl, three_ds) == PadAction::L);
+
+    PadConsole wii_u;
+    wii_u.game_uses_every_control = true;
+    CHECK(standard_pad_action(PadControl::Zl, wii_u) == PadAction::Zl);
+    CHECK(standard_pad_action(PadControl::LeftStick, wii_u) == PadAction::LeftStickButton);
+
+    // A mapping says Standard until changed, and a change to what the
+    // standard already is changes nothing.
+    ButtonMapping mapping;
+    CHECK(mapping.is_standard(ds));
+    mapping[PadControl::Zl] = PadAction::L;
+    CHECK(mapping.is_standard(ds));
+    mapping[PadControl::Zl] = PadAction::Zl;
+    CHECK(!mapping.is_standard(ds));
+    CHECK(mapping.resolved(PadControl::Zl, ds) == PadAction::Zl);
+    CHECK(mapping.resolved(PadControl::Zr, ds) == PadAction::R);
 }
 
-// The setting is written to a file and read back from one, so its two values
-// have to survive the trip by name, and unknown text has to land somewhere
-// rather than anywhere.
-void test_what_l3_does_round_trips_by_name() {
-    CHECK(left_stick_press_from_key(left_stick_press_key(LeftStickPress::Microphone)) ==
-          LeftStickPress::Microphone);
-    CHECK(left_stick_press_from_key(left_stick_press_key(LeftStickPress::SwapLayout)) ==
-          LeftStickPress::SwapLayout);
-    CHECK(left_stick_press_from_key("nonsense") == LeftStickPress::Microphone);
-    // Cycling twice is where it started: the settings row only moves one way.
-    CHECK(next_left_stick_press(next_left_stick_press(LeftStickPress::Microphone)) ==
-          LeftStickPress::Microphone);
-    CHECK(next_left_stick_press(LeftStickPress::Microphone) == LeftStickPress::SwapLayout);
+// The picker offers what the console has: a DS no ZL or ZR, a microphone only
+// where there is one, the Touch Cursor's tip only where there is a cursor.
+void test_the_picker_offers_what_the_console_has() {
+    const auto offers = [](const PadConsole& console, PadAction action) {
+        const std::vector<PadAction> choices = pad_action_choices(console);
+        return std::find(choices.begin(), choices.end(), action) != choices.end();
+    };
+    PadConsole ds;
+    ds.has_microphone = true;
+    CHECK(!offers(ds, PadAction::Zl));
+    CHECK(offers(ds, PadAction::BlowIntoMic));
+    CHECK(!offers(ds, PadAction::TouchCursor));
+    CHECK(offers(ds, PadAction::QuickMenu));
+    CHECK(!offers(ds, PadAction::Standard));
+    ds.right_stick = RightStickMode::TouchCursor;
+    CHECK(offers(ds, PadAction::TouchCursor));
+    PadConsole three_ds;
+    three_ds.has_zl_zr = true;
+    CHECK(offers(three_ds, PadAction::Zr));
+    CHECK(!offers(three_ds, PadAction::BlowIntoMic));
+    CHECK(pad_action_choices(three_ds).back() == PadAction::Nothing);
+}
+
+// Saved by name in a game's file: every action and control comes back as
+// itself, and text from a later build comes back Standard.
+void test_mappings_round_trip_by_name() {
+    for (int index = 0; index < static_cast<int>(PadAction::Count); ++index) {
+        const PadAction action = static_cast<PadAction>(index);
+        CHECK(pad_action_from_key(pad_action_key(action)) == action);
+    }
+    CHECK(pad_action_from_key("something_new") == PadAction::Standard);
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const PadControl control = static_cast<PadControl>(index);
+        PadControl back = PadControl::Count;
+        CHECK(pad_control_from_key(pad_control_key(control), back));
+        CHECK(back == control);
+    }
+    PadControl none = PadControl::A;
+    CHECK(!pad_control_from_key("dpad", none));
 }
 
 }  // namespace
@@ -234,7 +287,8 @@ int main() {
     test_prompt_letters_follow_the_pad();
     test_duplicate_presses_are_merged();
     test_keyboard_can_drive_menus();
-    test_l3_is_the_microphone_only_when_both_agree();
-    test_what_l3_does_round_trips_by_name();
+    test_the_standard_mapping_is_the_one_there_has_always_been();
+    test_the_picker_offers_what_the_console_has();
+    test_mappings_round_trip_by_name();
     return test::finish("controller-mapping");
 }
