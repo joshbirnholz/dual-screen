@@ -368,11 +368,13 @@ Three things are different about a Wii U session:
   **Continue**, which goes back to it.
 
 - **The quick menu also opens over the game, in Cemu's window.** With this
-  project's Cemu build, **F1** in Cemu's window, or the menu button on a pad,
-  puts the quick menu up over the game without switching windows. The game is
+  project's Cemu build, **F1** or **Escape** in Cemu's window, or the menu
+  button on a pad, puts the quick menu up over the game without switching windows. The game is
   darkened behind it but keeps running, and pads work the menu while it is up.
   It is the same menu on both devices: opened from a companion, it shows in
-  Cemu's window too. **F1** or **B** on the list puts it away. Not **Tab**,
+  Cemu's window too. **F1**, or **B** or **Escape** on the list, puts it
+  away. Escape no longer leaves Cemu's fullscreen while this app is attached;
+  **F11** or **Alt+Enter** still does. Not **Tab**,
   which Cemu keeps for itself: held, it shows the GamePad's screen.
 
 - **Graphics Packs**, the last of a Wii U game's **Game Options** in the quick

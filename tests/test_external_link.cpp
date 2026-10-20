@@ -1022,6 +1022,13 @@ void test_the_menu_crosses_to_be_drawn_over_the_game() {
     CHECK(wait_for([&]() { return link.take_menu_keyboard(key, down); }));
     CHECK(key == ExternalMenuKey::Back && down);
     CHECK(!link.take_menu_keyboard(key, down));
+
+    // Escape with the menu not up, which opens it.
+    producer.send_menu_keyboard(ExternalMenuKey::Open, true);
+    CHECK_MSG(wait_for([&]() { return link.take_menu_keyboard(key, down); }),
+              "Escape pressed in the game's window never came back");
+    CHECK(key == ExternalMenuKey::Open && down);
+    CHECK(!link.take_menu_keyboard(key, down));
 }
 
 void test_the_game_pauses_only_when_it_says_so() {

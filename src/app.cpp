@@ -7185,13 +7185,20 @@ int App::run(const AppOptions& options) {
             // And the keys that move through the menu, which Cemu's window
             // hears while the menu is drawn over it: whatever they would do
             // in this one, a held arrow repeating as one held here does.
-            // Escape is Back in the menu, as here, but never opens it from
-            // Cemu's window -- F1 does that.
+            // Escape is Back in the menu, as here, and opens it when it is
+            // not up, which Cemu sends as Open.
             if (impl.external_source) {
                 const bool menu_there = impl.menu_over_wii_u_game();
                 ExternalMenuKey key = ExternalMenuKey::Up;
                 bool down = false;
                 while (impl.external_source->take_menu_keyboard(key, down)) {
+                    if (key == ExternalMenuKey::Open) {
+                        if (down) {
+                            log_info("Escape was pressed in Cemu's window");
+                            ui_actions.push_back(UiAction::OpenMenu);
+                        }
+                        continue;
+                    }
                     if (!menu_there) continue;
                     static const UiAction kDirections[4] = {UiAction::Up, UiAction::Down,
                                                             UiAction::Left, UiAction::Right};

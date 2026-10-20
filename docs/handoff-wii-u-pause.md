@@ -192,8 +192,9 @@ Management have no layout problems at 4K.
   Dualscreen is running, or it reverts (or a test silently runs the installed
   Cemu). Check which Cemu actually started.
 - **Cemu's `~/.config/Cemu/settings.xml` is shared** with the installed Cemu.
-  Escape in Cemu's window outside the menu leaves fullscreen and Cemu saves
-  that; `<fullscreen>` should be `true`.
+  F11 or Alt+Enter in Cemu's window leaves fullscreen and Cemu saves that;
+  `<fullscreen>` should be `true`. (Escape opens the menu instead while
+  Dualscreen is attached.)
 - **Controls:** Dualscreen uses Nintendo positions, so the east button
   confirms and south goes back. Steam's own UI uses south for A.
 - **Screenshots:** `gamescopectl screenshot` sometimes returns a 1920x1080
