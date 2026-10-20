@@ -1281,6 +1281,43 @@ void test_options_and_amiibo_cross() {
                   "why the scan failed never came back");
         CHECK(result == why);
     }
+
+    // A producer that did not offer it says nothing of what the game is
+    // looking for: an amiibo is scanned as before.
+    CHECK(!link.amiibo_reading_supported());
+    CHECK(!link.amiibo_reading().has_value());
+}
+
+// What the game is looking for: nothing known until it is said, then each
+// change -- the same said twice goes over once.
+void test_what_the_game_is_looking_for_crosses() {
+    ExternalFrameLink link;
+    ExternalFrameProducer producer;
+    ExternalStreamInfo info = wii_u_info();
+    info.features = kExternalFeatureOverlay | kExternalFeatureAmiibo | kExternalFeatureAmiiboReading;
+    if (!bring_up(link, producer, info)) return;
+    CHECK(link.amiibo_reading_supported());
+    CHECK(!link.amiibo_reading().has_value());
+    auto wait_for = [&](auto&& arrived) {
+        const auto give_up_at = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < give_up_at) {
+            bool reset = false;
+            std::string error;
+            CHECK(producer.poll(reset, &error));
+            std::string link_error;
+            CHECK(link.poll(&link_error));
+            if (arrived()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return false;
+    };
+    for (const ExternalAmiiboReading reading :
+         {ExternalAmiiboReading::Nothing, ExternalAmiiboReading::Amiibo, ExternalAmiiboReading::OwnFigures}) {
+        producer.send_amiibo_reading(reading);
+        producer.send_amiibo_reading(reading);
+        CHECK_MSG(wait_for([&]() { return link.amiibo_reading() == reading; }),
+                  "what the game is looking for never arrived");
+    }
 }
 
 // A game's own dialogs -- its keyboard, its error messages -- shown by the
@@ -1388,6 +1425,7 @@ int main() {
     test_the_game_pauses_only_when_it_says_so();
     test_graphics_packs_are_listed_and_changed();
     test_options_and_amiibo_cross();
+    test_what_the_game_is_looking_for_crosses();
     test_a_games_dialogs_cross_and_are_answered();
     return test::finish("external-link");
 }

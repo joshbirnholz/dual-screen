@@ -119,6 +119,8 @@ public:
     bool amiibo_supported() const { return link_.amiibo_supported(); }
     void scan_amiibo(const std::string& path) { link_.scan_amiibo(path); }
     bool take_amiibo_result(ExternalAmiiboResult& out) { return link_.take_amiibo_result(out); }
+    bool amiibo_reading_supported() const { return link_.amiibo_reading_supported(); }
+    std::optional<ExternalAmiiboReading> amiibo_reading() const { return link_.amiibo_reading(); }
     // The game's own dialogs, shown here -- see
     // ExternalFrameLink::game_dialogs_supported().
     bool game_dialogs_supported() const { return link_.game_dialogs_supported(); }

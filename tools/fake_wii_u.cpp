@@ -14,7 +14,7 @@
 // exercised here is the code a fork of Cemu would link, not a description of it.
 //
 //   fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] [--refuse-pause]
-//              [--ignore-pause] [--menu-key-at SECONDS]...
+//              [--ignore-pause] [--menu-key-at SECONDS]... [--amiibo-reading nothing|figures|amiibo]
 
 #include <chrono>
 #include <cmath>
@@ -133,7 +133,8 @@ std::string describe(const ds::ExternalInput& input) {
 void usage() {
     std::fprintf(stderr,
                  "fake_wii_u [--socket PATH] [--seconds N] [--fps N] [--pad-only] "
-                 "[--refuse-pause] [--ignore-pause] [--menu-key-at SECONDS]...\n");
+                 "[--refuse-pause] [--ignore-pause] [--menu-key-at SECONDS]... "
+                 "[--amiibo-reading nothing|figures|amiibo]\n");
 }
 
 }  // namespace
@@ -199,6 +200,9 @@ int main(int argc, char** argv) {
     // When to press the menu key in this window -- Tab or F1 in Cemu's --
     // seconds after starting, as many times as given.
     std::vector<double> menu_key_at;
+    // What the game is looking for, said as Cemu says it; an amiibo unless
+    // told otherwise.
+    ds::ExternalAmiiboReading amiibo_reading = ds::ExternalAmiiboReading::Amiibo;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -216,6 +220,12 @@ int main(int argc, char** argv) {
         else if (arg == "--refuse-pause") refuse_pause = true;
         else if (arg == "--ignore-pause") ignore_pause = true;
         else if (arg == "--menu-key-at") menu_key_at.push_back(std::atof(value().c_str()));
+        else if (arg == "--amiibo-reading") {
+            const std::string reading = value();
+            amiibo_reading = reading == "nothing"   ? ds::ExternalAmiiboReading::Nothing
+                             : reading == "figures" ? ds::ExternalAmiiboReading::OwnFigures
+                                                    : ds::ExternalAmiiboReading::Amiibo;
+        }
         else {
             usage();
             return 2;
@@ -239,7 +249,8 @@ int main(int argc, char** argv) {
     // only in memory, for the quick menu's Graphics Packs page to change.
     info.features = ds::kExternalFeatureOverlay | ds::kExternalFeaturePause |
                     ds::kExternalFeatureGraphicPacks | ds::kExternalFeatureOptions |
-                    ds::kExternalFeatureAmiibo | ds::kExternalFeatureOverlayAnimation;
+                    ds::kExternalFeatureAmiibo | ds::kExternalFeatureOverlayAnimation |
+                    ds::kExternalFeatureAmiiboReading;
     std::vector<ds::ExternalGraphicPack> packs = fake_graphic_packs();
     // Cemu's options, as its fork offers them, kept only in memory.
     std::vector<ds::ExternalOption> options(5);
@@ -339,6 +350,7 @@ int main(int argc, char** argv) {
             options_wanted = true;
         }
         if (options_wanted) producer.send_options(options);
+        producer.send_amiibo_reading(amiibo_reading);
         // An amiibo is only measured, not read: a file the size of an
         // amiibo's dump is one, as far as this stand-in goes.
         for (std::string amiibo; producer.take_amiibo_scan(amiibo);) {
