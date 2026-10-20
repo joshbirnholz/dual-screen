@@ -75,8 +75,8 @@ private:
 // The quick menu's own sounds go with it opening and closing over a game,
 // whoever opened it, the error sound with an error appearing, and the save
 // chime with a save state made -- in place of the press's own sound. A press
-// that flips the switch the cursor is on sounds which way it went, on or off,
-// in place of a choice's.
+// that flips the switch the cursor is on -- A or a tap; no direction flips
+// one -- sounds which way it went, on or off, in place of a choice's.
 class UiSoundJudge {
 public:
     void note_input(const std::vector<UiAction>& actions, bool tapped, double now_seconds);

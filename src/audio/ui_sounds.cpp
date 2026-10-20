@@ -222,8 +222,10 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
     } else if (pending_ != Pending::None) {
         const bool moved = view.focus != before.focus;
         const bool changed = view.screen != before.screen || view.rest != before.rest;
-        // The switch under the cursor flipped, the cursor where it was.
-        const bool flipped = pending_ != Pending::Cancel && !moved && view.screen == before.screen &&
+        // The switch under the cursor flipped, the cursor where it was, by
+        // what flips one: A or a tap, never a direction.
+        const bool flipped = (pending_ == Pending::Confirm || pending_ == Pending::Tap) && !moved &&
+                             view.screen == before.screen &&
                              before.toggle >= 0 && view.toggle >= 0 && before.toggle != view.toggle;
         if (flipped) {
             sound = view.toggle != 0 ? UiSound::ToggleOn : UiSound::ToggleOff;
