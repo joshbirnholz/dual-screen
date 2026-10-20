@@ -466,7 +466,14 @@ public:
     AudioTarget audio_target() const { return state_.audio_target; }
     bool is_open() const { return open_; }
     bool embedded() const { return open_ && state_.embedded; }
-    void close() { open_ = false; }
+    void close() {
+        open_ = false;
+        lingering_ = false;
+    }
+    // Closed -- it answers nothing more -- but still drawn as it was, while
+    // the quick menu goes away over the game. Until close() or open().
+    void linger() { lingering_ = true; }
+    bool is_drawn() const { return open_ || lingering_; }
 
     LayoutPickerResult update(const std::vector<UiAction>& actions,
                               const std::vector<PointerEvent>& pointers,
@@ -635,6 +642,7 @@ private:
     // both. See layout_fits_system().
     std::vector<std::size_t> tiles_;
     bool open_ = false;
+    bool lingering_ = false;
     std::optional<ScreenId> device_screen_;
     const Texture* game_icon_ = nullptr;
     Texture ui_icons_;

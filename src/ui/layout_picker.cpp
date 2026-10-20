@@ -71,6 +71,7 @@ void LayoutPicker::open(const LayoutPickerState& state) {
     const bool reopening = opened_before_;
     opened_before_ = true;
     open_ = true;
+    lingering_ = false;
     confirm_ = MenuConfirm::None;
     state_ = state;
     selected_layout_id_ = state.layout_id;
@@ -1633,7 +1634,7 @@ void LayoutPicker::render(QuadRenderer& quads,
                           float output_height,
                           const std::string& game_title,
                           const ScreenTextures* textures) {
-    if (!open_) {
+    if (!is_drawn()) {
         return;
     }
     last_width_ = output_width;

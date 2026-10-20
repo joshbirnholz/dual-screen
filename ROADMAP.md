@@ -8,13 +8,6 @@ numbers can change freely.
 
 ## Next up
 
-- There are issues animating the quick menu out. In Cemu, the quick menu can
-  briefly be seen with the text in the top right about "switch to its window"
-  while the menu is animating out. While animating out, it seems to use the
-  menu content from the main Dualscreen window, not Cemu. Meanwhile for DS
-  and 3DS games, the menu doesn't animate out at all, it just disappears
-  without animation.
-
 - There is an issue in which dropdown pickers with more content than can fit
   on-screen at once, such as the 3DS's render scale options list, when
   scrolled from a connected device, jump back to fit the highlighted row on-
