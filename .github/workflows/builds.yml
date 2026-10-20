@@ -227,8 +227,24 @@ jobs:
       - name: Replace the nightly release
         env:
           GH_TOKEN: ${{ github.token }}
+        # Replaced in place rather than deleted and made again, which left
+        # nothing to download for the half minute between -- an update asked
+        # for then was told the release was not there. version.json goes up
+        # last, so the apps are offered a build only once all of it is up.
         run: |
-          gh release delete nightly --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
-          gh release create nightly dist/* -R "$GITHUB_REPOSITORY" \
-            --prerelease --target "$GITHUB_SHA" \
-            --title "Nightly build ${{ github.run_number }}" --notes-file notes.md
+          title="Nightly build ${{ github.run_number }}"
+          if gh release view nightly -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            for file in dist/*; do
+              [ "$(basename "$file")" = version.json ] || gh release upload nightly "$file" --clobber -R "$GITHUB_REPOSITORY"
+            done
+            # A build that failed this time has no file here, not last time's.
+            for name in $(gh release view nightly -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); do
+              [ -f "dist/$name" ] || gh release delete-asset nightly "$name" --yes -R "$GITHUB_REPOSITORY"
+            done
+            gh release upload nightly dist/version.json --clobber -R "$GITHUB_REPOSITORY"
+            gh release edit nightly -R "$GITHUB_REPOSITORY" --prerelease --title "$title" --notes-file notes.md
+          else
+            gh release create nightly dist/* -R "$GITHUB_REPOSITORY" \
+              --prerelease --target "$GITHUB_SHA" --title "$title" --notes-file notes.md
+          fi
