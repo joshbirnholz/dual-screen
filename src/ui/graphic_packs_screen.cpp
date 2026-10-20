@@ -323,8 +323,8 @@ GraphicPacksScreen::Geometry GraphicPacksScreen::compute_geometry(float output_w
 
     // The list, as tall as the quick menu's own rows, short of its right-hand
     // edge by the scroll bar.
-    const float row_height = std::round(line * 2.2f);
-    const float row_step = row_height + std::round(line * 0.25f);
+    const float row_height = quick_menu_row_height(line);
+    const float row_step = row_height + quick_menu_row_gap(line);
     const float row_width = list_width - scroll_bar_width(geometry.scale) - line * 0.5f;
     float y = geometry.view_top - scroll_;
     for (std::size_t index = 0; index < lines_.size(); ++index) {
