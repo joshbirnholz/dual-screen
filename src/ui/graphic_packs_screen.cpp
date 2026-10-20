@@ -679,7 +679,7 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
         // The list, drawn as a Switch's settings draw their left-hand side:
         // the pack whose things are showing in the accent colour with a bar
         // beside it, and ringed while the cursor is on it.
-        quads.set_clip(geometry.list);
+        quads.set_clip(menu_list_clip(geometry.list, scale));
         const int focused_line = line_of_focus(focus_);
         for (std::size_t index = 0; index < lines_.size() && index < geometry.lines.size(); ++index) {
             const GraphicPackLine& entry = lines_[index];

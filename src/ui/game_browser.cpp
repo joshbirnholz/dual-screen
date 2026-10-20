@@ -434,7 +434,7 @@ void GameBrowser::render(QuadRenderer& quads,
     const int count = static_cast<int>(rows_.size());
     // Rows are placed by the pixel, so the one at the top can be part-way
     // off it: drawn clipped to the list.
-    quads.set_clip(geometry.list);
+    quads.set_clip(menu_list_clip(geometry.list, scale));
     const int first = std::max(0, static_cast<int>(std::floor(scroll_ / geometry.row_height)));
     const int last = std::min(count, static_cast<int>(std::ceil((scroll_ + geometry.list.h) /
                                                                  geometry.row_height)));

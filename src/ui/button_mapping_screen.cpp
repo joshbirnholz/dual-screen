@@ -634,8 +634,9 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     draw_page_background(quads, output_width, output_height, over_game_);
     draw_page_header(quads, text, frame, "Button Mapping", game_title_);
 
-    quads.set_clip(PixelRect{geometry.list.x, geometry.view_top, geometry.list.w,
-                             geometry.view_bottom - geometry.view_top});
+    quads.set_clip(menu_list_clip(PixelRect{geometry.list.x, geometry.view_top, geometry.list.w,
+                                            geometry.view_bottom - geometry.view_top},
+                                  scale));
     const float pad = menu_row_pad(line);
     const float glyph_height = std::round(line * 1.7f);
     for (std::size_t index = 0; index < kPadControls; ++index) {

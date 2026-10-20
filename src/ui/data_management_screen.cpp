@@ -1370,7 +1370,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
         const int first = std::max(0, static_cast<int>(std::floor(list_scroll_ / row_h)));
         const int last = std::min(count, static_cast<int>(std::ceil((list_scroll_ + list.h) / row_h)));
         row_first_ = first;
-        quads.set_clip(list);
+        quads.set_clip(menu_list_clip(list, scale));
         const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
         if (saves_.empty()) {
             text.draw(quads, "There are no saves on " + own_name_ + " yet.", output_width * 0.5f,
@@ -1496,7 +1496,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
         const int first = std::max(0, static_cast<int>(std::floor(earlier_scroll_ / row_h)));
         const int last = std::min(count, static_cast<int>(std::ceil((earlier_scroll_ + list.h) / row_h)));
         row_first_ = first;
-        quads.set_clip(list);
+        quads.set_clip(menu_list_clip(list, scale));
         const float row_w = list.w - (scrolls ? scroll_bar_width(scale) + line * 0.6f : 0.0f);
         for (int index = first; index < last; ++index) {
             const EarlierSave& save = earlier_[static_cast<std::size_t>(index)];

@@ -1506,7 +1506,7 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     const float line = TextRenderer::line_height(scale);
     const float row_scale = scale * 1.1f;
     // Rows past the bottom are scrolled to, not drawn over the prompts.
-    quads.set_clip(geometry.content);
+    quads.set_clip(menu_list_clip(geometry.content, scale));
     for (std::size_t index = 0; index < geometry.items.size() && index < rows().size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
@@ -1540,7 +1540,7 @@ void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
     const float line = TextRenderer::line_height(scale);
     const float row_scale = scale * 1.1f;
     // Rows past the bottom are scrolled to, not drawn over the prompts.
-    quads.set_clip(geometry.content);
+    quads.set_clip(menu_list_clip(geometry.content, scale));
     const int count = static_cast<int>(geometry.items.size());
     for (int index = 0; index < count; ++index) {
         const PixelRect& row = geometry.items[static_cast<std::size_t>(index)];

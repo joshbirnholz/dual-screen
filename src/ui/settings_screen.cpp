@@ -769,8 +769,9 @@ void SettingsScreen::render(QuadRenderer& quads,
     // clipped to the room there is for it. Without this a row pushed past the
     // bottom carries on being drawn over whatever is under the panel.
     const float view_top = geometry.view_top;
-    quads.set_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
-                             geometry.panel.y + geometry.panel.h - view_top});
+    quads.set_clip(menu_list_clip(PixelRect{geometry.panel.x, view_top, geometry.panel.w,
+                                            geometry.panel.y + geometry.panel.h - view_top},
+                                  scale));
 
     std::vector<std::array<std::string, 2>> rows;
     if (page_ == Page::Emulators) {

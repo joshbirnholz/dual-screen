@@ -124,15 +124,29 @@ inline Color menu_row_rule_color() { return Color{1.0f, 1.0f, 1.0f, 0.16f}; }
 // with whatever is behind it still showing through -- the ring where its
 // rules would be, in place of them: its own, and the one above the row after
 // it, which says so with `after_focused`.
+inline float menu_row_reach(float scale) {
+    const float half_gap = std::floor(menu_row_gap(TextRenderer::line_height(scale)) * 0.5f);
+    return half_gap + std::ceil(std::max(1.0f, std::round(scale * 0.4f)) * 0.5f);
+}
+// A list's rows drawn clipped to `area` -- but for the cursor's ring and the
+// rules, which lie a little past the first and last rows' edges, so would be
+// cut thinner there than everywhere else.
+inline PixelRect menu_list_clip(const PixelRect& area, float scale) {
+    const float reach = menu_row_reach(scale);
+    return PixelRect{area.x, area.y - reach, area.w, area.h + reach * 2.0f};
+}
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale,
                           bool last = false, bool after_focused = false) {
     const float line = TextRenderer::line_height(scale);
     const float half_gap = std::floor(menu_row_gap(line) * 0.5f);
     const float thick = std::max(1.0f, std::round(scale * 0.4f));
     if (focused) {
-        // Out to the rules above and below, its edges lying over them.
-        const float reach = half_gap + std::ceil(thick * 0.5f);
-        const PixelRect ring{rect.x, rect.y - reach, rect.w, rect.h + reach * 2.0f};
+        // Out to the rules above and below, its edges lying over them, on
+        // whole pixels so its top is drawn as thick as its bottom.
+        const float reach = menu_row_reach(scale);
+        const float top = std::round(rect.y - reach);
+        const float bottom = std::round(rect.y + rect.h + reach);
+        const PixelRect ring{rect.x, top, rect.w, bottom - top};
         draw_menu_cursor(quads, ring, std::round(std::min(ring.h * 0.22f, scale * 3.5f)), scale);
         return;
     }

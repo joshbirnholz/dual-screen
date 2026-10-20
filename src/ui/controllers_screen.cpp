@@ -258,8 +258,9 @@ void ControllersScreen::render(QuadRenderer& quads,
     draw_page_background(quads, output_width, output_height, over_game_);
     draw_page_header(quads, text, frame, "Controller Order");
 
-    quads.set_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
-                             geometry.view_bottom - geometry.view_top});
+    quads.set_clip(menu_list_clip(PixelRect{geometry.panel.x, geometry.view_top, geometry.panel.w,
+                                            geometry.view_bottom - geometry.view_top},
+                                  scale));
     const float pad = menu_row_pad(line);
     const bool icons = load_ui_icons(icons_, icons_tried_);
     // Which player a controller is, the way a Wii Remote's own lights say it:
