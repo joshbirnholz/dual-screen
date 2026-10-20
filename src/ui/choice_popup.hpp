@@ -38,6 +38,11 @@ struct ChoicePopupResult {
 // after them -- see set_headings().
 class ChoicePopup {
 public:
+    // How much of the screen's height a long list's rows take at most, and
+    // how many rows it shows whatever that comes to, where they fit.
+    static constexpr float kMaxListShare = 0.6f;
+    static constexpr int kMinRowsShown = 6;
+
     // Up over `row`, the row whose value it is, with `current` filled.
     void open(std::vector<std::string> choices, int current, const PixelRect& row);
     // A grid of colored circles, `columns` across, unnamed; Left and Right
@@ -59,7 +64,8 @@ public:
     const std::vector<std::string>& choices() const { return choices_; }
     int current() const { return current_; }
     int focus() const { return focus_; }
-    // From the other device, drawing the same popup.
+    // From the other device, drawing the same popup: the list brought round
+    // to it only when it has moved.
     void set_focus(int focus);
     // How far its list is scrolled, in rows; and the other device's taken on.
     float scroll_rows() const { return scroll_rows_; }
