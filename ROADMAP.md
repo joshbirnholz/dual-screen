@@ -8,14 +8,6 @@ numbers can change freely.
 
 ## Next up
 
-- When scanning an amiibo, it should check if there would be an error
-  with that amiibo before the delay in scanning. If it's not valid for some
-  reason, it should show that error before trying the four second delay.
-  It should also check if the game is looking for an amiibo and show that
-  error before scanning if it's not as well. It also needs to check this
-  again after the delay, in case the game has stopped looking for amiibo
-  in those four seconds.
-
 - Rows in menus should have more padding around them so they look more like
   a Switch's interface, and are easier to tap on touch screens.
 

@@ -1045,6 +1045,14 @@ struct App::Impl {
     // When the game was last seen going again with an amiibo waiting -- see
     // send_pending_amiibo().
     std::optional<std::chrono::steady_clock::time_point> amiibo_game_going_since;
+    // What the game was looking for when it was last going -- see
+    // kExternalFeatureAmiiboReading. Not what it says while paused under the
+    // menu: a game lets go of the GamePad's reader then, as it does for the
+    // HOME Menu, and takes it again once it is going.
+    std::optional<ExternalAmiiboReading> amiibo_reading_going;
+    // Why an amiibo would not scan in the game as it was last going, or
+    // nothing when it would or there is no telling.
+    std::optional<std::string> amiibo_unwanted_reason() const;
     // A popup in the quick menu, on both devices, put away with OK.
     void show_menu_notice(const std::string& message);
     // Any of those three pages, which open over the game from its menu and
@@ -2240,6 +2248,17 @@ void App::Impl::show_menu_notice(const std::string& message) {
     }
 }
 
+std::optional<std::string> App::Impl::amiibo_unwanted_reason() const {
+    if (!amiibo_reading_going) return std::nullopt;
+    switch (*amiibo_reading_going) {
+        case ExternalAmiiboReading::Nothing: return std::string("The game isn't reading amiibo right now.");
+        case ExternalAmiiboReading::OwnFigures:
+            return std::string("This game doesn't read amiibo, only its own figures.");
+        case ExternalAmiiboReading::Amiibo: break;
+    }
+    return std::nullopt;
+}
+
 void App::Impl::choose_amiibo(const std::string& path) {
     // A file that is not one is said to be so in the menu, which stays up --
     // not found out after the game has gone on without it.
@@ -2252,6 +2271,14 @@ void App::Impl::choose_amiibo(const std::string& path) {
         if (state == State::Amiibo) close_cemu_page();
         show_menu_notice(readable ? path_stem(path) + " isn't an amiibo."
                                   : path_stem(path) + "'s file couldn't be opened.");
+        return;
+    }
+    // And a game not looking for one is said to be so too, before it is
+    // waited on -- the menu still up, so another can be chosen or it closed.
+    if (const std::optional<std::string> reason = amiibo_unwanted_reason()) {
+        log_warn("amiibo: " + path_basename(path) + " was not scanned: " + *reason);
+        if (state == State::Amiibo) close_cemu_page();
+        show_menu_notice(*reason);
         return;
     }
     // Held to the GamePad once the game is going again, so the menu goes
@@ -2337,6 +2364,11 @@ void App::Impl::send_pending_amiibo() {
     // seconds regardless, rather than never, should the game not say it is.
     const auto now = std::chrono::steady_clock::now();
     const bool going = state == State::Playing && !wii_u_paused && !menu_waiting_for_pause;
+    if (!external_source->amiibo_reading_supported()) {
+        amiibo_reading_going.reset();
+    } else if (!wii_u_paused && !menu_waiting_for_pause) {
+        amiibo_reading_going = external_source->amiibo_reading();
+    }
     if (pending_amiibo.empty() || !going) {
         amiibo_game_going_since.reset();
     } else if (!amiibo_game_going_since) {
@@ -2345,6 +2377,15 @@ void App::Impl::send_pending_amiibo() {
     const bool settled = amiibo_game_going_since && now - *amiibo_game_going_since >= std::chrono::seconds(4);
     if (!pending_amiibo.empty() && (settled || now - pending_amiibo_at > std::chrono::seconds(12))) {
         amiibo_game_going_since.reset();
+        // Asked again, now it is time: a game can stop looking in the
+        // seconds the menu took to go.
+        if (const std::optional<std::string> reason = amiibo_unwanted_reason()) {
+            log_warn("amiibo: " + path_basename(pending_amiibo) + " was not scanned: " + *reason);
+            show_corner_notice(*reason);
+            pending_amiibo.clear();
+            amiibo_scanning = false;
+            return;
+        }
         external_source->scan_amiibo(pending_amiibo);
         amiibo_sent_at = now;
         log_info("amiibo: holding " + path_basename(pending_amiibo) + " to the GamePad");
