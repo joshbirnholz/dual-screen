@@ -56,6 +56,9 @@ public:
     // They are drawn dim, without a circle, and cannot be chosen: the cursor
     // passes over them, and a tap on one does nothing.
     void set_headings(std::vector<bool> headings);
+    // After open(): a few words at the right of a choice, dim, saying more
+    // of what it is -- "of another button". Empty for none.
+    void set_hints(std::vector<std::string> hints) { hints_ = std::move(hints); }
     bool heading(int index) const {
         return index >= 0 && index < static_cast<int>(headings_.size()) && headings_[static_cast<std::size_t>(index)];
     }
@@ -126,6 +129,7 @@ private:
     float glyph_aspect_ = 1.0f;
     std::vector<Color> colors_;
     std::vector<bool> headings_;
+    std::vector<std::string> hints_;
     int columns_ = 0;
     int current_ = -1;
     int focus_ = 0;

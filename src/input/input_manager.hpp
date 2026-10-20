@@ -38,6 +38,9 @@ enum class UiAction {
     // Layout::swap_layout_id. Only means anything with a game on screen; in a
     // menu every layout is already a tile away.
     SwapLayout,
+    // Move to the next of the layouts the quick menu offers, round to the
+    // first: Button Mapping's Next Screen Layout. Only with a game on screen.
+    NextLayout,
     // Quit the app outright, from a key that means nothing else. Distinct from
     // MenuQuit below, which a face button raises and only a menu acts on.
     Quit,
@@ -417,6 +420,9 @@ private:
     // Which of the mappable controls any pad held last frame, one bit per
     // PadControl, for the presses of those that are shortcuts.
     uint32_t controls_held_ = 0;
+    // And of those, the ones pressed while the game was listening: what a
+    // Touch Point touches with.
+    uint32_t touching_controls_ = 0;
     uint32_t controls_held_in(const RawPadState& raw) const;
     ButtonMapping button_mapping_;
 

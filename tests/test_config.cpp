@@ -296,6 +296,10 @@ void test_game_config_round_trip() {
     CHECK(fresh.button_mapping == ButtonMapping());
     fresh.button_mapping[PadControl::Zr] = PadAction::TouchCursor;
     fresh.button_mapping[PadControl::A] = PadAction::Nothing;
+    fresh.button_mapping[PadControl::X] = PadAction::Turbo;
+    fresh.button_mapping.turbo(PadControl::X) = PadAction::B;
+    fresh.button_mapping[PadControl::L] = PadAction::TouchPoint;
+    fresh.button_mapping.spot(PadControl::L) = TouchSpot{0.25f, 0.875f};
     fresh.touch_last_played();
     CHECK(fresh.save(paths));
 

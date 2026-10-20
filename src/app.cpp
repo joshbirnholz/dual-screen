@@ -1229,6 +1229,9 @@ struct App::Impl {
     // L3: the layout this one pairs with, drawn for the same hand -- see
     // layout_swap_from().
     void swap_layout();
+    // Next Screen Layout: the next layout the quick menu offers -- see
+    // next_menu_layout().
+    void next_layout();
     void request_filtering(bool bilinear);
     void request_audio_target(AudioTarget target);
     void request_handedness(Handedness hand);
@@ -3624,6 +3627,23 @@ void App::Impl::swap_separate_screens() {
     log_info(std::string("Separate Screens: this device shows the ") + to_string(separate_screen) + " screen");
 }
 
+void App::Impl::next_layout() {
+    const Layout& from = active_layout();
+    const LayoutSwap next = next_menu_layout(registry, system, screens_geometry(), from);
+    if (next.layout_id.empty()) return;
+    const Handedness hand = handedness_of(from.id);
+    if (is_companion()) {
+        if (next.keeps_hand) {
+            companion_session->request_layout(next.layout_id, hand);
+        } else {
+            companion_session->request_layout(next.layout_id);
+        }
+        return;  // the host decides; it will tell us
+    }
+    request_layout(next.layout_id);
+    if (next.keeps_hand) adopt_handedness(hand);
+}
+
 void App::Impl::swap_layout() {
     const Layout& from = active_layout();
     const LayoutSwap swap = layout_swap_from(registry, from);
@@ -5221,6 +5241,10 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                 }
                 break;
             }
+            if (action == UiAction::NextLayout) {
+                next_layout();
+                break;
+            }
         }
     }
 
@@ -5685,6 +5709,9 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         amiibo_browser.render(quads, text, button_glyphs, width, height);
     } else if (state == State::ButtonMapping) {
         button_mapping_screen.set_over_game(over_game);
+        // The game's touch screen as it was paused, to place a Touch Point on.
+        ScreenSource* const drawing = active_source();
+        button_mapping_screen.set_touch_screen(drawing != nullptr ? drawing->screens().bottom : nullptr);
         button_mapping_screen.render(quads, text, button_glyphs, width, height);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
@@ -5811,6 +5838,8 @@ void App::Impl::render() {
                 }
                 // The host's mapping, which this device's pad follows too.
                 show_button_mapping(mirrored_button_mapping);
+                ScreenSource* const drawing = active_source();
+                mirrored_button_mapping.set_touch_screen(drawing != nullptr ? drawing->screens().bottom : nullptr);
                 mirrored_button_mapping.show_mirrored(mapping, width, height);
                 mirrored_button_mapping.set_over_game(over_game);
                 mirrored_button_mapping.render(quads, text, button_glyphs, width, height);

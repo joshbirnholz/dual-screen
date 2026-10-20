@@ -1402,6 +1402,69 @@ void test_the_touch_cursor_can_be_touched_with_any_button() {
     pad.detach();
 }
 
+// A Touch Point touches the touch screen where it says while held -- but
+// not with a press that began in a menu, the way the gate holds back a
+// button. And Turbo presses its button on and off.
+void test_a_touch_point_touches_and_turbo_repeats() {
+    VirtualPad pad;
+    if (!pad.attach()) {
+        return;
+    }
+
+    InputManager input;
+    input.initialize(Settings());
+    ButtonMapping mapping;
+    mapping[PadControl::Zr] = PadAction::TouchPoint;
+    mapping.spot(PadControl::Zr) = TouchSpot{0.5f, 0.25f};
+    mapping[PadControl::Zl] = PadAction::Turbo;
+    mapping.turbo(PadControl::Zl) = PadAction::A;
+    input.set_button_mapping(mapping);
+
+    const SystemScreens screens = system_profile(SystemId::Ds).screens;
+    const auto frame = [&]() {
+        input.begin_frame();
+        input.end_frame(LayoutRegistry().fallback(), 1280.0f, 800.0f, screens);
+    };
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 32000);
+    SDL_GameControllerUpdate();
+    frame();
+    CHECK(input.ds_state().touching);
+    CHECK_EQ(input.ds_state().touch_x, screens.bottom.width / 2);
+    CHECK_EQ(input.ds_state().touch_y, screens.bottom.height / 4);
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    frame();
+    CHECK(!input.ds_state().touching);
+
+    // Pressed in a menu, and still held once the game has the pad back.
+    input.set_game_input_enabled(false);
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 32000);
+    SDL_GameControllerUpdate();
+    frame();
+    input.set_game_input_enabled(true);
+    frame();
+    CHECK_MSG(!input.ds_state().touching, "a press from the menu touched the game");
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    frame();
+
+    // Turbo: A down, then up, then down, held all the while.
+    SDL_JoystickSetVirtualAxis(pad.joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 32000);
+    SDL_GameControllerUpdate();
+    bool down = false;
+    bool up = false;
+    for (int step = 0; step < 12 && !(down && up); ++step) {
+        frame();
+        (input.ds_state().pressed(DsButton::A) ? down : up) = true;
+        SDL_Delay(17);
+    }
+    CHECK_MSG(down && up, "Turbo did not press and let go of its button");
+    CHECK(turbo_down_at(0) && !turbo_down_at(40) && turbo_down_at(70));
+
+    input.shutdown();
+    pad.detach();
+}
+
 int main() {
     test_only_the_device_showing_the_gamepad_controls_it();
     test_a_switch_reading_becomes_the_sdl_reading_for_the_same_pose();
@@ -1414,6 +1477,7 @@ int main() {
     }
 
     test_each_pad_is_read_on_its_own_in_order();
+    test_a_touch_point_touches_and_turbo_repeats();
     test_holding_a_direction_keeps_moving();
     test_steam_input_pads_are_read_as_steam_presents_them();
     test_face_buttons_follow_ds_positions();

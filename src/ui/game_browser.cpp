@@ -340,6 +340,7 @@ GameBrowserResult GameBrowser::update(const InputManager& input,
             case UiAction::ToggleMenu:
                 break;  // there is no game to pause yet
             case UiAction::ToggleFilter:
+            case UiAction::NextLayout:
             case UiAction::SwapLayout:
                 break;  // nothing is being drawn from a game here
             // A menu's face buttons. Nothing here answers them, and a bare

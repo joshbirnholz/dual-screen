@@ -264,6 +264,12 @@ void encode_reject(const RejectMessage& message, std::vector<uint8_t>& out) {
     finish_message(out, start, MessageType::Reject);
 }
 
+// A spot on the touch screen across or down, in 65536ths: the middle, which
+// most spots start at, exactly; the far edge a hair short of it.
+static uint16_t touch_spot_u16(float fraction) {
+    return static_cast<uint16_t>(std::min(65535L, std::lround(std::clamp(fraction, 0.0f, 1.0f) * 65536.0f)));
+}
+
 void encode_session_state(const SessionStateMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_string(out, message.layout_id);
@@ -334,6 +340,14 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     put_u16(out, static_cast<uint16_t>(std::clamp(message.producer_controls_from + 1, 0, 65535)));
     put_u8(out, static_cast<uint8_t>(kPadControls));
     for (const PadAction action : message.button_mapping.actions) put_u8(out, static_cast<uint8_t>(action));
+    // And each control's Turbo button and Touch Point, the same way.
+    put_u8(out, static_cast<uint8_t>(kPadControls));
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        put_u8(out, static_cast<uint8_t>(message.button_mapping.turbo_of[index]));
+        const TouchSpot& spot = message.button_mapping.touch_points[index];
+        put_u16(out, touch_spot_u16(spot.u));
+        put_u16(out, touch_spot_u16(spot.v));
+    }
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -774,6 +788,9 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     put_u8(out, message.focus);
     put_u8(out, message.choice_focus);
     put_u8(out, message.confirm_focus);
+    put_u8(out, static_cast<uint8_t>((message.choosing_turbo ? 1u : 0u) | (message.placing ? 2u : 0u)));
+    put_u16(out, touch_spot_u16(message.spot_u));
+    put_u16(out, touch_spot_u16(message.spot_v));
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -787,6 +804,22 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
     reader.u8(view.confirm_focus);
     if (!reader.ok()) return false;
     view.open = open != 0;
+    // From a host without Turbo's picker or Touch Point: neither up.
+    if (reader.remaining() > 0) {
+        uint8_t flags = 0;
+        uint16_t u = 0;
+        uint16_t v = 0;
+        reader.u8(flags);
+        reader.u16(u);
+        reader.u16(v);
+        if (!reader.ok()) return false;
+        view.choosing_turbo = (flags & 1u) != 0;
+        view.placing = (flags & 2u) != 0;
+        if (view.placing) {
+            view.spot_u = u / 65536.0f;
+            view.spot_v = v / 65536.0f;
+        }
+    }
     out = view;
     return true;
 }
@@ -1446,6 +1479,25 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
             reader.u8(action);
             if (index < kPadControls && action < static_cast<uint8_t>(PadAction::Count)) {
                 out.button_mapping.actions[index] = static_cast<PadAction>(action);
+            }
+        }
+        if (!reader.ok()) return false;
+    }
+    if (reader.remaining() > 0) {
+        uint8_t controls = 0;
+        reader.u8(controls);
+        for (uint8_t index = 0; index < controls && reader.ok(); ++index) {
+            uint8_t turbo = 0;
+            uint16_t u = 0;
+            uint16_t v = 0;
+            reader.u8(turbo);
+            reader.u16(u);
+            reader.u16(v);
+            if (index < kPadControls && reader.ok()) {
+                if (turbo < static_cast<uint8_t>(PadAction::Count)) {
+                    out.button_mapping.turbo_of[index] = static_cast<PadAction>(turbo);
+                }
+                out.button_mapping.touch_points[index] = TouchSpot{u / 65536.0f, v / 65536.0f};
             }
         }
         if (!reader.ok()) return false;

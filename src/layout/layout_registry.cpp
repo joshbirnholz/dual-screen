@@ -1,5 +1,6 @@
 #include "layout/layout_registry.hpp"
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -312,6 +313,44 @@ const Layout& LayoutRegistry::at(std::size_t index) const {
 const Layout& LayoutRegistry::fallback() const {
     const Layout* layout = find(fallback_id());
     return layout != nullptr ? *layout : layouts_.front();
+}
+
+std::vector<std::size_t> menu_layouts(const LayoutRegistry& registry, SystemId system,
+                                      const SystemScreens& screens) {
+    std::vector<std::size_t> shown;
+    for (std::size_t index = 0; index < registry.size(); ++index) {
+        if (!registry.at(index).hidden && layout_fits_system(registry.at(index), system, screens)) {
+            shown.push_back(index);
+        }
+    }
+    // The console's own default leads, if it has one and it is actually
+    // offered -- most do not say, and are left in the registry's own order.
+    // See SystemProfile::default_layout_id.
+    const std::string& default_id = system_profile(system).default_layout_id;
+    if (!default_id.empty()) {
+        const auto leader = std::find_if(shown.begin(), shown.end(),
+                                         [&](std::size_t index) { return registry.at(index).id == default_id; });
+        if (leader != shown.end() && leader != shown.begin()) {
+            std::rotate(shown.begin(), leader, leader + 1);
+        }
+    }
+    return shown;
+}
+
+LayoutSwap next_menu_layout(const LayoutRegistry& registry, SystemId system, const SystemScreens& screens,
+                            const Layout& from) {
+    LayoutSwap next;
+    const std::vector<std::size_t> shown = menu_layouts(registry, system, screens);
+    if (shown.empty()) return next;
+    std::size_t at = shown.size() - 1;  // one not offered goes to the first
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+        if (registry.at(shown[index]).id == from.id) at = index;
+    }
+    const Layout& to = registry.at(shown[(at + 1) % shown.size()]);
+    if (to.id == from.id) return next;
+    next.layout_id = to.id;
+    next.keeps_hand = layout_has_handedness(from) && layout_has_handedness(to);
+    return next;
 }
 
 LayoutSwap layout_swap_from(const LayoutRegistry& registry, const Layout& from) {

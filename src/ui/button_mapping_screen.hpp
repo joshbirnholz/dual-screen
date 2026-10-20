@@ -10,6 +10,7 @@
 #include "net/protocol.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
+#include "render/texture.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/choice_popup.hpp"
 #include "ui/control_guide.hpp"
@@ -34,7 +35,9 @@ struct ButtonMappingScreenResult {
 // console, the button the highlighted one presses picked out on it. A picks
 // another job for it from a list beside its row -- the console's buttons,
 // then this app's -- X puts every button back to the standard mapping, after
-// asking, and B goes back to the menu.
+// asking, and B goes back to the menu. Turbo asks next which button it
+// presses, and Touch Point where on the touch screen it touches, on the
+// paused game's own touch screen.
 //
 // The mapping is the game's, held by the device running it: the page shows
 // what it is handed and says what was changed. With two devices it is one
@@ -45,7 +48,9 @@ public:
     void close() {
         open_ = false;
         choice_.close();
+        choosing_turbo_ = false;
         confirming_ = false;
+        placing_ = false;
     }
     bool is_open() const { return open_; }
     // Whether a paused game is behind it, to be dimmed rather than covered.
@@ -56,6 +61,9 @@ public:
     // the page, from the other device.
     void set_mapping(const ButtonMapping& mapping, SystemId system, const PadConsole& console,
                      const std::string& game_title);
+    // The game's touch screen as it was paused, for placing a Touch Point
+    // on. None draws an empty screen.
+    void set_touch_screen(const Texture* touch_screen) { touch_screen_ = touch_screen; }
 
     ButtonMappingScreenResult update(const std::vector<UiAction>& actions,
                                      const std::vector<PointerEvent>& pointers, float output_width,
@@ -70,6 +78,11 @@ public:
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
     int confirm_focus() const { return confirm_cursor_.focus(); }
+    // The picker up is Turbo's: which button it presses.
+    bool choosing_turbo() const { return choice_.is_open() && choosing_turbo_; }
+    // A Touch Point being placed, and where so far.
+    bool placing() const { return placing_; }
+    const TouchSpot& spot() const { return spot_; }
     // Where the prompts at the foot of the page were drawn -- see
     // take_guide_taps() -- for a device drawing the other's page.
     const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
@@ -82,8 +95,9 @@ public:
 
     // MenuPage: the list scrolls under a finger, the mouse and the wheel, and
     // the picker does while it is up. Entries: a row is its PadControl, a
-    // choice in the picker kChoiceEntryBase plus its index, and a button of
-    // Revert to Default's question kConfirmEntryBase plus its.
+    // choice in the picker kChoiceEntryBase plus its index, a button of
+    // Revert to Default's question kConfirmEntryBase plus its, and a spot on
+    // the touch screen being placed on kSpotEntryBase plus spot_entry().
     bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
@@ -92,6 +106,10 @@ public:
     void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
     static constexpr int kChoiceEntryBase = 0x4000;
     static constexpr int kConfirmEntryBase = 0x4800;
+    static constexpr int kSpotEntryBase = 0x10000;
+    // A spot as an entry, to 1/1024 of the screen each way, and back.
+    static int spot_entry(const TouchSpot& spot);
+    static TouchSpot entry_spot(int entry);
 
 private:
     struct Geometry {
@@ -114,6 +132,21 @@ private:
     void choose(int index, ButtonMappingScreenResult& result);
     void ask_revert();
     void answer_revert(int button, ButtonMappingScreenResult& result);
+    // Turbo's picker, beside the same row, after Turbo was chosen.
+    void open_turbo_choice(float output_width, float output_height);
+    // Touch Point's page, the spot where the button touches now.
+    void start_placing();
+    void finish_placing(ButtonMappingScreenResult& result);
+    // Back a step from Turbo's picker or Touch Point's page: the first
+    // picker again, on what was being chosen.
+    void back_to_choice(PadAction on, float output_width, float output_height);
+    void move_spot(float du, float dv);
+    // Where the touch screen is drawn while a Touch Point is placed.
+    PixelRect touch_rect(float output_width, float output_height) const;
+    void render_placing(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                        float output_width, float output_height);
+    // What a row says its button does: "Turbo A", "Touch Point".
+    std::string action_label(PadControl control) const;
     PopupGeometry confirm_popup(float output_width, float output_height) const;
     PopupText confirm_text() const;
     std::vector<PopupButton> confirm_buttons() const;
@@ -124,7 +157,7 @@ private:
     std::string console_name() const;
     // The words under the console, for what the focused button does.
     std::string caption() const;
-    void draw_console(QuadRenderer& quads, const PixelRect& box, PadAction action) const;
+    void draw_console(QuadRenderer& quads, const PixelRect& box, PadControl control) const;
 
     bool open_ = false;
     bool over_game_ = false;
@@ -138,6 +171,11 @@ private:
     // The picker, and what each of its lines is: an action, or a heading.
     ChoicePopup choice_;
     std::vector<PadAction> choice_actions_;
+    bool choosing_turbo_ = false;
+    // Touch Point's page.
+    bool placing_ = false;
+    TouchSpot spot_;
+    const Texture* touch_screen_ = nullptr;
     // Revert to Default's question, up over the page.
     bool confirming_ = false;
     PopupCursor confirm_cursor_;

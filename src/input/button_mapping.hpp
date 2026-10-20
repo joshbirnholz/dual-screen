@@ -53,6 +53,14 @@ enum class PadAction : uint8_t {
     // A DS's microphone, held.
     BlowIntoMic,
     Nothing,
+    // The next of the layouts the quick menu offers, round to the first.
+    NextLayout,
+    // Another of the console's buttons pressed over and over while this one
+    // is held -- which, ButtonMapping::turbo_of says.
+    Turbo,
+    // The touch screen touched at one spot while held -- where,
+    // ButtonMapping::touch_points says.
+    TouchPoint,
     Count,
 };
 
@@ -78,20 +86,40 @@ PadConsole pad_console_for(SystemId system, RightStickMode right_stick);
 // on a console with nowhere else to put them.
 PadAction standard_pad_action(PadControl control, const PadConsole& console);
 
+// A spot on the touch screen, as a fraction of it across and down: the same
+// spot whatever size the console's screen is.
+struct TouchSpot {
+    float u = 0.5f;
+    float v = 0.5f;
+    bool operator==(const TouchSpot& other) const { return u == other.u && v == other.v; }
+};
+
 // A game's Button Mapping: what each control does, Standard for those never
 // changed.
 struct ButtonMapping {
     std::array<PadAction, kPadControls> actions{};
+    // For a control that is Turbo, the console button it presses; Standard
+    // while none has been chosen, which presses nothing.
+    std::array<PadAction, kPadControls> turbo_of{};
+    // For a control that is Touch Point, where it touches. Kept when the
+    // control is given another job, to be where it was if it is put back.
+    std::array<TouchSpot, kPadControls> touch_points{};
 
     PadAction& operator[](PadControl control) { return actions[static_cast<std::size_t>(control)]; }
     PadAction operator[](PadControl control) const { return actions[static_cast<std::size_t>(control)]; }
+    PadAction& turbo(PadControl control) { return turbo_of[static_cast<std::size_t>(control)]; }
+    PadAction turbo(PadControl control) const { return turbo_of[static_cast<std::size_t>(control)]; }
+    TouchSpot& spot(PadControl control) { return touch_points[static_cast<std::size_t>(control)]; }
+    const TouchSpot& spot(PadControl control) const { return touch_points[static_cast<std::size_t>(control)]; }
     // What `control` does, Standard looked up.
     PadAction resolved(PadControl control, const PadConsole& console) const;
     // Nothing changed from the standard mapping -- what a game has until it
     // is, and after Revert to Default.
     bool is_standard(const PadConsole& console) const;
 
-    bool operator==(const ButtonMapping& other) const { return actions == other.actions; }
+    bool operator==(const ButtonMapping& other) const {
+        return actions == other.actions && turbo_of == other.turbo_of && touch_points == other.touch_points;
+    }
     bool operator!=(const ButtonMapping& other) const { return !(*this == other); }
 };
 
@@ -99,6 +127,11 @@ struct ButtonMapping {
 // then this app's, then Nothing. Only what the console has -- a DS has no ZL
 // and no Touch Cursor tip without a Touch Cursor.
 std::vector<PadAction> pad_action_choices(const PadConsole& console);
+// What Turbo can press: the console's own buttons.
+std::vector<PadAction> turbo_choices(const PadConsole& console);
+// Whether Turbo's press is down at `ms` milliseconds: down and up 15 times a
+// second, a little slower than a game reads its buttons, so none is missed.
+bool turbo_down_at(uint32_t ms);
 
 // Where a choice is in the picker, for the heading it goes under.
 enum class PadActionGroup { Console, TouchScreen, Dualscreen };

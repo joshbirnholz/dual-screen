@@ -71,22 +71,44 @@ std::vector<PadAction> pad_action_choices(const PadConsole& console) {
     }
     if (console.right_stick == RightStickMode::TouchCursor) choices.push_back(PadAction::TouchCursor);
     if (!console.game_uses_every_control) {
+        choices.push_back(PadAction::TouchPoint);
         choices.push_back(PadAction::QuickMenu);
         choices.push_back(PadAction::SwapScreens);
+        choices.push_back(PadAction::NextLayout);
         choices.push_back(PadAction::ScreenSmoothing);
     }
     if (console.has_microphone) choices.push_back(PadAction::BlowIntoMic);
+    choices.push_back(PadAction::Turbo);
     choices.push_back(PadAction::Nothing);
     return choices;
 }
 
+std::vector<PadAction> turbo_choices(const PadConsole& console) {
+    std::vector<PadAction> choices;
+    for (const PadAction action : pad_action_choices(console)) {
+        DsButton button = DsButton::A;
+        if (pad_action_group(action) == PadActionGroup::Console && ds_button_for_pad_action(action, button)) {
+            choices.push_back(action);
+        }
+    }
+    return choices;
+}
+
+bool turbo_down_at(uint32_t ms) {
+    constexpr uint32_t kHalfPeriodMs = 33;
+    return (ms / kHalfPeriodMs) % 2 == 0;
+}
+
 PadActionGroup pad_action_group(PadAction action) {
     switch (action) {
-        case PadAction::TouchCursor: return PadActionGroup::TouchScreen;
+        case PadAction::TouchCursor:
+        case PadAction::TouchPoint: return PadActionGroup::TouchScreen;
         case PadAction::QuickMenu:
         case PadAction::SwapScreens:
+        case PadAction::NextLayout:
         case PadAction::ScreenSmoothing:
         case PadAction::BlowIntoMic:
+        case PadAction::Turbo:
         case PadAction::Nothing: return PadActionGroup::Dualscreen;
         default: return PadActionGroup::Console;
     }
@@ -121,7 +143,7 @@ bool ds_button_for_pad_action(PadAction action, DsButton& out) {
 
 bool pad_action_is_shortcut(PadAction action) {
     return action == PadAction::QuickMenu || action == PadAction::SwapScreens ||
-           action == PadAction::ScreenSmoothing;
+           action == PadAction::NextLayout || action == PadAction::ScreenSmoothing;
 }
 
 const char* pad_control_name(PadControl control) {
@@ -168,6 +190,9 @@ const char* pad_action_name(PadAction action) {
         case PadAction::ScreenSmoothing: return "Screen Smoothing";
         case PadAction::BlowIntoMic: return "Blow into Mic";
         case PadAction::Nothing: return "Nothing";
+        case PadAction::NextLayout: return "Next Screen Layout";
+        case PadAction::Turbo: return "Turbo";
+        case PadAction::TouchPoint: return "Touch Point";
         case PadAction::Count: break;
     }
     return "?";
@@ -198,6 +223,9 @@ const char* pad_action_key(PadAction action) {
         case PadAction::ScreenSmoothing: return "screen_smoothing";
         case PadAction::BlowIntoMic: return "microphone";
         case PadAction::Nothing: return "nothing";
+        case PadAction::NextLayout: return "next_layout";
+        case PadAction::Turbo: return "turbo";
+        case PadAction::TouchPoint: return "touch_point";
         case PadAction::Count: break;
     }
     return "standard";

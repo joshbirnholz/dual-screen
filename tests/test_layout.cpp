@@ -1116,7 +1116,24 @@ void test_audio_off_reaches_neither_screen() {
     CHECK(audio_reaches(AudioTarget::Off, ScreenId::Bottom) == false);
 }
 
+// Next Screen Layout goes through the quick menu's layouts in its order, the
+// console's default first, and from the last back round to it.
+void test_next_screen_layout_goes_round_the_menus_layouts() {
+    const LayoutRegistry registry;
+    const SystemScreens screens = system_profile(SystemId::Ds).screens;
+    const std::vector<std::size_t> shown = menu_layouts(registry, SystemId::Ds, screens);
+    CHECK(shown.size() >= 2);
+    if (shown.size() < 2) return;
+    const std::string& default_id = system_profile(SystemId::Ds).default_layout_id;
+    if (!default_id.empty()) CHECK_STR_EQ(registry.at(shown.front()).id, default_id);
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+        const LayoutSwap next = next_menu_layout(registry, SystemId::Ds, screens, registry.at(shown[index]));
+        CHECK_STR_EQ(next.layout_id, registry.at(shown[(index + 1) % shown.size()]).id);
+    }
+}
+
 int main() {
+    test_next_screen_layout_goes_round_the_menus_layouts();
     test_which_layouts_have_a_hand();
     test_a_touch_point_is_drawn_where_it_is_felt();
     test_the_stylus_stick_follows_a_turned_screen();

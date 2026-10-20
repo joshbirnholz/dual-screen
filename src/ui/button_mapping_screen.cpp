@@ -71,7 +71,9 @@ void ButtonMappingScreen::open() {
     scroll_ = 0.0f;
     drag_.stop();
     choice_.close();
+    choosing_turbo_ = false;
     confirming_ = false;
+    placing_ = false;
     mirrored_focus_ = -1;
 }
 
@@ -135,7 +137,9 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     const PadAction now = mapping_.resolved(focused_control(), console_);
     std::vector<std::string> labels;
     std::vector<bool> headings;
+    std::vector<std::string> hints;
     choice_actions_.clear();
+    choosing_turbo_ = false;
     int current = -1;
     bool first = true;
     PadActionGroup group = PadActionGroup::Console;
@@ -146,10 +150,36 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
             labels.push_back(here == PadActionGroup::Console ? console_name() + " Buttons"
                                                               : group_heading(here));
             headings.push_back(true);
+            hints.emplace_back();
             choice_actions_.push_back(PadAction::Standard);
             group = here;
             first = false;
         }
+        if (action == now) current = static_cast<int>(labels.size());
+        // Touch Point goes on to a page of its own, and Turbo to a second
+        // list, which the words say.
+        labels.push_back(action == PadAction::TouchPoint ? std::string("Touch Point\u2026")
+                                                         : std::string(pad_action_name(action)));
+        hints.push_back(action == PadAction::Turbo ? "of another button" : "");
+        headings.push_back(false);
+        choice_actions_.push_back(action);
+    }
+    choice_.open(std::move(labels), current >= 0 ? current : 1,
+                 geometry.rows[static_cast<std::size_t>(focus_)]);
+    choice_.set_headings(std::move(headings));
+    choice_.set_hints(std::move(hints));
+}
+
+void ButtonMappingScreen::open_turbo_choice(float output_width, float output_height) {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    const PadControl control = focused_control();
+    const PadAction now =
+        mapping_.resolved(control, console_) == PadAction::Turbo ? mapping_.turbo(control) : PadAction::Standard;
+    std::vector<std::string> labels = {"Turbo of"};
+    std::vector<bool> headings = {true};
+    choice_actions_ = {PadAction::Standard};
+    int current = -1;
+    for (const PadAction action : turbo_choices(console_)) {
         if (action == now) current = static_cast<int>(labels.size());
         labels.push_back(pad_action_name(action));
         headings.push_back(false);
@@ -158,12 +188,95 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     choice_.open(std::move(labels), current >= 0 ? current : 1,
                  geometry.rows[static_cast<std::size_t>(focus_)]);
     choice_.set_headings(std::move(headings));
+    choosing_turbo_ = true;
+}
+
+void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float output_height) {
+    placing_ = false;
+    open_choice(output_width, output_height);
+    for (std::size_t index = 0; index < choice_actions_.size(); ++index) {
+        if (choice_actions_[index] == on && !choice_.heading(static_cast<int>(index))) {
+            choice_.set_focus(static_cast<int>(index));
+        }
+    }
+}
+
+void ButtonMappingScreen::start_placing() {
+    choice_.close();
+    choosing_turbo_ = false;
+    placing_ = true;
+    spot_ = mapping_.spot(focused_control());
+}
+
+void ButtonMappingScreen::finish_placing(ButtonMappingScreenResult& result) {
+    placing_ = false;
+    const PadControl control = focused_control();
+    if (mapping_[control] == PadAction::TouchPoint && mapping_.spot(control) == spot_) return;
+    mapping_[control] = PadAction::TouchPoint;
+    mapping_.spot(control) = spot_;
+    result.changed = mapping_;
+}
+
+void ButtonMappingScreen::move_spot(float du, float dv) {
+    spot_.u = std::clamp(spot_.u + du, 0.0f, 1.0f);
+    spot_.v = std::clamp(spot_.v + dv, 0.0f, 1.0f);
+}
+
+int ButtonMappingScreen::spot_entry(const TouchSpot& spot) {
+    const int u = std::clamp(static_cast<int>(std::lround(spot.u * 1023.0f)), 0, 1023);
+    const int v = std::clamp(static_cast<int>(std::lround(spot.v * 1023.0f)), 0, 1023);
+    return kSpotEntryBase + u * 1024 + v;
+}
+
+TouchSpot ButtonMappingScreen::entry_spot(int entry) {
+    const int at = std::clamp(entry - kSpotEntryBase, 0, 1024 * 1024 - 1);
+    return TouchSpot{static_cast<float>(at / 1024) / 1023.0f, static_cast<float>(at % 1024) / 1023.0f};
+}
+
+PixelRect ButtonMappingScreen::touch_rect(float output_width, float output_height) const {
+    const Geometry geometry = compute_geometry(output_width, output_height);
+    const PageFrame frame = page_frame(output_width, output_height);
+    // The console's touch screen is 4:3, a DS's and a 3DS's alike; as big as
+    // fits over the words beneath it.
+    const float top = geometry.view_top + geometry.line;
+    const float bottom = geometry.view_bottom - geometry.line * 3.0f;
+    const float height = std::max(1.0f, std::min(bottom - top, frame.panel.w * 0.6f * 3.0f / 4.0f));
+    const float width = std::round(height * 4.0f / 3.0f);
+    return PixelRect{std::round(frame.panel.x + (frame.panel.w - width) * 0.5f), std::round(top), width,
+                     std::round(height)};
+}
+
+std::string ButtonMappingScreen::action_label(PadControl control) const {
+    const PadAction action = mapping_.resolved(control, console_);
+    if (action == PadAction::Turbo) {
+        const PadAction of = mapping_.turbo(control);
+        return of == PadAction::Standard ? std::string("Turbo") : std::string("Turbo ") + pad_action_name(of);
+    }
+    return pad_action_name(action);
 }
 
 void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
     if (index < 0 || index >= static_cast<int>(choice_actions_.size()) || choice_.heading(index)) return;
     const PadControl control = focused_control();
     const PadAction action = choice_actions_[static_cast<std::size_t>(index)];
+    if (choosing_turbo_) {
+        choosing_turbo_ = false;
+        choice_.close();
+        if (mapping_[control] == PadAction::Turbo && mapping_.turbo(control) == action) return;
+        mapping_[control] = PadAction::Turbo;
+        mapping_.turbo(control) = action;
+        result.changed = mapping_;
+        return;
+    }
+    // Each asks a step more first.
+    if (action == PadAction::Turbo) {
+        open_turbo_choice(last_width_, last_height_);
+        return;
+    }
+    if (action == PadAction::TouchPoint) {
+        start_placing();
+        return;
+    }
     // What the standard mapping already does is kept as Standard, so a game
     // that put a button back by hand has nothing changed to save.
     const PadAction kept = action == standard_pad_action(control, console_) ? PadAction::Standard : action;
@@ -213,19 +326,51 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
     std::vector<UiAction> actions = pressed;
     std::vector<PointerEvent> pointers = touched;
     if (!choice_.is_open() && !confirming_) take_guide_taps(guide_hits_, actions, pointers);
+    // A tap on Touch Point's page lands on the screen, wherever it is.
     last_width_ = output_width;
     last_height_ = output_height;
 
     // The picker takes every press until put away -- the buttons here, a tap
     // the one way every tap is heard, below.
     if (choice_.is_open()) {
+        const bool turbo = choosing_turbo_;
         const ChoicePopupResult answer = choice_.update(actions, {}, output_width, output_height);
-        if (answer.chosen >= 0) choose(answer.chosen, result);
         if (answer.close_everything) {
             result.close_requested = true;
             result.close_everything = true;
             close();
             return result;
+        }
+        if (answer.chosen >= 0) {
+            choose(answer.chosen, result);
+        } else if (answer.closed && turbo) {
+            // B a step back: to the first list, on Turbo.
+            back_to_choice(PadAction::Turbo, output_width, output_height);
+        }
+        for (const int tap : take_taps(pointers, output_width, output_height)) {
+            handle_tap(tap, result, output_width, output_height);
+        }
+        return result;
+    }
+    // And Touch Point's page: the spot moved, and kept or not.
+    if (placing_) {
+        constexpr float kStep = 1.0f / 32.0f;
+        for (const UiAction action : actions) {
+            switch (action) {
+                case UiAction::Up: move_spot(0.0f, -kStep); break;
+                case UiAction::Down: move_spot(0.0f, kStep); break;
+                case UiAction::Left: move_spot(-kStep, 0.0f); break;
+                case UiAction::Right: move_spot(kStep, 0.0f); break;
+                case UiAction::Confirm: finish_placing(result); break;
+                case UiAction::Cancel: back_to_choice(PadAction::TouchPoint, output_width, output_height); break;
+                case UiAction::ToggleMenu:
+                    result.close_requested = true;
+                    result.close_everything = true;
+                    close();
+                    return result;
+                default: break;
+            }
+            if (!placing_) break;
         }
         for (const int tap : take_taps(pointers, output_width, output_height)) {
             handle_tap(tap, result, output_width, output_height);
@@ -281,6 +426,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
             case UiAction::OpenMenu:
             case UiAction::Quit:
             case UiAction::ToggleFilter:
+            case UiAction::NextLayout:
             case UiAction::SwapLayout: break;
         }
         if (choice_.is_open() || confirming_ || result.close_requested) break;
@@ -307,10 +453,17 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
     if (entry == kTapOffPopup) {
         // Off the picker or the question: put away, nothing changed.
         choice_.close();
+        choosing_turbo_ = false;
         confirming_ = false;
         return;
     }
     if (entry < 0) return;
+    if (entry >= kSpotEntryBase) {
+        // The spot goes where the finger was; A keeps it.
+        if (placing_) spot_ = entry_spot(entry);
+        return;
+    }
+    if (placing_) return;
     if (entry >= kConfirmEntryBase) {
         if (!confirming_) return;
         const int answer = confirm_cursor_.tap(entry - kConfirmEntryBase);
@@ -347,6 +500,13 @@ std::string ButtonMappingScreen::caption() const {
         case PadAction::BlowIntoMic: return "Holding " + name + " blows into the microphone.";
         case PadAction::TouchCursor: return name + " touches the screen at the Touch Cursor.";
         case PadAction::Nothing: return name + " does nothing in this game.";
+        case PadAction::NextLayout: return name + " moves on to the next screen layout.";
+        case PadAction::TouchPoint: return name + " touches the touch screen here while it's held.";
+        case PadAction::Turbo: {
+            const PadAction of = mapping_.turbo(control);
+            if (of == PadAction::Standard) return name + " does nothing until Turbo has a button.";
+            return name + " presses " + pad_action_name(of) + " over and over while it's held.";
+        }
         default: break;
     }
     if (ds_button_for_pad_action(action, button)) {
@@ -355,7 +515,10 @@ std::string ButtonMappingScreen::caption() const {
     return std::string();
 }
 
-void ButtonMappingScreen::draw_console(QuadRenderer& quads, const PixelRect& box, PadAction action) const {
+void ButtonMappingScreen::draw_console(QuadRenderer& quads, const PixelRect& box, PadControl control) const {
+    const PadAction resolved = mapping_.resolved(control, console_);
+    // Turbo picks out the button it presses.
+    const PadAction action = resolved == PadAction::Turbo ? mapping_.turbo(control) : resolved;
     const UiTheme& theme = ui_theme();
     const bool three_ds = system_ == SystemId::ThreeDs;
     // Drawn on a grid of 460 by 520, scaled to fit the room it has.
@@ -396,11 +559,20 @@ void ButtonMappingScreen::draw_console(QuadRenderer& quads, const PixelRect& box
     ring(at(40, 270, 380, 236), std::round(18 * unit), stroke, theme.text);
     ring(three_ds ? at(90, 36, 280, 168) : at(118, 38, 224, 168), std::round(3 * unit), thin, dim);
     const PixelRect touch = three_ds ? at(128, 292, 204, 153) : at(118, 298, 224, 168);
-    if (picked == ConsolePart::Touch) {
+    if (picked == ConsolePart::Touch || action == PadAction::TouchPoint) {
         quads.draw_rounded_rect(touch, std::round(3 * unit), faint);
         ring(touch, std::round(3 * unit), stroke, theme.accent);
     } else {
         ring(touch, std::round(3 * unit), thin, dim);
+    }
+    // And Touch Point where it touches.
+    if (action == PadAction::TouchPoint) {
+        const TouchSpot& spot = mapping_.spot(control);
+        const float r = std::round(11.0f * unit);
+        const PixelRect dot{std::round(touch.x + spot.u * touch.w - r), std::round(touch.y + spot.v * touch.h - r),
+                            r * 2.0f, r * 2.0f};
+        quads.draw_rounded_rect(dot, r, theme.accent);
+        ring(dot, r, thin, theme.text);
     }
     // The hinge, and on a DS the microphone in the middle of it.
     quads.draw_solid(at(60, 257, 340, 2), dim);
@@ -449,6 +621,10 @@ void ButtonMappingScreen::draw_console(QuadRenderer& quads, const PixelRect& box
 void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                                  float output_width, float output_height) {
     if (!open_) return;
+    if (placing_) {
+        render_placing(quads, text, glyphs, output_width, output_height);
+        return;
+    }
     const UiTheme& theme = ui_theme();
     const Geometry geometry = compute_geometry(output_width, output_height);
     const float scale = geometry.scale;
@@ -472,8 +648,8 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
         const float name_x = row.x + pad + glyphs.width_for(glyph_height) + line * 0.6f;
         const float baseline = page_row_text_y(row, scale);
         text.draw(quads, pad_control_name(control), name_x, baseline, scale, menu_row_text(focused));
-        text.draw(quads, pad_action_name(mapping_.resolved(control, console_)), row.x + row.w - pad,
-                  baseline, scale, theme.text_dim, TextAlign::Right);
+        text.draw(quads, action_label(control), row.x + row.w - pad, baseline, scale, theme.text_dim,
+                  TextAlign::Right);
     }
     quads.clear_clip();
     const float view = geometry.view_bottom - geometry.view_top;
@@ -483,7 +659,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     }
 
     // The console, what the highlighted button presses picked out on it.
-    draw_console(quads, geometry.diagram, mapping_.resolved(focused_control(), console_));
+    draw_console(quads, geometry.diagram, focused_control());
     const float caption_scale = scale * 0.85f;
     const std::string words =
         TextRenderer::elide_right(caption(), geometry.diagram.w, caption_scale);
@@ -510,6 +686,46 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     }
 }
 
+void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                                         float output_width, float output_height) {
+    const UiTheme& theme = ui_theme();
+    const PageFrame frame = page_frame(output_width, output_height);
+    const float line = frame.line;
+    const float scale = frame.scale;
+    draw_page_background(quads, output_width, output_height, over_game_);
+    draw_page_header(quads, text, frame,
+                     std::string("Touch Point for ") + pad_control_name(focused_control()), game_title_);
+    const PixelRect touch = touch_rect(output_width, output_height);
+    if (touch_screen_ != nullptr && touch_screen_->valid()) {
+        quads.draw_image(touch, *touch_screen_);
+    } else {
+        quads.draw_solid(touch, Color{0.0f, 0.0f, 0.0f, 1.0f});
+    }
+    const float border = std::max(1.0f, std::round(scale * 0.8f));
+    quads.draw_rounded_ring(touch, std::round(line * 0.15f), border, theme.text_dim, theme.text_dim);
+    // Where it touches: a ring on the spot, and a cross through it to aim by.
+    const float cx = std::round(touch.x + spot_.u * touch.w);
+    const float cy = std::round(touch.y + spot_.v * touch.h);
+    const float r = std::round(line * 0.9f);
+    const float bar = std::max(2.0f, std::round(scale * 1.2f));
+    Color fill = theme.accent;
+    fill.a = 0.35f;
+    quads.set_clip(touch);
+    quads.draw_rounded_rect(PixelRect{cx - r, cy - r, r * 2.0f, r * 2.0f}, r, fill);
+    quads.draw_rounded_ring(PixelRect{cx - r, cy - r, r * 2.0f, r * 2.0f}, r, bar, theme.accent, theme.accent);
+    quads.draw_solid(PixelRect{cx - bar * 0.5f, cy - r * 1.8f, bar, r * 3.6f}, theme.accent);
+    quads.draw_solid(PixelRect{cx - r * 1.8f, cy - bar * 0.5f, r * 3.6f, bar}, theme.accent);
+    quads.clear_clip();
+    text.draw(quads, "Choose a point for this button to tap.", frame.panel.x + frame.panel.w * 0.5f,
+              std::round(touch.y + touch.h + line * 1.0f), scale * 0.9f, theme.text_dim, TextAlign::Center);
+
+    guide_hits_.clear();
+    draw_page_guide(quads, text, glyphs, frame,
+                    {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen},
+                     {ButtonGlyph::A, "OK", PromptRole::ActsOnSelection}},
+                    &guide_hits_);
+}
+
 void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& view, float output_width,
                                         float output_height) {
     if (!open_) open();
@@ -525,10 +741,19 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     }
     if (view.choice_focus == 0) {
         choice_.close();
+        choosing_turbo_ = false;
     } else {
-        if (!choice_.is_open()) open_choice(output_width, output_height);
+        if (!choice_.is_open() || choosing_turbo_ != view.choosing_turbo) {
+            if (view.choosing_turbo) {
+                open_turbo_choice(output_width, output_height);
+            } else {
+                open_choice(output_width, output_height);
+            }
+        }
         if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
     }
+    placing_ = view.placing;
+    if (placing_) spot_ = TouchSpot{view.spot_u, view.spot_v};
     if (view.confirm_focus == 0) {
         confirming_ = false;
     } else {
@@ -543,13 +768,19 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
 bool ButtonMappingScreen::scroll(const std::vector<PointerEvent>& pointers, float output_width,
                                  float output_height) {
     if (choice_.is_open()) return choice_.scroll(pointers, output_width, output_height);
-    if (confirming_) return false;
+    if (confirming_ || placing_) return false;
     const Geometry geometry = compute_geometry(output_width, output_height);
     drag_.update(pointers, geometry.list, scroll_, geometry.max_scroll());
     return drag_.release_was_drag();
 }
 
 int ButtonMappingScreen::entry_at(float x, float y, float output_width, float output_height) const {
+    if (placing_) {
+        const PixelRect touch = touch_rect(output_width, output_height);
+        if (!touch.contains(x, y)) return -1;
+        return spot_entry(TouchSpot{std::clamp((x - touch.x) / touch.w, 0.0f, 1.0f),
+                                    std::clamp((y - touch.y) / touch.h, 0.0f, 1.0f)});
+    }
     if (choice_.is_open()) {
         const int choice = choice_.choice_at(x, y, output_width, output_height);
         return choice >= 0 ? kChoiceEntryBase + choice : -1;
@@ -592,7 +823,11 @@ void ButtonMappingScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, open_ ? 1u : 0u);
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, confirming_ ? 1u : 0u);
+    mix_sound_state(view.rest, choosing_turbo_ ? 1u : 0u);
+    mix_sound_state(view.rest, placing_ ? 1u : 0u);
+    if (placing_) mix_sound_state(view.focus, static_cast<uint64_t>(spot_entry(spot_)));
     for (const PadAction action : mapping_.actions) mix_sound_state(view.rest, static_cast<uint64_t>(action));
+    for (const PadAction action : mapping_.turbo_of) mix_sound_state(view.rest, static_cast<uint64_t>(action));
 }
 
 net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& screen) {
@@ -602,6 +837,12 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     view.focus = static_cast<uint8_t>(screen.focus());
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
     view.confirm_focus = screen.confirming() ? static_cast<uint8_t>(screen.confirm_focus() + 1) : 0;
+    view.choosing_turbo = screen.choosing_turbo();
+    view.placing = screen.placing();
+    if (view.placing) {
+        view.spot_u = screen.spot().u;
+        view.spot_v = screen.spot().v;
+    }
     return view;
 }
 

@@ -31,23 +31,7 @@ void LayoutPicker::rebuild_tiles() {
         // loop in app.cpp. There is nothing left to pick a layout between.
         return;
     }
-    for (std::size_t index = 0; index < registry_->size(); ++index) {
-        if (!registry_->at(index).hidden && layout_fits_system(registry_->at(index), system_, screens_)) {
-            tiles_.push_back(index);
-        }
-    }
-    // The console's own default leads its own menu, if it has one and it is
-    // actually offered -- most do not say, and are left in the registry's own
-    // order. See SystemProfile::default_layout_id.
-    const std::string& default_id = system_profile(system_).default_layout_id;
-    if (!default_id.empty()) {
-        const auto leader = std::find_if(tiles_.begin(), tiles_.end(), [&](std::size_t index) {
-            return registry_->at(index).id == default_id;
-        });
-        if (leader != tiles_.end() && leader != tiles_.begin()) {
-            std::rotate(tiles_.begin(), leader, leader + 1);
-        }
-    }
+    tiles_ = menu_layouts(*registry_, system_, screens_);
 }
 
 const Layout& LayoutPicker::tile_layout(int index) const {
@@ -1081,6 +1065,7 @@ void LayoutPicker::handle_menu_action(UiAction action, LayoutPickerResult& resul
         case UiAction::ToggleFilter: break;
         // L3 only swaps layouts with a game on screen: here every layout is a
         // move away already.
+        case UiAction::NextLayout:
         case UiAction::SwapLayout: break;
         // Escape's second meaning, for screens with a game on them; here its
         // first one -- Cancel, just above -- already closes the menu.

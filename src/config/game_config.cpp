@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
@@ -107,6 +108,26 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
             }
         }
     }
+    // What a Turbo button presses, and where a Touch Point touches.
+    if (const auto found = document.find("button_turbo"); found != document.end() && found->is_object()) {
+        for (const auto& [key, action] : found->items()) {
+            PadControl control = PadControl::A;
+            if (action.is_string() && pad_control_from_key(key, control)) {
+                config.button_mapping.turbo(control) = pad_action_from_key(action.get<std::string>());
+            }
+        }
+    }
+    if (const auto found = document.find("button_touch_points");
+        found != document.end() && found->is_object()) {
+        for (const auto& [key, spot] : found->items()) {
+            PadControl control = PadControl::A;
+            if (spot.is_array() && spot.size() == 2 && spot[0].is_number() && spot[1].is_number() &&
+                pad_control_from_key(key, control)) {
+                config.button_mapping.spot(control) =
+                    TouchSpot{std::clamp(spot[0].get<float>(), 0.0f, 1.0f), std::clamp(spot[1].get<float>(), 0.0f, 1.0f)};
+            }
+        }
+    }
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
     config.lcd_filter = get_bool(document, "lcd_filter", config.lcd_filter);
     config.resume_from_save_state =
@@ -166,6 +187,18 @@ bool GameConfig::save(const AppPaths& paths) const {
         const PadControl control = static_cast<PadControl>(index);
         if (button_mapping[control] != PadAction::Standard) {
             document["button_mapping"][pad_control_key(control)] = pad_action_key(button_mapping[control]);
+        }
+    }
+    document["button_turbo"] = json::object();
+    document["button_touch_points"] = json::object();
+    for (std::size_t index = 0; index < kPadControls; ++index) {
+        const PadControl control = static_cast<PadControl>(index);
+        if (button_mapping.turbo(control) != PadAction::Standard) {
+            document["button_turbo"][pad_control_key(control)] = pad_action_key(button_mapping.turbo(control));
+        }
+        if (!(button_mapping.spot(control) == TouchSpot())) {
+            document["button_touch_points"][pad_control_key(control)] =
+                json::array({button_mapping.spot(control).u, button_mapping.spot(control).v});
         }
     }
     document["rumble_pak"] = rumble_pak;

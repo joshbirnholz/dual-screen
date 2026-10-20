@@ -19,7 +19,7 @@ namespace {
 // Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
 // then no lists of Cemu's choices, then the favorite color's byte, then no
 // corner notice, then where Controls' rows begin, then the Button Mapping.
-constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls;
+constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls;
 }  // namespace
 using namespace ds::net;
 
@@ -325,7 +325,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls),
+    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls),
                                received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
@@ -340,7 +340,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.producer_choices == state.producer_choices);
     state.producer_choices.clear();
     // The Button Mapping's count and one byte for each control, last of all.
-    const std::size_t kMappingBytes = 1 + kPadControls;
+    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls;
     // The host's favorite color, for the other device's menus; and none said
     // by a host from before it was sent.
     state.favorite_color = 7;
@@ -387,6 +387,22 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.button_mapping == state.button_mapping);
     CHECK(decode_session_state(payload.data(), payload.size() - kMappingBytes, received_state));
     CHECK(received_state.button_mapping == ButtonMapping());
+    // A Turbo button and a Touch Point, which go with it -- and none, from a
+    // host from before them, the actions still there.
+    state.button_mapping[PadControl::A] = PadAction::Turbo;
+    state.button_mapping.turbo(PadControl::A) = PadAction::Y;
+    state.button_mapping[PadControl::L] = PadAction::TouchPoint;
+    state.button_mapping.spot(PadControl::L) = TouchSpot{0.25f, 0.75f};
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Y);
+    CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).u - 0.25f) < 0.001f);
+    CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).v - 0.75f) < 0.001f);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls, received_state));
+    CHECK(received_state.button_mapping[PadControl::L] == PadAction::TouchPoint);
+    CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Standard);
     state.button_mapping = ButtonMapping();
     state.menu_focus = 40;
     buffer.clear();
@@ -1969,6 +1985,20 @@ void test_button_mapping_view_round_trip() {
     CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
     CHECK(received == sent);
     CHECK(!decode_button_mapping_view(payload.data(), 1, received));
+    // Touch Point's page, and where its spot is so far.
+    sent.choice_focus = 0;
+    sent.placing = true;
+    sent.spot_u = 0.5f;
+    sent.spot_v = 1.0f;
+    buffer.clear();
+    encode_button_mapping_view(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(received.placing && !received.choosing_turbo);
+    CHECK(received.spot_u == 0.5f && std::fabs(received.spot_v - 1.0f) < 0.001f);
+    // From a host from before it: not placing.
+    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 5, received));
+    CHECK(!received.placing);
 
     // Closed is a message too.
     buffer.clear();

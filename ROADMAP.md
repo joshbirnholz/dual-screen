@@ -12,13 +12,11 @@ numbers can change freely.
 
 - **Button mapping, the rest of it.** DS and 3DS games have Controls >
   Button Mapping now: each pad button given one of the console's buttons,
-  Quick Menu, Swap Screens, Screen Smoothing, Blow into Mic, Activate Touch
-  Cursor or Nothing, kept with the game, Revert to Default on X, one page on
-  both devices. Still to do, in this order, from the mockups
-  (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
-  - More actions: Swap Layouts, Turbo, and **Touch Point** -- placed on the
-    paused game's touch screen by finger, mouse or the Touch Cursor, kept as
-    a fraction of the screen.
+  Touch Point (placed on the paused game's touch screen), Activate Touch
+  Cursor, Quick Menu, Swap Screens, Next Screen Layout, Screen Smoothing,
+  Blow into Mic, Turbo of another button or Nothing, kept with the game,
+  Revert to Default on X, one page on both devices. Still to do, in this
+  order, from the mockups (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
   - Right Stick on the mapping page itself: Touch Cursor or Touch Analog
     Stick, with Choose Spot.
   - Mapping profiles, saved and loaded from the page; loading one copies it

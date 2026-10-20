@@ -1277,6 +1277,7 @@ UiAction ui_action_for_shortcut(PadAction action) {
     switch (action) {
         case PadAction::QuickMenu: return UiAction::ToggleMenu;
         case PadAction::ScreenSmoothing: return UiAction::ToggleFilter;
+        case PadAction::NextLayout: return UiAction::NextLayout;
         default: break;
     }
     return UiAction::SwapLayout;
@@ -1355,6 +1356,12 @@ DsInputState InputManager::held_state_from(const RawPadState& raw) const {
         // Blowing needs a microphone to blow into.
         if (action == PadAction::BlowIntoMic && !left_stick_is_mic_) continue;
         DsButton ds_button = DsButton::A;
+        if (action == PadAction::Turbo) {
+            if (turbo_down_at(SDL_GetTicks()) && ds_button_for_pad_action(button_mapping_.turbo(control), ds_button)) {
+                held.set(ds_button, true);
+            }
+            continue;
+        }
         if (ds_button_for_pad_action(action, ds_button)) held.set(ds_button, true);
     }
 
@@ -1567,6 +1574,11 @@ void InputManager::end_frame(const Layout& layout,
     if (!left && !right) {
         stick_chord_used_ = false;
     }
+    // A press that began in a menu is not a touch on the way out of it, as
+    // the gate below holds back such a button: only presses made while the
+    // game was listening touch.
+    if (game_input_enabled_) touching_controls_ |= controls & ~controls_held_;
+    touching_controls_ &= controls;
     controls_held_ = controls;
 
     const bool pointer_down = update_pointer(output_width, output_height);
@@ -1616,6 +1628,24 @@ void InputManager::end_frame(const Layout& layout,
                 ds_state_.touching = true;
                 ds_state_.touch_x = point.x;
                 ds_state_.touch_y = point.y;
+            }
+        }
+        // A button that is a Touch Point, held, touches where it says -- a
+        // finger on the glass first.
+        if (!ds_state_.touching && !game_owns_controls_) {
+            const PadConsole console = pad_console();
+            for (std::size_t index = 0; index < kPadControls; ++index) {
+                const PadControl control = static_cast<PadControl>(index);
+                if ((touching_controls_ & control_bit(control)) == 0 ||
+                    button_mapping_.resolved(control, console) != PadAction::TouchPoint) {
+                    continue;
+                }
+                const TouchSpot& spot = button_mapping_.spot(control);
+                const ScreenSize touch = screens.bottom;
+                ds_state_.touching = true;
+                ds_state_.touch_x = std::clamp(static_cast<int>(spot.u * touch.width), 0, touch.width - 1);
+                ds_state_.touch_y = std::clamp(static_cast<int>(spot.v * touch.height), 0, touch.height - 1);
+                break;
             }
         }
     }

@@ -47,4 +47,13 @@ struct LayoutSwap {
 };
 LayoutSwap layout_swap_from(const LayoutRegistry& registry, const Layout& from);
 
+// The layouts the quick menu offers a console, in its order, as indices into
+// the registry: those not hidden that fit it, its own default first.
+std::vector<std::size_t> menu_layouts(const LayoutRegistry& registry, SystemId system,
+                                      const SystemScreens& screens);
+// Where Next Screen Layout goes from `from`: the next of those, round to the
+// first -- and its stylus hand, as for LayoutSwap. Empty with nowhere to go.
+LayoutSwap next_menu_layout(const LayoutRegistry& registry, SystemId system, const SystemScreens& screens,
+                            const Layout& from);
+
 }  // namespace ds

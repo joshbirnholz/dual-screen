@@ -190,6 +190,7 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& p
             case UiAction::MenuSettings:
             case UiAction::Quit:
             case UiAction::ToggleFilter:
+            case UiAction::NextLayout:
             case UiAction::SwapLayout:
             case UiAction::PageUp:
             case UiAction::PageDown: break;

@@ -709,6 +709,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
             case UiAction::OpenMenu: break;
             case UiAction::Quit: break;
             case UiAction::ToggleFilter:  // handled by the app, wherever you are
+            case UiAction::NextLayout:
             case UiAction::SwapLayout:    // nothing here is a layout
             // There is more here than fits, so these move the view rather
             // than doing nothing.

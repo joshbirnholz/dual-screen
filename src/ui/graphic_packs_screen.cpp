@@ -617,6 +617,7 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
             case UiAction::OpenMenu:
             case UiAction::Quit:
             case UiAction::ToggleFilter:
+            case UiAction::NextLayout:
             case UiAction::SwapLayout: break;
         }
     }

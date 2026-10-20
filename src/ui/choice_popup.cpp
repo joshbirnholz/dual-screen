@@ -13,6 +13,7 @@ void ChoicePopup::open(std::vector<std::string> choices, int current, const Pixe
     choices_ = std::move(choices);
     glyph_pairs_.clear();
     headings_.clear();
+    hints_.clear();
     colors_.clear();
     columns_ = 0;
     current_ = current >= 0 && current < static_cast<int>(choices_.size()) ? current : -1;
@@ -397,9 +398,18 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
             glyphs->draw(quads, glyph_pairs_[index].second, pen_x, glyph_y, height, theme.text);
             continue;
         }
+        float text_right = row.x + row.w - line * 0.4f;
+        if (index < hints_.size() && !hints_[index].empty()) {
+            const float hint_scale = scale * 0.8f;
+            const float hint_width = TextRenderer::measure_width(hints_[index], hint_scale);
+            const float hint_x = std::round(text_right - line * 0.4f - hint_width);
+            text.draw(quads, hints_[index], hint_x,
+                      std::round(row.y + (row.h - TextRenderer::line_height(hint_scale)) * 0.5f), hint_scale,
+                      theme.text_dim);
+            text_right = hint_x - gap;
+        }
         draw_fitted_text(quads, text, choices_[index], text_x, std::round(row.y + (row.h - line) * 0.5f),
-                         row.x + row.w - text_x - line * 0.4f, scale, theme.text, TextAlign::Left, focused,
-                         focus_seconds);
+                         text_right - text_x, scale, theme.text, TextAlign::Left, focused, focus_seconds);
     }
     quads.clear_clip();
 

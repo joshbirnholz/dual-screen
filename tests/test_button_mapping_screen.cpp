@@ -7,6 +7,7 @@
 
 #include "test_support.hpp"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -272,6 +273,108 @@ void test_the_picker_offers_what_the_console_has() {
     CHECK(zr.changed.has_value() && (*zr.changed)[PadControl::Zr] == PadAction::Zr);
 }
 
+// Turbo asks next which button it presses, B going back to the first list;
+// the button chosen is the one it presses.
+void test_turbo_asks_which_button() {
+    ButtonMappingScreen screen = open_screen();
+    move_to(screen, PadControl::X);
+    press(screen, UiAction::Confirm);
+    CHECK(!tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::Turbo))
+               .changed.has_value());
+    CHECK_MSG(screen.choosing_turbo(), "Turbo did not ask which button");
+    press(screen, UiAction::Cancel);
+    CHECK(screen.choosing() && !screen.choosing_turbo());
+    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::Turbo));
+    press(screen, UiAction::Confirm);
+    CHECK(screen.choosing_turbo());
+    // Its list: a heading, then the console's buttons, A first.
+    const ButtonMappingScreenResult chosen = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 2);
+    CHECK(!screen.choosing());
+    CHECK(chosen.changed.has_value());
+    if (chosen.changed) {
+        CHECK((*chosen.changed)[PadControl::X] == PadAction::Turbo);
+        CHECK(chosen.changed->turbo(PadControl::X) == PadAction::B);
+    }
+    // Opened again, its cursor starts on B.
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.choosing_turbo());
+    CHECK_EQ(screen.choice_focus(), 2);
+}
+
+// Touch Point opens a page of its own: the spot moved by the pad or put down
+// by a tap, A keeping it and B going back to the list, nothing changed.
+void test_a_touch_point_is_placed() {
+    ButtonMappingScreen screen = open_screen();
+    move_to(screen, PadControl::L);
+    press(screen, UiAction::Confirm);
+    tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::TouchPoint));
+    CHECK_MSG(screen.placing(), "Touch Point did not open its page");
+    CHECK(!screen.choosing());
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Right);
+    press(screen, UiAction::Up);
+    CHECK(std::fabs(screen.spot().u - (0.5f + 2.0f / 32.0f)) < 0.0001f);
+    CHECK(std::fabs(screen.spot().v - (0.5f - 1.0f / 32.0f)) < 0.0001f);
+    // B: back to the list, on Touch Point, and nothing kept.
+    CHECK(!press(screen, UiAction::Cancel).changed.has_value());
+    CHECK(!screen.placing() && screen.choosing());
+    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::TouchPoint));
+    // Again, from where it was kept -- the middle -- and put down by a tap.
+    press(screen, UiAction::Confirm);
+    CHECK(screen.placing());
+    CHECK_EQ(screen.spot().u, 0.5f);
+    tap_entry(screen, ButtonMappingScreen::spot_entry(TouchSpot{0.25f, 0.75f}));
+    CHECK(std::fabs(screen.spot().u - 0.25f) < 0.001f && std::fabs(screen.spot().v - 0.75f) < 0.001f);
+    const ButtonMappingScreenResult kept = press(screen, UiAction::Confirm);
+    CHECK(!screen.placing() && !screen.choosing());
+    CHECK(kept.changed.has_value());
+    if (kept.changed) {
+        CHECK((*kept.changed)[PadControl::L] == PadAction::TouchPoint);
+        CHECK(std::fabs(kept.changed->spot(PadControl::L).u - 0.25f) < 0.001f);
+    }
+    // The menu button out of everything from there too.
+    press(screen, UiAction::Confirm);
+    press(screen, UiAction::Confirm);
+    CHECK(screen.placing());
+    const ButtonMappingScreenResult out = press(screen, UiAction::ToggleMenu);
+    CHECK(out.close_everything && !screen.is_open());
+}
+
+// The other device draws Touch Point's page too, and a tap on its screen
+// puts the spot down on the host's.
+void test_the_other_device_places_a_touch_point() {
+    constexpr float kOtherWidth = 800.0f;
+    constexpr float kOtherHeight = 480.0f;
+    ButtonMappingScreen host = open_screen();
+    press(host, UiAction::Confirm);
+    tap_entry(host, ButtonMappingScreen::kChoiceEntryBase + choice_index(host, PadAction::TouchPoint));
+    CHECK(host.placing());
+    ButtonMappingScreen mirror;
+    mirror.set_mapping(ButtonMapping(), SystemId::Ds, ds_console(), "Some Game");
+    mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
+    CHECK(mirror.placing());
+    // Somewhere on its touch screen, down the middle.
+    float y = 0.0f;
+    int entry = -1;
+    for (y = 2.0f; y < kOtherHeight && entry < ButtonMappingScreen::kSpotEntryBase; y += 3.0f) {
+        entry = mirror.entry_at(kOtherWidth * 0.5f, y, kOtherWidth, kOtherHeight);
+    }
+    CHECK_MSG(entry >= ButtonMappingScreen::kSpotEntryBase, "no touch screen on the other device's page");
+    const std::vector<int> taps =
+        MenuPage::taps_on(mirror, {tap_at(kOtherWidth * 0.5f, y)}, kOtherWidth, kOtherHeight);
+    CHECK_EQ(taps.size(), 1u);
+    if (!taps.empty()) host.press_entry(taps.front());
+    host.update({}, {}, kWidth, kHeight);
+    CHECK(std::fabs(host.spot().u - 0.5f) < 0.01f);
+    CHECK(host.spot().v < 0.1f);
+    mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
+    CHECK(std::fabs(mirror.spot().v - host.spot().v) < 0.001f);
+    press(host, UiAction::Cancel);
+    mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
+    CHECK(!mirror.placing() && mirror.choosing());
+}
+
 }  // namespace
 
 int main() {
@@ -282,5 +385,8 @@ int main() {
     test_a_first_tap_highlights_and_a_second_chooses();
     test_the_other_device_shows_and_works_the_page();
     test_the_picker_offers_what_the_console_has();
+    test_turbo_asks_which_button();
+    test_a_touch_point_is_placed();
+    test_the_other_device_places_a_touch_point();
     return test::finish("button-mapping-screen");
 }

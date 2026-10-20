@@ -1506,6 +1506,22 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                         }
                         break;
                     }
+                    case UiAction::NextLayout: {
+                        const Layout& from = registry_.resolve(session_.host_layout_id());
+                        const LayoutSwap next = next_menu_layout(registry_, session_.system(),
+                                                                 session_.screens_geometry(), from);
+                        if (next.layout_id.empty()) break;
+                        if (next.keeps_hand) {
+                            const auto& left = session_.host_left_handed_layouts();
+                            const bool left_handed =
+                                std::find(left.begin(), left.end(), from.id) != left.end();
+                            session_.request_layout(
+                                next.layout_id, left_handed ? Handedness::Left : Handedness::Right);
+                        } else {
+                            session_.request_layout(next.layout_id);
+                        }
+                        break;
+                    }
                     case UiAction::Quit:
                         break;  // Quit lives in the menu here, not on a button
                     default:
@@ -2141,6 +2157,7 @@ void Client::draw_scene() {
                     session_.host_button_mapping(), session_.system(),
                     pad_console_for(session_.system(), session_.host_right_stick_mode()),
                     session_.game_title());
+                mirrored_button_mapping_.set_touch_screen(session_.screens().bottom);
                 mirrored_button_mapping_.show_mirrored(mapping, width, height);
                 mirrored_button_mapping_.set_over_game(true);
                 mirrored_button_mapping_.render(quads_, text_, button_glyphs_, width, height);
