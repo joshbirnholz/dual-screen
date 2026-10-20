@@ -72,6 +72,7 @@
 #include "net/save_exchange.hpp"
 #include "ui/connecting_screen.hpp"
 #include "ui/controllers_screen.hpp"
+#include "ui/button_mapping_screen.hpp"
 #include "ui/graphic_packs_screen.hpp"
 #include "ui/data_management_screen.hpp"
 #include "ui/forwarder_screen.hpp"
@@ -374,6 +375,8 @@ struct App::Impl {
         GraphicPacks,
         // An amiibo to scan, from the same menu.
         Amiibo,
+        // A DS or 3DS game's Button Mapping, from its menu's Controls.
+        ButtonMapping,
         // A Wii U game's own dialog -- an error, its keyboard -- shown over
         // it in place of Cemu's, the game going on underneath. See
         // update_game_dialogs().
@@ -510,6 +513,7 @@ struct App::Impl {
     // Opened from Settings, and drawn over it -- see ControllersScreen.
     ControllersScreen controllers_screen;
     GraphicPacksScreen graphic_packs_screen;
+    ButtonMappingScreen button_mapping_screen;
     // Cemu's own options, as it last said: shown in a Wii U menu's Options,
     // and the ones it keeps for every game alike set to this game's choice
     // once each session -- see ExternalOption::default_choice.
@@ -537,6 +541,10 @@ struct App::Impl {
     ControllersScreen mirrored_controllers;
     // And its Graphics Packs page, the same way.
     GraphicPacksScreen mirrored_graphic_packs;
+    // And the game's Button Mapping.
+    ButtonMappingScreen mirrored_button_mapping;
+    bool button_mapping_view_sent = false;
+    net::ButtonMappingViewMessage button_mapping_view_said;
     // What the companion was last told of the Graphics Packs page -- see
     // GraphicPacksScreen::packs_revision().
     bool graphic_packs_view_sent = false;
@@ -988,6 +996,14 @@ struct App::Impl {
                                      const std::vector<PointerEvent>& pointers);
     // What a press on the page asked for: a pack changed, or the page left.
     void apply_graphic_packs_result(const GraphicPacksScreenResult& result);
+    // The game's Button Mapping, kept with it on the device running it --
+    // see ButtonMappingScreen.
+    bool button_mapping_available() const;
+    void open_button_mapping();
+    void update_button_mapping_screen(const std::vector<UiAction>& actions,
+                                      const std::vector<PointerEvent>& pointers);
+    // What the page shows, for the game as it is now.
+    void show_button_mapping(ButtonMappingScreen& screen) const;
     // The page on screen now that taps reach as a MenuPage, or none -- and
     // that page updated with these presses and no pointer, to hear the taps
     // the other device sent it. See MenuPage.
@@ -1063,10 +1079,11 @@ struct App::Impl {
     std::optional<std::string> amiibo_unwanted_reason() const;
     // A popup in the quick menu, on both devices, put away with OK.
     void show_menu_notice(const std::string& message);
-    // Any of those three pages, which open over the game from its menu and
-    // go back to where they came from.
+    // Any of those pages, which open over the game from its menu and go
+    // back to where they came from -- Button Mapping too, though it is not
+    // Cemu's.
     bool on_cemu_page() const {
-        return state == State::GraphicPacks || state == State::Amiibo;
+        return state == State::GraphicPacks || state == State::Amiibo || state == State::ButtonMapping;
     }
     void enter_cemu_page(State page);
     void close_cemu_page();
@@ -2095,6 +2112,46 @@ void App::Impl::enter_cemu_page(State page) {
     input.set_game_input_enabled(false);
 }
 
+bool App::Impl::button_mapping_available() const {
+    return !is_companion() && local_game() && system != SystemId::WiiU;
+}
+
+void App::Impl::show_button_mapping(ButtonMappingScreen& screen) const {
+    screen.set_mapping(button_mapping, system, pad_console_for(system, right_stick_mode), game_title);
+}
+
+void App::Impl::open_button_mapping() {
+    enter_cemu_page(State::ButtonMapping);
+    show_button_mapping(button_mapping_screen);
+    button_mapping_screen.open();
+    log_info("the button mapping page is up");
+}
+
+void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& actions,
+                                             const std::vector<PointerEvent>& pointers) {
+    // The game went while the page was up: nothing left to map.
+    if (!button_mapping_available()) {
+        close_cemu_page();
+        return;
+    }
+    show_button_mapping(button_mapping_screen);
+    const ButtonMappingScreenResult result = button_mapping_screen.update(
+        actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
+    if (result.changed) {
+        const bool back_to_standard =
+            result.changed->is_standard(pad_console_for(system, right_stick_mode));
+        adopt_button_mapping(*result.changed);
+        log_info(back_to_standard ? "button mapping: every button is back to standard"
+                                  : "button mapping: a button was given another job");
+    }
+    if (result.close_everything) {
+        close_cemu_page();
+        if (state == State::Menu) set_menu_open(false);
+    } else if (result.close_requested) {
+        close_cemu_page();
+    }
+}
+
 void App::Impl::open_graphic_packs() {
     enter_cemu_page(State::GraphicPacks);
     graphic_packs_screen.open();
@@ -2461,6 +2518,9 @@ void App::Impl::close_cemu_page() {
     } else if (state == State::Amiibo) {
         amiibo_browser.close();
         log_info("the amiibo browser is down");
+    } else if (state == State::ButtonMapping) {
+        button_mapping_screen.close();
+        log_info("the button mapping page is down");
     }
     if (cemu_page_came_from == State::Menu && local_game()) {
         set_menu_open(true);
@@ -2493,6 +2553,7 @@ MenuPage* App::Impl::page_shown() {
         case State::GraphicPacks: return &graphic_packs_screen;
         case State::Controllers: return &controllers_screen;
         case State::Amiibo: return &amiibo_browser;
+        case State::ButtonMapping: return &button_mapping_screen;
         default: return nullptr;
     }
 }
@@ -2505,6 +2566,7 @@ net::MirroredPage App::Impl::mirrored_page() const {
         case State::GraphicPacks: return net::MirroredPage::GraphicPacks;
         case State::Controllers: return net::MirroredPage::Controllers;
         case State::Amiibo: return net::MirroredPage::AmiiboBrowser;
+        case State::ButtonMapping: return net::MirroredPage::ButtonMapping;
         // Settings and its pages are this device's own; the rest are not
         // over a game the two share, or have nothing that scrolls.
         case State::Settings:
@@ -2539,6 +2601,9 @@ void App::Impl::sync_companion_scroll() {
         } else if (companion_session->host_graphic_packs_view().open) {
             page = &mirrored_graphic_packs;
             shown = net::MirroredPage::GraphicPacks;
+        } else if (companion_session->host_button_mapping_view().open) {
+            page = &mirrored_button_mapping;
+            shown = net::MirroredPage::ButtonMapping;
         }
     }
     if (const std::optional<net::MenuScrollMessage> said =
@@ -2582,6 +2647,7 @@ void App::Impl::update_shown_page(const std::vector<UiAction>& actions) {
         case State::GraphicPacks: update_graphic_packs_screen(actions, {}); break;
         case State::Controllers: update_controllers_screen(actions, {}); break;
         case State::Amiibo: update_amiibo_browser(actions, {}); break;
+        case State::ButtonMapping: update_button_mapping_screen(actions, {}); break;
         default: break;
     }
 }
@@ -2756,6 +2822,7 @@ bool App::Impl::menu_key_back_to_game(const std::vector<UiAction>& actions) {
     if (state == State::Controllers) controllers_screen.close();
     if (state == State::GraphicPacks) graphic_packs_screen.close();
     if (state == State::Amiibo) amiibo_browser.close();
+    if (state == State::ButtonMapping) button_mapping_screen.close();
     if (state == State::DataManagement && data_screen) data_screen->close();
     data_from_settings = false;
     log_info("the menu button: every page put away, back to the game");
@@ -3308,6 +3375,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 // Cemu's, on this machine, like Settings: the other device is
                 // told to look over here.
                 if (graphic_packs_available()) open_graphic_packs();
+            } else if (result.button_mapping_requested) {
+                // The game's, kept on the device running it, the same way.
+                if (button_mapping_available()) open_button_mapping();
             } else if (result.amiibo_chosen >= 0) {
                 // Chosen from the list, from either device: the host's files.
                 if (!is_companion() && amiibo_available() &&
@@ -3386,6 +3456,11 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_right_stick_choosable()
                        : (local_game() && system_profile(system).offers_right_stick_mode);
     picker_state.right_stick_modes = right_stick_modes(system_profile(system).has_analog_stick);
+    // Every DS and 3DS game has one; a Wii U's buttons are Cemu's, player by
+    // player.
+    picker_state.button_mapping_available = system != SystemId::WiiU && (is_companion() || local_game());
+    picker_state.button_mapping_custom =
+        !button_mapping.is_standard(pad_console_for(system, right_stick_mode));
     // A Rumble Pak, where the core running this game can put one in.
     picker_state.rumble_pak = rumble_pak_in_effect();
     picker_state.lcd_filter = lcd_filter_in_effect();
@@ -5066,6 +5141,7 @@ UiSoundView App::Impl::sound_view() const {
         case State::Controllers: controllers_screen.describe_for_sound(view); break;
         case State::GraphicPacks: graphic_packs_screen.describe_for_sound(view); break;
         case State::Amiibo: amiibo_browser.describe_for_sound(view); break;
+        case State::ButtonMapping: button_mapping_screen.describe_for_sound(view); break;
         case State::Message: message.describe_for_sound(view); break;
         case State::GameDialog: view.focus = static_cast<uint64_t>(game_dialog_screen.focus()); break;
         case State::Browser:
@@ -5277,6 +5353,18 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                             companion_session->request_menu_focus(tap);
                         }
                     }
+                } else if (companion_session->host_button_mapping_view().open) {
+                    std::vector<PointerEvent> rest = pointers;
+                    take_guide_taps(mirrored_button_mapping.guide_hits(), forwarded, rest);
+                    for (const int tap : MenuPage::taps_on(mirrored_button_mapping, rest,
+                                                           static_cast<float>(output_width),
+                                                           static_cast<float>(output_height))) {
+                        if (tap == MenuPage::kTapOffPopup) {
+                            companion_session->request_menu_action(net::MenuAction::Cancel);
+                        } else {
+                            companion_session->request_menu_focus(tap);
+                        }
+                    }
                 }
                 for (const UiAction action : forwarded) {
                     net::MenuAction wire = net::MenuAction::Confirm;
@@ -5425,6 +5513,11 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
 
         case State::Amiibo: {
             update_amiibo_browser(actions, pointers);
+            break;
+        }
+
+        case State::ButtonMapping: {
+            update_button_mapping_screen(actions, pointers);
             break;
         }
 
@@ -5590,6 +5683,9 @@ void App::Impl::render_pages(float width, float height, bool over_game,
     } else if (state == State::Amiibo) {
         amiibo_browser.set_over_game(over_game);
         amiibo_browser.render(quads, text, button_glyphs, width, height);
+    } else if (state == State::ButtonMapping) {
+        button_mapping_screen.set_over_game(over_game);
+        button_mapping_screen.render(quads, text, button_glyphs, width, height);
     } else if (state == State::Controllers) {
         controllers_screen.set_over_game(over_game);
         controllers_screen.render(quads, text, button_glyphs, width, height,
@@ -5690,6 +5786,7 @@ void App::Impl::render() {
         const net::ControllersViewMessage& view = companion_session->host_controllers_view();
         const net::GraphicPacksViewMessage& packs = companion_session->host_graphic_packs_view();
         const net::AmiiboBrowserViewMessage& amiibo = companion_session->host_amiibo_browser_view();
+        const net::ButtonMappingViewMessage& mapping = companion_session->host_button_mapping_view();
         const auto draw_page = [&](bool over_game) {
             if (view.open) {
                 render_mirrored_controllers(mirrored_controllers, quads, text, button_glyphs, width,
@@ -5707,12 +5804,22 @@ void App::Impl::render() {
                 mirrored_amiibo.show_mirrored(amiibo.directory, entries, amiibo.focus);
                 mirrored_amiibo.set_over_game(over_game);
                 mirrored_amiibo.render(quads, text, button_glyphs, width, height);
+            } else if (mapping.open) {
+                if (!over_game) {
+                    quads.begin_frame(output_width, output_height);
+                    quads.clear(ui_theme().background);
+                }
+                // The host's mapping, which this device's pad follows too.
+                show_button_mapping(mirrored_button_mapping);
+                mirrored_button_mapping.show_mirrored(mapping, width, height);
+                mirrored_button_mapping.set_over_game(over_game);
+                mirrored_button_mapping.render(quads, text, button_glyphs, width, height);
             } else {
                 render_mirrored_graphic_packs(mirrored_graphic_packs, quads, text, button_glyphs,
                                               width, height, packs, over_game);
             }
         };
-        if (view.open || packs.open || amiibo.open) {
+        if (view.open || packs.open || amiibo.open || mapping.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game, which goes on, and the blurred still otherwise.
             if (ScreenSource* drawing = active_source()) {
@@ -6640,6 +6747,19 @@ int App::run(const AppOptions& options) {
                 impl.host_session->set_graphic_packs_view(net::GraphicPacksViewMessage());
                 impl.graphic_packs_view_sent = false;
             }
+            // And Button Mapping, which is a few numbers.
+            {
+                const net::ButtonMappingViewMessage mapping =
+                    impl.state == Impl::State::ButtonMapping ? button_mapping_view_of(impl.button_mapping_screen)
+                                                             : net::ButtonMappingViewMessage();
+                if (mapping.open || impl.button_mapping_view_sent) {
+                    if (!impl.button_mapping_view_sent || !(mapping == impl.button_mapping_view_said)) {
+                        impl.host_session->set_button_mapping_view(mapping);
+                        impl.button_mapping_view_said = mapping;
+                    }
+                    impl.button_mapping_view_sent = mapping.open;
+                }
+            }
             const uint64_t poll_began_us = steady_micros();
             impl.host_session->poll(network_now);
             impl.pass_times.network_us += steady_micros() - poll_began_us;
@@ -6876,6 +6996,10 @@ int App::run(const AppOptions& options) {
                 }
                 if (impl.state == Impl::State::Amiibo) {
                     impl.update_amiibo_browser({action}, {});
+                    continue;
+                }
+                if (impl.state == Impl::State::ButtonMapping) {
+                    impl.update_button_mapping_screen({action}, {});
                     continue;
                 }
                 if (impl.state == Impl::State::DataManagement) {

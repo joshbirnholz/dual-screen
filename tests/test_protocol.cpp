@@ -1953,6 +1953,42 @@ void test_graphic_packs_view_round_trip() {
     CHECK(!received.open && received.packs.empty());
 }
 
+void test_button_mapping_view_round_trip() {
+    ButtonMappingViewMessage sent;
+    sent.open = true;
+    sent.focus = 7;
+    sent.choice_focus = 15;
+    sent.confirm_focus = 0;
+    std::vector<uint8_t> buffer;
+    encode_button_mapping_view(sent, buffer);
+    MessageType type = MessageType::Ping;
+    std::vector<uint8_t> payload;
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::ButtonMappingView);
+    ButtonMappingViewMessage received;
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(received == sent);
+    CHECK(!decode_button_mapping_view(payload.data(), 1, received));
+
+    // Closed is a message too.
+    buffer.clear();
+    encode_button_mapping_view(ButtonMappingViewMessage(), buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(!received.open);
+
+    // The page's scroll goes over named as the page.
+    MenuScrollMessage scroll;
+    scroll.page = MirroredPage::ButtonMapping;
+    scroll.positions = {12.0f};
+    buffer.clear();
+    encode_menu_scroll(scroll, buffer);
+    CHECK(one_message(buffer, type, payload));
+    MenuScrollMessage got;
+    CHECK(decode_menu_scroll(payload.data(), payload.size(), got));
+    CHECK(got.page == MirroredPage::ButtonMapping);
+}
+
 // A game's own dialog, to the companion, and its answer back.
 void test_game_dialog_round_trip() {
     GameDialogMessage sent;
@@ -2105,6 +2141,7 @@ int main() {
     test_a_fragment_can_be_restamped_as_it_leaves();
     test_controllers_view_round_trip();
     test_graphic_packs_view_round_trip();
+    test_button_mapping_view_round_trip();
     test_game_dialog_round_trip();
     test_menu_scroll_and_amiibo_browser_round_trip();
     test_stylus_cursor_round_trip();

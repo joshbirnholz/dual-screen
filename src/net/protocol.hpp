@@ -119,6 +119,10 @@ enum class MessageType : uint16_t {
     // companion to draw over the touch screen too -- see StylusCursorMessage.
     // Sent when it changes. A companion from before this ignores it.
     StylusCursor = 25,
+    // host -> companion: the host's Button Mapping page, as it stands, for a
+    // companion to draw while it is up -- see ButtonMappingViewMessage. Sent
+    // when it changes. A companion from before this ignores it.
+    ButtonMappingView = 26,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -524,6 +528,7 @@ enum class MirroredPage : uint8_t {
     GraphicPacks = 2,
     Controllers = 3,
     AmiiboBrowser = 4,
+    ButtonMapping = 5,
 };
 
 // Where the page both devices show is scrolled -- see MenuPage::scroll_state()
@@ -642,6 +647,23 @@ struct StylusCursorMessage {
     float v = 0.5f;
     float opacity = 0.0f;
     bool pressed = false;
+};
+
+// The host's Button Mapping page, for the companion to draw the same: the row
+// the cursor is on, and the picker or the question up over it. The mapping
+// it shows is the session state's -- see SessionStateMessage::button_mapping.
+struct ButtonMappingViewMessage {
+    bool open = false;
+    uint8_t focus = 0;
+    // The picker's cursor plus one, or 0 when it is not up.
+    uint8_t choice_focus = 0;
+    // Revert to Default's question's cursor plus one, or 0 when it is not up.
+    uint8_t confirm_focus = 0;
+
+    bool operator==(const ButtonMappingViewMessage& other) const {
+        return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
+               confirm_focus == other.confirm_focus;
+    }
 };
 
 struct MenuSoundMessage {
@@ -778,6 +800,7 @@ void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vect
 void encode_game_dialog(const GameDialogMessage& message, std::vector<uint8_t>& out);
 void encode_menu_scroll(const MenuScrollMessage& message, std::vector<uint8_t>& out);
 void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_t>& out);
+void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::vector<uint8_t>& out);
 void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
@@ -822,6 +845,7 @@ bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPac
 bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage& out);
 bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage& out);
 bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMessage& out);
+bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMappingViewMessage& out);
 bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);
 bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
 

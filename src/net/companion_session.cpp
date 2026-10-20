@@ -164,6 +164,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
     host_stylus_cursor_ = StylusCursorMessage();
+    host_button_mapping_view_ = ButtonMappingViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -340,6 +341,7 @@ void CompanionSession::disconnect() {
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
     host_stylus_cursor_ = StylusCursorMessage();
+    host_button_mapping_view_ = ButtonMappingViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -458,6 +460,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
     host_stylus_cursor_ = StylusCursorMessage();
+    host_button_mapping_view_ = ButtonMappingViewMessage();
     reassembly_top_ = FrameReassembly();
     reassembly_bottom_ = FrameReassembly();
     // A new host counts its sent frames from the start, so nothing is known
@@ -669,6 +672,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         case MessageType::StylusCursor: {
             StylusCursorMessage cursor;
             if (decode_stylus_cursor(payload.data(), payload.size(), cursor)) host_stylus_cursor_ = cursor;
+            break;
+        }
+        case MessageType::ButtonMappingView: {
+            ButtonMappingViewMessage view;
+            if (decode_button_mapping_view(payload.data(), payload.size(), view)) host_button_mapping_view_ = view;
             break;
         }
         case MessageType::GameDialog: {

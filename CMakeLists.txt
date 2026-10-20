@@ -181,6 +181,7 @@ add_library(dualscreen_core STATIC
     src/ui/settings_screen.cpp
     src/ui/controllers_screen.cpp
     src/ui/graphic_packs_screen.cpp
+    src/ui/button_mapping_screen.cpp
     src/ui/choice_popup.cpp
     src/ui/text_entry.cpp
     src/ui/game_dialog.cpp

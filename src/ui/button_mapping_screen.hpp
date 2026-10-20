@@ -1,0 +1,155 @@
+#pragma once
+
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "core/system.hpp"
+#include "input/button_mapping.hpp"
+#include "input/input_manager.hpp"
+#include "net/protocol.hpp"
+#include "render/button_glyphs.hpp"
+#include "render/quad_renderer.hpp"
+#include "render/text_renderer.hpp"
+#include "ui/choice_popup.hpp"
+#include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
+#include "ui/menu_page.hpp"
+#include "ui/popup.hpp"
+#include "ui/sound_view.hpp"
+
+namespace ds {
+
+struct ButtonMappingScreenResult {
+    bool close_requested = false;
+    // The menu button: the quick menu goes too.
+    bool close_everything = false;
+    // A button given another job, or every one put back: the whole mapping
+    // as it now is, for the caller to take on and keep with the game.
+    std::optional<ButtonMapping> changed;
+};
+
+// A DS or 3DS game's Button Mapping, from Controls in its quick menu: each of
+// the pad's buttons down the left with what it does, and on the right the
+// console, the button the highlighted one presses picked out on it. A picks
+// another job for it from a list beside its row -- the console's buttons,
+// then this app's -- X puts every button back to the standard mapping, after
+// asking, and B goes back to the menu.
+//
+// The mapping is the game's, held by the device running it: the page shows
+// what it is handed and says what was changed. With two devices it is one
+// page on both, cursor, picker and all.
+class ButtonMappingScreen : public MenuPage {
+public:
+    void open();
+    void close() {
+        open_ = false;
+        choice_.close();
+        confirming_ = false;
+    }
+    bool is_open() const { return open_; }
+    // Whether a paused game is behind it, to be dimmed rather than covered.
+    void set_over_game(bool over_game) { over_game_ = over_game; }
+    // What the page shows: the game's mapping, the console it is played on --
+    // which decides what Standard is and what can be chosen -- and the
+    // game's name for the heading. Every frame: the mapping can change under
+    // the page, from the other device.
+    void set_mapping(const ButtonMapping& mapping, SystemId system, const PadConsole& console,
+                     const std::string& game_title);
+
+    ButtonMappingScreenResult update(const std::vector<UiAction>& actions,
+                                     const std::vector<PointerEvent>& pointers, float output_width,
+                                     float output_height);
+    void render(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
+                float output_width, float output_height);
+    void describe_for_sound(UiSoundView& view) const;
+
+    // The row the cursor is on: a PadControl.
+    int focus() const { return focus_; }
+    bool choosing() const { return choice_.is_open(); }
+    int choice_focus() const { return choice_.focus(); }
+    bool confirming() const { return confirming_; }
+    int confirm_focus() const { return confirm_cursor_.focus(); }
+    // Where the prompts at the foot of the page were drawn -- see
+    // take_guide_taps() -- for a device drawing the other's page.
+    const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
+
+    // The other device's page, drawn from what it said: its cursor, its
+    // picker or question, and nothing changed here. Opens the page if it is
+    // not.
+    void show_mirrored(const net::ButtonMappingViewMessage& view, float output_width,
+                       float output_height);
+
+    // MenuPage: the list scrolls under a finger, the mouse and the wheel, and
+    // the picker does while it is up. Entries: a row is its PadControl, a
+    // choice in the picker kChoiceEntryBase plus its index, and a button of
+    // Revert to Default's question kConfirmEntryBase plus its.
+    bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
+                float output_height) override;
+    int entry_at(float x, float y, float output_width, float output_height) const override;
+    bool off_popup(float x, float y, float output_width, float output_height) const override;
+    std::vector<float> scroll_state(float output_width, float output_height) const override;
+    void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
+    static constexpr int kChoiceEntryBase = 0x4000;
+    static constexpr int kConfirmEntryBase = 0x4800;
+
+private:
+    struct Geometry {
+        float scale = 1.0f;
+        float line = 0.0f;
+        float view_top = 0.0f;
+        float view_bottom = 0.0f;
+        PixelRect list;
+        std::vector<PixelRect> rows;
+        float content_height = 0.0f;
+        // Where the console is drawn, and the words under it.
+        PixelRect diagram;
+        float caption_y = 0.0f;
+        float max_scroll() const { return std::max(0.0f, content_height - (view_bottom - view_top)); }
+    };
+    Geometry compute_geometry(float output_width, float output_height) const;
+    void scroll_focus_into_view(const Geometry& geometry);
+    // The picker up beside the focused row, the cursor on what it does now.
+    void open_choice(float output_width, float output_height);
+    void choose(int index, ButtonMappingScreenResult& result);
+    void ask_revert();
+    void answer_revert(int button, ButtonMappingScreenResult& result);
+    PopupGeometry confirm_popup(float output_width, float output_height) const;
+    PopupText confirm_text() const;
+    std::vector<PopupButton> confirm_buttons() const;
+    void handle_tap(int entry, ButtonMappingScreenResult& result, float output_width,
+                    float output_height);
+    PadControl focused_control() const { return static_cast<PadControl>(focus_); }
+    // What the console is called on the page: "DS", "3DS".
+    std::string console_name() const;
+    // The words under the console, for what the focused button does.
+    std::string caption() const;
+    void draw_console(QuadRenderer& quads, const PixelRect& box, PadAction action) const;
+
+    bool open_ = false;
+    bool over_game_ = false;
+    ButtonMapping mapping_;
+    SystemId system_ = SystemId::Ds;
+    PadConsole console_;
+    std::string game_title_;
+    int focus_ = 0;
+    float scroll_ = 0.0f;
+    ListDrag drag_;
+    // The picker, and what each of its lines is: an action, or a heading.
+    ChoicePopup choice_;
+    std::vector<PadAction> choice_actions_;
+    // Revert to Default's question, up over the page.
+    bool confirming_ = false;
+    PopupCursor confirm_cursor_;
+    // The other device's cursor as last drawn here: the view follows it only
+    // when it moves, and is otherwise where a finger here left it.
+    int mirrored_focus_ = -1;
+    float last_width_ = 1280.0f;
+    float last_height_ = 800.0f;
+    std::vector<GuideHit> guide_hits_;
+};
+
+// The page as a message for the other device.
+net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& screen);
+
+}  // namespace ds

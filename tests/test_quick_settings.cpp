@@ -157,7 +157,7 @@ int taps_that_cycle_the_right_stick(const LayoutRegistry& registry, const Layout
     for (float y = 4.0f; y < kHeight; y += 8.0f) {
         for (float x = 4.0f; x < kWidth; x += 8.0f) {
             LayoutPicker picker(registry);
-            open_on(picker, state, MenuSection::Options);
+            open_on(picker, state, MenuSection::ControllerOrder);
             const LayoutPickerResult result =
                 through_popup(picker, picker.update({}, choose_at(x, y), kWidth, kHeight));
             if (result.right_stick_mode_changed) ++hits;
@@ -166,8 +166,8 @@ int taps_that_cycle_the_right_stick(const LayoutRegistry& registry, const Layout
     return hits;
 }
 
-// What the right stick does is only a question on a console that has a stick
-// of its own. A 3DS gets the button on both devices -- one menu, reachable
+// What the right stick does is in Controls, and only a question on a console
+// that has a stick of its own. A 3DS gets the button on both devices -- one menu, reachable
 // from either end -- and a DS gets nothing to press, because there its left
 // stick is already standing in for the d-pad and the right one has nothing to
 // be.
@@ -382,12 +382,10 @@ void test_the_other_buttons_still_work() {
     state.layout_id = "vertical";
     state.session_active = true;
     state.max_render_scale = 3;
-    state.right_stick_choosable = true;
 
     int sound = 0;
     int cursor = 0;
     int gap = 0;
-    int right_stick = 0;
     int render_scale = 0;
     int smoothing = 0;
     int doubled = 0;
@@ -407,7 +405,6 @@ void test_the_other_buttons_still_work() {
             if (result.audio_target_changed) ++sound;
             if (result.cursor_mode_changed) ++cursor;
             if (result.screen_gap_toggled) ++gap;
-            if (result.right_stick_mode_changed) ++right_stick;
             if (result.render_scale_changed) ++render_scale;
             if (result.filtering_toggled) ++smoothing;
         }
@@ -415,7 +412,6 @@ void test_the_other_buttons_still_work() {
     CHECK(sound > 0);
     CHECK(cursor > 0);
     CHECK(gap > 0);
-    CHECK(right_stick > 0);
     CHECK(render_scale > 0);
     CHECK(smoothing > 0);
     CHECK_MSG(doubled == 0, "a single tap on the menu did two things at once");
@@ -731,6 +727,40 @@ void test_moving_between_the_list_and_what_it_shows() {
         }
         CHECK_EQ(offered, offered_here);
     }
+}
+
+// A DS or 3DS game's Controls: Button Mapping first, a page of its own, and
+// the right stick under it. A tap on the first asks for the page; a menu
+// with neither has no Controls at all.
+void test_controls_hold_the_button_mapping_and_the_right_stick() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    state.button_mapping_available = true;
+    state.right_stick_choosable = true;
+    LayoutPicker picker(registry);
+    open_on(picker, state, MenuSection::ControllerOrder);
+    CHECK(picker.section() == MenuSection::ControllerOrder);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 2);
+    picker.update({UiAction::Right}, {}, kWidth, kHeight);
+    CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).button_mapping_requested);
+
+    int pages = 0;
+    for (float y = 4.0f; y < kHeight; y += 8.0f) {
+        for (float x = 4.0f; x < kWidth; x += 8.0f) {
+            LayoutPicker tapped(registry);
+            open_on(tapped, state, MenuSection::ControllerOrder);
+            if (tapped.update({}, choose_at(x, y), kWidth, kHeight).button_mapping_requested) ++pages;
+        }
+    }
+    CHECK_MSG(pages > 0, "no tap anywhere on Controls opened Button Mapping");
+
+    LayoutPickerState none = state;
+    none.button_mapping_available = false;
+    none.right_stick_choosable = false;
+    LayoutPicker bare(registry);
+    open_on(bare, none, MenuSection::ControllerOrder);
+    CHECK(bare.section() != MenuSection::ControllerOrder);
 }
 
 // Each layout is its own way round: flipping one leaves every other preview
@@ -1970,6 +2000,7 @@ int main() {
     test_the_settings_prompt_is_there_and_is_leftmost();
     test_the_render_button_appears_where_there_is_a_scale_to_choose();
     test_the_right_stick_button_appears_only_where_there_is_a_stick();
+    test_controls_hold_the_button_mapping_and_the_right_stick();
     test_smoothing_is_hidden_where_the_console_owns_it();
     test_the_pointer_button_appears_only_where_there_is_a_pointer();
     test_the_gap_option_is_always_offered();

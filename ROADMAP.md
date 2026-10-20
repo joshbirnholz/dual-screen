@@ -10,22 +10,23 @@ numbers can change freely.
 
 ### Controls
 
-- **Controls for DS and 3DS games.** A Wii U's quick menu has Controls
-  now -- Controller Order and each player's controller. DS and 3DS games get
-  the tab with remapping, which is where it goes.
-
-- **Per-game button remapping** -- the next major feature, once the
-  mockups (https://claude.ai/artifact/88zxUiXcYF7RfwpURSq5Lt) are agreed:
-  the Controls page in the quick menu, and any subscreen
-  opened from it. A controller diagram, as Nintendo Classics has, each button
-  opening a list of actions: the console's buttons, Quick Menu, Swap
-  Screens, Swap Layout, Blow into Mic, Turbo, **Touch Screen Point** (placed
-  on the paused game's touch screen by finger, mouse or the Touch Cursor,
-  kept as a fraction of the screen), and **Touch** -- the Touch Cursor's
-  tip, so it can be R2 rather than R3 (most 3DS games leave ZL/ZR alone, and
-  L1/R1 are already L and R). Saved per game with a per-console default;
-  "Revert to Default Mapping" on X; mirrored on both devices. For Cemu, each
-  player's controller type and the assignment of that type's buttons.
+- **Button mapping, the rest of it.** DS and 3DS games have Controls >
+  Button Mapping now: each pad button given one of the console's buttons,
+  Quick Menu, Swap Screens, Screen Smoothing, Blow into Mic, Activate Touch
+  Cursor or Nothing, kept with the game, Revert to Default on X, one page on
+  both devices. Still to do, in this order, from the mockups
+  (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
+  - More actions: Swap Layouts, Turbo, and **Touch Point** -- placed on the
+    paused game's touch screen by finger, mouse or the Touch Cursor, kept as
+    a fraction of the screen.
+  - Right Stick on the mapping page itself: Touch Cursor or Touch Analog
+    Stick, with Choose Spot.
+  - Mapping profiles, saved and loaded from the page; loading one copies it
+    into the game.
+  - Wii U: the Controls tab as the mockups have it, then each player's
+    controller type and the mapping of that type's buttons, motion and
+    rumble. The player-type option doing nothing is a bug to look at first,
+    once there is a log of it.
 
 ### After remapping
 

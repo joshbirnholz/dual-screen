@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "core/system.hpp"
 #include "input/controller_mapping.hpp"
 #include "input/ds_input.hpp"
 
@@ -67,6 +68,9 @@ struct PadConsole {
     // R3 is the Touch Cursor's tip while the right stick is the cursor.
     RightStickMode right_stick = RightStickMode::CStick;
 };
+
+// What `system` makes of a pad, with its right stick doing `right_stick`.
+PadConsole pad_console_for(SystemId system, RightStickMode right_stick);
 
 // The console's standard mapping, which a game has until it is changed: the
 // buttons where a Nintendo pad has them, the triggers as L and R, Plus and

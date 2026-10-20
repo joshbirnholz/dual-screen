@@ -188,6 +188,12 @@ void LayoutPicker::rebuild_footer() {
     }
     if (state_.save_sync_available) sections_.push_back(MenuSection::SaveSync);
     sections_.push_back(MenuSection::Options);
+    // How the game is played: its buttons, and the right stick.
+    if (state_.button_mapping_available) controls_.push_back(OptionRow{Option::ButtonMapping});
+    // What the right stick does, where the console has one of its own to have
+    // an opinion about -- a 3DS -- or a stylus to be, on a DS.
+    if (state_.right_stick_choosable) controls_.push_back(OptionRow{Option::RightStick});
+    if (!controls_.empty()) sections_.push_back(MenuSection::ControllerOrder);
     if (state_.session_active) sections_.push_back(MenuSection::Disconnect);
     if (state_.reset_available) sections_.push_back(MenuSection::Reset);
     sections_.push_back(MenuSection::Quit);
@@ -204,9 +210,6 @@ void LayoutPicker::rebuild_footer() {
     // quickly while playing: a trackpad you cannot see is a trackpad you cannot
     // aim.
     if (state_.cursor_choosable) options_.push_back(OptionRow{Option::Cursor});
-    // What the right stick does, where the console has one of its own to have
-    // an opinion about -- a 3DS.
-    if (state_.right_stick_choosable) options_.push_back(OptionRow{Option::RightStick});
     // A DS's Rumble Pak, where the core can give it one.
     if (state_.rumble_choosable) options_.push_back(OptionRow{Option::Rumble});
     // The gap is one choice for every layout that has one -- Vertical Screens
@@ -300,6 +303,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
         case Option::ControllerOrder: return "Controller Order";
+        case Option::ButtonMapping: return "Button Mapping";
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].first;
@@ -361,7 +365,8 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
         case Option::Resume:
         case Option::SwapScreens:
         case Option::GraphicPacks:
-        case Option::ControllerOrder: break;
+        case Option::ControllerOrder:
+        case Option::ButtonMapping: break;
     }
     // One value is nothing to choose between.
     if (choices.size() < 2) choices.clear();
@@ -413,6 +418,8 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
         // A page, not a value.
         case Option::GraphicPacks:
         case Option::ControllerOrder: return std::string();
+        // A page, which says whether this game has made any changes in it.
+        case Option::ButtonMapping: return state_.button_mapping_custom ? "Custom for This Game" : "Standard";
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].second;
@@ -577,6 +584,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.screens_swappable != state_.screens_swappable ||
                                  state.cursor_choosable != state_.cursor_choosable ||
                                  state.right_stick_choosable != state_.right_stick_choosable ||
+                                 state.button_mapping_available != state_.button_mapping_available ||
                                  state.rumble_choosable != state_.rumble_choosable ||
                                  state.save_points_available != state_.save_points_available ||
                                  state.save_sync_available != state_.save_sync_available ||
@@ -937,6 +945,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                     if (state_.graphic_packs_available) result.graphic_packs_requested = true;
                     break;
                 case Option::ControllerOrder: result.controllers_requested = true; break;
+                case Option::ButtonMapping: result.button_mapping_requested = true; break;
                 case Option::Producer:
                     result.producer_option = rows()[static_cast<std::size_t>(item_)].index;
                     break;
@@ -1750,6 +1759,7 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(confirm_));
     mix_sound_state(view.rest, selected_layout_id_);
     mix_sound_state(view.rest, smoothing_ ? 1u : 0u);
+    mix_sound_state(view.rest, state_.button_mapping_custom ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(preview_screen_));
     mix_sound_state(view.rest, state_.layout_id);
     mix_sound_state(view.rest, state_.bilinear_filtering ? 1u : 0u);

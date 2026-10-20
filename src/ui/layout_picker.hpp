@@ -73,6 +73,9 @@ struct LayoutPickerResult {
     // The same for the Controllers screen -- a Wii U's, which is the one
     // console whose controllers are each somebody's.
     bool controllers_requested = false;
+    // And for a DS or 3DS game's Button Mapping, which is the game's: the
+    // device running it puts the page up, on both devices.
+    bool button_mapping_requested = false;
     // And for the Wii U game's graphics packs, which are Cemu's, on the
     // machine running it.
     bool graphic_packs_requested = false;
@@ -170,6 +173,10 @@ struct LayoutPickerState {
     RightStickMode right_stick_mode = RightStickMode::CStick;
     bool right_stick_choosable = false;
     std::vector<RightStickMode> right_stick_modes;
+    // A DS or 3DS game's Button Mapping, at the top of Controls, and whether
+    // it has been changed from the standard one -- which its row says.
+    bool button_mapping_available = false;
+    bool button_mapping_custom = false;
     // A Rumble Pak in a DS's GBA slot, and whether that is on offer at all:
     // only where the core running the game can put one there. Nothing says
     // which DS games use one, so it is offered for every game there.
@@ -528,6 +535,9 @@ private:
         // A Wii U's Controller Order screen, a page of its own, at the top of
         // Controls.
         ControllerOrder,
+        // A DS or 3DS game's Button Mapping, a page of its own, at the top
+        // of its Controls.
+        ButtonMapping,
     };
     struct OptionRow {
         Option option = Option::Cursor;
@@ -641,7 +651,8 @@ private:
     // things, and on which.
     std::vector<MenuSection> sections_;
     std::vector<OptionRow> options_;
-    // A Wii U's Controls: Controller Order, then each player's controller.
+    // Controls: a Wii U's Controller Order, then each player's controller;
+    // a DS or 3DS game's Button Mapping and Right Stick.
     std::vector<OptionRow> controls_;
     // The rows of a list section: Controls', or Options'; and of whichever
     // is up.

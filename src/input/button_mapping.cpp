@@ -2,6 +2,16 @@
 
 namespace ds {
 
+PadConsole pad_console_for(SystemId system, RightStickMode right_stick) {
+    const SystemProfile& profile = system_profile(system);
+    PadConsole console;
+    console.has_zl_zr = system == SystemId::ThreeDs;
+    console.has_microphone = profile.has_microphone;
+    console.game_uses_every_control = profile.game_uses_every_control;
+    console.right_stick = right_stick;
+    return console;
+}
+
 PadAction standard_pad_action(PadControl control, const PadConsole& console) {
     switch (control) {
         case PadControl::A: return PadAction::A;

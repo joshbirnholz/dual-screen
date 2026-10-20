@@ -634,6 +634,8 @@ public:
     // Where the stylus on the right stick is on the host, to draw it here
     // over the touch screen too. See StylusCursorMessage.
     const StylusCursorMessage& host_stylus_cursor() const { return host_stylus_cursor_; }
+    // And its Button Mapping page. See ButtonMappingViewMessage.
+    const ButtonMappingViewMessage& host_button_mapping_view() const { return host_button_mapping_view_; }
     void answer_game_dialog(const GameDialogAnswerMessage& answer);
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
@@ -1177,6 +1179,7 @@ private:
     AmiiboBrowserViewMessage host_amiibo_browser_view_;
     MenuScrollMessage host_menu_scroll_;
     StylusCursorMessage host_stylus_cursor_;
+    ButtonMappingViewMessage host_button_mapping_view_;
     uint32_t host_save_slots_revision_ = 0;
     bool menu_open_ = false;
     bool said_hello_ = false;

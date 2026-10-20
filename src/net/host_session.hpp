@@ -249,6 +249,9 @@ public:
     bool take_menu_scroll(MenuScrollMessage& out);
     // Where the stylus on the right stick is: sent on change.
     void set_stylus_cursor(const StylusCursorMessage& cursor);
+    // The Button Mapping page as it stands here (closed once it is not):
+    // sent on change.
+    void set_button_mapping_view(const ButtonMappingViewMessage& view);
     // And the game's own dialog, up over it (kind 0 once it is not).
     void set_game_dialog(const GameDialogMessage& dialog);
     // The companion's answers to it, oldest first.
@@ -700,6 +703,8 @@ private:
     std::optional<MenuScrollMessage> companion_menu_scroll_;
     std::vector<uint8_t> stylus_cursor_;
     bool stylus_cursor_dirty_ = false;
+    std::vector<uint8_t> button_mapping_view_;
+    bool button_mapping_view_dirty_ = false;
     std::deque<GameDialogAnswerMessage> game_dialog_answers_;
 
     DsInputState companion_input_;

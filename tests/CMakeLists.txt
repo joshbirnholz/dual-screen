@@ -283,6 +283,7 @@ target_include_directories(test_forwarder_nca PRIVATE ${CMAKE_SOURCE_DIR}/switch
 dualscreen_add_test(test_quick_settings)
 dualscreen_add_test(test_render_scale)
 dualscreen_add_test(test_graphic_packs)
+dualscreen_add_test(test_button_mapping_screen)
 dualscreen_add_test(test_touch_hints)
 dualscreen_add_test(test_pad_glyphs)
 dualscreen_add_test(test_touch_gesture)

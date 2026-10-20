@@ -600,6 +600,14 @@ void HostSession::set_menu_scroll(const MenuScrollMessage& scroll) {
     menu_scroll_dirty_ = true;
 }
 
+void HostSession::set_button_mapping_view(const ButtonMappingViewMessage& view) {
+    std::vector<uint8_t> encoded;
+    encode_button_mapping_view(view, encoded);
+    if (encoded == button_mapping_view_) return;
+    button_mapping_view_ = std::move(encoded);
+    button_mapping_view_dirty_ = true;
+}
+
 void HostSession::set_stylus_cursor(const StylusCursorMessage& cursor) {
     std::vector<uint8_t> encoded;
     encode_stylus_cursor(cursor, encoded);
@@ -903,6 +911,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             amiibo_browser_view_dirty_ = !amiibo_browser_view_.empty();
             menu_scroll_dirty_ = !menu_scroll_.empty();
             stylus_cursor_dirty_ = !stylus_cursor_.empty();
+            button_mapping_view_dirty_ = !button_mapping_view_.empty();
             last_notice_ = companion_name_ + " connected";
             log_info(std::string("that device ") +
                      (companion_accepts_video_ ? "can decode video" : "cannot decode video"));
@@ -1360,6 +1369,10 @@ void HostSession::poll(uint64_t now_ms) {
     if (graphic_packs_view_dirty_ && handshake_done_) {
         companion_.send(graphic_packs_view_);
         graphic_packs_view_dirty_ = false;
+    }
+    if (button_mapping_view_dirty_ && handshake_done_) {
+        companion_.send(button_mapping_view_);
+        button_mapping_view_dirty_ = false;
     }
     if (game_dialog_dirty_ && handshake_done_) {
         companion_.send(game_dialog_);

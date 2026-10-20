@@ -721,7 +721,7 @@ bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage
     uint8_t count = 0;
     reader.u8(page);
     reader.u8(count);
-    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::AmiiboBrowser) || count > 16) return false;
+    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::ButtonMapping) || count > 16) return false;
     MenuScrollMessage message;
     message.page = static_cast<MirroredPage>(page);
     for (uint8_t index = 0; index < count && reader.ok(); ++index) {
@@ -765,6 +765,29 @@ bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMes
     out.v = v / 65535.0f;
     out.opacity = opacity / 255.0f;
     out.pressed = pressed != 0;
+    return true;
+}
+
+void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, message.open ? 1u : 0u);
+    put_u8(out, message.focus);
+    put_u8(out, message.choice_focus);
+    put_u8(out, message.confirm_focus);
+    finish_message(out, start, MessageType::ButtonMappingView);
+}
+
+bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMappingViewMessage& out) {
+    Reader reader(data, size);
+    uint8_t open = 0;
+    ButtonMappingViewMessage view;
+    reader.u8(open);
+    reader.u8(view.focus);
+    reader.u8(view.choice_focus);
+    reader.u8(view.confirm_focus);
+    if (!reader.ok()) return false;
+    view.open = open != 0;
+    out = view;
     return true;
 }
 

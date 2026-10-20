@@ -110,6 +110,7 @@ extern "C" {
 #include "ui/launcher_screen.hpp"
 #include "ui/list_touch.hpp"
 #include "ui/controllers_screen.hpp"
+#include "ui/button_mapping_screen.hpp"
 #include "ui/graphic_packs_screen.hpp"
 #include "ui/layout_picker.hpp"
 #include "ui/menu_state.hpp"
@@ -529,6 +530,8 @@ private:
     ControllersScreen mirrored_controllers_;
     // The host's Graphics Packs page, drawn the same way.
     GraphicPacksScreen mirrored_graphic_packs_;
+    // And the game's Button Mapping.
+    ButtonMappingScreen mirrored_button_mapping_;
     // The host's game dialog -- an error, its keyboard -- shown here too.
     MirroredGameDialog mirrored_game_dialog_;
     // The host's amiibo browser, drawn here while it is up.
@@ -1160,6 +1163,10 @@ const std::vector<GuideHit>& Client::guide_hits_on_screen() const {
                 session_.host_graphic_packs_view().open) {
                 return mirrored_graphic_packs_.guide_hits();
             }
+            if (!menu_open_ && session_.host_settings_open() &&
+                session_.host_button_mapping_view().open) {
+                return mirrored_button_mapping_.guide_hits();
+            }
             return none;
         // Its prompts are its own, and so are taps on them.
         case State::DataManagement:
@@ -1184,6 +1191,9 @@ void Client::sync_scroll() {
         } else if (session_.host_graphic_packs_view().open) {
             page = &mirrored_graphic_packs_;
             shown = net::MirroredPage::GraphicPacks;
+        } else if (session_.host_button_mapping_view().open) {
+            page = &mirrored_button_mapping_;
+            shown = net::MirroredPage::ButtonMapping;
         }
     }
     if (const std::optional<net::MenuScrollMessage> said =
@@ -1267,6 +1277,16 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
             }
         } else if (session_.host_graphic_packs_view().open) {
             for (const int tap : MenuPage::taps_on(mirrored_graphic_packs_, pointers,
+                                                   static_cast<float>(output_width_),
+                                                   static_cast<float>(output_height_))) {
+                if (tap == MenuPage::kTapOffPopup) {
+                    session_.request_menu_action(net::MenuAction::Cancel);
+                } else {
+                    session_.request_menu_focus(tap);
+                }
+            }
+        } else if (session_.host_button_mapping_view().open) {
+            for (const int tap : MenuPage::taps_on(mirrored_button_mapping_, pointers,
                                                    static_cast<float>(output_width_),
                                                    static_cast<float>(output_height_))) {
                 if (tap == MenuPage::kTapOffPopup) {
@@ -2083,7 +2103,8 @@ void Client::draw_scene() {
         const net::ControllersViewMessage& view = session_.host_controllers_view();
         const net::GraphicPacksViewMessage& packs = session_.host_graphic_packs_view();
         const net::AmiiboBrowserViewMessage& amiibo = session_.host_amiibo_browser_view();
-        if (view.open || packs.open || amiibo.open) {
+        const net::ButtonMappingViewMessage& mapping = session_.host_button_mapping_view();
+        if (view.open || packs.open || amiibo.open || mapping.open) {
             // Over the game, darkened as the host's own page is: live for a
             // Wii U game that goes on, and the blurred still otherwise.
             router_.decide(false);
@@ -2115,6 +2136,14 @@ void Client::draw_scene() {
                 mirrored_amiibo_.show_mirrored(amiibo.directory, entries, amiibo.focus);
                 mirrored_amiibo_.set_over_game(true);
                 mirrored_amiibo_.render(quads_, text_, button_glyphs_, width, height);
+            } else if (mapping.open) {
+                mirrored_button_mapping_.set_mapping(
+                    session_.host_button_mapping(), session_.system(),
+                    pad_console_for(session_.system(), session_.host_right_stick_mode()),
+                    session_.game_title());
+                mirrored_button_mapping_.show_mirrored(mapping, width, height);
+                mirrored_button_mapping_.set_over_game(true);
+                mirrored_button_mapping_.render(quads_, text_, button_glyphs_, width, height);
             } else {
                 render_mirrored_graphic_packs(mirrored_graphic_packs_, quads_, text_,
                                               button_glyphs_, width, height, packs,

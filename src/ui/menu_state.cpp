@@ -18,6 +18,10 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.cursor_choosable = session.host_cursor_choosable();
     state.right_stick_choosable = session.host_right_stick_choosable();
     state.right_stick_modes = right_stick_modes(system_profile(session.system()).has_analog_stick);
+    // A Wii U's buttons are Cemu's, player by player.
+    state.button_mapping_available = session.system() != SystemId::WiiU;
+    state.button_mapping_custom = !session.host_button_mapping().is_standard(
+        pad_console_for(session.system(), session.host_right_stick_mode()));
     state.rumble_pak = session.host_rumble_pak();
     state.rumble_choosable = session.host_rumble_choosable();
     state.lcd_filter = session.host_lcd_filter();
