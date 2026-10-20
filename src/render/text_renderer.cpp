@@ -10,11 +10,10 @@ namespace ds {
 namespace {
 
 // How much em the font is given per scale step. A line box is kTextLineUnit
-// tall, and setting the em to exactly that would leave the letters visibly
-// smaller than the bitmap font they replace, whose glyphs filled almost the
-// whole cell. This is the em that matches the old text's weight; the extra
-// sits in the descender, which the space between rows absorbs.
-constexpr float kEmPerLineUnit = 1.125f;
+// tall; the em is larger, for letters the size a Switch 2's own menus have
+// them -- capitals about a fortieth of the screen's height. The extra sits
+// above and below the line box, which the space between rows absorbs.
+constexpr float kEmPerLineUnit = 1.27f;
 
 float em_pixels_for(float scale) { return kTextLineUnit * kEmPerLineUnit * scale; }
 
@@ -83,7 +82,7 @@ float TextRenderer::measure_width(const std::string& text, float scale) {
 
 float TextRenderer::line_height(float scale) { return kTextLineUnit * scale; }
 
-float TextRenderer::wrapped_line_step(float scale) { return line_height(scale) * 1.25f; }
+float TextRenderer::wrapped_line_step(float scale) { return line_height(scale) * 1.4f; }
 
 void TextRenderer::draw(QuadRenderer& quads,
                         const std::string& text,

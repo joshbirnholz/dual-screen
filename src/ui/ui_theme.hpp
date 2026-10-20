@@ -81,7 +81,7 @@ inline float menu_border(float scale) { return std::max(2.0f, std::round(scale *
 // box just big enough for them. Two-line rows -- a title with a line under it
 // -- are taller. As tall as a Switch 2's System Settings rows, a ninth of
 // the screen at 1080p, and so easy to tap.
-inline float menu_row_height(float line) { return std::round(line * 4.4f); }
+inline float menu_row_height(float line) { return std::round(line * 4.2f); }
 inline float menu_two_line_row_height(float line) { return std::round(line * 5.6f); }
 // The space between two rows -- roomy as they are, they need little.
 inline float menu_row_gap(float line) { return std::round(line * 0.15f); }
@@ -122,7 +122,7 @@ inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focus
 // An on/off value: a switch, on at the right in the accent colour, off at the
 // left in grey -- ending at `right`, centred on `centre_y`. Returns its width.
 inline float draw_toggle(QuadRenderer& quads, float right, float centre_y, bool on, float line) {
-    const float height = std::round(line * 1.15f);
+    const float height = std::round(line * 1.48f);
     const float width = std::round(height * 1.85f);
     const PixelRect track{std::round(right - width), std::round(centre_y - height * 0.5f), width, height};
     quads.draw_capsule(track, on ? ui_theme().accent : Color{0.36f, 0.38f, 0.43f, 1.0f});

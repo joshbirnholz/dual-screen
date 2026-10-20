@@ -37,7 +37,7 @@ struct PageFrame {
     PixelRect content() const {
         return PixelRect{panel.x, content_top, panel.w, content_bottom - content_top};
     }
-    float title_scale() const { return scale * 1.45f; }
+    float title_scale() const { return scale * 1.3f; }
     float guide_scale() const { return scale * 0.9f; }
 };
 
