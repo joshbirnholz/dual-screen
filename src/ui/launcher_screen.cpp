@@ -176,7 +176,7 @@ void LauncherScreen::render(QuadRenderer& quads,
     for (std::size_t index = 0; index < rows.size(); ++index) {
         const PixelRect& row = rows[index];
         const bool focused = (static_cast<int>(index) == focus_);
-        draw_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale, index + 1 == rows.size());
 
         const float pad = menu_row_pad(line);
         // Centred on the row, since there is nothing under it any more: the
@@ -321,7 +321,7 @@ void HostPickerScreen::render(QuadRenderer& quads,
         const bool focused = (static_cast<int>(index) == focus_);
         const bool available = host.offers(wanted_screen_);
 
-        draw_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale, index + 1 == rows.size());
 
         const float pad = menu_row_pad(line);
         // The same two lines as Data Management's rows: the name, and under

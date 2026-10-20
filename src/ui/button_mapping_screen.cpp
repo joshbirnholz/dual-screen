@@ -641,7 +641,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     for (std::size_t index = 0; index < kPadControls; ++index) {
         const PixelRect& row = geometry.rows[index];
         const bool focused = static_cast<int>(index) == focus_;
-        draw_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale, index + 1 == kPadControls);
         const PadControl control = static_cast<PadControl>(index);
         const float centre = row.y + row.h * 0.5f;
         glyphs.draw(quads, glyph_for(control), row.x + pad,

@@ -1382,7 +1382,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const PixelRect row{list.x, list.y + index * row_h - list_scroll_, row_w, row_h - menu_row_gap(line)};
             row_rects_.push_back(visible_part(row, list));
             const bool focused = index == list_focus_ && overlay_ == Overlay::None;
-            draw_menu_row(quads, row, focused, scale);
+            draw_menu_row(quads, row, focused, scale, index == static_cast<int>(saves_.size()) - 1);
             if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
             const Color dim = theme.text_dim;
@@ -1423,7 +1423,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const PixelRect row{frame.panel.x, frame.content_top + index * row_h, left_w, row_h - menu_row_gap(line)};
             row_rects_.push_back(row);
             const bool focused = index == action_focus_ && overlay_ == Overlay::None;
-            draw_menu_row(quads, row, focused, scale);
+            draw_menu_row(quads, row, focused, scale, index == static_cast<int>(Action::Count) - 1);
             if (!focused) draw_menu_rule(quads, row);
             Color ink = menu_row_text(focused);
             if (!enabled[static_cast<std::size_t>(index)]) ink = with_alpha(theme.text_dim, 0.55f);
@@ -1501,7 +1501,7 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const PixelRect row{list.x, list.y + index * row_h - earlier_scroll_, row_w, row_h - menu_row_gap(line)};
             row_rects_.push_back(visible_part(row, list));
             const bool focused = index == earlier_focus_ && overlay_ == Overlay::None;
-            draw_menu_row(quads, row, focused, scale);
+            draw_menu_row(quads, row, focused, scale, index == count - 1);
             if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
             const Color dim = theme.text_dim;

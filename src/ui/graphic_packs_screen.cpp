@@ -731,7 +731,7 @@ void GraphicPacksScreen::render(QuadRenderer& quads, TextRenderer& text,
             for (int item = 0; item < static_cast<int>(geometry.items.size()); ++item) {
                 const PixelRect& row = geometry.items[static_cast<std::size_t>(item)];
                 const bool focused = in_pack_ && item == item_;
-                draw_menu_row(quads, row, focused, scale);
+                draw_menu_row(quads, row, focused, scale, item == static_cast<int>(geometry.items.size()) - 1);
                 const float pad = line * 0.8f;
                 const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
                 const std::string value = item_value(item);

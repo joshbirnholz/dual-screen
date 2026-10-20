@@ -1510,7 +1510,7 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
     for (std::size_t index = 0; index < geometry.items.size() && index < rows().size(); ++index) {
         const PixelRect& row = geometry.items[index];
         const bool focused = on_content_ && static_cast<int>(index) == item_;
-        draw_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale, index + 1 == std::min(geometry.items.size(), rows().size()));
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, option_name(rows()[index]), row.x + menu_row_pad(line), baseline, row_scale,
                   menu_row_text(focused));
@@ -1544,7 +1544,7 @@ void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
     for (int index = 0; index < count; ++index) {
         const PixelRect& row = geometry.items[static_cast<std::size_t>(index)];
         const bool focused = on_content_ && index == item_;
-        draw_menu_row(quads, row, focused, scale);
+        draw_menu_row(quads, row, focused, scale, index == count - 1);
         const bool folder_row = index >= static_cast<int>(state_.amiibo.size());
         const std::string label =
             folder_row ? std::string("Choose a Folder...") : state_.amiibo[static_cast<std::size_t>(index)];

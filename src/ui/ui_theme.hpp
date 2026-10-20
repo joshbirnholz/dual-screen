@@ -110,16 +110,19 @@ inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float r
     quads.draw_rounded_ring(rect, radius, ring, menu_ring_left(), menu_ring_right());
 }
 
-// The thin rule a Switch's own lists set between their rows: solid, so the
-// one two neighbouring rows both draw is drawn the same twice.
-inline Color menu_row_rule_color() { return Color{0.24f, 0.25f, 0.28f, 1.0f}; }
+// The thin rule a Switch's own lists set between their rows: white, faint,
+// so it sits as well on a game behind the menu as on the plain ground.
+inline Color menu_row_rule_color() { return Color{1.0f, 1.0f, 1.0f, 0.16f}; }
 
 // A line in a list -- the launcher, the settings, the file browser, Data
 // Management. The one under the cursor is ringed, the way a Switch's own
 // menus ring it, with whatever is behind it still showing through; the rest
-// have a thin rule above and below, as a Switch's do, halfway into the gap
-// to the next and a little in from the ends.
-inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale) {
+// have a thin rule above them, as a Switch's do, halfway into the gap to the
+// one before and a little in from the ends -- and the `last` one below too.
+// Each row draws only the rule above it, so the one between two rows is never
+// drawn twice, which would show twice as bright.
+inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale,
+                          bool last = false) {
     if (focused) {
         draw_menu_cursor(quads, rect, std::round(std::min(rect.h * 0.22f, scale * 3.5f)), scale);
         return;
@@ -132,7 +135,7 @@ inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focus
     const PixelRect bottom{rect.x + inset, std::round(rect.y + rect.h + half_gap - thick * 0.5f),
                            rect.w - inset * 2.0f, thick};
     quads.draw_solid(top, menu_row_rule_color());
-    quads.draw_solid(bottom, menu_row_rule_color());
+    if (last) quads.draw_solid(bottom, menu_row_rule_color());
 }
 
 // An on/off value: a switch, on at the right in the accent colour, off at the

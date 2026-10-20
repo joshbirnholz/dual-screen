@@ -446,7 +446,7 @@ void GameBrowser::render(QuadRenderer& quads,
                              geometry.list.w - scroll_bar_width(scale) - line * 0.4f,
                              geometry.row_height - menu_row_gap(line)};
         const bool focused = (index == focus_);
-        draw_menu_row(quads, rect, focused, scale);
+        draw_menu_row(quads, rect, focused, scale, index == count - 1);
 
         const float pad = menu_row_pad(line);
         const float baseline = page_row_text_y(rect, scale);
