@@ -5800,6 +5800,12 @@ void App::Impl::render() {
             refresh_game_icon();
             picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
             picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
+        } else if (state != State::Playing || quick_menu_leaving()) {
+            // Under the menu, or a page opened from it, coming or going:
+            // nothing, the game being in Cemu's window rather than this one.
+            // "Playing on Cemu" would show through the menu's darkness.
+            quads.begin_frame(output_width, output_height);
+            quads.clear(ui_theme().background);
         } else {
             const SystemProfile& profile = system_profile(system);
             render_waiting_screen(quads, text, button_glyphs, width, height,
