@@ -957,6 +957,20 @@ void SettingsScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(settings_.ds_favorite_color + 1));
     if (choice_.is_open()) mix_sound_state(view.focus, static_cast<uint64_t>(choice_.focus() + 1000));
     mix_sound_state(view.rest, tuning_.pipeline ? 1u : 0u);
+    // The switches: the rows drawn as one -- see render().
+    if (page_ == Page::Main && !choice_.is_open() && !text_entry_.is_open()) {
+        const int row = focus_ - first_setting_row();
+        if (row >= 0 && row < kRowCount) {
+            switch (static_cast<Row>(row)) {
+                case Row::Vsync: view.toggle = settings_.vsync ? 1 : 0; break;
+#if DS_PLAYS_WII_U
+                case Row::PauseWiiUInMenu: view.toggle = settings_.pause_wii_u_in_menu ? 1 : 0; break;
+#endif
+                case Row::UiSounds: view.toggle = settings_.ui_sounds ? 1 : 0; break;
+                default: break;
+            }
+        }
+    }
 }
 
 }  // namespace ds

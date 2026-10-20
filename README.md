@@ -136,7 +136,8 @@ device shows it, so a menu added later cannot leave any of this out.
 Every menu in the app makes a sound when a press does something: the cursor
 moving, something chosen, backing out, an error appearing, and the quick menu
 opening over a game, whichever device opened it. Closing it is backing out,
-and sounds like it, however it was closed. A press that
+and sounds like it, however it was closed. A switch -- an On/Off setting --
+has a sound of its own for each way it is flipped, on and off. A press that
 changes nothing -- the cursor already at the end of a list -- makes none, and
 nor do a game's own buttons while it is playing. A popup's Cancel sounds the
 same whether it is chosen with A or backed out of with B, and a press that

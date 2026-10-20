@@ -22,7 +22,7 @@ namespace ds {
 namespace {
 
 constexpr const char* kNames[kUiSoundCount] = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu",
-                                                 "save_state"};
+                                                 "save_state", "toggle_on", "toggle_off"};
 
 uint32_t le32(const uint8_t* at) {
     return uint32_t(at[0]) | uint32_t(at[1]) << 8 | uint32_t(at[2]) << 16 | uint32_t(at[3]) << 24;
@@ -222,7 +222,12 @@ std::optional<UiSound> UiSoundJudge::observe(const UiSoundView& view, double now
     } else if (pending_ != Pending::None) {
         const bool moved = view.focus != before.focus;
         const bool changed = view.screen != before.screen || view.rest != before.rest;
-        if (moved || changed) {
+        // The switch under the cursor flipped, the cursor where it was.
+        const bool flipped = pending_ != Pending::Cancel && !moved && view.screen == before.screen &&
+                             before.toggle >= 0 && view.toggle >= 0 && before.toggle != view.toggle;
+        if (flipped) {
+            sound = view.toggle != 0 ? UiSound::ToggleOn : UiSound::ToggleOff;
+        } else if (moved || changed) {
             switch (pending_) {
                 case Pending::Move: sound = UiSound::MoveCursor; break;
                 // A popup's Cancel, chosen with A, is backing out all the same.

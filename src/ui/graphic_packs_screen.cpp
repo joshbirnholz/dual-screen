@@ -924,6 +924,9 @@ void GraphicPacksScreen::describe_for_sound(UiSoundView& view) const {
             mix_sound_state(view.rest, static_cast<uint64_t>(choice.active + 1));
         }
     }
+    // A pack's first row is the switch that turns it on.
+    const ExternalGraphicPack* pack = focused_pack();
+    if (in_pack_ && item_ == 0 && !choice_.is_open() && pack != nullptr) view.toggle = pack->enabled ? 1 : 0;
 }
 
 }  // namespace ds

@@ -18,6 +18,9 @@ struct UiSoundView {
     bool on_cancel = false;  // the cursor on a popup's Cancel, which A backs
                              // out with as B does -- and sounds like it
     uint32_t saves = 0;      // save states made so far, each one chimed
+    int toggle = -1;         // the switch the cursor is on: 1 on, 0 off, -1
+                             // not on one -- a press flipping it sounds
+                             // which way it went
 };
 
 // Hashes a screen's state into a view's focus or rest.
