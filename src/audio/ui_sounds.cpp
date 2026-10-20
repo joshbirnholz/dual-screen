@@ -268,9 +268,16 @@ struct UiSoundPlayer::Backend {
     static constexpr int kBuffers = 4;
     // Lower is sooner; the main thread and those it starts are 0x2C.
     static constexpr int kFeederPriority = 0x2B;
+    // How long the feeder may go without handing over a buffer before the
+    // output is taken to have stopped: it hands one over every 5 ms.
+    static constexpr u64 kStalledNs = 250000000ull;
     UiSoundMixer mixer;
     std::mutex mutex;
     std::atomic<bool> stopping{false};
+    // When the feeder last handed over a buffer, in system ticks.
+    std::atomic<u64> fed_at{0};
+    const UiSoundPack* pack_ref = nullptr;
+    u64 restart_tried_at = 0;
     Thread feeder{};
     bool feeding = false;
     bool service = false;
@@ -283,6 +290,9 @@ struct UiSoundPlayer::Backend {
             close();
             return false;
         };
+        pack_ref = &pack;
+        stopping.store(false);
+        fed_at.store(armGetSystemTick());
         Result rc = audoutInitialize();
         if (R_FAILED(rc)) return fail("the console's audio output would not open", rc);
         service = true;
@@ -332,11 +342,37 @@ struct UiSoundPlayer::Backend {
                 mixer.mix(static_cast<int16_t*>(released->buffer), kFrames);
             }
             armDCacheFlush(released->buffer, kBufferBytes);
-            audoutAppendAudioOutBuffer(released);
+            if (R_SUCCEEDED(audoutAppendAudioOutBuffer(released))) fed_at.store(armGetSystemTick());
         }
     }
 
+    // The output can stop under a game -- buffers it never gives back, a
+    // session the system has ended -- and nothing says so: the game's own
+    // sound goes another way and carries on, and the menus simply went quiet
+    // for the rest of the session. A sound wanted from an output that has not
+    // taken a buffer for a quarter of a second starts it again first, at most
+    // once a second.
+    bool restart_if_stalled() {
+        const u64 now = armGetSystemTick();
+        if (started && armTicksToNs(now - fed_at.load()) < kStalledNs) return true;
+        if (pack_ref == nullptr || (restart_tried_at != 0 && armTicksToNs(now - restart_tried_at) < 1000000000ull)) {
+            return started;
+        }
+        restart_tried_at = now;
+        const UiSoundPack* again = pack_ref;
+        close();
+        mixer.stop_all();
+        std::string error;
+        if (!open(*again, &error)) {
+            log_warn("the menu sounds stopped, and would not start again: " + error);
+            return false;
+        }
+        log_info("the menu sounds had stopped, so they were started again");
+        return true;
+    }
+
     void play(UiSound sound) {
+        if (!restart_if_stalled()) return;
         std::lock_guard<std::mutex> lock(mutex);
         mixer.start(sound);
     }
@@ -371,6 +407,7 @@ struct UiSoundPlayer::Backend {
     SDL_AudioDeviceID device = 0;
     UiSoundMixer mixer;
     bool subsystem = false;
+    bool said_lost = false;  // that it went away and no other would open
 
     static void fill(void* self, Uint8* stream, int length) {
         auto* backend = static_cast<Backend*>(self);
@@ -390,16 +427,8 @@ struct UiSoundPlayer::Backend {
         }
         subsystem = true;
         mixer.set_pack(&pack);
-        SDL_AudioSpec desired{};
-        desired.freq = 48000;
-        desired.format = AUDIO_S16SYS;
-        desired.channels = 2;
-        desired.samples = 256;
-        desired.callback = &Backend::fill;
-        desired.userdata = this;
-        SDL_AudioSpec obtained{};
-        // No changes allowed: SDL converts to whatever the device really is.
-        device = SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained, 0);
+        const SDL_AudioSpec desired = spec();
+        device = open_device();
         if (device == 0) {
             if (error != nullptr) *error = std::string("no audio device for the menu sounds: ") + SDL_GetError();
             close();
@@ -425,7 +454,54 @@ struct UiSoundPlayer::Backend {
         return true;
     }
 
+    SDL_AudioSpec spec() {
+        SDL_AudioSpec desired{};
+        desired.freq = 48000;
+        desired.format = AUDIO_S16SYS;
+        desired.channels = 2;
+        desired.samples = 256;
+        desired.callback = &Backend::fill;
+        desired.userdata = this;
+        return desired;
+    }
+
+    // No changes allowed: SDL converts to whatever the device really is.
+    SDL_AudioDeviceID open_device() {
+        const SDL_AudioSpec desired = spec();
+        SDL_AudioSpec obtained{};
+        return SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained, 0);
+    }
+
+    // A device can go away under a program that has it open -- the output
+    // changed, a dock or headphones unplugged, the sound server restarted
+    // across a sleep -- and SDL then never calls back again. The game's own
+    // device is opened afresh with each game and carried on; the menus went
+    // quiet for the rest of the session. A sound wanted from a device that has
+    // stopped opens the default one again first.
+    bool reopen_if_lost() {
+        if (device != 0 && SDL_GetAudioDeviceStatus(device) != SDL_AUDIO_STOPPED) return true;
+        if (device != 0) {
+            SDL_CloseAudioDevice(device);
+            device = 0;
+            mixer.stop_all();
+        }
+        device = open_device();
+        if (device == 0) {
+            if (!said_lost) {
+                log_warn(std::string("the menu sounds' audio device went away, and no other would open: ") +
+                         SDL_GetError());
+                said_lost = true;
+            }
+            return false;
+        }
+        said_lost = false;
+        SDL_PauseAudioDevice(device, 0);
+        log_info("the menu sounds' audio device went away, so they play on the one there is now");
+        return true;
+    }
+
     void play(UiSound sound) {
+        if (!reopen_if_lost()) return;
         SDL_LockAudioDevice(device);
         mixer.start(sound);
         SDL_UnlockAudioDevice(device);
