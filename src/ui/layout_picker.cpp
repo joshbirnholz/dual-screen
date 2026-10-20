@@ -1532,8 +1532,7 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         text.draw(quads, option_name(rows()[index]), row.x + menu_row_pad(line), baseline, row_scale,
                   menu_row_text(focused));
         const std::string value = option_value(rows()[index]);
-        int current = -1;
-        if (is_toggle_value(value) && option_choices(rows()[index], current).empty()) {
+        if (is_switch(rows()[index])) {
             draw_toggle(quads, row.x + row.w - menu_row_pad(line), row.y + row.h * 0.5f, value == "On", line);
         } else {
             text.draw(quads, value, row.x + row.w - menu_row_pad(line), baseline, row_scale,
@@ -1747,6 +1746,11 @@ void LayoutPicker::render(QuadRenderer& quads,
     }
 }
 
+bool LayoutPicker::is_switch(const OptionRow& row) const {
+    int current = -1;
+    return is_toggle_value(option_value(row)) && option_choices(row, current).empty();
+}
+
 void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(section_));
     mix_sound_state(view.focus, on_content_ ? 1u : 0u);
@@ -1781,6 +1785,11 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
         const int at = confirm_cursor_.focus();
         view.on_cancel = at >= 0 && at < static_cast<int>(buttons.size()) &&
                          buttons[static_cast<std::size_t>(at)].label == "Cancel";
+    }
+    const bool on_list = section_ == MenuSection::Options || section_ == MenuSection::ControllerOrder;
+    if (on_list && on_content_ && confirm_ == MenuConfirm::None && item_ >= 0 &&
+        item_ < static_cast<int>(rows().size()) && is_switch(rows()[static_cast<std::size_t>(item_)])) {
+        view.toggle = option_value(rows()[static_cast<std::size_t>(item_)]) == "On" ? 1 : 0;
     }
 }
 

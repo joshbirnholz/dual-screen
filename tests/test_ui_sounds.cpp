@@ -36,7 +36,8 @@ std::vector<uint8_t> make_pack(const std::vector<std::string>& names, uint32_t f
     return out;
 }
 
-const std::vector<std::string> kAll = {"move_cursor", "confirm", "cancel", "error", "open_quick_menu", "save_state"};
+const std::vector<std::string> kAll = {"move_cursor",     "confirm",    "cancel",    "error",
+                                       "open_quick_menu", "save_state", "toggle_on", "toggle_off"};
 
 void test_the_carried_pack_has_every_sound_at_48k() {
     UiSoundPack pack;
@@ -78,7 +79,7 @@ void test_a_pack_cut_short_or_missing_a_sound_is_refused() {
     std::vector<std::string> all_but_one(kAll.begin(), kAll.end() - 1);
     std::vector<uint8_t> missing = make_pack(all_but_one, 10, 100);
     CHECK(!decode_ui_sound_pack(missing.data(), missing.size(), pack, &error));
-    CHECK_MSG(error.find("save_state") != std::string::npos, error);
+    CHECK_MSG(error.find("toggle_off") != std::string::npos, error);
 
     std::vector<uint8_t> other = whole;
     other[4] = 3;
@@ -263,6 +264,47 @@ void test_the_quick_menu_and_errors_have_their_own_sounds() {
     CHECK_MSG(!judge.observe(failed, 0.5), "an error is sounded as it appears, once");
 }
 
+// A switch flipped sounds which way it went; a press that does anything else
+// on a switch's row -- moves off it, opens a page -- sounds as it always did.
+void test_a_switch_flipped_sounds_on_or_off() {
+    UiSoundJudge judge;
+    UiSoundView off = view_at(1, 4, 1);
+    off.toggle = 0;
+    UiSoundView on = view_at(1, 4, 2);
+    on.toggle = 1;
+    judge.observe(off, 0.0);
+    judge.note_input({UiAction::Confirm}, false, 0.1);
+    auto sound = judge.observe(on, 0.1);
+    CHECK_MSG(sound && *sound == UiSound::ToggleOn, "a switch turned on did not sound it");
+    judge.note_input({}, true, 0.2);
+    sound = judge.observe(off, 0.2);
+    CHECK_MSG(sound && *sound == UiSound::ToggleOff, "a switch tapped off did not sound it");
+    // Pushed sideways, as a pad turns one.
+    judge.note_input({UiAction::Right}, false, 0.3);
+    sound = judge.observe(on, 0.3);
+    CHECK(sound && *sound == UiSound::ToggleOn);
+
+    // Moving onto a switch that is the other way is a move.
+    UiSoundView next_row = view_at(1, 5, 2);
+    next_row.toggle = 0;
+    judge.note_input({UiAction::Down}, false, 0.4);
+    sound = judge.observe(next_row, 0.4);
+    CHECK(sound && *sound == UiSound::MoveCursor);
+
+    // A switch flipped with no press here -- the other device's -- is not
+    // this judge's to sound, as with any other change.
+    UiSoundView flipped = view_at(1, 5, 3);
+    flipped.toggle = 1;
+    CHECK(!judge.observe(flipped, 0.5));
+
+    // A choice that changes something but not the switch is a choice.
+    UiSoundView still_on = view_at(1, 5, 4);
+    still_on.toggle = 1;
+    judge.note_input({UiAction::Confirm}, false, 0.6);
+    sound = judge.observe(still_on, 0.6);
+    CHECK(sound && *sound == UiSound::Confirm);
+}
+
 void test_the_launcher_describes_its_cursor() {
     LauncherScreen launcher;
     launcher.open(false);
@@ -292,12 +334,14 @@ void test_a_sound_crosses_the_wire_as_itself() {
         {UiSound::Error, net::MenuSound::Error},
         {UiSound::OpenQuickMenu, net::MenuSound::OpenQuickMenu},
         {UiSound::SaveState, net::MenuSound::SaveState},
+        {UiSound::ToggleOn, net::MenuSound::ToggleOn},
+        {UiSound::ToggleOff, net::MenuSound::ToggleOff},
     };
     for (const auto& [sound, wire] : pairs) {
         CHECK(ui_sound_to_wire(sound) == static_cast<uint8_t>(wire));
         CHECK(ui_sound_from_wire(static_cast<uint8_t>(wire)) == sound);
     }
-    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(7));
+    CHECK(!ui_sound_from_wire(0) && !ui_sound_from_wire(9));
     const uint8_t unknown = 9;
     net::MenuSoundMessage back;
     CHECK(!net::decode_menu_sound(&unknown, 1, back));
@@ -318,6 +362,7 @@ int main() {
     test_the_quick_menu_and_errors_have_their_own_sounds();
     test_a_popups_cancel_sounds_like_backing_out();
     test_a_save_state_made_chimes();
+    test_a_switch_flipped_sounds_on_or_off();
     test_the_launcher_describes_its_cursor();
     test_a_sound_crosses_the_wire_as_itself();
     return test::finish("ui_sounds");

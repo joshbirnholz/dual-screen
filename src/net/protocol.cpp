@@ -933,7 +933,7 @@ bool decode_menu_sound(const uint8_t* data, std::size_t size, MenuSoundMessage& 
     uint8_t sound = 0;
     reader.u8(sound);
     if (!reader.ok() || sound < static_cast<uint8_t>(MenuSound::MoveCursor) ||
-        sound > static_cast<uint8_t>(MenuSound::SaveState)) {
+        sound > static_cast<uint8_t>(MenuSound::ToggleOff)) {
         return false;
     }
     out.sound = static_cast<MenuSound>(sound);

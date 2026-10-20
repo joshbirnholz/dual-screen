@@ -626,6 +626,8 @@ enum class MenuSound : uint8_t {
     OpenQuickMenu = 5,
     // Once the quick menu closing, which is Cancel now.
     SaveState = 6,
+    ToggleOn = 7,
+    ToggleOff = 8,
 };
 
 // The stylus cursor, as the host has it -- see StylusCursor. `u` and `v` are

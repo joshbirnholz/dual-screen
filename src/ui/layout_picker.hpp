@@ -698,6 +698,8 @@ private:
     // The options row's choices, in the order it steps, and which is in
     // effect; empty for a switch or a way into a page.
     std::vector<std::string> option_choices(const OptionRow& row, int& current) const;
+    // Drawn as a switch: On or Off, and nothing else to choose.
+    bool is_switch(const OptionRow& row) const;
     // The popup up for the option the cursor is on.
     void open_choice();
     // Where the control prompts landed when they were last drawn, so a tap can
