@@ -79,17 +79,22 @@ inline float menu_border(float scale) { return std::max(2.0f, std::round(scale *
 // How tall a line in a list is, given the height of a line of its text: room
 // round the words, the way the menus were drawn in the design, rather than a
 // box just big enough for them. Two-line rows -- a title with a line under it
-// -- are taller. Roomy, as a Switch's are, and so easy to tap.
-inline float menu_row_height(float line) { return std::round(line * 3.2f); }
-inline float menu_two_line_row_height(float line) { return std::round(line * 4.3f); }
-// The space between two rows, and inside a row before its words start.
-inline float menu_row_gap(float line) { return std::round(line * 0.35f); }
-// The quick menu's rows -- its sections, and the lists beside them -- and the
-// space between two of them: a little closer than a page's, since the
-// sections must all fit down the screen without scrolling.
-inline float quick_menu_row_height(float line) { return std::round(line * 2.7f); }
-inline float quick_menu_row_gap(float line) { return std::round(line * 0.3f); }
-inline float menu_row_pad(float line) { return std::round(line * 0.9f); }
+// -- are taller. As tall as a Switch 2's System Settings rows, a ninth of
+// the screen at 1080p, and so easy to tap.
+inline float menu_row_height(float line) { return std::round(line * 4.4f); }
+inline float menu_two_line_row_height(float line) { return std::round(line * 5.6f); }
+// The space between two rows -- roomy as they are, they need little.
+inline float menu_row_gap(float line) { return std::round(line * 0.15f); }
+// The quick menu's sections, square-cornered down its left as a Switch's
+// own game menus set them: shorter than a list's rows, with more between
+// them. They must all fit down the screen without scrolling, so where there
+// are many they give up some of that -- see
+// LayoutPicker::compute_menu_geometry().
+inline float quick_menu_section_height(float line) { return std::round(line * 2.7f); }
+inline float quick_menu_section_gap(float line) { return std::round(line * 0.7f); }
+// Inside a row before its words start: as far in as a Switch's are from the
+// ring round the row under the cursor.
+inline float menu_row_pad(float line) { return std::round(line * 1.4f); }
 
 // The cursor's ring, as a Switch draws it: the accent running across the row
 // into another shade -- violet for the app's own blue -- see set_ui_accent().
@@ -98,7 +103,7 @@ inline Color menu_ring_right() { return accent_ring().right; }
 
 // The cursor's ring and the faint fill inside it, round `rect`.
 inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float radius, float scale) {
-    const float ring = std::max(2.0f, std::round(scale * 1.1f));
+    const float ring = std::max(2.0f, std::round(scale * 1.5f));
     quads.draw_rounded_ring(rect, radius, rect.w + rect.h, Color{1.0f, 1.0f, 1.0f, 0.07f},
                             Color{1.0f, 1.0f, 1.0f, 0.07f});
     quads.draw_rounded_ring(rect, radius, ring, menu_ring_left(), menu_ring_right());
@@ -111,7 +116,7 @@ inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float r
 // with whatever is behind it still showing through.
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale) {
     if (!focused) return;
-    draw_menu_cursor(quads, rect, std::round(std::min(rect.h * 0.22f, scale * 6.0f)), scale);
+    draw_menu_cursor(quads, rect, std::round(std::min(rect.h * 0.22f, scale * 3.5f)), scale);
 }
 
 // An on/off value: a switch, on at the right in the accent colour, off at the

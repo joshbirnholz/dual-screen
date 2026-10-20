@@ -471,16 +471,20 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
         label_width =
             std::max(label_width, TextRenderer::measure_width(section_label(section), scale * 1.1f));
     }
-    const float left_width = std::min(geometry.panel.w * 0.34f, label_width + line * 2.0f);
-    // As tall as they can be up to the quick menu's own rows, all of them
-    // down the screen: there is nowhere for the sections to scroll to.
-    const float gap = quick_menu_row_gap(line);
-    float row_step = quick_menu_row_height(line) + gap;
-    if (!sections_.empty()) {
-        const float room = geometry.content_bottom - geometry.content_top + gap;
-        row_step = std::min(row_step, std::floor(room / static_cast<float>(sections_.size())));
+    const float left_width =
+        std::min(geometry.panel.w * 0.34f, label_width + menu_row_pad(line) * 2.0f);
+    // All of them down the screen, there being nowhere for them to scroll
+    // to: closer together where there are many.
+    float gap = quick_menu_section_gap(line);
+    float row_height = quick_menu_section_height(line);
+    const float room = geometry.content_bottom - geometry.content_top;
+    const float rows = static_cast<float>(std::max<std::size_t>(1, sections_.size()));
+    if (row_height * rows + gap * (rows - 1.0f) > room) {
+        const float shrink = room / (row_height * rows + gap * (rows - 1.0f));
+        row_height = std::floor(row_height * shrink);
+        gap = std::floor(gap * shrink);
     }
-    const float row_height = row_step - gap;
+    const float row_step = row_height + gap;
     float y = geometry.content_top;
     for (std::size_t index = 0; index < sections_.size(); ++index) {
         geometry.sections.push_back(PixelRect{geometry.panel.x, y, left_width, row_height});
@@ -546,9 +550,9 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
         case MenuSection::Amiibo: {
             // A list, as tall as the sections' rows. Scan amiibo's can run
             // past the bottom, so it starts from the first of it in view.
-            const float option_height = quick_menu_row_height(line);
-            const float step = option_height + quick_menu_row_gap(line);
-            const int fitting = std::max(1, static_cast<int>((area.h + quick_menu_row_gap(line)) / step));
+            const float option_height = menu_row_height(line);
+            const float step = option_height + menu_row_gap(line);
+            const int fitting = std::max(1, static_cast<int>((area.h + menu_row_gap(line)) / step));
             const bool scrolls = count > fitting;
             const float first = scrolls ? std::clamp(content_scroll_, 0.0f, static_cast<float>(count - fitting)) : 0.0f;
             // Short of the right-hand edge by a scroll bar, where there is one.
@@ -628,13 +632,13 @@ int LayoutPicker::focus() const { return focus_of(section_, on_content_ ? item_ 
 
 int LayoutPicker::content_rows_fitting(const MenuGeometry& geometry) const {
     const float line = TextRenderer::line_height(geometry.scale);
-    const float step = quick_menu_row_height(line) + quick_menu_row_gap(line);
-    return std::max(1, static_cast<int>((geometry.content.h + quick_menu_row_gap(line)) / step));
+    const float step = menu_row_height(line) + menu_row_gap(line);
+    return std::max(1, static_cast<int>((geometry.content.h + menu_row_gap(line)) / step));
 }
 
 float LayoutPicker::content_row_step(const MenuGeometry& geometry) const {
     const float line = TextRenderer::line_height(geometry.scale);
-    return quick_menu_row_height(line) + quick_menu_row_gap(line);
+    return menu_row_height(line) + menu_row_gap(line);
 }
 
 float LayoutPicker::content_max_scroll(const MenuGeometry& geometry) const {
@@ -1336,7 +1340,7 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
             quads.draw_solid(bar, faint);
             ink = theme.background;
         }
-        text.draw(quads, section_label(section), row.x + row.w - line * 0.8f,
+        text.draw(quads, section_label(section), row.x + row.w - menu_row_pad(line),
                   row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f, row_scale, ink,
                   TextAlign::Right);
     }
@@ -1525,14 +1529,14 @@ void LayoutPicker::render_options(QuadRenderer& quads, TextRenderer& text,
         const bool focused = on_content_ && static_cast<int>(index) == item_;
         draw_menu_row(quads, row, focused, scale);
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
-        text.draw(quads, option_name(rows()[index]), row.x + line * 0.8f, baseline, row_scale,
+        text.draw(quads, option_name(rows()[index]), row.x + menu_row_pad(line), baseline, row_scale,
                   menu_row_text(focused));
         const std::string value = option_value(rows()[index]);
         int current = -1;
         if (is_toggle_value(value) && option_choices(rows()[index], current).empty()) {
-            draw_toggle(quads, row.x + row.w - line * 0.8f, row.y + row.h * 0.5f, value == "On", line);
+            draw_toggle(quads, row.x + row.w - menu_row_pad(line), row.y + row.h * 0.5f, value == "On", line);
         } else {
-            text.draw(quads, value, row.x + row.w - line * 0.8f, baseline, row_scale,
+            text.draw(quads, value, row.x + row.w - menu_row_pad(line), baseline, row_scale,
                       theme.text_dim, TextAlign::Right);
         }
     }
@@ -1564,7 +1568,7 @@ void LayoutPicker::render_amiibo(QuadRenderer& quads, TextRenderer& text,
             folder_row ? std::string("Choose a Folder...") : state_.amiibo[static_cast<std::size_t>(index)];
         const float baseline = row.y + (row.h - TextRenderer::line_height(row_scale)) * 0.5f;
         text.draw(quads, TextRenderer::elide_right(label, row.w - line * 1.6f, row_scale),
-                  row.x + line * 0.8f, baseline, row_scale,
+                  row.x + menu_row_pad(line), baseline, row_scale,
                   folder_row ? theme.text_dim : menu_row_text(focused));
     }
     quads.clear_clip();
