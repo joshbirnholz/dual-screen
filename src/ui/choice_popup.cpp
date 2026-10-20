@@ -145,9 +145,11 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
         return geometry;
     }
 
-    const float circle = std::round(line * 1.0f);
+    // Sized as a Switch 2's own: tall rows, the words where the page's
+    // start, and a large radio circle at the right of each.
+    const float circle = std::round(line * kCircleLines);
     const float gap = std::round(line * 0.7f);
-    geometry.row_height = std::round(line * 2.8f);
+    geometry.row_height = std::round(line * kRowLines);
     const int fitting =
         std::max(1, static_cast<int>((output_height - margin * 2.0f - pad_y * 2.0f) / geometry.row_height));
     // A long list takes a good part of the screen, but not the whole of it:
@@ -166,14 +168,21 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
         const float glyph = line * 1.5f * glyph_aspect_;
         widest = glyph * 2.0f + TextRenderer::measure_width("/", scale * 0.9f) + line * 0.3f;
     } else {
-        for (const std::string& choice : choices_) {
-            widest = std::max(widest, TextRenderer::measure_width(choice, scale));
+        for (std::size_t index = 0; index < choices_.size(); ++index) {
+            float wide = TextRenderer::measure_width(choices_[index], scale);
+            if (index < hints_.size() && !hints_[index].empty()) {
+                wide += gap + TextRenderer::measure_width(hints_[index], scale * kHintScale);
+            }
+            widest = std::max(widest, wide);
         }
     }
+    const float inset = std::round(line * kInsetLines);
     const float bar = scrolls ? scroll_bar_width(scale) + line * 0.5f : 0.0f;
-    const float width = std::clamp(pad_x * 2.0f + circle + gap + widest + bar + line * 0.6f,
-                                   line * 10.0f, std::max(line * 10.0f, output_width - margin * 2.0f));
-    const float height = geometry.row_height * static_cast<float>(geometry.visible) + pad_y * 2.0f;
+    const float width = std::clamp(inset * 2.0f + line * kTextInLines + widest + gap + circle +
+                                       line * kCircleInLines + bar,
+                                   line * kMinWidthLines,
+                                   std::max(line * kMinWidthLines, output_width - margin * 2.0f));
+    const float height = geometry.row_height * static_cast<float>(geometry.visible) + inset * 2.0f;
 
     // Beside its row, at the row's right-hand end where its value is, and
     // with the choice in effect level with the row as it opened -- as far as
@@ -181,13 +190,12 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
     // moving through the list scrolls it inside a box that stays put.
     float x = row_.x + row_.w - width;
     const float shown_at = std::clamp(anchor_rows_, 0.0f, static_cast<float>(geometry.visible - 1));
-    float y = row_.y + row_.h * 0.5f - pad_y - geometry.row_height * (shown_at + 0.5f);
+    float y = row_.y + row_.h * 0.5f - inset - geometry.row_height * (shown_at + 0.5f);
     x = std::clamp(x, margin, std::max(margin, output_width - margin - width));
     y = std::clamp(y, margin, std::max(margin, output_height - margin - height));
     geometry.box = PixelRect{std::round(x), std::round(y), std::round(width), std::round(height)};
-    geometry.list = PixelRect{geometry.box.x, geometry.box.y + pad_y, geometry.box.w,
+    geometry.list = PixelRect{geometry.box.x, geometry.box.y + inset, geometry.box.w,
                               geometry.row_height * static_cast<float>(geometry.visible)};
-    const float inset = std::round(line * 0.35f);
     const float scroll = std::clamp(scroll_rows_, 0.0f, max_scroll_rows(geometry.visible));
     for (int index = 0; index < count; ++index) {
         geometry.rows.push_back(PixelRect{
@@ -355,10 +363,10 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
         focus_since_ = now;
     }
     const float focus_seconds = std::chrono::duration<float>(now - focus_since_).count();
-    const float circle = std::round(line * 1.0f);
-    const float pad_x = std::round(line * 0.9f) - std::round(line * 0.35f);
+    const float circle = std::round(line * kCircleLines);
+    const float pad_x = std::round(line * kTextInLines);
     const float gap = std::round(line * 0.7f);
-    const float stroke = std::max(2.0f, std::round(scale * 0.8f));
+    const float stroke = std::max(2.0f, std::round(circle * 0.07f));
     for (std::size_t index = 0; index < shape.rows.size(); ++index) {
         const PixelRect& row = shape.rows[index];
         if (row.y + row.h < shape.list.y || row.y > shape.list.y + shape.list.h) continue;
@@ -372,16 +380,20 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
         const bool focused = static_cast<int>(index) == focus_;
         const bool chosen = static_cast<int>(index) == current_;
         if (focused) draw_menu_cursor(quads, row, std::round(std::min(row.h * 0.3f, radius)), scale);
-        const PixelRect dot{row.x + pad_x, std::round(row.y + (row.h - circle) * 0.5f), circle, circle};
-        quads.draw_rounded_ring(dot, circle * 0.5f, stroke, chosen ? theme.accent : theme.text_dim,
-                                chosen ? theme.accent : theme.text_dim);
+        // The radio circle at the right: the one in effect filled, a white
+        // dot in it.
+        const PixelRect dot{std::round(row.x + row.w - line * kCircleInLines - circle),
+                            std::round(row.y + (row.h - circle) * 0.5f), circle, circle};
         if (chosen) {
-            const float inner = std::round(circle * 0.5f);
-            quads.draw_capsule(PixelRect{dot.x + (circle - inner) * 0.5f, dot.y + (circle - inner) * 0.5f,
-                                         inner, inner},
-                               theme.accent);
+            quads.draw_capsule(dot, theme.accent);
+            const float inner = std::round(circle * 0.36f);
+            quads.draw_capsule(PixelRect{dot.x + std::round((circle - inner) * 0.5f),
+                                         dot.y + std::round((circle - inner) * 0.5f), inner, inner},
+                               Color{1.0f, 1.0f, 1.0f, 1.0f});
+        } else {
+            quads.draw_rounded_ring(dot, circle * 0.5f, stroke, theme.text_dim, theme.text_dim);
         }
-        const float text_x = dot.x + circle + gap;
+        const float text_x = row.x + pad_x;
         if (glyphs != nullptr && index < glyph_pairs_.size()) {
             // Two buttons, as the row they belong to draws them: "(A) / (B)".
             const float height = line * 1.5f;
@@ -398,11 +410,11 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
             glyphs->draw(quads, glyph_pairs_[index].second, pen_x, glyph_y, height, theme.text);
             continue;
         }
-        float text_right = row.x + row.w - line * 0.4f;
+        float text_right = dot.x - gap;
         if (index < hints_.size() && !hints_[index].empty()) {
-            const float hint_scale = scale * 0.8f;
+            const float hint_scale = scale * kHintScale;
             const float hint_width = TextRenderer::measure_width(hints_[index], hint_scale);
-            const float hint_x = std::round(text_right - line * 0.4f - hint_width);
+            const float hint_x = std::round(text_right - hint_width);
             text.draw(quads, hints_[index], hint_x,
                       std::round(row.y + (row.h - TextRenderer::line_height(hint_scale)) * 0.5f), hint_scale,
                       theme.text_dim);

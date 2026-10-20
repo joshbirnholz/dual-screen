@@ -102,6 +102,11 @@ public:
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
     bool off_popup(float x, float y, float output_width, float output_height) const override;
+    // Anywhere on the touch screen being placed on is the same: the spot
+    // goes where the finger came up.
+    bool same_entry(int pressed_on, int released_on) const override {
+        return pressed_on == released_on || (pressed_on >= kSpotEntryBase && released_on >= kSpotEntryBase);
+    }
     std::vector<float> scroll_state(float output_width, float output_height) const override;
     void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
     static constexpr int kChoiceEntryBase = 0x4000;

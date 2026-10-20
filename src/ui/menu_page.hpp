@@ -43,6 +43,11 @@ public:
     // Whether a point is off an open popup altogether: a tap there puts it
     // away. False when none is open.
     virtual bool off_popup(float x, float y, float output_width, float output_height) const = 0;
+    // Whether a finger that went down on one entry and came up on another
+    // tapped -- the one it came up on. Not as a rule, which is a finger
+    // sliding off what it was aiming at; but a page whose entries are places
+    // on a picture rather than rows says yes for two of those.
+    virtual bool same_entry(int pressed_on, int released_on) const { return pressed_on == released_on; }
 
     // Where each of its lists is scrolled -- a popup's too, while one is up
     // -- in a measure that is the same at any size: lines of text (see
@@ -103,7 +108,8 @@ public:
             // Only where the finger came down on the same entry it left on.
             const int entry = page.entry_at(pointer.x, pointer.y, output_width, output_height);
             if (entry >= 0 &&
-                entry == page.entry_at(pointer.press_x, pointer.press_y, output_width, output_height)) {
+                page.same_entry(page.entry_at(pointer.press_x, pointer.press_y, output_width, output_height),
+                                entry)) {
                 taps.push_back(entry);
             }
         }

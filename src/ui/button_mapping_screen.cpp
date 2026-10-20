@@ -100,9 +100,9 @@ ButtonMappingScreen::Geometry ButtonMappingScreen::compute_geometry(float output
     geometry.view_bottom = frame.content_bottom;
     const float row_height = menu_row_height(frame.line);
     const float step = row_height + menu_row_gap(frame.line);
-    // The list down the left, a little under half the page; the console in
-    // the rest, past a gap.
-    const float list_width = std::round(frame.panel.w * 0.46f);
+    // The list down the left, a little over half the page, room for a long
+    // name and what it does side by side; the console in the rest, past a gap.
+    const float list_width = std::round(frame.panel.w * 0.58f);
     geometry.list = PixelRect{frame.panel.x, geometry.view_top, list_width,
                               geometry.view_bottom - geometry.view_top};
     geometry.content_height = static_cast<float>(kPadControls) * step;
@@ -114,7 +114,8 @@ ButtonMappingScreen::Geometry ButtonMappingScreen::compute_geometry(float output
                                           row_width, row_height});
     }
     const float diagram_x = frame.panel.x + list_width + frame.line * 2.0f;
-    const float caption_room = frame.line * 2.4f;
+    // Two lines of words under it, for the longer things a button can do.
+    const float caption_room = frame.line * 3.6f;
     geometry.diagram = PixelRect{diagram_x, geometry.view_top,
                                  frame.panel.x + frame.panel.w - diagram_x,
                                  geometry.view_bottom - geometry.view_top - caption_room};
@@ -647,9 +648,13 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
                     std::round(centre - glyph_height * glyphs.button_centre()), glyph_height, theme.text);
         const float name_x = row.x + pad + glyphs.width_for(glyph_height) + line * 0.6f;
         const float baseline = page_row_text_y(row, scale);
-        text.draw(quads, pad_control_name(control), name_x, baseline, scale, menu_row_text(focused));
-        text.draw(quads, action_label(control), row.x + row.w - pad, baseline, scale, theme.text_dim,
-                  TextAlign::Right);
+        const std::string name = pad_control_name(control);
+        text.draw(quads, name, name_x, baseline, scale, menu_row_text(focused));
+        // What it does, in what room the name leaves.
+        const float value_room =
+            row.x + row.w - pad - (name_x + TextRenderer::measure_width(name, scale) + line * 1.2f);
+        text.draw(quads, TextRenderer::elide_right(action_label(control), value_room, scale), row.x + row.w - pad,
+                  baseline, scale, theme.text_dim, TextAlign::Right);
     }
     quads.clear_clip();
     const float view = geometry.view_bottom - geometry.view_top;
@@ -661,10 +666,16 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     // The console, what the highlighted button presses picked out on it.
     draw_console(quads, geometry.diagram, focused_control());
     const float caption_scale = scale * 0.85f;
-    const std::string words =
-        TextRenderer::elide_right(caption(), geometry.diagram.w, caption_scale);
-    text.draw(quads, words, geometry.diagram.x + geometry.diagram.w * 0.5f, geometry.caption_y,
-              caption_scale, theme.text_dim, TextAlign::Center);
+    std::vector<std::string> words = TextRenderer::wrap(caption(), geometry.diagram.w, caption_scale);
+    if (words.size() > 2) {
+        words[1] = TextRenderer::elide_right(words[1] + " " + words[2], geometry.diagram.w, caption_scale);
+        words.resize(2);
+    }
+    for (std::size_t at = 0; at < words.size(); ++at) {
+        text.draw(quads, words[at], geometry.diagram.x + geometry.diagram.w * 0.5f,
+                  geometry.caption_y + TextRenderer::wrapped_line_step(caption_scale) * static_cast<float>(at),
+                  caption_scale, theme.text_dim, TextAlign::Center);
+    }
 
     std::vector<GuidePrompt> guide;
     if (!mapping_.is_standard(console_)) guide.push_back({ButtonGlyph::X, "Revert to Default"});
@@ -697,7 +708,7 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
                      std::string("Touch Point for ") + pad_control_name(focused_control()), game_title_);
     const PixelRect touch = touch_rect(output_width, output_height);
     if (touch_screen_ != nullptr && touch_screen_->valid()) {
-        quads.draw_image(touch, *touch_screen_);
+        quads.draw_screen(touch, *touch_screen_);
     } else {
         quads.draw_solid(touch, Color{0.0f, 0.0f, 0.0f, 1.0f});
     }
@@ -706,15 +717,26 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     // Where it touches: a ring on the spot, and a cross through it to aim by.
     const float cx = std::round(touch.x + spot_.u * touch.w);
     const float cy = std::round(touch.y + spot_.v * touch.h);
-    const float r = std::round(line * 0.9f);
+    // White edged in black, to show on whatever the game has there.
+    const float r = std::round(line * 1.1f);
     const float bar = std::max(2.0f, std::round(scale * 1.2f));
+    const float edge = std::max(1.0f, std::round(scale * 0.6f));
+    const Color white{1.0f, 1.0f, 1.0f, 1.0f};
+    const Color shade{0.0f, 0.0f, 0.0f, 0.7f};
     Color fill = theme.accent;
-    fill.a = 0.35f;
+    fill.a = 0.55f;
     quads.set_clip(touch);
-    quads.draw_rounded_rect(PixelRect{cx - r, cy - r, r * 2.0f, r * 2.0f}, r, fill);
-    quads.draw_rounded_ring(PixelRect{cx - r, cy - r, r * 2.0f, r * 2.0f}, r, bar, theme.accent, theme.accent);
-    quads.draw_solid(PixelRect{cx - bar * 0.5f, cy - r * 1.8f, bar, r * 3.6f}, theme.accent);
-    quads.draw_solid(PixelRect{cx - r * 1.8f, cy - bar * 0.5f, r * 3.6f, bar}, theme.accent);
+    const PixelRect ring{cx - r, cy - r, r * 2.0f, r * 2.0f};
+    quads.draw_solid(PixelRect{cx - bar * 0.5f - edge, cy - r * 1.8f - edge, bar + edge * 2.0f, r * 3.6f + edge * 2.0f},
+                     shade);
+    quads.draw_solid(PixelRect{cx - r * 1.8f - edge, cy - bar * 0.5f - edge, r * 3.6f + edge * 2.0f, bar + edge * 2.0f},
+                     shade);
+    quads.draw_rounded_rect(ring, r, fill);
+    quads.draw_rounded_ring(PixelRect{ring.x - edge, ring.y - edge, ring.w + edge * 2.0f, ring.h + edge * 2.0f},
+                            r + edge, bar + edge * 2.0f, shade, shade);
+    quads.draw_rounded_ring(ring, r, bar, white, white);
+    quads.draw_solid(PixelRect{cx - bar * 0.5f, cy - r * 1.8f, bar, r * 3.6f}, white);
+    quads.draw_solid(PixelRect{cx - r * 1.8f, cy - bar * 0.5f, r * 3.6f, bar}, white);
     quads.clear_clip();
     text.draw(quads, "Choose a point for this button to tap.", frame.panel.x + frame.panel.w * 0.5f,
               std::round(touch.y + touch.h + line * 1.0f), scale * 0.9f, theme.text_dim, TextAlign::Center);

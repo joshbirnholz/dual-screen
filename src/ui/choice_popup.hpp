@@ -40,8 +40,20 @@ class ChoicePopup {
 public:
     // How much of the screen's height a long list's rows take at most, and
     // how many rows it shows whatever that comes to, where they fit.
-    static constexpr float kMaxListShare = 0.6f;
+    static constexpr float kMaxListShare = 0.66f;
     static constexpr int kMinRowsShown = 6;
+    // Its proportions, in lines of the page's text, measured off a Switch 2's
+    // own System Settings: a row's height, its radio circle's, where the
+    // words start in a row and how far the circle stands from its end, the
+    // rows' inset in the box, and the narrowest the box is.
+    static constexpr float kRowLines = 3.5f;
+    static constexpr float kCircleLines = 1.75f;
+    static constexpr float kTextInLines = 1.35f;
+    static constexpr float kCircleInLines = 1.35f;
+    static constexpr float kInsetLines = 0.67f;
+    static constexpr float kMinWidthLines = 18.0f;
+    // A hint's words, beside a choice's.
+    static constexpr float kHintScale = 0.8f;
 
     // Up over `row`, the row whose value it is, with `current` filled.
     void open(std::vector<std::string> choices, int current, const PixelRect& row);

@@ -324,6 +324,23 @@ void test_a_touch_point_is_placed() {
     press(screen, UiAction::Confirm);
     CHECK(screen.placing());
     CHECK_EQ(screen.spot().u, 0.5f);
+    // A finger that slid a little between going down and coming up still
+    // places it, where it came up.
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        int entry = -1;
+        for (y = 2.0f; y < kHeight && entry < ButtonMappingScreen::kSpotEntryBase; y += 3.0f) {
+            entry = screen.entry_at(kWidth * 0.5f, y, kWidth, kHeight);
+        }
+        x = kWidth * 0.5f;
+        PointerEvent slid = tap_at(x + 6.0f, y + 40.0f);
+        slid.press_x = x;
+        slid.press_y = y + 30.0f;
+        screen.update({}, {slid}, kWidth, kHeight);
+        CHECK(screen.placing());
+        CHECK_MSG(screen.spot().v > 0.02f && screen.spot().v < 0.3f, "a tap that slid did not place the spot");
+    }
     tap_entry(screen, ButtonMappingScreen::spot_entry(TouchSpot{0.25f, 0.75f}));
     CHECK(std::fabs(screen.spot().u - 0.25f) < 0.001f && std::fabs(screen.spot().v - 0.75f) < 0.001f);
     const ButtonMappingScreenResult kept = press(screen, UiAction::Confirm);
