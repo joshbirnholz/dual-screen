@@ -432,6 +432,18 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
 
 namespace {
 
+// How tall the quick menu's list rows are: a list's own rows where they all
+// fit, and shorter -- down to a little over three lines -- where there are
+// more, so a game with many options, as Cemu's have, shows them all at once.
+// Past that the list scrolls.
+float quick_menu_list_row_height(int count, float room, float line) {
+    const float full = menu_row_height(line);
+    if (count <= 0) return full;
+    const float gap = menu_row_gap(line);
+    const float fit = std::floor((room + gap) / static_cast<float>(count) - gap);
+    return std::clamp(fit, std::round(line * 3.2f), full);
+}
+
 const char* section_label(MenuSection section) {
     switch (section) {
         case MenuSection::Continue: return "Continue";
@@ -550,7 +562,7 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
         case MenuSection::Amiibo: {
             // A list, as tall as the sections' rows. Scan amiibo's can run
             // past the bottom, so it starts from the first of it in view.
-            const float option_height = menu_row_height(line);
+            const float option_height = quick_menu_list_row_height(count, area.h, line);
             const float step = option_height + menu_row_gap(line);
             const int fitting = std::max(1, static_cast<int>((area.h + menu_row_gap(line)) / step));
             const bool scrolls = count > fitting;
@@ -632,13 +644,14 @@ int LayoutPicker::focus() const { return focus_of(section_, on_content_ ? item_ 
 
 int LayoutPicker::content_rows_fitting(const MenuGeometry& geometry) const {
     const float line = TextRenderer::line_height(geometry.scale);
-    const float step = menu_row_height(line) + menu_row_gap(line);
+    const float step = content_row_step(geometry);
     return std::max(1, static_cast<int>((geometry.content.h + menu_row_gap(line)) / step));
 }
 
 float LayoutPicker::content_row_step(const MenuGeometry& geometry) const {
     const float line = TextRenderer::line_height(geometry.scale);
-    return menu_row_height(line) + menu_row_gap(line);
+    return quick_menu_list_row_height(content_count(section_), geometry.content.h, line) +
+           menu_row_gap(line);
 }
 
 float LayoutPicker::content_max_scroll(const MenuGeometry& geometry) const {
