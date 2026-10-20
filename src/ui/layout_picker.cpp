@@ -472,8 +472,15 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
             std::max(label_width, TextRenderer::measure_width(section_label(section), scale * 1.1f));
     }
     const float left_width = std::min(geometry.panel.w * 0.34f, label_width + line * 2.0f);
-    const float row_height = line * 2.2f;
-    const float row_step = row_height + line * 0.25f;
+    // As tall as they can be up to the quick menu's own rows, all of them
+    // down the screen: there is nowhere for the sections to scroll to.
+    const float gap = quick_menu_row_gap(line);
+    float row_step = quick_menu_row_height(line) + gap;
+    if (!sections_.empty()) {
+        const float room = geometry.content_bottom - geometry.content_top + gap;
+        row_step = std::min(row_step, std::floor(room / static_cast<float>(sections_.size())));
+    }
+    const float row_height = row_step - gap;
     float y = geometry.content_top;
     for (std::size_t index = 0; index < sections_.size(); ++index) {
         geometry.sections.push_back(PixelRect{geometry.panel.x, y, left_width, row_height});
@@ -539,9 +546,9 @@ LayoutPicker::MenuGeometry LayoutPicker::compute_menu_geometry(float output_widt
         case MenuSection::Amiibo: {
             // A list, as tall as the sections' rows. Scan amiibo's can run
             // past the bottom, so it starts from the first of it in view.
-            const float option_height = line * 2.2f;
-            const float step = option_height + line * 0.25f;
-            const int fitting = std::max(1, static_cast<int>((area.h + line * 0.25f) / step));
+            const float option_height = quick_menu_row_height(line);
+            const float step = option_height + quick_menu_row_gap(line);
+            const int fitting = std::max(1, static_cast<int>((area.h + quick_menu_row_gap(line)) / step));
             const bool scrolls = count > fitting;
             const float first = scrolls ? std::clamp(content_scroll_, 0.0f, static_cast<float>(count - fitting)) : 0.0f;
             // Short of the right-hand edge by a scroll bar, where there is one.
@@ -621,13 +628,13 @@ int LayoutPicker::focus() const { return focus_of(section_, on_content_ ? item_ 
 
 int LayoutPicker::content_rows_fitting(const MenuGeometry& geometry) const {
     const float line = TextRenderer::line_height(geometry.scale);
-    const float step = line * 2.2f + line * 0.25f;
-    return std::max(1, static_cast<int>((geometry.content.h + line * 0.25f) / step));
+    const float step = quick_menu_row_height(line) + quick_menu_row_gap(line);
+    return std::max(1, static_cast<int>((geometry.content.h + quick_menu_row_gap(line)) / step));
 }
 
 float LayoutPicker::content_row_step(const MenuGeometry& geometry) const {
     const float line = TextRenderer::line_height(geometry.scale);
-    return line * 2.2f + line * 0.25f;
+    return quick_menu_row_height(line) + quick_menu_row_gap(line);
 }
 
 float LayoutPicker::content_max_scroll(const MenuGeometry& geometry) const {

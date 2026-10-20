@@ -146,7 +146,7 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
 
     const float circle = std::round(line * 1.0f);
     const float gap = std::round(line * 0.7f);
-    geometry.row_height = std::round(line * 2.4f);
+    geometry.row_height = std::round(line * 2.8f);
     const int fitting =
         std::max(1, static_cast<int>((output_height - margin * 2.0f - pad_y * 2.0f) / geometry.row_height));
     // A long list takes a good part of the screen, but not the whole of it:

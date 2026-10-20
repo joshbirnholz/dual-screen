@@ -8,9 +8,6 @@ numbers can change freely.
 
 ## Next up
 
-- Rows in menus should have more padding around them so they look more like
-  a Switch's interface, and are easier to tap on touch screens.
-
 ### Controls
 
 - **Controls for DS and 3DS games.** A Wii U's quick menu has Controls

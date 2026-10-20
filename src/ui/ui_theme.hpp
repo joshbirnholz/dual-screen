@@ -79,11 +79,16 @@ inline float menu_border(float scale) { return std::max(2.0f, std::round(scale *
 // How tall a line in a list is, given the height of a line of its text: room
 // round the words, the way the menus were drawn in the design, rather than a
 // box just big enough for them. Two-line rows -- a title with a line under it
-// -- are taller.
-inline float menu_row_height(float line) { return std::round(line * 2.9f); }
-inline float menu_two_line_row_height(float line) { return std::round(line * 4.0f); }
+// -- are taller. Roomy, as a Switch's are, and so easy to tap.
+inline float menu_row_height(float line) { return std::round(line * 3.2f); }
+inline float menu_two_line_row_height(float line) { return std::round(line * 4.3f); }
 // The space between two rows, and inside a row before its words start.
-inline float menu_row_gap(float line) { return std::round(line * 0.3f); }
+inline float menu_row_gap(float line) { return std::round(line * 0.35f); }
+// The quick menu's rows -- its sections, and the lists beside them -- and the
+// space between two of them: a little closer than a page's, since the
+// sections must all fit down the screen without scrolling.
+inline float quick_menu_row_height(float line) { return std::round(line * 2.7f); }
+inline float quick_menu_row_gap(float line) { return std::round(line * 0.3f); }
 inline float menu_row_pad(float line) { return std::round(line * 0.9f); }
 
 // The cursor's ring, as a Switch draws it: the accent running across the row
