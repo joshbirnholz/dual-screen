@@ -1152,7 +1152,7 @@ struct App::Impl {
     // to be drawn until it has -- see quick_menu_leaving().
     bool menu_closing = false;
     bool quick_menu_leaving() const {
-        return menu_closing && menu_entrance.leaving() && picker && picker->is_open() && state != State::Menu;
+        return menu_closing && menu_entrance.leaving() && picker && picker->is_drawn() && state != State::Menu;
     }
     // Gone at once: closed from a page of it, where it was never on screen
     // to go away.
@@ -3082,6 +3082,10 @@ void App::Impl::set_menu_open(bool open) {
     } else {
         menu_entrance.leave();
         menu_closing = true;
+        // A close pressed in the menu has already closed it there: it is
+        // still drawn, as it was, until it has gone -- and in the meantime
+        // nothing else (the list beside a Wii U game) is opened in its place.
+        if (picker) picker->linger();
     }
     if (is_companion()) {
         companion_session->set_menu_open(false);
