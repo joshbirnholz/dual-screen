@@ -279,10 +279,12 @@ void test_a_switch_flipped_sounds_on_or_off() {
     judge.note_input({}, true, 0.2);
     sound = judge.observe(off, 0.2);
     CHECK_MSG(sound && *sound == UiSound::ToggleOff, "a switch tapped off did not sound it");
-    // Pushed sideways, as a pad turns one.
+    // A direction never flips a switch; were one to change under it, that
+    // is not a switch's sound.
     judge.note_input({UiAction::Right}, false, 0.3);
     sound = judge.observe(on, 0.3);
-    CHECK(sound && *sound == UiSound::ToggleOn);
+    CHECK_MSG(!sound || (*sound != UiSound::ToggleOn && *sound != UiSound::ToggleOff),
+              "a direction sounded a switch");
 
     // Moving onto a switch that is the other way is a move.
     UiSoundView next_row = view_at(1, 5, 2);
