@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -360,6 +361,13 @@ bool map_ds_point_to_output(const Layout& layout,
                             const SystemScreens& screens,
                             float display_width = 0.0f,
                             float display_height = 0.0f);
+
+// A push on a stick, as the player sees it pushing across a screen drawn with
+// `rotation`, as the push across the screen's own unturned axes -- so the
+// stylus cursor goes down a sideways screen when the stick is held down, not
+// along it. The turn map_output_point_to_ds() undoes, for a direction rather
+// than a point.
+void unturn_stick_push(ScreenRotation rotation, int16_t& x, int16_t& y);
 
 // True if this layout shows the bottom screen at all (and so can accept touch).
 bool layout_has_touchable_bottom(const Layout& layout);

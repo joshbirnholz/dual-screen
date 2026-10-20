@@ -882,6 +882,11 @@ struct App::Impl {
     // size yet, which read_screen() already treats as "use the console's own
     // resolution".
     void companion_target_size(ScreenId screen, int& out_width, int& out_height) const;
+    // device_layout() as the connected device resolves it, for its own screen.
+    Layout companion_layout() const;
+    // Which way the touch screen is turned where it is drawn, so the stylus
+    // cursor's stick moves it the way the player sees it.
+    ScreenRotation touch_screen_rotation() const;
     // The screen source currently feeding the compositor, whichever role we are
     // in. Null before anything is running.
     ScreenSource* active_source();
@@ -1575,6 +1580,42 @@ Layout App::Impl::device_layout() const {
     return resolve_for_device(chosen, local_screen);
 }
 
+Layout App::Impl::companion_layout() const {
+    // The companion's own version of device_layout(): the same layout, but
+    // resolved for whichever screen the companion holds rather than this
+    // device's. A companion is by definition paired the moment there is a
+    // reported size to act on, so there is no unpaired fallback to consider.
+    Layout layout = resolve_for_handedness(resolve_gap_choice(active_layout(), screen_gap), current_handedness());
+    if (layout.per_device && host_session) {
+        layout = resolve_for_device(layout, host_session->companion_screen());
+    }
+    return layout;
+}
+
+ScreenRotation App::Impl::touch_screen_rotation() const {
+    // Where the touch screen is drawn: this device's window first, then the
+    // connected device's, whichever is the one holding it.
+    for (const PlacedScreen& placed : place_screens(device_layout(), static_cast<float>(output_width),
+                                                     static_cast<float>(output_height), screens_geometry())) {
+        if (placed.screen == ScreenId::Bottom && placed.rect.w > 0.0f && placed.rect.h > 0.0f) {
+            return placed.rotation;
+        }
+    }
+    int companion_width = 0;
+    int companion_height = 0;
+    if (host_session && host_session->has_companion() && host_session->companion_wants(ScreenId::Bottom) &&
+        host_session->companion_display_size(companion_width, companion_height)) {
+        for (const PlacedScreen& placed : place_screens(companion_layout(), static_cast<float>(companion_width),
+                                                         static_cast<float>(companion_height),
+                                                         screens_geometry())) {
+            if (placed.screen == ScreenId::Bottom && placed.rect.w > 0.0f && placed.rect.h > 0.0f) {
+                return placed.rotation;
+            }
+        }
+    }
+    return ScreenRotation::None;
+}
+
 void App::Impl::companion_target_size(ScreenId screen, int& out_width, int& out_height) const {
     out_width = 0;
     out_height = 0;
@@ -1587,17 +1628,7 @@ void App::Impl::companion_target_size(ScreenId screen, int& out_width, int& out_
         return;
     }
 
-    // The companion's own version of device_layout(): the same layout, but
-    // resolved for whichever screen the companion holds rather than this
-    // device's. A companion is by definition paired the moment there is a
-    // reported size to act on, so there is no unpaired fallback to consider.
-    Layout companion_layout = resolve_for_handedness(
-        resolve_gap_choice(active_layout(), screen_gap), current_handedness());
-    if (companion_layout.per_device) {
-        companion_layout = resolve_for_device(companion_layout, host_session->companion_screen());
-    }
-
-    for (const PlacedScreen& placed : place_screens(companion_layout, static_cast<float>(companion_width),
+    for (const PlacedScreen& placed : place_screens(companion_layout(), static_cast<float>(companion_width),
                                                      static_cast<float>(companion_height),
                                                      screens_geometry())) {
         if (placed.screen != screen || placed.rect.w <= 0.0f || placed.rect.h <= 0.0f) {
@@ -3836,7 +3867,11 @@ void App::Impl::apply_stylus_cursor(DsInputState& held) {
         return;
     }
     const ScreenSize touch = system_profile(system).screens.bottom;
-    stylus_cursor.update(held.c_stick_x, held.c_stick_y, held.pressed(DsButton::RightStick),
+    // Down on the stick is down the screen as it is drawn, sideways or not.
+    int16_t push_x = held.c_stick_x;
+    int16_t push_y = held.c_stick_y;
+    unturn_stick_push(touch_screen_rotation(), push_x, push_y);
+    stylus_cursor.update(push_x, push_y, held.pressed(DsButton::RightStick),
                          settings.stick_deadzone, seconds, touch.width, touch.height);
     held.c_stick_x = 0;
     held.c_stick_y = 0;

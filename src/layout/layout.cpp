@@ -597,6 +597,26 @@ bool map_output_point_to_ds(const Layout& layout,
     return false;
 }
 
+void unturn_stick_push(ScreenRotation rotation, int16_t& x, int16_t& y) {
+    // Negated as an int: -32768 has no int16 opposite.
+    const auto opposite = [](int16_t value) {
+        return static_cast<int16_t>(std::min(32767, -static_cast<int>(value)));
+    };
+    const int16_t drawn_x = x;
+    const int16_t drawn_y = y;
+    switch (rotation) {
+        case ScreenRotation::Clockwise:
+            x = drawn_y;
+            y = opposite(drawn_x);
+            break;
+        case ScreenRotation::CounterClockwise:
+            x = opposite(drawn_y);
+            y = drawn_x;
+            break;
+        case ScreenRotation::None: break;
+    }
+}
+
 bool map_ds_point_to_output(const Layout& layout,
                             float output_width,
                             float output_height,

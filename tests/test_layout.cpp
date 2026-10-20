@@ -609,6 +609,50 @@ void test_a_touch_point_is_drawn_where_it_is_felt() {
     }
 }
 
+// The stylus cursor's stick goes the way the player sees the touch screen,
+// however it is turned: held down, the cursor goes down the window; held
+// right, it goes right. Both turns, as Side-by-Side for either hand draws.
+void test_the_stylus_stick_follows_a_turned_screen() {
+    const LayoutRegistry registry;
+    const float width = 1280.0f;
+    const float height = 800.0f;
+    std::vector<Layout> layouts = registry.layouts();
+    layouts.push_back(resolve_for_handedness(*registry.find("side_by_side"), Handedness::Left));
+    bool saw_a_turn = false;
+    for (const Layout& layout : layouts) {
+        PlacedScreen bottom;
+        if (!layout_has_touchable_bottom(layout) || !placed_screen(layout, ScreenId::Bottom, width, height, bottom)) {
+            continue;
+        }
+        if (bottom.rotation != ScreenRotation::None) saw_a_turn = true;
+        const struct {
+            int16_t x, y;
+            float want_x, want_y;
+            const char* name;
+        } pushes[] = {{0, 32767, 0.0f, 1.0f, "down"}, {32767, 0, 1.0f, 0.0f, "right"},
+                      {0, -32768, 0.0f, -1.0f, "up"}, {-32768, 0, -1.0f, 0.0f, "left"}};
+        for (const auto& push : pushes) {
+            int16_t x = push.x;
+            int16_t y = push.y;
+            unturn_stick_push(bottom.rotation, x, y);
+            float from_x = 0.0f;
+            float from_y = 0.0f;
+            float to_x = 0.0f;
+            float to_y = 0.0f;
+            CHECK(map_ds_point_to_output(layout, width, height, 0.5f, 0.5f, from_x, from_y, ds_screens()));
+            CHECK(map_ds_point_to_output(layout, width, height, 0.5f + x / 32767.0f * 0.25f,
+                                         0.5f + y / 32767.0f * 0.25f, to_x, to_y, ds_screens()));
+            const float moved_x = to_x - from_x;
+            const float moved_y = to_y - from_y;
+            CHECK_MSG(moved_x * push.want_x + moved_y * push.want_y > 0.0f &&
+                          std::abs(moved_x * push.want_y - moved_y * push.want_x) < 1.0f,
+                      layout.id + ": the stick held " + push.name + " moved the cursor " +
+                          std::to_string(moved_x) + "," + std::to_string(moved_y));
+        }
+    }
+    CHECK_MSG(saw_a_turn, "no layout turned its touch screen to test against");
+}
+
 void test_contain_preserves_aspect() {
     ScreenPlacement placement;
     placement.x = 0.0f;
@@ -1075,6 +1119,7 @@ void test_audio_off_reaches_neither_screen() {
 int main() {
     test_which_layouts_have_a_hand();
     test_a_touch_point_is_drawn_where_it_is_felt();
+    test_the_stylus_stick_follows_a_turned_screen();
     test_registry_contents();
     test_layouts_match_the_wii_u();
     test_small_displays_drop_the_margin();
