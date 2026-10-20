@@ -1920,8 +1920,53 @@ void test_a_dropdown_stays_where_it_opened() {
     CHECK_EQ(top_edge(), opened_at);
 }
 
+// A long dropdown takes a good part of the screen, not all of it, and more
+// than the six rows it once stopped at.
+void test_a_long_dropdown_is_not_the_whole_screen_tall() {
+    std::vector<std::string> choices;
+    for (int index = 0; index < 40; ++index) choices.push_back("Choice " + std::to_string(index));
+    ChoicePopup popup;
+    popup.open(choices, 0, PixelRect{200.0f, 300.0f, 800.0f, 60.0f});
+    popup.update({}, {}, kWidth, kHeight);
+    float top = -1.0f;
+    float bottom = -1.0f;
+    for (float y = 0.0f; y < kHeight; y += 1.0f) {
+        if (!popup.contains(900.0f, y, kWidth, kHeight)) continue;
+        if (top < 0.0f) top = y;
+        bottom = y;
+    }
+    CHECK(top >= 0.0f);
+    const float tall = bottom - top + 1.0f;
+    CHECK(tall < kHeight * 0.7f);
+    CHECK(tall > kHeight * 0.4f);
+}
+
+// The other device's cursor, told again every pass, does not pull a list
+// scrolled by a finger there back round to it: only a cursor that moved
+// brings the list with it.
+void test_a_dropdown_scrolled_from_the_other_device_stays_scrolled() {
+    std::vector<std::string> choices;
+    for (int index = 0; index < 40; ++index) choices.push_back("Choice " + std::to_string(index));
+    ChoicePopup popup;
+    popup.open(choices, 2, PixelRect{200.0f, 300.0f, 800.0f, 60.0f});
+    popup.update({}, {}, kWidth, kHeight);
+    CHECK_EQ(popup.scroll_rows(), 0.0f);
+    // To the bottom, a pass at a time, the host's cursor staying put.
+    for (float rows = 1.0f; rows <= 40.0f; rows += 1.0f) {
+        popup.set_scroll_rows(rows);
+        popup.set_focus(2);
+        popup.update({}, {}, kWidth, kHeight);
+    }
+    CHECK(popup.scroll_rows() > 20.0f);
+    // The cursor moved: the list comes round to it.
+    popup.set_focus(3);
+    CHECK(popup.scroll_rows() <= 3.0f);
+}
+
 int main() {
     test_a_dropdown_stays_where_it_opened();
+    test_a_long_dropdown_is_not_the_whole_screen_tall();
+    test_a_dropdown_scrolled_from_the_other_device_stays_scrolled();
     test_wii_u_options_are_this_games();
     test_wii_u_amiibo_are_listed_to_choose_from();
     test_the_resume_popup_is_put_away_with_ok();

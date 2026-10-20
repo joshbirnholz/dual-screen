@@ -79,6 +79,10 @@ int ChoicePopup::next_choice(int from, int step) const {
 
 void ChoicePopup::set_focus(int focus) {
     if (focus < 0 || focus >= static_cast<int>(choices_.size()) || heading(focus)) return;
+    // Told again each pass from the other device: the list follows the
+    // cursor when it moves, and is otherwise where a finger or the wheel
+    // left it -- or it could never be scrolled away from the cursor.
+    if (focus == focus_) return;
     focus_ = focus;
     keep_focus_in_view(shown_rows_);
 }
@@ -145,9 +149,15 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
     geometry.row_height = std::round(line * 2.4f);
     const int fitting =
         std::max(1, static_cast<int>((output_height - margin * 2.0f - pad_y * 2.0f) / geometry.row_height));
-    // As many as the screen has room for: a long list is not kept short
-    // with space to spare above and below it.
-    geometry.visible = std::max(1, std::min(count, fitting));
+    // A long list takes a good part of the screen, but not the whole of it:
+    // no taller than kMaxListShare of it, and never fewer than
+    // kMinRowsShown rows where they fit -- a short box with half the screen
+    // empty around it scrolled too much, and one from edge to edge looked
+    // like a page of its own.
+    const int share =
+        static_cast<int>(output_height * kMaxListShare / geometry.row_height);
+    const int tallest = std::min(fitting, std::max(kMinRowsShown, share));
+    geometry.visible = std::max(1, std::min(count, tallest));
     const bool scrolls = count > geometry.visible;
 
     float widest = 0.0f;

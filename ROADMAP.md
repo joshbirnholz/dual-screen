@@ -8,16 +8,6 @@ numbers can change freely.
 
 ## Next up
 
-- There is an issue in which dropdown pickers with more content than can fit
-  on-screen at once, such as the 3DS's render scale options list, when
-  scrolled from a connected device, jump back to fit the highlighted row on-
-  screen. This means they can't be scrolled to the bottom.
-
-- Dropdown menus with a lot of options now take up most of the screen's
-  height to show their content, which is better than before. They look too
-  tall though. They should have a max height that's a middleground between
-  the current approach and the previous max height that used to exist.
-
 - When scanning an amiibo, it should check if there would be an error
   with that amiibo before the delay in scanning. If it's not valid for some
   reason, it should show that error before trying the four second delay.

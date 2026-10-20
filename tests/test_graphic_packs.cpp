@@ -648,10 +648,11 @@ void test_a_packs_dividers_cannot_be_chosen() {
     CHECK_EQ(on_divider.focus(), 2);
 }
 
-// A long dropdown takes the room the screen has, not a fixed few rows.
+// A long dropdown takes more room than the six rows it once stopped at, but
+// not the whole screen's height: past what it shows, it scrolls.
 void test_a_long_dropdown_uses_the_room_there_is() {
     std::vector<std::string> choices;
-    for (int index = 0; index < 12; ++index) choices.push_back("Choice " + std::to_string(index + 1));
+    for (int index = 0; index < 20; ++index) choices.push_back("Choice " + std::to_string(index + 1));
     ChoicePopup popup;
     popup.open(choices, 0, PixelRect{100.0f, 300.0f, 900.0f, 50.0f});
     popup.update({}, {}, kWidth, kHeight);
@@ -660,8 +661,9 @@ void test_a_long_dropdown_uses_the_room_there_is() {
         const int at = popup.choice_at(950.0f, y, kWidth, kHeight);
         if (at >= 0) seen[static_cast<std::size_t>(at)] = true;
     }
-    CHECK_MSG(std::all_of(seen.begin(), seen.end(), [](bool shown) { return shown; }),
-              "twelve choices did not all fit on a screen with room for them");
+    const auto shown = std::count(seen.begin(), seen.end(), true);
+    CHECK_MSG(shown > 6, "a long dropdown showed no more than six rows");
+    CHECK_MSG(shown < 15, "a long dropdown took every row the screen has room for");
 }
 
 int main() {
