@@ -312,7 +312,7 @@ void ControllersScreen::render(QuadRenderer& quads,
         const float baseline = page_row_text_y(row, scale);
         const int line_rows = static_cast<int>(rows.size());
         if (index >= line_rows) {
-            draw_menu_row(quads, row, focused, scale, index == row_count - 1);
+            draw_menu_row(quads, row, focused, scale, index == row_count - 1, index == focus_ + 1);
             text.draw(quads, "Done", row.x + pad, baseline, scale, menu_row_text(focused));
             continue;
         }
@@ -325,7 +325,7 @@ void ControllersScreen::render(QuadRenderer& quads,
             // The same rounded shape as the cursor's, only filled.
             quads.draw_rounded_rect(row, std::round(std::min(row.h * 0.18f, scale * 5.0f)), theme.accent);
         } else {
-            draw_menu_row(quads, row, focused, scale, index == row_count - 1);
+            draw_menu_row(quads, row, focused, scale, index == row_count - 1, index == focus_ + 1);
         }
         const Color& ink = lifted ? theme.background : theme.text;
         const Color dim = lifted ? theme.panel : theme.text_dim;

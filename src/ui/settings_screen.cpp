@@ -818,7 +818,7 @@ void SettingsScreen::render(QuadRenderer& quads,
     for (int index = 0; index < static_cast<int>(rows.size()); ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = (index == focus_);
-        draw_menu_row(quads, row, focused, scale, index == static_cast<int>(rows.size()) - 1);
+        draw_menu_row(quads, row, focused, scale, index == static_cast<int>(rows.size()) - 1, index == focus_ + 1);
 
         // Label on the left, value on the right, both on one baseline. The
         // value is elided rather than allowed to run past the row, which is

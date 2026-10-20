@@ -115,26 +115,32 @@ inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float r
 inline Color menu_row_rule_color() { return Color{1.0f, 1.0f, 1.0f, 0.16f}; }
 
 // A line in a list -- the launcher, the settings, the file browser, Data
-// Management. The one under the cursor is ringed, the way a Switch's own
-// menus ring it, with whatever is behind it still showing through; the rest
-// have a thin rule above them, as a Switch's do, halfway into the gap to the
-// one before and a little in from the ends -- and the `last` one below too.
-// Each row draws only the rule above it, so the one between two rows is never
-// drawn twice, which would show twice as bright.
+// Management. Each has a thin rule above it, as a Switch's lists do, halfway
+// into the gap to the one before and a little in from the ends -- and the
+// `last` one below too. Each row draws only the rule above it, so the one
+// between two rows is never drawn twice, which would show twice as bright.
+//
+// The one under the cursor is ringed, the way a Switch's own menus ring it,
+// with whatever is behind it still showing through -- the ring where its
+// rules would be, in place of them: its own, and the one above the row after
+// it, which says so with `after_focused`.
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale,
-                          bool last = false) {
-    if (focused) {
-        draw_menu_cursor(quads, rect, std::round(std::min(rect.h * 0.22f, scale * 3.5f)), scale);
-        return;
-    }
+                          bool last = false, bool after_focused = false) {
     const float line = TextRenderer::line_height(scale);
     const float half_gap = std::floor(menu_row_gap(line) * 0.5f);
-    const float inset = std::round(line * 0.5f);
     const float thick = std::max(1.0f, std::round(scale * 0.4f));
+    if (focused) {
+        // Out to the rules above and below, its edges lying over them.
+        const float reach = half_gap + std::ceil(thick * 0.5f);
+        const PixelRect ring{rect.x, rect.y - reach, rect.w, rect.h + reach * 2.0f};
+        draw_menu_cursor(quads, ring, std::round(std::min(ring.h * 0.22f, scale * 3.5f)), scale);
+        return;
+    }
+    const float inset = std::round(line * 0.5f);
     const PixelRect top{rect.x + inset, std::round(rect.y - half_gap - thick * 0.5f), rect.w - inset * 2.0f, thick};
     const PixelRect bottom{rect.x + inset, std::round(rect.y + rect.h + half_gap - thick * 0.5f),
                            rect.w - inset * 2.0f, thick};
-    quads.draw_solid(top, menu_row_rule_color());
+    if (!after_focused) quads.draw_solid(top, menu_row_rule_color());
     if (last) quads.draw_solid(bottom, menu_row_rule_color());
 }
 

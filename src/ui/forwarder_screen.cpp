@@ -819,7 +819,8 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
         for (int index = 0; index < static_cast<int>(Row::Count); ++index) {
             const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
             const bool focused = zone_ == Zone::List && list_focus_ == index && overlay_ == Overlay::None;
-            draw_menu_row(quads, row, focused, scale, index == static_cast<int>(Row::Count) - 1);
+            draw_menu_row(quads, row, focused, scale, index == static_cast<int>(Row::Count) - 1,
+                          zone_ == Zone::List && list_focus_ + 1 == index && overlay_ == Overlay::None);
             const Row which = static_cast<Row>(index);
             const float pad = menu_row_pad(line);
             if (which == Row::Create) {
