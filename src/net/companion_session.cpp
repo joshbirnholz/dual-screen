@@ -743,6 +743,16 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
                                  ? "the game was quit from this device"
                                  : "the host closed the session";
             break;
+        case MessageType::ScreensCleared: {
+            uint64_t last_serial = 0;
+            if (!decode_screens_cleared(payload.data(), payload.size(), last_serial)) {
+                return;  // not worth ending a session over
+            }
+            top_.hidden = true;
+            bottom_.hidden = true;
+            cleared_at_serial_ = std::max(received_serial_, last_serial);
+            break;
+        }
         case MessageType::Ping:
             break;
         default:
@@ -2175,7 +2185,7 @@ const std::vector<uint32_t>& CompanionSession::ScreenBuffer::expanded() const {
 CompanionSession::ScreenPixels CompanionSession::screen_pixels(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
     ScreenPixels out;
-    if (!buffer.has_frame() || buffer.width <= 0 || buffer.height <= 0) {
+    if (!buffer.shown() || buffer.width <= 0 || buffer.height <= 0) {
         return out;
     }
     out.pixels = buffer.expanded().data();
@@ -2188,7 +2198,7 @@ CompanionSession::ScreenPixels CompanionSession::screen_pixels(ScreenId screen) 
 CompanionSession::ScreenBytes CompanionSession::screen_rgb565(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
     ScreenBytes out;
-    if (buffer.rgb565.empty() || buffer.width <= 0 || buffer.height <= 0) {
+    if (buffer.rgb565.empty() || buffer.hidden || buffer.width <= 0 || buffer.height <= 0) {
         return out;
     }
     out.pixels = buffer.rgb565.data();
@@ -2203,7 +2213,7 @@ bool CompanionSession::has_screen(ScreenId screen) const {
     // into pixels on the CPU is a pass over every one of them, to answer a
     // yes or no.
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
-    return buffer.has_frame() && buffer.width > 0 && buffer.height > 0;
+    return buffer.shown() && buffer.width > 0 && buffer.height > 0;
 }
 
 uint64_t CompanionSession::received_serial(ScreenId screen) const {
@@ -2864,7 +2874,7 @@ bool CompanionSession::advance_frame(std::string* error) {
 CompanionSession::NativePicture CompanionSession::native_picture(ScreenId screen) const {
     const ScreenBuffer& buffer = (screen == ScreenId::Top) ? top_ : bottom_;
     NativePicture out;
-    if (buffer.has_frame() && buffer.video && buffer.layout == video::DecodedLayout::Nv12 &&
+    if (buffer.shown() && buffer.video && buffer.layout == video::DecodedLayout::Nv12 &&
         buffer.native != nullptr) {
         out.picture = buffer.native;
         out.width = buffer.width;
@@ -2951,8 +2961,8 @@ const ScreenTextures& CompanionSession::screens() {
             buffer->uploaded_serial = buffer->serial;
         }
     }
-    textures_.top = top_.texture.valid() ? &top_.texture : nullptr;
-    textures_.bottom = bottom_.texture.valid() ? &bottom_.texture : nullptr;
+    textures_.top = top_.texture.valid() && !top_.hidden ? &top_.texture : nullptr;
+    textures_.bottom = bottom_.texture.valid() && !bottom_.hidden ? &bottom_.texture : nullptr;
 
     // Being drawn now: every input whose picture this is has come back. The
     // echoes are read in as they arrive -- see media_mutex_.
@@ -3394,6 +3404,13 @@ void CompanionSession::apply_frame(const FrameMessage& frame) {
         target.width = frame.width;
         target.height = frame.height;
     }
+    // Back up once a frame from after the reset arrives: newer than the last
+    // one sent before it, or far enough behind to be a host counting afresh,
+    // as Cemu does once it is started again.
+    if (target.hidden && (frame.serial > cleared_at_serial_ ||
+                          cleared_at_serial_ - frame.serial > 16)) {
+        target.hidden = false;
+    }
     target.serial = frame.serial;
     ++stats_decoded_;
 }
@@ -3563,6 +3580,7 @@ void CompanionSession::forget_the_pictures() {
     video_bottom_.close();
     top_ = ScreenBuffer();
     bottom_ = ScreenBuffer();
+    cleared_at_serial_ = 0;
     textures_ = ScreenTextures();
     // Frames queued for showing, and when they arrived, are the old host's;
     // the new one numbers its own from the start, so these would sit ahead of

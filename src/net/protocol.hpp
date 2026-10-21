@@ -127,6 +127,13 @@ enum class MessageType : uint16_t {
     // and what a finger is held on there -- see MenuCursorMessage. Sent when
     // it changes. Ignored by a peer from before it.
     MenuCursor = 27,
+    // host -> companion: the game was reset, so what the companion is showing
+    // is from before it and is taken down until the restarted game sends a
+    // picture of its own. Carries the newest serial sent before the reset, so
+    // a frame from before it still on its way is not taken for the restarted
+    // game's first. A companion from before this ignores it and goes on
+    // showing the old picture until a new one arrives.
+    ScreensCleared = 28,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -861,6 +868,8 @@ void encode_audio(const AudioMessage& message, std::vector<uint8_t>& out);
 // above is defined in terms of it.
 void encode_audio_payload(const AudioMessage& message, std::vector<uint8_t>& out);
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out);
+void encode_screens_cleared(uint64_t last_serial, std::vector<uint8_t>& out);
+bool decode_screens_cleared(const uint8_t* data, std::size_t size, uint64_t& out_last_serial);
 void encode_menu_sound(const MenuSoundMessage& message, std::vector<uint8_t>& out);
 void encode_save_slots(const SaveSlotsMessage& message, std::vector<uint8_t>& out);
 void encode_controllers_view(const ControllersViewMessage& message, std::vector<uint8_t>& out);
