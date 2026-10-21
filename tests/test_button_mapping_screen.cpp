@@ -367,6 +367,56 @@ void test_a_touch_point_is_placed() {
 
 // The other device draws Touch Point's page too, and a tap on its screen
 // puts the spot down on the host's.
+// The spot follows a finger dragged over the touch screen as it goes, and
+// stays where it lifts; the OK under the screen keeps it, as A does.
+void test_a_touch_point_is_dragged_and_kept_with_ok() {
+    ButtonMappingScreen screen = open_screen();
+    move_to(screen, PadControl::L);
+    press(screen, UiAction::Confirm);
+    tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::TouchPoint));
+    CHECK(screen.placing());
+    // Where the touch screen and the OK are, found by asking.
+    float left = kWidth, top = kHeight, right = 0.0f, bottom = 0.0f;
+    bool ok_found = false;
+    float ok_x = 0.0f, ok_y = 0.0f;
+    for (float y = 0.0f; y < kHeight; y += 4.0f) {
+        for (float x = 0.0f; x < kWidth; x += 4.0f) {
+            const int entry = screen.entry_at(x, y, kWidth, kHeight);
+            if (entry >= ButtonMappingScreen::kSpotEntryBase) {
+                left = std::min(left, x);
+                top = std::min(top, y);
+                right = std::max(right, x);
+                bottom = std::max(bottom, y);
+            } else if (entry == ButtonMappingScreen::kPlacingOkEntry && !ok_found) {
+                ok_found = true;
+                ok_x = x;
+                ok_y = y;
+            }
+        }
+    }
+    CHECK_MSG(right > left && bottom > top, "no touch screen to place on");
+    CHECK_MSG(ok_found && ok_y > bottom, "no OK under the touch screen");
+
+    // Down a quarter of the way across, then moved on, still down: the spot
+    // is where the finger is now.
+    const float x0 = left + (right - left) * 0.25f;
+    const float y0 = top + (bottom - top) * 0.25f;
+    const float x1 = left + (right - left) * 0.75f;
+    const float y1 = top + (bottom - top) * 0.5f;
+    set_live_pointer(true, x0, y0);
+    set_live_pointer(true, x1, y1);
+    screen.update({}, {}, kWidth, kHeight);
+    CHECK(std::fabs(screen.spot().u - 0.75f) < 0.02f && std::fabs(screen.spot().v - 0.5f) < 0.02f);
+    set_live_pointer(false, x1, y1);
+
+    // OK keeps it.
+    const ButtonMappingScreenResult kept = tap_entry(screen, ButtonMappingScreen::kPlacingOkEntry);
+    CHECK(!screen.placing());
+    CHECK(kept.changed.has_value() && (*kept.changed)[PadControl::L] == PadAction::TouchPoint);
+    if (kept.changed) CHECK(std::fabs(kept.changed->spot(PadControl::L).u - 0.75f) < 0.02f);
+    (void)ok_x;
+}
+
 void test_the_other_device_places_a_touch_point() {
     constexpr float kOtherWidth = 800.0f;
     constexpr float kOtherHeight = 480.0f;
@@ -411,6 +461,7 @@ int main() {
     test_the_picker_offers_what_the_console_has();
     test_y_toggles_turbo();
     test_a_touch_point_is_placed();
+    test_a_touch_point_is_dragged_and_kept_with_ok();
     test_the_other_device_places_a_touch_point();
     return test::finish("button-mapping-screen");
 }

@@ -217,11 +217,29 @@ PixelRect ButtonMappingScreen::touch_rect(float output_width, float output_heigh
     // The console's touch screen is 4:3, a DS's and a 3DS's alike; as big as
     // fits over the words beneath it.
     const float top = geometry.view_top + geometry.line;
-    const float bottom = geometry.view_bottom - geometry.line * 3.0f;
+    const float bottom = geometry.view_bottom - geometry.line * 5.4f;
     const float height = std::max(1.0f, std::min(bottom - top, frame.panel.w * 0.6f * 3.0f / 4.0f));
     const float width = std::round(height * 4.0f / 3.0f);
     return PixelRect{std::round(frame.panel.x + (frame.panel.w - width) * 0.5f), std::round(top), width,
                      std::round(height)};
+}
+
+PixelRect ButtonMappingScreen::placing_ok_rect(float output_width, float output_height) const {
+    const PixelRect touch = touch_rect(output_width, output_height);
+    const float line = TextRenderer::line_height(page_frame(output_width, output_height).scale);
+    const float width = std::round(line * 9.0f);
+    const float height = std::round(line * 2.2f);
+    return PixelRect{std::round(touch.x + (touch.w - width) * 0.5f), std::round(touch.y + touch.h + line * 2.6f),
+                     width, height};
+}
+
+void ButtonMappingScreen::drag_spot(float output_width, float output_height) {
+    const LivePointer& pointer = live_pointer();
+    if (!placing_ || !pointer.down) return;
+    const PixelRect touch = touch_rect(output_width, output_height);
+    if (!touch.contains(pointer.press_x, pointer.press_y)) return;
+    spot_ = TouchSpot{std::clamp((pointer.x - touch.x) / touch.w, 0.0f, 1.0f),
+                      std::clamp((pointer.y - touch.y) / touch.h, 0.0f, 1.0f)};
 }
 
 std::string ButtonMappingScreen::action_label(PadControl control) const {
@@ -345,6 +363,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
     }
     // And Touch Point's page: the spot moved, and kept or not.
     if (placing_) {
+        drag_spot(output_width, output_height);
         constexpr float kStep = 1.0f / 32.0f;
         for (const UiAction action : actions) {
             switch (action) {
@@ -454,7 +473,10 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         if (placing_) spot_ = entry_spot(entry);
         return;
     }
-    if (placing_) return;
+    if (placing_) {
+        if (entry == kPlacingOkEntry) finish_placing(result);
+        return;
+    }
     if (entry >= kConfirmEntryBase) {
         if (!confirming_) return;
         const int answer = confirm_cursor_.tap(entry - kConfirmEntryBase);
@@ -732,7 +754,13 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     quads.draw_solid(PixelRect{cx - r * 1.8f, cy - bar * 0.5f, r * 3.6f, bar}, white);
     quads.clear_clip();
     text.draw(quads, "Choose a point for this button to tap.", frame.panel.x + frame.panel.w * 0.5f,
-              std::round(touch.y + touch.h + line * 1.0f), scale * 0.9f, theme.text_dim, TextAlign::Center);
+              std::round(touch.y + touch.h + line * 0.8f), scale * 0.9f, theme.text_dim, TextAlign::Center);
+    // OK, ringed as the one thing A presses here.
+    const PixelRect ok = placing_ok_rect(output_width, output_height);
+    quads.draw_rounded_rect(ok, std::round(ok.h * 0.5f), Color{1.0f, 1.0f, 1.0f, 0.10f});
+    draw_menu_cursor(quads, ok, std::round(ok.h * 0.5f), scale);
+    text.draw(quads, "OK", ok.x + ok.w * 0.5f, std::round(ok.y + (ok.h - TextRenderer::line_height(scale)) * 0.5f),
+              scale, theme.text, TextAlign::Center);
 
     guide_hits_.clear();
     draw_page_guide(quads, text, glyphs, frame,
@@ -762,6 +790,8 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     }
     placing_ = view.placing;
     if (placing_) spot_ = TouchSpot{view.spot_u, view.spot_v};
+    // A finger here moving it is shown as it goes; where it lifts is told.
+    drag_spot(output_width, output_height);
     if (view.confirm_focus == 0) {
         confirming_ = false;
     } else {
@@ -784,6 +814,7 @@ bool ButtonMappingScreen::scroll(const std::vector<PointerEvent>& pointers, floa
 
 int ButtonMappingScreen::entry_at(float x, float y, float output_width, float output_height) const {
     if (placing_) {
+        if (placing_ok_rect(output_width, output_height).contains(x, y)) return kPlacingOkEntry;
         const PixelRect touch = touch_rect(output_width, output_height);
         if (!touch.contains(x, y)) return -1;
         return spot_entry(TouchSpot{std::clamp((x - touch.x) / touch.w, 0.0f, 1.0f),

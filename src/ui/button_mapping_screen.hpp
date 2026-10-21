@@ -95,8 +95,9 @@ public:
     // MenuPage: the list scrolls under a finger, the mouse and the wheel, and
     // the picker does while it is up. Entries: a row is its PadControl, a
     // choice in the picker kChoiceEntryBase plus its index, a button of
-    // Reset to Default's question kConfirmEntryBase plus its, and a spot on
-    // the touch screen being placed on kSpotEntryBase plus spot_entry().
+    // Reset to Default's question kConfirmEntryBase plus its, a spot on
+    // the touch screen being placed on kSpotEntryBase plus spot_entry(), and
+    // the OK under it kPlacingOkEntry.
     bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
                 float output_height) override;
     int entry_at(float x, float y, float output_width, float output_height) const override;
@@ -110,6 +111,7 @@ public:
     void set_scroll_state(const std::vector<float>& state, float output_width, float output_height) override;
     static constexpr int kChoiceEntryBase = 0x4000;
     static constexpr int kConfirmEntryBase = 0x4800;
+    static constexpr int kPlacingOkEntry = 0x5000;
     static constexpr int kSpotEntryBase = 0x10000;
     // A spot as an entry, to 1/1024 of the screen each way, and back.
     static int spot_entry(const TouchSpot& spot);
@@ -151,6 +153,11 @@ private:
     void move_spot(float du, float dv);
     // Where the touch screen is drawn while a Touch Point is placed.
     PixelRect touch_rect(float output_width, float output_height) const;
+    // The OK button under it, keeping the spot as A does.
+    PixelRect placing_ok_rect(float output_width, float output_height) const;
+    // A finger down on the touch screen being placed on moves the spot with
+    // it as it goes, not only once it lifts.
+    void drag_spot(float output_width, float output_height);
     void render_placing(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                         float output_width, float output_height);
     PopupGeometry confirm_popup(float output_width, float output_height) const;
