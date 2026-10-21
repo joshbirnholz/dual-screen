@@ -31,10 +31,17 @@ void mix(std::size_t& key, float value) {
     mix(key, std::hash<float>{}(value));
 }
 
-std::size_t key_for_composition(const std::vector<PlacedScreen>& placed, bool draws_console) {
+std::size_t key_for_composition(const std::vector<PlacedScreen>& placed, bool draws_console,
+                                const ScreenTextures& textures) {
     std::size_t key = draws_console ? 1u : 2u;
     for (const PlacedScreen& screen : placed) {
         mix(key, static_cast<std::size_t>(screen.screen));
+        // Whether there was a picture to draw there at all. A companion that
+        // joins while the menu is up takes the backdrop before the host's
+        // first picture lands; without this, the empty screen it copied would
+        // stay behind the menu for as long as the menu did.
+        const Texture* texture = screen.screen == ScreenId::Top ? textures.top : textures.bottom;
+        mix(key, texture != nullptr && texture->valid() ? std::size_t{1} : std::size_t{0});
         mix(key, static_cast<std::size_t>(screen.rotation));
         mix(key, screen.rect.x);
         mix(key, screen.rect.y);
@@ -119,7 +126,7 @@ void Compositor::render(QuadRenderer& quads,
     const std::vector<PlacedScreen> placements =
         place_screens(layout, PixelRect{0.0f, 0.0f, output_width, output_height}, screens,
                       display_width_, display_height_);
-    composition_key_ = key_for_composition(placements, draws_console);
+    composition_key_ = key_for_composition(placements, draws_console, textures);
 
     for (const PlacedScreen& placed : placements) {
         const PixelRect& rect = placed.rect;
