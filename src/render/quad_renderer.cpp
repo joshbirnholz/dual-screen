@@ -378,10 +378,24 @@ void QuadRenderer::draw_corners(const PixelRect& rect,
     }
 
     // About the zoom's centre -- see set_zoom().
-    const float x0 = zoom_x_ + (rect.x - zoom_x_) * zoom_;
-    const float y0 = zoom_y_ + (rect.y - zoom_y_) * zoom_;
-    const float x1 = zoom_x_ + (rect.x + rect.w - zoom_x_) * zoom_;
-    const float y1 = zoom_y_ + (rect.y + rect.h - zoom_y_) * zoom_;
+    float x0 = zoom_x_ + (rect.x - zoom_x_) * zoom_;
+    float y0 = zoom_y_ + (rect.y - zoom_y_) * zoom_;
+    float x1 = zoom_x_ + (rect.x + rect.w - zoom_x_) * zoom_;
+    float y1 = zoom_y_ + (rect.y + rect.h - zoom_y_) * zoom_;
+    if (mode == Mode::Solid) {
+        // On the target's own pixels, at least one of them across: a rule a
+        // pixel thick that fell between two would be drawn as two half-lit
+        // ones, and shimmer from one to the other as a list scrolls by.
+        const float s = target_scale_;
+        const auto snap = [s](float& from, float& to) {
+            const float a = std::round(from * s);
+            const float b = std::max(a + 1.0f, std::round(to * s));
+            from = a / s;
+            to = b / s;
+        };
+        snap(x0, x1);
+        snap(y0, y1);
+    }
 
     // Destination corners, clockwise from the top-left, each with the texture
     // coordinate it samples.
