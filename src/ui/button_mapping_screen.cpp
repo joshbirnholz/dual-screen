@@ -490,7 +490,7 @@ std::string ButtonMappingScreen::caption() const {
         case PadAction::ScreenSmoothing: return name + " turns Screen Smoothing on and off.";
         case PadAction::BlowIntoMic: return "Holding " + name + " blows into the microphone.";
         case PadAction::TouchCursor: return name + " touches the screen at the Touch Cursor.";
-        case PadAction::Nothing: return name + " does nothing in this game.";
+        case PadAction::Nothing: return name + " is disabled in this game.";
         case PadAction::NextLayout: return name + " moves on to the next screen layout.";
         case PadAction::TouchPoint: return name + " touches the touch screen here while it's held.";
         case PadAction::Turbo: {

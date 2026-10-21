@@ -188,7 +188,7 @@ const char* pad_action_name(PadAction action) {
         case PadAction::SwapScreens: return "Swap Screens";
         case PadAction::ScreenSmoothing: return "Screen Smoothing";
         case PadAction::BlowIntoMic: return "Blow into Mic";
-        case PadAction::Nothing: return "Nothing";
+        case PadAction::Nothing: return "Disabled";
         case PadAction::NextLayout: return "Next Screen Layout";
         case PadAction::Turbo: return "Turbo";
         case PadAction::TouchPoint: return "Touch Point";
