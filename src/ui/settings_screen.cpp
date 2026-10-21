@@ -438,8 +438,9 @@ const char* SettingsScreen::row_description(int index) const {
 }
 
 float SettingsScreen::description_height(float scale) const {
-    // Its own line, and room under it so it reads as the row above's.
-    return TextRenderer::line_height(scale * 0.8f) + TextRenderer::line_height(scale) * 0.7f;
+    // Under the row's own rule, as a Switch sets one: a little below the
+    // rule, then most of a row's room before the next one's.
+    return TextRenderer::line_height(scale) * 4.5f;
 }
 
 SettingsScreen::Geometry SettingsScreen::compute_geometry(float output_width,
@@ -621,8 +622,11 @@ void SettingsScreen::scroll_focus_into_view(const Geometry& geometry) {
     const float bottom = geometry.panel.y + geometry.panel.h;
     if (row.y < top) {
         scroll_ -= top - row.y;
-    } else if (row.y + row.h > bottom) {
-        scroll_ += row.y + row.h - bottom;
+    } else {
+        // With its line of explanation, which is the cursor's too.
+        const float end = row.y + row.h +
+                          (row_description(focus_) != nullptr ? description_height(geometry.scale) : 0.0f);
+        if (end > bottom) scroll_ += std::min(end - bottom, row.y - top);
     }
     scroll_ = std::max(0.0f, std::min(scroll_, geometry.max_scroll()));
 }
@@ -819,7 +823,11 @@ void SettingsScreen::render(QuadRenderer& quads,
     for (int index = 0; index < static_cast<int>(rows.size()); ++index) {
         const PixelRect& row = geometry.rows[static_cast<std::size_t>(index)];
         const bool focused = (index == focus_);
-        draw_menu_row(quads, row, focused, scale, index == static_cast<int>(rows.size()) - 1, index == focus_ + 1);
+        // A row with a line of explanation is ruled off above it, and the
+        // rule over the row after stays when the cursor is on this one.
+        const bool described = row_description(index) != nullptr;
+        draw_menu_row(quads, row, focused, scale, described || index == static_cast<int>(rows.size()) - 1,
+                      index == focus_ + 1 && row_description(focus_) == nullptr);
 
         // Label on the left, value on the right, both on one baseline. The
         // value is elided rather than allowed to run past the row, which is
@@ -828,7 +836,7 @@ void SettingsScreen::render(QuadRenderer& quads,
         const float baseline = page_row_text_y(row, scale);
         text.draw(quads, rows[index][0], row.x + pad, baseline, scale, menu_row_text(focused));
         if (const char* description = row_description(index)) {
-            text.draw(quads, description, row.x + pad, row.y + row.h + menu_row_gap(line) * 0.3f,
+            text.draw(quads, description, row.x + pad, row.y + row.h + menu_row_reach(scale) + line * 0.4f,
                       scale * 0.8f, theme.text_dim);
         }
 #ifndef __SWITCH__
