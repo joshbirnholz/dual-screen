@@ -72,11 +72,10 @@ void ButtonMappingScreen::open() {
 }
 
 void ButtonMappingScreen::set_mapping(const ButtonMapping& mapping, SystemId system,
-                                      const PadConsole& console, const std::string& game_title) {
+                                      const PadConsole& console) {
     mapping_ = mapping;
     system_ = system;
     console_ = console;
-    game_title_ = game_title;
 }
 
 std::string ButtonMappingScreen::console_name() const {
@@ -625,7 +624,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     const float line = geometry.line;
     const PageFrame frame = page_frame(output_width, output_height);
     draw_page_background(quads, output_width, output_height, over_game_);
-    draw_page_header(quads, text, frame, "Change Controls", game_title_);
+    draw_page_header(quads, text, frame, "Change Controls");
 
     quads.set_clip(menu_list_clip(PixelRect{geometry.list.x, geometry.view_top, geometry.list.w,
                                             geometry.view_bottom - geometry.view_top},
@@ -714,7 +713,7 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     const float scale = frame.scale;
     draw_page_background(quads, output_width, output_height, over_game_);
     draw_page_header(quads, text, frame,
-                     std::string("Touch Point for ") + pad_control_name(focused_control()), game_title_);
+                     std::string("Touch Point for ") + pad_control_name(focused_control()));
     const PixelRect touch = touch_rect(output_width, output_height);
     if (touch_screen_ != nullptr && touch_screen_->valid()) {
         quads.draw_screen(touch, *touch_screen_);

@@ -2162,8 +2162,7 @@ void Client::draw_scene() {
             } else if (mapping.open) {
                 mirrored_button_mapping_.set_mapping(
                     session_.host_button_mapping(), session_.system(),
-                    pad_console_for(session_.system(), session_.host_right_stick_mode()),
-                    session_.game_title());
+                    pad_console_for(session_.system(), session_.host_right_stick_mode()));
                 mirrored_button_mapping_.set_touch_screen(session_.screens().bottom);
                 mirrored_button_mapping_.show_mirrored(mapping, width, height);
                 mirrored_button_mapping_.set_over_game(true);

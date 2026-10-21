@@ -54,12 +54,10 @@ public:
     bool is_open() const { return open_; }
     // Whether a paused game is behind it, to be dimmed rather than covered.
     void set_over_game(bool over_game) { over_game_ = over_game; }
-    // What the page shows: the game's mapping, the console it is played on --
-    // which decides what Standard is and what can be chosen -- and the
-    // game's name for the heading. Every frame: the mapping can change under
-    // the page, from the other device.
-    void set_mapping(const ButtonMapping& mapping, SystemId system, const PadConsole& console,
-                     const std::string& game_title);
+    // What the page shows: the game's mapping, and the console it is played
+    // on, which decides what Standard is and what can be chosen. Every frame:
+    // the mapping can change under the page, from the other device.
+    void set_mapping(const ButtonMapping& mapping, SystemId system, const PadConsole& console);
     // The game's touch screen as it was paused, for placing a Touch Point
     // on. None draws an empty screen.
     void set_touch_screen(const Texture* touch_screen) { touch_screen_ = touch_screen; }
@@ -183,7 +181,6 @@ private:
     ButtonMapping mapping_;
     SystemId system_ = SystemId::Ds;
     PadConsole console_;
-    std::string game_title_;
     int focus_ = 0;
     float scroll_ = 0.0f;
     ListDrag drag_;

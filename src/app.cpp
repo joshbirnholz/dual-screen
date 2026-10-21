@@ -2139,7 +2139,7 @@ bool App::Impl::button_mapping_available() const {
 }
 
 void App::Impl::show_button_mapping(ButtonMappingScreen& screen) const {
-    screen.set_mapping(button_mapping, system, pad_console_for(system, right_stick_mode), game_title);
+    screen.set_mapping(button_mapping, system, pad_console_for(system, right_stick_mode));
 }
 
 void App::Impl::open_button_mapping() {

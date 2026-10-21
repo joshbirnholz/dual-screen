@@ -25,7 +25,7 @@ PadConsole ds_console() { return pad_console_for(SystemId::Ds, RightStickMode::C
 ButtonMappingScreen open_screen(const ButtonMapping& mapping = ButtonMapping(), SystemId system = SystemId::Ds,
                                 RightStickMode right_stick = RightStickMode::CStick) {
     ButtonMappingScreen screen;
-    screen.set_mapping(mapping, system, pad_console_for(system, right_stick), "Some Game");
+    screen.set_mapping(mapping, system, pad_console_for(system, right_stick));
     screen.open();
     return screen;
 }
@@ -188,7 +188,7 @@ void test_the_other_device_shows_and_works_the_page() {
     ButtonMappingScreen host = open_screen();
     ButtonMappingScreen mirror;
     const auto show = [&] {
-        mirror.set_mapping(ButtonMapping(), SystemId::Ds, ds_console(), "Some Game");
+        mirror.set_mapping(ButtonMapping(), SystemId::Ds, ds_console());
         mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
     };
     const auto tap_on_mirror = [&](int entry) {
@@ -459,7 +459,7 @@ void test_the_other_device_places_a_touch_point() {
     tap_entry(host, ButtonMappingScreen::kChoiceEntryBase + choice_index(host, PadAction::TouchPoint));
     CHECK(host.placing());
     ButtonMappingScreen mirror;
-    mirror.set_mapping(ButtonMapping(), SystemId::Ds, ds_console(), "Some Game");
+    mirror.set_mapping(ButtonMapping(), SystemId::Ds, ds_console());
     mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
     CHECK(mirror.placing());
     // Somewhere on its touch screen, down the middle.
