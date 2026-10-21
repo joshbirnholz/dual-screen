@@ -136,9 +136,11 @@ void UpdatePrompt::show_offer(const update::Status& status) {
         if (offer.component.id == Component::Dualscreen) replaces_dualscreen = true;
     }
     if (replaces_dualscreen) {
-        lines_.push_back(updater_ != nullptr && updater_->restarts_after_install()
-                             ? "Dualscreen will restart when it is done."
-                             : "Android will ask to replace Dualscreen with it.");
+        const bool restarts = updater_ != nullptr && updater_->restarts_after_install();
+        lines_.push_back(!restarts         ? "Android will ask to replace Dualscreen with it."
+                         : !game_playing_  ? "Dualscreen will restart when it is done."
+                         : game_comes_back_ ? "Dualscreen will restart when it is done, and start this game again."
+                                            : "The game will close, and Dualscreen will restart when it is done.");
     }
     offer_key_ = offer_key(status);
     offer_from_start_ = false;

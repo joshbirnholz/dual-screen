@@ -41,6 +41,14 @@ public:
     // still offers it; a newer build is offered at start-up as usual.
     void set_declined_file(std::string path) { declined_file_ = std::move(path); }
     bool available() const { return updater_ != nullptr; }
+    // Whether a game is being played as an offer is made, and whether the
+    // restart that ends an update of Dualscreen starts it again -- as it does
+    // for a game started from a shortcut, whose command line names it. The
+    // offer says which.
+    void set_game_playing(bool playing, bool comes_back) {
+        game_playing_ = playing;
+        game_comes_back_ = comes_back;
+    }
 
     // The check made at start-up, whose answer is offered the first time
     // the shell is somewhere it can be -- see poll().
@@ -97,6 +105,8 @@ private:
     bool offer_from_start_ = false;
     std::string offer_key_;
     std::string declined_file_;
+    bool game_playing_ = false;
+    bool game_comes_back_ = false;
     // The round of the install the progress popup is showing, whether Cemu
     // is part of it, and whether the restart it ended in has been passed on.
     int install_round_ = 0;

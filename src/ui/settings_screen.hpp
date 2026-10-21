@@ -107,8 +107,9 @@ public:
     // A Data Management row, first, on a device that keeps saves of its own.
     void set_offers_data_management(bool offers) { offers_data_management_ = offers; }
     // An Updates row, last, on a device that can update itself, saying what
-    // `value` does -- which build this is, or what the updater is doing. Not
-    // over a game: an update ends with the app starting again.
+    // `value` does -- which build this is, or what the updater is doing. Over
+    // a game too, for a game started from a shortcut, whose Settings is the
+    // only one there is: the offer says what restarting does to the game.
     void set_offers_updates(bool offers) { offers_updates_ = offers; }
     void set_updates_value(std::string value) { updates_value_ = std::move(value); }
     // Back from Data Management: the cursor where it was, on its row.
@@ -137,6 +138,7 @@ public:
     const Settings& settings() const { return settings_; }
     // Whether a paused game is behind it, to be dimmed rather than covered.
     void set_over_game(bool over_game) { over_game_ = over_game; }
+    bool over_game() const { return over_game_; }
 
     SettingsScreenResult update(const std::vector<UiAction>& actions,
                                 const std::vector<PointerEvent>& pointers,
@@ -270,7 +272,7 @@ private:
     bool has_emulators_page() const { return !cores_.empty() || melonds_available_; }
     int emulators_row() const { return has_emulators_page() ? first_setting_row() + kRowCount : -1; }
     int updates_row() const {
-        return offers_updates_ && !over_game_
+        return offers_updates_
                    ? first_setting_row() + kRowCount + (has_emulators_page() ? 1 : 0)
                    : -1;
     }

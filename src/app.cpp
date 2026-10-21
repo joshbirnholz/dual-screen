@@ -4429,6 +4429,12 @@ void App::Impl::poll_updates() {
 
 void App::Impl::apply_settings_result(const SettingsScreenResult& result) {
     if (result.open_updates) {
+        // A restart starts the program again as it was started: into the
+        // game a shortcut named, when it is that one being played.
+        const bool over_game = settings_screen->over_game();
+        update_prompt.set_game_playing(
+            over_game, over_game && !options.game_path.empty() &&
+                           expand_user_path(options.game_path) == game_path);
         update_prompt.choose();
         return;
     }
