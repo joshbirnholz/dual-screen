@@ -334,6 +334,36 @@ void test_the_prompt_offers_and_installs() {
     CHECK(!prompt.poll(true).restart);
 }
 
+// Over a game, an update that restarts Dualscreen closes the game, so it is
+// asked about again, as Quit is: B there installs nothing.
+void test_an_update_over_a_game_asks_again() {
+    auto backend = std::make_unique<FakeBackend>();
+    backend->staging = make_temp_dir();
+    backend->pages[kDualscreenVersion] = R"({"build": 15})";
+    Updater updater(std::move(backend), components_for("dualscreen-steamos.tar.gz", 12, false, kNotInstalled));
+    ds::UpdatePrompt prompt;
+    prompt.set_updater(&updater);
+    prompt.set_game_playing(true, true, false);
+    prompt.choose();
+    settle(prompt, updater, false);
+    CHECK(prompt.open());
+
+    // Update, then B on the question: nothing installed, nothing up.
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(prompt.open());
+    prompt.update({ds::UiAction::Cancel}, {}, 1280.0f, 800.0f);
+    CHECK(!prompt.open());
+    CHECK(!settle(prompt, updater, false).restart);
+    CHECK_STR_EQ(prompt.row_value(), std::string("Build 15 available"));
+
+    // Asked again from Settings: Update, then Update, which the cursor is on.
+    prompt.choose();
+    settle(prompt, updater, false);
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(settle(prompt, updater, false).restart);
+}
+
 // "Not Now" on the start-up offer is remembered, and the same build is not
 // offered at the next start -- but Settings still offers it, and a newer one
 // is offered as usual.
@@ -581,6 +611,7 @@ int main() {
     test_a_system_installer_is_not_a_restart();
     test_managed_cemu_build();
     test_the_prompt_offers_and_installs();
+    test_an_update_over_a_game_asks_again();
     test_not_now_is_remembered();
     test_up_to_date_is_said_when_asked();
     test_reads_the_buildbot_index();

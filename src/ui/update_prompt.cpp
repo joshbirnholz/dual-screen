@@ -256,6 +256,23 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
     return result;
 }
 
+bool UpdatePrompt::install_closes_game() const {
+    if (!game_playing_ || updater_ == nullptr || !updater_->restarts_after_install()) return false;
+    for (const update::Offer& offer : status_.offers) {
+        if (offer.component.id == Component::Dualscreen) return true;
+    }
+    return false;
+}
+
+void UpdatePrompt::start_install() {
+    installing_ = updater_->status().offers;
+    updater_->install();
+    status_ = updater_->status();
+    install_round_ = status_.round;
+    popup_ = Popup::Progress;
+    cursor_.reset(1, 0);
+}
+
 std::vector<PopupButton> UpdatePrompt::buttons() const {
     switch (popup_) {
         case Popup::Offer: {
@@ -266,6 +283,7 @@ std::vector<PopupButton> UpdatePrompt::buttons() const {
             }
             return {{all_new ? "Download" : "Update", ""}, {"Not Now", ""}};
         }
+        case Popup::CloseGame: return {{"Cancel", ""}, {"Update", ""}};
         case Popup::Progress:
             if (status_.phase == Phase::Downloading) return {{"Cancel", ""}};
             return {};
@@ -314,13 +332,17 @@ UpdatePromptResult UpdatePrompt::update(const std::vector<UiAction>& actions,
     if (pressed == PopupCursor::kNone) return result;
     switch (popup_) {
         case Popup::Offer:
-            if (pressed == 0) {
-                installing_ = updater_->status().offers;
-                updater_->install();
-                status_ = updater_->status();
-                install_round_ = status_.round;
-                popup_ = Popup::Progress;
-                cursor_.reset(1, 0);
+            if (pressed == 0 && install_closes_game()) {
+                // Asked again, as Quit is: the restart closes the game.
+                message_ = "Are you sure you want to update now?";
+                lines_ = {game_comes_back_ ? "The game will close, and start again when the update is done."
+                                           : "The game will close."};
+                if (!game_progress_kept_) lines_.push_back("Unsaved progress will be lost.");
+                popup_ = Popup::CloseGame;
+                // On the answer, as Quit's is; B is the way back out.
+                cursor_.reset(2, 1);
+            } else if (pressed == 0) {
+                start_install();
             } else {
                 // Not now: and, offered at start-up, not at the next start
                 // either.
@@ -329,6 +351,13 @@ UpdatePromptResult UpdatePrompt::update(const std::vector<UiAction>& actions,
                     std::string ignored;
                     write_file_atomically(declined_file_, offer_key_.data(), offer_key_.size(), &ignored);
                 }
+                popup_ = Popup::None;
+            }
+            break;
+        case Popup::CloseGame:
+            if (pressed == 1) {
+                start_install();
+            } else {
                 popup_ = Popup::None;
             }
             break;
@@ -376,7 +405,8 @@ void UpdatePrompt::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(cursor_.focus() + 1) * 7919u);
     mix_sound_state(view.rest, static_cast<uint64_t>(popup_) + 101u);
     mix_sound_state(view.rest, message_);
-    view.on_cancel = popup_ == Popup::Progress || (popup_ == Popup::Offer && cursor_.focus() == 1);
+    view.on_cancel = popup_ == Popup::Progress || (popup_ == Popup::Offer && cursor_.focus() == 1) ||
+                     (popup_ == Popup::CloseGame && cursor_.focus() == 0);
 }
 
 std::string UpdatePrompt::row_value() const {

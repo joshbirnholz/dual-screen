@@ -41,13 +41,16 @@ public:
     // still offers it; a newer build is offered at start-up as usual.
     void set_declined_file(std::string path) { declined_file_ = std::move(path); }
     bool available() const { return updater_ != nullptr; }
-    // Whether a game is being played as an offer is made, and whether the
+    // Whether a game is being played as an offer is made, whether the
     // restart that ends an update of Dualscreen starts it again -- as it does
-    // for a game started from a shortcut, whose command line names it. The
-    // offer says which.
-    void set_game_playing(bool playing, bool comes_back) {
+    // for a game started from a shortcut, whose command line names it -- and
+    // whether closing it keeps the player's progress, as Resume from Save
+    // State does. The offer says which, and an update that will close the
+    // game is asked about again, as Quit is.
+    void set_game_playing(bool playing, bool comes_back, bool progress_kept) {
         game_playing_ = playing;
         game_comes_back_ = comes_back;
+        game_progress_kept_ = progress_kept;
     }
 
     // The check made at start-up, whose answer is offered the first time
@@ -79,10 +82,14 @@ public:
     std::string row_value() const;
 
 private:
-    enum class Popup { None, Offer, Progress, Notice };
+    enum class Popup { None, Offer, CloseGame, Progress, Notice };
 
     void show_offer(const update::Status& status);
     void show_notice(std::string message, std::vector<std::string> lines = {});
+    // Whether installing what is offered restarts Dualscreen, and so closes
+    // the game being played.
+    bool install_closes_game() const;
+    void start_install();
     std::vector<PopupButton> buttons() const;
     PopupText words() const;
     PopupGeometry geometry(float output_width, float output_height) const;
@@ -107,6 +114,7 @@ private:
     std::string declined_file_;
     bool game_playing_ = false;
     bool game_comes_back_ = false;
+    bool game_progress_kept_ = false;
     // The round of the install the progress popup is showing, whether Cemu
     // is part of it, and whether the restart it ended in has been passed on.
     int install_round_ = 0;
