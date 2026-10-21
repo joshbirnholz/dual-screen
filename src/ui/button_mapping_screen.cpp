@@ -501,7 +501,7 @@ std::string ButtonMappingScreen::caption() const {
     DsButton button = DsButton::A;
     switch (action) {
         case PadAction::QuickMenu: return "opens the menu.";
-        case PadAction::SwapScreens: return "swaps the screens.";
+        case PadAction::SwapScreens: return "swaps the screens on certain screen layouts.";
         case PadAction::BlowIntoMic: return "blows into the microphone while it's held.";
         case PadAction::TouchCursor: return "touches the screen at the Touch Cursor.";
         case PadAction::Nothing: return "is disabled in this game.";
