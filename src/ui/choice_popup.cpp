@@ -388,7 +388,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
         }
         // Held under a finger, filled as a Switch fills it, the words in the
         // accent, as a popup's buttons are; under the cursor, ringed.
-        const bool held = pointer_holding(row) && shape.list.contains(live_pointer().x, live_pointer().y);
+        const bool held = pointer_holding(row);
         const bool focused = held || popup_cursor_drawn(static_cast<int>(index) == focus_);
         const bool chosen = static_cast<int>(index) == current_;
         if (held) {

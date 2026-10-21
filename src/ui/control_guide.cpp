@@ -289,6 +289,13 @@ void note_popup_drawn() {
 
 bool popup_up() { return g_popup_up; }
 
+namespace {
+RemoteHeld g_remote_held;
+}  // namespace
+
+const RemoteHeld& remote_held() { return g_remote_held; }
+void set_remote_held(bool held, float x, float y) { g_remote_held = RemoteHeld{held, x, y}; }
+
 void begin_menu_frame() {
     g_popup_up = g_popup_drawn_this_frame;
     g_popup_drawn_this_frame = false;

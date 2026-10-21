@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <optional>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -633,6 +634,10 @@ public:
     // said; and where it has been scrolled here, told to it.
     const MenuScrollMessage& host_menu_scroll() const { return host_menu_scroll_; }
     void send_menu_scroll(const MenuScrollMessage& scroll);
+    // The cursor on the page both devices show, as the host last said, newest
+    // only, once; and as it is here, told to it.
+    bool take_host_menu_cursor(MenuCursorMessage& out);
+    void send_menu_cursor(const MenuCursorMessage& cursor);
     // Where the stylus on the right stick is on the host, to draw it here
     // over the touch screen too. See StylusCursorMessage.
     const StylusCursorMessage& host_stylus_cursor() const { return host_stylus_cursor_; }
@@ -1189,6 +1194,7 @@ private:
     GameDialogMessage host_game_dialog_;
     AmiiboBrowserViewMessage host_amiibo_browser_view_;
     MenuScrollMessage host_menu_scroll_;
+    std::optional<MenuCursorMessage> host_menu_cursor_;
     StylusCursorMessage host_stylus_cursor_;
     ButtonMappingViewMessage host_button_mapping_view_;
     uint32_t host_save_slots_revision_ = 0;

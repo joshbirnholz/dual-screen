@@ -38,11 +38,33 @@ constexpr float kTapWobblePixels = 14.0f;
 // Switch shows it: down inside it, still inside it, and not moved off to
 // scroll. `behind_popups` for something drawn under a popup, which a finger
 // that went down while one was up is not holding.
+//
+// A finger held on the other device's drawing of the same page counts too:
+// see set_remote_held().
+struct RemoteHeld {
+    bool held = false;
+    float x = 0.0f;
+    float y = 0.0f;
+};
+const RemoteHeld& remote_held();
+// Whether a popup -- an alert, a dropdown -- was up as the last frame was
+// drawn: everything behind one is drawn without the cursor, the popup having
+// it. A frame late, as a popup is drawn after what is behind it; see
+// begin_menu_frame().
+bool popup_up();
 inline bool pointer_holding(const PixelRect& rect, bool behind_popups = false) {
     const LivePointer& live = live_pointer();
-    return live.down && !live.moved && !(behind_popups && live.on_popup) &&
-           rect.contains(live.press_x, live.press_y) && rect.contains(live.x, live.y);
+    if (live.down && !live.moved && !(behind_popups && live.on_popup) &&
+        rect.contains(live.press_x, live.press_y) && rect.contains(live.x, live.y)) {
+        return true;
+    }
+    const RemoteHeld& remote = remote_held();
+    return remote.held && !(behind_popups && popup_up()) && rect.contains(remote.x, remote.y);
 }
+// Where on this device's drawing of the page a finger on the other device's
+// is held -- a point on what it is held on -- or not held at all. See
+// MenuCursorSync.
+void set_remote_held(bool held, float x, float y);
 // Said by a popup each time it is drawn, so a finger going down while it is
 // up is known to be on it -- see LivePointer::on_popup.
 void note_popup_drawn();
@@ -54,11 +76,6 @@ void note_popup_drawn();
 // its answers highlighted. A press of the pad brings it back, where it was.
 bool menu_cursor_shown();
 void set_menu_cursor_shown(bool shown);
-// Whether a popup -- an alert, a dropdown -- was up as the last frame was
-// drawn: everything behind one is drawn without the cursor, the popup having
-// it. A frame late, as a popup is drawn after what is behind it; see
-// begin_menu_frame().
-bool popup_up();
 // Once a frame, before it is drawn.
 void begin_menu_frame();
 // Whether something on a page is drawn as under the cursor: `focused`,

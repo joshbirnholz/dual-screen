@@ -616,6 +616,21 @@ void HostSession::set_stylus_cursor(const StylusCursorMessage& cursor) {
     stylus_cursor_dirty_ = true;
 }
 
+void HostSession::set_menu_cursor(const MenuCursorMessage& cursor) {
+    std::vector<uint8_t> encoded;
+    encode_menu_cursor(cursor, encoded);
+    if (encoded == menu_cursor_) return;
+    menu_cursor_ = std::move(encoded);
+    menu_cursor_dirty_ = true;
+}
+
+bool HostSession::take_menu_cursor(MenuCursorMessage& out) {
+    if (!companion_menu_cursor_) return false;
+    out = *companion_menu_cursor_;
+    companion_menu_cursor_.reset();
+    return true;
+}
+
 bool HostSession::take_menu_scroll(MenuScrollMessage& out) {
     if (!companion_menu_scroll_) return false;
     out = std::move(*companion_menu_scroll_);
@@ -912,6 +927,7 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             game_dialog_dirty_ = !game_dialog_.empty();
             amiibo_browser_view_dirty_ = !amiibo_browser_view_.empty();
             menu_scroll_dirty_ = !menu_scroll_.empty();
+            menu_cursor_dirty_ = !menu_cursor_.empty();
             stylus_cursor_dirty_ = !stylus_cursor_.empty();
             button_mapping_view_dirty_ = !button_mapping_view_.empty();
             last_notice_ = companion_name_ + " connected";
@@ -925,6 +941,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
         case MessageType::MenuScroll: {
             MenuScrollMessage scroll;
             if (decode_menu_scroll(payload.data(), payload.size(), scroll)) companion_menu_scroll_ = std::move(scroll);
+            break;
+        }
+        case MessageType::MenuCursor: {
+            MenuCursorMessage cursor;
+            if (decode_menu_cursor(payload.data(), payload.size(), cursor)) companion_menu_cursor_ = cursor;
             break;
         }
         case MessageType::GameDialogAnswer: {
@@ -1400,6 +1421,10 @@ void HostSession::poll(uint64_t now_ms) {
     if (menu_scroll_dirty_ && handshake_done_) {
         companion_.send(menu_scroll_);
         menu_scroll_dirty_ = false;
+    }
+    if (menu_cursor_dirty_ && handshake_done_) {
+        companion_.send(menu_cursor_);
+        menu_cursor_dirty_ = false;
     }
     if (stylus_cursor_dirty_ && handshake_done_) {
         companion_.send(stylus_cursor_);

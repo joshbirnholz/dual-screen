@@ -123,6 +123,10 @@ enum class MessageType : uint16_t {
     // companion to draw while it is up -- see ButtonMappingViewMessage. Sent
     // when it changes. A companion from before this ignores it.
     ButtonMappingView = 26,
+    // either way: whether the cursor shows on the page both devices show,
+    // and what a finger is held on there -- see MenuCursorMessage. Sent when
+    // it changes. Ignored by a peer from before it.
+    MenuCursor = 27,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -555,6 +559,21 @@ struct MenuScrollMessage {
     std::vector<float> positions;
 };
 
+// The cursor on the page both devices show, as one device has it: whether
+// its ring is drawn -- a finger going down on either device hides it, a
+// press of either pad brings it back -- and the entry (see
+// MenuPage::entry_at()) a finger is held on there, filled on both, or -1.
+// Each takes the other's.
+struct MenuCursorMessage {
+    MirroredPage page = MirroredPage::None;
+    bool shown = true;
+    int32_t held = -1;
+    bool operator==(const MenuCursorMessage& other) const {
+        return page == other.page && shown == other.shown && held == other.held;
+    }
+    bool operator!=(const MenuCursorMessage& other) const { return !(*this == other); }
+};
+
 // The host's amiibo browser, for the companion to draw: the folder, what is
 // in it, and where the cursor is. Taps there go over as the row they landed
 // on, like any mirrored page's.
@@ -819,6 +838,7 @@ void encode_controllers_view(const ControllersViewMessage& message, std::vector<
 void encode_graphic_packs_view(const GraphicPacksViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog(const GameDialogMessage& message, std::vector<uint8_t>& out);
 void encode_menu_scroll(const MenuScrollMessage& message, std::vector<uint8_t>& out);
+void encode_menu_cursor(const MenuCursorMessage& message, std::vector<uint8_t>& out);
 void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_t>& out);
 void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::vector<uint8_t>& out);
 void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
@@ -864,6 +884,7 @@ bool decode_controllers_view(const uint8_t* data, std::size_t size, ControllersV
 bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out);
 bool decode_game_dialog(const uint8_t* data, std::size_t size, GameDialogMessage& out);
 bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage& out);
+bool decode_menu_cursor(const uint8_t* data, std::size_t size, MenuCursorMessage& out);
 bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMessage& out);
 bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMappingViewMessage& out);
 bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);

@@ -751,6 +751,31 @@ bool decode_menu_scroll(const uint8_t* data, std::size_t size, MenuScrollMessage
     return true;
 }
 
+void encode_menu_cursor(const MenuCursorMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>(message.page));
+    put_u8(out, message.shown ? 1 : 0);
+    put_u32(out, static_cast<uint32_t>(message.held));
+    finish_message(out, start, MessageType::MenuCursor);
+}
+
+bool decode_menu_cursor(const uint8_t* data, std::size_t size, MenuCursorMessage& out) {
+    Reader reader(data, size);
+    uint8_t page = 0;
+    uint8_t shown = 0;
+    uint32_t held = 0;
+    reader.u8(page);
+    reader.u8(shown);
+    reader.u32(held);
+    if (!reader.ok() || page > static_cast<uint8_t>(MirroredPage::ButtonMapping)) return false;
+    MenuCursorMessage message;
+    message.page = static_cast<MirroredPage>(page);
+    message.shown = shown != 0;
+    message.held = static_cast<int32_t>(held);
+    out = message;
+    return true;
+}
+
 void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     // To a sixty-five-thousandth of the screen and a 255th of showing: far

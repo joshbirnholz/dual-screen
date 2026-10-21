@@ -163,6 +163,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     host_game_dialog_ = GameDialogMessage();
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
+    host_menu_cursor_.reset();
     host_stylus_cursor_ = StylusCursorMessage();
     host_button_mapping_view_ = ButtonMappingViewMessage();
     reassembly_top_ = FrameReassembly();
@@ -341,6 +342,7 @@ void CompanionSession::disconnect() {
     host_game_dialog_ = GameDialogMessage();
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
+    host_menu_cursor_.reset();
     host_stylus_cursor_ = StylusCursorMessage();
     host_button_mapping_view_ = ButtonMappingViewMessage();
     reassembly_top_ = FrameReassembly();
@@ -463,6 +465,7 @@ void CompanionSession::fail(const std::string& reason) {
     host_game_dialog_ = GameDialogMessage();
     host_amiibo_browser_view_ = AmiiboBrowserViewMessage();
     host_menu_scroll_ = MenuScrollMessage();
+    host_menu_cursor_.reset();
     host_stylus_cursor_ = StylusCursorMessage();
     host_button_mapping_view_ = ButtonMappingViewMessage();
     reassembly_top_ = FrameReassembly();
@@ -674,6 +677,11 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
         case MessageType::MenuScroll: {
             MenuScrollMessage scroll;
             if (decode_menu_scroll(payload.data(), payload.size(), scroll)) host_menu_scroll_ = std::move(scroll);
+            break;
+        }
+        case MessageType::MenuCursor: {
+            MenuCursorMessage cursor;
+            if (decode_menu_cursor(payload.data(), payload.size(), cursor)) host_menu_cursor_ = cursor;
             break;
         }
         case MessageType::StylusCursor: {
@@ -2344,6 +2352,20 @@ void CompanionSession::send_menu_scroll(const MenuScrollMessage& scroll) {
     if (status_ != Status::Connected || !stream_.connected()) return;
     std::vector<uint8_t> out;
     encode_menu_scroll(scroll, out);
+    stream_.send(out);
+}
+
+bool CompanionSession::take_host_menu_cursor(MenuCursorMessage& out) {
+    if (!host_menu_cursor_) return false;
+    out = *host_menu_cursor_;
+    host_menu_cursor_.reset();
+    return true;
+}
+
+void CompanionSession::send_menu_cursor(const MenuCursorMessage& cursor) {
+    if (status_ != Status::Connected || !stream_.connected()) return;
+    std::vector<uint8_t> out;
+    encode_menu_cursor(cursor, out);
     stream_.send(out);
 }
 

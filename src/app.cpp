@@ -64,6 +64,7 @@
 #include "ui/corner_notice.hpp"
 #include "ui/game_dialog.hpp"
 #include "ui/mirrored_game_dialog.hpp"
+#include "ui/menu_cursor_sync.hpp"
 #include "ui/menu_scroll_sync.hpp"
 #include "ui/stylus_cursor_view.hpp"
 #include "ui/menu_entrance.hpp"
@@ -1057,6 +1058,9 @@ struct App::Impl {
     std::unique_ptr<MenuScrollSync> menu_scroll_sync;
     // And the companion's end of it, for the host's pages drawn here.
     MenuScrollSync companion_scroll_sync{/*host=*/false};
+    // And its cursor -- see MenuCursorSync.
+    MenuCursorSync host_cursor_sync{/*host=*/true};
+    MenuCursorSync companion_cursor_sync{/*host=*/false};
     void sync_companion_scroll();
     // The host's amiibo browser, drawn here while this device is a companion.
     GameBrowser mirrored_amiibo;
@@ -2635,6 +2639,13 @@ void App::Impl::sync_companion_scroll() {
                                        static_cast<float>(output_width), static_cast<float>(output_height))) {
         companion_session->send_menu_scroll(*said);
     }
+    net::MenuCursorMessage host_cursor;
+    const bool cursor_arrived = companion_session->take_host_menu_cursor(host_cursor);
+    if (const std::optional<net::MenuCursorMessage> said =
+            companion_cursor_sync.sync(page, shown, cursor_arrived ? &host_cursor : nullptr,
+                                       static_cast<float>(output_width), static_cast<float>(output_height))) {
+        companion_session->send_menu_cursor(*said);
+    }
 }
 
 void App::Impl::publish_mirrored_pages() {
@@ -2656,6 +2667,13 @@ void App::Impl::publish_mirrored_pages() {
             menu_scroll_sync->sync(page_shown(), mirrored_page(), fresh ? &theirs : nullptr,
                                    static_cast<float>(output_width), static_cast<float>(output_height))) {
         host_session->set_menu_scroll(*said);
+    }
+    net::MenuCursorMessage companion_cursor;
+    const bool cursor_arrived = host_session->take_menu_cursor(companion_cursor);
+    if (const std::optional<net::MenuCursorMessage> said =
+            host_cursor_sync.sync(page_shown(), mirrored_page(), cursor_arrived ? &companion_cursor : nullptr,
+                                  static_cast<float>(output_width), static_cast<float>(output_height))) {
+        host_session->set_menu_cursor(*said);
     }
 }
 

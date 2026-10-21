@@ -10,6 +10,7 @@
 #include "test_support.hpp"
 #include "ui/game_browser.hpp"
 #include "ui/list_touch.hpp"
+#include "ui/menu_cursor_sync.hpp"
 #include "ui/menu_scroll_sync.hpp"
 
 using namespace ds;
@@ -137,7 +138,59 @@ void test_the_companion_scrolls_and_the_host_follows() {
 
 }  // namespace
 
+// A finger held on a row of the companion's drawing fills the same row on
+// the host's, and a finger going down there hides the ring on both; a press
+// of the host's pad brings it back on both.
+void test_the_cursor_is_the_same_on_both() {
+    GameBrowser host;
+    GameBrowser companion;
+    host.set_amiibo(true);
+    companion.set_amiibo(true);
+    host.show_mirrored("/amiibo", amiibo(20), 0);
+    companion.show_mirrored("/amiibo", amiibo(20), 0);
+    MenuCursorSync host_sync(true);
+    MenuCursorSync companion_sync(false);
+    const net::MirroredPage page = net::MirroredPage::AmiiboBrowser;
+
+    set_menu_cursor_shown(true);
+    const auto first = host_sync.sync(&host, page, nullptr, kHostWidth, kHostHeight);
+    CHECK_MSG(first.has_value() && first->shown && first->held == -1, "the host did not say how it stands");
+    CHECK(!companion_sync.sync(&companion, page, &*first, kCompanionWidth, kCompanionHeight).has_value());
+
+    // A finger down on the companion's third row, held there.
+    float x = 0.0f;
+    float y = 0.0f;
+    CHECK(MenuCursorSync::entry_point(companion, 2, kCompanionWidth, kCompanionHeight, x, y));
+    set_live_pointer(true, x, y);
+    set_menu_cursor_shown(false);
+    const auto held = companion_sync.sync(&companion, page, nullptr, kCompanionWidth, kCompanionHeight);
+    CHECK_MSG(held.has_value() && !held->shown && held->held == 2, "the companion did not say what it held");
+    set_live_pointer(false, x, y);
+    set_menu_cursor_shown(true);
+    const auto start = std::chrono::steady_clock::now();
+    const auto answer = host_sync.sync(&host, page, held ? &*held : nullptr, kHostWidth, kHostHeight);
+    const float seconds = std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
+    CHECK_MSG(seconds < 0.05f, "finding the row held took too long");
+    CHECK_MSG(!answer.has_value(), "the host said back what it was told");
+    CHECK(!menu_cursor_shown());
+    CHECK(remote_held().held);
+    CHECK_EQ(host.entry_at(remote_held().x, remote_held().y, kHostWidth, kHostHeight), 2);
+
+    // Let go; then the host's pad.
+    const auto let_go = companion_sync.sync(&companion, page, nullptr, kCompanionWidth, kCompanionHeight);
+    CHECK(let_go.has_value() && let_go->held == -1);
+    host_sync.sync(&host, page, let_go ? &*let_go : nullptr, kHostWidth, kHostHeight);
+    CHECK(!remote_held().held);
+    set_menu_cursor_shown(true);
+    const auto shown = host_sync.sync(&host, page, nullptr, kHostWidth, kHostHeight);
+    CHECK(shown.has_value() && shown->shown);
+    set_menu_cursor_shown(false);
+    companion_sync.sync(&companion, page, shown ? &*shown : nullptr, kCompanionWidth, kCompanionHeight);
+    CHECK(menu_cursor_shown());
+}
+
 int main() {
+    test_the_cursor_is_the_same_on_both();
     test_the_host_scrolls_and_the_companion_follows();
     test_the_companion_scrolls_and_the_host_follows();
     return test::finish("menu-scroll-sync");

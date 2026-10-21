@@ -250,6 +250,10 @@ public:
     void set_menu_scroll(const MenuScrollMessage& scroll);
     // Where the companion has scrolled it, newest only, once.
     bool take_menu_scroll(MenuScrollMessage& out);
+    // The cursor on the page both devices show, as it is here: sent on
+    // change. And the companion's, newest only, once.
+    void set_menu_cursor(const MenuCursorMessage& cursor);
+    bool take_menu_cursor(MenuCursorMessage& out);
     // Where the stylus on the right stick is: sent on change.
     void set_stylus_cursor(const StylusCursorMessage& cursor);
     // The Button Mapping page as it stands here (closed once it is not):
@@ -704,6 +708,9 @@ private:
     std::vector<uint8_t> menu_scroll_;
     bool menu_scroll_dirty_ = false;
     std::optional<MenuScrollMessage> companion_menu_scroll_;
+    std::vector<uint8_t> menu_cursor_;
+    bool menu_cursor_dirty_ = false;
+    std::optional<MenuCursorMessage> companion_menu_cursor_;
     std::vector<uint8_t> stylus_cursor_;
     bool stylus_cursor_dirty_ = false;
     std::vector<uint8_t> button_mapping_view_;
