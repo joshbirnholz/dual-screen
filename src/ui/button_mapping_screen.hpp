@@ -48,7 +48,6 @@ public:
     void close() {
         open_ = false;
         choice_.close();
-        choosing_turbo_ = false;
         confirming_ = false;
         placing_ = false;
     }
@@ -78,8 +77,8 @@ public:
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
     int confirm_focus() const { return confirm_cursor_.focus(); }
-    // The picker up is Turbo's: which button it presses.
-    bool choosing_turbo() const { return choice_.is_open() && choosing_turbo_; }
+    // What a row says it does: "L", say, or "L (turbo)".
+    std::string action_label(PadControl control) const;
     // A Touch Point being placed, and where so far.
     bool placing() const { return placing_; }
     const TouchSpot& spot() const { return spot_; }
@@ -96,7 +95,7 @@ public:
     // MenuPage: the list scrolls under a finger, the mouse and the wheel, and
     // the picker does while it is up. Entries: a row is its PadControl, a
     // choice in the picker kChoiceEntryBase plus its index, a button of
-    // Revert to Default's question kConfirmEntryBase plus its, and a spot on
+    // Reset to Default's question kConfirmEntryBase plus its, and a spot on
     // the touch screen being placed on kSpotEntryBase plus spot_entry().
     bool scroll(const std::vector<PointerEvent>& pointers, float output_width,
                 float output_height) override;
@@ -138,7 +137,11 @@ private:
     void ask_revert();
     void answer_revert(int button, ButtonMappingScreenResult& result);
     // Turbo's picker, beside the same row, after Turbo was chosen.
-    void open_turbo_choice(float output_width, float output_height);
+    // Y: the focused button made to press its console button over and over
+    // while it is held, or back to pressing it once.
+    void toggle_turbo(ButtonMappingScreenResult& result);
+    bool can_toggle_turbo() const;
+    bool is_turbo_button(PadAction action) const;
     // Touch Point's page, the spot where the button touches now.
     void start_placing();
     void finish_placing(ButtonMappingScreenResult& result);
@@ -150,8 +153,6 @@ private:
     PixelRect touch_rect(float output_width, float output_height) const;
     void render_placing(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                         float output_width, float output_height);
-    // What a row says its button does: "Turbo A", "Touch Point".
-    std::string action_label(PadControl control) const;
     PopupGeometry confirm_popup(float output_width, float output_height) const;
     PopupText confirm_text() const;
     std::vector<PopupButton> confirm_buttons() const;
@@ -177,12 +178,11 @@ private:
     // The picker, and what each of its lines is: an action, or a heading.
     ChoicePopup choice_;
     std::vector<PadAction> choice_actions_;
-    bool choosing_turbo_ = false;
     // Touch Point's page.
     bool placing_ = false;
     TouchSpot spot_;
     const Texture* touch_screen_ = nullptr;
-    // Revert to Default's question, up over the page.
+    // Reset to Default's question, up over the page.
     bool confirming_ = false;
     PopupCursor confirm_cursor_;
     // The other device's cursor as last drawn here: the view follows it only

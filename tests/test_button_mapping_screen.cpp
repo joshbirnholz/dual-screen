@@ -1,7 +1,7 @@
 // A DS or 3DS game's Button Mapping page, driven the way a player drives it --
 // presses and taps in, the mapping it asks the game to keep out: the cursor
 // down the list, a button given another job from the picker beside it, the
-// standard job kept as Standard, Revert to Default after asking, and the
+// standard job kept as Standard, Reset to Default after asking, and the
 // page drawn on the other device and worked from there. Nothing here draws,
 // so none of it needs a GL context.
 
@@ -144,7 +144,7 @@ void test_revert_asks_first() {
     ButtonMappingScreen screen = open_screen(mapping);
     press(screen, UiAction::MenuQuit);
     CHECK_MSG(screen.confirming(), "X did not ask before putting every button back");
-    // The cursor on Revert; B is Cancel, and changes nothing.
+    // The cursor on Reset; B is Cancel, and changes nothing.
     CHECK_EQ(screen.confirm_focus(), 1);
     CHECK(!press(screen, UiAction::Cancel).changed.has_value());
     CHECK(!screen.confirming() && screen.is_open());
@@ -231,7 +231,7 @@ void test_the_other_device_shows_and_works_the_page() {
     show();
     CHECK(!mirror.choosing());
 
-    // Revert to Default's question, there too.
+    // Reset to Default's question, there too.
     press(host, UiAction::MenuQuit);
     show();
     CHECK(mirror.confirming());
@@ -273,33 +273,40 @@ void test_the_picker_offers_what_the_console_has() {
     CHECK(zr.changed.has_value() && (*zr.changed)[PadControl::Zr] == PadAction::Zr);
 }
 
-// Turbo asks next which button it presses, B going back to the first list;
-// the button chosen is the one it presses.
-void test_turbo_asks_which_button() {
+// Y turns turbo on for a button that presses one of the console's, and off
+// again; its row says so. A button on turbo keeps it for another of the
+// console's buttons, and Turbo is no choice of its own.
+void test_y_toggles_turbo() {
     ButtonMappingScreen screen = open_screen();
     move_to(screen, PadControl::X);
-    press(screen, UiAction::Confirm);
-    CHECK(!tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::Turbo))
-               .changed.has_value());
-    CHECK_MSG(screen.choosing_turbo(), "Turbo did not ask which button");
-    press(screen, UiAction::Cancel);
-    CHECK(screen.choosing() && !screen.choosing_turbo());
-    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::Turbo));
-    press(screen, UiAction::Confirm);
-    CHECK(screen.choosing_turbo());
-    // Its list: a heading, then the console's buttons, A first.
-    const ButtonMappingScreenResult chosen = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 2);
-    CHECK(!screen.choosing());
-    CHECK(chosen.changed.has_value());
-    if (chosen.changed) {
-        CHECK((*chosen.changed)[PadControl::X] == PadAction::Turbo);
-        CHECK(chosen.changed->turbo(PadControl::X) == PadAction::B);
+    const ButtonMappingScreenResult on = press(screen, UiAction::MenuReset);
+    CHECK(on.changed.has_value());
+    if (on.changed) {
+        CHECK((*on.changed)[PadControl::X] == PadAction::Turbo);
+        CHECK(on.changed->turbo(PadControl::X) == PadAction::X);
     }
-    // Opened again, its cursor starts on B.
+    CHECK(screen.action_label(PadControl::X) == "X (turbo)");
+
+    // The list: no Turbo, and the cursor on the button it presses.
     press(screen, UiAction::Confirm);
+    CHECK(screen.choosing());
+    CHECK_EQ(choice_index(screen, PadAction::Turbo), -1);
+    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::X));
+    const ButtonMappingScreenResult other =
+        tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::B));
+    CHECK(other.changed.has_value() && (*other.changed)[PadControl::X] == PadAction::Turbo &&
+          other.changed->turbo(PadControl::X) == PadAction::B);
+    CHECK(screen.action_label(PadControl::X) == "B (turbo)");
+
+    // Off: back to pressing B once.
+    const ButtonMappingScreenResult off = press(screen, UiAction::MenuReset);
+    CHECK(off.changed.has_value() && (*off.changed)[PadControl::X] == PadAction::B &&
+          off.changed->turbo(PadControl::X) == PadAction::Standard);
+
+    // Nothing for a button that presses none of the console's.
     press(screen, UiAction::Confirm);
-    CHECK(screen.choosing_turbo());
-    CHECK_EQ(screen.choice_focus(), 2);
+    tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::QuickMenu));
+    CHECK(!press(screen, UiAction::MenuReset).changed.has_value());
 }
 
 // Touch Point opens a page of its own: the spot moved by the pad or put down
@@ -402,7 +409,7 @@ int main() {
     test_a_first_tap_highlights_and_a_second_chooses();
     test_the_other_device_shows_and_works_the_page();
     test_the_picker_offers_what_the_console_has();
-    test_turbo_asks_which_button();
+    test_y_toggles_turbo();
     test_a_touch_point_is_placed();
     test_the_other_device_places_a_touch_point();
     return test::finish("button-mapping-screen");

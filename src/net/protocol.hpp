@@ -657,10 +657,8 @@ struct ButtonMappingViewMessage {
     uint8_t focus = 0;
     // The picker's cursor plus one, or 0 when it is not up.
     uint8_t choice_focus = 0;
-    // Revert to Default's question's cursor plus one, or 0 when it is not up.
+    // Reset to Default's question's cursor plus one, or 0 when it is not up.
     uint8_t confirm_focus = 0;
-    // The picker up is Turbo's, of which button, rather than the first.
-    bool choosing_turbo = false;
     // A Touch Point being placed, and where it is so far.
     bool placing = false;
     float spot_u = 0.5f;
@@ -668,7 +666,7 @@ struct ButtonMappingViewMessage {
 
     bool operator==(const ButtonMappingViewMessage& other) const {
         return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
-               confirm_focus == other.confirm_focus && choosing_turbo == other.choosing_turbo &&
+               confirm_focus == other.confirm_focus &&
                placing == other.placing && spot_u == other.spot_u && spot_v == other.spot_v;
     }
 };

@@ -78,7 +78,6 @@ std::vector<PadAction> pad_action_choices(const PadConsole& console) {
         choices.push_back(PadAction::ScreenSmoothing);
     }
     if (console.has_microphone) choices.push_back(PadAction::BlowIntoMic);
-    choices.push_back(PadAction::Turbo);
     choices.push_back(PadAction::Nothing);
     return choices;
 }

@@ -1994,7 +1994,7 @@ void test_button_mapping_view_round_trip() {
     encode_button_mapping_view(sent, buffer);
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
-    CHECK(received.placing && !received.choosing_turbo);
+    CHECK(received.placing);
     CHECK(received.spot_u == 0.5f && std::fabs(received.spot_v - 1.0f) < 0.001f);
     // From a host from before it: not placing.
     CHECK(decode_button_mapping_view(payload.data(), payload.size() - 5, received));

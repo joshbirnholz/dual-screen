@@ -11,16 +11,18 @@ numbers can change freely.
 ### Controls
 
 - **Button mapping, the rest of it.** DS and 3DS games have Controls >
-  Button Mapping now: each pad button given one of the console's buttons,
-  Touch Point (placed on the paused game's touch screen), Activate Touch
-  Cursor, Quick Menu, Swap Screens, Next Screen Layout, Screen Smoothing,
-  Blow into Mic, Turbo of another button or Nothing, kept with the game,
-  Revert to Default on X, one page on both devices. Still to do, in this
+  Change Button Mapping now: each pad button given one of the console's
+  buttons, Touch Point (placed on the paused game's touch screen), Activate
+  Touch Cursor, Quick Menu, Swap Screens, Next Screen Layout, Screen
+  Smoothing, Blow into Mic or Nothing, kept with the game; Y toggles turbo on
+  a button pressing one of the console's, X is Reset to Default, one page on
+  both devices. Still to do, in this
   order, from the mockups (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
   - Right Stick on the mapping page itself: Touch Cursor or Touch Analog
     Stick, with Choose Spot.
   - Mapping profiles, saved and loaded from the page; loading one copies it
-    into the game.
+    into the game. The mockups open them with Y, which now toggles turbo:
+    they need another button.
   - Wii U: the Controls tab as the mockups have it, then each player's
     controller type and the mapping of that type's buttons, motion and
     rumble. The player-type option doing nothing is a bug to look at first,

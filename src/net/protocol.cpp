@@ -788,7 +788,8 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     put_u8(out, message.focus);
     put_u8(out, message.choice_focus);
     put_u8(out, message.confirm_focus);
-    put_u8(out, static_cast<uint8_t>((message.choosing_turbo ? 1u : 0u) | (message.placing ? 2u : 0u)));
+    // Bit 1 was a second picker's, Turbo's, which there is no longer.
+    put_u8(out, static_cast<uint8_t>(message.placing ? 2u : 0u));
     put_u16(out, touch_spot_u16(message.spot_u));
     put_u16(out, touch_spot_u16(message.spot_v));
     finish_message(out, start, MessageType::ButtonMappingView);
@@ -813,7 +814,6 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
         reader.u16(u);
         reader.u16(v);
         if (!reader.ok()) return false;
-        view.choosing_turbo = (flags & 1u) != 0;
         view.placing = (flags & 2u) != 0;
         if (view.placing) {
             view.spot_u = u / 65536.0f;

@@ -71,7 +71,6 @@ void ButtonMappingScreen::open() {
     scroll_ = 0.0f;
     drag_.stop();
     choice_.close();
-    choosing_turbo_ = false;
     confirming_ = false;
     placing_ = false;
     mirrored_focus_ = -1;
@@ -135,12 +134,13 @@ void ButtonMappingScreen::scroll_focus_into_view(const Geometry& geometry) {
 
 void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
-    const PadAction now = mapping_.resolved(focused_control(), console_);
+    // A button on turbo shows the button it presses as its choice.
+    const PadAction resolved = mapping_.resolved(focused_control(), console_);
+    const PadAction now = resolved == PadAction::Turbo ? mapping_.turbo(focused_control()) : resolved;
     std::vector<std::string> labels;
     std::vector<bool> headings;
     std::vector<std::string> hints;
     choice_actions_.clear();
-    choosing_turbo_ = false;
     int current = -1;
     bool first = true;
     PadActionGroup group = PadActionGroup::Console;
@@ -157,11 +157,10 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
             first = false;
         }
         if (action == now) current = static_cast<int>(labels.size());
-        // Touch Point goes on to a page of its own, and Turbo to a second
-        // list, which the words say.
+        // Touch Point goes on to a page of its own, which the words say.
         labels.push_back(action == PadAction::TouchPoint ? std::string("Touch Point\u2026")
                                                          : std::string(pad_action_name(action)));
-        hints.push_back(action == PadAction::Turbo ? "of another button" : "");
+        hints.emplace_back();
         headings.push_back(false);
         choice_actions_.push_back(action);
     }
@@ -169,27 +168,6 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
                  geometry.rows[static_cast<std::size_t>(focus_)]);
     choice_.set_headings(std::move(headings));
     choice_.set_hints(std::move(hints));
-}
-
-void ButtonMappingScreen::open_turbo_choice(float output_width, float output_height) {
-    const Geometry geometry = compute_geometry(output_width, output_height);
-    const PadControl control = focused_control();
-    const PadAction now =
-        mapping_.resolved(control, console_) == PadAction::Turbo ? mapping_.turbo(control) : PadAction::Standard;
-    std::vector<std::string> labels = {"Turbo of"};
-    std::vector<bool> headings = {true};
-    choice_actions_ = {PadAction::Standard};
-    int current = -1;
-    for (const PadAction action : turbo_choices(console_)) {
-        if (action == now) current = static_cast<int>(labels.size());
-        labels.push_back(pad_action_name(action));
-        headings.push_back(false);
-        choice_actions_.push_back(action);
-    }
-    choice_.open(std::move(labels), current >= 0 ? current : 1,
-                 geometry.rows[static_cast<std::size_t>(focus_)]);
-    choice_.set_headings(std::move(headings));
-    choosing_turbo_ = true;
 }
 
 void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float output_height) {
@@ -204,7 +182,6 @@ void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float
 
 void ButtonMappingScreen::start_placing() {
     choice_.close();
-    choosing_turbo_ = false;
     placing_ = true;
     spot_ = mapping_.spot(focused_control());
 }
@@ -251,7 +228,7 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
     const PadAction action = mapping_.resolved(control, console_);
     if (action == PadAction::Turbo) {
         const PadAction of = mapping_.turbo(control);
-        return of == PadAction::Standard ? std::string("Turbo") : std::string("Turbo ") + pad_action_name(of);
+        return of == PadAction::Standard ? std::string("Turbo") : std::string(pad_action_name(of)) + " (turbo)";
     }
     return pad_action_name(action);
 }
@@ -260,18 +237,11 @@ void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
     if (index < 0 || index >= static_cast<int>(choice_actions_.size()) || choice_.heading(index)) return;
     const PadControl control = focused_control();
     const PadAction action = choice_actions_[static_cast<std::size_t>(index)];
-    if (choosing_turbo_) {
-        choosing_turbo_ = false;
-        choice_.close();
-        if (mapping_[control] == PadAction::Turbo && mapping_.turbo(control) == action) return;
-        mapping_[control] = PadAction::Turbo;
+    // A button on turbo stays on it for another of the console's buttons.
+    if (mapping_[control] == PadAction::Turbo && is_turbo_button(action)) {
+        if (mapping_.turbo(control) == action) return;
         mapping_.turbo(control) = action;
         result.changed = mapping_;
-        return;
-    }
-    // Each asks a step more first.
-    if (action == PadAction::Turbo) {
-        open_turbo_choice(last_width_, last_height_);
         return;
     }
     if (action == PadAction::TouchPoint) {
@@ -283,6 +253,32 @@ void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
     const PadAction kept = action == standard_pad_action(control, console_) ? PadAction::Standard : action;
     if (kept == mapping_[control]) return;
     mapping_[control] = kept;
+    mapping_.turbo(control) = PadAction::Standard;
+    result.changed = mapping_;
+}
+
+bool ButtonMappingScreen::is_turbo_button(PadAction action) const {
+    const std::vector<PadAction> buttons = turbo_choices(console_);
+    return std::find(buttons.begin(), buttons.end(), action) != buttons.end();
+}
+
+bool ButtonMappingScreen::can_toggle_turbo() const {
+    const PadAction action = mapping_.resolved(focused_control(), console_);
+    return action == PadAction::Turbo || is_turbo_button(action);
+}
+
+void ButtonMappingScreen::toggle_turbo(ButtonMappingScreenResult& result) {
+    if (!can_toggle_turbo()) return;
+    const PadControl control = focused_control();
+    const PadAction action = mapping_.resolved(control, console_);
+    if (action == PadAction::Turbo) {
+        const PadAction of = mapping_.turbo(control);
+        mapping_[control] = of == standard_pad_action(control, console_) ? PadAction::Standard : of;
+        mapping_.turbo(control) = PadAction::Standard;
+    } else {
+        mapping_[control] = PadAction::Turbo;
+        mapping_.turbo(control) = action;
+    }
     result.changed = mapping_;
 }
 
@@ -306,7 +302,7 @@ PopupText ButtonMappingScreen::confirm_text() const {
 }
 
 std::vector<PopupButton> ButtonMappingScreen::confirm_buttons() const {
-    return {PopupButton{"Cancel", ""}, PopupButton{"Revert", ""}};
+    return {PopupButton{"Cancel", ""}, PopupButton{"Reset", ""}};
 }
 
 PopupGeometry ButtonMappingScreen::confirm_popup(float output_width, float output_height) const {
@@ -334,7 +330,6 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
     // The picker takes every press until put away -- the buttons here, a tap
     // the one way every tap is heard, below.
     if (choice_.is_open()) {
-        const bool turbo = choosing_turbo_;
         const ChoicePopupResult answer = choice_.update(actions, {}, output_width, output_height);
         if (answer.close_everything) {
             result.close_requested = true;
@@ -342,12 +337,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
             close();
             return result;
         }
-        if (answer.chosen >= 0) {
-            choose(answer.chosen, result);
-        } else if (answer.closed && turbo) {
-            // B a step back: to the first list, on Turbo.
-            back_to_choice(PadAction::Turbo, output_width, output_height);
-        }
+        if (answer.chosen >= 0) choose(answer.chosen, result);
         for (const int tap : take_taps(pointers, output_width, output_height)) {
             handle_tap(tap, result, output_width, output_height);
         }
@@ -378,7 +368,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
         }
         return result;
     }
-    // And so does Revert to Default's question.
+    // And so does Reset to Default's question.
     if (confirming_) {
         for (const UiAction action : actions) {
             if (action == UiAction::ToggleMenu) {
@@ -417,11 +407,12 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
                 break;
             // X, where a Nintendo pad has it.
             case UiAction::MenuQuit: ask_revert(); break;
+            // Y, where a Nintendo pad has it.
+            case UiAction::MenuReset: toggle_turbo(result); break;
             case UiAction::Left:
             case UiAction::Right:
             case UiAction::PageUp:
             case UiAction::PageDown:
-            case UiAction::MenuReset:
             case UiAction::MenuDisconnect:
             case UiAction::MenuSettings:
             case UiAction::OpenMenu:
@@ -454,7 +445,6 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
     if (entry == kTapOffPopup) {
         // Off the picker or the question: put away, nothing changed.
         choice_.close();
-        choosing_turbo_ = false;
         confirming_ = false;
         return;
     }
@@ -681,7 +671,8 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     }
 
     std::vector<GuidePrompt> guide;
-    if (!mapping_.is_standard(console_)) guide.push_back({ButtonGlyph::X, "Revert to Default"});
+    if (!mapping_.is_standard(console_)) guide.push_back({ButtonGlyph::X, "Reset to Default"});
+    if (can_toggle_turbo()) guide.push_back({ButtonGlyph::Y, "Toggle Turbo"});
     guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
     guide.push_back({ButtonGlyph::A, "Change", PromptRole::ActsOnSelection});
     guide_hits_.clear();
@@ -766,15 +757,8 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     }
     if (view.choice_focus == 0) {
         choice_.close();
-        choosing_turbo_ = false;
     } else {
-        if (!choice_.is_open() || choosing_turbo_ != view.choosing_turbo) {
-            if (view.choosing_turbo) {
-                open_turbo_choice(output_width, output_height);
-            } else {
-                open_choice(output_width, output_height);
-            }
-        }
+        if (!choice_.is_open()) open_choice(output_width, output_height);
         if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
     }
     placing_ = view.placing;
@@ -848,7 +832,6 @@ void ButtonMappingScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, open_ ? 1u : 0u);
     mix_sound_state(view.rest, choice_.is_open() ? 1u : 0u);
     mix_sound_state(view.rest, confirming_ ? 1u : 0u);
-    mix_sound_state(view.rest, choosing_turbo_ ? 1u : 0u);
     mix_sound_state(view.rest, placing_ ? 1u : 0u);
     if (placing_) mix_sound_state(view.focus, static_cast<uint64_t>(spot_entry(spot_)));
     for (const PadAction action : mapping_.actions) mix_sound_state(view.rest, static_cast<uint64_t>(action));
@@ -862,7 +845,6 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     view.focus = static_cast<uint8_t>(screen.focus());
     view.choice_focus = screen.choosing() ? static_cast<uint8_t>(screen.choice_focus() + 1) : 0;
     view.confirm_focus = screen.confirming() ? static_cast<uint8_t>(screen.confirm_focus() + 1) : 0;
-    view.choosing_turbo = screen.choosing_turbo();
     view.placing = screen.placing();
     if (view.placing) {
         view.spot_u = screen.spot().u;
