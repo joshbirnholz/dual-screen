@@ -121,8 +121,9 @@ public:
                 OutputRouter& router);
 
     // What the last render put on the screen, as one number: where every screen
-    // landed and whether a console was drawn around them. Anything that moves a
-    // screen changes it, without this having to be told what the settings are.
+    // landed, whether each had a picture, and whether a console was drawn
+    // around them. Anything that moves a screen changes it, without this
+    // having to be told what the settings are.
     // The menu's blurred backdrop uses it to notice that the picture it copied
     // is no longer the picture underneath it.
     std::size_t composition_key() const { return composition_key_; }

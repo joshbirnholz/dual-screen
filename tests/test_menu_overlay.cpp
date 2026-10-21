@@ -8,9 +8,14 @@
 #include <string>
 #include <vector>
 
+#include "core/system.hpp"
+#include "layout/layout.hpp"
+#include "layout/layout_registry.hpp"
+#include "render/compositor.hpp"
 #include "render/gl_loader.hpp"
 #include "render/menu_overlay.hpp"
 #include "render/quad_renderer.hpp"
+#include "render/texture.hpp"
 
 using namespace ds;
 
@@ -146,11 +151,53 @@ void test_the_menu_hides_the_game_only_where_it_is_drawn() {
     CHECK_EQ(at(kWidth - 1, kHeight - 1, 3), 0);
 }
 
+// The menu's blurred backdrop is retaken when the composition key changes. A
+// companion that joins while the host's menu is up takes it before the
+// host's first picture has arrived, so the picture arriving has to change the
+// key -- or the menu sits over a black screen for as long as it is up.
+void test_a_picture_arriving_changes_the_composition() {
+    GlFixture fixture;
+    if (!fixture.start()) {
+        test::skip("no OpenGL 3.3 context available");
+        return;
+    }
+    QuadRenderer quads;
+    std::string error;
+    CHECK_MSG(quads.initialize(&error), error);
+    const LayoutRegistry registry;
+    const Layout& layout = *registry.find("vertical");
+    const SystemScreens& screens = system_profile(SystemId::Ds).screens;
+    LocalOutputRouter router;
+    Compositor compositor;
+    const auto key_for = [&](const ScreenTextures& textures) {
+        compositor.render(quads, layout, textures, screens, 1280.0f, 800.0f, router);
+        return compositor.composition_key();
+    };
+
+    const ScreenTextures nothing;
+    const std::size_t empty = key_for(nothing);
+    CHECK_MSG(empty == key_for(nothing), "nothing drawn twice read as two different pictures");
+
+    Texture bottom;
+    const std::vector<uint32_t> pixels(4u * 4u, 0x00ff0000u);
+    bottom.upload_xrgb8888(pixels.data(), 4, 4, 4);
+    CHECK(bottom.valid());
+    ScreenTextures arrived;
+    arrived.bottom = &bottom;
+    const std::size_t with_picture = key_for(arrived);
+    CHECK_MSG(with_picture != empty,
+              "a picture arriving left the key as it was, so the backdrop stays black");
+    CHECK_MSG(with_picture == key_for(arrived),
+              "the same picture drawn twice read as a change, so the backdrop would be "
+              "retaken every frame");
+}
+
 }  // namespace
 
 int main() {
     test_what_is_read_back_is_turned_the_right_way_up_and_straightened();
     test_it_is_drawn_no_bigger_than_the_link_carries();
     test_the_menu_hides_the_game_only_where_it_is_drawn();
+    test_a_picture_arriving_changes_the_composition();
     return test::finish("menu-overlay");
 }
