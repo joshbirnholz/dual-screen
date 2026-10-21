@@ -774,8 +774,10 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
               std::round(touch.y + touch.h + line * 0.8f), scale * 0.9f, theme.text_dim, TextAlign::Center);
     // OK, ringed as the one thing A presses here.
     const PixelRect ok = placing_ok_rect(output_width, output_height);
-    quads.draw_rounded_rect(ok, std::round(ok.h * 0.5f), Color{1.0f, 1.0f, 1.0f, 0.10f});
-    draw_menu_cursor(quads, ok, std::round(ok.h * 0.5f), scale);
+    // Its corners those of the cursor on any row, not a capsule's.
+    const float ok_radius = std::round(std::min(ok.h * 0.22f, scale * 3.5f));
+    quads.draw_rounded_rect(ok, ok_radius, Color{1.0f, 1.0f, 1.0f, 0.10f});
+    draw_menu_cursor(quads, ok, ok_radius, scale);
     text.draw(quads, "OK", ok.x + ok.w * 0.5f, std::round(ok.y + (ok.h - TextRenderer::line_height(scale)) * 0.5f),
               scale, theme.text, TextAlign::Center);
 
