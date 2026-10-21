@@ -4563,6 +4563,8 @@ void App::Impl::end_companion_session() {
     if (picker) {
         picker->close();
     }
+    // The menu's blurred still was taken from the session's picture.
+    menu_backdrop.forget();
     // The player quit the game from this device: the host has shut down, and
     // this app goes with it rather than back to the main menu.
     if (companion_session->host_quit_for_this_device()) {
@@ -5385,6 +5387,7 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
             } else if (result.chosen) {
                 joining_host = result.host;
                 companion_session->connect_to(result.host);
+                menu_backdrop.forget();
                 state = State::Companion;
             }
             break;
