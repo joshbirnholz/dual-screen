@@ -214,7 +214,11 @@ void test_the_standard_mapping_is_the_one_there_has_always_been() {
     PadConsole three_ds;
     three_ds.has_zl_zr = true;
     CHECK(standard_pad_action(PadControl::LeftStick, three_ds) == PadAction::SwapScreens);
-    CHECK(standard_pad_action(PadControl::RightStick, three_ds) == PadAction::ScreenSmoothing);
+    // Screen Smoothing is the quick menu's, not a button's: never standard,
+    // never chosen, and read back from a game that kept it as Standard.
+    CHECK(standard_pad_action(PadControl::RightStick, three_ds) == PadAction::Nothing);
+    for (const PadAction choice : pad_action_choices(three_ds)) CHECK(choice != PadAction::ScreenSmoothing);
+    CHECK(pad_action_from_key("screen_smoothing") == PadAction::Standard);
     CHECK(standard_pad_action(PadControl::Zl, three_ds) == PadAction::L);
 
     PadConsole wii_u;
@@ -258,10 +262,12 @@ void test_the_picker_offers_what_the_console_has() {
 }
 
 // Saved by name in a game's file: every action and control comes back as
-// itself, and text from a later build comes back Standard.
+// itself -- but Screen Smoothing, no longer one -- and text from a later
+// build comes back Standard.
 void test_mappings_round_trip_by_name() {
     for (int index = 0; index < static_cast<int>(PadAction::Count); ++index) {
         const PadAction action = static_cast<PadAction>(index);
+        if (action == PadAction::ScreenSmoothing) continue;
         CHECK(pad_action_from_key(pad_action_key(action)) == action);
     }
     CHECK(pad_action_from_key("something_new") == PadAction::Standard);

@@ -385,11 +385,10 @@ int ui_actions_from_press(SDL_GameControllerButton button, UiAction wanted) {
     return count;
 }
 
-// R3 is the smoothing toggle. It has to arrive as a UI action exactly once,
-// and must not double as a DS button -- that is what lets it mean the same
-// thing in a game as it does in a menu.
-void test_stick_click_toggles_filtering() {
-    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::ToggleFilter), 1);
+// R3 no longer toggles smoothing, which is the quick menu's: as standard it
+// is no UI action at all.
+void test_stick_click_does_not_toggle_filtering() {
+    CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::ToggleFilter), 0);
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, UiAction::Confirm), 0);
     CHECK_EQ(ui_actions_from_press(SDL_CONTROLLER_BUTTON_A, UiAction::ToggleFilter), 0);
 }
@@ -598,11 +597,13 @@ void test_the_stick_buttons_open_the_menu_together() {
     CHECK_EQ(count_of(UiAction::SwapLayout), 1);
     CHECK_EQ(menu_opens(), 0);
 
+    // The right one alone is nothing as standard, Screen Smoothing being the
+    // quick menu's.
     pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, true);
     frame();
     pad.press(SDL_CONTROLLER_BUTTON_RIGHTSTICK, false);
     frame();
-    CHECK_EQ(count_of(UiAction::ToggleFilter), 1);
+    CHECK_EQ(count_of(UiAction::ToggleFilter), 0);
 
     // And the chord fires again, which is what closes the menu it opened.
     pad.press(SDL_CONTROLLER_BUTTON_LEFTSTICK, true);
@@ -1486,7 +1487,7 @@ int main() {
     test_stick_click_is_not_a_ds_button();
     test_the_left_stick_is_the_microphone_on_a_console_that_has_one();
     test_right_stick_reaches_the_c_stick();
-    test_stick_click_toggles_filtering();
+    test_stick_click_does_not_toggle_filtering();
     test_left_stick_click_swaps_the_layout();
     test_the_stick_buttons_open_the_menu_together();
     test_the_right_stick_maps_where_it_is_told();

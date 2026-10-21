@@ -487,7 +487,6 @@ std::string ButtonMappingScreen::caption() const {
     switch (action) {
         case PadAction::QuickMenu: return name + " opens the quick menu.";
         case PadAction::SwapScreens: return name + " swaps the screens.";
-        case PadAction::ScreenSmoothing: return name + " turns Screen Smoothing on and off.";
         case PadAction::BlowIntoMic: return "Holding " + name + " blows into the microphone.";
         case PadAction::TouchCursor: return name + " touches the screen at the Touch Cursor.";
         case PadAction::Nothing: return name + " is disabled in this game.";

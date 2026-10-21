@@ -35,7 +35,7 @@ PadAction standard_pad_action(PadControl control, const PadConsole& console) {
         case PadControl::RightStick:
             if (console.game_uses_every_control) return PadAction::RightStickButton;
             return console.right_stick == RightStickMode::TouchCursor ? PadAction::TouchCursor
-                                                                      : PadAction::ScreenSmoothing;
+                                                                      : PadAction::Nothing;
         case PadControl::Count: break;
     }
     return PadAction::Nothing;
@@ -75,7 +75,6 @@ std::vector<PadAction> pad_action_choices(const PadConsole& console) {
         choices.push_back(PadAction::QuickMenu);
         choices.push_back(PadAction::SwapScreens);
         choices.push_back(PadAction::NextLayout);
-        choices.push_back(PadAction::ScreenSmoothing);
     }
     if (console.has_microphone) choices.push_back(PadAction::BlowIntoMic);
     choices.push_back(PadAction::Nothing);
@@ -233,6 +232,7 @@ const char* pad_action_key(PadAction action) {
 PadAction pad_action_from_key(const std::string& key) {
     for (int index = 0; index < static_cast<int>(PadAction::Count); ++index) {
         const PadAction action = static_cast<PadAction>(index);
+        if (action == PadAction::ScreenSmoothing) continue;
         if (key == pad_action_key(action)) return action;
     }
     return PadAction::Standard;

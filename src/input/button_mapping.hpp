@@ -49,6 +49,8 @@ enum class PadAction : uint8_t {
     // This app's own.
     QuickMenu,
     SwapScreens,
+    // No longer chosen: Screen Smoothing is the quick menu's. A game that
+    // kept it has it read as Standard -- see pad_action_from_key().
     ScreenSmoothing,
     // A DS's microphone, held.
     BlowIntoMic,
