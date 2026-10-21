@@ -82,6 +82,13 @@ public:
     // A Touch Point being placed, and where so far.
     bool placing() const { return placing_; }
     const TouchSpot& spot() const { return spot_; }
+    // The spot put where the other device's finger has it, while placing.
+    void set_spot(const TouchSpot& spot) {
+        if (placing_) spot_ = TouchSpot{std::clamp(spot.u, 0.0f, 1.0f), std::clamp(spot.v, 0.0f, 1.0f)};
+    }
+    // A finger down on the touch screen being placed on moves the spot with
+    // it as it goes, not only once it lifts. True while one is.
+    bool drag_spot(float output_width, float output_height);
     // Where the prompts at the foot of the page were drawn -- see
     // take_guide_taps() -- for a device drawing the other's page.
     const std::vector<GuideHit>& guide_hits() const { return guide_hits_; }
@@ -155,9 +162,7 @@ private:
     PixelRect touch_rect(float output_width, float output_height) const;
     // The OK button under it, keeping the spot as A does.
     PixelRect placing_ok_rect(float output_width, float output_height) const;
-    // A finger down on the touch screen being placed on moves the spot with
-    // it as it goes, not only once it lifts.
-    void drag_spot(float output_width, float output_height);
+
     void render_placing(QuadRenderer& quads, TextRenderer& text, const ButtonGlyphSheet& glyphs,
                         float output_width, float output_height);
     PopupGeometry confirm_popup(float output_width, float output_height) const;

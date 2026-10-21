@@ -5395,8 +5395,22 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                                                            static_cast<float>(output_height))) {
                         if (tap == MenuPage::kTapOffPopup) {
                             companion_session->request_menu_action(net::MenuAction::Cancel);
+                        } else if (tap >= ButtonMappingScreen::kSpotEntryBase) {
+                            // Too wide to go as an entry: where it lifted, said as a spot.
+                            const TouchSpot spot = ButtonMappingScreen::entry_spot(tap);
+                            companion_session->request_touch_spot(spot.u, spot.v);
                         } else {
                             companion_session->request_menu_focus(tap);
+                        }
+                    }
+                    // A finger moving the Touch Point here moves the host's as it goes.
+                    const net::ButtonMappingViewMessage& host_view = companion_session->host_button_mapping_view();
+                    if (mirrored_button_mapping.drag_spot(static_cast<float>(output_width),
+                                                          static_cast<float>(output_height))) {
+                        const TouchSpot spot = mirrored_button_mapping.spot();
+                        if (std::fabs(spot.u - host_view.spot_u) > 0.001f ||
+                            std::fabs(spot.v - host_view.spot_v) > 0.001f) {
+                            companion_session->request_touch_spot(spot.u, spot.v);
                         }
                     }
                 }
@@ -6938,6 +6952,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_lcd_filter) {
                     impl.adopt_lcd_filter(request.lcd_filter);
+                }
+                if (request.wants_touch_spot) {
+                    impl.button_mapping_screen.set_spot(TouchSpot{request.touch_spot_u, request.touch_spot_v});
                 }
                 if (request.wants_rumble_pak) {
                     impl.adopt_rumble_pak(request.rumble_pak);

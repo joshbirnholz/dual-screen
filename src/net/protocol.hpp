@@ -323,6 +323,12 @@ struct RequestMessage {
     // Last, and optional.
     bool wants_lcd_filter = false;
     bool lcd_filter = false;
+    // Where a Touch Point being placed on Button Mapping is put, by a finger
+    // on the companion's drawing of the page -- as it moves, not only where
+    // it lifts. In 65536ths of the touch screen on the wire.
+    bool wants_touch_spot = false;
+    float touch_spot_u = 0.5f;
+    float touch_spot_v = 0.5f;
     // Whether the game starts where it was left the next time it is played --
     // see SessionStateMessage::resume_from_save_state.
     bool wants_resume_from_save_state = false;

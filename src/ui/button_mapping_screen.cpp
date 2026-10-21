@@ -233,13 +233,14 @@ PixelRect ButtonMappingScreen::placing_ok_rect(float output_width, float output_
                      width, height};
 }
 
-void ButtonMappingScreen::drag_spot(float output_width, float output_height) {
+bool ButtonMappingScreen::drag_spot(float output_width, float output_height) {
     const LivePointer& pointer = live_pointer();
-    if (!placing_ || !pointer.down) return;
+    if (!placing_ || !pointer.down) return false;
     const PixelRect touch = touch_rect(output_width, output_height);
-    if (!touch.contains(pointer.press_x, pointer.press_y)) return;
+    if (!touch.contains(pointer.press_x, pointer.press_y)) return false;
     spot_ = TouchSpot{std::clamp((pointer.x - touch.x) / touch.w, 0.0f, 1.0f),
                       std::clamp((pointer.y - touch.y) / touch.h, 0.0f, 1.0f)};
+    return true;
 }
 
 std::string ButtonMappingScreen::action_label(PadControl control) const {

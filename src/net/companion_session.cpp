@@ -2276,6 +2276,14 @@ void CompanionSession::request_lcd_filter(bool on) {
     send_request(request);
 }
 
+void CompanionSession::request_touch_spot(float u, float v) {
+    RequestMessage request;
+    request.wants_touch_spot = true;
+    request.touch_spot_u = u;
+    request.touch_spot_v = v;
+    send_request(request);
+}
+
 void CompanionSession::request_resume_from_save_state(bool on) {
     RequestMessage request;
     request.wants_resume_from_save_state = true;

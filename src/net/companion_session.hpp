@@ -660,6 +660,8 @@ public:
     void request_left_stick_press(LeftStickPress press);
     void request_rumble_pak(bool inserted);
     void request_lcd_filter(bool on);
+    // A Touch Point being placed on the host's Button Mapping, put here.
+    void request_touch_spot(float u, float v);
     void request_resume_from_save_state(bool on);
     void request_render_scale(int scale);
     // Whether the host reads how this device is being held -- true only on a

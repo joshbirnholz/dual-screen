@@ -1076,6 +1076,9 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u16(out, message.menu_focus);
     // 0 for no change, 1 off, 2 on.
     put_u8(out, !message.wants_lcd_filter ? 0u : message.lcd_filter ? 2u : 1u);
+    put_u8(out, message.wants_touch_spot ? 1u : 0u);
+    put_u16(out, touch_spot_u16(message.touch_spot_u));
+    put_u16(out, touch_spot_u16(message.touch_spot_v));
     finish_message(out, start, MessageType::Request);
 }
 
@@ -1168,6 +1171,19 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         if (lcd > 2) return false;
         out.wants_lcd_filter = lcd != 0;
         out.lcd_filter = lcd == 2;
+    }
+    out.wants_touch_spot = false;
+    if (reader.remaining() >= 5) {
+        uint8_t wants_spot = 0;
+        uint16_t u = 0;
+        uint16_t v = 0;
+        reader.u8(wants_spot);
+        reader.u16(u);
+        reader.u16(v);
+        if (wants_spot > 1) return false;
+        out.wants_touch_spot = wants_spot != 0;
+        out.touch_spot_u = u / 65536.0f;
+        out.touch_spot_v = v / 65536.0f;
     }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);

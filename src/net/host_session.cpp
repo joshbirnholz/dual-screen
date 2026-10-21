@@ -977,6 +977,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 request.wants_rumble_pak = true;
                 request.rumble_pak = request_.rumble_pak;
             }
+            if (have_request_ && !request.wants_touch_spot && request_.wants_touch_spot) {
+                request.wants_touch_spot = true;
+                request.touch_spot_u = request_.touch_spot_u;
+                request.touch_spot_v = request_.touch_spot_v;
+            }
             if (have_request_ && !request.wants_lcd_filter && request_.wants_lcd_filter) {
                 request.wants_lcd_filter = true;
                 request.lcd_filter = request_.lcd_filter;

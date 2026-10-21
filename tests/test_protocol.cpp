@@ -488,6 +488,9 @@ void test_request_round_trip() {
     sent.wants_screen_swap = true;
     sent.wants_lcd_filter = true;
     sent.lcd_filter = true;
+    sent.wants_touch_spot = true;
+    sent.touch_spot_u = 0.25f;
+    sent.touch_spot_v = 0.75f;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -525,29 +528,36 @@ void test_request_round_trip() {
     CHECK_EQ(received.resume_from_save_state, true);
     CHECK_EQ(received.wants_screen_swap, true);
     CHECK(received.wants_lcd_filter && received.lcd_filter);
+    CHECK(received.wants_touch_spot && received.touch_spot_u == 0.25f && received.touch_spot_v == 0.75f);
+    // From a companion from before a Touch Point was dragged there: asks
+    // nothing about one. (Each below counts past its five bytes.)
+    constexpr std::size_t kSpotBytes = 5;
+    RequestMessage unspotted;
+    CHECK(decode_request(payload.data(), payload.size() - kSpotBytes, unspotted));
+    CHECK(!unspotted.wants_touch_spot && unspotted.wants_lcd_filter);
     // From a companion from before the LCD filter: asks nothing about it.
     RequestMessage unfiltered;
-    CHECK(decode_request(payload.data(), payload.size() - 1, unfiltered));
+    CHECK(decode_request(payload.data(), payload.size() - kSpotBytes - 1, unfiltered));
     CHECK(!unfiltered.wants_lcd_filter && unfiltered.wants_screen_swap);
     // From a companion from before Separate Screens' swap: asks for none.
     RequestMessage unswapped;
     // (Each counts past the whole menu focus near the end, two bytes, and
     // the LCD filter's byte after it.)
-    CHECK(decode_request(payload.data(), payload.size() - 4, unswapped));
+    CHECK(decode_request(payload.data(), payload.size() - kSpotBytes - 4, unswapped));
     CHECK_EQ(unswapped.wants_screen_swap, false);
     CHECK_EQ(unswapped.wants_resume_from_save_state, true);
     // Without that and the byte before it: nothing asked about resuming.
     RequestMessage shorter;
-    CHECK(decode_request(payload.data(), payload.size() - 5, shorter));
+    CHECK(decode_request(payload.data(), payload.size() - kSpotBytes - 5, shorter));
     CHECK_EQ(shorter.wants_resume_from_save_state, false);
     CHECK_EQ(shorter.wants_rumble_pak, true);
     // From a companion from before the Rumble Pak: asks nothing about it.
     RequestMessage older;
-    CHECK(decode_request(payload.data(), payload.size() - 6, older));
+    CHECK(decode_request(payload.data(), payload.size() - kSpotBytes - 6, older));
     CHECK_EQ(older.wants_rumble_pak, false);
     CHECK_EQ(older.wants_left_stick_press, true);
     // And from before the left stick: nothing about that either.
-    CHECK(decode_request(payload.data(), payload.size() - 7, older));
+    CHECK(decode_request(payload.data(), payload.size() - kSpotBytes - 7, older));
     CHECK_EQ(older.wants_left_stick_press, false);
     CHECK_EQ(older.wants_right_stick_mode, true);
 
@@ -592,32 +602,33 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 28, 1u,
+        {"audio target", 33, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 26, 1u,
+        {"handedness", 31, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 12, 2u,
+        {"right stick mode", 17, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 7, 2u,
+        {"left stick click", 12, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
          }},
-        {"rumble pak", 6, 2u,
+        {"rumble pak", 11, 2u,
          [](const RequestMessage& message) {
              return message.wants_rumble_pak && message.rumble_pak;
          }},
-        {"resume from save state", 5, 2u,
+        {"resume from save state", 10, 2u,
          [](const RequestMessage& message) {
              return message.wants_resume_from_save_state && message.resume_from_save_state;
          }},
-        {"screen swap", 4, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
-        {"LCD filter", 1, 1u,
+        {"screen swap", 9, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
+        {"LCD filter", 6, 1u,
          [](const RequestMessage& message) { return message.wants_lcd_filter && !message.lcd_filter; }},
+        {"touch spot", 5, 1u, [](const RequestMessage& message) { return message.wants_touch_spot; }},
     };
 
     for (const EnumByte& field : kEnumBytes) {
