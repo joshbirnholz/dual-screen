@@ -1027,6 +1027,10 @@ struct App::Impl {
     // An amiibo scanned -- see pending_amiibo -- from the list of those in
     // the amiibo folder, or from the browser.
     bool amiibo_available() const;
+    // Whether the menu offers Scan amiibo: where Cemu can scan one, only
+    // while the game was looking for one as it was last going -- or always,
+    // from a Cemu that does not say.
+    bool amiibo_in_menu() const;
     void scan_amiibo_folder();
     void choose_amiibo(const std::string& path);
     void open_amiibo_browser();
@@ -1166,8 +1170,10 @@ struct App::Impl {
     bool paired() const;
     // Opens the layout menu with the state it should be showing. `embedded`
     // shows it in place of "Playing on Cemu" instead -- see
-    // LayoutPickerState::embedded.
-    void open_picker(bool embedded = false);
+    // LayoutPickerState::embedded. `from_game` when it comes up from the
+    // game rather than back from a page of its own -- see
+    // LayoutPickerState::amiibo_wanted.
+    void open_picker(bool embedded = false, bool from_game = true);
     // What to do about whatever the menu just decided. Called for a press made
     // here and for one forwarded from the other device alike: there is one
     // menu, so there is one place that answers it.
@@ -2284,6 +2290,12 @@ bool App::Impl::amiibo_available() const {
            external_source->running() && external_source->amiibo_supported();
 }
 
+bool App::Impl::amiibo_in_menu() const {
+    if (!amiibo_available()) return false;
+    if (!external_source->amiibo_reading_supported()) return true;
+    return amiibo_reading_going == ExternalAmiiboReading::Amiibo;
+}
+
 namespace {
 
 // Where amiibo dumps are usually kept, for a first look before one has ever
@@ -3253,7 +3265,7 @@ void App::Impl::open_quick_menu() {
         state == State::Playing || (state == State::Companion && !companion_saw_host_page);
     // A notice that the menu could not open is over once it has.
     corner_notice.clear();
-    open_picker();
+    open_picker(/*embedded=*/false, from_game);
     state = State::Menu;
     menu_closing = false;
     if (from_game) {
@@ -3418,7 +3430,7 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             }
 }
 
-void App::Impl::open_picker(bool embedded) {
+void App::Impl::open_picker(bool embedded, bool from_game) {
     LayoutPickerState picker_state;
     picker_state.embedded = embedded;
     if (embedded) {
@@ -3437,7 +3449,13 @@ void App::Impl::open_picker(bool embedded) {
                                                ? companion_session->host_graphic_packs_available()
                                                : graphic_packs_available();
     picker_state.amiibo_available =
-        is_companion() ? companion_session->host_amiibo_available() : amiibo_available();
+        is_companion() ? companion_session->host_amiibo_available()
+                       // In place of the game, the menu is up while it plays
+                       // on, so it is always offered there.
+                       : (embedded ? amiibo_available() : amiibo_in_menu());
+    // Asked for by the game itself, rather than only offered.
+    picker_state.amiibo_wanted = from_game && !embedded && picker_state.amiibo_available && !is_companion() &&
+                                 external_source && external_source->amiibo_reading_supported();
     if (is_companion()) {
         picker_state.producer_options = companion_session->host_producer_options();
         picker_state.producer_choices = companion_session->host_producer_choices();
@@ -3450,7 +3468,7 @@ void App::Impl::open_picker(bool embedded) {
         picker_state.producer_controls_from = cemu_controls_from();
         // Looked for afresh each time the menu opens, so a file added since
         // is there.
-        if (amiibo_available()) scan_amiibo_folder();
+        if (picker_state.amiibo_available) scan_amiibo_folder();
         for (const std::string& path : amiibo_paths) picker_state.amiibo.push_back(path_stem(path));
         picker_state.amiibo_folder =
             settings.amiibo_dir.empty() ? first_amiibo_folder() : settings.amiibo_dir;
@@ -6772,7 +6790,11 @@ int App::run(const AppOptions& options) {
                                    impl.state == Impl::State::DataManagement ||
                                    impl.on_cemu_page();
             shared.graphic_packs_available = impl.graphic_packs_available();
-            shared.amiibo_available = impl.amiibo_available();
+            // As the menu has it while it is up: what the game wants can
+            // change under it, and the two devices' rows have to match.
+            shared.amiibo_available = impl.picker && impl.picker->is_open()
+                                          ? impl.picker->state().amiibo_available
+                                          : impl.amiibo_in_menu();
             shared.favorite_color = impl.settings.ds_favorite_color;
             // Whatever is in this device's corner is in the other's too.
             shared.corner_notice = impl.shown_corner_notice();

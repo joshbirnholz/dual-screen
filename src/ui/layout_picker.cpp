@@ -96,6 +96,12 @@ void LayoutPicker::open(const LayoutPickerState& state) {
         if (reopening && !held_place_) held_place_ = HeldPlace{wanted, wanted_inside, wanted_item};
         section_ = sections_.front();
     }
+    if (state_.amiibo_wanted && section_ != MenuSection::Amiibo && has_section(MenuSection::Amiibo) &&
+        content_count(MenuSection::Amiibo) > 0) {
+        section_ = MenuSection::Amiibo;
+        on_content_ = true;
+        item_ = 0;
+    }
 }
 
 void LayoutPicker::set_save_slots(std::vector<SavePointInfo> slots) {

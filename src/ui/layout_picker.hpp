@@ -154,6 +154,10 @@ struct LayoutPickerState {
     // Scan amiibo, where Cemu can: the amiibo found in `amiibo_folder`, by
     // name, listed on the right to be chosen from directly. The host's too.
     bool amiibo_available = false;
+    // The game is looking for an amiibo as the menu comes up from it: the
+    // menu opens on Scan amiibo, at its first amiibo, unless it was closed
+    // there -- then where it was in it.
+    bool amiibo_wanted = false;
     std::vector<std::string> amiibo;
     std::string amiibo_folder;
     // Which layouts are flipped for a left hand, by id: each is chosen on its

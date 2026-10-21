@@ -1904,6 +1904,51 @@ void test_wii_u_amiibo_are_listed_to_choose_from() {
     CHECK(press(empty, UiAction::Confirm).amiibo_folder_requested);
 }
 
+// Scan amiibo is offered only while the game looks for one -- the app leaves
+// it out otherwise -- and a menu brought up while it does opens on it, at its
+// first amiibo, or where it was in the list when it was closed there.
+void test_wii_u_menu_opens_on_amiibo_when_the_game_wants_one() {
+    LayoutRegistry registry;
+    LayoutPickerState state;
+    state.layout_id = registry.at(0).id;
+    for (int index = 0; index < 5; ++index) state.amiibo.push_back("Amiibo " + std::to_string(index));
+
+    LayoutPicker picker(registry);
+    open_wii_u(picker, state);
+    CHECK(picker.section() != MenuSection::Amiibo);
+    picker.set_focus(LayoutPicker::focus_of(MenuSection::Options));
+    picker.close();
+
+    // Wanted: straight to the list, from wherever it was.
+    state.amiibo_available = true;
+    state.amiibo_wanted = true;
+    picker.open(state);
+    CHECK(picker.section() == MenuSection::Amiibo && picker.on_content());
+    CHECK_EQ(press(picker, UiAction::Confirm).amiibo_chosen, 0);
+    press(picker, UiAction::Down);
+    press(picker, UiAction::Down);
+    picker.close();
+
+    // Already there: where it was in the list.
+    picker.open(state);
+    CHECK(picker.section() == MenuSection::Amiibo && picker.on_content());
+    CHECK_EQ(press(picker, UiAction::Confirm).amiibo_chosen, 2);
+    picker.close();
+
+    // Not wanted, and not offered: the menu starts elsewhere, and goes back
+    // to the same amiibo once it is wanted again.
+    state.amiibo_available = false;
+    state.amiibo_wanted = false;
+    picker.open(state);
+    CHECK(picker.section() != MenuSection::Amiibo);
+    picker.close();
+    state.amiibo_available = true;
+    state.amiibo_wanted = true;
+    picker.open(state);
+    CHECK(picker.section() == MenuSection::Amiibo && picker.on_content());
+    CHECK_EQ(press(picker, UiAction::Confirm).amiibo_chosen, 2);
+}
+
 // A dropdown stays where it opened: moving through a list longer than it
 // shows scrolls the list inside it, not the box. A finger drags the list, and
 // the mouse wheel turns it, without choosing anything.
@@ -1998,6 +2043,7 @@ int main() {
     test_a_dropdown_scrolled_from_the_other_device_stays_scrolled();
     test_wii_u_options_are_this_games();
     test_wii_u_amiibo_are_listed_to_choose_from();
+    test_wii_u_menu_opens_on_amiibo_when_the_game_wants_one();
     test_the_resume_popup_is_put_away_with_ok();
     test_the_menu_reopens_where_it_was_closed();
     test_a_wii_u_menu_closed_on_continue_opens_on_it_again();
