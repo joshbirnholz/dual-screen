@@ -287,7 +287,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
         case Option::ControllerOrder: return "Controller Order";
-        case Option::ButtonMapping: return "Button Mapping";
+        case Option::ButtonMapping: return "Change Button Mapping";
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].first;
@@ -403,7 +403,7 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
         case Option::GraphicPacks:
         case Option::ControllerOrder: return std::string();
         // A page, which says whether this game has made any changes in it.
-        case Option::ButtonMapping: return state_.button_mapping_custom ? "Custom for This Game" : "Standard";
+        case Option::ButtonMapping: return std::string();
         case Option::Producer:
             if (row.index >= 0 && row.index < static_cast<int>(state_.producer_options.size())) {
                 return state_.producer_options[static_cast<std::size_t>(row.index)].second;
@@ -1747,7 +1747,6 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, static_cast<uint64_t>(confirm_));
     mix_sound_state(view.rest, selected_layout_id_);
     mix_sound_state(view.rest, smoothing_ ? 1u : 0u);
-    mix_sound_state(view.rest, state_.button_mapping_custom ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(preview_screen_));
     mix_sound_state(view.rest, state_.layout_id);
     mix_sound_state(view.rest, state_.bilinear_filtering ? 1u : 0u);

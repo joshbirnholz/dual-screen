@@ -3462,8 +3462,6 @@ void App::Impl::open_picker(bool embedded) {
     // Every DS and 3DS game has one; a Wii U's buttons are Cemu's, player by
     // player.
     picker_state.button_mapping_available = system != SystemId::WiiU && (is_companion() || local_game());
-    picker_state.button_mapping_custom =
-        !button_mapping.is_standard(pad_console_for(system, right_stick_mode));
     // A Rumble Pak, where the core running this game can put one in.
     picker_state.rumble_pak = rumble_pak_in_effect();
     picker_state.lcd_filter = lcd_filter_in_effect();
