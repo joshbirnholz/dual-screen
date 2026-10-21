@@ -285,7 +285,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
     switch (row.option) {
         case Option::RenderScale: return "Render Scale";
         case Option::Sound: return "Sound";
-        case Option::Cursor: return "Show Pointer";
+        case Option::Cursor: return "Hide Cursor";
         case Option::RightStick: return "Right Stick";
         case Option::Rumble: return "Rumble";
         case Option::ScreenGap: return "Screen Gap";

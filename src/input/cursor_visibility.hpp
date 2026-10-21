@@ -15,6 +15,7 @@ enum class CursorMode {
     Hidden,
 };
 
+// The Hide Cursor switch: "On" for Hidden.
 const char* to_string(CursorMode mode);
 CursorMode next_cursor_mode(CursorMode mode);
 const char* cursor_mode_key(CursorMode mode);

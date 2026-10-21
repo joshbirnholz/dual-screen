@@ -396,8 +396,8 @@ Three things are different about a Wii U session:
   are, each stepped on with **A**: first **Graphics Packs**, which opens the
   page above, then **Swap Screens** (played alone: the other
   screen from **Default Wii U Screen** -- **F3** does the same; with a second
-  device connected, the two trade screens), **Show Pointer** (this device's own,
-  as on every console's menu), then Cemu's: **Upscaling** (how Cemu enlarges
+  device connected, the two trade screens), **Hide Cursor** (this device's own,
+  as on every console's menu; for games only, a menu always showing it), then Cemu's: **Upscaling** (how Cemu enlarges
   a picture smaller than its window: bilinear, bicubic, Hermite or nearest
   neighbor), **Aspect Ratio** (the game's own, or stretched to the screen),
   **Performance Overlay** (off, frame rate, frame rate and CPU, or
@@ -457,7 +457,7 @@ Three things are different about a Wii U session:
   connected device too, as every corner alert is; the game says the rest. A file that is not an amiibo dump is said to be so
   in a popup, and the menu stays up.
 
-- **Show Pointer** shows or hides the mouse pointer over Cemu's window, as it does
+- **Hide Cursor** hides or shows the mouse pointer over Cemu's window, as it does
   over a DS game. Shown, it appears when a mouse or trackpad moves it -- even
   with Cemu filling the screen, as in Game Mode -- and hides again when it is
   still, and a click with it on the GamePad's screen is a touch there. Hidden,
@@ -705,7 +705,7 @@ another PC, and neither can the menu.
 Its in-session menu *is* this menu — the same source, the same list, the same
 previews, the same options — because the device showing a screen is usually the
 one being held, and the alternative is reaching for a pad plugged into the
-other machine. The only entry it drops is **Show Pointer**, which is the one thing
+other machine. The only entry it drops is **Hide Cursor**, which is the one thing
 on that menu belonging to the device rather than the host, and a console has no
 arrow to show or hide.
 
@@ -1416,7 +1416,7 @@ Full options:
 | Move with the d-pad | the d-pad; on DS games, which have no stick, the left stick works too |
 | Touch the touchscreen | tap or drag on whichever screen is showing the bottom screen — a tap that misses the screen itself lands on whichever edge it's nearest to |
 | Point with a mouse or trackpad | the pointer appears when you move it and hides again after two still seconds |
-| Turn the pointer off entirely | **Show Pointer**, under **Game Options** in the quick menu — on a Wii U too, for Cemu's window |
+| Hide the pointer in games | **Hide Cursor**, under **Game Options** in the quick menu — on a Wii U too, for Cemu's window |
 | Move around the menus | d-pad, left stick or arrow keys, held down to keep moving; the east face button confirms, the south one goes back |
 | Page through a long list | **L** and **R**, or drag the list with a finger |
 | Press a button prompt without the button | click or tap the prompt at the bottom of a page. Held down on it, it lights up behind itself, for exactly as long as letting go would press it -- slide off and it goes out, and letting go does nothing |

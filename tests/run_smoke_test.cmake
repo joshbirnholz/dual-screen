@@ -311,7 +311,7 @@ execute_process(
     RESULT_VARIABLE POINTER_RESULT
     OUTPUT_VARIABLE POINTER_OUTPUT
     ERROR_VARIABLE POINTER_ERROR)
-if(NOT POINTER_OUTPUT MATCHES "pointer: Off")
+if(NOT POINTER_OUTPUT MATCHES "the cursor is hidden in games")
     message(STATUS "${POINTER_OUTPUT}")
     message(STATUS "${POINTER_ERROR}")
     message(SEND_ERROR "the stored pointer mode did not reach the running app")

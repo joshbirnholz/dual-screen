@@ -3356,7 +3356,8 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
                 settings.cursor_mode = next_cursor_mode(settings.cursor_mode);
                 picker->set_cursor_mode(settings.cursor_mode);
                 settings.save(paths);
-                log_info(std::string("pointer: ") + to_string(settings.cursor_mode));
+                log_info(settings.cursor_mode == CursorMode::Hidden ? "the cursor will be hidden in games"
+                                                                    : "the cursor will show in games");
             }
             if (result.reset_requested) {
                 request_reset();
@@ -6322,7 +6323,8 @@ int App::run(const AppOptions& options) {
         }
     }
     log_info("controls are Nintendo positional: east is A, south is B, in menus and in game");
-    log_info(std::string("pointer: ") + to_string(impl.settings.cursor_mode));
+    log_info(impl.settings.cursor_mode == CursorMode::Hidden ? "the cursor is hidden in games"
+                                                             : "the cursor shows in games");
 
     // When the game is already known, build the window for its console's core
     // straight away: a 3DS core needs a context an ES 2.0 one cannot stand in

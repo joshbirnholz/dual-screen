@@ -7,7 +7,8 @@
 namespace ds {
 
 const char* to_string(CursorMode mode) {
-    return mode == CursorMode::Hidden ? "Off" : "On";
+    // As the Hide Cursor switch reads: on when it is hidden.
+    return mode == CursorMode::Hidden ? "On" : "Off";
 }
 
 CursorMode next_cursor_mode(CursorMode mode) {
