@@ -4098,6 +4098,10 @@ void App::Impl::request_reset() {
     } else if (external_source) {
         if (!restart_external_game()) external_source->reset();
     }
+    // What the other device shows is from before the reset, so it goes too.
+    if (host_session) {
+        host_session->clear_companion_screens();
+    }
 }
 
 bool App::Impl::restart_external_game() {

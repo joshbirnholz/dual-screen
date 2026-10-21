@@ -1544,6 +1544,10 @@ private:
         // Shown by a SystemVideoLayers layer this frame -- see
         // set_screen_shown_elsewhere().
         bool shown_elsewhere = false;
+        // Taken down because the host's game was reset: kept, since the next
+        // frame may be a difference from it, but not shown until a frame from
+        // after the reset arrives -- see MessageType::ScreensCleared.
+        bool hidden = false;
         // Which of the two below is the frame and which is derived from it. A
         // tiled payload patches rgb565 and is expanded on demand; a video frame
         // decodes straight to pixels and never has a 5-6-5 form at all.
@@ -1582,6 +1586,8 @@ private:
         const std::vector<uint32_t>& expanded() const;
         // Whether anything has arrived for this screen at all, whichever form
         // it arrived in.
+        // What there is to show: a frame, and not one taken down.
+        bool shown() const { return has_frame() && !hidden; }
         bool has_frame() const {
             if (!video) return !rgb565.empty();
             if (layout == video::DecodedLayout::Xrgb8888) return !pixels.empty();
@@ -1591,6 +1597,11 @@ private:
     };
     ScreenBuffer top_;
     ScreenBuffer bottom_;
+    // The newest serial received when the host said its game was reset. A
+    // frame at or a little behind it is from before the reset and leaves a
+    // taken-down screen down; anything newer, or far enough behind to be a
+    // restarted program counting afresh, puts it back up.
+    uint64_t cleared_at_serial_ = 0;
     // One per screen, matching the encoders at the other end: two streams, two
     // sizes, and each frame only means anything after the ones before it.
     video::VideoDecoder video_top_;

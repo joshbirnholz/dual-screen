@@ -295,6 +295,9 @@ public:
     // Cheap to call every time the state changes, like publish_audio -- only
     // sent when it actually changed.
     void publish_rumble(bool active);
+    // The game was reset: the companion takes down the picture it has until
+    // the restarted game sends one -- see MessageType::ScreensCleared.
+    void clear_companion_screens();
     // A menu sound this device just played, sent for the companion to play
     // as well -- see MessageType::MenuSound. Nothing without one.
     void publish_menu_sound(MenuSound sound);

@@ -523,6 +523,18 @@ bool decode_audio(const uint8_t* data, std::size_t size, AudioMessage& out) {
     return true;
 }
 
+void encode_screens_cleared(uint64_t last_serial, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u64(out, last_serial);
+    finish_message(out, start, MessageType::ScreensCleared);
+}
+
+bool decode_screens_cleared(const uint8_t* data, std::size_t size, uint64_t& out_last_serial) {
+    Reader reader(data, size);
+    reader.u64(out_last_serial);
+    return reader.ok();
+}
+
 void encode_rumble(const RumbleMessage& message, std::vector<uint8_t>& out) {
     const std::size_t start = begin_message(out);
     put_u8(out, message.active ? 1u : 0u);

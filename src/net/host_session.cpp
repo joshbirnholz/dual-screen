@@ -1724,6 +1724,15 @@ void HostSession::publish_rumble(bool active) {
     have_sent_rumble_ = true;
 }
 
+void HostSession::clear_companion_screens() {
+    if (!has_companion() || !handshake_done_) {
+        return;
+    }
+    std::vector<uint8_t> out;
+    encode_screens_cleared(submitted_serial_, out);
+    companion_.send(out);
+}
+
 void HostSession::publish_menu_sound(MenuSound sound) {
     if (!has_companion() || !handshake_done_) {
         return;

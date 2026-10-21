@@ -1467,6 +1467,52 @@ void test_a_picture_does_not_outlive_its_session() {
     host.stop();
 }
 
+// Resetting the game takes the companion's picture down until the restarted
+// game sends one: what it had was from before the reset. A frame sent before
+// the reset leaves it down; the first one after puts it back.
+void test_a_reset_takes_the_companions_picture_down() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Reset Host";
+    config.game_title = "Resetting";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    if (!companion.begin_search("Reset Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    companion.connect_to(companion.hosts().front());
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    host.publish_screens(screen_pixels(top), screen_pixels(flat_screen(0x00112233u)), 5);
+    CHECK_MSG(spin(host, companion, [&] { return companion.has_screen(ScreenId::Bottom); }),
+              "the picture from before the reset never arrived");
+
+    host.clear_companion_screens();
+    CHECK_MSG(spin(host, companion, [&] { return !companion.has_screen(ScreenId::Bottom); }),
+              "the picture from before the reset stayed up after it");
+    CHECK(!companion.screen_pixels(ScreenId::Bottom).valid());
+
+    host.publish_screens(screen_pixels(top), screen_pixels(flat_screen(0x00445566u)), 6);
+    CHECK_MSG(spin(host, companion, [&] { return companion.has_screen(ScreenId::Bottom); }),
+              "the restarted game's first picture was not shown");
+    CHECK_EQ(companion.screen_pixels(ScreenId::Bottom).serial, static_cast<uint64_t>(6));
+
+    host.stop();
+}
+
 // The Quit button on the companion sends its quit request immediately
 // followed by its own Bye -- both usually land in the same poll(). That has
 // to still reach the app: drop_companion() (triggered by the Bye) clears the
@@ -4518,6 +4564,7 @@ int main() {
     test_a_tap_quicker_than_a_frame_still_reaches_the_game();
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
     test_a_picture_does_not_outlive_its_session();
+    test_a_reset_takes_the_companions_picture_down();
     test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it();
     test_menu_gets_the_companion_both_screens();
     test_joining_gives_up_on_a_host_that_never_answers();
