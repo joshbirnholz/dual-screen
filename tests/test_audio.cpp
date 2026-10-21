@@ -1,6 +1,7 @@
 #include "test_support.hpp"
 
 #include <cmath>
+#include <tuple>
 #include <vector>
 
 #include "audio/audio_output.hpp"
@@ -534,6 +535,143 @@ void test_a_dry_spell_is_the_time_past_what_was_queued() {
     CHECK_EQ(audio_dry_spell_frames(2880, 2880), static_cast<std::size_t>(0));
 }
 
+// Zero crossings per frame on the left channel: the pitch, near enough, of a
+// steady tone.
+double crossings_per_frame(const std::vector<int16_t>& samples, std::size_t from_frame) {
+    std::size_t crossings = 0;
+    const std::size_t frames = samples.size() / 2;
+    for (std::size_t frame = from_frame + 1; frame < frames; ++frame) {
+        if ((samples[(frame - 1) * 2] < 0) != (samples[frame * 2] < 0)) {
+            ++crossings;
+        }
+    }
+    return frames > from_frame + 1 ? static_cast<double>(crossings) / (frames - from_frame - 1)
+                                   : 0.0;
+}
+
+// Feeds `total` frames of tone through in game-frame-sized blocks.
+std::vector<int16_t> stretch_tone(AudioStretcher& stretcher, std::size_t total, double stretch,
+                                  bool finish) {
+    const std::vector<int16_t> input = make_tone(total);
+    std::vector<int16_t> output;
+    for (std::size_t at = 0; at < total; at += 800) {
+        const std::size_t frames = std::min<std::size_t>(800, total - at);
+        stretcher.process(input.data() + at * 2, frames, stretch, output);
+    }
+    if (finish) stretcher.finish(output);
+    return output;
+}
+
+void test_a_stretch_of_one_plays_the_input_straight_through() {
+    AudioStretcher stretcher;
+    stretcher.reset(48000.0);
+    const std::vector<int16_t> input = make_tone(48000);
+    const std::vector<int16_t> output = stretch_tone(stretcher, 48000, 1.0, true);
+    CHECK_EQ(output.size(), input.size());
+    int worst = 0;
+    for (std::size_t i = 0; i < std::min(output.size(), input.size()); ++i) {
+        worst = std::max(worst, std::abs(output[i] - input[i]));
+    }
+    CHECK(worst <= 1);
+    CHECK(!stretcher.holding());
+}
+
+void test_a_slow_game_is_stretched_in_time_without_dropping_in_pitch() {
+    AudioStretcher stretcher;
+    stretcher.reset(48000.0);
+    const std::vector<int16_t> input = make_tone(48000);
+    const std::vector<int16_t> output = stretch_tone(stretcher, 48000, 1.25, false);
+    // About a quarter longer, give or take what is held back to look ahead.
+    const double length = static_cast<double>(output.size()) / input.size();
+    CHECK(length > 1.2 && length < 1.27);
+    // The same note, not one a quarter lower -- which is what resampling to
+    // the same length would have made of it.
+    CHECK(test::nearly_equal(crossings_per_frame(output, 0), crossings_per_frame(input, 0), 0.0005));
+    // And no joins to be heard: no step bigger than the tone's own, give or
+    // take a little for the crossfades.
+    CHECK(largest_step(output) <= largest_step(input) + 60);
+}
+
+void test_stopping_a_stretch_carries_straight_on() {
+    AudioStretcher stretcher;
+    stretcher.reset(48000.0);
+    std::vector<int16_t> output = stretch_tone(stretcher, 24000, 1.5, true);
+    CHECK(!stretcher.holding());
+    // The tail handed back by finish() joins what was stretched without a
+    // step, and the next block plays straight on from it.
+    const std::vector<int16_t> more = make_tone(4800, 24000.0);
+    output.insert(output.end(), more.begin(), more.end());
+    CHECK(largest_step(output) <= largest_step(make_tone(4800)) + 60);
+}
+
+// A game at 80% speed, the speed misread by a couple of percent the way a
+// half-second of frame timings will: the stretched sound keeps the queue fed
+// and near where it is aimed, where unstretched it runs dry every few frames.
+void test_a_slow_game_keeps_the_queue_fed() {
+    constexpr std::size_t aimed = 2880;  // 60ms at 48kHz
+    constexpr double block = 800.0;      // a frame's sound
+    constexpr double played = 1000.0;    // what the device takes meanwhile
+    const auto run = [&](bool stretching, double misread) {
+        double queued = aimed;
+        int dry = 0;
+        double lowest = queued;
+        double highest = queued;
+        for (int frame = 0; frame < 3000; ++frame) {
+            const double stretch =
+                stretching ? audio_stretch_for(0.8 * misread, static_cast<std::size_t>(queued),
+                                               aimed)
+                           : 1.0;
+            queued += block * stretch;
+            queued -= played;
+            if (queued <= 0.0) {
+                ++dry;
+                queued = 0.0;
+            }
+            if (frame > 300) {
+                lowest = std::min(lowest, queued);
+                highest = std::max(highest, queued);
+            }
+        }
+        return std::make_tuple(dry, lowest, highest);
+    };
+    CHECK(std::get<0>(run(false, 1.0)) > 2000);
+    for (const double misread : {0.97, 1.0, 1.03}) {
+        const auto [dry, lowest, highest] = run(true, misread);
+        CHECK_EQ(dry, 0);
+        CHECK(lowest > aimed * 0.9);
+        CHECK(highest < aimed * 1.1);
+    }
+}
+
+void test_the_source_speed_reads_a_game_running_slow() {
+    AudioSourceSpeed speed;
+    speed.reset();
+    // A 48kHz game at 80% speed: 800 frames of sound per 60Hz frame, but a
+    // frame every 20.8ms rather than every 16.7.
+    uint64_t now = 1000;
+    for (int frame = 0; frame < 20; ++frame) {
+        speed.note(now, 800);
+        now += 21;
+    }
+    // Under half a second seen: no reading yet.
+    CHECK(test::nearly_equal(speed.speed(48000.0), 1.0));
+    for (int frame = 0; frame < 60; ++frame) {
+        speed.note(now, 800);
+        now += 21;
+    }
+    CHECK(speed.speed(48000.0) > 0.77 && speed.speed(48000.0) < 0.81);
+    // A pause is the stream stopping, not the game slowing to nothing.
+    now += kAudioStreamStoppedMs + 100;
+    speed.note(now, 800);
+    CHECK(test::nearly_equal(speed.speed(48000.0), 1.0));
+    // And one keeping up reads as keeping up.
+    for (int frame = 0; frame < 60; ++frame) {
+        now += (frame % 3 == 2) ? 16 : 17;
+        speed.note(now, 800);
+    }
+    CHECK(speed.speed(48000.0) > kAudioStretchUntilSpeed);
+}
+
 int main() {
     test_running_dry_buys_cover_the_length_of_the_spell();
     test_a_dry_spell_is_the_time_past_what_was_queued();
@@ -553,5 +691,10 @@ int main() {
     test_the_low_water_mark_follows_the_trough_not_the_peak();
     test_narrowing_the_margin_lowers_the_queue_without_trimming_lumps();
     test_a_mark_with_no_window_still_answers_with_the_queue();
+    test_a_stretch_of_one_plays_the_input_straight_through();
+    test_a_slow_game_is_stretched_in_time_without_dropping_in_pitch();
+    test_stopping_a_stretch_carries_straight_on();
+    test_the_source_speed_reads_a_game_running_slow();
+    test_a_slow_game_keeps_the_queue_fed();
     return test::finish("audio");
 }
