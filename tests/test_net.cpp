@@ -78,6 +78,70 @@ void test_browser_merges_and_expires() {
     CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(0));
 }
 
+// A Wii U-sized icon: noisy enough that it takes several pieces even deflated.
+std::vector<uint8_t> noisy_icon(int width, int height) {
+    std::vector<uint8_t> rgba(static_cast<std::size_t>(width) * height * 4u);
+    uint32_t seed = 12345;
+    for (std::size_t index = 0; index < rgba.size(); ++index) {
+        seed = seed * 1103515245u + 12345u;
+        rgba[index] = (index % 4 == 3) ? 255 : static_cast<uint8_t>(seed >> 24);
+    }
+    return rgba;
+}
+
+// The game's icon goes shrunk, in pieces, and comes back whole on the host it
+// belongs to, whatever order the pieces land in and whether they beat the
+// beacon there or not.
+void test_browser_puts_the_icon_back_together() {
+    const std::vector<uint8_t> rgba = noisy_icon(128, 128);
+    const std::vector<std::vector<uint8_t>> pieces = encode_beacon_icon(128, 128, rgba, 47821);
+    CHECK(pieces.size() > 1);
+    for (const std::vector<uint8_t>& piece : pieces) {
+        CHECK(piece.size() <= kBeaconIconPieceBytes + 64);
+        // Never mistaken for a beacon, by this build or an older one.
+        BeaconMessage beacon;
+        CHECK(!decode_beacon(piece.data(), piece.size(), beacon));
+    }
+    CHECK(encode_beacon_icon(0, 0, {}, 47821).empty());
+
+    HostBrowser browser;
+    // Backwards, and the first one twice.
+    for (std::size_t index = pieces.size(); index-- > 0;) {
+        BeaconIconPiece piece;
+        CHECK(decode_beacon_icon_piece(pieces[index].data(), pieces[index].size(), piece));
+        CHECK_EQ(piece.width, static_cast<uint16_t>(kBeaconIconMaxSide));
+        browser.ingest_icon(piece, "192.168.1.10", 1000);
+        if (index == pieces.size() - 1) browser.ingest_icon(piece, "192.168.1.10", 1000);
+    }
+    BeaconMessage beacon;
+    beacon.device_name = "Gaming PC";
+    beacon.game_title = "Mario Kart 8";
+    beacon.session_port = 47821;
+    browser.ingest(beacon, "192.168.1.10", 1100);
+    // Some other host's beacon gets none of it.
+    browser.ingest(beacon, "192.168.1.11", 1100);
+    CHECK_EQ(browser.hosts().size(), static_cast<std::size_t>(2));
+    const DiscoveredHost& host = browser.hosts()[0];
+    CHECK(host.icon_id != 0);
+    CHECK_EQ(host.icon_width, kBeaconIconMaxSide);
+    CHECK_EQ(host.icon_height, kBeaconIconMaxSide);
+    CHECK_EQ(host.icon_rgba.size(), static_cast<std::size_t>(kBeaconIconMaxSide) * kBeaconIconMaxSide * 4u);
+    // Each pixel the average of the four it stands for.
+    const unsigned red = (rgba[0] + rgba[4] + rgba[128 * 4] + rgba[128 * 4 + 4]) / 4u;
+    CHECK_EQ(static_cast<unsigned>(host.icon_rgba[0]), red);
+    CHECK_EQ(static_cast<unsigned>(host.icon_rgba[3]), 255u);
+    CHECK(browser.hosts()[1].icon_rgba.empty());
+
+    // A DS game's 32 goes as it is.
+    const std::vector<std::vector<uint8_t>> small = encode_beacon_icon(32, 32, noisy_icon(32, 32), 47821);
+    BeaconIconPiece piece;
+    CHECK(!small.empty());
+    CHECK(decode_beacon_icon_piece(small[0].data(), small[0].size(), piece));
+    CHECK_EQ(piece.width, static_cast<uint16_t>(32));
+    // A cut-short piece is refused.
+    CHECK(!decode_beacon_icon_piece(small[0].data(), small[0].size() - 1, piece));
+}
+
 // The real thing: a UDP broadcast that a browser on the same machine picks up.
 void test_discovery_over_loopback() {
     HostBrowser browser;
@@ -96,6 +160,7 @@ void test_discovery_over_loopback() {
     beacon.rom_sha1 = "d0858904048973636d489701cafe3a15bee6ee41";
     beacon.session_port = 47899;
     announcer.set_beacon(beacon);
+    announcer.set_icon(encode_beacon_icon(48, 48, noisy_icon(48, 48), 47899));
 
     // Give it a couple of seconds; broadcast delivery is not instantaneous.
     const uint64_t deadline = monotonic_millis() + 3000;
@@ -110,6 +175,8 @@ void test_discovery_over_loopback() {
                 CHECK_STR_EQ(host.game_title, "Test Game");
                 CHECK_STR_EQ(host.rom_sha1, beacon.rom_sha1);
                 CHECK(!host.address.empty());
+                // The icon goes with the first beacon.
+                if (host.icon_rgba.empty()) found = false;
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -578,6 +645,7 @@ void test_a_failed_connect_remembers_why() {
 
 int main() {
     test_browser_merges_and_expires();
+    test_browser_puts_the_icon_back_together();
     test_discovery_over_loopback();
     test_tcp_carries_framed_messages();
     test_streams_enable_keepalive_with_a_short_idle_time();

@@ -1288,6 +1288,110 @@ bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_seria
     return reader.ok();
 }
 
+std::vector<std::vector<uint8_t>> encode_beacon_icon(int width,
+                                                     int height,
+                                                     const std::vector<uint8_t>& rgba,
+                                                     uint16_t session_port) {
+    std::vector<std::vector<uint8_t>> pieces;
+    if (width <= 0 || height <= 0 ||
+        rgba.size() != static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u) {
+        return pieces;
+    }
+    // Shrunk by a whole factor, each pixel the average of the square it
+    // stands for: a DS game's 32 and a 3DS game's 48 go as they are.
+    const int factor = (std::max(width, height) + kBeaconIconMaxSide - 1) / kBeaconIconMaxSide;
+    const int out_width = width / factor;
+    const int out_height = height / factor;
+    if (out_width <= 0 || out_height <= 0) return pieces;
+    std::vector<uint8_t> shrunk(static_cast<std::size_t>(out_width) * out_height * 4u);
+    for (int y = 0; y < out_height; ++y) {
+        for (int x = 0; x < out_width; ++x) {
+            for (int channel = 0; channel < 4; ++channel) {
+                unsigned sum = 0;
+                for (int dy = 0; dy < factor; ++dy) {
+                    for (int dx = 0; dx < factor; ++dx) {
+                        sum += rgba[((static_cast<std::size_t>(y) * factor + dy) * width +
+                                     static_cast<std::size_t>(x) * factor + dx) * 4u + channel];
+                    }
+                }
+                shrunk[(static_cast<std::size_t>(y) * out_width + x) * 4u + channel] =
+                    static_cast<uint8_t>(sum / static_cast<unsigned>(factor * factor));
+            }
+        }
+    }
+    // Deflated the hard way: it is done once, when the game starts.
+    uLongf bound = compressBound(static_cast<uLong>(shrunk.size()));
+    std::vector<uint8_t> deflated(bound);
+    if (compress2(deflated.data(), &bound, shrunk.data(), static_cast<uLong>(shrunk.size()), 9) !=
+        Z_OK) {
+        return pieces;
+    }
+    deflated.resize(bound);
+    const uint32_t icon_id = static_cast<uint32_t>(
+        crc32(0L, deflated.data(), static_cast<uInt>(deflated.size())));
+    const std::size_t count =
+        (deflated.size() + kBeaconIconPieceBytes - 1) / kBeaconIconPieceBytes;
+    for (std::size_t index = 0; index < count; ++index) {
+        std::vector<uint8_t> out;
+        put_u32(out, kBeaconIconMagic);
+        put_u16(out, kProtocolVersion);
+        put_u16(out, session_port);
+        put_u32(out, icon_id);
+        put_u16(out, static_cast<uint16_t>(out_width));
+        put_u16(out, static_cast<uint16_t>(out_height));
+        put_u16(out, static_cast<uint16_t>(index));
+        put_u16(out, static_cast<uint16_t>(count));
+        put_u32(out, static_cast<uint32_t>(deflated.size()));
+        const std::size_t from = index * kBeaconIconPieceBytes;
+        const std::size_t to = std::min(deflated.size(), from + kBeaconIconPieceBytes);
+        put_u16(out, static_cast<uint16_t>(to - from));
+        out.insert(out.end(), deflated.begin() + static_cast<std::ptrdiff_t>(from),
+                   deflated.begin() + static_cast<std::ptrdiff_t>(to));
+        pieces.push_back(std::move(out));
+    }
+    return pieces;
+}
+
+bool decode_beacon_icon_piece(const uint8_t* data, std::size_t size, BeaconIconPiece& out) {
+    Reader reader(data, size);
+    uint32_t magic = 0;
+    uint16_t length = 0;
+    reader.u32(magic);
+    if (!reader.ok() || magic != kBeaconIconMagic) return false;
+    reader.u16(out.protocol_version);
+    reader.u16(out.session_port);
+    reader.u32(out.icon_id);
+    reader.u16(out.width);
+    reader.u16(out.height);
+    reader.u16(out.index);
+    reader.u16(out.count);
+    reader.u32(out.total_bytes);
+    reader.u16(length);
+    reader.bytes(out.data, length);
+    // Bounded like the welcome's icon, and every piece where the rest put it.
+    return reader.ok() && out.width > 0 && out.height > 0 && out.width <= 512 &&
+           out.height <= 512 && out.count > 0 && out.index < out.count &&
+           static_cast<std::size_t>(out.count) * kBeaconIconPieceBytes >= out.total_bytes &&
+           static_cast<std::size_t>(out.index) * kBeaconIconPieceBytes + out.data.size() <=
+               out.total_bytes;
+}
+
+bool inflate_beacon_icon(const std::vector<uint8_t>& deflated,
+                         int width,
+                         int height,
+                         std::vector<uint8_t>& rgba) {
+    if (width <= 0 || height <= 0) return false;
+    rgba.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u, 0);
+    uLongf size = static_cast<uLongf>(rgba.size());
+    if (uncompress(rgba.data(), &size, deflated.data(), static_cast<uLong>(deflated.size())) !=
+            Z_OK ||
+        size != rgba.size()) {
+        rgba.clear();
+        return false;
+    }
+    return true;
+}
+
 void encode_ping(std::vector<uint8_t>& out) {
     finish_message(out, begin_message(out), MessageType::Ping);
 }

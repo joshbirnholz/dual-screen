@@ -283,6 +283,24 @@ HostPickerResult HostPickerScreen::update(const std::vector<ds::net::DiscoveredH
     return result;
 }
 
+const Texture* HostPickerScreen::icon_for(const ds::net::DiscoveredHost& host) {
+    if (host.icon_id == 0 || host.icon_width <= 0 || host.icon_height <= 0 ||
+        host.icon_rgba.size() !=
+            static_cast<std::size_t>(host.icon_width) * static_cast<std::size_t>(host.icon_height) * 4u) {
+        return nullptr;
+    }
+    HostIcon& icon = icons_[host.address + ":" + std::to_string(host.session_port)];
+    if (icon.icon_id != host.icon_id) {
+        icon.icon_id = host.icon_id;
+        icon.texture = Texture();
+        icon.texture.upload_rgba8888(reinterpret_cast<const uint32_t*>(host.icon_rgba.data()),
+                                     host.icon_width, host.icon_height, host.icon_width);
+        // Drawn at about twice its size: smoothed, as the quick menu's is.
+        icon.texture.set_linear_filtering(true);
+    }
+    return icon.texture.valid() ? &icon.texture : nullptr;
+}
+
 void HostPickerScreen::render(QuadRenderer& quads,
                               TextRenderer& text,
                               const ButtonGlyphSheet& glyphs,
@@ -324,14 +342,24 @@ void HostPickerScreen::render(QuadRenderer& quads,
         draw_menu_row(quads, row, focused, scale, index + 1 == rows.size(), static_cast<int>(index) == focus_ + 1);
 
         const float pad = menu_row_pad(line);
-        // The same two lines as Data Management's rows: the name, and under
-        // it, smaller, what it is.
+        // Laid out as Data Management's rows are: the game's icon, then the
+        // game's name and under it, smaller, the device's. Until the icon
+        // comes in -- or from a host that does not send one -- a blank tile
+        // holds its place, so the names never shift across when it lands.
+        const float icon_size = line * 2.0f;
+        const PixelRect icon_rect{row.x + pad, row.y + (row.h - icon_size) * 0.5f, icon_size, icon_size};
+        if (const Texture* icon = icon_for(host)) {
+            quads.draw_image(icon_rect, *icon, Color{1.0f, 1.0f, 1.0f, available ? 1.0f : 0.5f});
+        } else {
+            quads.draw_rounded_rect(icon_rect, icon_rect.w * 0.12f, Color{theme.text_dim.r, theme.text_dim.g, theme.text_dim.b, theme.text_dim.a * 0.35f});
+        }
+        const float text_x = row.x + pad * 1.8f + icon_size;
         const float sub_scale = scale * 0.75f;
         const float step = line * 1.3f;
         const float top = row.y + (row.h - step - TextRenderer::line_height(sub_scale)) * 0.5f;
-        text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, row.x + pad, top,
+        text.draw(quads, host.game_title.empty() ? "(no game)" : host.game_title, text_x, top,
                   scale, available ? menu_row_text(focused) : theme.text_dim);
-        text.draw(quads, host_row_detail(host, available), row.x + pad, top + step, sub_scale,
+        text.draw(quads, host_row_detail(host, available), text_x, top + step, sub_scale,
                   theme.text_dim);
     }
 

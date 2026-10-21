@@ -427,6 +427,10 @@ bool HostSession::start(const Config& config, std::string* error) {
         // pointed at this address directly.
         log_warn("cannot announce this host on the network: " + announce_error);
     }
+    // Once, here: the icon does not change while the game is played.
+    announcer_.set_icon(encode_beacon_icon(config_.game_icon_width, config_.game_icon_height,
+                                           config_.game_icon_rgba,
+                                           listener_.port() != 0 ? listener_.port() : kSessionPort));
     refresh_beacon();
     log_info("hosting " + config_.game_title + " on port " + std::to_string(listener_.port()));
     return true;

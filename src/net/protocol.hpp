@@ -505,6 +505,35 @@ struct BeaconMessage {
     bool bottom_available = true;
 };
 
+// The game's icon, for beside its title in the companion's picker. Sent on the
+// discovery port beside the beacon rather than inside it: an icon is several
+// kilobytes even shrunk and deflated, a beacon has to stay one small datagram,
+// and a broadcast too big for one packet is the kind a Wi-Fi network drops.
+// So it goes in pieces, each a datagram of its own under its own magic number,
+// which a build from before this reads as a beacon it cannot decode and drops.
+constexpr uint32_t kBeaconIconMagic = 0x49535344u;  // "DSSI" little-endian
+// Shrunk to fit this square first: the picker draws it at about this size on
+// a 1080p screen, and a Wii U game's 128 would only be four times the pieces.
+constexpr int kBeaconIconMaxSide = 64;
+// What one piece carries, well under a packet once the header and the
+// network's own are added.
+constexpr std::size_t kBeaconIconPieceBytes = 1200;
+
+struct BeaconIconPiece {
+    uint16_t protocol_version = kProtocolVersion;
+    // Which of the host's sessions it belongs to, as its beacon names it.
+    uint16_t session_port = kSessionPort;
+    // Tells one icon from the next, so pieces of two never get mixed.
+    uint32_t icon_id = 0;
+    uint16_t width = 0;
+    uint16_t height = 0;
+    uint16_t index = 0;
+    uint16_t count = 0;
+    // The whole deflated icon's size, which every piece repeats.
+    uint32_t total_bytes = 0;
+    std::vector<uint8_t> data;
+};
+
 // The Wii U GamePad's own motor, standing in for whichever controller the
 // companion actually holds -- see ExternalControl::Rumble for where this
 // starts. Just on/off: what a real Wii U GamePad's motor does with a finer
@@ -867,6 +896,19 @@ bool decode_frame_ack(const uint8_t* data, std::size_t size, uint64_t& out_seria
 // The beacon is not framed -- it replaces the buffer with one datagram.
 void encode_beacon(const BeaconMessage& message, std::vector<uint8_t>& out);
 bool decode_beacon(const uint8_t* data, std::size_t size, BeaconMessage& out);
+// The icon (RGBA8, width x height), shrunk and deflated and cut into the
+// datagrams that carry it. Empty when there is no icon to send.
+std::vector<std::vector<uint8_t>> encode_beacon_icon(int width,
+                                                     int height,
+                                                     const std::vector<uint8_t>& rgba,
+                                                     uint16_t session_port);
+bool decode_beacon_icon_piece(const uint8_t* data, std::size_t size, BeaconIconPiece& out);
+// The pieces' bytes, put together, back into RGBA8. False unless they come to
+// exactly width x height.
+bool inflate_beacon_icon(const std::vector<uint8_t>& deflated,
+                         int width,
+                         int height,
+                         std::vector<uint8_t>& rgba);
 void encode_ping(std::vector<uint8_t>& out);
 
 bool decode_hello(const uint8_t* data, std::size_t size, HelloMessage& out);

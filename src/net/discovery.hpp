@@ -25,6 +25,13 @@ struct DiscoveredHost {
     bool top_available = true;
     bool bottom_available = true;
     uint64_t last_seen_ms = 0;
+    // The game's icon, RGBA8, once all of its pieces have come in -- see
+    // BeaconIconPiece. Empty from a host from before it was sent, or until
+    // then. `icon_id` changes whenever the icon does.
+    uint32_t icon_id = 0;
+    int icon_width = 0;
+    int icon_height = 0;
+    std::vector<uint8_t> icon_rgba;
 
     bool offers(ScreenId screen) const {
         return screen == ScreenId::Top ? top_available : bottom_available;
@@ -48,6 +55,9 @@ public:
 
     // Cheap to call every frame: it only hands the beacon over.
     void set_beacon(const BeaconMessage& beacon);
+    // The game's icon, as encode_beacon_icon() cut it up; sent beside the
+    // beacon, every kBeaconIconEvery beacons.
+    void set_icon(std::vector<std::vector<uint8_t>> pieces);
     // Nothing to do any more -- the thread sends -- and kept so callers need
     // not change.
     void poll(uint64_t now_ms) { (void)now_ms; }
@@ -62,6 +72,7 @@ private:
     BeaconMessage beacon_;
     std::vector<uint8_t> encoded_;
     bool dirty_ = true;
+    std::vector<std::vector<uint8_t>> icon_pieces_;
     std::thread worker_;
 };
 
@@ -77,11 +88,29 @@ public:
 
     // Exposed so the merge and expiry rules can be tested without sockets.
     void ingest(const BeaconMessage& beacon, const std::string& address, uint64_t now_ms);
+    void ingest_icon(const BeaconIconPiece& piece, const std::string& address, uint64_t now_ms);
     void expire(uint64_t now_ms);
 
 private:
+    // One host's icon as its pieces come in, and once they all have.
+    struct IconAssembly {
+        std::string address;
+        uint16_t session_port = 0;
+        uint32_t icon_id = 0;
+        int width = 0;
+        int height = 0;
+        uint32_t total_bytes = 0;
+        std::vector<std::vector<uint8_t>> pieces;
+        std::vector<bool> received;
+        bool complete = false;
+        std::vector<uint8_t> rgba;
+        uint64_t last_seen_ms = 0;
+    };
+    static void give_icon(DiscoveredHost& host, const IconAssembly& icon);
+
     UdpSocket socket_;
     std::vector<DiscoveredHost> hosts_;
+    std::vector<IconAssembly> icons_;
     // Hosts heard speaking another protocol version, said once each: they are
     // not listed, and "the other device never shows up" is otherwise all the
     // player sees of two builds that no longer match.
@@ -93,6 +122,10 @@ private:
 // dropped datagram never makes a host flicker out of the list.
 constexpr uint64_t kBeaconIntervalMs = 1000;
 constexpr uint64_t kHostExpiryMs = 5000;
+// The icon goes with the first beacon and every this many after it: a picker
+// opened mid-game has it in a moment or two, and the network is not carrying
+// the same few kilobytes every second for the whole of a session.
+constexpr int kBeaconIconEvery = 2;
 
 // How long joining a host is given before it is called off. Generous against a
 // LAN handshake, which is a few round trips, and short enough that picking a

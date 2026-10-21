@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -7,6 +8,7 @@
 #include "input/input_manager.hpp"
 #include "net/discovery.hpp"
 #include "render/button_glyphs.hpp"
+#include "render/texture.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/menu_page.hpp"
 #include "ui/control_guide.hpp"
@@ -184,6 +186,14 @@ private:
     // How many hosts update() was last given, which entry_at() lays out.
     std::size_t host_count_ = 0;
     std::vector<GuideHit> guide_hits_;
+    // Each host's game icon, by its address and port, loaded the first time
+    // its row is drawn with it.
+    struct HostIcon {
+        uint32_t icon_id = 0;
+        Texture texture;
+    };
+    std::map<std::string, HostIcon> icons_;
+    const Texture* icon_for(const ds::net::DiscoveredHost& host);
 
 public:
     // Where this screen's prompts ended up, for a finger. See
