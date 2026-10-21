@@ -134,7 +134,8 @@ enum class GlyphCell {
     XboxGuide,
     XboxShare,
     // Four dots, the one to press filled in -- see PadGlyphStyle::Positional
-    // -- and a Steam Controller's shoulders and triggers, the plainest.
+    // -- and a Steam Controller's shoulders, triggers, options and view, the
+    // plainest.
     DotsEast,
     DotsSouth,
     DotsNorth,
@@ -143,6 +144,8 @@ enum class GlyphCell {
     SteamR1,
     SteamL2,
     SteamR2,
+    SteamOptions,
+    SteamView,
     Count
 };
 

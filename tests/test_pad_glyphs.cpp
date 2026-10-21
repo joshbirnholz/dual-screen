@@ -51,15 +51,15 @@ void test_playstation_is_shapes() {
 }
 
 // Positional names each button by where it is, and nothing else: the dots
-// for its own corner, and the Nintendo symbols for the buttons that have no
-// corner.
+// for its own corner, and a Steam Controller's plain options and view for
+// start and select, which have none.
 void test_positional_prompts_are_the_four_corners() {
     CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::A) == GlyphCell::DotsEast);
     CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::B) == GlyphCell::DotsSouth);
     CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::X) == GlyphCell::DotsNorth);
     CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Y) == GlyphCell::DotsWest);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Plus) == GlyphCell::Plus);
-    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Minus) == GlyphCell::Minus);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Plus) == GlyphCell::SteamOptions);
+    CHECK(glyph_cell(PadGlyphStyle::Positional, ButtonGlyph::Minus) == GlyphCell::SteamView);
 }
 
 // Four face buttons, four different symbols, in every style. A table that

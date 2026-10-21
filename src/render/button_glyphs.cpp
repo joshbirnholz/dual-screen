@@ -40,8 +40,8 @@ bool pad_glyph_style_from_string(const std::string& text, PadGlyphStyle& out) {
 //   Positional four dots, the one in that corner filled in
 //
 // and every other button as that pad prints it. Positional has no printing
-// of its own past the face buttons: a Switch's, but for the shoulders and
-// triggers, a Steam Controller's plain ones.
+// of its own past the face buttons: a Switch's, but for the shoulders,
+// triggers, start and select, a Steam Controller's plain ones.
 GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
     using C = GlyphCell;
     constexpr int kGlyphs = static_cast<int>(ButtonGlyph::Count);
@@ -66,7 +66,7 @@ GlyphCell glyph_cell(PadGlyphStyle style, ButtonGlyph glyph) {
         C::XboxGuide, C::XboxShare};
     static constexpr GlyphCell kPositional[kGlyphs] = {
         C::DotsEast, C::DotsSouth, C::DotsNorth, C::DotsWest, C::LeftStick, C::RightStick,
-        C::Plus, C::Minus, C::SteamL1, C::SteamR1, C::SteamL2, C::SteamR2, C::SwitchDpadUp,
+        C::SteamOptions, C::SteamView, C::SteamL1, C::SteamR1, C::SteamL2, C::SteamR2, C::SwitchDpadUp,
         C::SwitchDpadDown, C::SwitchDpadLeft, C::SwitchDpadRight, C::SwitchDpad, C::SwitchStickL,
         C::SwitchStickR, C::SwitchHome, C::SwitchCapture};
     const int index = static_cast<int>(glyph);
