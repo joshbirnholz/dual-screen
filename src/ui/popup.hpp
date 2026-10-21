@@ -18,8 +18,8 @@ namespace ds {
 // screen, what it has to say inset at the top, and its answers as buttons
 // along the bottom -- side by side, split by a rule, or, when an answer has a
 // detail of its own (a save's date), one above the other. The button with the
-// cursor, or a finger held on it, is filled with the accent's wash, its words
-// in the accent. Every popup in the app is one of
+// cursor is ringed in the accent colour; one a finger is held on is filled
+// with the accent's wash, its words in the accent. Every popup in the app is one of
 // these: the quick menu's questions, Data Management's, and the notices.
 //
 // The words are the caller's to draw, inside `body`; this is the box, the
@@ -144,18 +144,18 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
     }
     for (std::size_t index = 0; index < geometry.buttons.size() && index < buttons.size(); ++index) {
         const PixelRect& button = geometry.buttons[index];
-        // Highlighted as a Switch's are, under the cursor or a finger held
-        // on it: filled with the accent's wash edge to edge, its words in
-        // the accent -- the same as a dropdown's choices.
-        const bool lit = (show_focus && cursor_drawn(static_cast<int>(index) == focus)) ||
-                         pointer_holding(button);
+        const std::size_t last = geometry.buttons.size() - 1;
+        const bool bottom = geometry.stacked ? index == last : true;
+        const bool left_end = geometry.stacked || index == 0;
+        const bool right_end = geometry.stacked || index == last;
+        // Held under a finger, filled as a Switch fills it, edge to edge,
+        // its words in the accent; under the cursor, ringed -- never both,
+        // a finger going down having hidden the cursor.
+        const bool lit = pointer_holding(button);
+        const bool focused = !lit && show_focus && cursor_drawn(static_cast<int>(index) == focus);
         if (lit) {
             // Square, but for a corner it shares with the box, which it
             // follows.
-            const std::size_t last = geometry.buttons.size() - 1;
-            const bool bottom = geometry.stacked ? index == last : true;
-            const bool left_end = geometry.stacked || index == 0;
-            const bool right_end = geometry.stacked || index == last;
             const float radii[4] = {0.0f, 0.0f, bottom && right_end ? radius : 0.0f,
                                     bottom && left_end ? radius : 0.0f};
             // Below the rule along its top, which stays.
@@ -164,6 +164,21 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
             quads.draw_rounded_ring(fill, radii, fill.w + fill.h, popup_fill(), popup_fill());
             quads.draw_rounded_ring(fill, radii, fill.w + fill.h, menu_highlight_fill(),
                                     menu_highlight_fill());
+        } else if (focused) {
+            // Ringed, the ring standing a little proud of the button.
+            const float ring = std::max(3.0f, std::round(scale * 1.4f));
+            const float out = std::round(ring * 0.6f);
+            const PixelRect outer{button.x - out, button.y - out, button.w + out * 2.0f,
+                                  button.h + out * 2.0f};
+            // Barely rounded, but for a corner it shares with the box, which
+            // it follows from just outside -- as a Switch's popups draw it.
+            const float small = std::max(3.0f, std::round(scale * 2.0f));
+            const float big = radius + out;
+            const float radii[4] = {small, small, bottom && right_end ? big : small,
+                                    bottom && left_end ? big : small};
+            const Color dark{0.10f, 0.105f, 0.11f, 1.0f};
+            quads.draw_rounded_ring(outer, radii, outer.w + outer.h, dark, dark);
+            quads.draw_rounded_ring(outer, radii, ring, menu_ring_left(), menu_ring_right());
         }
         const Color& ink = lit ? theme.accent : theme.text;
         const PopupButton& label = buttons[index];

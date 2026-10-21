@@ -112,9 +112,8 @@ inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float r
 }
 
 // What a Switch fills a row, a popup's button or a dropdown's choice with
-// while a finger is held on it -- and a popup's button or choice under the
-// cursor, which it highlights the same way rather than ringing: a wash of
-// the accent, dark enough that the words on it still read.
+// while a finger is held on it, and only then -- the cursor is a ring: a
+// wash of the accent, dark enough that the words on it still read.
 inline Color menu_highlight_fill() {
     const Color& accent = ui_theme().accent;
     return Color{accent.r, accent.g, accent.b, 0.32f};

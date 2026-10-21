@@ -382,15 +382,16 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
                              theme.text_dim, TextAlign::Left, false, 0.0f);
             continue;
         }
-        // Highlighted as a Switch's are -- under the cursor, while it shows,
-        // or under a finger held on it: the accent's wash, the words in the
-        // accent, as a popup's buttons are.
-        const bool focused = cursor_drawn(static_cast<int>(index) == focus_) ||
-                             (pointer_holding(row) && shape.list.contains(live_pointer().x, live_pointer().y));
+        // Held under a finger, filled as a Switch fills it, the words in the
+        // accent, as a popup's buttons are; under the cursor, ringed.
+        const bool held = pointer_holding(row) && shape.list.contains(live_pointer().x, live_pointer().y);
+        const bool focused = held || cursor_drawn(static_cast<int>(index) == focus_);
         const bool chosen = static_cast<int>(index) == current_;
-        if (focused) {
+        if (held) {
             const Color fill = menu_highlight_fill();
             quads.draw_rounded_ring(row, std::round(scale * 1.5f), row.w + row.h, fill, fill);
+        } else if (focused) {
+            draw_menu_cursor(quads, row, std::round(std::min(row.h * 0.3f, radius)), scale);
         }
         // The radio circle at the right: the one in effect filled, a white
         // dot in it.
@@ -434,7 +435,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
             text_right = hint_x - gap;
         }
         draw_fitted_text(quads, text, choices_[index], text_x, std::round(row.y + (row.h - line) * 0.5f),
-                         text_right - text_x, scale, focused ? theme.accent : theme.text, TextAlign::Left,
+                         text_right - text_x, scale, held ? theme.accent : theme.text, TextAlign::Left,
                          focused, focus_seconds);
     }
     quads.clear_clip();
