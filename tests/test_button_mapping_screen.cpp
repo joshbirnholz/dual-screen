@@ -40,6 +40,9 @@ ButtonMappingScreenResult tap_entry(ButtonMappingScreen& screen, int entry) {
     return screen.update({}, {}, kWidth, kHeight);
 }
 
+// Whether Y would toggle turbo on the row the cursor is on.
+bool can_press_turbo(ButtonMappingScreen& screen) { return press(screen, UiAction::MenuReset).changed.has_value(); }
+
 // The row `control` is on.
 int row_of(PadControl control) {
     for (std::size_t row = 0; row < kPadControls; ++row) {
@@ -69,11 +72,11 @@ void test_the_cursor_stops_at_the_ends() {
     press(screen, UiAction::Up);
     CHECK_EQ(screen.focus(), 0);
     for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
-    CHECK_EQ(screen.focus(), static_cast<int>(kPadControls) - 1);
+    CHECK_EQ(screen.focus(), ButtonMappingScreen::kRows - 1);
     // Left and right are nothing here.
     press(screen, UiAction::Left);
     press(screen, UiAction::Right);
-    CHECK_EQ(screen.focus(), static_cast<int>(kPadControls) - 1);
+    CHECK_EQ(screen.focus(), ButtonMappingScreen::kRows - 1);
     CHECK(!screen.choosing());
 }
 
@@ -504,6 +507,56 @@ void test_the_other_device_places_a_touch_point() {
     CHECK(!mirror.placing() && mirror.choosing());
 }
 
+// The right stick's row, last: what it is, from a list of what the console
+// offers; the Touch Analog Stick placed and sized on a page of its own, A
+// keeping it and making the right stick it.
+void test_the_right_stick_is_chosen_and_the_touch_analog_stick_placed() {
+    ButtonMappingScreen screen = open_screen();
+    for (int step = 0; step < 30; ++step) press(screen, UiAction::Down);
+    CHECK_EQ(screen.focus(), ButtonMappingScreen::kRightStickRow);
+    CHECK(!can_press_turbo(screen));
+    press(screen, UiAction::Confirm);
+    CHECK(screen.choosing());
+    // A DS: Touch Cursor, its standard, then the Touch Analog Stick and Off.
+    CHECK_EQ(screen.choice_focus(), 0);
+    const ButtonMappingScreenResult off = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 2);
+    CHECK(off.right_stick.has_value() && *off.right_stick == RightStickMode::Off);
+    CHECK(!off.changed.has_value());
+
+    press(screen, UiAction::Confirm);
+    tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 1);
+    CHECK(screen.placing_stick());
+    CHECK(screen.spot() == TouchSpot());
+    CHECK_EQ(screen.stick_radius(), kDefaultStickRadius);
+    press(screen, UiAction::PageDown);
+    CHECK(screen.stick_radius() > kDefaultStickRadius);
+    press(screen, UiAction::PageUp);
+    press(screen, UiAction::PageUp);
+    CHECK(screen.stick_radius() < kDefaultStickRadius);
+    screen.steer(-1.0f, 0.0f, 0.1f);
+    const ButtonMappingScreenResult kept = press(screen, UiAction::Confirm);
+    CHECK(!screen.placing());
+    CHECK(kept.right_stick.has_value() && *kept.right_stick == RightStickMode::TouchAnalog);
+    CHECK(kept.changed.has_value());
+    if (kept.changed) {
+        CHECK(kept.changed->stick_centre.u < 0.5f);
+        CHECK(kept.changed->stick_radius < kDefaultStickRadius);
+    }
+}
+
+// Where the Touch Analog Stick touches: nothing at rest, its centre at the
+// deadzone's edge, its edge at a full push -- as far across as down.
+void test_the_touch_analog_stick_touches_where_it_is_pushed() {
+    TouchSpot at;
+    const TouchSpot centre{0.5f, 0.5f};
+    CHECK(!touch_analog_stick_spot(0, 0, 0.2f, centre, 0.25f, 4.0f / 3.0f, at));
+    CHECK(!touch_analog_stick_spot(3000, 0, 0.2f, centre, 0.25f, 4.0f / 3.0f, at));
+    CHECK(touch_analog_stick_spot(0, 32767, 0.2f, centre, 0.25f, 4.0f / 3.0f, at));
+    CHECK(std::fabs(at.u - 0.5f) < 0.001f && std::fabs(at.v - 0.75f) < 0.001f);
+    CHECK(touch_analog_stick_spot(32767, 0, 0.2f, centre, 0.25f, 4.0f / 3.0f, at));
+    CHECK(std::fabs(at.u - (0.5f + 0.25f * 3.0f / 4.0f)) < 0.001f && std::fabs(at.v - 0.5f) < 0.001f);
+}
+
 }  // namespace
 
 int main() {
@@ -517,6 +570,8 @@ int main() {
     test_y_toggles_turbo();
     test_y_toggles_turbo_for_a_touch_point();
     test_the_d_pad_is_mapped_a_direction_at_a_time();
+    test_the_right_stick_is_chosen_and_the_touch_analog_stick_placed();
+    test_the_touch_analog_stick_touches_where_it_is_pushed();
     test_a_touch_point_is_placed();
     test_a_touch_point_is_dragged_and_kept_with_ok();
     test_the_other_device_places_a_touch_point();

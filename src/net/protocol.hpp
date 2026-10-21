@@ -166,6 +166,10 @@ enum class MenuAction : uint8_t {
     // where Cancel steps back out of a section first. A host that predates it
     // drops it, as it drops any value it does not know.
     Close = 11,
+    // L and R in a menu: the Touch Analog Stick made smaller and larger, a
+    // page of a list.
+    PageUp = 12,
+    PageDown = 13,
 };
 
 // How a screen's pixels are encoded in a Frame message.
@@ -773,11 +777,15 @@ struct ButtonMappingViewMessage {
     bool placing = false;
     float spot_u = 0.5f;
     float spot_v = 0.5f;
+    // Or the Touch Analog Stick, its centre the spot above and this its size.
+    bool placing_stick = false;
+    float stick_radius = kDefaultStickRadius;
 
     bool operator==(const ButtonMappingViewMessage& other) const {
         return open == other.open && focus == other.focus && choice_focus == other.choice_focus &&
                confirm_focus == other.confirm_focus &&
-               placing == other.placing && spot_u == other.spot_u && spot_v == other.spot_v;
+               placing == other.placing && spot_u == other.spot_u && spot_v == other.spot_v &&
+               placing_stick == other.placing_stick && stick_radius == other.stick_radius;
     }
 };
 

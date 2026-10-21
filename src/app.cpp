@@ -1283,6 +1283,9 @@ struct App::Impl {
     // The stylus on the right stick: moved by the stick in `held`, which it
     // takes out, and touching for R3 -- see RightStickMode::TouchCursor.
     void apply_stylus_cursor(DsInputState& held);
+    // The right stick as the Touch Analog Stick: the touch screen touched
+    // where it is pushed to, while it is.
+    void apply_touch_analog_stick(DsInputState& held, const ScreenSize& touch);
     // The pad moving the spot on Touch Point's page, as smoothly as the
     // Touch Cursor moves in a game. True if it moved.
     bool steer_touch_spot(ButtonMappingScreen& screen);
@@ -2173,6 +2176,7 @@ void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& action
         log_info(back_to_standard ? "button mapping: every button is back to standard"
                                   : "button mapping: a button was given another job");
     }
+    if (result.right_stick) request_right_stick_mode(*result.right_stick);
     if (result.close_everything) {
         close_cemu_page();
         if (state == State::Menu) set_menu_open(false);
@@ -4025,11 +4029,16 @@ void App::Impl::apply_stylus_cursor(DsInputState& held) {
     const uint32_t now = SDL_GetTicks();
     const float seconds = stylus_ticks == 0 ? 0.0f : static_cast<float>(now - stylus_ticks) / 1000.0f;
     stylus_ticks = now;
+    const ScreenSize touch = system_profile(system).screens.bottom;
+    if (right_stick_mode == RightStickMode::TouchAnalog) {
+        stylus_cursor.hide();
+        apply_touch_analog_stick(held, touch);
+        return;
+    }
     if (right_stick_mode != RightStickMode::TouchCursor) {
         stylus_cursor.hide();
         return;
     }
-    const ScreenSize touch = system_profile(system).screens.bottom;
     // Down on the stick is down the screen as it is drawn, sideways or not.
     int16_t push_x = held.c_stick_x;
     int16_t push_y = held.c_stick_y;
@@ -4045,6 +4054,26 @@ void App::Impl::apply_stylus_cursor(DsInputState& held) {
         held.touch_x = stylus_cursor.x();
         held.touch_y = stylus_cursor.y();
     }
+}
+
+void App::Impl::apply_touch_analog_stick(DsInputState& held, const ScreenSize& touch) {
+    // Down on the stick is down the screen as it is drawn, sideways or not.
+    int16_t push_x = held.c_stick_x;
+    int16_t push_y = held.c_stick_y;
+    unturn_stick_push(touch_screen_rotation(), push_x, push_y);
+    held.c_stick_x = 0;
+    held.c_stick_y = 0;
+    // A finger on the glass is the touch while it is there; the stick only
+    // touches while it is pushed.
+    if (held.touching) return;
+    TouchSpot at;
+    if (!touch_analog_stick_spot(push_x, push_y, settings.stick_deadzone, button_mapping.stick_centre,
+                                 button_mapping.stick_radius, static_cast<float>(touch.width) / touch.height, at)) {
+        return;
+    }
+    held.touching = true;
+    held.touch_x = std::clamp(static_cast<int>(at.u * touch.width), 0, touch.width - 1);
+    held.touch_y = std::clamp(static_cast<int>(at.v * touch.height), 0, touch.height - 1);
 }
 
 void App::Impl::publish_stylus_cursor() {

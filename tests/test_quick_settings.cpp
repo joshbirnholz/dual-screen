@@ -166,11 +166,9 @@ int taps_that_cycle_the_right_stick(const LayoutRegistry& registry, const Layout
     return hits;
 }
 
-// What the right stick does is in Controls, and only a question on a console
-// that has a stick of its own. A 3DS gets the button on both devices -- one menu, reachable
-// from either end -- and a DS gets nothing to press, because there its left
-// stick is already standing in for the d-pad and the right one has nothing to
-// be.
+// What the right stick does is a row of Change Controls now, not one of the
+// quick menu's own: nothing in the menu cycles it, on either device, even
+// for a console with a stick of its own.
 void test_the_right_stick_button_appears_only_where_there_is_a_stick() {
     LayoutRegistry registry;
 
@@ -178,11 +176,11 @@ void test_the_right_stick_button_appears_only_where_there_is_a_stick() {
     three_ds.layout_id = registry.at(0).id;
     three_ds.right_stick_choosable = system_profile(SystemId::ThreeDs).has_analog_stick;
     CHECK(three_ds.right_stick_choosable);
-    CHECK(taps_that_cycle_the_right_stick(registry, three_ds) > 0);
+    CHECK_EQ(taps_that_cycle_the_right_stick(registry, three_ds), 0);
 
     LayoutPickerState companion = three_ds;
     companion.session_active = true;
-    CHECK(taps_that_cycle_the_right_stick(registry, companion) > 0);
+    CHECK_EQ(taps_that_cycle_the_right_stick(registry, companion), 0);
 
     LayoutPickerState ds = three_ds;
     ds.right_stick_choosable = system_profile(SystemId::Ds).has_analog_stick;
@@ -746,8 +744,8 @@ void test_moving_between_the_list_and_what_it_shows() {
     }
 }
 
-// A DS or 3DS game's Controls: Button Mapping first, a page of its own, and
-// the right stick under it. A tap on the first asks for the page; a menu
+// A DS or 3DS game's Controls: Change Controls, a page of its own, which has
+// the right stick on it too. A tap on the first asks for the page; a menu
 // with neither has no Controls at all.
 void test_controls_hold_the_button_mapping_and_the_right_stick() {
     LayoutRegistry registry;
@@ -758,7 +756,7 @@ void test_controls_hold_the_button_mapping_and_the_right_stick() {
     LayoutPicker picker(registry);
     open_on(picker, state, MenuSection::ControllerOrder);
     CHECK(picker.section() == MenuSection::ControllerOrder);
-    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 2);
+    CHECK_EQ(picker.items_in(MenuSection::ControllerOrder), 1);
     picker.update({UiAction::Right}, {}, kWidth, kHeight);
     CHECK(picker.update({UiAction::Confirm}, {}, kWidth, kHeight).button_mapping_requested);
 

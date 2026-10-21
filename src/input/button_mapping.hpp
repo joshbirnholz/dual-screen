@@ -106,6 +106,16 @@ struct TouchSpot {
     bool operator==(const TouchSpot& other) const { return u == other.u && v == other.v; }
 };
 
+// The Touch Analog Stick's size as standard -- how far from its centre a full
+// push touches, as a fraction of the touch screen's height -- and the least
+// and most it can be.
+inline constexpr float kDefaultStickRadius = 0.25f;
+inline constexpr float kMinStickRadius = 0.08f;
+inline constexpr float kMaxStickRadius = 0.5f;
+inline float clamp_stick_radius(float radius) {
+    return radius < kMinStickRadius ? kMinStickRadius : radius > kMaxStickRadius ? kMaxStickRadius : radius;
+}
+
 // A game's Button Mapping: what each control does, Standard for those never
 // changed.
 struct ButtonMapping {
@@ -117,6 +127,10 @@ struct ButtonMapping {
     // For a control that is Touch Point, where it touches. Kept when the
     // control is given another job, to be where it was if it is put back.
     std::array<TouchSpot, kPadControls> touch_points{};
+    // Where the Touch Analog Stick is drawn on the touch screen, and how big,
+    // for a right stick that is one -- see RightStickMode::TouchAnalog.
+    TouchSpot stick_centre;
+    float stick_radius = kDefaultStickRadius;
 
     PadAction& operator[](PadControl control) { return actions[static_cast<std::size_t>(control)]; }
     PadAction operator[](PadControl control) const { return actions[static_cast<std::size_t>(control)]; }
@@ -131,10 +145,19 @@ struct ButtonMapping {
     bool is_standard(const PadConsole& console) const;
 
     bool operator==(const ButtonMapping& other) const {
-        return actions == other.actions && turbo_of == other.turbo_of && touch_points == other.touch_points;
+        return actions == other.actions && turbo_of == other.turbo_of && touch_points == other.touch_points &&
+               stick_centre == other.stick_centre && stick_radius == other.stick_radius;
     }
     bool operator!=(const ButtonMapping& other) const { return !(*this == other); }
 };
+
+// Where the Touch Analog Stick touches for a stick pushed `stick_x`,
+// `stick_y` (as SDL reads one): out from `centre` as far as the push goes past
+// `deadzone`, `radius` of the screen's height at a full push, the same
+// distance across as down on a screen `aspect` wide for its height. False
+// while the stick is not pushed, when it touches nothing.
+bool touch_analog_stick_spot(int16_t stick_x, int16_t stick_y, float deadzone, const TouchSpot& centre,
+                             float radius, float aspect, TouchSpot& out);
 
 // What Button Mapping's picker offers, in its order: the console's buttons,
 // then the touch screen's and this app's, then Nothing -- one list. Only what the console has -- a DS has no ZL

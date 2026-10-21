@@ -69,6 +69,7 @@ void ButtonMappingScreen::open() {
     choice_.close();
     confirming_ = false;
     placing_ = false;
+    placing_stick_ = false;
     mirrored_focus_ = -1;
 }
 
@@ -99,11 +100,11 @@ ButtonMappingScreen::Geometry ButtonMappingScreen::compute_geometry(float output
     const float list_width = std::round(frame.panel.w * 0.58f);
     geometry.list = PixelRect{frame.panel.x, geometry.view_top, list_width,
                               geometry.view_bottom - geometry.view_top};
-    geometry.content_height = static_cast<float>(kPadControls) * step;
+    geometry.content_height = static_cast<float>(kRows) * step;
     const bool scrolls = geometry.max_scroll() > 0.5f;
     const float row_width =
         list_width - (scrolls ? scroll_bar_width(geometry.scale) + frame.line * 0.6f : 0.0f);
-    for (std::size_t index = 0; index < kPadControls; ++index) {
+    for (std::size_t index = 0; index < static_cast<std::size_t>(kRows); ++index) {
         geometry.rows.push_back(PixelRect{frame.panel.x, geometry.view_top - scroll_ + index * step,
                                           row_width, row_height});
     }
@@ -129,11 +130,26 @@ void ButtonMappingScreen::scroll_focus_into_view(const Geometry& geometry) {
 
 void ButtonMappingScreen::open_choice(float output_width, float output_height) {
     const Geometry geometry = compute_geometry(output_width, output_height);
+    choice_actions_.clear();
+    choice_modes_.clear();
+    if (on_right_stick()) {
+        // The right stick's: what it can be on this console, the Touch
+        // Analog Stick going on to a page of its own.
+        std::vector<std::string> labels;
+        int current = 0;
+        for (const RightStickMode mode : stick_modes()) {
+            if (mode == console_.right_stick) current = static_cast<int>(labels.size());
+            labels.push_back(mode == RightStickMode::TouchAnalog ? std::string(to_string(mode)) + "\u2026"
+                                                                 : std::string(to_string(mode)));
+            choice_modes_.push_back(mode);
+        }
+        choice_.open(std::move(labels), current, geometry.rows[static_cast<std::size_t>(focus_)]);
+        return;
+    }
     // A button on turbo shows the button it presses as its choice.
     const PadAction resolved = mapping_.resolved(focused_control(), console_);
     const PadAction now = resolved == PadAction::Turbo ? mapping_.turbo(focused_control()) : resolved;
     std::vector<std::string> labels;
-    choice_actions_.clear();
     int current = -1;
     // One list, no headings: the console's buttons, then the rest.
     for (const PadAction action : pad_action_choices(console_)) {
@@ -148,7 +164,11 @@ void ButtonMappingScreen::open_choice(float output_width, float output_height) {
 
 void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float output_height) {
     placing_ = false;
+    placing_stick_ = false;
     open_choice(output_width, output_height);
+    for (std::size_t index = 0; index < choice_modes_.size(); ++index) {
+        if (choice_modes_[index] == RightStickMode::TouchAnalog) choice_.set_focus(static_cast<int>(index));
+    }
     for (std::size_t index = 0; index < choice_actions_.size(); ++index) {
         if (choice_actions_[index] == on) {
             choice_.set_focus(static_cast<int>(index));
@@ -159,11 +179,40 @@ void ButtonMappingScreen::back_to_choice(PadAction on, float output_width, float
 void ButtonMappingScreen::start_placing() {
     choice_.close();
     placing_ = true;
+    placing_stick_ = false;
     spot_ = mapping_.spot(focused_control());
+}
+
+void ButtonMappingScreen::start_placing_stick() {
+    choice_.close();
+    placing_ = true;
+    placing_stick_ = true;
+    spot_ = mapping_.stick_centre;
+    stick_radius_ = mapping_.stick_radius;
+}
+
+std::vector<RightStickMode> ButtonMappingScreen::stick_modes() const {
+    return right_stick_modes(system_ == SystemId::ThreeDs);
+}
+
+ButtonGlyph ButtonMappingScreen::row_glyph(int row) const {
+    if (row == kRightStickRow) return ButtonGlyph::RightStickMove;
+    return glyph_for(kPadControlRows[static_cast<std::size_t>(std::clamp(row, 0, kRightStickRow - 1))]);
 }
 
 void ButtonMappingScreen::finish_placing(ButtonMappingScreenResult& result) {
     placing_ = false;
+    if (placing_stick_) {
+        placing_stick_ = false;
+        // The stick where it was put and as big, and the right stick made it.
+        if (!(mapping_.stick_centre == spot_) || mapping_.stick_radius != stick_radius_) {
+            mapping_.stick_centre = spot_;
+            mapping_.stick_radius = stick_radius_;
+            result.changed = mapping_;
+        }
+        if (console_.right_stick != RightStickMode::TouchAnalog) result.right_stick = RightStickMode::TouchAnalog;
+        return;
+    }
     const PadControl control = focused_control();
     // A button on turbo stays on it, touching there over and over.
     const bool turbo = mapping_[control] == PadAction::Turbo;
@@ -254,6 +303,16 @@ std::string ButtonMappingScreen::action_label(PadControl control) const {
 }
 
 void ButtonMappingScreen::choose(int index, ButtonMappingScreenResult& result) {
+    if (on_right_stick()) {
+        if (index < 0 || index >= static_cast<int>(choice_modes_.size())) return;
+        const RightStickMode mode = choice_modes_[static_cast<std::size_t>(index)];
+        if (mode == RightStickMode::TouchAnalog) {
+            start_placing_stick();
+            return;
+        }
+        if (mode != console_.right_stick) result.right_stick = mode;
+        return;
+    }
     if (index < 0 || index >= static_cast<int>(choice_actions_.size())) return;
     const PadControl control = focused_control();
     const PadAction action = choice_actions_[static_cast<std::size_t>(index)];
@@ -283,6 +342,7 @@ bool ButtonMappingScreen::is_turbo_button(PadAction action) const {
 }
 
 bool ButtonMappingScreen::can_toggle_turbo() const {
+    if (on_right_stick()) return false;
     const PadAction action = mapping_.resolved(focused_control(), console_);
     return action == PadAction::Turbo || action == PadAction::TouchPoint || is_turbo_button(action);
 }
@@ -371,6 +431,15 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
             switch (action) {
                 case UiAction::Confirm: finish_placing(result); break;
                 case UiAction::Cancel: back_to_choice(PadAction::TouchPoint, output_width, output_height); break;
+                // L and R: the Touch Analog Stick smaller and larger.
+                case UiAction::PageUp:
+                case UiAction::PageDown:
+                    if (placing_stick_) {
+                        constexpr float kStep = 0.02f;
+                        stick_radius_ = clamp_stick_radius(stick_radius_ +
+                                                           (action == UiAction::PageUp ? -kStep : kStep));
+                    }
+                    break;
                 case UiAction::ToggleMenu:
                     result.close_requested = true;
                     result.close_everything = true;
@@ -408,7 +477,7 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
         return result;
     }
 
-    const int last = static_cast<int>(kPadControls) - 1;
+    const int last = kRows - 1;
     for (const UiAction action : actions) {
         switch (action) {
             // No going round: the list stops at its ends.
@@ -490,12 +559,23 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         choose(index, result);
         return;
     }
-    if (choice_.is_open() || confirming_ || entry >= static_cast<int>(kPadControls)) return;
+    if (choice_.is_open() || confirming_ || entry >= kRows) return;
     // A tap chooses.
     if (tap_chooses(focus_, entry)) open_choice(output_width, output_height);
 }
 
 std::string ButtonMappingScreen::caption() const {
+    if (on_right_stick()) {
+        switch (console_.right_stick) {
+            case RightStickMode::CStick: return "is the 3DS's C-Stick.";
+            case RightStickMode::CirclePad: return "moves the Circle Pad, as the left stick does.";
+            case RightStickMode::DPad: return "presses the D-Pad's directions.";
+            case RightStickMode::TouchCursor: return "moves the Touch Cursor over the touch screen.";
+            case RightStickMode::TouchAnalog: return "drags a touch analog stick on the touch screen.";
+            case RightStickMode::Off: break;
+        }
+        return "is disabled in this game.";
+    }
     const PadControl control = focused_control();
     const PadAction action = mapping_.resolved(control, console_);
     DsButton button = DsButton::A;
@@ -523,8 +603,13 @@ std::string ButtonMappingScreen::caption() const {
 
 void ButtonMappingScreen::draw_console(QuadRenderer& quads, const PixelRect& box, PadControl control) const {
     const PadAction resolved = mapping_.resolved(control, console_);
-    // Turbo picks out the button it presses.
-    const PadAction action = resolved == PadAction::Turbo ? mapping_.turbo(control) : resolved;
+    // Turbo picks out the button it presses; the right stick's row the touch
+    // screen, for a stick that touches it.
+    const RightStickMode stick = console_.right_stick;
+    const bool stick_touches = stick == RightStickMode::TouchCursor || stick == RightStickMode::TouchAnalog;
+    const PadAction action = on_right_stick() ? (stick_touches ? PadAction::TouchCursor : PadAction::Standard)
+                             : resolved == PadAction::Turbo ? mapping_.turbo(control)
+                                                            : resolved;
     const UiTheme& theme = ui_theme();
     const bool three_ds = system_ == SystemId::ThreeDs;
     // Drawn on a grid of 460 by 520, scaled to fit the room it has.
@@ -579,6 +664,17 @@ void ButtonMappingScreen::draw_console(QuadRenderer& quads, const PixelRect& box
                             r * 2.0f, r * 2.0f};
         quads.draw_rounded_rect(dot, r, theme.accent);
         ring(dot, r, thin, theme.text);
+    }
+    // And the Touch Analog Stick where it sits, as big as it is.
+    if (on_right_stick() && stick == RightStickMode::TouchAnalog) {
+        const float r = std::max(2.0f, std::round(mapping_.stick_radius * touch.h));
+        const float cx = std::round(touch.x + mapping_.stick_centre.u * touch.w);
+        const float cy = std::round(touch.y + mapping_.stick_centre.v * touch.h);
+        quads.set_clip(touch);
+        ring(PixelRect{cx - r, cy - r, r * 2.0f, r * 2.0f}, r, thin, theme.text);
+        const float dot = std::round(5.0f * unit);
+        quads.draw_rounded_rect(PixelRect{cx - dot, cy - dot, dot * 2.0f, dot * 2.0f}, dot, theme.accent);
+        quads.clear_clip();
     }
     // The hinge, and on a DS the microphone in the middle of it.
     quads.draw_solid(at(60, 257, 340, 2), dim);
@@ -645,19 +741,22 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
                                   scale));
     const float pad = menu_row_pad(line);
     const float glyph_height = std::round(line * 1.7f);
-    for (std::size_t index = 0; index < kPadControls; ++index) {
+    for (std::size_t index = 0; index < static_cast<std::size_t>(kRows); ++index) {
         const PixelRect& row = geometry.rows[index];
         const bool focused = static_cast<int>(index) == focus_;
-        draw_menu_row(quads, row, focused, scale, index + 1 == kPadControls,
+        draw_menu_row(quads, row, focused, scale, index + 1 == static_cast<std::size_t>(kRows),
                       static_cast<int>(index) == focus_ + 1);
-        const PadControl control = kPadControlRows[index];
-        // The button as its icon alone, and what it does on the right.
+        // The button as its icon alone, and what it does on the right; the
+        // right stick, what it is.
+        const bool stick_row = static_cast<int>(index) == kRightStickRow;
+        const std::string value =
+            stick_row ? std::string(to_string(console_.right_stick)) : action_label(kPadControlRows[index]);
         const float centre = row.y + row.h * 0.5f;
-        glyphs.draw(quads, glyph_for(control), row.x + pad,
+        glyphs.draw(quads, row_glyph(static_cast<int>(index)), row.x + pad,
                     std::round(centre - glyph_height * glyphs.button_centre()), glyph_height, theme.text);
         const float value_left = row.x + pad + glyphs.width_for(glyph_height) + line * 1.2f;
         const float baseline = page_row_text_y(row, scale);
-        text.draw(quads, TextRenderer::elide_right(action_label(control), row.x + row.w - pad - value_left, scale),
+        text.draw(quads, TextRenderer::elide_right(value, row.x + row.w - pad - value_left, scale),
                   row.x + row.w - pad, baseline, scale, theme.text_dim, TextAlign::Right);
     }
     quads.clear_clip();
@@ -690,7 +789,7 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
             const float width = icon_width + TextRenderer::measure_width(rest, caption_scale);
             const float left = std::round(centre_x - width * 0.5f);
             const float text_centre = y + TextRenderer::line_height(caption_scale) * 0.5f;
-            glyphs.draw(quads, glyph_for(focused_control()), left,
+            glyphs.draw(quads, row_glyph(focus_), left,
                         std::round(text_centre - icon_height * glyphs.button_centre()), icon_height, theme.text_dim);
             text.draw(quads, rest, left + icon_width, y, caption_scale, theme.text_dim);
             continue;
@@ -727,7 +826,8 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     const float scale = frame.scale;
     draw_page_background(quads, output_width, output_height, over_game_);
     draw_page_header(quads, text, frame,
-                     std::string("Touch Point for ") + pad_control_name(focused_control()));
+                     placing_stick_ ? std::string("Touch Analog Stick")
+                                    : std::string("Touch Point for ") + pad_control_name(focused_control()));
     const PixelRect touch = touch_rect(output_width, output_height);
     if (touch_screen_ != nullptr && touch_screen_->valid()) {
         quads.draw_screen(touch, *touch_screen_);
@@ -736,31 +836,46 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     }
     const float border = std::max(1.0f, std::round(scale * 0.8f));
     quads.draw_rounded_ring(touch, std::round(line * 0.15f), border, theme.text_dim, theme.text_dim);
-    // Where it touches: a ring on the spot, and a cross through it to aim by.
+    // Where it touches: a ring on the spot, and a cross through it to aim by
+    // -- or the Touch Analog Stick, as big as it is, its centre marked.
     const float cx = std::round(touch.x + spot_.u * touch.w);
     const float cy = std::round(touch.y + spot_.v * touch.h);
     // White edged in black, to show on whatever the game has there.
-    const float r = std::round(line * 1.1f);
     const float bar = std::max(2.0f, std::round(scale * 1.2f));
     const float edge = std::max(1.0f, std::round(scale * 0.6f));
     const Color white{1.0f, 1.0f, 1.0f, 1.0f};
     const Color shade{0.0f, 0.0f, 0.0f, 0.7f};
     Color fill = theme.accent;
-    fill.a = 0.55f;
+    fill.a = placing_stick_ ? 0.25f : 0.55f;
     quads.set_clip(touch);
+    const float r = placing_stick_ ? std::max(4.0f, std::round(stick_radius_ * touch.h)) : std::round(line * 1.1f);
     const PixelRect ring{cx - r, cy - r, r * 2.0f, r * 2.0f};
-    quads.draw_solid(PixelRect{cx - bar * 0.5f - edge, cy - r * 1.8f - edge, bar + edge * 2.0f, r * 3.6f + edge * 2.0f},
-                     shade);
-    quads.draw_solid(PixelRect{cx - r * 1.8f - edge, cy - bar * 0.5f - edge, r * 3.6f + edge * 2.0f, bar + edge * 2.0f},
-                     shade);
+    if (!placing_stick_) {
+        quads.draw_solid(
+            PixelRect{cx - bar * 0.5f - edge, cy - r * 1.8f - edge, bar + edge * 2.0f, r * 3.6f + edge * 2.0f}, shade);
+        quads.draw_solid(
+            PixelRect{cx - r * 1.8f - edge, cy - bar * 0.5f - edge, r * 3.6f + edge * 2.0f, bar + edge * 2.0f}, shade);
+    }
     quads.draw_rounded_rect(ring, r, fill);
     quads.draw_rounded_ring(PixelRect{ring.x - edge, ring.y - edge, ring.w + edge * 2.0f, ring.h + edge * 2.0f},
                             r + edge, bar + edge * 2.0f, shade, shade);
     quads.draw_rounded_ring(ring, r, bar, white, white);
-    quads.draw_solid(PixelRect{cx - bar * 0.5f, cy - r * 1.8f, bar, r * 3.6f}, white);
-    quads.draw_solid(PixelRect{cx - r * 1.8f, cy - bar * 0.5f, r * 3.6f, bar}, white);
+    if (placing_stick_) {
+        const float dot = std::round(line * 0.4f);
+        const PixelRect centre{cx - dot, cy - dot, dot * 2.0f, dot * 2.0f};
+        quads.draw_rounded_rect(PixelRect{centre.x - edge, centre.y - edge, centre.w + edge * 2.0f,
+                                          centre.h + edge * 2.0f},
+                                dot + edge, shade);
+        quads.draw_rounded_rect(centre, dot, white);
+    } else {
+        quads.draw_solid(PixelRect{cx - bar * 0.5f, cy - r * 1.8f, bar, r * 3.6f}, white);
+        quads.draw_solid(PixelRect{cx - r * 1.8f, cy - bar * 0.5f, r * 3.6f, bar}, white);
+    }
     quads.clear_clip();
-    text.draw(quads, "Choose a point for this button to tap.", frame.panel.x + frame.panel.w * 0.5f,
+    text.draw(quads,
+              placing_stick_ ? "Choose a location for the center of the touch analog stick."
+                             : "Choose a point for this button to tap.",
+              frame.panel.x + frame.panel.w * 0.5f,
               std::round(touch.y + touch.h + line * 0.8f), scale * 0.9f, theme.text_dim, TextAlign::Center);
     // OK, ringed as the one thing A presses here -- while the cursor is
     // drawn at all; filled while a finger is held on it.
@@ -777,10 +892,14 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
               scale, theme.text, TextAlign::Center);
 
     guide_hits_.clear();
-    draw_page_guide(quads, text, glyphs, frame,
-                    {{ButtonGlyph::B, "Back", PromptRole::LeavesScreen},
-                     {ButtonGlyph::A, "OK", PromptRole::ActsOnSelection}},
-                    &guide_hits_);
+    std::vector<GuidePrompt> guide;
+    if (placing_stick_) {
+        guide.push_back({ButtonGlyph::L, "Smaller"});
+        guide.push_back({ButtonGlyph::R, "Larger"});
+    }
+    guide.push_back({ButtonGlyph::B, "Back", PromptRole::LeavesScreen});
+    guide.push_back({ButtonGlyph::A, "OK", PromptRole::ActsOnSelection});
+    draw_page_guide(quads, text, glyphs, frame, guide, &guide_hits_);
 }
 
 void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& view, float output_width,
@@ -788,7 +907,7 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     if (!open_) open();
     last_width_ = output_width;
     last_height_ = output_height;
-    focus_ = std::clamp(static_cast<int>(view.focus), 0, static_cast<int>(kPadControls) - 1);
+    focus_ = std::clamp(static_cast<int>(view.focus), 0, kRows - 1);
     // The other device's cursor brings the list with it when it moves;
     // otherwise the list is where a finger here left it.
     if (focus_ != mirrored_focus_) {
@@ -806,6 +925,8 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
     // which the other device has yet to hear.
     if (view.placing && (!placing_ || own_spot_seconds_ <= 0.0f)) spot_ = TouchSpot{view.spot_u, view.spot_v};
     placing_ = view.placing;
+    placing_stick_ = view.placing_stick;
+    stick_radius_ = view.stick_radius;
     // A finger here moving it is shown as it goes; where it lifts is told.
     drag_spot(output_width, output_height);
     if (view.confirm_focus == 0) {
@@ -880,6 +1001,8 @@ void ButtonMappingScreen::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, confirming_ ? 1u : 0u);
     mix_sound_state(view.rest, placing_ ? 1u : 0u);
     if (placing_) mix_sound_state(view.focus, static_cast<uint64_t>(spot_entry(spot_)));
+    if (placing_stick_) mix_sound_state(view.focus, static_cast<uint64_t>(std::lround(stick_radius_ * 1000.0f)));
+    mix_sound_state(view.rest, static_cast<uint64_t>(console_.right_stick));
     for (const PadAction action : mapping_.actions) mix_sound_state(view.rest, static_cast<uint64_t>(action));
     for (const PadAction action : mapping_.turbo_of) mix_sound_state(view.rest, static_cast<uint64_t>(action));
 }
@@ -895,6 +1018,8 @@ net::ButtonMappingViewMessage button_mapping_view_of(const ButtonMappingScreen& 
     if (view.placing) {
         view.spot_u = screen.spot().u;
         view.spot_v = screen.spot().v;
+        view.placing_stick = screen.placing_stick();
+        view.stick_radius = screen.stick_radius();
     }
     return view;
 }

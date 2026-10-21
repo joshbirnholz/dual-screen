@@ -117,6 +117,13 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
             }
         }
     }
+    if (const auto found = document.find("touch_analog_stick"); found != document.end() && found->is_array() &&
+                                                                 found->size() == 3 && (*found)[0].is_number() &&
+                                                                 (*found)[1].is_number() && (*found)[2].is_number()) {
+        config.button_mapping.stick_centre = TouchSpot{std::clamp((*found)[0].get<float>(), 0.0f, 1.0f),
+                                                       std::clamp((*found)[1].get<float>(), 0.0f, 1.0f)};
+        config.button_mapping.stick_radius = clamp_stick_radius((*found)[2].get<float>());
+    }
     if (const auto found = document.find("button_touch_points");
         found != document.end() && found->is_object()) {
         for (const auto& [key, spot] : found->items()) {
@@ -202,6 +209,8 @@ bool GameConfig::save(const AppPaths& paths) const {
                 json::array({button_mapping.spot(control).u, button_mapping.spot(control).v});
         }
     }
+    document["touch_analog_stick"] = json::array(
+        {button_mapping.stick_centre.u, button_mapping.stick_centre.v, button_mapping.stick_radius});
     document["rumble_pak"] = rumble_pak;
     document["custom_textures"] = custom_textures;
     document["lcd_filter"] = lcd_filter;

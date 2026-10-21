@@ -178,11 +178,9 @@ void LayoutPicker::rebuild_footer() {
     }
     if (state_.save_sync_available) sections_.push_back(MenuSection::SaveSync);
     sections_.push_back(MenuSection::Options);
-    // How the game is played: its buttons, and the right stick.
+    // How the game is played: its buttons, and the right stick, which is a
+    // row of Change Controls'.
     if (state_.button_mapping_available) controls_.push_back(OptionRow{Option::ButtonMapping});
-    // What the right stick does, where the console has one of its own to have
-    // an opinion about -- a 3DS -- or a stylus to be, on a DS.
-    if (state_.right_stick_choosable) controls_.push_back(OptionRow{Option::RightStick});
     if (!controls_.empty()) sections_.push_back(MenuSection::ControllerOrder);
     if (state_.session_active) sections_.push_back(MenuSection::Disconnect);
     if (state_.reset_available) sections_.push_back(MenuSection::Reset);

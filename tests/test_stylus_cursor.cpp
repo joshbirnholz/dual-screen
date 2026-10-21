@@ -77,18 +77,19 @@ void test_a_3ds_screen_is_its_own_size() {
     CHECK_NEAR(cursor.u(), 160.5f / 320.0f);
 }
 
-// What the right stick can be: a DS has no stick of its own, so the stylus or
-// nothing; a 3DS everything, its C-Stick first.
+// What the right stick can be: a DS has no stick of its own, so the stylus,
+// the Touch Analog Stick or nothing; a 3DS everything, its C-Stick first.
 void test_each_console_offers_what_it_can() {
     const std::vector<RightStickMode> ds = right_stick_modes(false);
-    CHECK_EQ(ds.size(), 2u);
+    CHECK_EQ(ds.size(), 3u);
+    CHECK(ds[1] == RightStickMode::TouchAnalog);
     CHECK(ds.front() == RightStickMode::TouchCursor);
     CHECK(right_stick_mode_for(RightStickMode::CStick, false) == RightStickMode::TouchCursor);
     CHECK(right_stick_mode_for(RightStickMode::Off, false) == RightStickMode::Off);
     CHECK(next_right_stick_mode(RightStickMode::Off, false) == RightStickMode::TouchCursor);
 
     const std::vector<RightStickMode> three_ds = right_stick_modes(true);
-    CHECK_EQ(three_ds.size(), 5u);
+    CHECK_EQ(three_ds.size(), 6u);
     CHECK(three_ds.front() == RightStickMode::CStick);
     CHECK(right_stick_mode_for(RightStickMode::TouchCursor, true) == RightStickMode::TouchCursor);
     CHECK(next_right_stick_mode(RightStickMode::DPad, true) == RightStickMode::TouchCursor);

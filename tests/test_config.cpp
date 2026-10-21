@@ -290,7 +290,7 @@ void test_game_config_round_trip() {
     fresh.bilinear_filtering = false;
     fresh.render_scale = 3;
     fresh.screen_gap = true;
-    fresh.right_stick_mode = RightStickMode::Off;
+    fresh.right_stick_mode = RightStickMode::TouchAnalog;
     fresh.wii_u_options["upscale_filter"] = 3;
     fresh.lcd_filter = true;
     fresh.custom_textures = true;
@@ -301,6 +301,8 @@ void test_game_config_round_trip() {
     fresh.button_mapping.turbo(PadControl::X) = PadAction::B;
     fresh.button_mapping[PadControl::L] = PadAction::TouchPoint;
     fresh.button_mapping.spot(PadControl::L) = TouchSpot{0.25f, 0.875f};
+    fresh.button_mapping.stick_centre = TouchSpot{0.75f, 0.5f};
+    fresh.button_mapping.stick_radius = 0.375f;
     fresh.touch_last_played();
     CHECK(fresh.save(paths));
 
@@ -311,7 +313,7 @@ void test_game_config_round_trip() {
     CHECK_EQ(reloaded.bilinear_filtering, false);
     CHECK_EQ(reloaded.render_scale, 3);
     CHECK_EQ(reloaded.screen_gap, true);
-    CHECK(reloaded.right_stick_mode == RightStickMode::Off);
+    CHECK(reloaded.right_stick_mode == RightStickMode::TouchAnalog);
     CHECK_MSG(reloaded.lcd_filter, "the LCD filter did not survive being written down");
     CHECK_MSG(reloaded.custom_textures, "Custom Textures did not survive being written down");
     CHECK(reloaded.button_mapping == fresh.button_mapping);

@@ -16,17 +16,17 @@ numbers can change freely.
   Activate Touch Cursor, Open Menu, Swap Screens, Next Screen Layout, Blow
   into Mic or Disabled, kept with the game; Y toggles turbo on a button
   pressing one of the console's or a Touch Point, X is Reset to Default, one
-  page on both devices. Still to do, in this
-  order, from the mockups (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
-  - Right Stick on the mapping page itself: Touch Cursor or Touch Analog
-    Stick, with Choose Spot.
-  - Mapping profiles, saved and loaded from the page; loading one copies it
-    into the game. The mockups open them with Y, which now toggles turbo:
-    they need another button.
+  page on both devices, and the right stick's row last (C-Stick, Circle Pad,
+  D-Pad, Touch Cursor, Touch Analog Stick placed and sized, Off). Still to
+  do, in this order, from the mockups
+  (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
   - Wii U: the Controls tab as the mockups have it, then each player's
     controller type and the mapping of that type's buttons, motion and
     rumble. The player-type option doing nothing is a bug to look at first,
     once there is a log of it.
+  - Mapping profiles (on hold, Josh 2026-10-21), saved and loaded from the
+    page; loading one copies it into the game. The mockups open them with Y,
+    which now toggles turbo: they need another button.
 
 ### After remapping
 

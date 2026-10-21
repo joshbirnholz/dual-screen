@@ -1,5 +1,8 @@
 #include "input/button_mapping.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace ds {
 
 PadConsole pad_console_for(SystemId system, RightStickMode right_stick) {
@@ -96,6 +99,21 @@ std::vector<PadAction> turbo_choices(const PadConsole& console) {
         }
     }
     return choices;
+}
+
+bool touch_analog_stick_spot(int16_t stick_x, int16_t stick_y, float deadzone, const TouchSpot& centre,
+                             float radius, float aspect, TouchSpot& out) {
+    const float push_x = stick_x / 32767.0f;
+    const float push_y = stick_y / 32767.0f;
+    const float length = std::sqrt(push_x * push_x + push_y * push_y);
+    if (length <= deadzone || length <= 0.0f) return false;
+    // From the centre itself at the deadzone's edge, so a push starts as a
+    // touch on the stick and drags out from there.
+    const float past = std::min(1.0f, (length - deadzone) / std::max(0.01f, 1.0f - deadzone));
+    const float reach = past * radius;
+    out.u = std::clamp(centre.u + push_x / length * reach / std::max(0.1f, aspect), 0.0f, 1.0f);
+    out.v = std::clamp(centre.v + push_y / length * reach, 0.0f, 1.0f);
+    return true;
 }
 
 bool turbo_down_at(uint32_t ms) {

@@ -962,13 +962,19 @@ working touch for free, sideways or not.
 
 A 3DS has a circle pad of its own, and the handful of games built for a Circle
 Pad Pro or a New 3DS read a second stick as well. Nothing in a ROM says which,
-so **Right Stick** under **Game Options** chooses between:
+so the **Right Stick** row at the foot of **Controls > Change Controls**
+chooses between:
 
 - **C-Stick** — a Circle Pad Pro / New 3DS second stick. The default on a 3DS.
 - **Circle Pad** — a second way to drive the circle pad, alongside the left
   stick. The stronger of the two wins, so pushing either one walks.
 - **D-Pad** — pressed directions, the way the left stick works on a DS.
 - **Touch Cursor** — a stylus: see below.
+- **Touch Analog Stick** — a stick drawn on the touch screen: pushing the right
+  stick touches out from its centre as far as it is pushed, and letting go
+  lifts, for a game steered by dragging. Choosing it opens a page to place it
+  on the paused game's touch screen (moved with either stick, the d-pad or a
+  finger) and size it with **L** and **R**.
 - **Off** — ignored entirely, for a game that does something unwanted with a
   stick it is handed.
 
@@ -978,7 +984,8 @@ a core that reads the d-pad sees a direction held down for as long as the stick
 is off centre.
 
 A DS has no stick at all — its left stick already stands in for the d-pad — so
-its right stick is **Touch Cursor** (the default there) or **Off**. A Wii U's
+its right stick is **Touch Cursor** (the default there), **Touch Analog Stick**
+or **Off**. A Wii U's
 GamePad has two sticks of its own and is not asked.
 
 A game remembers what it was last set to; the value a new game starts from is

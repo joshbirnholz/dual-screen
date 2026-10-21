@@ -19,9 +19,9 @@ namespace {
 // Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
 // then no lists of Cemu's choices, then the favorite color's byte, then no
 // corner notice, then where Controls' rows begin, then the Button Mapping,
-// then Custom Textures' byte.
+// then Custom Textures' byte, then the Touch Analog Stick's six.
 constexpr std::size_t kWiiUTail =
-    2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls + 1;
+    2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls + 1 + 6;
 }  // namespace
 using namespace ds::net;
 
@@ -327,7 +327,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls) - 1,
+    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls) - 1 - 6,
                                received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
@@ -341,7 +341,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.custom_textures_choosable && received_state.custom_textures);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 6, received_state));
     CHECK(!received_state.custom_textures_choosable && !received_state.custom_textures);
     state.custom_textures_choosable = false;
     state.custom_textures = false;
@@ -355,8 +355,9 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.producer_choices == state.producer_choices);
     state.producer_choices.clear();
     // The Button Mapping's count and one byte for each control, last of all.
-    // The Button Mapping, and Custom Textures' byte after it.
-    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls + 1;
+    // The Button Mapping, and Custom Textures' byte after it, and the Touch
+    // Analog Stick's.
+    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls + 1 + 6;
     // The host's favorite color, for the other device's menus; and none said
     // by a host from before it was sent.
     state.favorite_color = 7;
@@ -416,9 +417,23 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Y);
     CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).u - 0.25f) < 0.001f);
     CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).v - 0.75f) < 0.001f);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls - 1, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls - 1 - 6, received_state));
     CHECK(received_state.button_mapping[PadControl::L] == PadAction::TouchPoint);
     CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Standard);
+    // The Touch Analog Stick's centre and size, last; from a host before it,
+    // where it starts.
+    state.button_mapping.stick_centre = TouchSpot{0.3f, 0.6f};
+    state.button_mapping.stick_radius = 0.4f;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(std::fabs(received_state.button_mapping.stick_centre.u - 0.3f) < 0.001f);
+    CHECK(std::fabs(received_state.button_mapping.stick_centre.v - 0.6f) < 0.001f);
+    CHECK(std::fabs(received_state.button_mapping.stick_radius - 0.4f) < 0.001f);
+    CHECK(decode_session_state(payload.data(), payload.size() - 6, received_state));
+    CHECK(received_state.button_mapping.stick_centre == TouchSpot());
+    CHECK_EQ(received_state.button_mapping.stick_radius, kDefaultStickRadius);
     state.button_mapping = ButtonMapping();
     state.menu_focus = 40;
     buffer.clear();
@@ -2036,9 +2051,19 @@ void test_button_mapping_view_round_trip() {
     CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
     CHECK(received.placing);
     CHECK(received.spot_u == 0.5f && std::fabs(received.spot_v - 1.0f) < 0.001f);
+    CHECK(!received.placing_stick);
     // From a host from before it: not placing.
-    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 5, received));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size() - 7, received));
     CHECK(!received.placing);
+    // The Touch Analog Stick's page: its centre the spot, and its size.
+    sent.placing_stick = true;
+    sent.stick_radius = 0.375f;
+    buffer.clear();
+    encode_button_mapping_view(sent, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_button_mapping_view(payload.data(), payload.size(), received));
+    CHECK(received.placing && received.placing_stick);
+    CHECK(std::fabs(received.stick_radius - 0.375f) < 0.001f);
 
     // Closed is a message too.
     buffer.clear();

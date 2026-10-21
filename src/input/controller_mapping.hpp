@@ -105,6 +105,11 @@ enum class RightStickMode {
     // for touching without a finger: a DS's default. R3 is the stylus here
     // rather than this app's smoothing shortcut. See StylusCursor.
     TouchCursor,
+    // A stick drawn on the touch screen and pushed with this one: the screen
+    // touched away from its centre as far as the stick is pushed, and let go
+    // when it comes back -- for a game steered by dragging, as Super Mario 64
+    // DS can be. Where it is and how big, ButtonMapping says.
+    TouchAnalog,
 };
 
 // What clicking the left stick did on a DS, when that was a setting of its

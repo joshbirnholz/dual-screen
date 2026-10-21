@@ -1433,6 +1433,8 @@ DsInputState InputManager::held_state_from(const RawPadState& raw) const {
             if (raw_c_x > deadzone_threshold) held.set(DsButton::Right, true);
             break;
         case RightStickMode::TouchCursor:
+        // And the Touch Analog Stick the same way, the stick only.
+        case RightStickMode::TouchAnalog:
             // Carried as the C-Stick and R3 as far as the app, which moves
             // the cursor with them and hands the game a touch instead -- see
             // StylusCursor. The game itself never sees either. The tip is

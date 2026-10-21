@@ -28,6 +28,8 @@ struct ButtonMappingScreenResult {
     // A button given another job, or every one put back: the whole mapping
     // as it now is, for the caller to take on and keep with the game.
     std::optional<ButtonMapping> changed;
+    // Right Stick given another job, for the caller to take on.
+    std::optional<RightStickMode> right_stick;
 };
 
 // A DS or 3DS game's Change Controls, from Controls in its quick menu: each of
@@ -37,7 +39,9 @@ struct ButtonMappingScreenResult {
 // console's buttons, then the rest -- Y puts a console button or Touch Point
 // on turbo or takes it off, X puts every button back to the standard mapping,
 // after asking, and B goes back to the menu. Touch Point asks where on the
-// touch screen it touches, on the paused game's own touch screen.
+// touch screen it touches, on the paused game's own touch screen. Last of the
+// rows is the right stick's: what it is, and for the Touch Analog Stick where
+// it sits on the touch screen and how big it is, placed the same way.
 //
 // The mapping is the game's, held by the device running it: the page shows
 // what it is handed and says what was changed. With two devices it is one
@@ -69,17 +73,23 @@ public:
                 float output_width, float output_height);
     void describe_for_sound(UiSoundView& view) const;
 
-    // The row the cursor is on: an index into kPadControlRows.
+    // The row the cursor is on: an index into kPadControlRows, or past its
+    // end the right stick's, kRightStickRow.
     int focus() const { return focus_; }
+    static constexpr int kRightStickRow = static_cast<int>(kPadControls);
+    static constexpr int kRows = kRightStickRow + 1;
     bool choosing() const { return choice_.is_open(); }
     int choice_focus() const { return choice_.focus(); }
     bool confirming() const { return confirming_; }
     int confirm_focus() const { return confirm_cursor_.focus(); }
     // What a row says it does: "L Button", say, or "L Button (turbo)".
     std::string action_label(PadControl control) const;
-    // A Touch Point being placed, and where so far.
+    // A Touch Point being placed, or the Touch Analog Stick, and where so
+    // far; the stick's size, as a fraction of the touch screen's height.
     bool placing() const { return placing_; }
+    bool placing_stick() const { return placing_ && placing_stick_; }
     const TouchSpot& spot() const { return spot_; }
+    float stick_radius() const { return stick_radius_; }
     // The spot put where the other device's finger has it, while placing.
     void set_spot(const TouchSpot& spot) {
         if (placing_) spot_ = TouchSpot{std::clamp(spot.u, 0.0f, 1.0f), std::clamp(spot.v, 0.0f, 1.0f)};
@@ -176,7 +186,16 @@ private:
     std::vector<PopupButton> confirm_buttons() const;
     void handle_tap(int entry, ButtonMappingScreenResult& result, float output_width,
                     float output_height);
-    PadControl focused_control() const { return kPadControlRows[static_cast<std::size_t>(focus_)]; }
+    bool on_right_stick() const { return focus_ == kRightStickRow; }
+    // The control the cursor is on; meaningless on the right stick's row.
+    PadControl focused_control() const {
+        return kPadControlRows[static_cast<std::size_t>(std::min(focus_, kRightStickRow - 1))];
+    }
+    // The icon a row is drawn with.
+    ButtonGlyph row_glyph(int row) const;
+    // What the right stick's row says it is, and the picker's choices for it.
+    std::vector<RightStickMode> stick_modes() const;
+    void start_placing_stick();
     // What the console is called on the page: "DS", "3DS".
     std::string console_name() const;
     // The words under the console, for what the focused button does: after
@@ -193,12 +212,17 @@ private:
     float scroll_ = 0.0f;
     ListDrag drag_;
     ScrollEase scroll_ease_;
-    // The picker, and the action each of its lines is.
+    // The picker, and the action each of its lines is -- or on the right
+    // stick's row, the mode.
     ChoicePopup choice_;
     std::vector<PadAction> choice_actions_;
+    std::vector<RightStickMode> choice_modes_;
     // Touch Point's page.
     bool placing_ = false;
     TouchSpot spot_;
+    // Placing the Touch Analog Stick rather than a Touch Point, and its size.
+    bool placing_stick_ = false;
+    float stick_radius_ = kDefaultStickRadius;
     // How much longer the spot steer() moved stays this page's own.
     float own_spot_seconds_ = 0.0f;
     const Texture* touch_screen_ = nullptr;

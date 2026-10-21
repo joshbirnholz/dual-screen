@@ -195,6 +195,7 @@ uint8_t right_stick_mode_to_wire(RightStickMode mode) {
         case RightStickMode::CirclePad: return 1u;
         case RightStickMode::DPad: return 2u;
         case RightStickMode::TouchCursor: return 4u;
+        case RightStickMode::TouchAnalog: return 5u;
         case RightStickMode::Off: break;
     }
     return 3u;
@@ -207,6 +208,7 @@ bool right_stick_mode_from_wire(uint8_t value, RightStickMode& out) {
         case 2u: out = RightStickMode::DPad; return true;
         case 3u: out = RightStickMode::Off; return true;
         case 4u: out = RightStickMode::TouchCursor; return true;
+        case 5u: out = RightStickMode::TouchAnalog; return true;
         default: break;
     }
     return false;
@@ -350,6 +352,10 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
     }
     put_u8(out, static_cast<uint8_t>((message.custom_textures_choosable ? 1u : 0u) |
                                      (message.custom_textures ? 2u : 0u)));
+    // The Touch Analog Stick's centre and size.
+    put_u16(out, touch_spot_u16(message.button_mapping.stick_centre.u));
+    put_u16(out, touch_spot_u16(message.button_mapping.stick_centre.v));
+    put_u16(out, touch_spot_u16(message.button_mapping.stick_radius));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -828,9 +834,10 @@ void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::ve
     put_u8(out, message.choice_focus);
     put_u8(out, message.confirm_focus);
     // Bit 1 was a second picker's, Turbo's, which there is no longer.
-    put_u8(out, static_cast<uint8_t>(message.placing ? 2u : 0u));
+    put_u8(out, static_cast<uint8_t>((message.placing ? 2u : 0u) | (message.placing_stick ? 4u : 0u)));
     put_u16(out, touch_spot_u16(message.spot_u));
     put_u16(out, touch_spot_u16(message.spot_v));
+    put_u16(out, touch_spot_u16(message.stick_radius));
     finish_message(out, start, MessageType::ButtonMappingView);
 }
 
@@ -854,9 +861,15 @@ bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMap
         reader.u16(v);
         if (!reader.ok()) return false;
         view.placing = (flags & 2u) != 0;
+        view.placing_stick = view.placing && (flags & 4u) != 0;
         if (view.placing) {
             view.spot_u = u / 65536.0f;
             view.spot_v = v / 65536.0f;
+        }
+        if (reader.remaining() >= 2) {
+            uint16_t radius = 0;
+            reader.u16(radius);
+            view.stick_radius = clamp_stick_radius(radius / 65536.0f);
         }
     }
     out = view;
@@ -1114,6 +1127,8 @@ bool menu_action_from_wire(uint8_t value, MenuAction& out) {
         case 9: out = MenuAction::Disconnect; return true;
         case 10: out = MenuAction::Settings; return true;
         case 11: out = MenuAction::Close; return true;
+        case 12: out = MenuAction::PageUp; return true;
+        case 13: out = MenuAction::PageDown; return true;
         default: break;
     }
     return false;
@@ -1724,6 +1739,20 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
         reader.u8(textures);
         out.custom_textures_choosable = (textures & 1u) != 0;
         out.custom_textures = (textures & 2u) != 0;
+    }
+    // A host from before the Touch Analog Stick: where it would start.
+    out.button_mapping.stick_centre = TouchSpot();
+    out.button_mapping.stick_radius = kDefaultStickRadius;
+    if (reader.remaining() > 0) {
+        uint16_t u = 0;
+        uint16_t v = 0;
+        uint16_t radius = 0;
+        reader.u16(u);
+        reader.u16(v);
+        reader.u16(radius);
+        if (!reader.ok()) return false;
+        out.button_mapping.stick_centre = TouchSpot{u / 65536.0f, v / 65536.0f};
+        out.button_mapping.stick_radius = clamp_stick_radius(radius / 65536.0f);
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

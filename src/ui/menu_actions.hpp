@@ -28,6 +28,8 @@ inline bool menu_action_for(UiAction action, net::MenuAction& out) {
         case UiAction::MenuReset: out = net::MenuAction::Reset; return true;
         case UiAction::MenuDisconnect: out = net::MenuAction::Disconnect; return true;
         case UiAction::MenuSettings: out = net::MenuAction::Settings; return true;
+        case UiAction::PageUp: out = net::MenuAction::PageUp; return true;
+        case UiAction::PageDown: out = net::MenuAction::PageDown; return true;
         default: break;
     }
     return false;
@@ -50,6 +52,8 @@ inline UiAction ui_action_for(net::MenuAction action) {
         case net::MenuAction::Down: return UiAction::Down;
         case net::MenuAction::Left: return UiAction::Left;
         case net::MenuAction::Right: return UiAction::Right;
+        case net::MenuAction::PageUp: return UiAction::PageUp;
+        case net::MenuAction::PageDown: return UiAction::PageDown;
         case net::MenuAction::Cancel: return UiAction::Cancel;
         case net::MenuAction::Close: return UiAction::ToggleMenu;
         case net::MenuAction::Quit: return UiAction::MenuQuit;
