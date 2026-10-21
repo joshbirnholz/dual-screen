@@ -745,6 +745,9 @@ struct App::Impl {
     // screen. Kept here, the host, and told to a companion.
     StylusCursor stylus_cursor;
     uint32_t stylus_ticks = 0;
+    // When a Touch Point's spot was last steered by the pad -- see
+    // steer_touch_spot().
+    uint32_t spot_steer_ticks = 0;
     std::string game_title;
     std::string resolved_core_path;
     // Which console the loaded game belongs to, and its screens. On a companion
@@ -1280,6 +1283,9 @@ struct App::Impl {
     // The stylus on the right stick: moved by the stick in `held`, which it
     // takes out, and touching for R3 -- see RightStickMode::TouchCursor.
     void apply_stylus_cursor(DsInputState& held);
+    // The pad moving the spot on Touch Point's page, as smoothly as the
+    // Touch Cursor moves in a game. True if it moved.
+    bool steer_touch_spot(ButtonMappingScreen& screen);
     void publish_stylus_cursor();
     // Drawn over the touch screen where this device shows it.
     void draw_stylus_cursor(float width, float height);
@@ -2157,6 +2163,7 @@ void App::Impl::update_button_mapping_screen(const std::vector<UiAction>& action
         return;
     }
     show_button_mapping(button_mapping_screen);
+    steer_touch_spot(button_mapping_screen);
     const ButtonMappingScreenResult result = button_mapping_screen.update(
         actions, pointers, static_cast<float>(output_width), static_cast<float>(output_height));
     if (result.changed) {
@@ -4004,6 +4011,16 @@ void App::Impl::adopt_right_stick_mode(RightStickMode mode) {
     log_info(std::string("right stick: ") + to_string(right_stick_mode));
 }
 
+bool App::Impl::steer_touch_spot(ButtonMappingScreen& screen) {
+    const uint32_t now = SDL_GetTicks();
+    const float seconds = spot_steer_ticks == 0 ? 0.0f : static_cast<float>(now - spot_steer_ticks) / 1000.0f;
+    spot_steer_ticks = now;
+    float push_x = 0.0f;
+    float push_y = 0.0f;
+    input.menu_push(push_x, push_y);
+    return screen.steer(push_x, push_y, seconds);
+}
+
 void App::Impl::apply_stylus_cursor(DsInputState& held) {
     const uint32_t now = SDL_GetTicks();
     const float seconds = stylus_ticks == 0 ? 0.0f : static_cast<float>(now - stylus_ticks) / 1000.0f;
@@ -5489,10 +5506,15 @@ void App::Impl::handle_ui(const std::vector<UiAction>& actions,
                             companion_session->request_menu_focus(tap);
                         }
                     }
-                    // A finger moving the Touch Point here moves the host's as it goes.
+                    // A finger or the pad moving the Touch Point here moves the
+                    // host's as it goes -- the pad smoothly, so its directions
+                    // are not sent as steps too.
                     const net::ButtonMappingViewMessage& host_view = companion_session->host_button_mapping_view();
+                    const bool steered = steer_touch_spot(mirrored_button_mapping);
+                    if (host_view.placing) strip_directions(forwarded);
                     if (mirrored_button_mapping.drag_spot(static_cast<float>(output_width),
-                                                          static_cast<float>(output_height))) {
+                                                          static_cast<float>(output_height)) ||
+                        steered) {
                         const TouchSpot spot = mirrored_button_mapping.spot();
                         if (std::fabs(spot.u - host_view.spot_u) > 0.001f ||
                             std::fabs(spot.v - host_view.spot_v) > 0.001f) {

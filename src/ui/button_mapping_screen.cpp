@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "input/stylus_cursor.hpp"
 #include "ui/page_frame.hpp"
 #include "ui/ui_theme.hpp"
 
@@ -216,6 +217,23 @@ PixelRect ButtonMappingScreen::placing_ok_rect(float output_width, float output_
                      width, height};
 }
 
+bool ButtonMappingScreen::steer(float push_x, float push_y, float seconds) {
+    seconds = std::clamp(seconds, 0.0f, 0.1f);
+    own_spot_seconds_ = std::max(0.0f, own_spot_seconds_ - seconds);
+    if (!placing_) return false;
+    const float length = std::sqrt(push_x * push_x + push_y * push_y);
+    if (length <= 0.0f) return false;
+    // Squared, as the Touch Cursor's: fine control near the middle, speed at
+    // the edge -- and as fast down the screen as across it, in its pixels.
+    const float past = std::min(1.0f, length);
+    const float speed = past * past / StylusCursor::kCrossingSeconds;
+    const TouchSpot was = spot_;
+    move_spot(push_x / length * speed * seconds, push_y / length * speed * seconds * 4.0f / 3.0f);
+    constexpr float kOwnSpotSeconds = 0.5f;
+    own_spot_seconds_ = kOwnSpotSeconds;
+    return !(spot_ == was);
+}
+
 bool ButtonMappingScreen::drag_spot(float output_width, float output_height) {
     const LivePointer& pointer = live_pointer();
     if (!placing_ || !pointer.down) return false;
@@ -345,16 +363,12 @@ ButtonMappingScreenResult ButtonMappingScreen::update(const std::vector<UiAction
         }
         return result;
     }
-    // And Touch Point's page: the spot moved, and kept or not.
+    // And Touch Point's page: the spot kept or not. The pad moves it
+    // smoothly, through steer(), rather than a step a press.
     if (placing_) {
         drag_spot(output_width, output_height);
-        constexpr float kStep = 1.0f / 32.0f;
         for (const UiAction action : actions) {
             switch (action) {
-                case UiAction::Up: move_spot(0.0f, -kStep); break;
-                case UiAction::Down: move_spot(0.0f, kStep); break;
-                case UiAction::Left: move_spot(-kStep, 0.0f); break;
-                case UiAction::Right: move_spot(kStep, 0.0f); break;
                 case UiAction::Confirm: finish_placing(result); break;
                 case UiAction::Cancel: back_to_choice(PadAction::TouchPoint, output_width, output_height); break;
                 case UiAction::ToggleMenu:
@@ -788,8 +802,10 @@ void ButtonMappingScreen::show_mirrored(const net::ButtonMappingViewMessage& vie
         if (!choice_.is_open()) open_choice(output_width, output_height);
         if (choice_.focus() != view.choice_focus - 1) choice_.set_focus(view.choice_focus - 1);
     }
+    // Where the other device says -- unless the pad here has just moved it,
+    // which the other device has yet to hear.
+    if (view.placing && (!placing_ || own_spot_seconds_ <= 0.0f)) spot_ = TouchSpot{view.spot_u, view.spot_v};
     placing_ = view.placing;
-    if (placing_) spot_ = TouchSpot{view.spot_u, view.spot_v};
     // A finger here moving it is shown as it goes; where it lifts is told.
     drag_spot(output_width, output_height);
     if (view.confirm_focus == 0) {

@@ -1203,7 +1203,32 @@ void InputManager::emit_navigation_from_axes() {
         }
         if (forwarded_held_[direction]) held[direction] = true;
     }
+    menu_stick_x_ = x;
+    menu_stick_y_ = y;
+    for (int direction = 0; direction < 4; ++direction) menu_held_[direction] = held[direction];
     repeat_held_directions(held);
+}
+
+void InputManager::menu_push(float& x, float& y) const {
+    x = 0.0f;
+    y = 0.0f;
+    const float deadzone = settings_.stick_deadzone;
+    const float length = std::sqrt(menu_stick_x_ * menu_stick_x_ + menu_stick_y_ * menu_stick_y_);
+    if (length > deadzone && length > 0.0f) {
+        const float past = std::min(1.0f, (length - deadzone) / std::max(0.01f, 1.0f - deadzone));
+        x = menu_stick_x_ / length * past;
+        y = menu_stick_y_ / length * past;
+        return;
+    }
+    // A direction held: steady, slower than a full push, for aiming by.
+    constexpr float kHeldPush = 0.7f;
+    const float across = (menu_held_[3] ? 1.0f : 0.0f) - (menu_held_[2] ? 1.0f : 0.0f);
+    const float down = (menu_held_[1] ? 1.0f : 0.0f) - (menu_held_[0] ? 1.0f : 0.0f);
+    const float held = std::sqrt(across * across + down * down);
+    if (held > 0.0f) {
+        x = across / held * kHeldPush;
+        y = down / held * kHeldPush;
+    }
 }
 
 void InputManager::repeat_held_directions(const bool held[4]) {

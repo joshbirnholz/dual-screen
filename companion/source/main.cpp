@@ -484,6 +484,8 @@ private:
     LayoutRegistry registry_;
     net::CompanionSession session_;
     InputManager input_;
+    // When a Touch Point's spot was last steered by the pad.
+    uint32_t spot_steer_ticks_ = 0;
     // The mouse pointer, on a device that has one -- a Mac. The window hides
     // it when it is made (see GlWindow); this is what brings it back while
     // the mouse is moving, and hides it again once it has been still, the
@@ -1265,6 +1267,9 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
     // their session -- so the presses go over and get the same answers a
     // press on the host would.
     if (state_ == State::Playing && session_.host_settings_open()) {
+        // A Touch Point being placed: the pad moves it smoothly, not a step a
+        // press -- see below.
+        bool placing_spot = false;
         // The host's Graphics Packs page, drawn here, scrolls under a finger
         // here -- its own view of the page -- and a tap goes over as what it
         // landed on.
@@ -1298,12 +1303,39 @@ void Client::handle_actions(const std::vector<UiAction>& actions,
                                                    static_cast<float>(output_height_))) {
                 if (tap == MenuPage::kTapOffPopup) {
                     session_.request_menu_action(net::MenuAction::Cancel);
+                } else if (tap >= ButtonMappingScreen::kSpotEntryBase) {
+                    // Too wide to go as an entry: where it lifted, said as a spot.
+                    const TouchSpot spot = ButtonMappingScreen::entry_spot(tap);
+                    session_.request_touch_spot(spot.u, spot.v);
                 } else {
                     session_.request_menu_focus(tap);
                 }
             }
+            // A finger or the pad moving the Touch Point here moves the
+            // host's as it goes -- the pad smoothly, so its directions are
+            // not sent as steps too.
+            const net::ButtonMappingViewMessage& host_view = session_.host_button_mapping_view();
+            const uint32_t now = SDL_GetTicks();
+            const float seconds =
+                spot_steer_ticks_ == 0 ? 0.0f : static_cast<float>(now - spot_steer_ticks_) / 1000.0f;
+            spot_steer_ticks_ = now;
+            float push_x = 0.0f;
+            float push_y = 0.0f;
+            input_.menu_push(push_x, push_y);
+            const bool steered = mirrored_button_mapping_.steer(push_x, push_y, seconds);
+            placing_spot = host_view.placing;
+            if (mirrored_button_mapping_.drag_spot(static_cast<float>(output_width_),
+                                                   static_cast<float>(output_height_)) ||
+                steered) {
+                const TouchSpot spot = mirrored_button_mapping_.spot();
+                if (std::fabs(spot.u - host_view.spot_u) > 0.001f || std::fabs(spot.v - host_view.spot_v) > 0.001f) {
+                    session_.request_touch_spot(spot.u, spot.v);
+                }
+            }
         }
-        for (const UiAction action : actions) {
+        std::vector<UiAction> sent = actions;
+        if (placing_spot) strip_directions(sent);
+        for (const UiAction action : sent) {
             net::MenuAction wire = net::MenuAction::Confirm;
             if (menu_action_for(action, wire)) {
                 session_.request_menu_action(wire);

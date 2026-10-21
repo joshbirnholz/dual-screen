@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <vector>
+
 #include "input/input_manager.hpp"
 #include "net/protocol.hpp"
 
@@ -28,6 +31,17 @@ inline bool menu_action_for(UiAction action, net::MenuAction& out) {
         default: break;
     }
     return false;
+}
+
+// The presses that only move a cursor, taken out: for a page the pad moves
+// smoothly rather than a step a press, whose movement goes over another way.
+inline void strip_directions(std::vector<UiAction>& actions) {
+    actions.erase(std::remove_if(actions.begin(), actions.end(),
+                                 [](UiAction action) {
+                                     return action == UiAction::Up || action == UiAction::Down ||
+                                            action == UiAction::Left || action == UiAction::Right;
+                                 }),
+                  actions.end());
 }
 
 inline UiAction ui_action_for(net::MenuAction action) {

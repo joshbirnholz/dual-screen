@@ -84,6 +84,14 @@ public:
     void set_spot(const TouchSpot& spot) {
         if (placing_) spot_ = TouchSpot{std::clamp(spot.u, 0.0f, 1.0f), std::clamp(spot.v, 0.0f, 1.0f)};
     }
+    // The pad moving the spot, as the Touch Cursor moves in a game: `push_x`
+    // and `push_y` how far it is pushed past its deadzone, 0 to 1 each way
+    // (see InputManager::menu_push()), a full push crossing the screen in
+    // StylusCursor::kCrossingSeconds and a little one creeping. True if the
+    // spot moved. A page drawn from the other device's keeps where it was
+    // moved here for a moment, rather than going back to where the other
+    // device last said, until the other device has caught up.
+    bool steer(float push_x, float push_y, float seconds);
     // A finger down on the touch screen being placed on moves the spot with
     // it as it goes, not only once it lifts. True while one is.
     bool drag_spot(float output_width, float output_height);
@@ -191,6 +199,8 @@ private:
     // Touch Point's page.
     bool placing_ = false;
     TouchSpot spot_;
+    // How much longer the spot steer() moved stays this page's own.
+    float own_spot_seconds_ = 0.0f;
     const Texture* touch_screen_ = nullptr;
     // Reset to Default's question, up over the page.
     bool confirming_ = false;

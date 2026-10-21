@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "input/stylus_cursor.hpp"
 #include "ui/button_mapping_screen.hpp"
 
 using namespace ds;
@@ -318,7 +319,7 @@ void test_y_toggles_turbo_for_a_touch_point() {
     CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::TouchPoint));
     press(screen, UiAction::Confirm);
     CHECK(screen.placing());
-    press(screen, UiAction::Right);
+    screen.steer(1.0f, 0.0f, 0.05f);
     const ButtonMappingScreenResult moved = press(screen, UiAction::Confirm);
     CHECK(moved.changed.has_value() && (*moved.changed)[PadControl::L] == PadAction::Turbo &&
           moved.changed->turbo(PadControl::L) == PadAction::TouchPoint);
@@ -352,11 +353,17 @@ void test_a_touch_point_is_placed() {
     tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::TouchPoint));
     CHECK_MSG(screen.placing(), "Touch Point did not open its page");
     CHECK(!screen.choosing());
+    // The pad moves it smoothly, as the Touch Cursor moves in a game: a
+    // full push across the screen in StylusCursor::kCrossingSeconds, a half
+    // one a quarter as fast; a press of a direction is no step of its own.
     press(screen, UiAction::Right);
-    press(screen, UiAction::Right);
-    press(screen, UiAction::Up);
-    CHECK(std::fabs(screen.spot().u - (0.5f + 2.0f / 32.0f)) < 0.0001f);
-    CHECK(std::fabs(screen.spot().v - (0.5f - 1.0f / 32.0f)) < 0.0001f);
+    CHECK_EQ(screen.spot().u, 0.5f);
+    CHECK(screen.steer(1.0f, 0.0f, 0.1f));
+    CHECK(std::fabs(screen.spot().u - (0.5f + 0.1f / StylusCursor::kCrossingSeconds)) < 0.0001f);
+    CHECK(screen.steer(0.0f, -0.5f, 0.1f));
+    CHECK(std::fabs(screen.spot().v - (0.5f - 0.25f * 0.1f / StylusCursor::kCrossingSeconds * 4.0f / 3.0f)) <
+          0.0001f);
+    CHECK(!screen.steer(0.0f, 0.0f, 0.1f));
     // B: back to the list, on Touch Point, and nothing kept.
     CHECK(!press(screen, UiAction::Cancel).changed.has_value());
     CHECK(!screen.placing() && screen.choosing());
@@ -478,6 +485,20 @@ void test_the_other_device_places_a_touch_point() {
     CHECK(host.spot().v < 0.1f);
     mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
     CHECK(std::fabs(mirror.spot().v - host.spot().v) < 0.001f);
+    // Steered here, it stays where it went until the host has caught up,
+    // rather than going back to where the host last said.
+    CHECK(mirror.steer(1.0f, 0.0f, 0.1f));
+    const float steered = mirror.spot().u;
+    mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
+    CHECK_EQ(mirror.spot().u, steered);
+    host.set_spot(mirror.spot());
+    mirror.steer(0.0f, 0.0f, 0.1f);
+    mirror.steer(0.0f, 0.0f, 0.1f);
+    mirror.steer(0.0f, 0.0f, 0.1f);
+    mirror.steer(0.0f, 0.0f, 0.1f);
+    mirror.steer(0.0f, 0.0f, 0.1f);
+    mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
+    CHECK(std::fabs(mirror.spot().u - host.spot().u) < 0.001f);
     press(host, UiAction::Cancel);
     mirror.show_mirrored(button_mapping_view_of(host), kOtherWidth, kOtherHeight);
     CHECK(!mirror.placing() && mirror.choosing());

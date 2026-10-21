@@ -305,6 +305,12 @@ public:
         if (direction >= 0 && direction < 4) forwarded_held_[direction] = held;
     }
 
+    // How far the pad pushes in a menu, for what moves smoothly rather than
+    // a step at a time -- a Touch Point being placed: the stick pushed
+    // furthest, past the deadzone, 0 to 1 each way, or else a d-pad or arrow
+    // held, as most of a push.
+    void menu_push(float& x, float& y) const;
+
     MenuButtonLabels menu_labels() const;
 
 private:
@@ -464,6 +470,10 @@ private:
     // going round on -- see direction_repeating().
     bool direction_repeated_[4] = {};
     bool forwarded_held_[4] = {};
+    // menu_push()'s: the stick and every direction held, as last read.
+    float menu_stick_x_ = 0.0f;
+    float menu_stick_y_ = 0.0f;
+    bool menu_held_[4] = {};
     void repeat_held_directions(const bool held[4]);
 };
 
