@@ -13,8 +13,8 @@ numbers can change freely.
 - **Button mapping, the rest of it.** DS and 3DS games have Controls >
   Change Button Mapping now: each pad button given one of the console's
   buttons, Touch Point (placed on the paused game's touch screen), Activate
-  Touch Cursor, Quick Menu, Swap Screens, Next Screen Layout, Screen
-  Smoothing, Blow into Mic or Nothing, kept with the game; Y toggles turbo on
+  Touch Cursor, Quick Menu, Swap Screens, Next Screen Layout, Blow into
+  Mic or Disabled, kept with the game; Y toggles turbo on
   a button pressing one of the console's, X is Reset to Default, one page on
   both devices. Still to do, in this
   order, from the mockups (https://claude.ai/artifact/WjbNkq2jKemE92hbj6pcMk):
