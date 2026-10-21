@@ -285,7 +285,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
         case Option::LcdFilter: return "LCD Filter";
-        case Option::CustomTextures: return "Custom Textures";
+        case Option::CustomTextures: return "Load Custom Textures";
         case Option::Resume: return "Resume from Save State";
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
