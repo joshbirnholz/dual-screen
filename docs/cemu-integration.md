@@ -37,6 +37,13 @@ They depend on the C++17 standard library and Linux (`memfd_create`, `SCM_RIGHTS
 this app's. Drop them into a fork, compile the `.cpp`, and `ds::ExternalFrameProducer`
 is available.
 
+Optionally, two more for slowing the sound a fork plays itself down with a game
+that cannot keep up, rather than leaving its device to run dry (see the comment
+on `kAudioStretchBelowSpeed`). Standard library only:
+
+    src/audio/audio_stretch.hpp
+    src/audio/audio_stretch.cpp
+
 The producer half is deliberately in the same file as the consumer half. A
 protocol described in two places is a protocol with two subtly different
 implementations, and the one that would drift is the one living in somebody

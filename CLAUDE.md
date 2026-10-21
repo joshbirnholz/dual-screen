@@ -15,7 +15,8 @@ list current -- it is how work carries across sessions.
   -j4`, about 6 minutes) before every push, and push only when it passes.
 - The Cemu fork (joshbirnholz/cemu-dualscreen, branch
   `claude/dualscreen-frame-link`) shares `src/core/external_frame_link.{hpp,cpp}`
-  with this repo as `src/dualscreen/core/`; the two copies stay identical.
+  with this repo as `src/dualscreen/core/`, and `src/audio/audio_stretch.{hpp,cpp}`
+  as `src/dualscreen/audio/`; the two copies stay identical.
 
 ## How the app should feel
 

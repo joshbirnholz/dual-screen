@@ -109,6 +109,7 @@ add_library(dualscreen_core STATIC
     ${BEZEL_SOURCES}
     src/app.cpp
     src/audio/audio_output.cpp
+    src/audio/audio_stretch.cpp
     src/audio/ui_sounds.cpp
     src/video/video_decoder.cpp
     src/video/color_convert.cpp

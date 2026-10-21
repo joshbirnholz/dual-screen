@@ -14,6 +14,7 @@
 set(DUALSCREEN_COMPANION_SOURCES
     companion/source/main.cpp
     src/audio/audio_output.cpp
+    src/audio/audio_stretch.cpp
     src/audio/ui_sounds.cpp
     src/config/paths.cpp
     src/video/color_convert.cpp

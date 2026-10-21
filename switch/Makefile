@@ -81,7 +81,7 @@ SOURCE_DIRS := $(CLIENT) \
                $(SHARED)/video
 
 CPPFILES    := main.cpp \
-               audio_output.cpp \
+               audio_output.cpp audio_stretch.cpp \
                ui_sounds.cpp \
                paths.cpp \
                save_points.cpp system.cpp \

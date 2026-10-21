@@ -9,7 +9,9 @@
 set(FILES
     core/external_frame_link.hpp
     core/external_frame_link.cpp
-    layout/screen_id.hpp)
+    layout/screen_id.hpp
+    audio/audio_stretch.hpp
+    audio/audio_stretch.cpp)
 
 file(REMOVE_RECURSE "${WORK_DIR}")
 foreach(file ${FILES})
@@ -38,4 +40,21 @@ if(NOT result EQUAL 0)
         "into these files.")
 endif()
 
-message(STATUS "ok - the frame link compiles with nothing else from this app")
+# The audio stretcher, which Cemu vendors the same way for the screen it plays
+# itself -- see audio/audio_stretch.hpp.
+execute_process(
+    COMMAND "${COMPILER}" -std=c++17 -Wall -Wextra -Werror
+            -I "${WORK_DIR}"
+            -c "${WORK_DIR}/audio/audio_stretch.cpp"
+            -o "${WORK_DIR}/audio_stretch.o"
+    RESULT_VARIABLE result
+    OUTPUT_VARIABLE output
+    ERROR_VARIABLE output)
+
+if(NOT result EQUAL 0)
+    message("${output}")
+    message(FATAL_ERROR
+        "the audio stretcher no longer compiles on its own, so Cemu can no longer vendor it.")
+endif()
+
+message(STATUS "ok - the frame link and the audio stretcher compile with nothing else from this app")
