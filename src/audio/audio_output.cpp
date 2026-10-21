@@ -515,11 +515,14 @@ const int16_t* AudioOutput::stretch_if_slow(const int16_t* interleaved_stereo, s
     const double speed = source_speed_.speed(sample_rate_);
     if (!stretching_ && speed < kAudioStretchBelowSpeed) {
         stretching_ = true;
-        log_debug("audio: arriving at " + std::to_string(static_cast<int>(speed * 100.0 + 0.5)) +
-                  "% of real time, so it is being slowed down with the game");
+        // Info rather than debug: whether this happened at all is the first
+        // question about any report of sound going wrong while a game ran
+        // slow, and the answer belongs in an ordinary log.
+        log_info("The game slowed to " + std::to_string(static_cast<int>(speed * 100.0 + 0.5)) +
+                 "% speed, so its sound is being slowed down with it");
     } else if (stretching_ && speed > kAudioStretchUntilSpeed) {
         stretching_ = false;
-        log_debug("audio: back up to real time");
+        log_info("The game is back up to speed, and so is its sound");
     }
 
     if (stretching_) {
@@ -573,7 +576,6 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     // and that is a start rather than a stop.
     const bool resuming_from_dry = queued == 0 && last_push_ms_ != 0;
     update_cover(now_ms, queued, frames);
-    rate_ratio_ = audio_drift_ratio(queued, aimed_frames(), rate_ratio_);
 
     // Surplus, not drift -- see kAudioTrimMarginMs. Taken off the block on the
     // way in rather than off the queue behind it, which comes to the same
@@ -589,6 +591,13 @@ void AudioOutput::push(const int16_t* interleaved_stereo, std::size_t frames) {
     // same surplus from being paid for twice.
     stats_frames_in_ += frames;
     const int16_t* block = stretch_if_slow(interleaved_stereo, frames, now_ms, queued);
+    // While stretching, the stretch holds the queue by itself, by tempo, which
+    // costs no pitch. Left to chase the queue too, the rate correction sat
+    // near its limit below one as a slowdown began -- the whole game a sixth
+    // of a semitone flat -- for depth the stretch was already making up. So
+    // it eases back to playing at pitch instead.
+    rate_ratio_ = audio_drift_ratio(stretching_ ? aimed_frames() : queued, aimed_frames(),
+                                    rate_ratio_);
     const std::size_t block_frames = block == interleaved_stereo ? frames : stretched_.size() / 2;
     const std::size_t sustained = low_water_.note(queued, block_frames);
     // Not while stretching, which holds the queue at its target by itself --
