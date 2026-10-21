@@ -83,8 +83,8 @@ void test_a_button_is_given_another_job_and_put_back() {
     move_to(screen, PadControl::Zr);
     press(screen, UiAction::Confirm);
     CHECK_MSG(screen.choosing(), "A did not bring up the picker");
-    // The cursor starts on what it does now: R, as a DS has no ZR.
-    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::R));
+    // The cursor starts on what it does now: Disabled, as a DS has no ZR.
+    CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::Nothing));
 
     const ButtonMappingScreenResult changed =
         tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::QuickMenu));
@@ -98,9 +98,9 @@ void test_a_button_is_given_another_job_and_put_back() {
     press(screen, UiAction::Confirm);
     CHECK(!tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase).changed.has_value());
     CHECK(screen.choosing());
-    // Back to R, its standard job, which is kept as Standard.
+    // Back to Disabled, its standard job, which is kept as Standard.
     const ButtonMappingScreenResult back =
-        tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::R));
+        tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::Nothing));
     CHECK(back.changed.has_value());
     if (back.changed) {
         CHECK((*back.changed)[PadControl::Zr] == PadAction::Standard);
@@ -108,7 +108,7 @@ void test_a_button_is_given_another_job_and_put_back() {
     }
     // And choosing what it already does changes nothing.
     press(screen, UiAction::Confirm);
-    CHECK(!tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::R))
+    CHECK(!tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + choice_index(screen, PadAction::Nothing))
                .changed.has_value());
 }
 
@@ -262,15 +262,15 @@ void test_the_picker_offers_what_the_console_has() {
     CHECK(!has(three_ds, PadAction::BlowIntoMic) && has(three_ds, PadAction::TouchCursor));
     CHECK(three_ds.back() == PadAction::Nothing);
 
-    // On a 3DS too the triggers are a second L and R as standard, as they
-    // always were; ZR is there to be chosen, just past them.
+    // On a 3DS the triggers are a New 3DS's ZL and ZR as standard, just
+    // past L and R in the list.
     ButtonMappingScreen screen = open_screen(ButtonMapping(), SystemId::ThreeDs, RightStickMode::TouchCursor);
     move_to(screen, PadControl::Zr);
     press(screen, UiAction::Confirm);
     CHECK(screen.choosing());
-    CHECK_EQ(screen.choice_focus(), 6);
-    const ButtonMappingScreenResult zr = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 8);
-    CHECK(zr.changed.has_value() && (*zr.changed)[PadControl::Zr] == PadAction::Zr);
+    CHECK_EQ(screen.choice_focus(), 8);
+    const ButtonMappingScreenResult r = tap_entry(screen, ButtonMappingScreen::kChoiceEntryBase + 6);
+    CHECK(r.changed.has_value() && (*r.changed)[PadControl::Zr] == PadAction::R);
 }
 
 // Y turns turbo on for a button that presses one of the console's, and off

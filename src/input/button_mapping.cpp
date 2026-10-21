@@ -21,10 +21,12 @@ PadAction standard_pad_action(PadControl control, const PadConsole& console) {
         case PadControl::L: return PadAction::L;
         case PadControl::R: return PadAction::R;
         // A console with four shoulder buttons has somewhere for the triggers
-        // to go. One with two takes them as a second L and R, since plenty of
-        // people reach for the triggers first.
-        case PadControl::Zl: return console.game_uses_every_control ? PadAction::Zl : PadAction::L;
-        case PadControl::Zr: return console.game_uses_every_control ? PadAction::Zr : PadAction::R;
+        // to go -- a New 3DS's ZL and ZR among them. A DS has none, so they
+        // do nothing until given something.
+        case PadControl::Zl:
+            return console.has_zl_zr || console.game_uses_every_control ? PadAction::Zl : PadAction::Nothing;
+        case PadControl::Zr:
+            return console.has_zl_zr || console.game_uses_every_control ? PadAction::Zr : PadAction::Nothing;
         case PadControl::Plus: return PadAction::Start;
         case PadControl::Minus: return PadAction::Select;
         case PadControl::LeftStick:

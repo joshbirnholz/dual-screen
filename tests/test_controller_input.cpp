@@ -965,9 +965,8 @@ void test_the_shell_lets_go_of_the_controls_where_the_game_wants_them() {
 }
 
 // A pad has four shoulder buttons and two sticks that press; a DS has two
-// shoulder buttons and no sticks at all. So on a handheld the triggers stand in
-// for the shoulder buttons a player is likely to reach past, and the stick
-// presses are this app's own shortcuts. On a console that reads all of them the
+// shoulder buttons and no sticks at all. So on a DS the triggers do nothing
+// until given something, and the stick presses are this app's own shortcuts. On a console that reads all of them the
 // same physical controls have somewhere of their own to go, and taking any of
 // them for this app would be taking them from the game.
 void test_the_extra_shoulders_and_stick_presses_go_where_the_console_has_room() {
@@ -994,8 +993,8 @@ void test_the_extra_shoulders_and_stick_presses_go_where_the_console_has_room() 
 
     hold_triggers(true);
     DsInputState state = read();
-    CHECK_MSG(state.pressed(DsButton::L) && state.pressed(DsButton::R),
-              "the triggers stopped standing in for the shoulder buttons on a handheld");
+    CHECK_MSG(!state.pressed(DsButton::L) && !state.pressed(DsButton::R),
+              "the triggers pressed a DS's shoulder buttons, which they no longer do as standard");
     CHECK_MSG(!state.pressed(DsButton::Zl) && !state.pressed(DsButton::Zr),
               "a handheld was given buttons it does not have");
 

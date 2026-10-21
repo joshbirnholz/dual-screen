@@ -204,8 +204,8 @@ void test_the_standard_mapping_is_the_one_there_has_always_been() {
     ds.has_microphone = true;
     ds.right_stick = RightStickMode::TouchCursor;
     CHECK(standard_pad_action(PadControl::A, ds) == PadAction::A);
-    CHECK(standard_pad_action(PadControl::Zl, ds) == PadAction::L);
-    CHECK(standard_pad_action(PadControl::Zr, ds) == PadAction::R);
+    CHECK(standard_pad_action(PadControl::Zl, ds) == PadAction::Nothing);
+    CHECK(standard_pad_action(PadControl::Zr, ds) == PadAction::Nothing);
     CHECK(standard_pad_action(PadControl::Plus, ds) == PadAction::Start);
     CHECK(standard_pad_action(PadControl::Minus, ds) == PadAction::Select);
     CHECK(standard_pad_action(PadControl::LeftStick, ds) == PadAction::BlowIntoMic);
@@ -219,7 +219,8 @@ void test_the_standard_mapping_is_the_one_there_has_always_been() {
     CHECK(standard_pad_action(PadControl::RightStick, three_ds) == PadAction::Nothing);
     for (const PadAction choice : pad_action_choices(three_ds)) CHECK(choice != PadAction::ScreenSmoothing);
     CHECK(pad_action_from_key("screen_smoothing") == PadAction::Standard);
-    CHECK(standard_pad_action(PadControl::Zl, three_ds) == PadAction::L);
+    CHECK(standard_pad_action(PadControl::Zl, three_ds) == PadAction::Zl);
+    CHECK(standard_pad_action(PadControl::Zr, three_ds) == PadAction::Zr);
 
     PadConsole wii_u;
     wii_u.game_uses_every_control = true;
@@ -230,12 +231,12 @@ void test_the_standard_mapping_is_the_one_there_has_always_been() {
     // standard already is changes nothing.
     ButtonMapping mapping;
     CHECK(mapping.is_standard(ds));
-    mapping[PadControl::Zl] = PadAction::L;
+    mapping[PadControl::Zl] = PadAction::Nothing;
     CHECK(mapping.is_standard(ds));
-    mapping[PadControl::Zl] = PadAction::Zl;
+    mapping[PadControl::Zl] = PadAction::L;
     CHECK(!mapping.is_standard(ds));
-    CHECK(mapping.resolved(PadControl::Zl, ds) == PadAction::Zl);
-    CHECK(mapping.resolved(PadControl::Zr, ds) == PadAction::R);
+    CHECK(mapping.resolved(PadControl::Zl, ds) == PadAction::L);
+    CHECK(mapping.resolved(PadControl::Zr, ds) == PadAction::Nothing);
 }
 
 // The picker offers what the console has: a DS no ZL or ZR, a microphone only
