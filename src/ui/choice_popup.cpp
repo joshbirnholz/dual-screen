@@ -177,9 +177,12 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
         }
     }
     const float inset = std::round(line * kInsetLines);
-    const float bar = scrolls ? scroll_bar_width(scale) + line * 0.5f : 0.0f;
-    const float width = std::clamp(inset * 2.0f + line * kTextInLines + widest + gap + circle +
-                                       line * kCircleInLines + bar,
+    const float bar = scrolls ? std::round(scroll_bar_width(scale) + line * 0.5f) : 0.0f;
+    // Added up from the same rounded pieces render() lays a row out with, and
+    // the words' width rounded up: a pixel short, and the longest choice would
+    // end in "..." -- and, under the cursor, slide that pixel back and forth.
+    const float width = std::clamp(inset * 2.0f + std::round(line * kTextInLines) + std::ceil(widest) + gap +
+                                       circle + std::round(line * kCircleInLines) + bar,
                                    line * kMinWidthLines,
                                    std::max(line * kMinWidthLines, output_width - margin * 2.0f));
     const float height = geometry.row_height * static_cast<float>(geometry.visible) + inset * 2.0f;
@@ -193,7 +196,7 @@ ChoicePopup::Geometry ChoicePopup::geometry(float output_width, float output_hei
     float y = row_.y + row_.h * 0.5f - inset - geometry.row_height * (shown_at + 0.5f);
     x = std::clamp(x, margin, std::max(margin, output_width - margin - width));
     y = std::clamp(y, margin, std::max(margin, output_height - margin - height));
-    geometry.box = PixelRect{std::round(x), std::round(y), std::round(width), std::round(height)};
+    geometry.box = PixelRect{std::round(x), std::round(y), std::ceil(width), std::round(height)};
     geometry.list = PixelRect{geometry.box.x, geometry.box.y + inset, geometry.box.w,
                               geometry.row_height * static_cast<float>(geometry.visible)};
     const float scroll = std::clamp(scroll_rows_, 0.0f, max_scroll_rows(geometry.visible));
@@ -415,7 +418,8 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
         if (index < hints_.size() && !hints_[index].empty()) {
             const float hint_scale = scale * kHintScale;
             const float hint_width = TextRenderer::measure_width(hints_[index], hint_scale);
-            const float hint_x = std::round(text_right - hint_width);
+            // Rounded rightward, into the gap, so the words keep all their room.
+            const float hint_x = std::ceil(text_right - hint_width);
             text.draw(quads, hints_[index], hint_x,
                       std::round(row.y + (row.h - TextRenderer::line_height(hint_scale)) * 0.5f), hint_scale,
                       theme.text_dim);
