@@ -6,6 +6,7 @@
 
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
+#include "ui/list_touch.hpp"
 
 namespace ds {
 
@@ -110,6 +111,15 @@ inline void draw_menu_cursor(QuadRenderer& quads, const PixelRect& rect, float r
     quads.draw_rounded_ring(rect, radius, ring, menu_ring_left(), menu_ring_right());
 }
 
+// What a Switch fills a row, a popup's button or a dropdown's choice with
+// while a finger is held on it -- and a popup's button or choice under the
+// cursor, which it highlights the same way rather than ringing: a wash of
+// the accent, dark enough that the words on it still read.
+inline Color menu_highlight_fill() {
+    const Color& accent = ui_theme().accent;
+    return Color{accent.r, accent.g, accent.b, 0.32f};
+}
+
 // The thin rule a Switch's own lists set between their rows: white, faint,
 // so it sits as well on a game behind the menu as on the plain ground.
 inline Color menu_row_rule_color() { return Color{1.0f, 1.0f, 1.0f, 0.16f}; }
@@ -123,7 +133,9 @@ inline Color menu_row_rule_color() { return Color{1.0f, 1.0f, 1.0f, 0.16f}; }
 // The one under the cursor is ringed, the way a Switch's own menus ring it,
 // with whatever is behind it still showing through -- the ring where its
 // rules would be, in place of them: its own, and the one above the row after
-// it, which says so with `after_focused`.
+// it, which says so with `after_focused`. Only while the cursor is drawn
+// at all -- see menu_cursor_shown(). A row a finger is held on is filled
+// instead, out to the same edges -- see pointer_holding().
 inline float menu_row_reach(float scale) {
     const float half_gap = std::floor(menu_row_gap(TextRenderer::line_height(scale)) * 0.5f);
     return half_gap + std::ceil(std::max(1.0f, std::round(scale * 0.4f)) * 0.5f);
@@ -135,21 +147,33 @@ inline PixelRect menu_list_clip(const PixelRect& area, float scale) {
     const float reach = menu_row_reach(scale);
     return PixelRect{area.x, area.y - reach, area.w, area.h + reach * 2.0f};
 }
+// A row's ring, or its fill while held: out to the rules above and below,
+// its edges lying over them, on whole pixels so its top is drawn as thick as
+// its bottom.
+inline PixelRect menu_row_outline(const PixelRect& rect, float scale) {
+    const float reach = menu_row_reach(scale);
+    const float top = std::round(rect.y - reach);
+    const float bottom = std::round(rect.y + rect.h + reach);
+    return PixelRect{rect.x, top, rect.w, bottom - top};
+}
+inline void draw_menu_held(QuadRenderer& quads, const PixelRect& rect, float scale) {
+    const PixelRect fill_rect = menu_row_outline(rect, scale);
+    const Color fill = menu_highlight_fill();
+    quads.draw_rounded_ring(fill_rect, std::round(scale * 1.5f), fill_rect.w + fill_rect.h, fill, fill);
+}
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale,
                           bool last = false, bool after_focused = false) {
     const float line = TextRenderer::line_height(scale);
     const float half_gap = std::floor(menu_row_gap(line) * 0.5f);
     const float thick = std::max(1.0f, std::round(scale * 0.4f));
+    focused = cursor_drawn(focused);
+    after_focused = cursor_drawn(after_focused);
     if (focused) {
-        // Out to the rules above and below, its edges lying over them, on
-        // whole pixels so its top is drawn as thick as its bottom.
-        const float reach = menu_row_reach(scale);
-        const float top = std::round(rect.y - reach);
-        const float bottom = std::round(rect.y + rect.h + reach);
-        const PixelRect ring{rect.x, top, rect.w, bottom - top};
+        const PixelRect ring = menu_row_outline(rect, scale);
         draw_menu_cursor(quads, ring, std::round(std::min(ring.h * 0.22f, scale * 3.5f)), scale);
         return;
     }
+    if (pointer_holding(rect, true)) draw_menu_held(quads, rect, scale);
     const float inset = std::round(line * 0.5f);
     const PixelRect top{rect.x + inset, std::round(rect.y - half_gap - thick * 0.5f), rect.w - inset * 2.0f, thick};
     const PixelRect bottom{rect.x + inset, std::round(rect.y + rect.h + half_gap - thick * 0.5f),
@@ -182,6 +206,7 @@ inline bool is_toggle_value(const std::string& value) { return value == "On" || 
 inline void draw_side_tab(QuadRenderer& quads, const PixelRect& rect, bool chosen, bool focused,
                           float scale) {
     if (focused) draw_menu_row(quads, rect, true, scale);
+    else if (pointer_holding(rect, true)) draw_menu_held(quads, rect, scale);
     if (!chosen) return;
     const float bar = std::max(3.0f, std::round(scale * 1.3f));
     const float inset = std::round(rect.h * 0.2f);
@@ -219,7 +244,7 @@ inline void draw_menu_tile(QuadRenderer& quads,
                            bool selected,
                            float scale) {
     const UiTheme& theme = ui_theme();
-    if (focused) {
+    if (cursor_drawn(focused)) {
         quads.draw_solid(rect, theme.text);
         return;
     }

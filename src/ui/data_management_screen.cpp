@@ -1112,8 +1112,7 @@ DataManagementResult DataManagementScreen::update(const std::vector<UiAction>& i
             handle_guide_tap(static_cast<ButtonGlyph>(tap - kGuideEntryBase), actions);
             continue;
         }
-        // Everywhere here, a first tap highlights and a second, on the same
-        // thing, chooses it.
+        // Everywhere here, a tap chooses what it lands on.
         if (overlay_ != Overlay::None || tap < 0) continue;
         bool chosen = false;
         if (page_ == Page::List) chosen = tap_chooses(list_focus_, tap);

@@ -1,6 +1,7 @@
 #include "ui/control_guide.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include "ui/list_touch.hpp"
@@ -36,7 +37,11 @@ ConfirmButton g_confirm_button = ConfirmButton::East;
 
 }  // namespace
 
-void set_prompt_style(PromptStyle style) { g_prompt_style = style; }
+void set_prompt_style(PromptStyle style) {
+    // A touchscreen and nothing else: nothing to bring a cursor back with.
+    if (style == PromptStyle::Touch && g_prompt_style != PromptStyle::Touch) set_menu_cursor_shown(false);
+    g_prompt_style = style;
+}
 void set_confirm_button(ConfirmButton choice) { g_confirm_button = choice; }
 ConfirmButton confirm_button() { return g_confirm_button; }
 
@@ -270,16 +275,61 @@ float draw_control_guide(QuadRenderer& quads,
 namespace ds {
 namespace {
 LivePointer g_live_pointer;
+std::chrono::steady_clock::time_point g_popup_drawn{};
+bool g_menu_cursor_shown = true;
 }  // namespace
+
+void note_popup_drawn() { g_popup_drawn = std::chrono::steady_clock::now(); }
 
 void set_live_pointer(bool down, float x, float y) {
     if (down && !g_live_pointer.down) {
         g_live_pointer.press_x = x;
         g_live_pointer.press_y = y;
+        g_live_pointer.moved = false;
+        // Drawn in the last few frames: up as the finger went down.
+        g_live_pointer.on_popup =
+            std::chrono::steady_clock::now() - g_popup_drawn < std::chrono::milliseconds(100);
+    }
+    if (down && std::hypot(x - g_live_pointer.press_x, y - g_live_pointer.press_y) > kTapWobblePixels) {
+        g_live_pointer.moved = true;
     }
     g_live_pointer.down = down;
     g_live_pointer.x = x;
     g_live_pointer.y = y;
+}
+
+bool menu_cursor_shown() { return g_menu_cursor_shown; }
+void set_menu_cursor_shown(bool shown) { g_menu_cursor_shown = shown; }
+
+std::vector<UiAction> menu_cursor_input(const std::vector<UiAction>& actions,
+                                        const std::vector<PointerEvent>& pointers, bool in_menu) {
+    for (const PointerEvent& pointer : pointers) {
+        if (pointer.pressed) g_menu_cursor_shown = false;
+    }
+    std::vector<UiAction> heard;
+    heard.reserve(actions.size());
+    for (const UiAction action : actions) {
+        switch (action) {
+            case UiAction::Up:
+            case UiAction::Down:
+            case UiAction::Left:
+            case UiAction::Right:
+            case UiAction::PageUp:
+            case UiAction::PageDown:
+            case UiAction::Confirm:
+                if (!g_menu_cursor_shown) {
+                    g_menu_cursor_shown = true;
+                    if (in_menu) continue;
+                }
+                break;
+            case UiAction::Cancel:
+            case UiAction::ToggleMenu:
+            case UiAction::OpenMenu: g_menu_cursor_shown = true; break;
+            default: break;
+        }
+        heard.push_back(action);
+    }
+    return heard;
 }
 
 const LivePointer& live_pointer() { return g_live_pointer; }

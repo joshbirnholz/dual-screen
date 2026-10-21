@@ -172,5 +172,54 @@ int main() {
         set_live_wheel(0.0f, 0.0f, 0.0f);
     }
 
+    // A finger held on a row: held while still and on it, let go of once it
+    // moves off to scroll, and nothing behind a popup that was up as it went
+    // down.
+    {
+        const PixelRect row{100.0f, 100.0f, 400.0f, 60.0f};
+        set_live_pointer(true, 200.0f, 120.0f);
+        CHECK(pointer_holding(row));
+        set_live_pointer(true, 205.0f, 125.0f);
+        CHECK(pointer_holding(row));
+        set_live_pointer(true, 205.0f, 150.0f);
+        CHECK(!pointer_holding(row));
+        set_live_pointer(true, 200.0f, 120.0f);
+        CHECK_MSG(!pointer_holding(row), "back where it started, it is still scrolling");
+        set_live_pointer(false, 200.0f, 120.0f);
+        CHECK(!pointer_holding(row));
+        note_popup_drawn();
+        set_live_pointer(true, 200.0f, 120.0f);
+        CHECK(pointer_holding(row));
+        CHECK(!pointer_holding(row, true));
+        set_live_pointer(false, 200.0f, 120.0f);
+    }
+
+    // The cursor: hidden by a finger going down; in a menu, the pad's next
+    // direction or A only brings it back, and the one after is heard; B is
+    // heard at once. Playing, every press is the game's.
+    {
+        set_menu_cursor_shown(true);
+        PointerEvent press;
+        press.pressed = true;
+        CHECK(menu_cursor_input({UiAction::Down}, {}, true).size() == 1u);
+        CHECK(menu_cursor_input({}, {press}, true).empty());
+        CHECK(!menu_cursor_shown());
+        CHECK(menu_cursor_input({UiAction::Down}, {}, true).empty());
+        CHECK(menu_cursor_shown());
+        CHECK(menu_cursor_input({UiAction::Down}, {}, true).size() == 1u);
+        menu_cursor_input({}, {press}, true);
+        CHECK(menu_cursor_input({UiAction::Confirm}, {}, true).empty());
+        menu_cursor_input({}, {press}, true);
+        CHECK(menu_cursor_input({UiAction::Cancel}, {}, true).size() == 1u);
+        CHECK(menu_cursor_shown());
+        menu_cursor_input({}, {press}, true);
+        CHECK(menu_cursor_input({UiAction::Down}, {}, false).size() == 1u);
+        CHECK(menu_cursor_shown());
+        // And a tap chooses at once.
+        int focus = 0;
+        CHECK(tap_chooses(focus, 3));
+        CHECK_EQ(focus, 3);
+    }
+
     return test::finish("list touch");
 }

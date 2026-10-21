@@ -732,8 +732,7 @@ SettingsScreenResult SettingsScreen::update(const std::vector<UiAction>& pressed
         drag_.stop();
         scroll_focus_into_view(compute_geometry(output_width, output_height));
     }
-    // A first tap highlights a row; a second changes its value -- heard the
-    // one way every tap is.
+    // A tap on a row changes its value -- heard the one way every tap is.
     for (const int index : take_taps(pointers, output_width, output_height)) {
         const Geometry settled = compute_geometry(output_width, output_height);
         if (index >= 0 && index < static_cast<int>(settled.rows.size()) && tap_chooses(focus_, index)) {

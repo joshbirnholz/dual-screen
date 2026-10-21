@@ -216,8 +216,7 @@ ControllersScreenResult ControllersScreen::update(const std::vector<UiAction>& p
             }
             holding_ = false;
         } else {
-            // Highlighted by a first tap, and taken up or put down by a
-            // second on the same row.
+            // Taken up or put down by a tap.
             if (tap_chooses(focus_, index)) activate();
         }
         row_count_ = row_count();

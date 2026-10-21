@@ -510,15 +510,14 @@ void test_the_opening_screen_stops_at_its_last_row() {
     }
 }
 
-// A single tap highlights a row and chooses nothing; a second on the same row
-// chooses it.
-void test_a_tap_highlights_before_it_chooses() {
+// A single tap on a row chooses it, as a Switch's lists do.
+void test_a_tap_chooses_a_row() {
     LauncherScreen launcher;
     launcher.open(true);
     const std::size_t rows = launcher_choices(true).size();
     CHECK(rows > 1);
     // The cursor on the second row; then the first, found by tapping down the
-    // screen until the highlight moves.
+    // screen until the cursor moves.
     launcher.update({UiAction::Down}, {}, 1280.0f, 800.0f);
     bool found = false;
     for (float y = 4.0f; y < 800.0f && !found; y += 8.0f) {
@@ -531,9 +530,7 @@ void test_a_tap_highlights_before_it_chooses() {
         const int before = launcher.focus();
         const LauncherChoice once = launcher.update({}, {tap}, 1280.0f, 800.0f).choice;
         if (launcher.focus() != before) {
-            CHECK_MSG(once == LauncherChoice::None, "one tap on a new row chose it");
-            CHECK_MSG(launcher.update({}, {tap}, 1280.0f, 800.0f).choice != LauncherChoice::None,
-                      "a second tap on the highlighted row did not choose it");
+            CHECK_MSG(once != LauncherChoice::None, "one tap on a row did not choose it");
             found = true;
         }
     }
@@ -593,6 +590,6 @@ int main() {
     test_the_opening_screen_offers_what_the_device_can_do();
     test_a_switch_that_plays_games_offers_settings();
     test_the_opening_screen_stops_at_its_last_row();
-    test_a_tap_highlights_before_it_chooses();
+    test_a_tap_chooses_a_row();
     return test::finish("browser");
 }

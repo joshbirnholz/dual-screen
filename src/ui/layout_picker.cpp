@@ -771,22 +771,23 @@ void LayoutPicker::handle_tap(int entry, LayoutPickerResult& result) {
     int item = -1;
     if (!decode_focus(entry, section, item)) return;
     if (item < 0) {
-        const bool highlighted = !on_content_ && section_ == section;
         if (section != section_) content_scroll_ = 0.0f;
         section_ = section;
         on_content_ = false;
-        if (highlighted) activate_section(result);
+        // A section with things of its own shows them, as a tap on a
+        // Switch's settings' left-hand list does, the cursor staying on the
+        // section; any other -- Continue, Reset, a page of its own -- does
+        // what it says.
+        if (content_count(section) == 0) activate_section(result);
         return;
     }
-    const bool highlighted = on_content_ && section_ == section && item_ == item;
     if (section != section_) content_scroll_ = 0.0f;
     section_ = section;
     on_content_ = true;
     item_ = item;
-    // A layout, and the swap or stylus button beside them, are chosen by the
-    // first tap: each is undone by tapping the one before, and seeing it is
-    // the point of trying one.
-    if (highlighted || section_ == MenuSection::Layout) activate_item(result);
+    // Chosen by the tap, as a Switch's are: the finger held on it showed
+    // which it was.
+    activate_item(result);
 }
 
 void LayoutPicker::ask(MenuConfirm confirm) {
@@ -1214,9 +1215,7 @@ LayoutPickerResult LayoutPicker::update(const std::vector<UiAction>& actions,
             content_drag_.stop();
             keep_item_in_view(output_width, output_height);
         }
-        // Touch: a first tap highlights the thing under the finger, and a
-        // second on the same thing chooses it -- so a finger landing on the
-        // wrong tile moves the cursor rather than changing the game. Heard
+        // Touch: a tap chooses what it lands on -- see handle_tap(). Heard
         // the one way every tap is, this device's and the other's alike.
         for (const int tap : take_taps(pointers, output_width, output_height)) {
             if (confirming()) break;
@@ -1320,7 +1319,8 @@ void LayoutPicker::render_sections(QuadRenderer& quads, TextRenderer& text,
         const PixelRect& row = geometry.sections[index];
         const MenuSection section = sections_[index];
         const bool current = section == section_;
-        const bool focused = current && !on_content_;
+        const bool focused = cursor_drawn(current && !on_content_) ||
+                             pointer_holding(PixelRect{row.x, row.y, geometry.divider_x - row.x, row.h}, true);
         // As a Switch's own game menus draw theirs: the row under the cursor
         // solid white, running right up to the line, its words in the accent;
         // the one whose things are showing, while the cursor is over among
@@ -1359,7 +1359,8 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
     for (std::size_t index = 0; index < tiles; ++index) {
         const PixelRect& tile = geometry.items[index];
         const Layout& layout = tile_layout(static_cast<int>(index));
-        const bool focused = on_content_ && static_cast<int>(index) == item_;
+        const bool focused =
+            cursor_drawn(on_content_ && static_cast<int>(index) == item_) || pointer_holding(tile, true);
         const bool selected = layout.id == selected_layout_id_;
 
         // Outlines everywhere except under the cursor and on the layout in
@@ -1394,7 +1395,7 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
     // for. Not there at all where that layout has no hand to choose.
     const PixelRect& square = geometry.hand_button;
     if (square.w <= 0.0f || !corner_button_usable()) return;
-    const bool focused = on_content_ && item_ == tile_count();
+    const bool focused = cursor_drawn(on_content_ && item_ == tile_count()) || pointer_holding(square, true);
     const float border = menu_border(scale);
     // Under the cursor its background takes a wash of white and the symbol
     // stays white on it -- a highlight, not the tiles' full inversion, which
@@ -1443,7 +1444,7 @@ void LayoutPicker::render_slots(QuadRenderer& quads, TextRenderer& text,
          ++slot) {
         const auto index = static_cast<std::size_t>(slot);
         const PixelRect& cell = geometry.items[index];
-        const bool focused = on_content_ && slot == item_;
+        const bool focused = cursor_drawn(on_content_ && slot == item_) || pointer_holding(cell, true);
         const bool filled = slot_filled(slot);
         // Square, as a Switch's own suspend points are: solid white under
         // the cursor, outlined otherwise.

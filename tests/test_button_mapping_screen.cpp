@@ -157,12 +157,10 @@ void test_revert_asks_first() {
     CHECK(!screen.confirming());
 }
 
-void test_a_first_tap_highlights_and_a_second_chooses() {
+void test_a_tap_chooses() {
     ButtonMappingScreen screen = open_screen();
     tap_entry(screen, static_cast<int>(PadControl::Plus));
     CHECK_EQ(screen.focus(), static_cast<int>(PadControl::Plus));
-    CHECK(!screen.choosing());
-    tap_entry(screen, static_cast<int>(PadControl::Plus));
     CHECK(screen.choosing());
     CHECK_EQ(screen.choice_focus(), choice_index(screen, PadAction::Start));
     // Off the picker puts it away.
@@ -220,7 +218,6 @@ void test_the_other_device_shows_and_works_the_page() {
 
     tap_on_mirror(static_cast<int>(PadControl::Y));
     CHECK_EQ(host.focus(), static_cast<int>(PadControl::Y));
-    tap_on_mirror(static_cast<int>(PadControl::Y));
     CHECK(host.choosing());
     show();
     CHECK(mirror.choosing());
@@ -456,7 +453,7 @@ int main() {
     test_a_button_is_given_another_job_and_put_back();
     test_b_puts_the_picker_away_then_leaves();
     test_revert_asks_first();
-    test_a_first_tap_highlights_and_a_second_chooses();
+    test_a_tap_chooses();
     test_the_other_device_shows_and_works_the_page();
     test_the_picker_offers_what_the_console_has();
     test_y_toggles_turbo();

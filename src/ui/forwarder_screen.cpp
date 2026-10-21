@@ -32,8 +32,10 @@ const char* row_label(ForwarderScreen::Row row) {
 std::string quoted(const std::string& text) { return "\xE2\x80\x9C" + text + "\xE2\x80\x9D"; }
 
 // The ring round whatever the cursor is on that is not a row of a list: the
-// title box, the icon, a picture in the grid.
+// title box, the icon, a picture in the grid. Only while the cursor is drawn
+// at all -- see menu_cursor_shown().
 void draw_ring(QuadRenderer& quads, const PixelRect& rect, float scale) {
+    if (!menu_cursor_shown()) return;
     const float ring = std::max(3.0f, std::round(scale * 1.4f));
     const float out = std::round(ring * 0.6f);
     quads.draw_outline(PixelRect{rect.x - out, rect.y - out, rect.w + out * 2.0f, rect.h + out * 2.0f},
@@ -599,25 +601,19 @@ void ForwarderScreen::update_editor(const std::vector<UiAction>& input_actions,
             if (on_guide == ButtonGlyph::B) actions.push_back(UiAction::Cancel);
             continue;
         }
-        // A first tap puts the cursor on a thing; a second on it chooses it.
+        // A tap chooses what it lands on, the cursor going there too.
         const auto tap_zone = [&](Zone zone) {
-            if (zone_ == zone) {
-                actions.push_back(UiAction::Confirm);
-            } else {
-                zone_ = zone;
-            }
+            zone_ = zone;
+            actions.push_back(UiAction::Confirm);
         };
         if (tap == kTitleEntry) {
             tap_zone(Zone::Title);
         } else if (tap == kIconEntry) {
             tap_zone(Zone::Icon);
         } else if (tap >= 0 && tap < rows) {
-            if (zone_ == Zone::List && list_focus_ == tap) {
-                actions.push_back(UiAction::Confirm);
-            } else {
-                zone_ = Zone::List;
-                list_focus_ = tap;
-            }
+            zone_ = Zone::List;
+            list_focus_ = tap;
+            actions.push_back(UiAction::Confirm);
         }
     }
 
@@ -760,7 +756,11 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
                           cell.x + cell.w * 0.5f, mid + line * 1.5f, scale * 0.8f, theme.text_dim,
                           TextAlign::Center);
             }
-            if (index == grid_focus_ && overlay_ == Overlay::None) draw_ring(quads, cell, scale);
+            if (overlay_ == Overlay::None && pointer_holding(cell)) {
+                quads.draw_solid(cell, menu_highlight_fill());
+            } else if (index == grid_focus_ && overlay_ == Overlay::None) {
+                draw_ring(quads, cell, scale);
+            }
         }
         quads.clear_clip();
         if (grid.content_height > grid.view.h + 0.5f) {
@@ -773,7 +773,7 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
         quads.draw_rounded_rect(geometry.left, line * 0.4f, panel_fill());
 
         // The title, in a box of its own at the top of the panel.
-        const bool title_focused = zone_ == Zone::Title && overlay_ == Overlay::None;
+        const bool title_focused = cursor_drawn(zone_ == Zone::Title && overlay_ == Overlay::None);
         quads.draw_rounded_rect(geometry.title_box, line * 0.3f, box_fill());
         const float box_pad = std::round(line * 0.7f);
         const float label_scale = scale * 0.75f;
@@ -803,7 +803,7 @@ void ForwarderScreen::render(QuadRenderer& quads, TextRenderer& text, const Butt
         } else {
             quads.draw_solid(geometry.icon_box, box_fill());
         }
-        const bool icon_focused = zone_ == Zone::Icon && overlay_ == Overlay::None;
+        const bool icon_focused = cursor_drawn(zone_ == Zone::Icon && overlay_ == Overlay::None);
         if (icon_focused) draw_ring(quads, geometry.icon_box, scale);
         const float centre = geometry.left.x + geometry.left.w * 0.5f;
         float pen_y = geometry.icon_label_y;

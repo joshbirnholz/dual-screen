@@ -25,9 +25,14 @@ list current -- it is how work carries across sessions.
   and the `lint_menu_pages` test). With two devices, a page of the host's is
   one page on both: cursor, popups and scroll the same -- but for Settings and
   its pages, which are each device's own.
-- Lists: a first tap highlights, a second chooses; a dropdown's choice is
-  chosen by its first tap. Smooth scrolling, no wrap-around; held directions
-  repeat every 75 ms; the cursor never moves unexpectedly.
+- Selection works as a Switch's: a finger held on a row, button or choice
+  fills it, sliding off to scroll takes that back, and lifting chooses it --
+  one tap. A finger going down anywhere hides the cursor's ring, and a popup
+  put up after a tap has nothing highlighted; the pad's next press brings
+  the cursor back where it was without moving it. Popups' buttons and
+  dropdowns' choices are highlighted alike, filled rather than ringed. Smooth
+  scrolling, no wrap-around; held directions repeat every 75 ms; the cursor
+  never moves unexpectedly.
 - B goes back one level; the menu button closes everything.
 - Title Case for menu labels (but "Save slot", as the Switch spells it).
 - Values right-aligned; no yellow or orange text. Devices are named by their

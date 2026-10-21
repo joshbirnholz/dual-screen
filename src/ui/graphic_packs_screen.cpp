@@ -520,19 +520,19 @@ void GraphicPacksScreen::handle_tap(int entry, GraphicPacksScreenResult& result)
     const int index = entry / 2;
     if (entry % 2 == 0) {
         if (index >= pack_count()) return;
-        const bool highlighted = !in_pack_ && focus_ == index;
+        // A pack shows what is in it, as a tap on a Switch's settings'
+        // left-hand list does, the cursor staying on the list.
+        if (focus_ != index) detail_scroll_ = 0.0f;
         focus_ = index;
-        in_pack_ = highlighted;
+        in_pack_ = false;
         item_ = 0;
-        if (!highlighted) detail_scroll_ = 0.0f;
         scroll_focus_into_view(compute_geometry(last_width_, last_height_));
         return;
     }
     if (index >= item_count()) return;
-    const bool highlighted = in_pack_ && item_ == index;
     in_pack_ = true;
     item_ = index;
-    if (highlighted) adjust(result);
+    adjust(result);
 }
 
 GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>& pressed,
@@ -635,8 +635,7 @@ GraphicPacksScreenResult GraphicPacksScreen::update(const std::vector<UiAction>&
         scroll_focus_into_view(moved);
         scroll_item_into_view(compute_geometry(output_width, output_height));
     }
-    // A first tap highlights; a second on the same thing chooses it -- a
-    // pack, by going into it, and a row in it, by changing it. Heard the one
+    // A tap on a pack shows it; one on a row in it changes it. Heard the one
     // way every tap is, this device's and the other's alike.
     for (const int tap : take_taps(pointers, output_width, output_height)) handle_tap(tap, result);
     drag_.settle();

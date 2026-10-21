@@ -6613,7 +6613,9 @@ int App::run(const AppOptions& options) {
 
         // Test hook: hold a touch at a fixed spot by pushing the same events a
         // real device would, so everything downstream is the production path.
-        if (options.simulate_touch_x >= 0.0f && options.simulate_touch_y >= 0.0f) {
+        // From the second frame, once the window is the size it will be, so
+        // the finger goes down where it stays.
+        if (options.simulate_touch_x >= 0.0f && options.simulate_touch_y >= 0.0f && impl.frames_rendered >= 2) {
             SDL_Event touch {};
             touch.type = SDL_MOUSEBUTTONDOWN;
             touch.button.button = SDL_BUTTON_LEFT;
@@ -7486,6 +7488,9 @@ int App::run(const AppOptions& options) {
                     }
                 }
             }
+            // A finger going down hides the cursor, and the pad's next press
+            // in a menu only brings it back -- see menu_cursor_input().
+            ui_actions = menu_cursor_input(ui_actions, pointers, impl.state != Impl::State::Playing);
             impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
             impl.handle_ui(ui_actions, pointers);
             // The host's page drawn here, scrolled where the host has it --

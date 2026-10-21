@@ -22,9 +22,50 @@ struct LivePointer {
     // both started and ends on.
     float press_x = 0.0f;
     float press_y = 0.0f;
+    // Gone further from where it went down than a tap's wobble: scrolling
+    // something, and so no longer holding down what it went down on.
+    bool moved = false;
+    // Went down while a popup was up, so on the popup or the scrim round it:
+    // nothing behind it is held down.
+    bool on_popup = false;
 };
 void set_live_pointer(bool down, float x, float y);
 const LivePointer& live_pointer();
+// How far a finger goes before it is moving rather than tapping, in pixels.
+constexpr float kTapWobblePixels = 14.0f;
+
+// Whether a finger (or the mouse button) is being held down on `rect`, as a
+// Switch shows it: down inside it, still inside it, and not moved off to
+// scroll. `behind_popups` for something drawn under a popup, which a finger
+// that went down while one was up is not holding.
+inline bool pointer_holding(const PixelRect& rect, bool behind_popups = false) {
+    const LivePointer& live = live_pointer();
+    return live.down && !live.moved && !(behind_popups && live.on_popup) &&
+           rect.contains(live.press_x, live.press_y) && rect.contains(live.x, live.y);
+}
+// Said by a popup each time it is drawn, so a finger going down while it is
+// up is known to be on it -- see LivePointer::on_popup.
+void note_popup_drawn();
+
+// Whether the cursor is drawn -- the ring round a row, a popup's highlighted
+// button or choice. As on a Switch, a finger going down anywhere takes it
+// away, and with it every menu's highlight: from then on nothing is
+// highlighted but what a finger is held on, and a popup opens with none of
+// its answers highlighted. A press of the pad brings it back, where it was.
+bool menu_cursor_shown();
+void set_menu_cursor_shown(bool shown);
+// Whether something is drawn as under the cursor: `focused`, while the
+// cursor is drawn at all.
+inline bool cursor_drawn(bool focused) { return focused && menu_cursor_shown(); }
+// This pass's input as far as the cursor goes, before any menu hears it,
+// and what the menus are to hear. A finger or the mouse going down hides
+// the cursor. A direction, A or a shoulder while it is hidden brings it
+// back where it was and is not otherwise heard -- a press only moves or
+// chooses what can be seen -- while `in_menu`: playing, every press is the
+// game's, and shows it only for when a menu is next up. B, and the menu's
+// own button, show it too, and are heard.
+std::vector<UiAction> menu_cursor_input(const std::vector<UiAction>& actions,
+                                        const std::vector<PointerEvent>& pointers, bool in_menu);
 
 // The mouse wheel this pass: how many notches it turned, positive up a list,
 // and where the mouse was -- a list under it scrolls. Set once a pass beside
@@ -41,14 +82,13 @@ const LiveWheel& live_wheel();
 // height: three rows, as a desktop's lists move.
 inline float wheel_pixels(float notches, float row_height) { return -notches * row_height * 3.0f; }
 
-// A tap on a row of a list: the first highlights it, and only a tap on the
-// row already highlighted chooses it -- so a finger landing on the wrong row
-// moves the cursor there rather than doing something. True when `index` is
-// to be chosen; otherwise it becomes the focus.
+// A tap on a row of a list chooses it, as a Switch's do: the finger held
+// on it showed which it was, and one that slid off to scroll took it back.
+// The cursor goes there too, for when a press of the pad brings it back.
+// True when `index` is to be chosen, which is always.
 inline bool tap_chooses(int& focus, int index) {
-    if (focus == index) return true;
     focus = index;
-    return false;
+    return true;
 }
 
 // Dragging a list with a finger, the way a phone's lists move. A press on the
@@ -148,7 +188,7 @@ public:
     }
 
 private:
-    static constexpr float kThresholdPixels = 14.0f;
+    static constexpr float kThresholdPixels = kTapWobblePixels;
     // How quickly a glide slows (per second, exponentially) and the speed, in
     // pixels a second, below which it is over.
     static constexpr float kFriction = 3.5f;

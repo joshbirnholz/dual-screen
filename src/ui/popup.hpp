@@ -9,6 +9,7 @@
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
 #include "ui/control_guide.hpp"
+#include "ui/list_touch.hpp"
 #include "ui/ui_theme.hpp"
 
 namespace ds {
@@ -17,7 +18,8 @@ namespace ds {
 // screen, what it has to say inset at the top, and its answers as buttons
 // along the bottom -- side by side, split by a rule, or, when an answer has a
 // detail of its own (a save's date), one above the other. The button with the
-// cursor is ringed in the accent colour. Every popup in the app is one of
+// cursor, or a finger held on it, is filled with the accent's wash, its words
+// in the accent. Every popup in the app is one of
 // these: the quick menu's questions, Data Management's, and the notices.
 //
 // The words are the caller's to draw, inside `body`; this is the box, the
@@ -40,7 +42,6 @@ struct PopupGeometry {
 // The colours the Switch's popups have.
 inline Color popup_fill() { return Color{0.145f, 0.149f, 0.157f, 1.0f}; }
 inline Color popup_rule() { return Color{0.30f, 0.31f, 0.32f, 1.0f}; }
-inline Color popup_focus_fill() { return Color{0.10f, 0.105f, 0.11f, 1.0f}; }
 
 inline float popup_scale(float output_height) { return UiTheme::base_scale(output_height); }
 inline float popup_radius(float scale) { return std::round(scale * 6.0f); }
@@ -114,13 +115,15 @@ inline int popup_button_at(const PopupGeometry& geometry, float x, float y) {
 }
 
 // The dimmed screen, the box and its buttons. `show_focus` false leaves the
-// cursor off, as the Switch does until a button or the pad is used.
+// cursor off, as the Switch does until a button or the pad is used -- and
+// so does a finger having gone down since: see menu_cursor_shown().
 inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_width,
                        float output_height, const PopupGeometry& geometry,
                        const std::vector<PopupButton>& buttons, int focus, bool show_focus) {
     const UiTheme& theme = ui_theme();
     const float scale = popup_scale(output_height);
     const float line = TextRenderer::line_height(scale);
+    note_popup_drawn();
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
                      Color{0.0f, 0.0f, 0.0f, 0.6f});
     // Well rounded, as a Switch's popups are.
@@ -141,27 +144,28 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
     }
     for (std::size_t index = 0; index < geometry.buttons.size() && index < buttons.size(); ++index) {
         const PixelRect& button = geometry.buttons[index];
-        const bool focused = show_focus && static_cast<int>(index) == focus;
-        if (focused) {
-            // Ringed, the ring standing a little proud of the button.
-            const float ring = std::max(3.0f, std::round(scale * 1.4f));
-            const float out = std::round(ring * 0.6f);
-            const PixelRect outer{button.x - out, button.y - out, button.w + out * 2.0f,
-                                  button.h + out * 2.0f};
-            // Barely rounded, but for a corner it shares with the box, which
-            // it follows from just outside -- as a Switch's popups draw it.
-            const float small = std::max(3.0f, std::round(scale * 2.0f));
-            const float big = radius + out;
+        // Highlighted as a Switch's are, under the cursor or a finger held
+        // on it: filled with the accent's wash edge to edge, its words in
+        // the accent -- the same as a dropdown's choices.
+        const bool lit = (show_focus && cursor_drawn(static_cast<int>(index) == focus)) ||
+                         pointer_holding(button);
+        if (lit) {
+            // Square, but for a corner it shares with the box, which it
+            // follows.
             const std::size_t last = geometry.buttons.size() - 1;
             const bool bottom = geometry.stacked ? index == last : true;
             const bool left_end = geometry.stacked || index == 0;
             const bool right_end = geometry.stacked || index == last;
-            const float radii[4] = {small, small, bottom && right_end ? big : small,
-                                    bottom && left_end ? big : small};
-            quads.draw_rounded_ring(outer, radii, outer.w + outer.h, popup_focus_fill(),
-                                    popup_focus_fill());
-            quads.draw_rounded_ring(outer, radii, ring, menu_ring_left(), menu_ring_right());
+            const float radii[4] = {0.0f, 0.0f, bottom && right_end ? radius : 0.0f,
+                                    bottom && left_end ? radius : 0.0f};
+            // Below the rule along its top, which stays.
+            const float below = index == 0 || geometry.stacked ? rule : 0.0f;
+            const PixelRect fill{button.x, button.y + below, button.w, button.h - below};
+            quads.draw_rounded_ring(fill, radii, fill.w + fill.h, popup_fill(), popup_fill());
+            quads.draw_rounded_ring(fill, radii, fill.w + fill.h, menu_highlight_fill(),
+                                    menu_highlight_fill());
         }
+        const Color& ink = lit ? theme.accent : theme.text;
         const PopupButton& label = buttons[index];
         const float text_y = std::round(button.y + (button.h - line) * 0.5f);
         if (geometry.stacked) {
@@ -175,10 +179,10 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
                 room -= TextRenderer::measure_width(label.detail, detail_scale) + line;
             }
             text.draw(quads, TextRenderer::elide_right(label.label, room, scale), button.x + pad,
-                      text_y, scale, theme.text);
+                      text_y, scale, ink);
         } else {
             text.draw(quads, TextRenderer::elide_right(label.label, button.w - line, scale),
-                      button.x + button.w * 0.5f, text_y, scale, theme.text, TextAlign::Center);
+                      button.x + button.w * 0.5f, text_y, scale, ink, TextAlign::Center);
         }
     }
 }
@@ -230,18 +234,18 @@ public:
     static constexpr int kNone = -1;
     static constexpr int kCancelled = -2;
 
-    // Up again with `count` buttons, the cursor on `default_focus`. With a
-    // pad the cursor shows from the start; with a finger, from the first
-    // tap -- the first tap on a button only puts the cursor there, and a
-    // second presses it, so a finger that lands on the wrong one does
-    // nothing it cannot take back.
+    // Up again with `count` buttons, the cursor on `default_focus`. As on a
+    // Switch, it shows only while the cursor does at all: put up after a
+    // tap, none of its buttons is highlighted until the pad is pressed --
+    // and a tap on one presses it, the finger held on it having shown
+    // which it is.
     void reset(int count, int default_focus) {
         count_ = count;
         focus_ = std::clamp(default_focus, 0, std::max(0, count - 1));
-        shown_ = prompt_style() != PromptStyle::Touch;
+        shown_ = true;
     }
     int focus() const { return focus_; }
-    bool shown() const { return shown_; }
+    bool shown() const { return shown_ && menu_cursor_shown(); }
     int count() const { return count_; }
     // From the other device, which answers the same popup.
     void set_focus(int focus) {
@@ -278,15 +282,12 @@ public:
         }
         return kNone;
     }
-    // A tap on a button, by its index: pressed, where it is the only one or
-    // already under the cursor; otherwise the cursor goes to it. What is
-    // pressed, or kNone.
+    // A tap on a button, by its index: pressed, the cursor left on it. What
+    // is pressed, or kNone.
     int tap(int index) {
         if (index < 0 || index >= count_) return kNone;
-        if (count_ == 1 || (shown_ && focus_ == index)) return index;
         focus_ = index;
-        shown_ = true;
-        return kNone;
+        return index;
     }
 
 private:

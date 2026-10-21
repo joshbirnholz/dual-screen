@@ -534,22 +534,18 @@ void test_taps_on_the_other_devices_page_work_it() {
         if (!taps.empty()) host.press_entry(taps.front());
         return host.update({}, {}, kWidth, kHeight);
     };
-    // The fourth pack down the list, FPS++: highlighted, then gone into.
+    // The fourth pack down the list, FPS++: shown, the cursor staying on
+    // the list, as a tap on a Switch's settings' left-hand list does.
     tap_on_mirror(3 * 2);
     CHECK_EQ(host.focus(), 3);
     CHECK(!host.in_pack());
-    tap_on_mirror(3 * 2);
-    CHECK(host.in_pack());
-    // Its on/off row, from its preset: highlighted, then turned on.
-    tap_on_mirror(1 * 2 + 1);
-    CHECK(host.in_pack() && host.item() == 1 && !host.choosing());
-    tap_on_mirror(0 * 2 + 1);
-    CHECK(host.in_pack() && host.item() == 0);
+    // Its on/off row, turned on by the one tap.
     const GraphicPacksScreenResult turned = tap_on_mirror(0 * 2 + 1);
+    CHECK(host.in_pack() && host.item() == 0);
     CHECK(turned.change.has_value() && turned.change->enabled);
     // Its preset, by its popup: the choice tapped is the one taken.
     tap_on_mirror(1 * 2 + 1);
-    tap_on_mirror(1 * 2 + 1);
+    CHECK(host.in_pack() && host.item() == 1);
     CHECK(host.choosing());
     const GraphicPacksScreenResult chosen = tap_on_mirror(GraphicPacksScreen::kChoiceEntryBase + 1);
     CHECK(!host.choosing());

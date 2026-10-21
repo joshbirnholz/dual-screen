@@ -274,7 +274,7 @@ bool GameBrowser::handle_tap(int entry, GameBrowserResult& result) {
         return true;
     }
     if (entry < 0 || entry >= static_cast<int>(rows_.size())) return false;
-    // A first tap highlights the row; a second, on the same row, opens it.
+    // A tap on a row opens it.
     if (tap_chooses(focus_, entry)) activate(entry, result);
     return true;
 }

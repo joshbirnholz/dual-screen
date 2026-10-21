@@ -124,8 +124,8 @@ LauncherResult LauncherScreen::update(const std::vector<UiAction>& actions,
     }
 
     for (const int index : take_taps(pointers, output_width, output_height)) {
-        // A first tap highlights a row; a second, on the same row, chooses
-        // it -- so a stray touch never starts anything.
+        // A tap on a row chooses it: the finger held on it showed which it
+        // was, and one that slid off took it back.
         if (index < count && tap_chooses(focus_, index)) result.choice = rows_[static_cast<std::size_t>(index)];
     }
 

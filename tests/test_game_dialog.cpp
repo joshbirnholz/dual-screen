@@ -55,16 +55,12 @@ void test_a_question_is_the_players_to_answer() {
 }
 
 // A tap made on the other device's drawing of it, as the button it landed
-// on: the first highlights, the second presses.
+// on: pressed by the one tap, as a Switch's are.
 void test_a_tap_from_either_device_presses_a_button() {
     GameDialogScreen screen;
     screen.show(message({"Retry", "Cancel"}));
     screen.press_entry(1);
-    GameDialogResult result = screen.update({}, {}, kWidth, kHeight);
-    CHECK(!result.answered);
-    CHECK_EQ(screen.focus(), 1);
-    screen.press_entry(1);
-    result = screen.update({}, {}, kWidth, kHeight);
+    const GameDialogResult result = screen.update({}, {}, kWidth, kHeight);
     CHECK(result.answered);
     CHECK_EQ(result.answer.button, 1);
 }

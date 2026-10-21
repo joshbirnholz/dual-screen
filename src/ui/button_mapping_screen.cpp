@@ -494,12 +494,8 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
         return;
     }
     if (choice_.is_open() || confirming_ || entry >= static_cast<int>(kPadControls)) return;
-    // A first tap highlights, a second chooses.
-    if (tap_chooses(focus_, entry)) {
-        open_choice(output_width, output_height);
-    } else {
-        scroll_focus_into_view(compute_geometry(output_width, output_height));
-    }
+    // A tap chooses.
+    if (tap_chooses(focus_, entry)) open_choice(output_width, output_height);
 }
 
 std::string ButtonMappingScreen::caption() const {
@@ -772,12 +768,17 @@ void ButtonMappingScreen::render_placing(QuadRenderer& quads, TextRenderer& text
     quads.clear_clip();
     text.draw(quads, "Choose a point for this button to tap.", frame.panel.x + frame.panel.w * 0.5f,
               std::round(touch.y + touch.h + line * 0.8f), scale * 0.9f, theme.text_dim, TextAlign::Center);
-    // OK, ringed as the one thing A presses here.
+    // OK, ringed as the one thing A presses here -- while the cursor is
+    // drawn at all; filled while a finger is held on it.
     const PixelRect ok = placing_ok_rect(output_width, output_height);
     // Its corners those of the cursor on any row, not a capsule's.
     const float ok_radius = std::round(std::min(ok.h * 0.22f, scale * 3.5f));
     quads.draw_rounded_rect(ok, ok_radius, Color{1.0f, 1.0f, 1.0f, 0.10f});
-    draw_menu_cursor(quads, ok, ok_radius, scale);
+    if (pointer_holding(ok)) {
+        quads.draw_rounded_rect(ok, ok_radius, menu_highlight_fill());
+    } else if (menu_cursor_shown()) {
+        draw_menu_cursor(quads, ok, ok_radius, scale);
+    }
     text.draw(quads, "OK", ok.x + ok.w * 0.5f, std::round(ok.y + (ok.h - TextRenderer::line_height(scale)) * 0.5f),
               scale, theme.text, TextAlign::Center);
 
