@@ -263,6 +263,11 @@ public:
     void set_game_dialog(const GameDialogMessage& dialog);
     // The companion's answers to it, oldest first.
     bool take_game_dialog_answer(GameDialogAnswerMessage& out);
+    // Asks the companion's own updater to check, or to install what it
+    // found -- see UpdateRequestMessage. Nothing without one.
+    void request_companion_update(UpdateRequest request);
+    // What it said, newest only, once.
+    bool take_companion_update_answer(UpdateAnswerMessage& out);
 
     // Sends one of the game's audio streams to the companion. DS and 3DS have
     // one soundtrack and always pass Shared; a Wii U's TV and GamePad are
@@ -719,6 +724,7 @@ private:
     std::vector<uint8_t> button_mapping_view_;
     bool button_mapping_view_dirty_ = false;
     std::deque<GameDialogAnswerMessage> game_dialog_answers_;
+    std::optional<UpdateAnswerMessage> companion_update_answer_;
 
     DsInputState companion_input_;
     bool companion_input_fresh_ = false;

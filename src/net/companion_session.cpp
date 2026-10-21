@@ -726,6 +726,13 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             }
             break;
         }
+        case MessageType::UpdateRequest: {
+            UpdateRequestMessage request;
+            if (decode_update_request(payload.data(), payload.size(), request) && update_requests_.size() < 4) {
+                update_requests_.push_back(request.request);
+            }
+            break;
+        }
         case MessageType::Rumble: {
             RumbleMessage rumble;
             if (!decode_rumble(payload.data(), payload.size(), rumble)) {
@@ -3605,6 +3612,20 @@ SystemScreens CompanionSession::screens_geometry() const {
     // build, so the sizes are looked up rather than measured from whatever
     // frame happened to arrive first.
     return system_profile(system_).screens;
+}
+
+bool CompanionSession::take_update_request(UpdateRequest& out) {
+    if (update_requests_.empty()) return false;
+    out = update_requests_.front();
+    update_requests_.pop_front();
+    return true;
+}
+
+void CompanionSession::answer_update(const UpdateAnswerMessage& answer) {
+    if (status_ != Status::Connected || !stream_.connected()) return;
+    std::vector<uint8_t> out;
+    encode_update_answer(answer, out);
+    stream_.send(out);
 }
 
 bool CompanionSession::take_menu_sound(MenuSound& out) {

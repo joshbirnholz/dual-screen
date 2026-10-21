@@ -866,7 +866,11 @@ void Client::start_updater(const AppPaths& paths) {
 
 void Client::poll_updates() {
     if (!updater_) return;
+    // The host checking for updates asks about this device's own too.
+    net::UpdateRequest request;
+    while (session_.take_update_request(request)) update_prompt_.host_requests(request);
     const UpdatePromptResult result = update_prompt_.poll(state_ == State::Launcher);
+    if (result.answer_host) session_.answer_update(*result.answer_host);
     if (result.restart) {
 #if defined(__SWITCH__)
         // The homebrew loader starts the new one once this has exited.
@@ -2101,6 +2105,14 @@ void Client::draw() {
     router_.reset();
     video_layers_.begin_frame();
     draw_scene();
+#if DS_LOCAL_PLAY
+    // An update the host asked for here, going, over the game; the screens
+    // that are this device's own draw it themselves.
+    if (state_ == State::Playing) {
+        update_prompt_.render(quads_, text_, button_glyphs_, static_cast<float>(output_width_),
+                              static_cast<float>(output_height_));
+    }
+#endif
     video_layers_.end_frame();
 }
 
@@ -2228,7 +2240,13 @@ void Client::draw_scene() {
                                           : session_.host_menu_unavailable_notice()
                                                 ? std::string(kMenuUnavailableNotice)
                                                 : std::string();
-    router_.decide(!menu_open_ && !menu_leaving() && !resume_notice && !game_dialog && corner_notice.empty());
+#if DS_LOCAL_PLAY
+    const bool update_shown = update_prompt_.open();
+#else
+    const bool update_shown = false;
+#endif
+    router_.decide(!menu_open_ && !menu_leaving() && !resume_notice && !game_dialog && corner_notice.empty() &&
+                   !update_shown);
     const ScreenTextures& textures = session_.screens();
     compositor_.render(quads_, session_layout(), textures, session_.screens_geometry(), width,
                        height, router_);

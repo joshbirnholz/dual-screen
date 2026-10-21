@@ -42,9 +42,79 @@ void UpdatePrompt::check_at_start() {
     waiting_only_.reset();
 }
 
+void UpdatePrompt::set_peer_name(const std::string& name) {
+    if (name == peer_name_) return;
+    // Another device, or none: what the last one said is not this one's.
+    peer_name_ = name;
+    peer_state_ = PeerState::None;
+}
+
+void UpdatePrompt::peer_answered(const net::UpdateAnswerMessage& answer) {
+    if (peer_state_ == PeerState::None) return;
+    if (answer.answer == net::UpdateAnswer::Checking) {
+        peer_state_ = PeerState::Checking;
+    } else {
+        peer_state_ = PeerState::Answered;
+        peer_answer_ = answer;
+    }
+}
+
+bool UpdatePrompt::waiting_on_peer() const {
+    const auto waited = std::chrono::steady_clock::now() - peer_asked_at_;
+    // Long enough for it to hear and say it is checking; and once it has,
+    // for a check of its own over the same network as this one's.
+    if (peer_state_ == PeerState::Asked) return waited < std::chrono::seconds(2);
+    if (peer_state_ == PeerState::Checking) return waited < std::chrono::seconds(20);
+    return false;
+}
+
+void UpdatePrompt::install_on_peer() {
+    if (peer_ask_) peer_ask_(net::UpdateRequest::Install);
+    log_info("updates: asking " + peer_name_ + " to install " + describe_build(offer_peer_answer_.newest_build));
+}
+
+void UpdatePrompt::host_requests(net::UpdateRequest request) {
+    net::UpdateAnswerMessage answer;
+    if (updater_ == nullptr) {
+        host_answer_ = answer;
+        return;
+    }
+    const update::Status status = updater_->status();
+    if (request == net::UpdateRequest::Check) {
+        if (status.phase == Phase::Downloading || status.phase == Phase::Installing) {
+            // Installing one already: nothing more to offer.
+            host_answer_ = answer;
+            return;
+        }
+        updater_->check(true);
+        host_round_ = updater_->status().round;
+        answer.answer = net::UpdateAnswer::Checking;
+        host_answer_ = answer;
+        return;
+    }
+    log_info("updates: the host asked for the update here to be installed");
+    if (status.phase == Phase::Checked && !status.offers.empty()) {
+        // As Update on this device's own offer: how it goes is shown here.
+        start_install();
+    } else {
+        // Found no longer, or downloading already: as Settings' Updates row.
+        choose();
+    }
+}
+
 void UpdatePrompt::choose(std::optional<update::Component> only) {
     if (updater_ == nullptr) return;
     const update::Status status = updater_->status();
+    // The device connected is asked about its own as this one checks.
+    const bool asks_peer = !only && peer_ask_ && !peer_name_.empty() &&
+                           status.phase != Phase::Downloading && status.phase != Phase::Installing;
+    if (asks_peer) {
+        peer_ask_(net::UpdateRequest::Check);
+        peer_state_ = PeerState::Asked;
+        peer_asked_at_ = std::chrono::steady_clock::now();
+    } else {
+        peer_state_ = PeerState::None;
+    }
     if (updater_->busy()) {
         // Downloading already: show how far it has got.
         if (status.phase == Phase::Downloading || status.phase == Phase::Installing) {
@@ -108,13 +178,19 @@ std::string UpdatePrompt::component_value(update::Component id) const {
     return installed > 0 ? "Build " + std::to_string(installed) : std::string("Installed");
 }
 
-void UpdatePrompt::show_offer(const update::Status& status) {
+void UpdatePrompt::show_offer(const update::Status& status, bool own_failed) {
+    offer_own_ = !own_failed && !status.offers.empty();
     const bool one = status.offers.size() == 1;
-    message_ = one ? status.offers.front().component.name + " " +
-                         update::describe_release(status.offers.front().component, status.offers.front().release) +
-                         " is available."
-                   : std::string("Updates are available.");
+    message_ = !offer_own_ ? peer_name_ + " can be updated to " + describe_build(offer_peer_answer_.newest_build) + "."
+               : one       ? status.offers.front().component.name + " " +
+                           update::describe_release(status.offers.front().component, status.offers.front().release) +
+                           " is available."
+                           : std::string("Updates are available.");
     lines_.clear();
+    if (!offer_own_) {
+        lines_.push_back(own_failed ? "Dualscreen could not check for updates on this device."
+                                    : "This device is up to date.");
+    }
     bool replaces_dualscreen = false;
     for (const update::Offer& offer : status.offers) {
         const std::string newest =
@@ -135,17 +211,26 @@ void UpdatePrompt::show_offer(const update::Status& status) {
         }
         if (offer.component.id == Component::Dualscreen) replaces_dualscreen = true;
     }
-    if (replaces_dualscreen) {
+    if (offer_own_ && replaces_dualscreen) {
         const bool restarts = updater_ != nullptr && updater_->restarts_after_install();
         lines_.push_back(!restarts         ? "Android will ask to replace Dualscreen with it."
                          : !game_playing_  ? "Dualscreen will restart when it is done."
                          : game_comes_back_ ? "Dualscreen will restart when it is done, and start this game again."
                                             : "The game will close, and Dualscreen will restart when it is done.");
     }
+    if (offer_peer_) {
+        // The device connected installs its own, as its Settings would.
+        const net::UpdateAnswerMessage& peer = offer_peer_answer_;
+        if (offer_own_) {
+            lines_.push_back(peer_name_ + " can be updated to " + describe_build(peer.newest_build) + " too.");
+        }
+        lines_.push_back(peer.restarts ? peer_name_ + " will download it, and restart when it is done."
+                                       : peer_name_ + " will download it, and ask to replace Dualscreen with it.");
+    }
     offer_key_ = offer_key(status);
     offer_from_start_ = false;
     popup_ = Popup::Offer;
-    cursor_.reset(2, 0);
+    cursor_.reset(static_cast<int>(buttons().size()), 0);
 }
 
 void UpdatePrompt::show_notice(std::string message, std::vector<std::string> lines) {
@@ -157,19 +242,47 @@ void UpdatePrompt::show_notice(std::string message, std::vector<std::string> lin
 
 UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
     UpdatePromptResult result;
+    result.answer_host = host_answer_;
+    host_answer_.reset();
     if (updater_ == nullptr) return result;
     status_ = updater_->status();
+
+    // The check the host asked for, answered.
+    if (host_round_ != 0 && status_.round == host_round_ &&
+        (status_.phase == Phase::Checked || status_.phase == Phase::Failed)) {
+        host_round_ = 0;
+        net::UpdateAnswerMessage answer;
+        answer.answer = status_.phase == Phase::Failed ? net::UpdateAnswer::Failed : net::UpdateAnswer::UpToDate;
+        for (const update::Offer& offer : status_.offers) {
+            if (offer.component.id != Component::Dualscreen) continue;
+            answer.answer = net::UpdateAnswer::Available;
+            answer.newest_build = offer.release.build;
+            answer.installed_build = std::max(0, offer.component.installed);
+            answer.restarts = updater_->restarts_after_install();
+        }
+        result.answer_host = answer;
+    } else if (host_round_ != 0 && status_.round != host_round_) {
+        host_round_ = 0;
+    }
 
     // A check's answer.
     const bool answered = status_.phase == Phase::Checked || status_.phase == Phase::Failed;
     if (waiting_round_ != 0 && status_.round == waiting_round_ && answered) {
-        if (waiting_asked_) {
+        if (waiting_asked_ && !waiting_only_ && waiting_on_peer()) {
+            // The two answers are offered together.
+        } else if (waiting_asked_) {
             waiting_round_ = 0;
-            if (status_.phase == Phase::Failed) {
+            offer_peer_ = !waiting_only_ && peer_state_ == PeerState::Answered &&
+                          peer_answer_.answer == net::UpdateAnswer::Available;
+            if (offer_peer_) offer_peer_answer_ = peer_answer_;
+            peer_state_ = PeerState::None;
+            if (status_.phase == Phase::Failed && offer_peer_) {
+                show_offer(status_, true);
+            } else if (status_.phase == Phase::Failed) {
                 show_notice(waiting_only_ ? "Dualscreen could not reach Cemu's builds."
                                           : "Dualscreen could not check for updates.",
                             {status_.error});
-            } else if (!status_.offers.empty()) {
+            } else if (!status_.offers.empty() || offer_peer_) {
                 show_offer(status_);
             } else {
                 const Component asked_about = waiting_only_.value_or(Component::Dualscreen);
@@ -199,6 +312,7 @@ UpdatePromptResult UpdatePrompt::poll(bool may_offer) {
                 if (was_declined) {
                     log_info("updates: " + offer_key(status_) + " was turned down before; not offering it again");
                 } else {
+                    offer_peer_ = false;
                     show_offer(status_);
                     offer_from_start_ = true;
                 }
@@ -281,6 +395,17 @@ std::vector<PopupButton> UpdatePrompt::buttons() const {
             for (const update::Offer& offer : status_.offers) {
                 if (offer.component.installed != update::kNotInstalled) all_new = false;
             }
+            if (!offer_own_) return {{"Update " + peer_name_, ""}, {"Not Now", ""}};
+            if (offer_peer_) {
+                // One above the other, each with the build it gets.
+                std::string own;
+                for (const update::Offer& offer : status_.offers) {
+                    if (offer.component.id == Component::Dualscreen) own = "Build " + std::to_string(offer.release.build);
+                }
+                return {{all_new ? "Download" : "Update", own},
+                        {"Update " + peer_name_ + " Too", "Build " + std::to_string(offer_peer_answer_.newest_build)},
+                        {"Not Now", ""}};
+            }
             return {{all_new ? "Download" : "Update", ""}, {"Not Now", ""}};
         }
         case Popup::CloseGame: return {{"Cancel", ""}, {"Update", ""}};
@@ -331,8 +456,16 @@ UpdatePromptResult UpdatePrompt::update(const std::vector<UiAction>& actions,
     const int pressed = cursor_.update(actions, pointers, geometry(output_width, output_height));
     if (pressed == PopupCursor::kNone) return result;
     switch (popup_) {
-        case Popup::Offer:
-            if (pressed == 0 && install_closes_game()) {
+        case Popup::Offer: {
+            // Which of the offer's buttons: this device's update, the
+            // peer's as well, or the peer's alone; the last is Not Now.
+            const bool not_now = pressed < 0 || pressed == static_cast<int>(labels.size()) - 1;
+            peer_too_ = !not_now && offer_peer_ && (!offer_own_ || pressed == 1);
+            if (!not_now && !offer_own_) {
+                install_on_peer();
+                show_notice(peer_name_ + " will update itself.",
+                            {"How it is going will be shown on " + peer_name_ + "."});
+            } else if (!not_now && install_closes_game()) {
                 // Asked again, as Quit is: the restart closes the game.
                 message_ = "Are you sure you want to update now?";
                 lines_ = {game_comes_back_ ? "The game will close, and start again when the update is done."
@@ -341,7 +474,8 @@ UpdatePromptResult UpdatePrompt::update(const std::vector<UiAction>& actions,
                 popup_ = Popup::CloseGame;
                 // On the answer, as Quit's is; B is the way back out.
                 cursor_.reset(2, 1);
-            } else if (pressed == 0) {
+            } else if (!not_now) {
+                if (peer_too_) install_on_peer();
                 start_install();
             } else {
                 // Not now: and, offered at start-up, not at the next start
@@ -354,8 +488,10 @@ UpdatePromptResult UpdatePrompt::update(const std::vector<UiAction>& actions,
                 popup_ = Popup::None;
             }
             break;
+        }
         case Popup::CloseGame:
             if (pressed == 1) {
+                if (peer_too_) install_on_peer();
                 start_install();
             } else {
                 popup_ = Popup::None;
@@ -405,7 +541,8 @@ void UpdatePrompt::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.focus, static_cast<uint64_t>(cursor_.focus() + 1) * 7919u);
     mix_sound_state(view.rest, static_cast<uint64_t>(popup_) + 101u);
     mix_sound_state(view.rest, message_);
-    view.on_cancel = popup_ == Popup::Progress || (popup_ == Popup::Offer && cursor_.focus() == 1) ||
+    view.on_cancel = popup_ == Popup::Progress ||
+                     (popup_ == Popup::Offer && cursor_.focus() == static_cast<int>(buttons().size()) - 1) ||
                      (popup_ == Popup::CloseGame && cursor_.focus() == 0);
 }
 

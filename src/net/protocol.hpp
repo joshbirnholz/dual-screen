@@ -71,6 +71,10 @@ enum class MessageType : uint16_t {
     // The answer to the game's dialog shown here -- see
     // GameDialogAnswerMessage. A host from before this ignores it.
     GameDialogAnswer = 8,
+    // What this device's own updater found, asked by the host's
+    // UpdateRequest -- see UpdateAnswerMessage. A host from before this
+    // ignores it.
+    UpdateAnswer = 9,
     // host -> companion
     Welcome = 10,
     Reject = 11,
@@ -134,6 +138,11 @@ enum class MessageType : uint16_t {
     // game's first. A companion from before this ignores it and goes on
     // showing the old picture until a new one arrives.
     ScreensCleared = 28,
+    // host -> companion: check for an update of the companion's own, or
+    // install the one it found -- see UpdateRequestMessage. Sent when the
+    // player checks for updates on the host. A companion from before this
+    // ignores it, and the host offers only its own.
+    UpdateRequest = 29,
 };
 
 // A press a companion sends into the host's menu. Numbered here rather than
@@ -650,6 +659,37 @@ struct GameDialogAnswerMessage {
     std::string text;
 };
 
+// The host asking the companion's updater: to look for a newer build of
+// itself, or to install what it found, showing how it goes on its own screen
+// as its Settings' Updates row does.
+enum class UpdateRequest : uint8_t {
+    Check = 1,
+    Install = 2,
+};
+struct UpdateRequestMessage {
+    UpdateRequest request = UpdateRequest::Check;
+};
+
+// The companion's answer, sent as the check starts and again when it ends.
+enum class UpdateAnswer : uint8_t {
+    // This device has no updater, or it is busy installing already.
+    Unavailable = 0,
+    Checking = 1,
+    UpToDate = 2,
+    Available = 3,
+    Failed = 4,
+};
+struct UpdateAnswerMessage {
+    UpdateAnswer answer = UpdateAnswer::Unavailable;
+    // Available: the build it found, and the one it has (0 for a local
+    // build).
+    int32_t newest_build = 0;
+    int32_t installed_build = 0;
+    // Whether installing restarts it, rather than handing it to the system's
+    // installer, as Android's is.
+    bool restarts = true;
+};
+
 struct GraphicPacksViewChoice {
     std::string category;
     std::vector<std::string> presets;
@@ -881,6 +921,8 @@ void encode_stylus_cursor(const StylusCursorMessage& message, std::vector<uint8_
 void encode_button_mapping_view(const ButtonMappingViewMessage& message, std::vector<uint8_t>& out);
 void encode_amiibo_browser_view(const AmiiboBrowserViewMessage& message, std::vector<uint8_t>& out);
 void encode_game_dialog_answer(const GameDialogAnswerMessage& message, std::vector<uint8_t>& out);
+void encode_update_request(const UpdateRequestMessage& message, std::vector<uint8_t>& out);
+void encode_update_answer(const UpdateAnswerMessage& message, std::vector<uint8_t>& out);
 void encode_request(const RequestMessage& message, std::vector<uint8_t>& out);
 // `quit_too`, from the host: the player quit from the companion, so the
 // companion closes its own app rather than going back to its main menu. One
@@ -940,6 +982,8 @@ bool decode_stylus_cursor(const uint8_t* data, std::size_t size, StylusCursorMes
 bool decode_button_mapping_view(const uint8_t* data, std::size_t size, ButtonMappingViewMessage& out);
 bool decode_amiibo_browser_view(const uint8_t* data, std::size_t size, AmiiboBrowserViewMessage& out);
 bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialogAnswerMessage& out);
+bool decode_update_request(const uint8_t* data, std::size_t size, UpdateRequestMessage& out);
+bool decode_update_answer(const uint8_t* data, std::size_t size, UpdateAnswerMessage& out);
 
 // The most pads one companion may report. Far more than anyone plugs into one
 // device; a bound so a malformed message cannot ask for a million.

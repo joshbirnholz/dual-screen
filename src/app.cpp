@@ -4450,6 +4450,10 @@ void App::Impl::start_updater(const AppOptions& options) {
                                                 std::move(components));
     update_prompt.set_updater(updater.get());
     update_prompt.set_declined_file(path_join(path_join(paths.data_dir, "update"), "declined"));
+    // The device connected, asked about its own update as this one checks.
+    update_prompt.set_peer_asker([this](net::UpdateRequest request) {
+        if (host_session) host_session->request_companion_update(request);
+    });
     settings_screen->set_offers_updates(true);
     // At start-up, quietly, and only on a build from CI: a build made by hand
     // is not offered one unless it asks, so there is nothing to look for --
@@ -4462,7 +4466,19 @@ void App::Impl::start_updater(const AppOptions& options) {
 
 void App::Impl::poll_updates() {
     if (!updater) return;
+    // A companion joined here is offered its own update beside this one's;
+    // joined to a host, this device is asked by it about its own.
+    update_prompt.set_peer_name(companion_joined() ? host_session->companion_name() : std::string());
+    if (companion_joined()) {
+        net::UpdateAnswerMessage answer;
+        if (host_session->take_companion_update_answer(answer)) update_prompt.peer_answered(answer);
+    }
+    if (is_companion()) {
+        net::UpdateRequest request;
+        while (companion_session->take_update_request(request)) update_prompt.host_requests(request);
+    }
     const UpdatePromptResult result = update_prompt.poll(state == State::Launcher);
+    if (result.answer_host && is_companion()) companion_session->answer_update(*result.answer_host);
     const std::string cemu = update::managed_cemu_path(paths.data_dir);
     bool changed = false;
     for (const update::Component installed : result.installed) {
@@ -6011,6 +6027,8 @@ void App::Impl::render() {
         } else {
             render_centred_message(quads, text, width, height, "Look at the other screen.");
         }
+        // An update the host asked for here, going.
+        update_prompt.render(quads, text, button_glyphs, width, height);
         swap();
         ++frames_rendered;
         companion_session->note_frame_drawn();
@@ -6184,6 +6202,11 @@ void App::Impl::render() {
     }
     if (state == State::Companion && mirrored_game_dialog.is_open()) {
         mirrored_game_dialog.render(quads, text, width, height);
+    }
+    // An update the host asked this device for, going; Settings draws its
+    // own.
+    if (is_companion() && state != State::Settings) {
+        update_prompt.render(quads, text, button_glyphs, width, height);
     }
 
     swap();

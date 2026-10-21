@@ -2108,6 +2108,38 @@ void test_game_dialog_round_trip() {
     CHECK(back.final && back.button == 1);
 }
 
+// The host asking the companion's updater, and its answer.
+void test_update_request_and_answer_round_trip() {
+    std::vector<uint8_t> buffer;
+    MessageType type{};
+    std::vector<uint8_t> payload;
+    UpdateRequestMessage request;
+    request.request = UpdateRequest::Install;
+    encode_update_request(request, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::UpdateRequest);
+    UpdateRequestMessage asked;
+    CHECK(decode_update_request(payload.data(), payload.size(), asked));
+    CHECK(asked.request == UpdateRequest::Install);
+    const uint8_t unknown = 9;
+    CHECK(!decode_update_request(&unknown, 1, asked));
+
+    UpdateAnswerMessage answer;
+    answer.answer = UpdateAnswer::Available;
+    answer.newest_build = 130;
+    answer.installed_build = 125;
+    answer.restarts = false;
+    buffer.clear();
+    encode_update_answer(answer, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(type == MessageType::UpdateAnswer);
+    UpdateAnswerMessage back;
+    CHECK(decode_update_answer(payload.data(), payload.size(), back));
+    CHECK(back.answer == UpdateAnswer::Available && back.newest_build == 130 && back.installed_build == 125 &&
+          !back.restarts);
+    CHECK(!decode_update_answer(payload.data(), 3, back));
+}
+
 // Where the stylus on the right stick is, and that it is touching; and the
 // touch cursor itself as a right-stick mode over the wire.
 void test_stylus_cursor_round_trip() {
@@ -2215,5 +2247,6 @@ int main() {
     test_game_dialog_round_trip();
     test_menu_scroll_and_amiibo_browser_round_trip();
     test_stylus_cursor_round_trip();
+    test_update_request_and_answer_round_trip();
     return test::finish("protocol");
 }

@@ -411,6 +411,106 @@ void test_up_to_date_is_said_when_asked() {
     CHECK(!prompt.open());
 }
 
+// With a device connected, Settings' Updates row asks it about its own too,
+// and the offer names it: Update installs only this device's, the button
+// with its name asks it to install its own as well.
+void test_the_connected_device_is_offered_its_update() {
+    auto backend = std::make_unique<FakeBackend>();
+    backend->staging = make_temp_dir();
+    backend->pages[kDualscreenVersion] = R"({"build": 15})";
+    Updater updater(std::move(backend), components_for("dualscreen-steamos.tar.gz", 12, false, kNotInstalled));
+    ds::UpdatePrompt prompt;
+    prompt.set_updater(&updater);
+    std::vector<ds::net::UpdateRequest> asked;
+    prompt.set_peer_asker([&](ds::net::UpdateRequest request) { asked.push_back(request); });
+    prompt.set_peer_name("Josh's Switch");
+    prompt.choose();
+    CHECK(asked.size() == 1 && asked.front() == ds::net::UpdateRequest::Check);
+
+    // Its check still going: the offer waits for it.
+    ds::net::UpdateAnswerMessage answer;
+    answer.answer = ds::net::UpdateAnswer::Checking;
+    prompt.peer_answered(answer);
+    settle(prompt, updater, false);
+    CHECK(!prompt.open());
+    answer.answer = ds::net::UpdateAnswer::Available;
+    answer.newest_build = 15;
+    answer.installed_build = 11;
+    prompt.peer_answered(answer);
+    prompt.poll(false);
+    CHECK(prompt.open());
+
+    // Down to its button, and installed on both.
+    prompt.update({ds::UiAction::Down}, {}, 1280.0f, 800.0f);
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(asked.size() == 2 && asked.back() == ds::net::UpdateRequest::Install);
+    CHECK(settle(prompt, updater, false).restart);
+}
+
+// This device up to date and the one connected not: its update is offered
+// on its own, and goes on there.
+void test_only_the_connected_device_has_an_update() {
+    auto backend = std::make_unique<FakeBackend>();
+    FakeBackend* fake = backend.get();
+    backend->staging = make_temp_dir();
+    backend->pages[kDualscreenVersion] = R"({"build": 15})";
+    Updater updater(std::move(backend), components_for("dualscreen-steamos.tar.gz", 15, false, kNotInstalled));
+    ds::UpdatePrompt prompt;
+    prompt.set_updater(&updater);
+    std::vector<ds::net::UpdateRequest> asked;
+    prompt.set_peer_asker([&](ds::net::UpdateRequest request) { asked.push_back(request); });
+    prompt.set_peer_name("Josh's Switch");
+    prompt.choose();
+    ds::net::UpdateAnswerMessage answer;
+    answer.answer = ds::net::UpdateAnswer::Available;
+    answer.newest_build = 15;
+    prompt.peer_answered(answer);
+    settle(prompt, updater, false);
+    CHECK(prompt.open());
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(asked.size() == 2 && asked.back() == ds::net::UpdateRequest::Install);
+    // Nothing installed here; said where to look.
+    CHECK(!settle(prompt, updater, false).restart);
+    CHECK(fake->installed.empty());
+    CHECK(prompt.open());
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(!prompt.open());
+
+    // Up to date there too: up to date is said, as before.
+    prompt.choose();
+    answer.answer = ds::net::UpdateAnswer::UpToDate;
+    prompt.peer_answered(answer);
+    settle(prompt, updater, false);
+    CHECK(prompt.open());
+    prompt.update({ds::UiAction::Confirm}, {}, 1280.0f, 800.0f);
+    CHECK(fake->installed.empty());
+}
+
+// On the companion: the host's check is answered as it starts and as it
+// ends, and its install shows how it goes here.
+void test_the_host_asks_the_companion() {
+    auto backend = std::make_unique<FakeBackend>();
+    FakeBackend* fake = backend.get();
+    backend->staging = make_temp_dir();
+    backend->pages[kDualscreenVersion] = R"({"build": 15})";
+    Updater updater(std::move(backend), components_for("Dualscreen.nro", 12, false, kNotInstalled));
+    ds::UpdatePrompt prompt;
+    prompt.set_updater(&updater);
+    prompt.host_requests(ds::net::UpdateRequest::Check);
+    ds::UpdatePromptResult result = prompt.poll(false);
+    CHECK(result.answer_host && result.answer_host->answer == ds::net::UpdateAnswer::Checking);
+    result = settle(prompt, updater, false);
+    CHECK(result.answer_host && result.answer_host->answer == ds::net::UpdateAnswer::Available);
+    CHECK(result.answer_host->newest_build == 15 && result.answer_host->installed_build == 12);
+    // Nothing up here for a check the host asked for.
+    CHECK(!prompt.open());
+
+    prompt.host_requests(ds::net::UpdateRequest::Install);
+    CHECK(prompt.open());
+    CHECK(settle(prompt, updater, false).restart);
+    CHECK(fake->installed.size() == 1);
+}
+
 // The buildbot's index: the first of a core's files it lists, by its date
 // and hash.
 void test_reads_the_buildbot_index() {
@@ -614,6 +714,9 @@ int main() {
     test_an_update_over_a_game_asks_again();
     test_not_now_is_remembered();
     test_up_to_date_is_said_when_asked();
+    test_the_connected_device_is_offered_its_update();
+    test_only_the_connected_device_has_an_update();
+    test_the_host_asks_the_companion();
     test_reads_the_buildbot_index();
     test_cores_are_offered_by_version();
     test_a_core_is_downloaded_when_asked();

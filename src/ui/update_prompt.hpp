@@ -1,9 +1,13 @@
 #pragma once
 
+#include <chrono>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "input/input_manager.hpp"
+#include "net/protocol.hpp"
 #include "render/button_glyphs.hpp"
 #include "render/quad_renderer.hpp"
 #include "render/text_renderer.hpp"
@@ -23,6 +27,8 @@ struct UpdatePromptResult {
     // Every component installed: Cemu, or a core, which the shell makes the
     // one its console is played with.
     std::vector<update::Component> installed;
+    // On a companion: what to tell the host it asked -- see host_requests().
+    std::optional<net::UpdateAnswerMessage> answer_host;
 };
 
 // The popups that go with the updater (update/updater.hpp): a newer build
@@ -52,6 +58,20 @@ public:
         game_comes_back_ = comes_back;
         game_progress_kept_ = progress_kept;
     }
+
+    // The device connected to this host, by its name -- empty for none --
+    // and how to ask it. Settings' Updates row asks it to check too, and
+    // the offer waits for its answer, so that an update of its own is
+    // offered beside this one's and installed there, as its own Settings
+    // would. See net::UpdateRequestMessage.
+    void set_peer_asker(std::function<void(net::UpdateRequest)> ask) { peer_ask_ = std::move(ask); }
+    void set_peer_name(const std::string& name);
+    // What it said.
+    void peer_answered(const net::UpdateAnswerMessage& answer);
+    // On a companion, the host asking: a check is answered through poll(),
+    // as it starts and as it ends; an install shows how it goes here, as
+    // Settings' Updates row would.
+    void host_requests(net::UpdateRequest request);
 
     // The check made at start-up, whose answer is offered the first time
     // the shell is somewhere it can be -- see poll().
@@ -84,12 +104,19 @@ public:
 private:
     enum class Popup { None, Offer, CloseGame, Progress, Notice };
 
-    void show_offer(const update::Status& status);
+    // `own_failed`: this device could not check, and only the peer's update
+    // is offered.
+    void show_offer(const update::Status& status, bool own_failed = false);
     void show_notice(std::string message, std::vector<std::string> lines = {});
     // Whether installing what is offered restarts Dualscreen, and so closes
     // the game being played.
     bool install_closes_game() const;
     void start_install();
+    // Whether the offer is still waiting on the peer's answer: briefly for
+    // it to say it is checking, and longer once it has.
+    bool waiting_on_peer() const;
+    // Tells the peer to install what it found.
+    void install_on_peer();
     std::vector<PopupButton> buttons() const;
     PopupText words() const;
     PopupGeometry geometry(float output_width, float output_height) const;
@@ -120,6 +147,25 @@ private:
     int install_round_ = 0;
     std::vector<update::Offer> installing_;
     bool restart_reported_ = false;
+    // The device connected to this host, and what it said of its own
+    // update, asked when Settings' Updates row was.
+    enum class PeerState { None, Asked, Checking, Answered };
+    std::string peer_name_;
+    std::function<void(net::UpdateRequest)> peer_ask_;
+    PeerState peer_state_ = PeerState::None;
+    std::chrono::steady_clock::time_point peer_asked_at_;
+    net::UpdateAnswerMessage peer_answer_;
+    // What the open offer is of: this device's update, the peer's, or both
+    // -- and, once one is chosen with the game's closing to ask about,
+    // whether the peer's goes with it.
+    bool offer_own_ = true;
+    bool offer_peer_ = false;
+    net::UpdateAnswerMessage offer_peer_answer_;
+    bool peer_too_ = false;
+    // On a companion: the check the host asked for, and the answer to give
+    // it at the next poll.
+    int host_round_ = 0;
+    std::optional<net::UpdateAnswerMessage> host_answer_;
     // The status as of the last poll, for drawing.
     update::Status status_;
 };

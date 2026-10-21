@@ -930,6 +930,51 @@ bool decode_game_dialog_answer(const uint8_t* data, std::size_t size, GameDialog
     return true;
 }
 
+void encode_update_request(const UpdateRequestMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>(message.request));
+    finish_message(out, start, MessageType::UpdateRequest);
+}
+
+bool decode_update_request(const uint8_t* data, std::size_t size, UpdateRequestMessage& out) {
+    Reader reader(data, size);
+    uint8_t request = 0;
+    reader.u8(request);
+    if (!reader.ok() || request < static_cast<uint8_t>(UpdateRequest::Check) ||
+        request > static_cast<uint8_t>(UpdateRequest::Install)) {
+        return false;
+    }
+    out.request = static_cast<UpdateRequest>(request);
+    return true;
+}
+
+void encode_update_answer(const UpdateAnswerMessage& message, std::vector<uint8_t>& out) {
+    const std::size_t start = begin_message(out);
+    put_u8(out, static_cast<uint8_t>(message.answer));
+    put_u32(out, static_cast<uint32_t>(message.newest_build));
+    put_u32(out, static_cast<uint32_t>(message.installed_build));
+    put_u8(out, message.restarts ? 1u : 0u);
+    finish_message(out, start, MessageType::UpdateAnswer);
+}
+
+bool decode_update_answer(const uint8_t* data, std::size_t size, UpdateAnswerMessage& out) {
+    Reader reader(data, size);
+    uint8_t answer = 0;
+    uint32_t newest = 0;
+    uint32_t installed = 0;
+    uint8_t restarts = 0;
+    reader.u8(answer);
+    reader.u32(newest);
+    reader.u32(installed);
+    reader.u8(restarts);
+    if (!reader.ok() || answer > static_cast<uint8_t>(UpdateAnswer::Failed)) return false;
+    out.answer = static_cast<UpdateAnswer>(answer);
+    out.newest_build = static_cast<int32_t>(newest);
+    out.installed_build = static_cast<int32_t>(installed);
+    out.restarts = restarts != 0;
+    return true;
+}
+
 bool decode_graphic_packs_view(const uint8_t* data, std::size_t size, GraphicPacksViewMessage& out) {
     Reader reader(data, size);
     uint8_t flags = 0;

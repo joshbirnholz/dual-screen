@@ -657,6 +657,22 @@ bool HostSession::take_game_dialog_answer(GameDialogAnswerMessage& out) {
     return true;
 }
 
+void HostSession::request_companion_update(UpdateRequest request) {
+    if (!has_companion()) return;
+    UpdateRequestMessage message;
+    message.request = request;
+    std::vector<uint8_t> out;
+    encode_update_request(message, out);
+    companion_.send(out);
+}
+
+bool HostSession::take_companion_update_answer(UpdateAnswerMessage& out) {
+    if (!companion_update_answer_) return false;
+    out = *companion_update_answer_;
+    companion_update_answer_.reset();
+    return true;
+}
+
 void HostSession::set_session_state(const SharedState& state) {
     if (state.per_device_layout != shared_.per_device_layout ||
         state.menu_open != shared_.menu_open) {
@@ -846,6 +862,7 @@ void HostSession::drop_companion(const std::string& reason) {
     companion_reports_pads_ = false;
     companion_pads_.clear();
     pad_rumble_sent_.clear();
+    companion_update_answer_.reset();
     refresh_beacon();
 }
 
@@ -958,6 +975,11 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
                 game_dialog_answers_.size() < 64) {
                 game_dialog_answers_.push_back(std::move(answer));
             }
+            break;
+        }
+        case MessageType::UpdateAnswer: {
+            UpdateAnswerMessage answer;
+            if (decode_update_answer(payload.data(), payload.size(), answer)) companion_update_answer_ = answer;
             break;
         }
         case MessageType::Request: {

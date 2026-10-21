@@ -644,6 +644,11 @@ public:
     // And its Button Mapping page. See ButtonMappingViewMessage.
     const ButtonMappingViewMessage& host_button_mapping_view() const { return host_button_mapping_view_; }
     void answer_game_dialog(const GameDialogAnswerMessage& answer);
+    // The host asking this device's own updater to check, or to install
+    // what it found, oldest first -- see UpdateRequestMessage -- and what
+    // it said back.
+    bool take_update_request(UpdateRequest& out);
+    void answer_update(const UpdateAnswerMessage& answer);
     uint32_t host_save_slots_revision() const { return host_save_slots_revision_; }
 
     // Sends this device's input to the host. Only what changed goes out.
@@ -1635,6 +1640,7 @@ private:
     uint32_t audio_sample_rate_ = 0;
     RumbleCallback rumble_callback_;
     std::deque<MenuSound> menu_sounds_;
+    std::deque<UpdateRequest> update_requests_;
     // Per AudioStreamId (3 entries -- Shared/TopDevice/BottomDevice), for
     // detecting a genuinely missing audio packet rather than the ordinary
     // jitter UDP never promised against -- see AudioMessage::sequence and
