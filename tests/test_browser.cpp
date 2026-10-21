@@ -176,6 +176,15 @@ void test_cursor_auto_hides() {
     CHECK(cursor.visible());  // the mouse moved a moment ago
     cursor.update(2.0);
     CHECK(!cursor.visible());
+
+    // In a menu it shows with the setting off, the setting being for a game:
+    // a mouse there is how a point is chosen.
+    cursor.set_mode(CursorMode::Hidden);
+    cursor.set_in_menu(true);
+    cursor.notice_mouse_activity();
+    CHECK_MSG(cursor.visible(), "the pointer stayed hidden in a menu");
+    cursor.set_in_menu(false);
+    CHECK(!cursor.visible());
 }
 
 // The bug this guards: dismissing a menu with A left the button physically
