@@ -279,7 +279,20 @@ std::chrono::steady_clock::time_point g_popup_drawn{};
 bool g_menu_cursor_shown = true;
 }  // namespace
 
-void note_popup_drawn() { g_popup_drawn = std::chrono::steady_clock::now(); }
+bool g_popup_drawn_this_frame = false;
+bool g_popup_up = false;
+
+void note_popup_drawn() {
+    g_popup_drawn = std::chrono::steady_clock::now();
+    g_popup_drawn_this_frame = true;
+}
+
+bool popup_up() { return g_popup_up; }
+
+void begin_menu_frame() {
+    g_popup_up = g_popup_drawn_this_frame;
+    g_popup_drawn_this_frame = false;
+}
 
 void set_live_pointer(bool down, float x, float y) {
     if (down && !g_live_pointer.down) {

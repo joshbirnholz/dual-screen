@@ -31,7 +31,8 @@ list current -- it is how work carries across sessions.
   put up after a tap has nothing highlighted; the pad's next press brings
   the cursor back where it was without moving it. The fill is only ever
   for a finger held there; the cursor is always a ring, popups' buttons and
-  dropdowns' choices included. Smooth
+  dropdowns' choices included. Behind an alert nothing is ringed; behind a
+  dropdown, only the row it was opened from, with a dim ring and no fill. Smooth
   scrolling, no wrap-around; held directions repeat every 75 ms; the cursor
   never moves unexpectedly.
 - B goes back one level; the menu button closes everything.

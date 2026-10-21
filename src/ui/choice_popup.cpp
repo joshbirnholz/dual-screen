@@ -329,6 +329,10 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
     note_popup_drawn();
     quads.draw_solid(PixelRect{0.0f, 0.0f, output_width, output_height},
                      Color{0.0f, 0.0f, 0.0f, 0.35f});
+    // The row it was opened from, ringed dimly whatever opened it -- in the
+    // shade a row takes under a finger -- its own cursor being put away
+    // while the popup is up.
+    if (!grid()) draw_menu_opener(quads, row_, scale);
     const float radius = popup_radius(scale);
     quads.draw_rounded_ring(shape.box, radius, shape.box.w + shape.box.h, popup_fill(), popup_fill());
     quads.draw_rounded_ring(shape.box, radius, 1.0f, popup_rule(), popup_rule());
@@ -339,7 +343,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
             const PixelRect& cell = shape.rows[index];
             const PixelRect dot{std::round(cell.x + (cell.w - circle) * 0.5f),
                                 std::round(cell.y + (cell.h - circle) * 0.5f), circle, circle};
-            if (cursor_drawn(static_cast<int>(index) == focus_) || pointer_holding(cell)) {
+            if (popup_cursor_drawn(static_cast<int>(index) == focus_) || pointer_holding(cell)) {
                 const float out = std::round((cell.w - circle) * 0.3f);
                 const PixelRect ring{dot.x - out, dot.y - out, dot.w + out * 2.0f, dot.h + out * 2.0f};
                 draw_menu_cursor(quads, ring, ring.w * 0.5f, scale);
@@ -385,7 +389,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
         // Held under a finger, filled as a Switch fills it, the words in the
         // accent, as a popup's buttons are; under the cursor, ringed.
         const bool held = pointer_holding(row) && shape.list.contains(live_pointer().x, live_pointer().y);
-        const bool focused = held || cursor_drawn(static_cast<int>(index) == focus_);
+        const bool focused = held || popup_cursor_drawn(static_cast<int>(index) == focus_);
         const bool chosen = static_cast<int>(index) == current_;
         if (held) {
             const Color fill = menu_highlight_fill();

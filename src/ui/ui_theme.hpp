@@ -160,6 +160,18 @@ inline void draw_menu_held(QuadRenderer& quads, const PixelRect& rect, float sca
     const Color fill = menu_highlight_fill();
     quads.draw_rounded_ring(fill_rect, std::round(scale * 1.5f), fill_rect.w + fill_rect.h, fill, fill);
 }
+// The row a dropdown was opened from, while it is up: ringed as the cursor
+// is, but in the shade a row takes under a finger -- the fill's colour as it
+// shows on the plain ground, solid.
+inline void draw_menu_opener(QuadRenderer& quads, const PixelRect& rect, float scale) {
+    const PixelRect ring = menu_row_outline(rect, scale);
+    const Color& ground = ui_theme().background;
+    const Color fill = menu_highlight_fill();
+    const Color shade{ground.r + (fill.r - ground.r) * fill.a, ground.g + (fill.g - ground.g) * fill.a,
+                      ground.b + (fill.b - ground.b) * fill.a, 1.0f};
+    quads.draw_rounded_ring(ring, std::round(std::min(ring.h * 0.22f, scale * 3.5f)),
+                            std::max(2.0f, std::round(scale * 1.5f)), shade, shade);
+}
 inline void draw_menu_row(QuadRenderer& quads, const PixelRect& rect, bool focused, float scale,
                           bool last = false, bool after_focused = false) {
     const float line = TextRenderer::line_height(scale);

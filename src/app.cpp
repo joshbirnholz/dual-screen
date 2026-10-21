@@ -7494,6 +7494,7 @@ int App::run(const AppOptions& options) {
             // A finger going down hides the cursor, and the pad's next press
             // in a menu only brings it back -- see menu_cursor_input().
             ui_actions = menu_cursor_input(ui_actions, pointers, impl.state != Impl::State::Playing);
+            begin_menu_frame();
             impl.ui_sound_judge.note_input(ui_actions, tapped, now_seconds);
             impl.handle_ui(ui_actions, pointers);
             // The host's page drawn here, scrolled where the host has it --

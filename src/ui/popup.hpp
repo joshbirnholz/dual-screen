@@ -152,7 +152,7 @@ inline void draw_popup(QuadRenderer& quads, TextRenderer& text, float output_wid
         // its words in the accent; under the cursor, ringed -- never both,
         // a finger going down having hidden the cursor.
         const bool lit = pointer_holding(button);
-        const bool focused = !lit && show_focus && cursor_drawn(static_cast<int>(index) == focus);
+        const bool focused = !lit && show_focus && popup_cursor_drawn(static_cast<int>(index) == focus);
         if (lit) {
             // Square, but for a corner it shares with the box, which it
             // follows.

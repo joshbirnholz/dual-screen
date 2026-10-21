@@ -54,9 +54,19 @@ void note_popup_drawn();
 // its answers highlighted. A press of the pad brings it back, where it was.
 bool menu_cursor_shown();
 void set_menu_cursor_shown(bool shown);
-// Whether something is drawn as under the cursor: `focused`, while the
-// cursor is drawn at all.
-inline bool cursor_drawn(bool focused) { return focused && menu_cursor_shown(); }
+// Whether a popup -- an alert, a dropdown -- was up as the last frame was
+// drawn: everything behind one is drawn without the cursor, the popup having
+// it. A frame late, as a popup is drawn after what is behind it; see
+// begin_menu_frame().
+bool popup_up();
+// Once a frame, before it is drawn.
+void begin_menu_frame();
+// Whether something on a page is drawn as under the cursor: `focused`,
+// while the cursor is drawn at all and no popup is up over the page.
+inline bool cursor_drawn(bool focused) { return focused && menu_cursor_shown() && !popup_up(); }
+// Whether a popup's own button or choice is: `focused`, while the cursor is
+// drawn at all.
+inline bool popup_cursor_drawn(bool focused) { return focused && menu_cursor_shown(); }
 // This pass's input as far as the cursor goes, before any menu hears it,
 // and what the menus are to hear. A finger or the mouse going down hides
 // the cursor. A direction, A or a shoulder while it is hidden brings it
