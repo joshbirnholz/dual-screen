@@ -504,26 +504,25 @@ void ButtonMappingScreen::handle_tap(int entry, ButtonMappingScreenResult& resul
 
 std::string ButtonMappingScreen::caption() const {
     const PadControl control = focused_control();
-    const std::string name = pad_control_name(control);
     const PadAction action = mapping_.resolved(control, console_);
     DsButton button = DsButton::A;
     switch (action) {
-        case PadAction::QuickMenu: return name + " opens the quick menu.";
-        case PadAction::SwapScreens: return name + " swaps the screens.";
-        case PadAction::BlowIntoMic: return "Holding " + name + " blows into the microphone.";
-        case PadAction::TouchCursor: return name + " touches the screen at the Touch Cursor.";
-        case PadAction::Nothing: return name + " is disabled in this game.";
-        case PadAction::NextLayout: return name + " moves on to the next screen layout.";
-        case PadAction::TouchPoint: return name + " touches the touch screen here while it's held.";
+        case PadAction::QuickMenu: return "opens the quick menu.";
+        case PadAction::SwapScreens: return "swaps the screens.";
+        case PadAction::BlowIntoMic: return "blows into the microphone while it's held.";
+        case PadAction::TouchCursor: return "touches the screen at the Touch Cursor.";
+        case PadAction::Nothing: return "is disabled in this game.";
+        case PadAction::NextLayout: return "moves on to the next screen layout.";
+        case PadAction::TouchPoint: return "touches the touch screen here while it's held.";
         case PadAction::Turbo: {
             const PadAction of = mapping_.turbo(control);
-            if (of == PadAction::Standard) return name + " does nothing until Turbo has a button.";
-            return name + " presses " + pad_action_name(of) + " over and over while it's held.";
+            if (of == PadAction::Standard) return "does nothing until Turbo has a button.";
+            return std::string("presses ") + pad_action_name(of) + " over and over while it's held.";
         }
         default: break;
     }
     if (ds_button_for_pad_action(action, button)) {
-        return name + " presses " + pad_action_name(action) + " on the " + console_name() + ".";
+        return std::string("presses ") + pad_action_name(action) + " on the " + console_name() + ".";
     }
     return std::string();
 }
@@ -681,15 +680,32 @@ void ButtonMappingScreen::render(QuadRenderer& quads, TextRenderer& text, const 
     // The console, what the highlighted button presses picked out on it.
     draw_console(quads, geometry.diagram, focused_control());
     const float caption_scale = scale * 0.85f;
-    std::vector<std::string> words = TextRenderer::wrap(caption(), geometry.diagram.w, caption_scale);
+    // The button leads, as its icon: wrapped with a word as wide standing in
+    // for it, then drawn in that word's place.
+    const float icon_height = std::round(TextRenderer::line_height(caption_scale) * 1.4f);
+    const float icon_width = glyphs.width_for(icon_height);
+    std::string stand_in;
+    while (TextRenderer::measure_width(stand_in, caption_scale) < icon_width) stand_in += "M";
+    std::vector<std::string> words =
+        TextRenderer::wrap(stand_in + " " + caption(), geometry.diagram.w, caption_scale);
     if (words.size() > 2) {
         words[1] = TextRenderer::elide_right(words[1] + " " + words[2], geometry.diagram.w, caption_scale);
         words.resize(2);
     }
     for (std::size_t at = 0; at < words.size(); ++at) {
-        text.draw(quads, words[at], geometry.diagram.x + geometry.diagram.w * 0.5f,
-                  geometry.caption_y + TextRenderer::wrapped_line_step(caption_scale) * static_cast<float>(at),
-                  caption_scale, theme.text_dim, TextAlign::Center);
+        const float y = geometry.caption_y + TextRenderer::wrapped_line_step(caption_scale) * static_cast<float>(at);
+        const float centre_x = geometry.diagram.x + geometry.diagram.w * 0.5f;
+        if (at == 0 && words[0].rfind(stand_in, 0) == 0) {
+            const std::string rest = words[0].substr(stand_in.size());
+            const float width = icon_width + TextRenderer::measure_width(rest, caption_scale);
+            const float left = std::round(centre_x - width * 0.5f);
+            const float text_centre = y + TextRenderer::line_height(caption_scale) * 0.5f;
+            glyphs.draw(quads, glyph_for(focused_control()), left,
+                        std::round(text_centre - icon_height * glyphs.button_centre()), icon_height, theme.text_dim);
+            text.draw(quads, rest, left + icon_width, y, caption_scale, theme.text_dim);
+            continue;
+        }
+        text.draw(quads, words[at], centre_x, y, caption_scale, theme.text_dim, TextAlign::Center);
     }
 
     std::vector<GuidePrompt> guide;

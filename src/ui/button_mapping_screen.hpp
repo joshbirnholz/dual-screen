@@ -173,7 +173,8 @@ private:
     PadControl focused_control() const { return static_cast<PadControl>(focus_); }
     // What the console is called on the page: "DS", "3DS".
     std::string console_name() const;
-    // The words under the console, for what the focused button does.
+    // The words under the console, for what the focused button does: after
+    // the button itself, drawn as its icon in the player's own style.
     std::string caption() const;
     void draw_console(QuadRenderer& quads, const PixelRect& box, PadControl control) const;
 
