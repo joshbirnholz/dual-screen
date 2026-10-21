@@ -189,13 +189,6 @@ inline void draw_side_tab(QuadRenderer& quads, const PixelRect& rect, bool chose
     quads.draw_rounded_ring(line, bar * 0.5f, line.w + line.h, ui_theme().accent, ui_theme().accent);
 }
 
-// A faint rule under a row, for lists whose rows run on from one another
-// without gaps: Data Management's saves and actions.
-inline void draw_menu_rule(QuadRenderer& quads, const PixelRect& rect) {
-    Color rule = ui_theme().text_dim;
-    rule.a = 0.25f;
-    quads.draw_solid(PixelRect{rect.x, rect.y + rect.h - 1.0f, rect.w, 1.0f}, rule);
-}
 
 
 // How wide a scroll bar is, and the one every list that runs past its bottom

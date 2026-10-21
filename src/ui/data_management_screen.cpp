@@ -1384,7 +1384,6 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const bool focused = index == list_focus_ && overlay_ == Overlay::None;
             draw_menu_row(quads, row, focused, scale, index == static_cast<int>(saves_.size()) - 1,
                           index == list_focus_ + 1 && overlay_ == Overlay::None);
-            if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
             const Color dim = theme.text_dim;
             const float icon_size = line * 2.0f;
@@ -1426,7 +1425,6 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const bool focused = index == action_focus_ && overlay_ == Overlay::None;
             draw_menu_row(quads, row, focused, scale, index == static_cast<int>(Action::Count) - 1,
                           index == action_focus_ + 1 && overlay_ == Overlay::None);
-            if (!focused) draw_menu_rule(quads, row);
             Color ink = menu_row_text(focused);
             if (!enabled[static_cast<std::size_t>(index)]) ink = with_alpha(theme.text_dim, 0.55f);
             const float icon_size = line * 1.35f;
@@ -1505,7 +1503,6 @@ void DataManagementScreen::render(QuadRenderer& quads,
             const bool focused = index == earlier_focus_ && overlay_ == Overlay::None;
             draw_menu_row(quads, row, focused, scale, index == count - 1,
                           index == earlier_focus_ + 1 && overlay_ == Overlay::None);
-            if (!focused) draw_menu_rule(quads, row);
             const Color& ink = menu_row_text(focused);
             const Color dim = theme.text_dim;
             const float pad = menu_row_pad(line);
