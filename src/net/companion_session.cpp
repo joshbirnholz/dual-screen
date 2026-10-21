@@ -253,6 +253,7 @@ void CompanionSession::connect_to(DiscoveredHost host) {
     last_arrival_ms_ = 0;
     last_sent_at_ms_ = 0;
     jitter_.reset();
+    forget_the_pictures();
     game_title_ = joining_.game_title;
     log_info("connecting to " + joining_.device_name + " at " + joining_.address);
     begin_connect();
@@ -417,6 +418,9 @@ void CompanionSession::disconnect() {
     last_arrival_ms_ = 0;
     last_sent_at_ms_ = 0;
     jitter_.reset();
+    // Not left on screen for the next session to show until it sends a
+    // picture of its own.
+    forget_the_pictures();
     if (status_ == Status::Connected || status_ == Status::Connecting) {
         status_ = Status::Searching;
         status_detail_.clear();
@@ -526,6 +530,7 @@ void CompanionSession::fail(const std::string& reason) {
     // A host that has gone is not asking for anything, motion included -- so
     // the client following this switches its sensors back off.
     host_wants_motion_ = false;
+    forget_the_pictures();
     status_ = Status::Failed;
     status_detail_ = reason;
     if (rumble_callback_) {
@@ -3484,8 +3489,11 @@ bool CompanionSession::decode_next_frame() {
         complete_at_.pop_front();
     }
     while (!pending_frames_.empty() && pending_frames_.front().serial == serial) {
-        apply_frame(pending_frames_.front());
+        // Taken off the queue first: a frame that ends the session empties
+        // the queue it would otherwise still be standing in.
+        const FrameMessage frame = std::move(pending_frames_.front());
         pending_frames_.pop_front();
+        apply_frame(frame);
     }
     const uint64_t finished_ms = monotonic_millis();
     const uint64_t cost = finished_ms > started_ms ? finished_ms - started_ms : 0;
@@ -3524,6 +3532,24 @@ std::size_t CompanionSession::frames_waiting() const {
         }
     }
     return frames;
+}
+
+void CompanionSession::forget_the_pictures() {
+    // The decoders too: one that last saw the old host's stream would predict
+    // the new one's first frames from the old one's pictures.
+    video_top_.close();
+    video_bottom_.close();
+    top_ = ScreenBuffer();
+    bottom_ = ScreenBuffer();
+    textures_ = ScreenTextures();
+    // Frames queued for showing, and when they arrived, are the old host's;
+    // the new one numbers its own from the start, so these would sit ahead of
+    // them.
+    pending_frames_.clear();
+    complete_at_.clear();
+    echoes_waiting_.clear();
+    input_sent_at_.clear();
+    shown_serial_ = 0;
 }
 
 void CompanionSession::forget_screen_textures() {

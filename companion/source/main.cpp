@@ -805,6 +805,11 @@ void Client::open_launcher() {
     state_ = State::Launcher;
     close_menu();
     session_.disconnect();
+    // Nothing of the session that ended stays to be shown by the next one:
+    // the session's own pictures went with disconnect(), and these are the
+    // copies made from them.
+    video_layers_.forget();
+    menu_backdrop_.forget();
     // Nothing is reading how this device is being held any more, so the
     // sensors stop -- on a handheld that is battery not being spent sitting
     // on a menu. Picked up again by the Playing case in poll(), from
@@ -937,6 +942,8 @@ void Client::join(const net::DiscoveredHost& host) {
     log_info("joining " + host.device_name + " (" + host.address + ") as the " +
              to_string(host_picker_.wanted_screen()) + " screen");
     session_.connect_to(host);
+    video_layers_.forget();
+    menu_backdrop_.forget();
     joining_ = host;
     state_ = State::Connecting;
 }

@@ -1418,6 +1418,55 @@ void test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused() 
     host.stop();
 }
 
+// Once a session ends, nothing it sent is left to show: not after leaving,
+// and not after joining again, until the new session sends a picture of its
+// own. A picture kept over would be put up the moment the next session
+// started drawing, showing the old game until the first new frame landed.
+void test_a_picture_does_not_outlive_its_session() {
+    HostSession host;
+    HostSession::Config config;
+    config.device_name = "Stale Host";
+    config.game_title = "Stale";
+
+    std::string error;
+    if (!host.start(config, &error)) return;
+    set_shared(host, "upper_on_tv");
+
+    CompanionSession companion;
+    if (!companion.begin_search("Stale Deck", ScreenId::Bottom, &error)) {
+        host.stop();
+        return;
+    }
+    if (!spin(host, companion, [&] { return !companion.hosts().empty(); })) {
+        host.stop();
+        return;
+    }
+    const DiscoveredHost discovered = companion.hosts().front();
+    companion.connect_to(discovered);
+    if (!paired(host, companion)) {
+        host.stop();
+        return;
+    }
+
+    const std::vector<uint32_t> top = flat_screen(0x00204080u);
+    host.publish_screens(screen_pixels(top), screen_pixels(flat_screen(0x00112233u)), 5);
+    CHECK_MSG(spin(host, companion, [&] { return companion.has_screen(ScreenId::Bottom); }),
+              "the first session's picture never arrived");
+
+    companion.disconnect();
+    CHECK_MSG(!companion.has_screen(ScreenId::Bottom),
+              "the picture outlived the session that sent it");
+    CHECK(!companion.screen_pixels(ScreenId::Bottom).valid());
+    CHECK(spin(host, companion, [&] { return !host.has_companion(); }));
+
+    companion.connect_to(discovered);
+    CHECK_MSG(paired(host, companion), "the companion could not reconnect");
+    CHECK_MSG(!companion.has_screen(ScreenId::Bottom),
+              "the new session started out showing the last one's picture");
+
+    host.stop();
+}
+
 // The Quit button on the companion sends its quit request immediately
 // followed by its own Bye -- both usually land in the same poll(). That has
 // to still reach the app: drop_companion() (triggered by the Bye) clears the
@@ -4468,6 +4517,7 @@ int main() {
     test_a_refused_menu_can_be_asked_for_again();
     test_a_tap_quicker_than_a_frame_still_reaches_the_game();
     test_reconnecting_after_a_menu_disconnect_does_not_leave_the_host_paused();
+    test_a_picture_does_not_outlive_its_session();
     test_quit_reaches_the_host_even_though_the_companion_disconnects_right_behind_it();
     test_menu_gets_the_companion_both_screens();
     test_joining_gives_up_on_a_host_that_never_answers();

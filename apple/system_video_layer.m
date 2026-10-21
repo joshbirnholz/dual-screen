@@ -129,6 +129,19 @@ void ds_video_layer_hide(void *handle)
     [CATransaction commit];
 }
 
+void ds_video_layer_clear(void *handle)
+{
+    DsVideoLayer *self = (DsVideoLayer *)handle;
+    if (self == NULL) {
+        return;
+    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self->layer.hidden = YES;
+    [self->layer flushAndRemoveImage];
+    [CATransaction commit];
+}
+
 // Says what the picture is, which the GL path says in its shader instead: the
 // app sends BT.601 full range (see color_convert.cpp and ds_yuv_to_rgb in
 // quad_renderer.cpp), and with nothing attached the system assumes BT.709 and

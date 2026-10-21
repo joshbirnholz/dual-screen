@@ -1106,6 +1106,10 @@ private:
     std::deque<FrameMessage> pending_frames_;
     // Defined further down, with the rest of what a screen holds.
     struct ScreenBuffer;
+    // Everything this device was given to show by the session that just
+    // ended: its pictures, the decoders that drew them, the frames still
+    // waiting their turn. None of it is anything the next session sent.
+    void forget_the_pictures();
     void apply_frame(const FrameMessage& frame);
     // False when nothing came out: a failure, already reported, or a stream
     // still waiting for its first keyframe.

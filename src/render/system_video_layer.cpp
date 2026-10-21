@@ -28,6 +28,8 @@ int ds_video_layer_show(void* layer, void* picture, int is_new, float x, float y
                         float height, int quarter_turns, int smooth, float output_width,
                         float output_height, char* reason, int reason_size);
 void ds_video_layer_hide(void* layer);
+// Hidden, and the picture it was holding let go of.
+void ds_video_layer_clear(void* layer);
 }
 #endif
 
@@ -152,6 +154,19 @@ void SystemVideoLayers::end_frame() {
         if (!layer->shown_this_frame) {
             hide(*layer);
         }
+    }
+}
+
+void SystemVideoLayers::forget() {
+    for (Layer* layer : {&top_, &bottom_}) {
+        layer->visible = false;
+        layer->shown_this_frame = false;
+        layer->serial = 0;
+#if DS_HAVE_SYSTEM_VIDEO_LAYER
+        if (layer->handle != nullptr) {
+            ds_video_layer_clear(layer->handle);
+        }
+#endif
     }
 }
 

@@ -55,6 +55,11 @@ public:
               const PlacedScreen& placed, bool smooth, float output_width, float output_height);
     // After the frame is drawn: a layer not shown this frame is hidden.
     void end_frame();
+    // A session has ended: hidden, and the last picture let go of rather than
+    // kept to show again. A hidden layer still holds what it last showed, and
+    // shown again it puts that up until the next session's first picture
+    // replaces it.
+    void forget();
 
 private:
     struct Layer {
