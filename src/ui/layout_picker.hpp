@@ -506,6 +506,9 @@ public:
     // reimplement the combination; render() uses this for every tile, which is
     // what makes toggling Gap or Hands update the previews immediately.
     Layout resolved_layout_for_preview(const Layout& layout) const;
+    // Width over height of the display the menu's previews stand for: the
+    // panel set by set_display_size(), or else what the menu is drawn at.
+    float preview_aspect(float output_width, float output_height) const;
 
     // Draws a layout at a glance: the game's own screens where there are frames
     // to draw, two coloured rectangles where there are not. `display_width`/

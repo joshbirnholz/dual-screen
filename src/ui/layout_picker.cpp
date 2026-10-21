@@ -1249,6 +1249,12 @@ Handedness LayoutPicker::handedness_of(const std::string& layout_id) const {
                                                                         : Handedness::Right;
 }
 
+float LayoutPicker::preview_aspect(float output_width, float output_height) const {
+    const float width = display_width_ > 0.0f ? display_width_ : output_width;
+    const float height = display_height_ > 0.0f ? display_height_ : output_height;
+    return width > 0.0f && height > 0.0f ? width / height : 16.0f / 9.0f;
+}
+
 Layout LayoutPicker::resolved_layout_for_preview(const Layout& layout) const {
     Layout resolved = resolve_for_handedness(resolve_gap_choice(layout, state_.screen_gap),
                                              handedness_of(layout.id));
@@ -1369,11 +1375,24 @@ void LayoutPicker::render_layouts(QuadRenderer& quads, TextRenderer& text,
 
         const float padding = std::round(std::min(tile.w, tile.h) * 0.07f);
         const float label_height = line * 1.4f;
-        const PixelRect preview{
+        // Shaped like the display the menu is on -- a 16:10 Deck's previews
+        // are a little taller than a 16:9 TV's -- and centred in the space the
+        // tile has for it, so a layout looks the way it will once picked. The
+        // tiles themselves stay the same size whatever the display.
+        const PixelRect space{
             tile.x + padding,
             tile.y + padding,
             tile.w - padding * 2.0f,
             tile.h - padding * 2.0f - label_height,
+        };
+        const float aspect = preview_aspect(output_width, output_height);
+        const float preview_width = std::min(space.w, space.h * aspect);
+        const float preview_height = std::min(space.h, space.w / aspect);
+        const PixelRect preview{
+            std::round(space.x + (space.w - preview_width) * 0.5f),
+            std::round(space.y + (space.h - preview_height) * 0.5f),
+            std::round(preview_width),
+            std::round(preview_height),
         };
         draw_preview(quads, resolved_layout_for_preview(layout), preview,
                      display_width_ > 0.0f ? display_width_ : output_width,
