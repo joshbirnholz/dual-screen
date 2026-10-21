@@ -332,7 +332,7 @@ void ChoicePopup::render(QuadRenderer& quads, TextRenderer& text, float output_w
     // The row it was opened from, ringed dimly whatever opened it -- in the
     // shade a row takes under a finger -- its own cursor being put away
     // while the popup is up.
-    if (!grid()) draw_menu_opener(quads, row_, scale);
+    draw_menu_opener(quads, row_, scale);
     const float radius = popup_radius(scale);
     quads.draw_rounded_ring(shape.box, radius, shape.box.w + shape.box.h, popup_fill(), popup_fill());
     quads.draw_rounded_ring(shape.box, radius, 1.0f, popup_rule(), popup_rule());
