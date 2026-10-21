@@ -6606,7 +6606,10 @@ int App::run(const AppOptions& options) {
         // changes. An "apply this setting" step is a step that can be forgotten,
         // and forgetting it made every pointer mode behave as the default.
         impl.cursor.set_mode(impl.settings.cursor_mode);
-        impl.cursor.set_in_menu(impl.state != Impl::State::Playing && impl.state != Impl::State::Companion);
+        impl.cursor.set_choosing_point(
+            (impl.state == Impl::State::ButtonMapping && impl.button_mapping_screen.placing()) ||
+            (impl.companion_session && impl.companion_session->host_button_mapping_view().open &&
+             impl.companion_session->host_button_mapping_view().placing));
         impl.cursor.update(elapsed);
         impl.input.begin_frame();
         impl.tick_identify();

@@ -177,13 +177,13 @@ void test_cursor_auto_hides() {
     cursor.update(2.0);
     CHECK(!cursor.visible());
 
-    // In a menu it shows with the setting off, the setting being for a game:
-    // a mouse there is how a point is chosen.
+    // Placing a Touch Point it shows with the setting off: a mouse there is
+    // how the point is chosen.
     cursor.set_mode(CursorMode::Hidden);
-    cursor.set_in_menu(true);
+    cursor.set_choosing_point(true);
     cursor.notice_mouse_activity();
-    CHECK_MSG(cursor.visible(), "the pointer stayed hidden in a menu");
-    cursor.set_in_menu(false);
+    CHECK_MSG(cursor.visible(), "the pointer stayed hidden while a Touch Point was placed");
+    cursor.set_choosing_point(false);
     CHECK(!cursor.visible());
 }
 

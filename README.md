@@ -397,7 +397,7 @@ Three things are different about a Wii U session:
   page above, then **Swap Screens** (played alone: the other
   screen from **Default Wii U Screen** -- **F3** does the same; with a second
   device connected, the two trade screens), **Hide Cursor** (this device's own,
-  as on every console's menu; for games only, a menu always showing it), then Cemu's: **Upscaling** (how Cemu enlarges
+  as on every console's menu; placing a Touch Point always shows it), then Cemu's: **Upscaling** (how Cemu enlarges
   a picture smaller than its window: bilinear, bicubic, Hermite or nearest
   neighbor), **Aspect Ratio** (the game's own, or stretched to the screen),
   **Performance Overlay** (off, frame rate, frame rate and CPU, or

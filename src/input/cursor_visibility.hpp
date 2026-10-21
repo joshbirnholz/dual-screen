@@ -46,10 +46,9 @@ public:
 
     void set_mode(CursorMode mode) { mode_ = mode; }
     CursorMode mode() const { return mode_; }
-    // Whether a menu is up. The setting is for a game: in a menu the pointer
-    // is how a mouse chooses -- a Touch Point among other things -- so it
-    // shows whatever the setting says.
-    void set_in_menu(bool in_menu) { in_menu_ = in_menu; }
+    // Whether a Touch Point is being placed: the pointer is how a mouse
+    // chooses one, so there it shows whatever the setting says.
+    void set_choosing_point(bool choosing) { choosing_point_ = choosing; }
 
     // The real mouse moved or was clicked.
     void notice_mouse_activity() {
@@ -70,13 +69,13 @@ public:
         }
     }
 
-    bool visible() const { return (in_menu_ || mode_ == CursorMode::Shown) && !idle_hidden_; }
+    bool visible() const { return (choosing_point_ || mode_ == CursorMode::Shown) && !idle_hidden_; }
 
 private:
     double idle_seconds_;
     double still_for_ = 0.0;
     CursorMode mode_ = CursorMode::Shown;
-    bool in_menu_ = false;
+    bool choosing_point_ = false;
     // Hidden to begin with: nothing has been touched yet, and a pointer sitting
     // over the game at startup is the thing being avoided.
     bool idle_hidden_ = true;
