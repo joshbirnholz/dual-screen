@@ -966,6 +966,8 @@ struct App::Impl {
     void apply_system();
     // True while this device is showing another device's game.
     bool is_companion() const;
+    // The name of the game being played: on a companion, the host's.
+    const std::string& shown_game_title() const;
     // Whether this device is the one being held as the GamePad, which is the
     // one showing the GamePad's screen -- the bottom one. With a companion
     // connected that is whichever screen the companion did not take; alone it
@@ -1936,6 +1938,10 @@ std::optional<ScreenId> App::Impl::wii_u_screen_here() const {
 bool App::Impl::is_companion() const {
     return companion_session &&
            companion_session->status() == net::CompanionSession::Status::Connected;
+}
+
+const std::string& App::Impl::shown_game_title() const {
+    return is_companion() ? companion_session->game_title() : game_title;
 }
 
 bool App::Impl::gamepad_is_here() const {
@@ -5698,7 +5704,7 @@ void App::Impl::render_pages(float width, float height, bool over_game,
         picker->set_device_screen(wii_u_screen_here());
         refresh_game_icon();
         picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
-        picker->render(quads, text, button_glyphs, width, height, game_title, frames);
+        picker->render(quads, text, button_glyphs, width, height, shown_game_title(), frames);
     } else if (state == State::GraphicPacks) {
         graphic_packs_screen.set_over_game(over_game);
         graphic_packs_screen.render(quads, text, button_glyphs, width, height);
@@ -5942,7 +5948,7 @@ void App::Impl::render() {
             picker->set_device_screen(wii_u_screen_here());
             refresh_game_icon();
             picker->set_game_icon(game_icon.valid() ? &game_icon : nullptr);
-            picker->render(quads, text, button_glyphs, width, height, game_title, nullptr);
+            picker->render(quads, text, button_glyphs, width, height, shown_game_title(), nullptr);
         } else if (state != State::Playing || quick_menu_leaving()) {
             // Under the menu, or a page opened from it, coming or going:
             // nothing, the game being in Cemu's window rather than this one.
