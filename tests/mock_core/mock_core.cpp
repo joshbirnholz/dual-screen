@@ -392,6 +392,9 @@ const retro_core_option_v2_definition kOptions[] = {
       {"C-Stick", nullptr},
       {nullptr, nullptr}},
      "C-Stick and Touchscreen Pointer"},
+    // A texture pack in place of the game's own, spelled as both cores spell it.
+    {"citra_custom_textures", "Enable custom textures", nullptr, nullptr, nullptr, "video",
+     {{"disabled", nullptr}, {"enabled", nullptr}, {nullptr, nullptr}}, "disabled"},
     {"melonds_number_of_screen_layouts", "Number of layouts", nullptr,
      "How many layouts to cycle through", nullptr, "screen",
      {{"1", nullptr}, {"2", nullptr}, {nullptr, nullptr}}, "2"},
@@ -477,6 +480,9 @@ const retro_core_option_v2_definition kAzaharOptions[] = {
       {"10", nullptr},
       {nullptr, nullptr}},
      "1"},
+    // Copied from Azahar's own option table.
+    {"citra_custom_textures", "Custom Textures", nullptr, nullptr, nullptr, "graphics",
+     {{"enabled", "Enabled"}, {"disabled", "Disabled"}, {nullptr, nullptr}}, "disabled"},
     {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, {{nullptr, nullptr}}, nullptr},
 };
 

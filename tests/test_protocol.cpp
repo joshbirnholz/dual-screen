@@ -18,8 +18,10 @@ namespace {
 // What every session state ends with now, empty: the whole focus, then no
 // Cemu options, no amiibo and no amiibo folder, then the LCD filter's byte,
 // then no lists of Cemu's choices, then the favorite color's byte, then no
-// corner notice, then where Controls' rows begin, then the Button Mapping.
-constexpr std::size_t kWiiUTail = 2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls;
+// corner notice, then where Controls' rows begin, then the Button Mapping,
+// then Custom Textures' byte.
+constexpr std::size_t kWiiUTail =
+    2 + 2 + 2 + 2 + 1 + 2 + 1 + 2 + 2 + 1 + ds::kPadControls + 1 + 5 * ds::kPadControls + 1;
 }  // namespace
 using namespace ds::net;
 
@@ -325,11 +327,24 @@ void test_welcome_and_session_round_trip() {
     CHECK(one_message(buffer, type, payload));
     CHECK(decode_session_state(payload.data(), payload.size(), received_state));
     CHECK(received_state.lcd_filter_choosable && received_state.lcd_filter);
-    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls),
+    CHECK(decode_session_state(payload.data(), payload.size() - 6 - 2 - (1 + ds::kPadControls) - (1 + 5 * ds::kPadControls) - 1,
                                received_state));
     CHECK(!received_state.lcd_filter_choosable && !received_state.lcd_filter);
     state.lcd_filter_choosable = false;
     state.lcd_filter = false;
+    // A 3DS game's Custom Textures, offered and on; from a host before them,
+    // neither.
+    state.custom_textures_choosable = true;
+    state.custom_textures = true;
+    buffer.clear();
+    encode_session_state(state, buffer);
+    CHECK(one_message(buffer, type, payload));
+    CHECK(decode_session_state(payload.data(), payload.size(), received_state));
+    CHECK(received_state.custom_textures_choosable && received_state.custom_textures);
+    CHECK(decode_session_state(payload.data(), payload.size() - 1, received_state));
+    CHECK(!received_state.custom_textures_choosable && !received_state.custom_textures);
+    state.custom_textures_choosable = false;
+    state.custom_textures = false;
 
     // Each Cemu option's choices, for the popup the other device draws.
     state.producer_choices = {{"Bilinear", "Bicubic"}, {"Auto", "Multi-core", "Single-core"}};
@@ -340,7 +355,8 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.producer_choices == state.producer_choices);
     state.producer_choices.clear();
     // The Button Mapping's count and one byte for each control, last of all.
-    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls;
+    // The Button Mapping, and Custom Textures' byte after it.
+    const std::size_t kMappingBytes = 1 + kPadControls + 1 + 5 * kPadControls + 1;
     // The host's favorite color, for the other device's menus; and none said
     // by a host from before it was sent.
     state.favorite_color = 7;
@@ -400,7 +416,7 @@ void test_welcome_and_session_round_trip() {
     CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Y);
     CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).u - 0.25f) < 0.001f);
     CHECK(std::fabs(received_state.button_mapping.spot(PadControl::L).v - 0.75f) < 0.001f);
-    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls, received_state));
+    CHECK(decode_session_state(payload.data(), payload.size() - 1 - 5 * kPadControls - 1, received_state));
     CHECK(received_state.button_mapping[PadControl::L] == PadAction::TouchPoint);
     CHECK(received_state.button_mapping.turbo(PadControl::A) == PadAction::Standard);
     state.button_mapping = ButtonMapping();
@@ -491,6 +507,8 @@ void test_request_round_trip() {
     sent.wants_touch_spot = true;
     sent.touch_spot_u = 0.25f;
     sent.touch_spot_v = 0.75f;
+    sent.wants_custom_textures = true;
+    sent.custom_textures = true;
 
     std::vector<uint8_t> buffer;
     encode_request(sent, buffer);
@@ -529,9 +547,15 @@ void test_request_round_trip() {
     CHECK_EQ(received.wants_screen_swap, true);
     CHECK(received.wants_lcd_filter && received.lcd_filter);
     CHECK(received.wants_touch_spot && received.touch_spot_u == 0.25f && received.touch_spot_v == 0.75f);
+    CHECK(received.wants_custom_textures && received.custom_textures);
+    // From a companion from before Custom Textures: asks nothing about them.
+    RequestMessage untextured;
+    CHECK(decode_request(payload.data(), payload.size() - 1, untextured));
+    CHECK(!untextured.wants_custom_textures && untextured.wants_touch_spot);
     // From a companion from before a Touch Point was dragged there: asks
-    // nothing about one. (Each below counts past its five bytes.)
-    constexpr std::size_t kSpotBytes = 5;
+    // nothing about one. (Each below counts past its five bytes, and Custom
+    // Textures' one after them.)
+    constexpr std::size_t kSpotBytes = 5 + 1;
     RequestMessage unspotted;
     CHECK(decode_request(payload.data(), payload.size() - kSpotBytes, unspotted));
     CHECK(!unspotted.wants_touch_spot && unspotted.wants_lcd_filter);
@@ -582,6 +606,7 @@ void test_request_round_trip() {
     CHECK_EQ(received_quiet.wants_right_stick_mode, false);
     CHECK_EQ(received_quiet.wants_left_stick_press, false);
     CHECK_EQ(received_quiet.wants_rumble_pak, false);
+    CHECK_EQ(received_quiet.wants_custom_textures, false);
     CHECK_EQ(received_quiet.wants_menu_action, false);
     CHECK_EQ(received_quiet.wants_menu_focus, false);
 
@@ -602,33 +627,37 @@ void test_request_round_trip() {
         bool (*matches)(const RequestMessage&);
     };
     const EnumByte kEnumBytes[] = {
-        {"audio target", 33, 1u,
+        {"audio target", 34, 1u,
          [](const RequestMessage& message) {
              return message.audio_target == AudioTarget::BottomScreen;
          }},
-        {"handedness", 31, 1u,
+        {"handedness", 32, 1u,
          [](const RequestMessage& message) { return message.handedness == Handedness::Left; }},
-        {"right stick mode", 17, 2u,
+        {"right stick mode", 18, 2u,
          [](const RequestMessage& message) {
              return message.right_stick_mode == RightStickMode::DPad;
          }},
-        {"left stick click", 12, 2u,
+        {"left stick click", 13, 2u,
          [](const RequestMessage& message) {
              return message.wants_left_stick_press &&
                     message.left_stick_press == LeftStickPress::SwapLayout;
          }},
-        {"rumble pak", 11, 2u,
+        {"rumble pak", 12, 2u,
          [](const RequestMessage& message) {
              return message.wants_rumble_pak && message.rumble_pak;
          }},
-        {"resume from save state", 10, 2u,
+        {"resume from save state", 11, 2u,
          [](const RequestMessage& message) {
              return message.wants_resume_from_save_state && message.resume_from_save_state;
          }},
-        {"screen swap", 9, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
-        {"LCD filter", 6, 1u,
+        {"screen swap", 10, 1u, [](const RequestMessage& message) { return message.wants_screen_swap; }},
+        {"LCD filter", 7, 1u,
          [](const RequestMessage& message) { return message.wants_lcd_filter && !message.lcd_filter; }},
-        {"touch spot", 5, 1u, [](const RequestMessage& message) { return message.wants_touch_spot; }},
+        {"touch spot", 6, 1u, [](const RequestMessage& message) { return message.wants_touch_spot; }},
+        {"custom textures", 1, 1u,
+         [](const RequestMessage& message) {
+             return message.wants_custom_textures && !message.custom_textures;
+         }},
     };
 
     for (const EnumByte& field : kEnumBytes) {

@@ -293,6 +293,7 @@ void test_game_config_round_trip() {
     fresh.right_stick_mode = RightStickMode::Off;
     fresh.wii_u_options["upscale_filter"] = 3;
     fresh.lcd_filter = true;
+    fresh.custom_textures = true;
     CHECK(fresh.button_mapping == ButtonMapping());
     fresh.button_mapping[PadControl::Zr] = PadAction::TouchCursor;
     fresh.button_mapping[PadControl::A] = PadAction::Nothing;
@@ -312,6 +313,7 @@ void test_game_config_round_trip() {
     CHECK_EQ(reloaded.screen_gap, true);
     CHECK(reloaded.right_stick_mode == RightStickMode::Off);
     CHECK_MSG(reloaded.lcd_filter, "the LCD filter did not survive being written down");
+    CHECK_MSG(reloaded.custom_textures, "Custom Textures did not survive being written down");
     CHECK(reloaded.button_mapping == fresh.button_mapping);
     const std::map<std::string, int> kept{{"upscale_filter", 3}};
     CHECK(reloaded.wii_u_options == kept);

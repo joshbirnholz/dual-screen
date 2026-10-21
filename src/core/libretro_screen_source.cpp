@@ -126,6 +126,9 @@ constexpr const char* kOpt3dsResolution = "citra_resolution_factor";
 // what it did and takes the cross away.
 constexpr const char* kOpt3dsAnalogFunction = "citra_analog_function";
 const std::vector<std::string> kOpt3dsAnalogFunctionValues = {"c_stick", "C-Stick"};
+// A texture pack in place of the game's own textures. Both cores spell it the
+// same way, with "enabled" and "disabled".
+constexpr const char* kOpt3dsCustomTextures = "citra_custom_textures";
 
 std::vector<std::string> citra_resolution_values(int scale) {
     return {scale <= 1 ? std::string("1x (Native)") : std::to_string(scale) + "x",
@@ -211,6 +214,7 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     max_render_scale_ = std::max(1, profile.max_render_scale);
     render_scale_ = std::clamp(config.render_scale, 1, max_render_scale_);
     rumble_pak_ = config.rumble_pak;
+    custom_textures_ = config.custom_textures;
 
     if (config.core_path.empty()) {
         if (error != nullptr) {
@@ -338,6 +342,10 @@ bool LibretroCoreScreenSource::open(const LibretroSourceConfig& config, std::str
     apply_render_scale();
     if (offers_rumble_pak()) {
         set_rumble_pak(rumble_pak_);
+    }
+    // Before the game loads, so the pack is looked for the once, as it starts.
+    if (offers_custom_textures()) {
+        set_custom_textures(custom_textures_);
     }
 
     for (const std::string& warning : core_->option_warnings()) {
@@ -619,6 +627,7 @@ void LibretroCoreScreenSource::apply_render_scale() {
 
 void LibretroCoreScreenSource::find_core_options() {
     rumble_key_.clear();
+    custom_textures_offered_ = false;
     const auto lower = [](std::string text) {
         for (char& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return text;
@@ -632,6 +641,13 @@ void LibretroCoreScreenSource::find_core_options() {
             values += value;
         }
         log_debug("core option " + key + " = " + info.default_value + " of: " + values);
+    }
+    if (system_ == SystemId::ThreeDs) {
+        custom_textures_offered_ =
+            core_->declared_options().count(kOpt3dsCustomTextures) != 0;
+        log_info(std::string("this core ") +
+                 (custom_textures_offered_ ? "can" : "cannot") + " load custom textures");
+        return;
     }
     if (system_ != SystemId::Ds) {
         return;
@@ -674,6 +690,15 @@ void LibretroCoreScreenSource::set_rumble_pak(bool inserted) {
     }
     core_->force_option(rumble_key_, inserted ? rumble_on_value_ : rumble_off_value_);
     log_info(std::string("Rumble Pak ") + (inserted ? "in" : "out"));
+}
+
+void LibretroCoreScreenSource::set_custom_textures(bool on) {
+    custom_textures_ = on;
+    if (!custom_textures_offered_) {
+        return;
+    }
+    core_->force_option(kOpt3dsCustomTextures, on ? "enabled" : "disabled");
+    log_info(std::string("custom textures ") + (on ? "on" : "off"));
 }
 
 void LibretroCoreScreenSource::apply_pointer_rect() {

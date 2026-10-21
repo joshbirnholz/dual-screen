@@ -336,6 +336,10 @@ struct RequestMessage {
     // Separate Screens' swap: the two devices trade screens. One-shot, like
     // the reset above -- the result is SessionState's companion_screen.
     bool wants_screen_swap = false;
+    // A 3DS game's custom textures on or off -- see
+    // SessionStateMessage::custom_textures. Last, and optional.
+    bool wants_custom_textures = false;
+    bool custom_textures = false;
 };
 
 struct RejectMessage {
@@ -463,6 +467,11 @@ struct SessionStateMessage {
     // host's does -- one game, one mapping. A count, then each PadControl's
     // PadAction as a byte. Last, and optional: from an older host, standard.
     ButtonMapping button_mapping;
+    // Whether the menu offers Custom Textures -- a 3DS game on a core that
+    // can load a texture pack -- and whether they are on. A byte, a bit each;
+    // last, and optional.
+    bool custom_textures_choosable = false;
+    bool custom_textures = false;
 };
 
 struct FrameMessage {

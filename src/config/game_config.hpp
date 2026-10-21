@@ -47,6 +47,11 @@ struct GameConfig {
     // A Rumble Pak in the DS's GBA slot -- out unless asked for, since a game
     // that finds one may say so, and one that has no use for it gains nothing.
     bool rumble_pak = false;
+    // A 3DS game drawn with the texture pack put in its folder of Azahar's
+    // (see LibretroCoreScreenSource::offers_custom_textures()) in place of its
+    // own textures. Off unless asked for, since a pack is something a player
+    // goes looking for, and loading one costs memory and start-up time.
+    bool custom_textures = false;
     // Start the game from where it was when the app last closed, rather than
     // from its title screen -- see App::Impl::write_resume_point(). Off unless
     // asked for, and only offered where save states are.

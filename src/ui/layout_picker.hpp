@@ -64,6 +64,8 @@ struct LayoutPickerResult {
     bool rumble_pak_toggled = false;
     // The LCD filter was turned on or off. The game's too.
     bool lcd_filter_toggled = false;
+    // A 3DS game's custom textures were turned on or off. The game's too.
+    bool custom_textures_toggled = false;
     // Resume from Save State was turned on or off. The game's too.
     bool resume_toggled = false;
     // The settings screen was asked for. Not a value to adopt: the caller puts
@@ -184,6 +186,10 @@ struct LayoutPickerState {
     // whether that is on offer: a DS game's, kept for it.
     bool lcd_filter = false;
     bool lcd_filter_choosable = false;
+    // A 3DS game drawn with a texture pack, and whether that is on offer:
+    // only where the core running the game can load one.
+    bool custom_textures = false;
+    bool custom_textures_choosable = false;
     // Whether Reset makes sense to offer. False for a Wii U session: Cemu owns
     // restarting the game, and nothing here can do it for it. See
     // SystemProfile::offers_reset.
@@ -435,6 +441,7 @@ public:
     void set_repeat_source(std::function<bool(UiAction)> repeating) { repeating_ = std::move(repeating); }
     void set_rumble_pak(bool inserted) { state_.rumble_pak = inserted; }
     void set_lcd_filter(bool on) { state_.lcd_filter = on; }
+    void set_custom_textures(bool on) { state_.custom_textures = on; }
     void set_resume_from_save_state(bool on) { state_.resume_from_save_state = on; }
     // The console artwork, drawn inside the Standard layout's tile.
     void set_bezel_art(const Texture* art) { bezel_art_ = art; }
@@ -522,6 +529,7 @@ private:
         ScreenGap,
         Smoothing,
         LcdFilter,
+        CustomTextures,
         Resume,
         // A Wii U's: this game's screen, alone, or the two devices trading.
         SwapScreens,

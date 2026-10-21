@@ -671,6 +671,23 @@ void test_moving_between_the_list_and_what_it_shows() {
         CHECK_EQ(offered, pak);
     }
 
+    // Custom Textures, where a 3DS core can load them, and nowhere else.
+    for (const bool textures : {false, true}) {
+        LayoutPickerState with_textures = state;
+        with_textures.custom_textures_choosable = textures;
+        LayoutPicker listed(registry);
+        open_on(listed, with_textures, MenuSection::Options);
+        listed.update({UiAction::Right}, {}, kWidth, kHeight);
+        bool offered = false;
+        for (int row = 0; row < 8; ++row) {
+            if (listed.update({UiAction::Confirm}, {}, kWidth, kHeight).custom_textures_toggled) {
+                offered = true;
+            }
+            listed.update({UiAction::Down}, {}, kWidth, kHeight);
+        }
+        CHECK_EQ(offered, textures);
+    }
+
     // A switch flips with A, and only with A: the d-pad's sideways presses
     // move between the two sides of the menu and nothing else.
     {

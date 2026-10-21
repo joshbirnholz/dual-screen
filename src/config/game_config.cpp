@@ -129,6 +129,7 @@ GameConfig GameConfig::load_or_default(const AppPaths& paths,
         }
     }
     config.rumble_pak = get_bool(document, "rumble_pak", config.rumble_pak);
+    config.custom_textures = get_bool(document, "custom_textures", config.custom_textures);
     config.lcd_filter = get_bool(document, "lcd_filter", config.lcd_filter);
     config.resume_from_save_state =
         get_bool(document, "resume_from_save_state", config.resume_from_save_state);
@@ -202,6 +203,7 @@ bool GameConfig::save(const AppPaths& paths) const {
         }
     }
     document["rumble_pak"] = rumble_pak;
+    document["custom_textures"] = custom_textures;
     document["lcd_filter"] = lcd_filter;
     document["resume_from_save_state"] = resume_from_save_state;
     document["screens_swapped"] = screens_swapped;

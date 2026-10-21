@@ -674,6 +674,8 @@ void HostSession::set_session_state(const SharedState& state) {
         state.rumble_pak != shared_.rumble_pak ||
         state.lcd_filter_choosable != shared_.lcd_filter_choosable ||
         state.lcd_filter != shared_.lcd_filter ||
+        state.custom_textures_choosable != shared_.custom_textures_choosable ||
+        state.custom_textures != shared_.custom_textures ||
         state.cursor_shown != shared_.cursor_shown ||
         state.settings_open != shared_.settings_open ||
         state.save_points_available != shared_.save_points_available ||
@@ -985,6 +987,10 @@ void HostSession::handle_message(MessageType type, const std::vector<uint8_t>& p
             if (have_request_ && !request.wants_lcd_filter && request_.wants_lcd_filter) {
                 request.wants_lcd_filter = true;
                 request.lcd_filter = request_.lcd_filter;
+            }
+            if (have_request_ && !request.wants_custom_textures && request_.wants_custom_textures) {
+                request.wants_custom_textures = true;
+                request.custom_textures = request_.custom_textures;
             }
             if (have_request_ && !request.wants_resume_from_save_state &&
                 request_.wants_resume_from_save_state) {
@@ -1342,6 +1348,8 @@ void HostSession::poll(uint64_t now_ms) {
         state.rumble_pak = shared_.rumble_pak;
         state.lcd_filter_choosable = shared_.lcd_filter_choosable;
         state.lcd_filter = shared_.lcd_filter;
+        state.custom_textures_choosable = shared_.custom_textures_choosable;
+        state.custom_textures = shared_.custom_textures;
         state.cursor_shown = shared_.cursor_shown;
         state.settings_open = shared_.settings_open;
         state.save_points_available = shared_.save_points_available;

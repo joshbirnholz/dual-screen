@@ -605,6 +605,8 @@ public:
     bool host_rumble_pak() const { return host_rumble_pak_; }
     bool host_lcd_filter_choosable() const { return host_lcd_filter_choosable_; }
     bool host_lcd_filter() const { return host_lcd_filter_; }
+    bool host_custom_textures_choosable() const { return host_custom_textures_choosable_; }
+    bool host_custom_textures() const { return host_custom_textures_; }
     bool host_cursor_shown() const { return host_cursor_shown_; }
     bool host_save_points_available() const { return host_save_points_available_; }
     bool host_save_sync_available() const { return host_save_sync_available_; }
@@ -660,6 +662,7 @@ public:
     void request_left_stick_press(LeftStickPress press);
     void request_rumble_pak(bool inserted);
     void request_lcd_filter(bool on);
+    void request_custom_textures(bool on);
     // A Touch Point being placed on the host's Button Mapping, put here.
     void request_touch_spot(float u, float v);
     void request_resume_from_save_state(bool on);
@@ -1168,6 +1171,8 @@ private:
     bool host_rumble_pak_ = false;
     bool host_lcd_filter_choosable_ = false;
     bool host_lcd_filter_ = false;
+    bool host_custom_textures_choosable_ = false;
+    bool host_custom_textures_ = false;
     bool host_cursor_shown_ = true;
     bool host_save_points_available_ = false;
     bool host_save_sync_available_ = false;

@@ -48,6 +48,9 @@ struct LibretroSourceConfig {
     // A Rumble Pak in the DS's GBA slot, where the core offers one -- see
     // LibretroCoreScreenSource::offers_rumble_pak().
     bool rumble_pak = false;
+    // A 3DS game's custom textures, where the core offers them -- see
+    // LibretroCoreScreenSource::offers_custom_textures().
+    bool custom_textures = false;
     // The DS's owner -- see Settings::ds_nickname, ds_favorite_color and
     // ds_birth_month. Empty, -1 and 0 leave the core's own.
     std::string nickname;
@@ -84,6 +87,15 @@ public:
     // In or out. The core takes it straight away; a game that only looks for
     // one as it boots sees it after Reset Game.
     void set_rumble_pak(bool inserted);
+    // Whether the loaded core can draw a 3DS game with a texture pack in place
+    // of its own textures. Azahar and citra_libretro both can, looking for one
+    // in load/textures/<title id>/ under the folder they keep their files in
+    // -- Azahar's is "Azahar" in the save directory.
+    bool offers_custom_textures() const { return custom_textures_offered_; }
+    bool custom_textures() const { return custom_textures_; }
+    // On or off. The core takes it straight away: it throws away the textures
+    // it has and looks for the pack again.
+    void set_custom_textures(bool on);
     // Changes the core's internal resolution while it runs. The core answers
     // with a new geometry and the split follows it, so nothing else has to be
     // told. A system with no scale to choose ignores this.
@@ -223,6 +235,8 @@ private:
     std::string rumble_on_value_;
     std::string rumble_off_value_;
     bool rumble_pak_ = false;
+    bool custom_textures_offered_ = false;
+    bool custom_textures_ = false;
     void find_core_options();
     ScreenSplit split_;
     Texture top_texture_;

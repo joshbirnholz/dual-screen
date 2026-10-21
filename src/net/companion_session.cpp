@@ -639,6 +639,8 @@ void CompanionSession::handle_message(MessageType type, const std::vector<uint8_
             host_rumble_pak_ = state.rumble_pak;
             host_lcd_filter_choosable_ = state.lcd_filter_choosable;
             host_lcd_filter_ = state.lcd_filter;
+            host_custom_textures_choosable_ = state.custom_textures_choosable;
+            host_custom_textures_ = state.custom_textures;
             host_cursor_shown_ = state.cursor_shown;
             host_save_points_available_ = state.save_points_available;
             host_save_sync_available_ = state.save_sync_available;
@@ -2273,6 +2275,13 @@ void CompanionSession::request_lcd_filter(bool on) {
     RequestMessage request;
     request.wants_lcd_filter = true;
     request.lcd_filter = on;
+    send_request(request);
+}
+
+void CompanionSession::request_custom_textures(bool on) {
+    RequestMessage request;
+    request.wants_custom_textures = true;
+    request.custom_textures = on;
     send_request(request);
 }
 

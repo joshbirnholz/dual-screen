@@ -356,6 +356,8 @@ void test_a_ds_game_takes_a_rumble_pak() {
     CHECK(source.offers_rumble_pak());
     CHECK(!source.rumble_pak());
     CHECK_STR_EQ(source.core_option_for_test("melonds_slot2_device"), "none");
+    // Custom textures are a 3DS core's, and a DS game is not offered them.
+    CHECK(!source.offers_custom_textures());
 
     std::vector<bool> felt;
     source.set_rumble_callback([&felt](bool active) { felt.push_back(active); });
@@ -641,6 +643,10 @@ void test_screen_source_handles_a_3ds_core() {
     // The core reports whether the layout option actually reached it, and it
     // paints a loud magenta band across the upper screen when it did not.
     CHECK_MSG(source.warnings().empty(), "the 3DS core refused an option we pin");
+    // Custom textures: offered, and off unless asked for.
+    CHECK(source.offers_custom_textures());
+    CHECK(!source.custom_textures());
+    CHECK_STR_EQ(source.core_option_for_test("citra_custom_textures"), "disabled");
 
     CHECK_MSG(source.advance_frame(&error), error);
 
@@ -708,9 +714,18 @@ void test_a_3ds_core_that_spells_its_options_differently() {
     config.system_directory = "/tmp";
     config.save_directory = "/tmp";
     config.render_scale = 3;
+    config.custom_textures = true;
 
     std::string error;
     CHECK_MSG(source.open(config, &error), error);
+    // A game's custom textures, on from the start when its settings say so,
+    // and off again while it runs.
+    CHECK(source.offers_custom_textures());
+    CHECK(source.custom_textures());
+    CHECK_STR_EQ(source.core_option_for_test("citra_custom_textures"), "enabled");
+    source.set_custom_textures(false);
+    CHECK(!source.custom_textures());
+    CHECK_STR_EQ(source.core_option_for_test("citra_custom_textures"), "disabled");
     // Nothing to report: the layout and the scale were sent in this core's own
     // words, and the two options it does not have were not insisted on.
     for (const std::string& warning : source.warnings()) {

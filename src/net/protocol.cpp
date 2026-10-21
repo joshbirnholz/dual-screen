@@ -348,6 +348,8 @@ void encode_session_state(const SessionStateMessage& message, std::vector<uint8_
         put_u16(out, touch_spot_u16(spot.u));
         put_u16(out, touch_spot_u16(spot.v));
     }
+    put_u8(out, static_cast<uint8_t>((message.custom_textures_choosable ? 1u : 0u) |
+                                     (message.custom_textures ? 2u : 0u)));
     finish_message(out, start, MessageType::SessionState);
 }
 
@@ -1079,6 +1081,8 @@ void encode_request(const RequestMessage& message, std::vector<uint8_t>& out) {
     put_u8(out, message.wants_touch_spot ? 1u : 0u);
     put_u16(out, touch_spot_u16(message.touch_spot_u));
     put_u16(out, touch_spot_u16(message.touch_spot_v));
+    // 0 for no change, 1 off, 2 on.
+    put_u8(out, !message.wants_custom_textures ? 0u : message.custom_textures ? 2u : 1u);
     finish_message(out, start, MessageType::Request);
 }
 
@@ -1184,6 +1188,15 @@ bool decode_request(const uint8_t* data, std::size_t size, RequestMessage& out) 
         out.wants_touch_spot = wants_spot != 0;
         out.touch_spot_u = u / 65536.0f;
         out.touch_spot_v = v / 65536.0f;
+    }
+    out.wants_custom_textures = false;
+    out.custom_textures = false;
+    if (reader.remaining() > 0) {
+        uint8_t textures = 0;
+        reader.u8(textures);
+        if (textures > 2) return false;
+        out.wants_custom_textures = textures != 0;
+        out.custom_textures = textures == 2;
     }
     out.wants_menu_action = (wants_menu_action != 0);
     out.wants_menu_focus = (wants_menu_focus != 0);
@@ -1517,6 +1530,14 @@ bool decode_session_state(const uint8_t* data, std::size_t size, SessionStateMes
             }
         }
         if (!reader.ok()) return false;
+    }
+    out.custom_textures_choosable = false;
+    out.custom_textures = false;
+    if (reader.remaining() > 0) {
+        uint8_t textures = 0;
+        reader.u8(textures);
+        out.custom_textures_choosable = (textures & 1u) != 0;
+        out.custom_textures = (textures & 2u) != 0;
     }
     out.motion_wanted = (motion_wanted != 0);
     out.cursor_shown = (cursor_shown != 0);

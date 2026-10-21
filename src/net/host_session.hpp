@@ -215,6 +215,9 @@ public:
         // See SessionStateMessage::lcd_filter.
         bool lcd_filter_choosable = false;
         bool lcd_filter = false;
+        // See SessionStateMessage::custom_textures.
+        bool custom_textures_choosable = false;
+        bool custom_textures = false;
         bool cursor_shown = true;
         bool save_points_available = false;
         bool save_sync_available = false;

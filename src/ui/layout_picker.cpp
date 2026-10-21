@@ -204,6 +204,8 @@ void LayoutPicker::rebuild_footer() {
     if (state_.smoothing_available) options_.push_back(OptionRow{Option::Smoothing});
     // A DS's screens with the pixel grid of its own.
     if (state_.lcd_filter_choosable) options_.push_back(OptionRow{Option::LcdFilter});
+    // A 3DS game's texture pack, where the core can load one.
+    if (state_.custom_textures_choosable) options_.push_back(OptionRow{Option::CustomTextures});
     // Where the game starts next time, which is about the game rather than
     // about how it looks -- so last. Only where save states are.
     if (state_.resume_choosable) options_.push_back(OptionRow{Option::Resume});
@@ -283,6 +285,7 @@ std::string LayoutPicker::option_name(const OptionRow& row) const {
         case Option::ScreenGap: return "Screen Gap";
         case Option::Smoothing: return "Screen Smoothing";
         case Option::LcdFilter: return "LCD Filter";
+        case Option::CustomTextures: return "Custom Textures";
         case Option::Resume: return "Resume from Save State";
         case Option::SwapScreens: return "Swap Screens";
         case Option::GraphicPacks: return "Graphics Packs";
@@ -346,6 +349,7 @@ std::vector<std::string> LayoutPicker::option_choices(const OptionRow& row, int&
         case Option::ScreenGap:
         case Option::Smoothing:
         case Option::LcdFilter:
+        case Option::CustomTextures:
         case Option::Resume:
         case Option::SwapScreens:
         case Option::GraphicPacks:
@@ -394,6 +398,7 @@ std::string LayoutPicker::option_value(const OptionRow& row) const {
         case Option::ScreenGap: return state_.screen_gap ? "On" : "Off";
         case Option::Smoothing: return state_.bilinear_filtering ? "On" : "Off";
         case Option::LcdFilter: return state_.lcd_filter ? "On" : "Off";
+        case Option::CustomTextures: return state_.custom_textures ? "On" : "Off";
         case Option::Resume: return state_.resume_from_save_state ? "On" : "Off";
         // Alone, whether this game shows the other screen from the setting's;
         // with a second device, nothing to say -- it swaps them, there and then.
@@ -570,6 +575,7 @@ void LayoutPicker::show(const LayoutPickerState& state, int focus, MenuConfirm c
                                  state.right_stick_choosable != state_.right_stick_choosable ||
                                  state.button_mapping_available != state_.button_mapping_available ||
                                  state.rumble_choosable != state_.rumble_choosable ||
+                                 state.custom_textures_choosable != state_.custom_textures_choosable ||
                                  state.save_points_available != state_.save_points_available ||
                                  state.save_sync_available != state_.save_sync_available ||
                                  state.resume_choosable != state_.resume_choosable ||
@@ -922,6 +928,7 @@ void LayoutPicker::activate_item(LayoutPickerResult& result) {
                 case Option::ScreenGap: result.screen_gap_toggled = true; break;
                 case Option::Smoothing: result.filtering_toggled = true; break;
                 case Option::LcdFilter: result.lcd_filter_toggled = true; break;
+                case Option::CustomTextures: result.custom_textures_toggled = true; break;
                 case Option::Resume: result.resume_toggled = true; break;
                 case Option::SwapScreens: result.screens_swap_toggled = true; break;
                 // Cemu's, on the device running it, which the caller puts up.
@@ -1757,6 +1764,7 @@ void LayoutPicker::describe_for_sound(UiSoundView& view) const {
     mix_sound_state(view.rest, state_.screen_gap ? 1u : 0u);
     mix_sound_state(view.rest, static_cast<uint64_t>(state_.right_stick_mode));
     mix_sound_state(view.rest, state_.rumble_pak ? 1u : 0u);
+    mix_sound_state(view.rest, state_.custom_textures ? 1u : 0u);
     mix_sound_state(view.rest, state_.resume_from_save_state ? 1u : 0u);
     mix_sound_state(view.rest, save_status_);
     mix_sound_state(view.rest, state_.screens_swapped ? 1u : 0u);

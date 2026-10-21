@@ -1304,6 +1304,9 @@ struct App::Impl {
     bool rumble_pak_in_effect() const;
     void request_rumble_pak(bool inserted);
     void adopt_rumble_pak(bool inserted);
+    bool custom_textures_in_effect() const;
+    void request_custom_textures(bool on);
+    void adopt_custom_textures(bool on);
     // A DS game's LCD filter -- see GameConfig::lcd_filter. The host's, and
     // on a companion what the host says.
     bool lcd_filter = false;
@@ -3320,6 +3323,9 @@ void App::Impl::apply_menu_result(const LayoutPickerResult& result, bool pressed
             if (result.rumble_pak_toggled) {
                 request_rumble_pak(!rumble_pak_in_effect());
             }
+            if (result.custom_textures_toggled) {
+                request_custom_textures(!custom_textures_in_effect());
+            }
             if (result.resume_toggled) {
                 request_resume(!resume_in_effect());
             }
@@ -3475,6 +3481,11 @@ void App::Impl::open_picker(bool embedded) {
         is_companion() ? companion_session->host_lcd_filter_choosable() : system == SystemId::Ds;
     picker_state.rumble_choosable = is_companion() ? companion_session->host_rumble_choosable()
                                                    : (source && source->offers_rumble_pak());
+    // A 3DS game's texture pack, where the core running it can load one.
+    picker_state.custom_textures = custom_textures_in_effect();
+    picker_state.custom_textures_choosable = is_companion()
+                                                 ? companion_session->host_custom_textures_choosable()
+                                                 : (source && source->offers_custom_textures());
     // Resume from Save State, wherever save states are.
     picker_state.resume_from_save_state = resume_in_effect();
     picker_state.resume_choosable =
@@ -3860,6 +3871,33 @@ void App::Impl::adopt_rumble_pak(bool inserted) {
     }
     if (have_game_config) {
         game_config.rumble_pak = inserted;
+        persist_game_config();
+    }
+}
+
+bool App::Impl::custom_textures_in_effect() const {
+    if (is_companion()) return companion_session->host_custom_textures();
+    return source && source->custom_textures();
+}
+
+void App::Impl::request_custom_textures(bool on) {
+    if (is_companion()) {
+        companion_session->request_custom_textures(on);
+        return;  // the host decides; it will tell us
+    }
+    adopt_custom_textures(on);
+}
+
+void App::Impl::adopt_custom_textures(bool on) {
+    if (!source || !source->offers_custom_textures() || on == source->custom_textures()) {
+        return;
+    }
+    source->set_custom_textures(on);
+    if (picker) {
+        picker->set_custom_textures(on);
+    }
+    if (have_game_config) {
+        game_config.custom_textures = on;
         persist_game_config();
     }
 }
@@ -4636,6 +4674,7 @@ bool App::Impl::open_core(const std::string& rom_path, std::string* error,
                                  : render_scale;
     source_config.render_scale = effective_render_scale;
     source_config.rumble_pak = have_game_config && game_config.rumble_pak;
+    source_config.custom_textures = have_game_config && game_config.custom_textures;
     source_config.nickname = settings.ds_nickname;
     source_config.favorite_color = settings.ds_favorite_color;
     source_config.birth_month = settings.ds_birth_month;
@@ -6761,6 +6800,8 @@ int App::run(const AppOptions& options) {
             shared.button_mapping = impl.button_mapping;
             shared.rumble_choosable = impl.source && impl.source->offers_rumble_pak();
             shared.rumble_pak = impl.source && impl.source->rumble_pak();
+            shared.custom_textures_choosable = impl.source && impl.source->offers_custom_textures();
+            shared.custom_textures = impl.source && impl.source->custom_textures();
             shared.lcd_filter_choosable = impl.system == SystemId::Ds;
             shared.lcd_filter = impl.lcd_filter_in_effect();
             shared.save_points_available = impl.save_points_available();
@@ -6958,6 +6999,9 @@ int App::run(const AppOptions& options) {
                 }
                 if (request.wants_rumble_pak) {
                     impl.adopt_rumble_pak(request.rumble_pak);
+                }
+                if (request.wants_custom_textures) {
+                    impl.adopt_custom_textures(request.custom_textures);
                 }
                 if (request.wants_resume_from_save_state) {
                     impl.adopt_resume(request.resume_from_save_state);

@@ -24,6 +24,8 @@ LayoutPickerState menu_state_from_host(const net::CompanionSession& session) {
     state.rumble_choosable = session.host_rumble_choosable();
     state.lcd_filter = session.host_lcd_filter();
     state.lcd_filter_choosable = session.host_lcd_filter_choosable();
+    state.custom_textures = session.host_custom_textures();
+    state.custom_textures_choosable = session.host_custom_textures_choosable();
     state.save_points_available = session.host_save_points_available();
     state.save_sync_available = session.host_save_sync_available();
     state.resume_from_save_state = session.host_resume_from_save_state();
